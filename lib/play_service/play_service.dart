@@ -1,0 +1,22 @@
+import 'package:pure_music/play_service/desktop_lyric_service.dart';
+import 'package:pure_music/play_service/lyric_service.dart';
+import 'package:pure_music/play_service/playback_service.dart';
+
+class PlayService {
+  late final playbackService = PlaybackService(this);
+  late final lyricService = LyricService(this);
+  late final desktopLyricService = DesktopLyricService(this);
+
+  PlayService._();
+
+  static PlayService? _instance;
+  static PlayService get instance {
+    _instance ??= PlayService._();
+    return _instance!;
+  }
+
+  void close() {
+    desktopLyricService.killDesktopLyric();
+    playbackService.close();
+  }
+}
