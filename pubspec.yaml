@@ -1,0 +1,59 @@
+name: pure_music
+description: Material You 风格的本地音乐播放器
+publish_to: none
+version: 0.0.4+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+  flutter: ">=3.3.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  ffi: ^2.1.3
+  filepicker_windows: ^2.1.4
+  flex_color_picker: ^3.7.1
+  flutter_markdown_plus: ^1.0.7
+  flutter_rust_bridge: 2.11.1
+  flutter_volume_controller: ^1.3.3
+  go_router: ^17.1.0
+  github: ^9.24.0
+  hotkey_manager: ^0.2.3
+  logger: ^2.5.0
+  material_symbols_icons: ^4.2815.1
+  path: ^1.9.0
+  path_provider: ^2.1.5
+  pinyin: ^3.3.0
+  provider: ^6.1.2
+  sqlite3: ^2.1.0
+  sqlite3_flutter_libs: ^0.5.0
+  window_manager: ^0.5.1
+
+  desktop_lyric:
+    path: packages/desktop_lyric
+  music_api:
+    git:
+      url: https://github.com/yhsj0919/music_api.git
+
+  rust_lib_coriander_player:
+    path: rust_builder
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  integration_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/fonts/MiSans/MiSansVF.ttf
+    - app_icon.ico
+  shaders:
+    - assets/shaders/now_playing_bg.frag
+  fonts:
+    - family: MiSans
+      fonts:
+        - asset: assets/fonts/MiSans/MiSansVF.ttf

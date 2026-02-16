@@ -1,0 +1,441 @@
+import 'dart:io';
+import 'dart:convert';
+import 'dart:ui';
+import 'package:pure_music/app_settings.dart';
+import 'package:pure_music/src/rust/api/library_db.dart' as library_db;
+import 'package:pure_music/src/rust/api/tag_reader.dart';
+import 'package:pure_music/utils.dart';
+import 'package:flutter/painting.dart';
+
+/// from index.json
+class AudioLibrary {
+  List<AudioFolder> folders;
+
+  AudioLibrary._(this.folders);
+
+  /// 所有音乐
+  List<Audio> audioCollection = [];
+
+  Map<String, Artist> artistCollection = {};
+
+  Map<String, Album> albumCollection = {};
+
+  /// must call [initFromIndex]
+  static AudioLibrary get instance {
+    _instance ??= AudioLibrary._([]);
+    return _instance!;
+  }
+
+  static AudioLibrary? _instance;
+
+  /// 目前 index 结构：
+  /// ```json
+  /// {
+  ///     "folders": [
+  ///         {
+  ///             "audios": [
+  ///                 {...},
+  ///                 ...
+  ///             ],
+  ///             ...
+  ///         },
+  ///         ...
+  ///     ],
+  ///     "version": 110
+  /// }
+  /// ```
+  static Future<void> initFromIndex() async {
+    final stopwatch = Stopwatch()..start();
+    try {
+      final supportPath = (await getAppDataDir()).path;
+      final indexPath = "$supportPath\\index.json";
+      final sqlitePath = "$supportPath\\library.sqlite";
+
+      if (!File(sqlitePath).existsSync() && File(indexPath).existsSync()) {
+        try {
+          await library_db.migrateIndexJsonToSqlite(indexPath: supportPath);
+        } catch (err, trace) {
+          LOGGER.e(err, stackTrace: trace);
+        }
+      }
+
+      try {
+        final dbFolders =
+            await library_db.readIndexFromSqlite(indexPath: supportPath);
+        final folders = <AudioFolder>[];
+        for (final folder in dbFolders) {
+          final audios = <Audio>[];
+          for (final audio in folder.audios) {
+            audios.add(Audio.fromMap({
+              "title": audio.title,
+              "artist": audio.artist,
+              "album": audio.album,
+              "album_artist": audio.albumArtist,
+              "track": audio.track,
+              "duration": audio.duration.toInt(),
+              "bitrate": audio.bitrate,
+              "sample_rate": audio.sampleRate,
+              "path": audio.path,
+              "modified": audio.modified.toInt(),
+              "created": audio.created.toInt(),
+              "by": audio.by,
+            }));
+          }
+          folders.add(
+            AudioFolder(
+              audios,
+              folder.path,
+              folder.modified.toInt(),
+              folder.latest.toInt(),
+            ),
+          );
+        }
+
+        _instance = AudioLibrary._(folders);
+        instance.artistCollection.clear();
+        instance.albumCollection.clear();
+        instance._buildCollections();
+
+        LOGGER.i(
+          "AudioLibrary init from sqlite: ${stopwatch.elapsedMilliseconds}ms, audios=${instance.audioCollection.length}",
+        );
+        return;
+      } catch (_) {}
+
+      final indexStr = await File(indexPath).readAsString();
+      final Map indexJson = json.decode(indexStr);
+      final List foldersJson = indexJson["folders"];
+      final List<AudioFolder> folders = [];
+
+      for (Map folderMap in foldersJson) {
+        final List audiosJson = folderMap["audios"];
+        final List<Audio> audios = [];
+        for (Map audioMap in audiosJson) {
+          audios.add(Audio.fromMap(audioMap));
+        }
+        folders.add(AudioFolder.fromMap(folderMap, audios));
+      }
+
+      _instance = AudioLibrary._(folders);
+
+      instance.artistCollection.clear();
+      instance.albumCollection.clear();
+      instance._buildCollections();
+      LOGGER.i(
+        "AudioLibrary init from json: ${stopwatch.elapsedMilliseconds}ms, audios=${instance.audioCollection.length}",
+      );
+    } catch (err, trace) {
+      LOGGER.e(err, stackTrace: trace);
+    }
+  }
+
+  void _buildCollections() {
+    for (var f in folders) {
+      audioCollection.addAll(f.audios);
+    }
+
+    for (Audio audio in audioCollection) {
+      final artistNames = <String>{
+        ...audio.splitedArtists,
+        ...audio.splitedAlbumArtists,
+      };
+      for (String artistName in artistNames) {
+        /// 如果artistCollection中有artistName指向的artist，putIfAbsent会返回该artist。
+        /// 随后往这个artist里添加该audio。
+        ///
+        /// 如果没有，创建一个名字为artistName的空艺术家，并将artistName与之相连。
+        /// 随后往这个artist里添加该audio。
+        artistCollection
+            .putIfAbsent(artistName, () => Artist(name: artistName))
+            .works
+            .add(audio);
+      }
+
+      /// 如果albumCollection中有audio.album指向的album，putIfAbsent会返回该album。
+      /// 随后往这个album里添加该audio。
+      ///
+      /// 如果没有，创建一个名字为audio.album的空艺术家，并将audio.album与之相连。
+      /// 随后往这个album里添加该audio。
+      albumCollection
+          .putIfAbsent(audio.album, () => Album(name: audio.album))
+          .works
+          .add(audio);
+    }
+
+    /// 将艺术家和专辑链接起来
+    for (Artist artist in artistCollection.values) {
+      for (Audio audio in artist.works) {
+        artist.albumsMap.putIfAbsent(
+          audio.album,
+          () => albumCollection[audio.album]!,
+        );
+      }
+    }
+
+    /// 将专辑和艺术家链接起来
+    for (Album album in albumCollection.values) {
+      final albumArtistNames = <String>{};
+      for (Audio audio in album.works) {
+        albumArtistNames.addAll(audio.splitedAlbumArtists);
+      }
+
+      final namesToUse = albumArtistNames.isNotEmpty
+          ? albumArtistNames
+          : album.works.expand((a) => a.splitedArtists).toSet();
+
+      for (String artistName in namesToUse) {
+        final artist = artistCollection[artistName];
+        if (artist == null) continue;
+        album.artistsMap.putIfAbsent(artistName, () => artist);
+      }
+    }
+  }
+
+  @override
+  String toString() {
+    return folders.toString();
+  }
+}
+
+class AudioFolder {
+  List<Audio> audios;
+
+  /// absolute path
+  String path;
+
+  /// secs since UNIX EPOCH
+  int modified;
+
+  /// secs since UNIX EPOCH
+  int latest;
+
+  AudioFolder(this.audios, this.path, this.modified, this.latest);
+
+  factory AudioFolder.fromMap(Map map, List<Audio> audios) =>
+      AudioFolder(audios, map["path"], map["modified"], map["latest"]);
+
+  @override
+  String toString() {
+    return {
+      "audios": audios.toString(),
+      "path": path,
+      "modified":
+          DateTime.fromMillisecondsSinceEpoch(modified * 1000).toString(),
+    }.toString();
+  }
+}
+
+class Audio {
+  String title;
+
+  /// 从音乐标签中读取的艺术家字符串，可能包含多个艺术家，以“、”，“/”等分隔。
+  String artist;
+
+  /// 分割[artist]得到的结果
+  List<String> splitedArtists;
+
+  String album;
+
+  String? albumArtist;
+
+  List<String> splitedAlbumArtists;
+
+  /// 0: 没有track
+  int track;
+
+  /// audio's duration in secs
+  int duration;
+
+  /// kbps
+  int? bitrate;
+
+  int? sampleRate;
+
+  /// absolute path
+  String path;
+
+  /// secs since UNIX EPOCH
+  int modified;
+
+  /// secs since UNIX EPOCH
+  int created;
+
+  /// 标签来源（Lofty、Windows、null）
+  String? by;
+
+  ImageProvider? _cover;
+  Future<ImageProvider?>? _coverFuture;
+
+  /// 以“、”和“/”分割艺术家，会把名称中带有这些符号的艺术家分割。
+  /// 暂时想不到别的方法。
+  Audio(
+    this.title,
+    this.artist,
+    this.album,
+    this.albumArtist,
+    this.track,
+    this.duration,
+    this.bitrate,
+    this.sampleRate,
+    this.path,
+    this.modified,
+    this.created,
+    this.by,
+  )   : splitedArtists = artist.split(
+          RegExp(AppSettings.instance.artistSplitPattern),
+        ),
+        splitedAlbumArtists = (albumArtist ?? "").isEmpty
+            ? const []
+            : albumArtist!
+                .split(RegExp(AppSettings.instance.artistSplitPattern));
+
+  factory Audio.fromMap(Map map) => Audio(
+        map["title"],
+        map["artist"],
+        map["album"],
+        map["album_artist"],
+        map["track"] ?? 0,
+        map["duration"] ?? 0,
+        map["bitrate"],
+        map["sample_rate"],
+        map["path"],
+        map["modified"],
+        map["created"],
+        map["by"],
+      );
+
+  Map toMap() => {
+        "title": title,
+        "artist": artist,
+        "album": album,
+        "album_artist": albumArtist,
+        "track": track,
+        "duration": duration,
+        "bitrate": bitrate,
+        "sample_rate": sampleRate,
+        "path": path,
+        "modified": modified,
+        "created": created,
+        "by": by
+      };
+
+  /// 读取音乐文件的图片，自动适应缩放
+  Future<ImageProvider?> _getResizedPic({
+    required int width,
+    required int height,
+  }) async {
+    final ratio = PlatformDispatcher.instance.views.first.devicePixelRatio;
+    return getPictureFromPath(
+      path: path,
+      width: (width * ratio).round(),
+      height: (height * ratio).round(),
+    ).then((pic) {
+      if (pic == null) return null;
+
+      return MemoryImage(pic);
+    });
+  }
+
+  Future<ImageProvider?> _getFolderCover({
+    required int width,
+    required int height,
+  }) async {
+    try {
+      final dir = Directory(File(path).parent.path);
+      final candidates = [
+        File("${dir.path}\\cover.jpg"),
+        File("${dir.path}\\cover.png"),
+      ];
+      for (final f in candidates) {
+        if (f.existsSync()) {
+          final ratio =
+              PlatformDispatcher.instance.views.first.devicePixelRatio;
+          return ResizeImage(
+            FileImage(f),
+            width: (width * ratio).round(),
+            height: (height * ratio).round(),
+          );
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// 缓存ImageProvider而不是Uint8List（bytes）
+  /// 缓存bytes时，每次加载图片都要重新解码，内存占用很大。快速滚动时能到700mb
+  /// 缓存ImageProvider不用重新解码。快速滚动时最多250mb
+  /// 48*48
+  Future<ImageProvider?> get cover {
+    _coverFuture ??= (() async {
+      if (_cover != null) return _cover;
+      final value = await _getResizedPic(width: 48, height: 48);
+      if (value != null) _cover = value;
+      return _cover;
+    })();
+    return _coverFuture!;
+  }
+
+  /// audio detail page 不需要频繁调用，所以不缓存图片
+  /// 200 * 200
+  Future<ImageProvider?> get mediumCover {
+    _mediumCoverFuture ??= _getResizedPic(width: 200, height: 200);
+    return _mediumCoverFuture!;
+  }
+  Future<ImageProvider?>? _mediumCoverFuture;
+
+  /// now playing 不需要频繁调用，所以不缓存图片
+  /// size: 400 * devicePixelRatio（屏幕缩放大小）
+  Future<ImageProvider?> get largeCover =>
+      _getResizedPic(width: 400, height: 400);
+
+  @override
+  String toString() {
+    return {
+      "title": title,
+      "artist": artist,
+      "album": album,
+      "path": path,
+      "modified":
+          DateTime.fromMillisecondsSinceEpoch(modified * 1000).toString(),
+      "created": DateTime.fromMillisecondsSinceEpoch(created * 1000).toString(),
+    }.toString();
+  }
+}
+
+class Artist {
+  String name;
+
+  /// 所有专辑
+  Map<String, Album> albumsMap = {};
+
+  /// 作品
+  List<Audio> works = [];
+
+  /// 只能用在artist detail page
+  /// 200*200
+  Future<ImageProvider?> get picture =>
+      works.first._getResizedPic(width: 200, height: 200);
+
+  Artist({required this.name});
+}
+
+class Album {
+  String name;
+
+  /// 参与的艺术家
+  Map<String, Artist> artistsMap = {};
+
+  /// 作品
+  List<Audio> works = [];
+
+  /// 只能用在album detail page
+  /// 200*200
+  Future<ImageProvider?> get cover async {
+    final folderCover =
+        await works.first._getFolderCover(width: 200, height: 200);
+    if (folderCover != null) return folderCover;
+    return works.first._getResizedPic(width: 200, height: 200);
+  }
+
+  Album({required this.name});
+}

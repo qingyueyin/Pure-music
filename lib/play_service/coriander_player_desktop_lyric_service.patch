@@ -1,0 +1,42 @@
+*** Begin Patch
+*** Update File: d:\All\Documents\Projects\coriander_player\lib\play_service\desktop_lyric_service.dart
+@@
+   void sendLyricLineMessage(LyricLine line) {
+     if (line is SyncLyricLine) {
++      final progressMs =
++          ((_playbackService.position * 1000).round() - line.start.inMilliseconds)
++              .clamp(0, line.length.inMilliseconds);
++      final words = line.words
++          .map(
++            (w) => msg.LyricWord(
++              w.start.inMilliseconds,
++              w.length.inMilliseconds,
++              w.content,
++            ),
++          )
++          .toList(growable: false);
+       sendMessage(msg.LyricLineChangedMessage(
+         line.content,
+         line.length,
+         line.translation,
++        words,
++        progressMs,
+       ));
+     } else if (line is LrcLine) {
+       final splitted = line.content.split("┃");
+       final content = splitted.first;
+       final translation = splitted.length > 1 ? splitted[1] : null;
++      final progressMs =
++          ((_playbackService.position * 1000).round() - line.start.inMilliseconds)
++              .clamp(0, line.length.inMilliseconds);
+       sendMessage(msg.LyricLineChangedMessage(
+         content,
+         line.length,
+         translation,
++        null,
++        progressMs,
+       ));
+     }
+   }
+*** End Patch
+
