@@ -43,10 +43,7 @@ else {
     $portableBuild = "true"
 }
 
-$tagInput = (Read-Input "Tag: release / test  (default release)").Trim().ToLowerInvariant()
-if ([string]::IsNullOrWhiteSpace($tagInput)) { $tagInput = "release" }
-if ($tagInput -ne "release" -and $tagInput -ne "test") { $tagInput = "release" }
-$tag = $tagInput
+$tag = "release"
 
 $defaultVersion = Get-AppSettingsVersion
 if ([string]::IsNullOrWhiteSpace($defaultVersion)) { $defaultVersion = "unknown" }
@@ -62,33 +59,27 @@ function Update-AppSettingsVersion([string]$newVersion) {
     }
     
     try {
-        # 读取文件
-        $lines = Get-Content -Path $p -Encoding UTF8 -ErrorAction Stop
-        $newLines = @()
-        $updated = $false
-        
-        # 查找并更新版本行
-        foreach ($line in $lines) {
-            if ($line -like '*static const String version =*') {
-                # 保持相同的缩进
-                $indent = $line -replace 'static const String version =.*', ''
-                $newVersionLine = $indent + 'static const String version = "' + $newVersion + '";'
-                $newLines += $newVersionLine
-                $updated = $true
-            } else {
-                $newLines += $line
-            }
+        $sr = New-Object System.IO.StreamReader($p, [System.Text.Encoding]::UTF8, $true)
+        try {
+            $content = $sr.ReadToEnd()
+        } finally {
+            $sr.Dispose()
         }
-        
-        if ($updated) {
-            # 写入文件，使用 UTF-8 with BOM 编码保留文件编码
-            $content = $newLines -join "`n"
-            $Utf8BomEncoding = New-Object System.Text.UTF8Encoding $true
-            [System.IO.File]::WriteAllText($p, $content, $Utf8BomEncoding)
-            Write-Host "Updated version in app_settings.dart to $newVersion" -ForegroundColor Green
-        } else {
+
+        if ($content.Length -gt 0 -and $content[0] -eq [char]0xFEFF) {
+            $content = $content.Substring(1)
+        }
+
+        $rx = New-Object System.Text.RegularExpressions.Regex('(?m)^(\s*)static const String version\s*=\s*"[^"]*";')
+        $newContent = $rx.Replace($content, ('$1static const String version = "' + $newVersion + '";'), 1)
+        if ($newContent -eq $content) {
             Write-Warning "Failed to find version line in app_settings.dart"
+            return
         }
+
+        $Utf8NoBomEncoding = New-Object System.Text.UTF8Encoding $false
+        [System.IO.File]::WriteAllText($p, $newContent, $Utf8NoBomEncoding)
+        Write-Host "Updated version in app_settings.dart to $newVersion" -ForegroundColor Green
     } catch {
         Write-Error "Failed to update version in app_settings.dart: $_"
     }
