@@ -22,7 +22,7 @@ function Get-AppSettingsVersion() {
     if (-not (Test-Path $p)) { return "" }
     $content = Get-Content -Path $p -Raw -ErrorAction SilentlyContinue
     if (-not $content) { return "" }
-    $m = [regex]::Match($content, 'static const String version\s*=\s*"([^"]+)"')
+    $m = [regex]::Match($content, 'static\s+const\s+String\s+version\s*=\s*["'']([^"'']+)["'']')
     if ($m.Success) { return $m.Groups[1].Value }
     return ""
 }
@@ -70,15 +70,28 @@ function Update-AppSettingsVersion([string]$newVersion) {
             $content = $content.Substring(1)
         }
 
-        $rx = New-Object System.Text.RegularExpressions.Regex('(?m)^(\s*)static const String version\s*=\s*"[^"]*";')
-        $newContent = $rx.Replace($content, ('$1static const String version = "' + $newVersion + '";'), 1)
-        if ($newContent -eq $content) {
-            Write-Warning "Failed to find version line in app_settings.dart"
+        # First, remove ALL existing version declarations to prevent duplicates
+        $rxRemove = New-Object System.Text.RegularExpressions.Regex('(?m)^\s*static\s+const\s+String\s+version\s*=\s*["''][^"'']*["''];\s*[\r\n]+')
+        $content = $rxRemove.Replace($content, '')
+
+        # Then insert a single version declaration after class AppSettings {
+        $rxClass = New-Object System.Text.RegularExpressions.Regex('(?m)^(\s*)class\s+AppSettings\s*\{')
+        if ($rxClass.IsMatch($content)) {
+            $insertLine = "`n  static const String version = `"$newVersion`";`n"
+            $content = $rxClass.Replace($content, ('$1class AppSettings {' + $insertLine), 1)
+        }
+        else {
+            Write-Error "Failed to find class AppSettings in app_settings.dart"
             return
         }
 
         $Utf8NoBomEncoding = New-Object System.Text.UTF8Encoding $false
-        [System.IO.File]::WriteAllText($p, $newContent, $Utf8NoBomEncoding)
+        [System.IO.File]::WriteAllText($p, $content, $Utf8NoBomEncoding)
+        $verify = Get-AppSettingsVersion
+        if ($verify -ne $newVersion) {
+            Write-Error "Failed to verify updated version in app_settings.dart (expected $newVersion, got $verify)"
+            return
+        }
         Write-Host "Updated version in app_settings.dart to $newVersion" -ForegroundColor Green
     } catch {
         Write-Error "Failed to update version in app_settings.dart: $_"
