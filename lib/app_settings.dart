@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'dart:io';
 import 'package:pure_music/src/rust/api/system_theme.dart';
 import 'package:pure_music/utils.dart';
@@ -135,8 +135,9 @@ void _copyDirectory(Directory source, Directory dest) {
 }
 
 class AppSettings {
+  static const String version = "1.0.0";
+
   static final github = GitHub();
-static const String version = "1.0.0";
 
   ThemeMode themeMode = getWindowsThemeMode();
 
