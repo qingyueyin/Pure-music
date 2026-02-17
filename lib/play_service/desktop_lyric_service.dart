@@ -40,8 +40,8 @@ class DesktopLyricService extends ChangeNotifier {
     }
 
     final nowPlaying = _playbackService.nowPlaying;
-    final currScheme = ThemeProvider.instance.currScheme;
-    final isDarkMode = ThemeProvider.instance.themeMode == ThemeMode.dark;
+    final currScheme = ThemeProvider.instance.darkScheme;
+    const isDarkMode = true;
     desktopLyric = Process.start(desktopLyricPath, [
       json.encode(msg.InitArgsMessage(
         _playbackService.playerState == PlayerState.playing,
@@ -136,11 +136,13 @@ class DesktopLyricService extends ChangeNotifier {
   }
 
   void sendThemeMessage(ColorScheme scheme) {
-    sendMessage(msg.ThemeChangedMessage(
-      scheme.primary.value,
-      scheme.surfaceContainer.value,
-      scheme.onSurface.value,
-    ));
+    final primary = scheme.primary.value;
+    final surfaceContainer = scheme.surfaceContainer.value;
+    final onSurface = scheme.onSurface.value;
+    sendMessage(msg.ThemeChangedMessage(primary, surfaceContainer, onSurface));
+    sendMessage(
+      msg.PreferenceChangedMessage(primary, surfaceContainer, onSurface),
+    );
   }
 
   void sendPlayerStateMessage(bool isPlaying) {

@@ -74,7 +74,7 @@ class ThemeProvider extends ChangeNotifier {
     PlayService.instance.desktopLyricService.canSendMessage.then((canSend) {
       if (!canSend) return;
 
-      PlayService.instance.desktopLyricService.sendThemeMessage(currScheme);
+      PlayService.instance.desktopLyricService.sendThemeMessage(darkScheme);
     });
   }
 
@@ -108,13 +108,18 @@ class ThemeProvider extends ChangeNotifier {
           break;
       }
 
+      if ((requestToken == null || requestToken == _themeRequestToken) &&
+          brightness == Brightness.dark) {
+        PlayService.instance.desktopLyricService.canSendMessage.then((canSend) {
+          if (!canSend) return;
+          PlayService.instance.desktopLyricService.sendThemeMessage(darkScheme);
+          PlayService.instance.desktopLyricService.sendThemeModeMessage(true);
+        });
+      }
+
       if (themeMode == this.themeMode &&
           (requestToken == null || requestToken == _themeRequestToken)) {
         notifyListeners();
-        PlayService.instance.desktopLyricService.canSendMessage.then((canSend) {
-          if (!canSend) return;
-          PlayService.instance.desktopLyricService.sendThemeMessage(currScheme);
-        });
       }
       return;
     }
@@ -151,12 +156,16 @@ class ThemeProvider extends ChangeNotifier {
           break;
       }
 
-      if (themeMode == this.themeMode) {
-        notifyListeners();
+      if (brightness == Brightness.dark) {
         PlayService.instance.desktopLyricService.canSendMessage.then((canSend) {
           if (!canSend) return;
-          PlayService.instance.desktopLyricService.sendThemeMessage(currScheme);
+          PlayService.instance.desktopLyricService.sendThemeMessage(darkScheme);
+          PlayService.instance.desktopLyricService.sendThemeModeMessage(true);
         });
+      }
+
+      if (themeMode == this.themeMode) {
+        notifyListeners();
       }
     });
   }
@@ -167,9 +176,9 @@ class ThemeProvider extends ChangeNotifier {
     PlayService.instance.desktopLyricService.canSendMessage.then((canSend) {
       if (!canSend) return;
 
-      PlayService.instance.desktopLyricService.sendThemeMessage(currScheme);
+      PlayService.instance.desktopLyricService.sendThemeMessage(darkScheme);
       PlayService.instance.desktopLyricService.sendThemeModeMessage(
-        themeMode == ThemeMode.dark,
+        true,
       );
     });
   }
