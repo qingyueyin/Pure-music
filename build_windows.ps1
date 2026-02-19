@@ -18,7 +18,7 @@ try {
 } catch {}
 
 function Get-AppSettingsVersion() {
-    $p = Join-Path $PSScriptRoot "lib\app_settings.dart"
+    $p = Join-Path $PSScriptRoot "lib\core\settings.dart"
     if (-not (Test-Path $p)) { return "" }
     $content = Get-Content -Path $p -Raw -ErrorAction SilentlyContinue
     if (-not $content) { return "" }
@@ -52,9 +52,9 @@ if ([string]::IsNullOrWhiteSpace($versionInput)) { $versionInput = $defaultVersi
 $version = $versionInput
 
 function Update-AppSettingsVersion([string]$newVersion) {
-    $p = Join-Path $PSScriptRoot "lib\app_settings.dart"
+    $p = Join-Path $PSScriptRoot "lib\core\settings.dart"
     if (-not (Test-Path $p)) {
-        Write-Warning "app_settings.dart not found at $p"
+        Write-Warning "core/settings.dart not found at $p"
         return
     }
     
@@ -81,7 +81,7 @@ function Update-AppSettingsVersion([string]$newVersion) {
             $content = $rxClass.Replace($content, ('$1class AppSettings {' + $insertLine), 1)
         }
         else {
-            Write-Error "Failed to find class AppSettings in app_settings.dart"
+            Write-Error "Failed to find class AppSettings in core/settings.dart"
             return
         }
 
@@ -89,16 +89,16 @@ function Update-AppSettingsVersion([string]$newVersion) {
         [System.IO.File]::WriteAllText($p, $content, $Utf8NoBomEncoding)
         $verify = Get-AppSettingsVersion
         if ($verify -ne $newVersion) {
-            Write-Error "Failed to verify updated version in app_settings.dart (expected $newVersion, got $verify)"
+            Write-Error "Failed to verify updated version in core/settings.dart (expected $newVersion, got $verify)"
             return
         }
-        Write-Host "Updated version in app_settings.dart to $newVersion" -ForegroundColor Green
+        Write-Host "Updated version in core/settings.dart to $newVersion" -ForegroundColor Green
     } catch {
-        Write-Error "Failed to update version in app_settings.dart: $_"
+        Write-Error "Failed to update version in core/settings.dart: $_"
     }
 }
 
-# Update version in app_settings.dart
+# Update version in core/settings.dart
 Update-AppSettingsVersion $version
 
 $bassPluginMode = "full"

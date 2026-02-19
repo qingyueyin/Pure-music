@@ -11,7 +11,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-Windows-blue?style=flat-square" alt="Platform">
   <img src="https://img.shields.io/badge/Flutter-3.3+-0x0175C2?style=flat-square" alt="Flutter">
-  <img src="https://img.shields.io/github/license/qingyueyin/Pure-music?style=flat-square" alt="License">
+  <img src="https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-green?style=flat-square" alt="License">
 </p>
 
 ---
@@ -32,7 +32,21 @@
 
 ## 📸 预览
 
-> 暂无截图，欢迎提交 PR 添加！
+### 深色模式
+
+<img src="Screenshot/深色模式.png" width="45%" alt="深色模式"> <img src="Screenshot/深色模式2.png" width="45%" alt="深色模式2">
+
+<img src="Screenshot/深色模式3.png" width="45%" alt="深色模式3">
+
+### 浅色模式
+
+<img src="Screenshot/浅色模式.png" width="45%" alt="浅色模式"> <img src="Screenshot/浅色模式2.png" width="45%" alt="浅色模式2">
+
+<img src="Screenshot/浅色模式3.png" width="45%" alt="浅色模式3">
+
+### 沉浸模式 & 歌词行模糊
+
+<img src="Screenshot/沉浸模式.png" width="45%" alt="沉浸模式"> <img src="Screenshot/歌词模糊.png" width="45%" alt="歌词模糊">
 
 ---
 
@@ -63,7 +77,7 @@
 - **系统级音量调节** — 可通过滑动条调整全局音量
 - 快捷键悬浮提示
 - 数据库迁移工具
-- 一键获取脱敏日志
+- 一键获取运行日志
 
 ---
 
@@ -72,17 +86,19 @@
 ```
 pure-music/
 ├── lib/                          # Flutter 主代码
+│   ├── core/                     # 核心基础设施
+│   ├── native/                   # 底层实现
+│   │   ├── bass/                 # BASS 音频库绑定
+│   │   └── rust/                 # Rust 原生 API
 │   ├── component/                # 通用组件
 │   ├── library/                  # 音乐库管理
-│   ├── lyric/                    # 歌词解析 (KRC/LRC/QRC)
+│   ├── lyric/                    # 歌词解析
 │   ├── page/                     # UI页面
-│   ├── play_service/             # 播放服务
-│   └── src/                      # 底层实现
-│       ├── bass/                 # BASS 音频库绑定
-│       └── rust/                 # Rust 原生 API
+│   └── play_service/             # 播放服务
 ├── rust/                         # Rust 原生代码
 ├── BASS/                        # BASS 音频库插件
 ├── assets/                      # 资源文件
+├── Screenshot/                  # 截图预览
 ├── desktop_lyric/               # 桌面歌词二进制
 └── rust_builder/                # Rust 编译工具
 ```

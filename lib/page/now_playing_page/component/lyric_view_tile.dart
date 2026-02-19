@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:ui' show FontVariation, ImageFilter;
 
-import 'package:pure_music/enums.dart';
+import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.dart';

@@ -6,9 +6,9 @@ import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/playback_service.dart';
-import 'package:pure_music/src/bass/bass_player.dart';
-import 'package:pure_music/theme_provider.dart';
-import 'package:pure_music/utils.dart';
+import 'package:pure_music/native/bass/bass_player.dart';
+import 'package:pure_music/core/theme.dart';
+import 'package:pure_music/core/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
 

@@ -1,7 +1,7 @@
 import 'dart:ui';
 
-import 'package:pure_music/app_preference.dart';
-import 'package:pure_music/enums.dart';
+import 'package:pure_music/core/preference.dart';
+import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/page/uni_page.dart';
 import 'package:pure_music/page/uni_page_components.dart';
 import 'package:flutter/material.dart';

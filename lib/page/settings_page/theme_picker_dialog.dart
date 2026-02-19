@@ -1,6 +1,6 @@
-import 'package:pure_music/app_settings.dart';
-import 'package:pure_music/utils.dart';
-import 'package:pure_music/hotkeys_helper.dart';
+import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/core/utils.dart';
+import 'package:pure_music/core/hotkeys.dart';
 import 'package:flex_color_picker/flex_color_picker.dart';
 import 'package:flutter/material.dart';
 

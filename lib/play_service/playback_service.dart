@@ -1,15 +1,15 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:pure_music/app_preference.dart';
-import 'package:pure_music/enums.dart';
+import 'package:pure_music/core/preference.dart';
+import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
-import 'package:pure_music/src/bass/bass_player.dart';
-import 'package:pure_music/src/rust/api/smtc_flutter.dart';
-import 'package:pure_music/theme_provider.dart';
-import 'package:pure_music/utils.dart';
+import 'package:pure_music/native/bass/bass_player.dart';
+import 'package:pure_music/native/rust/api/smtc_flutter.dart';
+import 'package:pure_music/core/theme.dart';
+import 'package:pure_music/core/utils.dart';
 import 'package:flutter/foundation.dart';
 
 /// 只通知 now playing 变更

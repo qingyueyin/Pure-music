@@ -1,9 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:pure_music/app_settings.dart';
-import 'package:pure_music/enums.dart';
-import 'package:pure_music/utils.dart';
+import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/core/enums.dart';
+import 'package:pure_music/core/utils.dart';
 
 class PagePreference {
   int sortMethod;

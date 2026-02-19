@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
-import 'package:pure_music/app_preference.dart';
-import 'package:pure_music/enums.dart';
+import 'package:pure_music/core/preference.dart';
+import 'package:pure_music/core/enums.dart';
 import 'package:provider/provider.dart';
 
 class LyricViewController extends ChangeNotifier {

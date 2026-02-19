@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:pure_music/app_settings.dart';
-import 'package:pure_music/app_preference.dart';
+import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/play_service/play_service.dart';
-import 'package:pure_music/utils.dart';
+import 'package:pure_music/core/utils.dart';
 
 class AudioEchoLogRecorder {
   AudioEchoLogRecorder._();

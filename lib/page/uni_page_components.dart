@@ -1,9 +1,9 @@
-import 'package:pure_music/enums.dart';
+import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/page/uni_page.dart';
 import 'package:pure_music/play_service/play_service.dart';
-import 'package:pure_music/utils.dart';
+import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';

@@ -1,6 +1,6 @@
-import 'package:pure_music/app_preference.dart';
+import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/play_service/play_service.dart';
-import 'package:pure_music/utils.dart';
+import 'package:pure_music/core/utils.dart';
 import 'dart:io';
 import 'package:filepicker_windows/filepicker_windows.dart';
 import 'package:flutter/material.dart';

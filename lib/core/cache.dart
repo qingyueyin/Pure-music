@@ -6,10 +6,10 @@ import 'dart:math';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:pure_music/app_db.dart';
-import 'package:pure_music/app_settings.dart';
+import 'package:pure_music/core/database.dart';
+import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/library/audio_library.dart';
-import 'package:pure_music/src/rust/api/tag_reader.dart';
+import 'package:pure_music/native/rust/api/tag_reader.dart';
 import 'package:flutter/material.dart';
 import 'package:sqlite3/sqlite3.dart';
 

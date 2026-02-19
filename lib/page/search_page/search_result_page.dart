@@ -1,13 +1,13 @@
 import 'package:pure_music/component/album_tile.dart';
 import 'package:pure_music/component/artist_tile.dart';
 import 'package:pure_music/component/audio_tile.dart';
-import 'package:pure_music/hotkeys_helper.dart';
+import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/library/union_search_result.dart';
 import 'package:pure_music/page/search_page/search_page.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
-import 'package:pure_music/app_paths.dart' as app_paths;
+import 'package:pure_music/core/paths.dart' as app_paths;
 
 class SearchResultPage extends StatefulWidget {
   const SearchResultPage({super.key, required this.searchResult});

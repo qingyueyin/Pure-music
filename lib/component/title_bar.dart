@@ -2,12 +2,12 @@
 
 import 'dart:ui';
 
-import 'package:pure_music/app_preference.dart';
-import 'package:pure_music/app_settings.dart';
+import 'package:pure_music/core/preference.dart';
+import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/component/horizontal_lyric_view.dart';
 import 'package:pure_music/component/responsive_builder.dart';
 import 'package:pure_music/component/search_dialog.dart';
-import 'package:pure_music/hotkeys_helper.dart';
+import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/lyric/lyric_source.dart';
 import 'package:pure_music/play_service/play_service.dart';

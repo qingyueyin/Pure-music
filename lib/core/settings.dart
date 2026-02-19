@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:pure_music/src/rust/api/system_theme.dart';
-import 'package:pure_music/utils.dart';
+import 'package:pure_music/native/rust/api/system_theme.dart';
+import 'package:pure_music/core/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:github/github.dart';
 import 'package:path/path.dart' as path;

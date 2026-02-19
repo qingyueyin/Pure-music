@@ -1,5 +1,5 @@
-import 'package:pure_music/app_settings.dart';
-import 'package:pure_music/app_preference.dart';
+import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/component/settings_tile.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
 import 'package:pure_music/play_service/play_service.dart';

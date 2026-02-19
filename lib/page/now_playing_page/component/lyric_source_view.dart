@@ -4,7 +4,7 @@ import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/lyric/lyric_source.dart';
-import 'package:pure_music/music_matcher.dart';
+import 'package:pure_music/core/matcher.dart';
 import 'package:pure_music/page/now_playing_page/component/vertical_lyric_view.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:flutter/material.dart';
