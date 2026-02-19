@@ -11,6 +11,7 @@ class NowPlayingShaderBackground extends StatefulWidget {
   final Stream<Float32List>? spectrumStream;
   final double intensity;
   final Widget? fallback;
+  final Color? dominantColor;
 
   const NowPlayingShaderBackground({
     super.key,
@@ -20,6 +21,7 @@ class NowPlayingShaderBackground extends StatefulWidget {
     this.spectrumStream,
     this.intensity = 1.0,
     this.fallback,
+    this.dominantColor,
   });
 
   @override
@@ -99,6 +101,7 @@ class _NowPlayingShaderBackgroundState extends State<NowPlayingShaderBackground>
           spectrum: _spectrum,
           animation: widget.repaint,
           repaint: repaint,
+          dominantColor: widget.dominantColor,
         ),
         child: const SizedBox.expand(),
       ),
@@ -113,6 +116,7 @@ class _NowPlayingShaderPainter extends CustomPainter {
   final double intensity;
   final _SpectrumNotifier spectrum;
   final Animation<double> animation;
+  final Color? dominantColor;
 
   _NowPlayingShaderPainter({
     required this.program,
@@ -122,6 +126,7 @@ class _NowPlayingShaderPainter extends CustomPainter {
     required this.spectrum,
     required this.animation,
     required Listenable repaint,
+    this.dominantColor,
   }) : super(repaint: repaint);
 
   double _c(double channel) => channel.clamp(0.0, 1.0).toDouble();
@@ -137,8 +142,8 @@ class _NowPlayingShaderPainter extends CustomPainter {
     final bright = brightness == Brightness.light ? 1.0 : 0.0;
     final safeIntensity = intensity.clamp(0.0, 2.0).toDouble();
 
-    final primary = scheme.primary;
-    final secondary = scheme.secondary;
+    final primary = dominantColor ?? scheme.primary;
+    final secondary = _getComplementaryColor(primary);
     final tertiary = scheme.tertiary;
 
     shader.setFloat(0, w);
@@ -168,12 +173,18 @@ class _NowPlayingShaderPainter extends CustomPainter {
     canvas.drawRect(Offset.zero & size, paint);
   }
 
+  Color _getComplementaryColor(Color color) {
+    final hsl = HSLColor.fromColor(color);
+    return hsl.withHue((hsl.hue + 40) % 360).toColor();
+  }
+
   @override
   bool shouldRepaint(covariant _NowPlayingShaderPainter oldDelegate) {
     return oldDelegate.scheme != scheme ||
         oldDelegate.brightness != brightness ||
         oldDelegate.intensity != intensity ||
-        oldDelegate.program != program;
+        oldDelegate.program != program ||
+        oldDelegate.dominantColor != dominantColor;
   }
 }
 

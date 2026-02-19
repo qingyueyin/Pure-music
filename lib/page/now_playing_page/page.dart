@@ -10,6 +10,7 @@ import 'package:pure_music/component/hotkey_ui_feedback.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/side_nav.dart';
 import 'package:pure_music/component/title_bar.dart';
+import 'package:pure_music/core/color_extraction.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/immersive.dart';
 import 'package:pure_music/core/utils.dart';
@@ -26,6 +27,7 @@ import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/playback_service.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
+import 'package:pure_music/native/rust/api/tag_reader.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_volume_controller/flutter_volume_controller.dart';
 import 'package:go_router/go_router.dart';
@@ -144,6 +146,8 @@ class _NowPlayingPageState extends State<NowPlayingPage>
   late final AnimationController _bgController;
   bool _cursorHidden = false;
   bool _lastImmersive = false;
+  Color? _dominantColor;
+  final ColorExtractionService _colorService = ColorExtractionService();
 
   void _bumpCursor() {
     _cursorHideTimer?.cancel();
@@ -169,6 +173,7 @@ class _NowPlayingPageState extends State<NowPlayingPage>
           _nowPlayingCoverPath = null;
           nowPlayingCover = null;
           nowPlayingBgCover = null;
+          _dominantColor = null;
         });
       }
       return;
@@ -178,25 +183,38 @@ class _NowPlayingPageState extends State<NowPlayingPage>
     _nowPlayingCoverPath = path;
 
     _coverDebounceTimer?.cancel();
-    _coverDebounceTimer = Timer(MotionDuration.base, () {
-      playbackService.nowPlaying?.cover.then((cover) {
-        if (!mounted) return;
-        if (playbackService.nowPlaying?.path != path) return;
-        if (cover != null) {
-          precacheImage(cover, context);
+    _coverDebounceTimer = Timer(MotionDuration.base, () async {
+      final audio = playbackService.nowPlaying;
+      if (audio == null || audio.path != path) return;
+
+      final cover = await audio.cover;
+      if (!mounted) return;
+      if (playbackService.nowPlaying?.path != path) return;
+
+      if (cover != null) {
+        precacheImage(cover, context);
+        final bytes = await getPictureFromPath(path: path, width: 100, height: 100);
+        if (bytes != null && mounted) {
+          final color = await _colorService.extractDominantColor(bytes);
+          if (mounted && color != null) {
+            setState(() {
+              _dominantColor = color;
+            });
+          }
         }
-        if (nowPlayingCover == cover) return;
-        setState(() {
-          nowPlayingCover = cover;
-          nowPlayingBgCover = cover == null
-              ? null
-              : ResizeImage(
-                  cover,
-                  width: 64,
-                  height: 64,
-                  allowUpscaling: true,
-                );
-        });
+      }
+
+      if (nowPlayingCover == cover) return;
+      setState(() {
+        nowPlayingCover = cover;
+        nowPlayingBgCover = cover == null
+            ? null
+            : ResizeImage(
+                cover,
+                width: 64,
+                height: 64,
+                allowUpscaling: true,
+              );
       });
     });
   }
@@ -298,6 +316,7 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                             brightness: brightness,
                             spectrumStream: playbackService.spectrumStream,
                             intensity: brightness == Brightness.dark ? 1.0 : 0.9,
+                            dominantColor: _dominantColor,
                             fallback: RepaintBoundary(
                               child: CustomPaint(
                                 painter: _MeshBackgroundPainter(

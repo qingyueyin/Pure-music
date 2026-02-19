@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:collection';
 import 'dart:io';
 
 import 'package:pure_music/core/settings.dart';
@@ -12,6 +13,40 @@ import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
+
+const int _kLyricCacheCapacity = 32;
+
+class LyricCache {
+  final LinkedHashMap<String, Lyric> _cache = LinkedHashMap();
+  
+  Lyric? get(String path) {
+    final lyric = _cache[path];
+    if (lyric != null) {
+      _cache.remove(path);
+      _cache[path] = lyric;
+    }
+    return lyric;
+  }
+  
+  void put(String path, Lyric lyric) {
+    if (_cache.containsKey(path)) {
+      _cache.remove(path);
+    } else if (_cache.length >= _kLyricCacheCapacity) {
+      _cache.remove(_cache.keys.first);
+    }
+    _cache[path] = lyric;
+  }
+  
+  void remove(String path) {
+    _cache.remove(path);
+  }
+  
+  void clear() {
+    _cache.clear();
+  }
+}
+
+final LyricCache _lyricCache = LyricCache();
 
 /// 只通知 lyric 变更
 class LyricService extends ChangeNotifier {
@@ -262,12 +297,19 @@ class LyricService extends ChangeNotifier {
     final nowPlaying = _getNowPlaying();
     if (nowPlaying == null) return Future.value(null);
 
-    if (localFirst) {
-      return (await Lrc.fromAudioPath(nowPlaying)) ??
-          (await getMostMatchedLyric(nowPlaying));
+    final cached = _lyricCache.get(nowPlaying.path);
+    if (cached != null) return cached;
+
+    final lyric = localFirst
+        ? (await Lrc.fromAudioPath(nowPlaying)) ??
+            (await getMostMatchedLyric(nowPlaying))
+        : (await getMostMatchedLyric(nowPlaying)) ??
+            (await Lrc.fromAudioPath(nowPlaying));
+    
+    if (lyric != null) {
+      _lyricCache.put(nowPlaying.path, lyric);
     }
-    return (await getMostMatchedLyric(nowPlaying)) ??
-        (await Lrc.fromAudioPath(nowPlaying));
+    return lyric;
   }
 
   /// 根据默认歌词来源获取歌词：
@@ -276,14 +318,16 @@ class LyricService extends ChangeNotifier {
   void updateLyric() {
     final nowPlaying = _getNowPlaying();
     if (nowPlaying == null) return;
+    final audioPath = nowPlaying.path;
 
     currLyricFuture.ignore();
     _currLyric = null;
     _lineStartMs = const [];
     _lastEmittedLineIndex = -1;
     _lastDesktopLyricLineIndex = -1;
+    _lyricCache.remove(audioPath);
 
-    final lyricSource = LYRIC_SOURCES[nowPlaying.path];
+    final lyricSource = LYRIC_SOURCES[audioPath];
     if (lyricSource == null) {
       currLyricFuture = _getLyricDefault(AppSettings.instance.localLyricFirst);
     } else {
@@ -302,6 +346,7 @@ class LyricService extends ChangeNotifier {
       if (value == null) return;
       _nextLyricLine = 0;
       _setCurrLyric(value);
+      _lyricCache.put(audioPath, value);
       findCurrLyricLineAt(playService.playbackService.position);
     });
 

@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/lyric/lyric.dart';
+import 'package:pure_music/lyric/ttml.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart';
 
 class EnhancedLrc extends Lyric {
@@ -225,6 +226,9 @@ class Lrc extends Lyric {
     LrcSource source, {
     String? separator,
   }) {
+    if (_isTtml(lrc)) {
+      return Ttml.fromTtmlText(lrc, source, separator: separator);
+    }
     final hasWordTags = RegExp(r'<(\d+:\d+\.\d+|\d+)>').hasMatch(lrc);
     if (!hasWordTags) {
       return fromLrcText(lrc, source, separator: separator);
@@ -235,6 +239,15 @@ class Lrc extends Lyric {
       return _parseCrcText(lrc, source, separator: separator);
     }
     return _parseEnhancedLrcText(lrc, source, separator: separator);
+  }
+
+  static bool _isTtml(String text) {
+    final trimmed = text.trim();
+    return trimmed.startsWith('<?xml') ||
+        trimmed.startsWith('<tt') ||
+        trimmed.contains('<tt ') ||
+        trimmed.contains('<body>') ||
+        (trimmed.contains('<p ') && trimmed.contains('begin='));
   }
 
   static Lyric? _parseEnhancedLrcText(

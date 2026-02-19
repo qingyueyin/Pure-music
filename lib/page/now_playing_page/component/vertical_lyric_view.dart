@@ -2,16 +2,24 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:ui' show FontVariation;
 
+import 'package:pure_music/core/interlude_detector.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_tile.dart';
 import 'package:pure_music/play_service/play_service.dart';
+import 'package:pure_music/widget/breathing_dots.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
 
 bool ALWAYS_SHOW_LYRIC_VIEW_CONTROLS = false;
+
+enum LyricScrollState {
+  idle,
+  userDragging,
+  programScrolling,
+}
 
 class VerticalLyricView extends StatefulWidget {
   const VerticalLyricView({
@@ -138,10 +146,13 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   Timer? _afterScrollRetryTimer;
   Timer? _sizeChangeTimer;
   double _lastHeight = 0.0;
-  bool _userScrolling = false;
+  LyricScrollState _scrollState = LyricScrollState.idle;
   static const double _fadeExtent = 0.12;
   int _mainLine = 0;
   int _pendingScrollRetries = 0;
+  bool _isInInterlude = false;
+  late AnimationController _interludeFadeController;
+  late Animation<double> _interludeFadeAnimation;
 
   /// 用来定位到当前歌词
   final currentLyricTileKey = GlobalKey();
@@ -153,6 +164,15 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   @override
   void initState() {
     super.initState();
+
+    _interludeFadeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+    _interludeFadeAnimation = CurvedAnimation(
+      parent: _interludeFadeController,
+      curve: Curves.easeInOut,
+    );
 
     _initLyricView();
     lyricLineStreamSubscription =
@@ -367,33 +387,45 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
     if (duration != null && duration.inMilliseconds <= 16) {
       scrollController.jumpTo(to);
+      if (_scrollState == LyricScrollState.programScrolling) {
+        _scrollState = LyricScrollState.idle;
+      }
       return;
     }
 
     final from = scrollController.offset;
     final dist = (to - from).abs();
-    if (dist < 0.5) return;
+    if (dist < 0.5) {
+      if (_scrollState == LyricScrollState.programScrolling) {
+        _scrollState = LyricScrollState.idle;
+      }
+      return;
+    }
 
     final computed = duration ??
         Duration(
           milliseconds: (280 + dist * 0.22).round().clamp(320, 650),
         );
     scrollController.animateTo(to,
-        duration: computed, curve: Curves.easeOutQuart);
+        duration: computed, curve: Curves.easeOutQuart).then((_) {
+      if (_scrollState == LyricScrollState.programScrolling) {
+        _scrollState = LyricScrollState.idle;
+      }
+    });
   }
 
   void _markUserScrolling() {
     _userScrollHoldTimer?.cancel();
-    _userScrolling = true;
+    _scrollState = LyricScrollState.userDragging;
     _userScrollHoldTimer = Timer(const Duration(seconds: 2), () {
       if (!mounted) return;
-      _userScrolling = false;
+      _scrollState = LyricScrollState.idle;
       _scrollToCurrent();
     });
   }
 
   void _scrollToCurrent([Duration? duration]) {
-    if (_userScrolling) return;
+    if (_scrollState == LyricScrollState.userDragging) return;
     if (!scrollController.hasClients) {
       if (_pendingScrollRetries < 4) {
         _pendingScrollRetries++;
@@ -405,6 +437,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       return;
     }
     _pendingScrollRetries = 0;
+
+    _scrollState = LyricScrollState.programScrolling;
 
     // 1. Try to use the actual rendered object (most accurate)
     final targetContext = currentLyricTileKey.currentContext;
@@ -468,73 +502,186 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       _mainLine = lyricLine;
     });
 
+    _checkInterlude();
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollToCurrent();
     });
   }
 
+  void _checkInterlude() {
+    final wasInInterlude = _isInInterlude;
+    _isInInterlude = InterludeDetector.isInInterlude(
+      widget.lyric,
+      Duration(milliseconds: (playbackService.position * 1000).round()),
+    );
+
+    if (_isInInterlude && !wasInInterlude) {
+      _interludeFadeController.forward();
+    } else if (!_isInInterlude && wasInInterlude) {
+      _interludeFadeController.reverse();
+    }
+  }
+
+  void _onInterludeTap() {
+    final nextTime = InterludeDetector.getNextLyricTime(
+      widget.lyric,
+      Duration(milliseconds: (playbackService.position * 1000).round()),
+    );
+    if (nextTime != null) {
+      playbackService.seek(nextTime.inMilliseconds / 1000);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return LayoutBuilder(builder: (context, constraints) {
       if (constraints.maxWidth != _cachedMaxWidth) {
         _cachedMaxWidth = constraints.maxWidth;
-        // Recompute in next frame to avoid blocking build?
-        // Or compute now. It's better to compute now to have correct offsets immediately.
         _computeOffsets(constraints.maxWidth);
       }
 
       final spacerHeight = constraints.maxHeight / 2.0;
-      return RepaintBoundary(
-        child: ShaderMask(
-          blendMode: BlendMode.dstIn,
-          shaderCallback: (bounds) {
-            return const LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Colors.transparent,
-                Colors.white,
-                Colors.white,
-                Colors.transparent,
-              ],
-              stops: [0.0, _fadeExtent, 1.0 - _fadeExtent, 1.0],
-            ).createShader(bounds);
-          },
-          child: NotificationListener<ScrollNotification>(
-            onNotification: (notification) {
-              if (notification is ScrollStartNotification &&
-                  notification.dragDetails != null) {
-                _markUserScrolling();
-              } else if (notification is ScrollUpdateNotification &&
-                  notification.dragDetails != null) {
-                _markUserScrolling();
-              }
-              return false;
-            },
-            child: ListView.builder(
-              key: ValueKey(widget.lyric.hashCode),
-              controller: scrollController,
-              padding: EdgeInsets.symmetric(
-                vertical: widget.centerVertically ? spacerHeight : 0,
-              ),
-              itemCount: widget.lyric.lines.length,
-              itemBuilder: (context, i) {
-                final dist = (i - _mainLine).abs();
-                final opacity = dist == 0
-                    ? 1.0
-                    : pow(0.72, dist).toDouble().clamp(0.16, 0.78);
-                return LyricViewTile(
-                  key: dist == 0 ? currentLyricTileKey : null,
-                  line: widget.lyric.lines[i],
-                  opacity: opacity,
-                  distance: dist,
-                  onTap:
-                      widget.enableSeekOnTap ? () => _seekToLyricLine(i) : null,
-                );
+      return Stack(
+        children: [
+          RepaintBoundary(
+            child: ShaderMask(
+              blendMode: BlendMode.dstIn,
+              shaderCallback: (bounds) {
+                return const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.transparent,
+                    Colors.white,
+                    Colors.white,
+                    Colors.transparent,
+                  ],
+                  stops: [0.0, _fadeExtent, 1.0 - _fadeExtent, 1.0],
+                ).createShader(bounds);
               },
+              child: NotificationListener<ScrollNotification>(
+                onNotification: (notification) {
+                  if (notification is ScrollStartNotification &&
+                      notification.dragDetails != null) {
+                    _markUserScrolling();
+                  } else if (notification is ScrollUpdateNotification &&
+                      notification.dragDetails != null) {
+                    _markUserScrolling();
+                  }
+                  return false;
+                },
+                child: ListView.builder(
+                  key: ValueKey(widget.lyric.hashCode),
+                  controller: scrollController,
+                  padding: EdgeInsets.symmetric(
+                    vertical: widget.centerVertically ? spacerHeight : 0,
+                  ),
+                  itemCount: widget.lyric.lines.length,
+                  itemBuilder: (context, i) {
+                    final dist = (i - _mainLine).abs();
+                    final opacity = dist == 0
+                        ? 1.0
+                        : pow(0.72, dist).toDouble().clamp(0.16, 0.78);
+                    return LyricViewTile(
+                      key: dist == 0 ? currentLyricTileKey : null,
+                      line: widget.lyric.lines[i],
+                      opacity: opacity,
+                      distance: dist,
+                      onTap: widget.enableSeekOnTap
+                          ? () => _seekToLyricLine(i)
+                          : null,
+                    );
+                  },
+                ),
+              ),
             ),
           ),
-        ),
+          if (_scrollState == LyricScrollState.userDragging)
+            Positioned(
+              top: 16,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: scheme.secondaryContainer.withValues(alpha: 0.85),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    '拖动歌词查看，松开后自动回到当前行',
+                    style: TextStyle(
+                      color: scheme.onSecondaryContainer,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          if (_isInInterlude)
+            Positioned(
+              top: 0,
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: FadeTransition(
+                  opacity: _interludeFadeAnimation,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 30, vertical: 20),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '间奏',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w300,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        BreathingDots(
+                          dotSize: 10,
+                          dotColor: Colors.white,
+                          breathDuration: const Duration(seconds: 2),
+                          onTap: _onInterludeTap,
+                        ),
+                        Builder(builder: (context) {
+                          final remaining = InterludeDetector
+                              .getInterludeRemaining(
+                            widget.lyric,
+                            Duration(milliseconds: (playbackService.position * 1000).round()),
+                          ).inSeconds;
+                          if (remaining > 0) {
+                            return Padding(
+                              padding: const EdgeInsets.only(top: 12),
+                              child: Text(
+                                '剩余 $remaining 秒',
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.5),
+                                  fontSize: 12,
+                                ),
+                              ),
+                            );
+                          }
+                          return const SizedBox.shrink();
+                        }),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       );
     });
   }
@@ -549,5 +696,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     _lyricViewController?.removeListener(_scheduleEnsureCurrentVisible);
     lyricLineStreamSubscription.cancel();
     scrollController.dispose();
+    _interludeFadeController.dispose();
   }
 }
