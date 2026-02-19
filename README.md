@@ -34,19 +34,19 @@
 
 ### 深色模式
 
-<img src="Screenshot/深色模式.png" width="45%" alt="深色模式"> <img src="Screenshot/深色模式2.png" width="45%" alt="深色模式2">
+<img src="screenshot/深色模式.png" width="45%" alt="深色模式"> <img src="screenshot/深色模式2.png" width="45%" alt="深色模式2">
 
-<img src="Screenshot/深色模式3.png" width="45%" alt="深色模式3">
+<img src="screenshot/深色模式3.png" width="45%" alt="深色模式3">
 
 ### 浅色模式
 
-<img src="Screenshot/浅色模式.png" width="45%" alt="浅色模式"> <img src="Screenshot/浅色模式2.png" width="45%" alt="浅色模式2">
+<img src="screenshot/浅色模式.png" width="45%" alt="浅色模式"> <img src="screenshot/浅色模式2.png" width="45%" alt="浅色模式2">
 
-<img src="Screenshot/浅色模式3.png" width="45%" alt="浅色模式3">
+<img src="screenshot/浅色模式3.png" width="45%" alt="浅色模式3">
 
 ### 沉浸模式 & 歌词行模糊
 
-<img src="Screenshot/沉浸模式.png" width="45%" alt="沉浸模式"> <img src="Screenshot/歌词模糊.png" width="45%" alt="歌词模糊">
+<img src="screenshot/沉浸模式.png" width="45%" alt="沉浸模式"> <img src="screenshot/歌词模糊.png" width="45%" alt="歌词模糊">
 
 ---
 
@@ -98,7 +98,7 @@ pure-music/
 ├── rust/                         # Rust 原生代码
 ├── BASS/                        # BASS 音频库插件
 ├── assets/                      # 资源文件
-├── Screenshot/                  # 截图预览
+├── screenshot/                  # 截图预览
 ├── desktop_lyric/               # 桌面歌词二进制
 └── rust_builder/                # Rust 编译工具
 ```

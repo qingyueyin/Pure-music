@@ -287,6 +287,7 @@ class _SyncLineContent extends StatelessWidget {
           alignment,
           primarySize,
           fontWeight,
+          opacity: 0.6,
         ),
       ];
       if (showTranslation && syncLine.translation != null) {
@@ -297,6 +298,7 @@ class _SyncLineContent extends StatelessWidget {
           alignment,
           translationSize,
           fontWeight,
+          opacity: 0.5,
         ));
       }
 
@@ -337,6 +339,11 @@ class _SyncLineContent extends StatelessWidget {
               final progress = wordLenMs <= 0
                   ? (posInMs >= wordEndMs ? 1.0 : 0.0)
                   : ((posInMs - wordStartMs) / wordLenMs).clamp(0.0, 1.0);
+              
+              final glowIntensity = progress.clamp(0.0, 1.0);
+              final glowAlpha = 0.3 + (glowIntensity * 0.4);
+              final glowBlur = 6.0 + (glowIntensity * 10.0);
+              
               return Stack(
                 children: [
                   Text(
@@ -353,6 +360,7 @@ class _SyncLineContent extends StatelessWidget {
                     ShaderMask(
                       blendMode: BlendMode.dstIn,
                       shaderCallback: (bounds) {
+                        final gradientProgress = progress.clamp(0.0, 1.0);
                         return LinearGradient(
                           colors: const [
                             Colors.white,
@@ -360,7 +368,14 @@ class _SyncLineContent extends StatelessWidget {
                             Colors.transparent,
                             Colors.transparent
                           ],
-                          stops: [0, progress, progress + 0.05, 1],
+                          stops: [
+                            0,
+                            gradientProgress,
+                            gradientProgress + 0.08,
+                            1
+                          ],
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
                         ).createShader(bounds);
                       },
                       child: Text(
@@ -371,6 +386,17 @@ class _SyncLineContent extends StatelessWidget {
                           fontSize: primarySize,
                           weight: fontWeight,
                           height: _primaryLineHeight(fontWeight),
+                        ).copyWith(
+                          shadows: [
+                            Shadow(
+                              color: Colors.white.withValues(alpha: glowAlpha),
+                              blurRadius: glowBlur,
+                            ),
+                            Shadow(
+                              color: Colors.white.withValues(alpha: glowAlpha * 0.6),
+                              blurRadius: glowBlur * 1.5,
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -409,8 +435,9 @@ class _SyncLineContent extends StatelessWidget {
     ColorScheme scheme,
     LyricTextAlign align,
     double fontSize,
-    int fontWeight,
-  ) {
+    int fontWeight, {
+    double opacity = 1.0,
+  }) {
     return Text(
       text,
       softWrap: true,
@@ -421,7 +448,7 @@ class _SyncLineContent extends StatelessWidget {
         LyricTextAlign.right => TextAlign.right,
       },
       style: _lyricTextStyle(
-        color: Colors.white,
+        color: Colors.white.withValues(alpha: opacity),
         fontSize: fontSize,
         weight: fontWeight,
         height: _primaryLineHeight(fontWeight),
@@ -434,8 +461,9 @@ class _SyncLineContent extends StatelessWidget {
     ColorScheme scheme,
     LyricTextAlign align,
     double fontSize,
-    int fontWeight,
-  ) {
+    int fontWeight, {
+    double opacity = 0.70,
+  }) {
     final translationWeight = (fontWeight - 50).clamp(100, 900);
     return Text(
       text,
@@ -447,7 +475,7 @@ class _SyncLineContent extends StatelessWidget {
         LyricTextAlign.right => TextAlign.right,
       },
       style: _lyricTextStyle(
-        color: Colors.white.withValues(alpha: 0.70),
+        color: Colors.white.withValues(alpha: opacity),
         fontSize: fontSize,
         weight: translationWeight,
         height: _translationLineHeight(fontWeight),
