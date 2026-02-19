@@ -2,14 +2,14 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:io';
 
-import 'package:pure_music/app_settings.dart';
+import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/lyric/lyric_source.dart';
-import 'package:pure_music/music_matcher.dart';
+import 'package:pure_music/core/matcher.dart';
 import 'package:pure_music/play_service/play_service.dart';
-import 'package:pure_music/src/rust/api/tag_reader.dart';
+import 'package:pure_music/native/rust/api/tag_reader.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 

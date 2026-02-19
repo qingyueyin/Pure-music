@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:github/github.dart';
 import 'package:material_symbols_icons/symbols.dart';
-import 'package:pure_music/app_preference.dart';
-import 'package:pure_music/app_settings.dart';
-import 'package:pure_music/src/rust/api/utils.dart' as rust_utils;
-import 'package:pure_music/utils.dart';
+import 'package:pure_music/core/preference.dart';
+import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/native/rust/api/utils.dart' as rust_utils;
+import 'package:pure_music/core/utils.dart';
 
 class CheckForUpdate extends StatefulWidget {
   const CheckForUpdate({super.key});

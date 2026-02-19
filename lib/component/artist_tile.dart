@@ -1,11 +1,11 @@
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/page/uni_page.dart';
-import 'package:pure_music/enums.dart';
+import 'package:pure_music/core/enums.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
-import 'package:pure_music/app_paths.dart' as app_paths;
+import 'package:pure_music/core/paths.dart' as app_paths;
 
 class ArtistTile extends StatefulWidget {
   const ArtistTile({

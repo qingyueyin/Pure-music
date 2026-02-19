@@ -1,15 +1,15 @@
 import 'dart:io';
 
-import 'package:pure_music/app_preference.dart';
-import 'package:pure_music/app_settings.dart';
-import 'package:pure_music/album_color_cache.dart';
+import 'package:pure_music/core/preference.dart';
+import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/entry.dart';
-import 'package:pure_music/hotkeys_helper.dart';
-import 'package:pure_music/immersive_mode.dart';
-import 'package:pure_music/src/rust/api/logger.dart';
-import 'package:pure_music/src/rust/frb_generated.dart';
-import 'package:pure_music/theme_provider.dart';
-import 'package:pure_music/utils.dart';
+import 'package:pure_music/core/hotkeys.dart';
+import 'package:pure_music/core/immersive.dart';
+import 'package:pure_music/native/rust/api/logger.dart';
+import 'package:pure_music/native/rust/frb_generated.dart';
+import 'package:pure_music/core/theme.dart';
+import 'package:pure_music/core/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';

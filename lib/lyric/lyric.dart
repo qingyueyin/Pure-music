@@ -1,50 +1,41 @@
-abstract class Lyric {
-  List<LyricLine> lines;
+class Lyric {
+  final List<LyricLine> lines;
 
-  Lyric(this.lines);
+  const Lyric(this.lines);
+
+  static const Lyric empty = Lyric([]);
+
+  bool get isEmpty => lines.isEmpty;
+  bool get isNotEmpty => lines.isNotEmpty;
 }
 
-abstract class LyricLine {
-  Duration start;
-
-  LyricLine(this.start);
-}
-
-abstract class UnsyncLyricLine extends LyricLine {
-  String content;
-
-  UnsyncLyricLine(super.start, this.content);
-}
-
-abstract class SyncLyricLine extends LyricLine {
+class LyricLine {
+  final Duration start;
   Duration length;
-  List<SyncLyricWord> words;
-  late String content;
   String? translation;
 
-  SyncLyricLine(super.start, this.length, this.words, [this.translation]) {
-    final buffer = StringBuffer();
-    for (final e in words) {
-      buffer.write(e.content);
-    }
-    content = buffer.toString();
-  }
-
-  @override
-  String toString() {
-    return "[${start.inMilliseconds},${length.inMilliseconds}]$content";
-  }
+  LyricLine(this.start, this.length, [this.translation]);
 }
 
-abstract class SyncLyricWord {
-  Duration start;
+class SyncLyricLine extends LyricLine {
+  final List<SyncLyricWord> words;
+
+  SyncLyricLine(super.start, super.length, this.words, [super.translation]);
+
+  String get content => words.map((w) => w.content).join();
+}
+
+class SyncLyricWord {
+  final Duration start;
   Duration length;
-  String content;
+  final String content;
 
   SyncLyricWord(this.start, this.length, this.content);
+}
 
-  @override
-  String toString() {
-    return "(${start.inMilliseconds},${length.inMilliseconds})$content";
-  }
+class UnsyncLyricLine extends LyricLine {
+  final String content;
+
+  UnsyncLyricLine(Duration start, this.content, [String? translation])
+      : super(start, Duration.zero, translation);
 }

@@ -1,17 +1,17 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:pure_music/app_preference.dart';
-import 'package:pure_music/app_settings.dart';
-import 'package:pure_music/album_color_cache.dart';
+import 'package:pure_music/core/preference.dart';
+import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/lyric/lyric_source.dart';
-import 'package:pure_music/src/rust/api/tag_reader.dart';
-import 'package:pure_music/utils.dart';
+import 'package:pure_music/native/rust/api/tag_reader.dart';
+import 'package:pure_music/core/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:pure_music/app_paths.dart' as app_paths;
+import 'package:pure_music/core/paths.dart' as app_paths;
 
 class UpdatingPage extends StatelessWidget {
   const UpdatingPage({super.key});

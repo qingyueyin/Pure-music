@@ -24,14 +24,14 @@ import 'package:pure_music/page/welcoming_page.dart';
 import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
 import 'package:pure_music/component/app_scroll_behavior.dart';
-import 'package:pure_music/theme_provider.dart';
-import 'package:pure_music/utils.dart';
+import 'package:pure_music/core/theme.dart';
+import 'package:pure_music/core/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
-import 'package:pure_music/app_paths.dart' as app_paths;
+import 'package:pure_music/core/paths.dart' as app_paths;
 
 class SlideTransitionPage<T> extends CustomTransitionPage<T> {
   const SlideTransitionPage({

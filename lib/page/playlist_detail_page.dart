@@ -1,7 +1,7 @@
-import 'package:pure_music/app_preference.dart';
-import 'package:pure_music/enums.dart';
+import 'package:pure_music/core/preference.dart';
+import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/component/audio_tile.dart';
-import 'package:pure_music/utils.dart';
+import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/page/uni_page.dart';

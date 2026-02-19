@@ -7,11 +7,11 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:pure_music/app_preference.dart';
-import 'package:pure_music/src/bass/bass.dart' as bass;
-import 'package:pure_music/src/bass/bass_fx.dart';
-import 'package:pure_music/src/bass/bass_wasapi.dart' as bass_wasapi;
-import 'package:pure_music/utils.dart';
+import 'package:pure_music/core/preference.dart';
+import 'package:pure_music/native/bass/bass.dart' as bass;
+import 'package:pure_music/native/bass/bass_fx.dart';
+import 'package:pure_music/native/bass/bass_wasapi.dart' as bass_wasapi;
+import 'package:pure_music/core/utils.dart';
 import 'package:ffi/ffi.dart';
 import 'package:path/path.dart' as path;
 

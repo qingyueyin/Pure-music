@@ -1,7 +1,7 @@
-import 'package:pure_music/utils.dart';
+import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/library/audio_library.dart';
-import 'package:pure_music/src/rust/api/utils.dart';
-import 'package:pure_music/src/rust/api/tag_reader.dart' as rust_tag_reader;
+import 'package:pure_music/native/rust/api/utils.dart';
+import 'package:pure_music/native/rust/api/tag_reader.dart' as rust_tag_reader;
 import 'dart:io';
 import 'dart:convert';
 import 'package:path/path.dart' as p;
@@ -9,7 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:go_router/go_router.dart';
-import 'package:pure_music/app_paths.dart' as app_paths;
+import 'package:pure_music/core/paths.dart' as app_paths;
 
 String _formatBytes(int bytes) {
   if (bytes < 1024) return "$bytes B";

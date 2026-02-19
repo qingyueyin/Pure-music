@@ -6,7 +6,7 @@ import 'package:pure_music/lyric/krc.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/lyric/qrc.dart';
-import 'package:pure_music/utils.dart';
+import 'package:pure_music/core/utils.dart';
 import 'package:music_api/api/kugou/kugou.dart';
 import 'package:music_api/api/netease/netease.dart';
 import 'package:music_api/api/qq/qq.dart';

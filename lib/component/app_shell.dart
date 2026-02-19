@@ -1,6 +1,6 @@
 // ignore_for_file: camel_case_types
 
-import 'package:pure_music/album_color_cache.dart';
+import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/component/mini_now_playing.dart';
 import 'package:pure_music/component/responsive_builder.dart';

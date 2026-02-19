@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:pure_music/app_settings.dart';
+import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:flutter/material.dart';

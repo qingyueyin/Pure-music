@@ -1,10 +1,10 @@
 import 'dart:io';
 import 'dart:convert';
 import 'dart:ui';
-import 'package:pure_music/app_settings.dart';
-import 'package:pure_music/src/rust/api/library_db.dart' as library_db;
-import 'package:pure_music/src/rust/api/tag_reader.dart';
-import 'package:pure_music/utils.dart';
+import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/native/rust/api/library_db.dart' as library_db;
+import 'package:pure_music/native/rust/api/tag_reader.dart';
+import 'package:pure_music/core/utils.dart';
 import 'package:flutter/painting.dart';
 
 /// from index.json

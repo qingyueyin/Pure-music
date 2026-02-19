@@ -2,7 +2,7 @@ import 'dart:math';
 
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/lyric/lyric.dart';
-import 'package:pure_music/src/rust/api/tag_reader.dart';
+import 'package:pure_music/native/rust/api/tag_reader.dart';
 
 class EnhancedLrc extends Lyric {
   final LrcSource source;

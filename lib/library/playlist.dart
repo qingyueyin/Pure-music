@@ -3,10 +3,10 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:pure_music/app_db.dart';
-import 'package:pure_music/app_settings.dart';
+import 'package:pure_music/core/database.dart';
+import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/library/audio_library.dart';
-import 'package:pure_music/utils.dart';
+import 'package:pure_music/core/utils.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 List<Playlist> PLAYLISTS = [];

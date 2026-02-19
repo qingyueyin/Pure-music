@@ -1,10 +1,10 @@
-import 'package:pure_music/app_paths.dart' as app_paths;
-import 'package:pure_music/app_preference.dart';
+import 'package:pure_music/core/paths.dart' as app_paths;
+import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/component/hotkey_ui_feedback.dart';
-import 'package:pure_music/immersive_mode.dart';
+import 'package:pure_music/core/immersive.dart';
 import 'package:pure_music/play_service/play_service.dart';
-import 'package:pure_music/src/bass/bass_player.dart';
-import 'package:pure_music/utils.dart';
+import 'package:pure_music/native/bass/bass_player.dart';
+import 'package:pure_music/core/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';

@@ -1,19 +1,19 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:pure_music/app_preference.dart';
-import 'package:pure_music/app_settings.dart';
+import 'package:pure_music/core/preference.dart';
+import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/component/settings_tile.dart';
-import 'package:pure_music/hotkeys_helper.dart';
+import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
 import 'package:pure_music/play_service/play_service.dart';
-import 'package:pure_music/src/rust/api/utils.dart' as rust_utils;
-import 'package:pure_music/utils.dart';
+import 'package:pure_music/native/rust/api/utils.dart' as rust_utils;
+import 'package:pure_music/core/utils.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:go_router/go_router.dart';
-import 'package:pure_music/app_paths.dart' as app_paths;
+import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:flutter/services.dart';
 
 const bool enableIssueReporting = bool.fromEnvironment(

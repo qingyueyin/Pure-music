@@ -3,10 +3,10 @@
 import 'dart:ui';
 import 'dart:math' as math;
 
-import 'package:pure_music/app_preference.dart';
+import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/responsive_builder.dart';
-import 'package:pure_music/app_paths.dart' as app_paths;
+import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';

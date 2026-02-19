@@ -1,11 +1,11 @@
 import 'dart:io';
-import 'package:pure_music/src/rust/api/installed_font.dart';
-import 'package:pure_music/utils.dart';
+import 'package:pure_music/native/rust/api/installed_font.dart';
+import 'package:pure_music/core/utils.dart';
 import 'package:flutter/services.dart';
-import 'package:pure_music/app_settings.dart';
+import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/component/settings_tile.dart';
 import 'package:pure_music/page/settings_page/theme_picker_dialog.dart';
-import 'package:pure_music/theme_provider.dart';
+import 'package:pure_music/core/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';

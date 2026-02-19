@@ -1,5 +1,5 @@
-import 'package:pure_music/album_color_cache.dart';
-import 'package:pure_music/app_settings.dart';
+import 'package:pure_music/core/cache.dart';
+import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/component/build_index_state_view.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/library/playlist.dart';
