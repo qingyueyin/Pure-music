@@ -1,7 +1,6 @@
 // ignore_for_file: camel_case_types
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:math';
 import 'dart:ui';
 
@@ -13,6 +12,7 @@ import 'package:pure_music/component/title_bar.dart';
 import 'package:pure_music/core/color_extraction.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/immersive.dart';
+import 'package:pure_music/core/system_volume_service.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/library/playlist.dart';
@@ -29,7 +29,6 @@ import 'package:pure_music/play_service/playback_service.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_volume_controller/flutter_volume_controller.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
@@ -700,6 +699,7 @@ class _NowPlayingVolDspSlider extends StatefulWidget {
 
 class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
   final playbackService = PlayService.instance.playbackService;
+  final systemVolumeService = SystemVolumeService.instance;
   final dragVolDsp = ValueNotifier(
     AppPreference.instance.playbackPref.volumeDsp,
   );
@@ -709,11 +709,8 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
   bool isSystemDragging = false;
   bool _isMenuOpen = false;
   double _lastVolumeDsp = -1;
-  Timer? _systemVolPollTimer;
-  bool _systemVolPollBusy = false;
   Timer? _systemVolBoostTimer;
-  int _systemVolReadFailures = 0;
-  late final void Function(double) _systemVolListener;
+  late final VoidCallback _systemVolValueListener;
   Timer? _indicatorTimer;
   Timer? _systemIndicatorTimer;
   bool _showCustomIndicator = false;
@@ -738,16 +735,7 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
   }
 
   Future<double?> _readSystemVol({required Duration timeout}) async {
-    try {
-      return await FlutterVolumeController.getVolume().timeout(timeout);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  void _rebindSystemVolListener() {
-    FlutterVolumeController.removeListener();
-    FlutterVolumeController.addListener(_systemVolListener);
+    return await systemVolumeService.read(timeout: timeout);
   }
 
   @override
@@ -781,43 +769,13 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
         _triggerIndicator();
       }
     });
-    _systemVolListener = (v) {
-      if (mounted && !isSystemDragging) {
-        dragSystemVol.value = v;
-      }
+    systemVolumeService.ensureBound();
+    dragSystemVol.value = systemVolumeService.volume.value;
+    _systemVolValueListener = () {
+      if (!mounted || isSystemDragging) return;
+      dragSystemVol.value = systemVolumeService.volume.value;
     };
-    FlutterVolumeController.addListener(_systemVolListener);
-    _readSystemVol(timeout: const Duration(milliseconds: 600)).then((v) {
-      if (!mounted) return;
-      dragSystemVol.value = v ?? 0.5;
-    });
-
-    if (Platform.isWindows) {
-      _systemVolPollTimer =
-          Timer.periodic(const Duration(milliseconds: 250), (_) async {
-        if (!mounted || isSystemDragging || _systemVolPollBusy) return;
-        _systemVolPollBusy = true;
-        try {
-          final v = await _readSystemVol(timeout: const Duration(seconds: 1));
-          if (!mounted || isSystemDragging) return;
-          if (v == null) {
-            _systemVolReadFailures += 1;
-            if (_systemVolReadFailures >= 3) {
-              _systemVolReadFailures = 0;
-              _rebindSystemVolListener();
-            }
-            return;
-          }
-          _systemVolReadFailures = 0;
-          final curr = dragSystemVol.value;
-          if ((v - curr).abs() > 0.005) {
-            dragSystemVol.value = v;
-          }
-        } finally {
-          _systemVolPollBusy = false;
-        }
-      });
-    }
+    systemVolumeService.volume.addListener(_systemVolValueListener);
   }
 
   void _triggerIndicator() {
@@ -842,12 +800,11 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
 
   @override
   void dispose() {
-    FlutterVolumeController.removeListener();
-    _systemVolPollTimer?.cancel();
     _systemVolBoostTimer?.cancel();
     _indicatorTimer?.cancel();
     _systemIndicatorTimer?.cancel();
     _autoCloseTimer?.cancel();
+    systemVolumeService.volume.removeListener(_systemVolValueListener);
     HOTKEY_UI_FEEDBACK.removeListener(_hotkeyListener);
     super.dispose();
   }
@@ -944,12 +901,12 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
                                   onChangeStart: (value) {
                                     isSystemDragging = true;
                                     dragSystemVol.value = value;
-                                    FlutterVolumeController.setVolume(value);
+                                    systemVolumeService.set(value);
                                     _triggerSystemIndicator();
                                   },
                                   onChanged: (value) {
                                     dragSystemVol.value = value;
-                                    FlutterVolumeController.setVolume(value);
+                                    systemVolumeService.set(value);
                                     if (isSystemDragging) {
                                       _triggerSystemIndicator();
                                     }
@@ -957,7 +914,7 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
                                   onChangeEnd: (value) {
                                     isSystemDragging = false;
                                     dragSystemVol.value = value;
-                                    FlutterVolumeController.setVolume(value);
+                                    systemVolumeService.set(value);
                                   },
                                 ),
                                 if (_showSystemCustomIndicator ||
