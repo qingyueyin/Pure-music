@@ -32,9 +32,10 @@ String _toHexString(int dec) {
 
 extension RGBHexString on Color {
   String toRGBHexString() {
-    final redHex = _toHexString(red);
-    final greenHex = _toHexString(green);
-    final blueHex = _toHexString(blue);
+    final argb = toARGB32();
+    final redHex = _toHexString((argb >> 16) & 0xff);
+    final greenHex = _toHexString((argb >> 8) & 0xff);
+    final blueHex = _toHexString(argb & 0xff);
 
     return "#$redHex$greenHex$blueHex";
   }
@@ -217,7 +218,7 @@ void showHotkeyToast({
                       vertical: 10.0,
                     ),
                     decoration: BoxDecoration(
-                      color: scheme.secondaryContainer.withOpacity(0.92),
+                      color: scheme.secondaryContainer.withAlpha(235),
                       borderRadius: BorderRadius.circular(20.0),
                     ),
                     child: Row(

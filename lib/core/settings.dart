@@ -184,7 +184,7 @@ class AppSettings {
       systemTheme.accent.$2,
       systemTheme.accent.$3,
       systemTheme.accent.$4,
-    ).value;
+    ).toARGB32();
   }
 
   AppSettings._();

@@ -212,9 +212,9 @@ class _NowPlayingSmallViewSwitchState
               scale: visible ? 1.0 : 0.94,
               child: InkWell(
                 borderRadius: BorderRadius.circular(16.0),
-                hoverColor: scheme.onSecondaryContainer.withOpacity(0.08),
-                highlightColor: scheme.onSecondaryContainer.withOpacity(0.12),
-                splashColor: scheme.onSecondaryContainer.withOpacity(0.12),
+                hoverColor: scheme.onSecondaryContainer.withAlpha(20),
+                highlightColor: scheme.onSecondaryContainer.withAlpha(31),
+                splashColor: scheme.onSecondaryContainer.withAlpha(31),
                 onTap: widget.onTap,
                 onHover: (hasEntered) {
                   setState(() {

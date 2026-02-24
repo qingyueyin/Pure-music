@@ -303,7 +303,7 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
                 Expanded(
                   child: Text(
                     "日志（可选）",
-                    style: TextStyle(color: scheme.onSurface.withOpacity(0.75)),
+                    style: TextStyle(color: scheme.onSurface.withAlpha(191)),
                   ),
                 ),
                 TextButton(

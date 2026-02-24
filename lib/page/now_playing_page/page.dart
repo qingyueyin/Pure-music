@@ -1893,21 +1893,21 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
                   boxShadow: [
                     // 1. 环境光晕 (Ambient Glow)
                     BoxShadow(
-                      color: scheme.primary.withOpacity(0.25),
+                      color: scheme.primary.withAlpha(64),
                       spreadRadius: -4,
                       blurRadius: 24,
                       offset: const Offset(0, 8),
                     ),
                     // 2. 轮廓描边 (Outline)
                     BoxShadow(
-                      color: scheme.primary.withOpacity(0.15),
+                      color: scheme.primary.withAlpha(38),
                       spreadRadius: 1,
                       blurRadius: 0,
                       offset: Offset.zero,
                     ),
                     // 3. 深邃阴影 (Depth Shadow)
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.20),
+                      color: Colors.black.withAlpha(51),
                       spreadRadius: 0,
                       blurRadius: 16,
                       offset: const Offset(0, 8),

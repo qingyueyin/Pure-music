@@ -26,7 +26,7 @@ class ThemeSelector extends StatelessWidget {
           if (seedColor == null) return;
 
           ThemeProvider.instance.applyTheme(seedColor: seedColor);
-          AppSettings.instance.defaultTheme = seedColor.value;
+          AppSettings.instance.defaultTheme = seedColor.toARGB32();
           await AppSettings.instance.saveSettings();
         },
         label: const Text("主题选择器"),

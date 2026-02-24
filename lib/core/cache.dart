@@ -148,8 +148,8 @@ class AlbumColorCache {
 
       _entries[key] = {
         "sig": signature,
-        "p": primary.value,
-        "on": onPrimary.value,
+        "p": primary.toARGB32(),
+        "on": onPrimary.toARGB32(),
       };
       _scheduleFlush();
       return AlbumColor(primary: primary, onPrimary: onPrimary);
