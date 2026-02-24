@@ -89,8 +89,8 @@ class _DebugOverlayState extends State<DebugOverlay> {
               ),
               const Divider(color: Colors.white30),
               if (_showFps && _lastStats != null) ...[
-                _buildInfoRow('FPS', '${_lastStats!.fps.toStringAsFixed(1)}'),
-                _buildInfoRow('丢帧', '${_lastStats!.droppedFrames}'),
+                _buildInfoRow('FPS', _lastStats!.fps.toStringAsFixed(1)),
+                _buildInfoRow('丢帧', _lastStats!.droppedFrames.toString()),
                 _buildInfoRow(
                     '帧时间', '${_lastStats!.avgFrameTime.toStringAsFixed(1)}ms'),
                 _buildStatusRow(
@@ -112,7 +112,7 @@ class _DebugOverlayState extends State<DebugOverlay> {
                   Switch(
                     value: _showFps,
                     onChanged: (v) => setState(() => _showFps = v),
-                    activeColor: Colors.blue,
+                    activeThumbColor: Colors.blue,
                   ),
                 ],
               ),

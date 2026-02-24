@@ -49,6 +49,7 @@ class CrcWord extends SyncLyricWord {
 
 class LrcLine extends UnsyncLyricLine {
   bool isBlank;
+  @override
   Duration length;
 
   LrcLine(super.start, super.content,
