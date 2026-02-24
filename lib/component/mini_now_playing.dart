@@ -168,7 +168,6 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
 
                   return LayoutBuilder(builder: (context, constraints) {
                     final dense = constraints.maxWidth <= 520;
-                    final minimal = constraints.maxWidth <= 440;
                     final hideControls = !_controlsVisible;
                     final controls = Row(
                       mainAxisSize: MainAxisSize.min,
@@ -456,31 +455,6 @@ class _MiniTimeText extends StatelessWidget {
             color: color,
             fontFeatures: const [FontFeature.tabularFigures()],
           ),
-        );
-      },
-    );
-  }
-}
-
-class _MiniShuffleButton extends StatelessWidget {
-  const _MiniShuffleButton({required this.enabled});
-
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    final playbackService = PlayService.instance.playbackService;
-    final scheme = Theme.of(context).colorScheme;
-    return ValueListenableBuilder(
-      valueListenable: playbackService.shuffle,
-      builder: (context, value, _) {
-        final onPressed =
-            enabled ? () => playbackService.useShuffle(!value) : null;
-        return IconButton(
-          tooltip: value ? "关闭随机" : "开启随机",
-          onPressed: onPressed,
-          icon: const Icon(Symbols.shuffle, fill: 0.0, weight: 400.0),
-          color: value ? scheme.primary : scheme.onSecondaryContainer,
         );
       },
     );

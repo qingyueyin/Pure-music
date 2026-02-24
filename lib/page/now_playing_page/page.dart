@@ -1238,7 +1238,6 @@ class _GlowingIconButton extends StatefulWidget {
   final double size;
   final Color glowColor;
   final Color iconColor;
-  final bool enableGlow;
 
   const _GlowingIconButton({
     required this.tooltip,
@@ -1247,7 +1246,6 @@ class _GlowingIconButton extends StatefulWidget {
     required this.size,
     required this.glowColor,
     required this.iconColor,
-    this.enableGlow = false,
   });
 
   @override
@@ -1260,7 +1258,7 @@ class _GlowingIconButtonState extends State<_GlowingIconButton> {
 
   @override
   Widget build(BuildContext context) {
-    final showGlow = widget.enableGlow || _isHovering;
+    final showGlow = _isHovering;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovering = true),
@@ -1447,14 +1445,12 @@ class _HotkeyPulseIconButton extends StatefulWidget {
     required this.onPressed,
     required this.icon,
     required this.hotkeyAction,
-    this.style,
   });
 
   final String tooltip;
   final VoidCallback onPressed;
   final Widget icon;
   final HotkeyUiAction hotkeyAction;
-  final ButtonStyle? style;
 
   @override
   State<_HotkeyPulseIconButton> createState() => _HotkeyPulseIconButtonState();
@@ -1505,7 +1501,6 @@ class _HotkeyPulseIconButtonState extends State<_HotkeyPulseIconButton> {
         tooltip: widget.tooltip,
         onPressed: widget.onPressed,
         icon: widget.icon,
-        style: widget.style,
       ),
     );
   }
@@ -1922,7 +1917,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(12.0),
                   child: Image(
-                    image: currentCover!,
+                    image: currentCover,
                     fit: BoxFit.cover,
                     gaplessPlayback: true,
                     filterQuality: FilterQuality.high,

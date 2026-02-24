@@ -1,8 +1,6 @@
 import 'dart:async';
-import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
 class PerformanceMonitor {
@@ -10,7 +8,6 @@ class PerformanceMonitor {
   factory PerformanceMonitor() => _instance;
   PerformanceMonitor._internal();
 
-  int _frameCount = 0;
   int _droppedFrameCount = 0;
   final List<double> _frameTimes = [];
   Timer? _statsTimer;
@@ -26,8 +23,6 @@ class PerformanceMonitor {
 
   void _onTimings(List<FrameTiming> timings) {
     for (var timing in timings) {
-      _frameCount++;
-
       final buildDuration = timing.buildDuration.inMicroseconds / 1000;
       final rasterDuration = timing.rasterDuration.inMicroseconds / 1000;
       final totalDuration = buildDuration + rasterDuration;
@@ -51,7 +46,6 @@ class PerformanceMonitor {
     final fps = 1000 / avgFrameTime;
     final droppedFrames = _droppedFrameCount;
 
-    _frameCount = 0;
     _droppedFrameCount = 0;
 
     onStatsUpdate?.call(PerformanceStats(

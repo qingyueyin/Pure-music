@@ -29,7 +29,7 @@ class InterludeDetector {
 
     if (currentLineIndex == lines.length - 1) {
       final lastLineEnd = lines.last.start.inMilliseconds +
-          (lines.last.length?.inMilliseconds ?? 0);
+          lines.last.length.inMilliseconds;
       if (currentMs > lastLineEnd) {
         return (currentMs - lastLineEnd) > thresholdMs;
       }
@@ -38,7 +38,7 @@ class InterludeDetector {
 
     final currentLine = lines[currentLineIndex];
     final currentLineEnd =
-        currentLine.start.inMilliseconds + (currentLine.length?.inMilliseconds ?? 0);
+        currentLine.start.inMilliseconds + currentLine.length.inMilliseconds;
     final nextLineStart = lines[currentLineIndex + 1].start.inMilliseconds;
     final gap = nextLineStart - currentLineEnd;
 
@@ -83,7 +83,7 @@ class InterludeDetector {
     if (currentLineIndex == lines.length - 1) {
       if (currentMs >
           lines.last.start.inMilliseconds +
-              (lines.last.length?.inMilliseconds ?? 0)) {
+              lines.last.length.inMilliseconds) {
         return Duration.zero;
       }
     }
@@ -91,7 +91,7 @@ class InterludeDetector {
     if (currentLineIndex >= 0 && currentLineIndex < lines.length - 1) {
       final nextLineStart = lines[currentLineIndex + 1].start.inMilliseconds;
       final currentLineEnd = lines[currentLineIndex].start.inMilliseconds +
-          (lines[currentLineIndex].length?.inMilliseconds ?? 0);
+          lines[currentLineIndex].length.inMilliseconds;
       if (currentMs < nextLineStart && currentMs > currentLineEnd) {
         return Duration(milliseconds: nextLineStart - currentMs);
       }
