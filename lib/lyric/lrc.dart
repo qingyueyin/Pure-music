@@ -49,17 +49,24 @@ class CrcWord extends SyncLyricWord {
 
 class LrcLine extends UnsyncLyricLine {
   bool isBlank;
-  @override
-  Duration length;
 
-  LrcLine(super.start, super.content,
-      {required this.isBlank, this.length = Duration.zero});
+  LrcLine(
+    Duration start,
+    String content, {
+    required this.isBlank,
+    Duration length = Duration.zero,
+    String? translation,
+  }) : super(
+          start,
+          content,
+          length: length,
+          translation: translation,
+        );
 
   static LrcLine defaultLine = LrcLine(
     Duration.zero,
     "无歌词",
     isBlank: false,
-    length: Duration.zero,
   );
 
   @override
