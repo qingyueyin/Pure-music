@@ -445,7 +445,7 @@ class PlaybackService extends ChangeNotifier {
       restoredIndex = idxByPath;
     }
 
-    this.playlist.value = List.from(restoredPlaylist);
+    playlist.value = List.from(restoredPlaylist);
     _playlistBackup = List.from(restoredPlaylist);
     _playlistIndex = restoredIndex;
     nowPlaying = restoredPlaylist[restoredIndex];

@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/responsive_builder.dart';
