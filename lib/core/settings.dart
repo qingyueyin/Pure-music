@@ -135,7 +135,10 @@ void _copyDirectory(Directory source, Directory dest) {
 }
 
 class AppSettings {
-  static const String version = "1.0.0";
+  static const String version = String.fromEnvironment(
+    'APP_VERSION',
+    defaultValue: "1.0.0",
+  );
 
   static final github = GitHub();
 

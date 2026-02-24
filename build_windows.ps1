@@ -51,56 +51,6 @@ $versionInput = (Read-Input "Version").Trim()
 if ([string]::IsNullOrWhiteSpace($versionInput)) { $versionInput = $defaultVersion }
 $version = $versionInput
 
-function Update-AppSettingsVersion([string]$newVersion) {
-    $p = Join-Path $PSScriptRoot "lib\core\settings.dart"
-    if (-not (Test-Path $p)) {
-        Write-Warning "core/settings.dart not found at $p"
-        return
-    }
-    
-    try {
-        $sr = New-Object System.IO.StreamReader($p, [System.Text.Encoding]::UTF8, $true)
-        try {
-            $content = $sr.ReadToEnd()
-        } finally {
-            $sr.Dispose()
-        }
-
-        if ($content.Length -gt 0 -and $content[0] -eq [char]0xFEFF) {
-            $content = $content.Substring(1)
-        }
-
-        # First, remove ALL existing version declarations to prevent duplicates
-        $rxRemove = New-Object System.Text.RegularExpressions.Regex('(?m)^\s*static\s+const\s+String\s+version\s*=\s*["''][^"'']*["''];\s*[\r\n]+')
-        $content = $rxRemove.Replace($content, '')
-
-        # Then insert a single version declaration after class AppSettings {
-        $rxClass = New-Object System.Text.RegularExpressions.Regex('(?m)^(\s*)class\s+AppSettings\s*\{')
-        if ($rxClass.IsMatch($content)) {
-            $insertLine = "`n  static const String version = `"$newVersion`";`n"
-            $content = $rxClass.Replace($content, ('$1class AppSettings {' + $insertLine), 1)
-        }
-        else {
-            Write-Error "Failed to find class AppSettings in core/settings.dart"
-            return
-        }
-
-        $Utf8NoBomEncoding = New-Object System.Text.UTF8Encoding $false
-        [System.IO.File]::WriteAllText($p, $content, $Utf8NoBomEncoding)
-        $verify = Get-AppSettingsVersion
-        if ($verify -ne $newVersion) {
-            Write-Error "Failed to verify updated version in core/settings.dart (expected $newVersion, got $verify)"
-            return
-        }
-        Write-Host "Updated version in core/settings.dart to $newVersion" -ForegroundColor Green
-    } catch {
-        Write-Error "Failed to update version in core/settings.dart: $_"
-    }
-}
-
-# Update version in core/settings.dart
-Update-AppSettingsVersion $version
-
 $bassPluginMode = "full"
 
 $artifactRoot = Join-Path $finalOutputDir ("pure_music_{0}_{1}_{2}" -f $version, $tag, $dist)
@@ -325,7 +275,13 @@ public static class ExeIconPatcher
 
 # 3. Build Windows
 Write-Host "Building Windows ($BuildMode)..." -ForegroundColor Cyan
-$flutterArgs = @("build", "windows", "--release", "--dart-define=PORTABLE_BUILD=$portableBuild")
+$flutterArgs = @(
+    "build",
+    "windows",
+    "--release",
+    "--dart-define=PORTABLE_BUILD=$portableBuild",
+    "--dart-define=APP_VERSION=$version"
+)
 $issueReportingEnabled = $false
 if ($env:ENABLE_ISSUE_REPORTING) {
     $issueReportingEnabled = $true
