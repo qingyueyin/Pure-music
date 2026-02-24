@@ -31,11 +31,12 @@ class HotkeysHelper {
       final routerContext = ROUTER_KEY.currentContext;
       if (routerContext == null) return;
 
+      final router = GoRouter.of(routerContext);
       if (ImmersiveModeController.instance.enabled) {
         await ImmersiveModeController.instance.exit();
         final startIndex = AppPreference.instance.startPage
             .clamp(0, app_paths.START_PAGES.length - 1);
-        GoRouter.of(routerContext).go(app_paths.START_PAGES[startIndex]);
+        router.go(app_paths.START_PAGES[startIndex]);
         return;
       }
 
@@ -113,7 +114,7 @@ class HotkeysHelper {
 
   static Future<void> unregisterAll() => hotKeyManager.unregisterAll();
 
-  static Future<void> onFocusChanges(focus) async {
+  static Future<void> onFocusChanges(bool focus) async {
     if (focus) {
       await unregisterAll();
     } else {
