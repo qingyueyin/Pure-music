@@ -3,3 +3,5 @@ include: package:flutter_lints/flutter.yaml
 analyzer:
   exclude:
     - bin/build_tool_runner.dart
+    - 原代码（请勿修改）/**
+    - rust_builder/cargokit/build_tool/**
