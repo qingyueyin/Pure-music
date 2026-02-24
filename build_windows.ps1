@@ -18,6 +18,15 @@ try {
 } catch {}
 
 function Get-AppSettingsVersion() {
+    $pubspec = Join-Path $PSScriptRoot "pubspec.yaml"
+    if (Test-Path $pubspec) {
+        $content = Get-Content -Path $pubspec -Raw -ErrorAction SilentlyContinue
+        if ($content) {
+            $m = [regex]::Match($content, '(?m)^\s*version\s*:\s*([^\r\n]+)\s*$')
+            if ($m.Success) { return $m.Groups[1].Value.Trim() }
+        }
+    }
+
     $p = Join-Path $PSScriptRoot "lib\core\settings.dart"
     if (-not (Test-Path $p)) { return "" }
     $content = Get-Content -Path $p -Raw -ErrorAction SilentlyContinue
