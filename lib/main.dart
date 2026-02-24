@@ -58,7 +58,7 @@ Future<void> loadPrefFont() async {
       await fontLoader.load();
       ThemeProvider.instance.changeFontFamily(settings.fontFamily!);
     } catch (err, trace) {
-      LOGGER.e(err, stackTrace: trace);
+      logger.e(err, stackTrace: trace);
     }
   }
 }
@@ -69,7 +69,7 @@ Future<void> main() async {
   await RustLib.init();
 
   initRustLogger().listen((msg) {
-    LOGGER.i("[rs]: $msg");
+    logger.i("[rs]: $msg");
   });
 
   // For hot reload, `unregisterAll()` needs to be called.

@@ -110,7 +110,7 @@ class BassPlayer {
     final wasapiStarted = _bassWasapi.BASS_WASAPI_IsStarted() == bass.TRUE;
     final eqCount =
         (_bfxEqHandle != 0 ? 1 : 0) + _eqHandles.where((e) => e != 0).length;
-    LOGGER.d(
+    logger.i(
       "[bass] $tag | exclusive=$wasapiExclusive streamExclusive=$_streamWasapiExclusive "
       "wasapiStarted=$wasapiStarted handle=$_fstream eq=$eqCount eqFlat=${_isEqFlat ? 1 : 0} "
       "rate=$_rate pitch=$_pitch",
@@ -341,7 +341,7 @@ class BassPlayer {
 
     if (wasapiExclusive) {
       if (!_isEqFlat) {
-        LOGGER.w("[bass] EQ enabled in exclusive mode, keep shared mode");
+        logger.w("[bass] EQ enabled in exclusive mode, keep shared mode");
         useExclusiveMode(false);
       }
       return;
@@ -393,7 +393,7 @@ class BassPlayer {
         }
         return;
       }
-      LOGGER.w(
+      logger.w(
         "Failed to set BFX EQ: BASS Error ${_bass.BASS_ErrorGetCode()}",
       );
       _bfxEqHandle = 0;
@@ -411,7 +411,7 @@ class BassPlayer {
 
         if (fx == 0) {
           final err = _bass.BASS_ErrorGetCode();
-          LOGGER.w("Failed to set EQ band $i: BASS Error $err");
+          logger.w("Failed to set EQ band $i: BASS Error $err");
           continue;
         }
 
@@ -419,7 +419,7 @@ class BassPlayer {
         _updateEQ(i);
       }
     } catch (e) {
-      LOGGER.e("Error initializing EQ: $e");
+      logger.e("Error initializing EQ: $e");
     }
   }
 
@@ -442,19 +442,19 @@ class BassPlayer {
 
         final result = _bass.BASS_FXSetParameters(_bfxEqHandle, params.cast());
 
-        LOGGER.i(
+        logger.i(
           "EQ Update (BFX) - Band: $band, Freq: $center Hz, Gain: $gain dB, Bandwidth: $bandwidth, Result: $result",
         );
 
         if (result == 0) {
           final err = _bass.BASS_ErrorGetCode();
-          LOGGER
+          logger
               .w("Failed to set BFX EQ parameters for band $band: Error $err");
         }
 
         calloc.free(params);
       } catch (e) {
-        LOGGER.e("Error updating BFX EQ band $band: $e");
+        logger.e("Error updating BFX EQ band $band: $e");
       }
       return;
     }
@@ -476,17 +476,17 @@ class BassPlayer {
 
       final result = _bass.BASS_FXSetParameters(fx, params.cast());
 
-      LOGGER.i(
+      logger.i(
         "EQ Update (DX8) - Band: $band, Freq: $center Hz, Gain: $gain dB, Bandwidth: $bandwidth, Result: $result",
       );
 
       if (result == 0) {
         final err = _bass.BASS_ErrorGetCode();
-        LOGGER.w("Failed to set EQ parameters for band $band: Error $err");
+        logger.w("Failed to set EQ parameters for band $band: Error $err");
       }
       calloc.free(params);
     } catch (e) {
-      LOGGER.e("Error updating EQ band $band: $e");
+      logger.e("Error updating EQ band $band: $e");
     }
   }
 
@@ -594,7 +594,7 @@ class BassPlayer {
         setDllDirectory(bassDir);
         malloc.free(bassDir);
       } catch (e) {
-        LOGGER.e("Failed to SetDllDirectory: $e");
+        logger.e("Failed to SetDllDirectory: $e");
       }
     }
 
@@ -635,7 +635,7 @@ class BassPlayer {
       final hplugin = _bass.BASS_PluginLoad(pluginPathP, bass.BASS_UNICODE);
       if (hplugin == 0) {
         final errCode = _bass.BASS_ErrorGetCode();
-        LOGGER.w("Failed to load plugin $pluginFullPath: Error $errCode");
+        logger.w("Failed to load plugin $pluginFullPath: Error $errCode");
       }
       malloc.free(pluginPathP);
     }
@@ -643,7 +643,7 @@ class BassPlayer {
     try {
       _bassInit();
     } catch (err) {
-      LOGGER.e("[bass init] $err");
+      logger.e("[bass init] $err");
     }
 
     // BASS_FX - 加载bass_fx必须在bass初始化之后
@@ -655,68 +655,68 @@ class BassPlayer {
       final bassFxLibPath = path.join(_bassDir, "bass_fx.dll");
       final bassFxFile = File(bassFxLibPath);
       if (!bassFxFile.existsSync()) {
-        LOGGER.w("bass_fx.dll file not found at: $bassFxLibPath");
+        logger.w("bass_fx.dll file not found at: $bassFxLibPath");
         return;
       }
 
-      LOGGER.i("Attempting to load bass_fx.dll from: $bassFxLibPath");
+      logger.i("Attempting to load bass_fx.dll from: $bassFxLibPath");
 
       // 方法1: 使用DynamicLibrary.process() - 利用已加载的库符号
       try {
-        LOGGER.d("Method 1: Loading with DynamicLibrary.process()");
+        logger.d("Method 1: Loading with DynamicLibrary.process()");
         final processSym = ffi.DynamicLibrary.process();
         final tempBassFx = BassFx(processSym);
         final version = tempBassFx.BASS_FX_GetVersion();
         _bassFx = tempBassFx;
-        LOGGER.i(
+        logger.i(
             "✓ BASS_FX loaded via process symbols! Version: ${version.toRadixString(16)}");
         return;
       } catch (e) {
-        LOGGER.w("Method 1 failed: $e");
+        logger.w("Method 1 failed: $e");
       }
 
       // 方法2: 直接用绝对路径加载
       try {
-        LOGGER.d("Method 2: Loading with absolute path");
+        logger.d("Method 2: Loading with absolute path");
         final bassFxLib = ffi.DynamicLibrary.open(bassFxLibPath);
         final tempBassFx = BassFx(bassFxLib);
         final version = tempBassFx.BASS_FX_GetVersion();
         _bassFx = tempBassFx;
-        LOGGER.i(
+        logger.i(
             "✓ BASS_FX loaded successfully! Version: ${version.toRadixString(16)}");
         return;
       } catch (e) {
-        LOGGER.w("Method 2 failed: $e");
+        logger.w("Method 2 failed: $e");
       }
 
       // 方法3: 用相对路径加载
       try {
-        LOGGER.d("Method 3: Loading with relative path");
+        logger.d("Method 3: Loading with relative path");
         final bassFxLib = ffi.DynamicLibrary.open("bass_fx.dll");
         final tempBassFx = BassFx(bassFxLib);
         final version = tempBassFx.BASS_FX_GetVersion();
         _bassFx = tempBassFx;
-        LOGGER.i(
+        logger.i(
             "✓ BASS_FX loaded successfully! Version: ${version.toRadixString(16)}");
         return;
       } catch (e) {
-        LOGGER.w("Method 3 failed: $e");
+        logger.w("Method 3 failed: $e");
       }
 
       // 方法4: 尝试只加载dll而不立即验证函数
       try {
-        LOGGER.d("Method 4: Loading without immediate version check");
+        logger.d("Method 4: Loading without immediate version check");
         final bassFxLib = ffi.DynamicLibrary.open(bassFxLibPath);
         _bassFx = BassFx(bassFxLib);
-        LOGGER.i("✓ BASS_FX library loaded (version check deferred)");
+        logger.i("✓ BASS_FX library loaded (version check deferred)");
         return;
       } catch (e) {
-        LOGGER.w("Method 4 failed: $e");
+        logger.w("Method 4 failed: $e");
       }
 
-      LOGGER.e("❌ All methods to load bass_fx.dll have failed");
+      logger.e("❌ All methods to load bass_fx.dll have failed");
     } catch (e) {
-      LOGGER.e("Unexpected error during bass_fx loading: $e");
+      logger.e("Unexpected error during bass_fx loading: $e");
     }
   }
 
@@ -726,7 +726,7 @@ class BassPlayer {
     try {
       _logAudioState("useExclusiveMode(begin,$exclusive)");
       if (exclusive && !_eqBypass && !_isEqFlat) {
-        LOGGER.w("[bass] Cannot enable exclusive mode while EQ is enabled");
+        logger.w("[bass] Cannot enable exclusive mode while EQ is enabled");
         showTextOnSnackBar("独占模式与均衡器冲突，请先关闭均衡器（全部归零）");
         return false;
       }
@@ -760,7 +760,7 @@ class BassPlayer {
     _logAudioState("useExclusiveMode(end,$exclusive)");
     return true;
     } catch (err) {
-      LOGGER.e("[use exclusive mode] $err");
+      logger.e("[use exclusive mode] $err");
       showTextOnSnackBar(err.toString());
     }
     wasapiExclusive = prevState;
@@ -781,14 +781,14 @@ class BassPlayer {
       } else {
         final stopped = _bass.BASS_ChannelStop(oldHandle);
         if (stopped == 0) {
-          LOGGER.w(
+          logger.w(
             "[bass] cleanup stop failed: err=${_bass.BASS_ErrorGetCode()} handle=$oldHandle",
           );
         }
       }
       final freed = _bass.BASS_StreamFree(oldHandle);
       if (freed == 0) {
-        LOGGER.w(
+        logger.w(
           "[bass] cleanup free failed: err=${_bass.BASS_ErrorGetCode()} handle=$oldHandle",
         );
       }
@@ -872,7 +872,7 @@ class BassPlayer {
       try {
         refreshEQ();
       } catch (e) {
-        LOGGER.e("SetSource refreshEQ failed: $e");
+        logger.e("SetSource refreshEQ failed: $e");
       }
 
       if (_rate != 1.0) {
@@ -954,7 +954,7 @@ class BassPlayer {
     if (_fstream == null) return;
 
     if (wasapiExclusive && _rate != 1.0) {
-      LOGGER.w("[bass] rate change in exclusive mode, fallback to shared mode");
+      logger.w("[bass] rate change in exclusive mode, fallback to shared mode");
       useExclusiveMode(false);
       return;
     }
@@ -988,7 +988,7 @@ class BassPlayer {
         // 但由于我们现在主推 bass_fx，这里作为 fallback 可以暂不实现复杂逻辑，
         // 或者仅仅在控制台输出警告。
         malloc.free(freqPtr);
-        LOGGER.w(
+        logger.w(
             "BASS_ATTRIB_TEMPO failed, and fallback implementation is skipped.");
       } else {
         malloc.free(freqPtr);
@@ -1001,7 +1001,7 @@ class BassPlayer {
     if (_fstream == null) return;
 
     if (wasapiExclusive && _pitch != 0.0) {
-      LOGGER
+      logger
           .w("[bass] pitch change in exclusive mode, fallback to shared mode");
       useExclusiveMode(false);
       return;
@@ -1090,11 +1090,11 @@ class BassPlayer {
     }
   }
 
-  void _start_wasapiExclusive() {
+  void _startWasapiExclusive() {
     try {
       _bassWasapiInit();
     } catch (err) {
-      LOGGER.w("[bass] wasapi exclusive init failed, fallback to shared: $err");
+      logger.w("[bass] wasapi exclusive init failed, fallback to shared: $err");
       showTextOnSnackBar("独占模式初始化失败，已切回共享模式");
       useExclusiveMode(false);
       return;
@@ -1104,7 +1104,7 @@ class BassPlayer {
       switch (_bass.BASS_ErrorGetCode()) {
         case bass.BASS_ERROR_INIT:
           _bassWasapiInit();
-          _start_wasapiExclusive();
+          _startWasapiExclusive();
           break;
         case bass.BASS_ERROR_UNKNOWN:
           throw const FormatException("Some other mystery problem!");
@@ -1126,7 +1126,7 @@ class BassPlayer {
 
     if (wasapiExclusive) {
       _logAudioState("start(wasapi)");
-      return _start_wasapiExclusive();
+      return _startWasapiExclusive();
     }
     _logAudioState("start(normal)");
     if (_bass.BASS_ChannelStart(_fstream!) == 0) {
@@ -1153,7 +1153,7 @@ class BassPlayer {
     _logAudioState("start(done)");
   }
 
-  void _pause_wasapiExclusive() {
+  void _pauseWasapiExclusive() {
     if (_bassWasapi.BASS_WASAPI_Stop(bass.TRUE) == bass.TRUE) {
       _playerStateStreamController.add(playerState);
       _positionUpdater?.cancel();
@@ -1170,7 +1170,7 @@ class BassPlayer {
 
     if (wasapiExclusive) {
       _logAudioState("pause(wasapi)");
-      return _pause_wasapiExclusive();
+      return _pauseWasapiExclusive();
     }
     _logAudioState("pause(normal)");
 
@@ -1239,7 +1239,7 @@ class BassPlayer {
     if (_bass.BASS_StreamFree(_fstream!) == 0) {
       switch (_bass.BASS_ErrorGetCode()) {
         case bass.BASS_ERROR_HANDLE:
-          LOGGER.w("StreamFree is called on a invalid handle.");
+          logger.w("StreamFree is called on a invalid handle.");
           break;
         case bass.BASS_ERROR_NOTAVAIL:
           throw const FormatException(
@@ -1266,7 +1266,7 @@ class BassPlayer {
     if (_bass.BASS_Free() == 0) {
       switch (_bass.BASS_ErrorGetCode()) {
         case bass.BASS_ERROR_INIT:
-          LOGGER.w("BASS_Free is called before BASS_Init complete normally.");
+          logger.w("BASS_Free is called before BASS_Init complete normally.");
           break;
         case bass.BASS_ERROR_BUSY:
           throw const FormatException(

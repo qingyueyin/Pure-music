@@ -77,7 +77,7 @@ class _UpdatingStateViewState extends State<UpdatingStateView> {
 
     _subscription = updateIndexStream.listen(
       (action) {
-        LOGGER.i("[update index] ${action.progress}: ${action.message}");
+        logger.i("[update index] ${action.progress}: ${action.message}");
       },
       onDone: whenIndexUpdated,
     );

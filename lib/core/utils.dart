@@ -165,11 +165,12 @@ List<_NaturalToken> _tokenizeForNaturalCompare(String input) {
   return tokens;
 }
 
-final GlobalKey<NavigatorState> ROUTER_KEY = GlobalKey();
+final GlobalKey<NavigatorState> routerKey = GlobalKey();
 
-final SCAFFOLD_MESSAGER = GlobalKey<ScaffoldMessengerState>();
+final scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
 void showTextOnSnackBar(String text) {
-  SCAFFOLD_MESSAGER.currentState?.showSnackBar(SnackBar(content: Text(text)));
+  scaffoldMessengerKey.currentState
+      ?.showSnackBar(SnackBar(content: Text(text)));
 }
 
 OverlayEntry? _hotkeyToastEntry;
@@ -179,7 +180,7 @@ void showHotkeyToast({
   required String text,
   IconData? icon,
 }) {
-  final context = SCAFFOLD_MESSAGER.currentContext ?? ROUTER_KEY.currentContext;
+  final context = scaffoldMessengerKey.currentContext ?? routerKey.currentContext;
   if (context == null) return;
   final overlay = Overlay.of(context, rootOverlay: true);
 
@@ -266,12 +267,12 @@ void showHotkeyToast({
   });
 }
 
-final LOGGER_MEMORY = MemoryOutput(
+final loggerMemoryOutput = MemoryOutput(
   secondOutput: kDebugMode ? ConsoleOutput() : null,
 );
-final LOGGER = Logger(
+final logger = Logger(
   filter: ProductionFilter(),
   printer: SimplePrinter(colors: false),
-  output: LOGGER_MEMORY,
+  output: loggerMemoryOutput,
   level: Level.all,
 );

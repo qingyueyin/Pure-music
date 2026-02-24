@@ -202,7 +202,7 @@ class _EntryState extends State<Entry> with WindowListener, SingleTickerProvider
             );
           },
           child: MaterialApp.router(
-            scaffoldMessengerKey: SCAFFOLD_MESSAGER,
+            scaffoldMessengerKey: scaffoldMessengerKey,
             debugShowCheckedModeBanner: false,
             scrollBehavior: const AppScrollBehavior(),
             theme: fromSchemeAndFontFamily(
@@ -226,7 +226,7 @@ class _EntryState extends State<Entry> with WindowListener, SingleTickerProvider
   }
 
   late final GoRouter config = GoRouter(
-    navigatorKey: ROUTER_KEY,
+    navigatorKey: routerKey,
     initialLocation:
         widget.welcome ? app_paths.WELCOMING_PAGE : app_paths.UPDATING_DIALOG,
     routes: [

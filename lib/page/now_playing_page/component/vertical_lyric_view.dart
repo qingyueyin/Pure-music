@@ -12,7 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
 
-bool ALWAYS_SHOW_LYRIC_VIEW_CONTROLS = false;
+bool alwaysShowLyricViewControls = false;
 
 enum LyricScrollState {
   idle,
@@ -100,7 +100,7 @@ class _VerticalLyricViewState extends State<VerticalLyricView> {
                               ),
                       },
                       if (widget.showControls &&
-                          (isHovering || ALWAYS_SHOW_LYRIC_VIEW_CONTROLS))
+                          (isHovering || alwaysShowLyricViewControls))
                         const Align(
                           alignment: Alignment.bottomRight,
                           child: LyricViewControls(),

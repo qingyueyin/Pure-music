@@ -38,7 +38,7 @@ part 'small_page.dart';
 part 'large_page.dart';
 part 'immersive_page.dart';
 
-final NOW_PLAYING_VIEW_MODE = ValueNotifier(
+final nowPlayingViewMode = ValueNotifier(
   AppPreference.instance.nowPlayingPagePref.nowPlayingViewMode,
 );
 
@@ -433,15 +433,15 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                       child: ChangeNotifierProvider.value(
                         value: PlayService.instance.playbackService,
                         builder: (context, _) => immersive
-                            ? const _NowPlayingPage_Immersive()
+                            ? const _NowPlayingImmersivePage()
                             : ResponsiveBuilder2(
                                 builder: (context, screenType) {
                                   switch (screenType) {
                                     case ScreenType.small:
-                                      return const _NowPlayingPage_Small();
+                                      return const _NowPlayingSmallPage();
                                     case ScreenType.medium:
                                     case ScreenType.large:
-                                      return const _NowPlayingPage_Large();
+                                      return const _NowPlayingLargePage();
                                   }
                                 },
                               ),
@@ -743,7 +743,7 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
     super.initState();
     _hotkeyListener = () {
       if (!mounted) return;
-      final event = HOTKEY_UI_FEEDBACK.lastEvent;
+      final event = hotkeyUiFeedback.lastEvent;
       if (event == null) return;
       if (event.action != HotkeyUiAction.volumeStep) return;
       if (event.serial == _lastVolumeHotkeySerial) return;
@@ -758,7 +758,7 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
       _triggerIndicator();
       _scheduleAutoClose();
     };
-    HOTKEY_UI_FEEDBACK.addListener(_hotkeyListener);
+    hotkeyUiFeedback.addListener(_hotkeyListener);
     _lastVolumeDsp = playbackService.volumeDsp;
     playbackService.addListener(() {
       if (!mounted) return;
@@ -805,7 +805,7 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
     _systemIndicatorTimer?.cancel();
     _autoCloseTimer?.cancel();
     systemVolumeService.volume.removeListener(_systemVolValueListener);
-    HOTKEY_UI_FEEDBACK.removeListener(_hotkeyListener);
+    hotkeyUiFeedback.removeListener(_hotkeyListener);
     super.dispose();
   }
 
@@ -1474,20 +1474,20 @@ class _HotkeyPulseIconButtonState extends State<_HotkeyPulseIconButton> {
   void initState() {
     super.initState();
     _listener = () {
-      final event = HOTKEY_UI_FEEDBACK.lastEvent;
+      final event = hotkeyUiFeedback.lastEvent;
       if (event == null) return;
       if (event.action != widget.hotkeyAction) return;
       if (event.serial == _lastSerial) return;
       _lastSerial = event.serial;
       _pulse();
     };
-    HOTKEY_UI_FEEDBACK.addListener(_listener);
+    hotkeyUiFeedback.addListener(_listener);
   }
 
   @override
   void dispose() {
     _timer?.cancel();
-    HOTKEY_UI_FEEDBACK.removeListener(_listener);
+    hotkeyUiFeedback.removeListener(_listener);
     super.dispose();
   }
 

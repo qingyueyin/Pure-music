@@ -42,7 +42,7 @@ Future<void> migrateAppData() async {
     }
     await migrateAppDataLayout();
   } catch (err, trace) {
-    LOGGER.e(err, stackTrace: trace);
+    logger.e(err, stackTrace: trace);
   }
 }
 
@@ -117,7 +117,7 @@ Future<void> migrateAppDataLayout() async {
       }
     }
   } catch (err, trace) {
-    LOGGER.e(err, stackTrace: trace);
+    logger.e(err, stackTrace: trace);
   }
 }
 
@@ -189,7 +189,7 @@ class AppSettings {
 
   AppSettings._();
 
-  static Future<void> _readFromJson_old(Map settingsMap) async {
+  static Future<void> _readFromJsonOld(Map settingsMap) async {
     final ust = settingsMap["UseSystemTheme"];
     if (ust != null) {
       _instance.useSystemTheme = ust == 1 ? true : false;
@@ -239,7 +239,7 @@ class AppSettings {
       Map settingsMap = json.decode(settingsStr);
 
       if (settingsMap["Version"] == null) {
-        return _readFromJson_old(settingsMap);
+        return _readFromJsonOld(settingsMap);
       }
 
       final ust = settingsMap["UseSystemTheme"];
@@ -296,7 +296,7 @@ class AppSettings {
         _instance.fontPath = fp;
       }
     } catch (err, trace) {
-      LOGGER.e(err, stackTrace: trace);
+      logger.e(err, stackTrace: trace);
     }
   }
 
@@ -330,7 +330,7 @@ class AppSettings {
       final output = await File(settingsPath).create(recursive: true);
       output.writeAsStringSync(settingsStr);
     } catch (err, trace) {
-      LOGGER.e(err, stackTrace: trace);
+      logger.e(err, stackTrace: trace);
     }
   }
 }

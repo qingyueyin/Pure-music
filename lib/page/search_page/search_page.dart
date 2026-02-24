@@ -2,7 +2,7 @@ import 'package:pure_music/component/search_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
-final SEARCH_BAR_KEY = GlobalKey();
+final searchBarKey = GlobalKey();
 
 class SearchPage extends StatelessWidget {
   const SearchPage({super.key});

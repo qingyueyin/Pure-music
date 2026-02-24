@@ -24,5 +24,5 @@ class HotkeyUiFeedback extends ChangeNotifier {
   }
 }
 
-final HOTKEY_UI_FEEDBACK = HotkeyUiFeedback();
+final hotkeyUiFeedback = HotkeyUiFeedback();
 

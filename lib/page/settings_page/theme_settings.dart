@@ -281,7 +281,7 @@ class SelectFontCombobox extends StatelessWidget {
               await settings.saveSettings();
             } catch (err) {
               ThemeProvider.instance.changeFontFamily(null);
-              LOGGER.e("[select font] $err");
+              logger.e("[select font] $err");
               if (context.mounted) {
                 showTextOnSnackBar(err.toString());
               }

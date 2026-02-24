@@ -172,7 +172,7 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
 
   String _buildLogSnapshot() {
     final logStrBuf = StringBuffer();
-    for (final event in LOGGER_MEMORY.buffer) {
+    for (final event in loggerMemoryOutput.buffer) {
       for (var line in event.lines) {
         logStrBuf.writeln(line);
       }

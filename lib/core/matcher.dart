@@ -162,8 +162,8 @@ Future<List<SongSearchResult>> uniSearch(Audio audio) async {
     result.sort((a, b) => b.score.compareTo(a.score));
     return result;
   } catch (err, trace) {
-    LOGGER.e("query: $query");
-    LOGGER.e(err, stackTrace: trace);
+    logger.e("query: $query");
+    logger.e(err, stackTrace: trace);
   }
   return Future.value([]);
 }
@@ -181,7 +181,7 @@ Future<Lyric?> _getNeteaseUnsyncLyric(String neteaseSongId) async {
       );
     }
   } catch (err, trace) {
-    LOGGER.e(err, stackTrace: trace);
+    logger.e(err, stackTrace: trace);
   }
 
   return null;
@@ -199,7 +199,7 @@ Future<Qrc?> _getQQSyncLyric(int qqSongId) async {
       return Qrc.fromQrcText(qrcText);
     }
   } catch (err, trace) {
-    LOGGER.e(err, stackTrace: trace);
+    logger.e(err, stackTrace: trace);
   }
 
   return null;
@@ -213,7 +213,7 @@ Future<Krc?> _getKugouSyncLyric(String kugouSongHash) async {
       return Krc.fromKrcText(krcText);
     }
   } catch (err, trace) {
-    LOGGER.e(err, stackTrace: trace);
+    logger.e(err, stackTrace: trace);
   }
 
   return null;

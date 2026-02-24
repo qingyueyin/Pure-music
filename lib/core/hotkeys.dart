@@ -28,7 +28,7 @@ class HotkeysHelper {
     },
     HotKey(key: PhysicalKeyboardKey.escape, scope: HotKeyScope.inapp):
         (_) async {
-      final routerContext = ROUTER_KEY.currentContext;
+      final routerContext = routerKey.currentContext;
       if (routerContext == null) return;
 
       final router = GoRouter.of(routerContext);
@@ -44,8 +44,8 @@ class HotkeysHelper {
       final navigator = Navigator.maybeOf(routerContext);
       if (navigator?.canPop() == true) {
         navigator?.pop();
-      } else if (ROUTER_KEY.currentContext?.canPop() == true) {
-        ROUTER_KEY.currentContext?.pop();
+      } else if (routerKey.currentContext?.canPop() == true) {
+        routerKey.currentContext?.pop();
       }
     },
     HotKey(
@@ -54,7 +54,7 @@ class HotkeysHelper {
       scope: HotKeyScope.inapp,
     ): (_) {
       PlayService.instance.playbackService.lastAudio();
-      HOTKEY_UI_FEEDBACK.emit(HotkeyUiAction.prev);
+      hotkeyUiFeedback.emit(HotkeyUiAction.prev);
       showHotkeyToast(text: "上一曲", icon: Icons.skip_previous);
     },
     HotKey(
@@ -63,7 +63,7 @@ class HotkeysHelper {
       scope: HotKeyScope.inapp,
     ): (_) {
       PlayService.instance.playbackService.nextAudio();
-      HOTKEY_UI_FEEDBACK.emit(HotkeyUiAction.next);
+      hotkeyUiFeedback.emit(HotkeyUiAction.next);
       showHotkeyToast(text: "下一曲", icon: Icons.skip_next);
     },
     HotKey(
@@ -74,7 +74,7 @@ class HotkeysHelper {
       final playbackService = PlayService.instance.playbackService;
       final next = (playbackService.volumeDsp + 0.05).clamp(0.0, 1.0);
       playbackService.setVolumeDsp(next);
-      HOTKEY_UI_FEEDBACK.emit(HotkeyUiAction.volumeStep);
+      hotkeyUiFeedback.emit(HotkeyUiAction.volumeStep);
       showHotkeyToast(
         text: "应用音量：${(next * 100).round()}%",
         icon: Icons.volume_up,
@@ -88,7 +88,7 @@ class HotkeysHelper {
       final playbackService = PlayService.instance.playbackService;
       final next = (playbackService.volumeDsp - 0.05).clamp(0.0, 1.0);
       playbackService.setVolumeDsp(next);
-      HOTKEY_UI_FEEDBACK.emit(HotkeyUiAction.volumeStep);
+      hotkeyUiFeedback.emit(HotkeyUiAction.volumeStep);
       showHotkeyToast(
         text: "应用音量：${(next * 100).round()}%",
         icon: Icons.volume_down,
