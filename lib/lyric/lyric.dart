@@ -36,6 +36,10 @@ class SyncLyricWord {
 class UnsyncLyricLine extends LyricLine {
   final String content;
 
-  UnsyncLyricLine(Duration start, this.content, [String? translation])
-      : super(start, Duration.zero, translation);
+  UnsyncLyricLine(
+    Duration start,
+    this.content, {
+    Duration length = Duration.zero,
+    String? translation,
+  }) : super(start, length, translation);
 }
