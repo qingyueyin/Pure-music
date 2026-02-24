@@ -1,13 +1,13 @@
 part of 'page.dart';
 
-class _NowPlayingPage_Small extends StatefulWidget {
-  const _NowPlayingPage_Small();
+class _NowPlayingSmallPage extends StatefulWidget {
+  const _NowPlayingSmallPage();
 
   @override
-  State<_NowPlayingPage_Small> createState() => _NowPlayingPage_SmallState();
+  State<_NowPlayingSmallPage> createState() => _NowPlayingSmallPageState();
 }
 
-class _NowPlayingPage_SmallState extends State<_NowPlayingPage_Small> {
+class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
   static const viewOnlyMain = [
     NowPlayingViewMode.withPlaylist,
     NowPlayingViewMode.onlyMain,
@@ -57,7 +57,7 @@ class _NowPlayingPage_SmallState extends State<_NowPlayingPage_Small> {
         _hideBottomPanel = false;
       }
     });
-    NOW_PLAYING_VIEW_MODE.value = viewMode;
+    nowPlayingViewMode.value = viewMode;
     AppPreference.instance.nowPlayingPagePref.nowPlayingViewMode = viewMode;
   }
 

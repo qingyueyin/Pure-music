@@ -49,7 +49,7 @@ Future<void> readPlaylists() async {
     }
     PLAYLISTS = playlists;
   } catch (err, trace) {
-    LOGGER.e(err, stackTrace: trace);
+    logger.e(err, stackTrace: trace);
   }
 }
 
@@ -58,7 +58,7 @@ Future<void> savePlaylists() async {
     final db = await AppDb.instance.db();
     _writePlaylistsToDb(db, PLAYLISTS);
   } catch (err, trace) {
-    LOGGER.e(err, stackTrace: trace);
+    logger.e(err, stackTrace: trace);
   }
 }
 

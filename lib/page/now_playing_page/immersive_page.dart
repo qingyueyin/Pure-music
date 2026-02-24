@@ -1,7 +1,7 @@
 part of 'page.dart';
 
-class _NowPlayingPage_Immersive extends StatelessWidget {
-  const _NowPlayingPage_Immersive();
+class _NowPlayingImmersivePage extends StatelessWidget {
+  const _NowPlayingImmersivePage();
 
   @override
   Widget build(BuildContext context) {

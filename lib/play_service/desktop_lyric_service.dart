@@ -34,7 +34,7 @@ class DesktopLyricService extends ChangeNotifier {
       'desktop_lyric.exe',
     );
     if (!File(desktopLyricPath).existsSync()) {
-      LOGGER
+      logger
           .e("[desktop lyric] desktop_lyric.exe not found: $desktopLyricPath");
       return;
     }
@@ -59,7 +59,7 @@ class DesktopLyricService extends ChangeNotifier {
     _sendQueue = Future.value();
 
     process?.stderr.transform(utf8.decoder).listen((event) {
-      LOGGER.e("[desktop lyric] $event");
+      logger.e("[desktop lyric] $event");
     });
 
     _desktopLyricSubscription = process?.stdout.transform(utf8.decoder).listen(
@@ -104,7 +104,7 @@ class DesktopLyricService extends ChangeNotifier {
         await value.stdin.flush();
         await Future.delayed(const Duration(milliseconds: 10));
       } catch (err, trace) {
-        LOGGER.e(err, stackTrace: trace);
+        logger.e(err, stackTrace: trace);
       }
     });
   }
@@ -121,7 +121,7 @@ class DesktopLyricService extends ChangeNotifier {
 
       notifyListeners();
     }).catchError((err, trace) {
-      LOGGER.e(err, stackTrace: trace);
+      logger.e(err, stackTrace: trace);
     });
   }
 
@@ -216,7 +216,7 @@ class DesktopLyricService extends ChangeNotifier {
         }
       }
     } catch (err) {
-      LOGGER.e("[desktop lyric] $err");
+      logger.e("[desktop lyric] $err");
     }
   }
 

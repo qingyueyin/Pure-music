@@ -152,7 +152,7 @@ class AudioEchoLogRecorder {
   void _flushLoggerMemoryDelta() {
     if (_sink == null) return;
 
-    final buffer = LOGGER_MEMORY.buffer.toList(growable: false);
+    final buffer = loggerMemoryOutput.buffer.toList(growable: false);
     if (buffer.isEmpty) return;
 
     if (_lastEventIndex > buffer.length) {

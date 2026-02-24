@@ -55,7 +55,7 @@ class AudioLibrary {
         try {
           await library_db.migrateIndexJsonToSqlite(indexPath: supportPath);
         } catch (err, trace) {
-          LOGGER.e(err, stackTrace: trace);
+          logger.e(err, stackTrace: trace);
         }
       }
 
@@ -96,7 +96,7 @@ class AudioLibrary {
         instance.albumCollection.clear();
         instance._buildCollections();
 
-        LOGGER.i(
+        logger.i(
           "AudioLibrary init from sqlite: ${stopwatch.elapsedMilliseconds}ms, audios=${instance.audioCollection.length}",
         );
         return;
@@ -121,11 +121,11 @@ class AudioLibrary {
       instance.artistCollection.clear();
       instance.albumCollection.clear();
       instance._buildCollections();
-      LOGGER.i(
+      logger.i(
         "AudioLibrary init from json: ${stopwatch.elapsedMilliseconds}ms, audios=${instance.audioCollection.length}",
       );
     } catch (err, trace) {
-      LOGGER.e(err, stackTrace: trace);
+      logger.e(err, stackTrace: trace);
     }
   }
 

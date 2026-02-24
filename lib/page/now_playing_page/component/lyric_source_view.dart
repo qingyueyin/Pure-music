@@ -55,10 +55,10 @@ class _SetLyricSourceBtn extends StatelessWidget {
     final lyricService = PlayService.instance.lyricService;
     return MenuAnchor(
       onOpen: () {
-        ALWAYS_SHOW_LYRIC_VIEW_CONTROLS = true;
+        alwaysShowLyricViewControls = true;
       },
       onClose: () {
-        ALWAYS_SHOW_LYRIC_VIEW_CONTROLS = false;
+        alwaysShowLyricViewControls = false;
       },
       menuChildren: [
         MenuItemButton(
@@ -134,7 +134,7 @@ class SetLyricSourceDialog extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8.0),
                 ),
                 onTap: () {
-                  LYRIC_SOURCES[audio.path] =
+                  lyricSources[audio.path] =
                       LyricSource(LyricSourceType.local);
                   PlayService.instance.lyricService.useLocalLyric();
                   Navigator.pop(context);
@@ -258,7 +258,7 @@ class _LyricSourceTileState extends State<_LyricSourceTile> {
           ResultSource.kugou => LyricSourceType.kugou,
           ResultSource.netease => LyricSourceType.netease,
         };
-        LYRIC_SOURCES[audio.path] = LyricSource(
+        lyricSources[audio.path] = LyricSource(
           source,
           qqSongId: searchResult.qqSongId,
           kugouSongHash: searchResult.kugouSongHash,

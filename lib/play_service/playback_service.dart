@@ -119,7 +119,7 @@ class PlaybackService extends ChangeNotifier {
   }
 
   void setEQ(int band, double gain) {
-    LOGGER.i("[action] setEQ band=$band gain=$gain");
+    logger.i("[action] setEQ band=$band gain=$gain");
     AudioEchoLogRecorder.instance
         .mark('setEQ', extra: {'band': band, 'gain': gain});
     _player.setEQ(band, gain);
@@ -176,7 +176,7 @@ class PlaybackService extends ChangeNotifier {
 
   /// 独占模式
   void useExclusiveMode(bool exclusive) {
-    LOGGER.i("[action] useExclusiveMode=$exclusive");
+    logger.i("[action] useExclusiveMode=$exclusive");
     AudioEchoLogRecorder.instance
         .mark('useExclusiveMode', extra: {'exclusive': exclusive});
     if (_player.useExclusiveMode(exclusive)) {
@@ -204,7 +204,7 @@ class PlaybackService extends ChangeNotifier {
   ValueNotifier<double> get pitch => _pitch;
 
   void setPitch(double value) {
-    LOGGER.i("[action] setPitch=$value");
+    logger.i("[action] setPitch=$value");
     AudioEchoLogRecorder.instance.mark('setPitch', extra: {'value': value});
     _pitch.value = value;
     _player.setPitch(value);
@@ -214,7 +214,7 @@ class PlaybackService extends ChangeNotifier {
   ValueNotifier<double> get rate => _rate;
 
   void setRate(double value) {
-    LOGGER.i("[action] setRate=$value");
+    logger.i("[action] setRate=$value");
     AudioEchoLogRecorder.instance.mark('setRate', extra: {'value': value});
     _rate.value = value;
     _player.setRate(value);
@@ -233,7 +233,7 @@ class PlaybackService extends ChangeNotifier {
 
   /// 修改解码时的音量（不影响 Windows 系统音量）
   void setVolumeDsp(double volume) {
-    LOGGER.i("[action] setVolumeDsp=$volume");
+    logger.i("[action] setVolumeDsp=$volume");
     AudioEchoLogRecorder.instance
         .mark('setVolumeDsp', extra: {'value': volume});
     _pref.volumeDsp = volume;
@@ -308,14 +308,14 @@ class PlaybackService extends ChangeNotifier {
         playService.desktopLyricService.sendNowPlayingMessage(nowPlaying!);
       });
     } catch (err) {
-      LOGGER.e("[load and play] $err");
+      logger.e("[load and play] $err");
       showTextOnSnackBar(err.toString());
     }
   }
 
   /// 播放当前播放列表的第几项，只能用在播放列表界面
   void playIndexOfPlaylist(int audioIndex) {
-    LOGGER.i("[action] playIndexOfPlaylist=$audioIndex");
+    logger.i("[action] playIndexOfPlaylist=$audioIndex");
     AudioEchoLogRecorder.instance
         .mark('playIndexOfPlaylist', extra: {'index': audioIndex});
     _loadAndPlay(audioIndex, playlist.value);
@@ -323,7 +323,7 @@ class PlaybackService extends ChangeNotifier {
 
   /// 播放playlist[audioIndex]并设置播放列表为playlist
   void play(int audioIndex, List<Audio> playlist) {
-    LOGGER.i("[action] play index=$audioIndex playlistLen=${playlist.length}");
+    logger.i("[action] play index=$audioIndex playlistLen=${playlist.length}");
     AudioEchoLogRecorder.instance.mark('play',
         extra: {'index': audioIndex, 'playlistLen': playlist.length});
     if (shuffle.value) {
@@ -341,7 +341,7 @@ class PlaybackService extends ChangeNotifier {
   }
 
   void shuffleAndPlay(List<Audio> audios) {
-    LOGGER.i("[action] shuffleAndPlay len=${audios.length}");
+    logger.i("[action] shuffleAndPlay len=${audios.length}");
     AudioEchoLogRecorder.instance
         .mark('shuffleAndPlay', extra: {'len': audios.length});
     playlist.value = List.from(audios);
@@ -355,7 +355,7 @@ class PlaybackService extends ChangeNotifier {
 
   /// 下一首播放
   void addToNext(Audio audio) {
-    LOGGER.i("[action] addToNext path=${audio.path}");
+    logger.i("[action] addToNext path=${audio.path}");
     AudioEchoLogRecorder.instance
         .mark('addToNext', extra: {'path': audio.path});
     if (_playlistIndex != null) {
@@ -374,7 +374,7 @@ class PlaybackService extends ChangeNotifier {
   void useShuffle(bool flag) {
     if (nowPlaying == null) return;
     if (flag == shuffle.value) return;
-    LOGGER.i("[action] useShuffle=$flag");
+    logger.i("[action] useShuffle=$flag");
     AudioEchoLogRecorder.instance.mark('useShuffle', extra: {'flag': flag});
 
     if (flag) {
@@ -467,11 +467,11 @@ class PlaybackService extends ChangeNotifier {
       );
       notifyListeners();
     } catch (err) {
-      LOGGER.e("[restore last session] $err");
+      logger.e("[restore last session] $err");
     }
   }
 
-  void _nextAudio_forward() {
+  void _nextAudioForward() {
     if (_playlistIndex == null) return;
 
     if (_playlistIndex! < playlist.value.length - 1) {
@@ -479,7 +479,7 @@ class PlaybackService extends ChangeNotifier {
     }
   }
 
-  void _nextAudio_loop() {
+  void _nextAudioLoop() {
     if (_playlistIndex == null) return;
 
     int newIndex = _playlistIndex! + 1;
@@ -490,7 +490,7 @@ class PlaybackService extends ChangeNotifier {
     _loadAndPlay(newIndex, playlist.value);
   }
 
-  void _nextAudio_singleLoop() {
+  void _nextAudioSingleLoop() {
     if (_playlistIndex == null) return;
 
     _loadAndPlay(_playlistIndex!, playlist.value);
@@ -499,27 +499,27 @@ class PlaybackService extends ChangeNotifier {
   void _autoNextAudio() {
     switch (playMode.value) {
       case PlayMode.forward:
-        _nextAudio_forward();
+        _nextAudioForward();
         break;
       case PlayMode.loop:
-        _nextAudio_loop();
+        _nextAudioLoop();
         break;
       case PlayMode.singleLoop:
-        _nextAudio_singleLoop();
+        _nextAudioSingleLoop();
         break;
     }
   }
 
   /// 手动下一曲时默认循环播放列表
   void nextAudio() {
-    LOGGER.i("[action] nextAudio");
+    logger.i("[action] nextAudio");
     AudioEchoLogRecorder.instance.mark('nextAudio');
-    _nextAudio_loop();
+    _nextAudioLoop();
   }
 
   /// 手动上一曲时默认循环播放列表
   void lastAudio() {
-    LOGGER.i("[action] lastAudio");
+    logger.i("[action] lastAudio");
     AudioEchoLogRecorder.instance.mark('lastAudio');
     if (_playlistIndex == null) return;
 
@@ -534,7 +534,7 @@ class PlaybackService extends ChangeNotifier {
   /// 暂停
   void pause() {
     try {
-      LOGGER.i("[action] pause");
+      logger.i("[action] pause");
       AudioEchoLogRecorder.instance.mark('pause');
       _player.pause();
       _smtc.updateState(state: SMTCState.paused);
@@ -544,7 +544,7 @@ class PlaybackService extends ChangeNotifier {
         playService.desktopLyricService.sendPlayerStateMessage(false);
       });
     } catch (err) {
-      LOGGER.e("[pause] $err");
+      logger.e("[pause] $err");
       showTextOnSnackBar(err.toString());
     }
   }
@@ -552,7 +552,7 @@ class PlaybackService extends ChangeNotifier {
   /// 恢复播放
   void start() {
     try {
-      LOGGER.i("[action] start");
+      logger.i("[action] start");
       AudioEchoLogRecorder.instance.mark('start');
       _player.start();
       _smtc.updateState(state: SMTCState.playing);
@@ -562,17 +562,17 @@ class PlaybackService extends ChangeNotifier {
         playService.desktopLyricService.sendPlayerStateMessage(true);
       });
     } catch (err) {
-      LOGGER.e("[start]: $err");
+      logger.e("[start]: $err");
       showTextOnSnackBar(err.toString());
     }
   }
 
   /// 再次播放。在顺序播放完最后一曲时再次按播放时使用。
   /// 与 [start] 的差别在于它会通知重绘组件
-  void playAgain() => _nextAudio_singleLoop();
+  void playAgain() => _nextAudioSingleLoop();
 
   void seek(double position) {
-    LOGGER.i("[action] seek=$position");
+    logger.i("[action] seek=$position");
     AudioEchoLogRecorder.instance.mark('seek', extra: {'pos': position});
     _player.seek(position);
     playService.lyricService.findCurrLyricLineAt(position);

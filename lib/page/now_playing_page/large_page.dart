@@ -1,7 +1,7 @@
 part of 'page.dart';
 
-class _NowPlayingPage_Large extends StatelessWidget {
-  const _NowPlayingPage_Large();
+class _NowPlayingLargePage extends StatelessWidget {
+  const _NowPlayingLargePage();
 
   @override
   Widget build(BuildContext context) {
@@ -17,7 +17,7 @@ class _NowPlayingPage_Large extends StatelessWidget {
                   const Expanded(child: Center(child: _NowPlayingInfo())),
                   Expanded(
                     child: ValueListenableBuilder(
-                      valueListenable: NOW_PLAYING_VIEW_MODE,
+                      valueListenable: nowPlayingViewMode,
                       builder: (context, value, _) => AnimatedSwitcher(
                         duration: MotionDuration.base,
                         switchInCurve: MotionCurve.standard,
@@ -209,7 +209,7 @@ class _NowPlayingLargeViewSwitch extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
 
     return ValueListenableBuilder(
-      valueListenable: NOW_PLAYING_VIEW_MODE,
+      valueListenable: nowPlayingViewMode,
       builder: (context, value, _) => IconButton(
         tooltip: switch (value) {
           NowPlayingViewMode.withPlaylist => "歌词",
@@ -218,11 +218,11 @@ class _NowPlayingLargeViewSwitch extends StatelessWidget {
         onPressed: () {
           if (value == NowPlayingViewMode.onlyMain ||
               value == NowPlayingViewMode.withLyric) {
-            NOW_PLAYING_VIEW_MODE.value = NowPlayingViewMode.withPlaylist;
+            nowPlayingViewMode.value = NowPlayingViewMode.withPlaylist;
             AppPreference.instance.nowPlayingPagePref.nowPlayingViewMode =
                 NowPlayingViewMode.withPlaylist;
           } else {
-            NOW_PLAYING_VIEW_MODE.value = NowPlayingViewMode.withLyric;
+            nowPlayingViewMode.value = NowPlayingViewMode.withLyric;
             AppPreference.instance.nowPlayingPagePref.nowPlayingViewMode =
                 NowPlayingViewMode.withLyric;
           }

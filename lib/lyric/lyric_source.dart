@@ -52,10 +52,10 @@ class LyricSource {
   }
 }
 
-Map<String, LyricSource> LYRIC_SOURCES = {};
+Map<String, LyricSource> lyricSources = {};
 
 Future<void> readLyricSources() async {
-  LYRIC_SOURCES = {};
+  lyricSources = {};
   try {
     final dir = await getAppDataDir();
     final jsonFile = File("${dir.path}\\lyric_source.json");
@@ -65,7 +65,7 @@ Future<void> readLyricSources() async {
     if (count == 0 && jsonFile.existsSync()) {
       final fromJson = _readLyricSourcesFromJson(jsonFile);
       _writeLyricSourcesToDb(db, fromJson);
-      LYRIC_SOURCES = fromJson;
+      lyricSources = fromJson;
       return;
     }
 
@@ -81,18 +81,18 @@ Future<void> readLyricSources() async {
         result[p] = ls;
       }
     }
-    LYRIC_SOURCES = result;
+    lyricSources = result;
   } catch (err, trace) {
-    LOGGER.e(err, stackTrace: trace);
+    logger.e(err, stackTrace: trace);
   }
 }
 
 Future<void> saveLyricSources() async {
   try {
     final db = await AppDb.instance.db();
-    _writeLyricSourcesToDb(db, LYRIC_SOURCES);
+    _writeLyricSourcesToDb(db, lyricSources);
   } catch (err, trace) {
-    LOGGER.e(err, stackTrace: trace);
+    logger.e(err, stackTrace: trace);
   }
 }
 

@@ -234,7 +234,7 @@ class AppPreference {
       final output = await File(appPreferencePath).create(recursive: true);
       await output.writeAsString(prefJson);
     } catch (err, trace) {
-      LOGGER.e(err, stackTrace: trace);
+      logger.e(err, stackTrace: trace);
     }
   }
 
@@ -279,7 +279,7 @@ class AppPreference {
       instance.updateRepoSlug =
           prefMap["updateRepoSlug"] ?? "qingyueyin/Pure-music";
     } catch (err, trace) {
-      LOGGER.e(err, stackTrace: trace);
+      logger.e(err, stackTrace: trace);
     }
   }
 

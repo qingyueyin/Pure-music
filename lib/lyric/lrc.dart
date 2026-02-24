@@ -51,17 +51,12 @@ class LrcLine extends UnsyncLyricLine {
   bool isBlank;
 
   LrcLine(
-    Duration start,
-    String content, {
+    super.start,
+    super.content, {
     required this.isBlank,
-    Duration length = Duration.zero,
-    String? translation,
-  }) : super(
-          start,
-          content,
-          length: length,
-          translation: translation,
-        );
+    super.length,
+    super.translation,
+  });
 
   static LrcLine defaultLine = LrcLine(
     Duration.zero,

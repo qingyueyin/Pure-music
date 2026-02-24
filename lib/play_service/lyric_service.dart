@@ -327,7 +327,7 @@ class LyricService extends ChangeNotifier {
     _lastDesktopLyricLineIndex = -1;
     _lyricCache.remove(audioPath);
 
-    final lyricSource = LYRIC_SOURCES[audioPath];
+    final lyricSource = lyricSources[audioPath];
     if (lyricSource == null) {
       currLyricFuture = _getLyricDefault(AppSettings.instance.localLyricFirst);
     } else {

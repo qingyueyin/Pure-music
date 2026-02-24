@@ -47,7 +47,7 @@ class _SearchResultPageState extends State<SearchResultPage> {
               Focus(
                 onFocusChange: HotkeysHelper.onFocusChanges,
                 child: Hero(
-                  tag: SEARCH_BAR_KEY,
+                  tag: searchBarKey,
                   child: TextField(
                     controller: searchBarController,
                     decoration: const InputDecoration(
