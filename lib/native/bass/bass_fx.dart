@@ -13,29 +13,7 @@ const int BASS_ATTRIB_TEMPO_FREQ = 0x10002;
 
 class BassFx {
   final ffi.DynamicLibrary _lib;
-  bool _initialized = false;
-  late final int _BASS_FX_GetVersionHandle;
-  late final int _BASS_FX_TempoCreateHandle;
-
-  BassFx(ffi.DynamicLibrary dynamicLibrary) : _lib = dynamicLibrary {
-    // Try to initialize function pointers, but don't fail if we can't
-    try {
-      _BASS_FX_GetVersionHandle = _lib
-          .lookup<ffi.NativeFunction<ffi.Uint32 Function()>>(
-            'BASS_FX_GetVersion',
-          )
-          .address;
-      _BASS_FX_TempoCreateHandle = _lib
-          .lookup<ffi.NativeFunction<HSTREAM Function(DWORD, DWORD)>>(
-            'BASS_FX_TempoCreate',
-          )
-          .address;
-      _initialized = true;
-    } catch (e) {
-      // Functions will be looked up lazily when accessed
-      _initialized = false;
-    }
-  }
+  BassFx(ffi.DynamicLibrary dynamicLibrary) : _lib = dynamicLibrary;
 
   /// HSTREAM BASS_FX_TempoCreate(DWORD chan, DWORD flags);
   late final _BASS_FX_TempoCreatePtr = () {

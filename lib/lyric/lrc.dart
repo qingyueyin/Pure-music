@@ -269,7 +269,6 @@ class Lrc extends Lyric {
 
     final timeTagRe = RegExp(r'\[(\d{1,2}):(\d{2}(?:\.\d{1,3})?)\]');
     final wordTagRe = RegExp(r'<(\d+:\d+\.\d+|\d+)>([^<]*)');
-    final timeOnlyTagRe = RegExp(r'<(\d+:\d+\.\d+|\d+)>');
 
     int? parseTimeTagToMs(String timeStr) {
       if (timeStr.contains(':')) {
@@ -329,7 +328,7 @@ class Lrc extends Lyric {
       final translations = <String>[];
 
       int extractTagCount(String raw) {
-        final part = separator == null ? raw : raw.split(separator!).first;
+        final part = separator == null ? raw : raw.split(separator).first;
         return wordTagRe.allMatches(part).length;
       }
 
@@ -345,7 +344,7 @@ class Lrc extends Lyric {
 
       final primaryParts = separator == null
           ? <String>[contents[primaryIndex]]
-          : contents[primaryIndex].split(separator!);
+          : contents[primaryIndex].split(separator);
       primaryText = primaryParts.first;
       if (primaryParts.length > 1) {
         translations.add(
@@ -357,7 +356,7 @@ class Lrc extends Lyric {
         if (i == primaryIndex) continue;
         final parts = separator == null
             ? <String>[contents[i]]
-            : contents[i].split(separator!);
+            : contents[i].split(separator);
         final inlinePrimary = parts.first;
         final inlineTrans =
             parts.length > 1 ? parts.sublist(1).join(separator ?? '┃') : null;
@@ -519,7 +518,7 @@ class Lrc extends Lyric {
       final contents = entry.value;
 
       int extractTagCount(String raw) {
-        final part = separator == null ? raw : raw.split(separator!).first;
+        final part = separator == null ? raw : raw.split(separator).first;
         return wordTagRe.allMatches(part).length;
       }
 
@@ -536,7 +535,7 @@ class Lrc extends Lyric {
       final translations = <String>[];
       final primaryParts = separator == null
           ? <String>[contents[primaryIndex]]
-          : contents[primaryIndex].split(separator!);
+          : contents[primaryIndex].split(separator);
       final primaryText = primaryParts.first;
       if (primaryParts.length > 1) {
         translations.add(
@@ -548,7 +547,7 @@ class Lrc extends Lyric {
         if (i == primaryIndex) continue;
         final parts = separator == null
             ? <String>[contents[i]]
-            : contents[i].split(separator!);
+            : contents[i].split(separator);
         final inlinePrimary = parts.first;
         final inlineTrans =
             parts.length > 1 ? parts.sublist(1).join(separator ?? '┃') : null;

@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math';
-import 'dart:ui' show FontVariation;
 
 import 'package:pure_music/core/interlude_detector.dart';
 import 'package:pure_music/lyric/lrc.dart';
@@ -145,7 +144,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   Timer? _userScrollHoldTimer;
   Timer? _afterScrollRetryTimer;
   Timer? _sizeChangeTimer;
-  double _lastHeight = 0.0;
   LyricScrollState _scrollState = LyricScrollState.idle;
   static const double _fadeExtent = 0.12;
   int _mainLine = 0;

@@ -200,7 +200,7 @@ class _TitleBar_Large extends StatelessWidget {
 }
 
 class _OpenDrawerBtn extends StatelessWidget {
-  const _OpenDrawerBtn({super.key});
+  const _OpenDrawerBtn();
 
   @override
   Widget build(BuildContext context) {

@@ -138,7 +138,7 @@ class Ttml extends Lyric {
     if (!hasSpans) {
       final text = p.innerText;
       if (text.isNotEmpty) {
-        final parts = separator != null ? text.split(separator!) : [text];
+        final parts = separator != null ? text.split(separator) : [text];
         if (parts.isNotEmpty) {
           words.add(TtmlWord(begin, length, parts.first.trim()));
           if (parts.length > 1) {
