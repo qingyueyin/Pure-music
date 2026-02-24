@@ -176,7 +176,7 @@ class _EntryState extends State<Entry> with WindowListener, SingleTickerProvider
       canvasColor: colorScheme.surfaceContainer,
       scaffoldBackgroundColor: colorScheme.surfaceContainer,
       cardColor: colorScheme.surface,
-      dividerColor: colorScheme.onSurface.withOpacity(0.12),
+      dividerColor: colorScheme.onSurface.withAlpha(31),
       applyElevationOverlayColor: isDark,
       useMaterial3: true,
       dialogTheme: DialogThemeData(backgroundColor: colorScheme.surface),

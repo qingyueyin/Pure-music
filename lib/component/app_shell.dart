@@ -37,7 +37,7 @@ class AppShell extends StatelessWidget {
             final dynamicColor = snapshot.data?.primary;
             final backgroundColor = dynamicColor != null
                 ? Color.alphaBlend(
-                    dynamicColor.withOpacity(0.08), scheme.surfaceContainer)
+                    dynamicColor.withAlpha(20), scheme.surfaceContainer)
                 : scheme.surfaceContainer;
 
             return ResponsiveBuilder(

@@ -47,7 +47,7 @@ class _TitleBar_Small extends StatelessWidget {
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
         child: Container(
-          color: scheme.surface.withOpacity(0.12),
+          color: scheme.surface.withAlpha(31),
           height: 56.0,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8.0),
@@ -93,7 +93,7 @@ class _TitleBar_Medium extends StatelessWidget {
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
         child: Container(
-          color: scheme.surface.withOpacity(0.12),
+          color: scheme.surface.withAlpha(31),
           child: Row(
             children: [
               const SizedBox(
@@ -147,7 +147,7 @@ class _TitleBar_Large extends StatelessWidget {
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
         child: Container(
-          color: scheme.surface.withOpacity(0.12),
+          color: scheme.surface.withAlpha(31),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8.0),
             child: Row(

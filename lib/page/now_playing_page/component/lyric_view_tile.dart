@@ -651,15 +651,20 @@ class LyricTransitionPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    circlePaint1.color = scheme.onSecondaryContainer.withOpacity(
-      0.05 + min(controller.progress * 3, 1) * 0.95,
-    );
-    circlePaint2.color = scheme.onSecondaryContainer.withOpacity(
-      0.05 + min(max(controller.progress - 1 / 3, 0) * 3, 1) * 0.95,
-    );
-    circlePaint3.color = scheme.onSecondaryContainer.withOpacity(
-      0.05 + min(max(controller.progress - 2 / 3, 0) * 3, 1) * 0.95,
-    );
+    final a1 = (255 * (0.05 + min(controller.progress * 3, 1) * 0.95))
+        .round()
+        .clamp(0, 255);
+    final a2 =
+        (255 * (0.05 + min(max(controller.progress - 1 / 3, 0) * 3, 1) * 0.95))
+            .round()
+            .clamp(0, 255);
+    final a3 =
+        (255 * (0.05 + min(max(controller.progress - 2 / 3, 0) * 3, 1) * 0.95))
+            .round()
+            .clamp(0, 255);
+    circlePaint1.color = scheme.onSecondaryContainer.withAlpha(a1);
+    circlePaint2.color = scheme.onSecondaryContainer.withAlpha(a2);
+    circlePaint3.color = scheme.onSecondaryContainer.withAlpha(a3);
 
     final rWithFactor = radius + controller.sizeFactor;
     final c1 = Offset(rWithFactor, 8);

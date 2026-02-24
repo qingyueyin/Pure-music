@@ -118,7 +118,7 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
         curve: MotionCurve.standard,
         decoration: BoxDecoration(
           color:
-              _hovered ? scheme.onSecondaryContainer.withOpacity(0.06) : null,
+              _hovered ? scheme.onSecondaryContainer.withValues(alpha: 0.06) : null,
           borderRadius: BorderRadius.circular(8.0),
         ),
         child: Material(

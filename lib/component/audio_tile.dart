@@ -167,9 +167,9 @@ class _AudioTileState extends State<AudioTile> {
               final backgroundColor = isSelected
                   ? scheme.secondaryContainer
                   : effectiveFocus
-                      ? scheme.primary.withOpacity(0.08)
+                      ? scheme.primary.withAlpha(20)
                       : _hovered
-                          ? scheme.onSurface.withOpacity(0.04)
+                          ? scheme.onSurface.withAlpha(10)
                           : Colors.transparent;
 
               return AnimatedContainer(
@@ -180,7 +180,7 @@ class _AudioTileState extends State<AudioTile> {
                   color: backgroundColor,
                   borderRadius: BorderRadius.circular(8.0),
                   border: effectiveFocus && !isSelected
-                      ? Border.all(color: scheme.primary.withOpacity(0.35))
+                      ? Border.all(color: scheme.primary.withAlpha(89))
                       : null,
                 ),
                 child: Material(

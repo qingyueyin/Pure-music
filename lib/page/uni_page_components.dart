@@ -70,7 +70,7 @@ class SortMethodComboBox<T> extends StatelessWidget {
             borderRadius: borderRadius,
             color: scheme.secondaryContainer,
             child: InkWell(
-              hoverColor: scheme.onSecondaryContainer.withOpacity(0.08),
+              hoverColor: scheme.onSecondaryContainer.withAlpha(20),
               borderRadius: borderRadius,
               onTap: () {
                 if (menuController.isOpen) {

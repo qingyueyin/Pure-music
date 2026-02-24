@@ -141,7 +141,7 @@ class _ImmersiveHelpOverlayState extends State<_ImmersiveHelpOverlay> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Material(
-                      color: scheme.secondaryContainer.withOpacity(0.92),
+                      color: scheme.secondaryContainer.withAlpha(235),
                       borderRadius: BorderRadius.circular(999),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
@@ -159,7 +159,7 @@ class _ImmersiveHelpOverlayState extends State<_ImmersiveHelpOverlay> {
                     ),
                     const SizedBox(width: 10),
                     Material(
-                      color: scheme.secondaryContainer.withOpacity(0.92),
+                      color: scheme.secondaryContainer.withAlpha(235),
                       shape: const CircleBorder(),
                       child: IconButton(
                         onPressed: _showDialog,
