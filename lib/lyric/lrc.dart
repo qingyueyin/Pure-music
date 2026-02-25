@@ -1,8 +1,14 @@
 import 'dart:math';
+import 'dart:io';
 
+import 'package:path/path.dart' as p;
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/lyric/ttml.dart';
+import 'package:pure_music/lyric/krc.dart';
+import 'package:pure_music/lyric/qrc.dart';
+import 'package:pure_music/lyric/qrc_decryptor.dart';
+import 'package:pure_music/lyric/yrc.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart';
 
 class EnhancedLrc extends Lyric {
@@ -668,18 +674,78 @@ class Lrc extends Lyric {
   }
 
   /// 只支持读取 ID3V2, VorbisComment, Mp4Ilst 存储的内嵌歌词
-  /// 以及相同目录相同文件名的 .lrc 外挂歌词（utf-8 or utf-16）
+  /// 以及相同目录相同文件名的 .lrc/.krc/.qrc/.yrc 外挂歌词
+  /// 优先级：内嵌歌词 > YRC > QRC > KRC > LRC
   static Future<Lyric?> fromAudioPath(
     Audio belongTo, {
     String? separator = "┃",
   }) async {
-    Lyric? lyric = await getLyricFromPath(path: belongTo.path).then((value) {
-      if (value == null) {
-        return null;
-      }
-      return Lrc.fromLrcTextAuto(value, LrcSource.local, separator: separator);
-    });
+    final audioPath = belongTo.path;
+    final dir = p.dirname(audioPath);
+    final baseName = p.basenameWithoutExtension(audioPath);
 
-    return lyric;
+    final embeddedLyric = await getLyricFromPath(path: audioPath);
+    if (embeddedLyric != null && embeddedLyric.isNotEmpty) {
+      final lyric = Lrc.fromLrcTextAuto(embeddedLyric, LrcSource.local, separator: separator);
+      if (lyric != null && lyric.lines.isNotEmpty) {
+        return lyric;
+      }
+    }
+
+    final extensions = ['.yrc', '.qrc', '.krc', '.lrc'];
+
+    for (final ext in extensions) {
+      final lyricPath = p.join(dir, '$baseName$ext');
+      final lyricFile = File(lyricPath);
+
+      if (await lyricFile.exists()) {
+        try {
+          final content = await lyricFile.readAsString();
+
+          if (ext == '.yrc') {
+            final vtsPath = p.join(dir, '$baseName.lrc');
+            String? transContent;
+            if (await File(vtsPath).exists()) {
+              transContent = await File(vtsPath).readAsString();
+            }
+            final lyric = Yrc.fromYrcText(content, transContent);
+            if (lyric.lines.isNotEmpty) return lyric;
+          } else if (ext == '.qrc') {
+            String? contentToParse = content;
+
+            if (!content.trimLeft().startsWith('<?xml') &&
+                !content.trimLeft().startsWith('<Qrc')) {
+              final decrypted = await qrcDecrypt(
+                encryptedQrc: await lyricFile.readAsBytes(),
+                isLocal: true,
+              );
+              if (decrypted != null) {
+                contentToParse = decrypted;
+              } else {
+                continue;
+              }
+            }
+
+            final vtsPath = p.join(dir, '$baseName.lrc');
+            String? transContent;
+            if (await File(vtsPath).exists()) {
+              transContent = await File(vtsPath).readAsString();
+            }
+            final lyric = Qrc.fromQrcText(contentToParse, transContent);
+            if (lyric.lines.isNotEmpty) return lyric;
+          } else if (ext == '.krc') {
+            final lyric = Krc.fromKrcText(content);
+            if (lyric.lines.isNotEmpty) return lyric;
+          } else if (ext == '.lrc') {
+            final lyric = Lrc.fromLrcTextAuto(content, LrcSource.local, separator: separator);
+            if (lyric != null && lyric.lines.isNotEmpty) return lyric;
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+    }
+
+    return null;
   }
 }

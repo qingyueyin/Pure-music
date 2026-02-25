@@ -5,6 +5,7 @@
 pub mod installed_font;
 pub mod library_db;
 pub mod logger;
+pub mod ne;
 pub mod smtc_flutter;
 pub mod system_theme;
 pub mod system_volume;

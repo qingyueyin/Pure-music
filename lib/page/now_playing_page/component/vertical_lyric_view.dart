@@ -648,6 +648,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                         ),
                         const SizedBox(height: 12),
                         BreathingDots(
+                          key: const ValueKey('interlude_breathing_dots'),
                           dotSize: 10,
                           dotColor: Colors.white,
                           breathDuration: const Duration(seconds: 2),

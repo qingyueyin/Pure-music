@@ -9,7 +9,7 @@ import 'package:sqlite3/sqlite3.dart';
 enum LyricSourceType {
   qq("qq"),
   kugou("kugou"),
-  netease("netease"),
+  ne("ne"),
   local("local");
 
   final String name;
@@ -21,18 +21,17 @@ class LyricSource {
   LyricSourceType source;
   int? qqSongId;
   String? kugouSongHash;
-  String? neteaseSongId;
+  int? neSongId;
 
-  LyricSource(this.source,
-      {this.qqSongId, this.kugouSongHash, this.neteaseSongId});
+  LyricSource(this.source, {this.qqSongId, this.kugouSongHash, this.neSongId});
 
   static LyricSource fromMap(Map map) {
     if (map["source"] == "qq") {
       return LyricSource(LyricSourceType.qq, qqSongId: map["id"]);
     } else if (map["source"] == "kugou") {
       return LyricSource(LyricSourceType.kugou, kugouSongHash: map["id"]);
-    } else if (map["source"] == "netease") {
-      return LyricSource(LyricSourceType.netease, neteaseSongId: map["id"]);
+    } else if (map["source"] == "ne") {
+      return LyricSource(LyricSourceType.ne, neSongId: map["id"]);
     } else {
       return LyricSource(LyricSourceType.local);
     }
@@ -44,8 +43,8 @@ class LyricSource {
         return {"source": source.name, "id": qqSongId};
       case LyricSourceType.kugou:
         return {"source": source.name, "id": kugouSongHash};
-      case LyricSourceType.netease:
-        return {"source": source.name, "id": neteaseSongId};
+      case LyricSourceType.ne:
+        return {"source": source.name, "id": neSongId};
       case LyricSourceType.local:
         return {"source": source.name, "id": null};
     }
@@ -58,10 +57,11 @@ Future<void> readLyricSources() async {
   lyricSources = {};
   try {
     final dir = await getAppDataDir();
-    final jsonFile = File("${dir.path}\\lyric_source.json");
+    final jsonFile = File("${dir.path}\lyric_source.json");
 
     final db = await AppDb.instance.db();
-    final count = db.select("SELECT COUNT(1) AS c FROM lyric_sources").first["c"] as int;
+    final count =
+        db.select("SELECT COUNT(1) AS c FROM lyric_sources").first["c"] as int;
     if (count == 0 && jsonFile.existsSync()) {
       final fromJson = _readLyricSourcesFromJson(jsonFile);
       _writeLyricSourcesToDb(db, fromJson);
@@ -137,8 +137,8 @@ String? _lyricSourceId(LyricSource s) {
       return s.qqSongId?.toString();
     case LyricSourceType.kugou:
       return s.kugouSongHash;
-    case LyricSourceType.netease:
-      return s.neteaseSongId;
+    case LyricSourceType.ne:
+      return s.neSongId?.toString();
     case LyricSourceType.local:
       return null;
   }
@@ -154,8 +154,9 @@ LyricSource? _lyricSourceFromDb(String source, String? id) {
   if (source == LyricSourceType.kugou.name) {
     return LyricSource(LyricSourceType.kugou, kugouSongHash: id);
   }
-  if (source == LyricSourceType.netease.name) {
-    return LyricSource(LyricSourceType.netease, neteaseSongId: id);
+  if (source == LyricSourceType.ne.name) {
+    return LyricSource(LyricSourceType.ne,
+        neSongId: id == null ? null : int.tryParse(id));
   }
   return LyricSource(LyricSourceType.local);
 }

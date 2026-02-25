@@ -308,6 +308,10 @@ class LyricService extends ChangeNotifier {
     
     if (lyric != null) {
       _lyricCache.put(nowPlaying.path, lyric);
+      // 当获取到网络歌词时，自动写入音乐标签
+      if (!localFirst) {
+        await writeCurrentLyricToTag();
+      }
     }
     return lyric;
   }
@@ -337,7 +341,6 @@ class LyricService extends ChangeNotifier {
         currLyricFuture = getOnlineLyric(
           qqSongId: lyricSource.qqSongId,
           kugouSongHash: lyricSource.kugouSongHash,
-          neteaseSongId: lyricSource.neteaseSongId,
         );
       }
     }
@@ -347,6 +350,10 @@ class LyricService extends ChangeNotifier {
       _nextLyricLine = 0;
       _setCurrLyric(value);
       _lyricCache.put(audioPath, value);
+      // 当获取到在线歌词时，自动写入音乐标签
+      if (lyricSource?.source != LyricSourceType.local) {
+        writeCurrentLyricToTag();
+      }
       findCurrLyricLineAt(playService.playbackService.position);
     });
 
@@ -387,6 +394,8 @@ class LyricService extends ChangeNotifier {
     currLyricFuture.then((value) {
       if (value == null) return;
       _setCurrLyric(value);
+      // 当获取到在线歌词时，自动写入音乐标签
+      writeCurrentLyricToTag();
       findCurrLyricLine();
     });
 
@@ -402,6 +411,8 @@ class LyricService extends ChangeNotifier {
     currLyricFuture.then((value) {
       if (value == null) return;
       _setCurrLyric(value);
+      // 当选择特定歌词时，自动写入音乐标签
+      writeCurrentLyricToTag();
       findCurrLyricLine();
     });
 
