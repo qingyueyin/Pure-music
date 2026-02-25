@@ -10,9 +10,19 @@ import 'package:flutter/services.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:go_router/go_router.dart';
 
+bool _isTextInputFocused() {
+  final focusManager = FocusManager.instance;
+  final focused = focusManager.primaryFocus;
+  if (focused == null) return false;
+  
+  return focused.context?.widget is EditableText;
+}
+
 class HotkeysHelper {
   static final Map<HotKey, void Function(HotKey)> _hotKeys = {
     HotKey(key: PhysicalKeyboardKey.space, scope: HotKeyScope.inapp): (_) {
+      if (_isTextInputFocused()) return;
+      
       final playbackService = PlayService.instance.playbackService;
       final state = playbackService.playerState;
       if (state == PlayerState.playing) {
