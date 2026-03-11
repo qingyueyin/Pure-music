@@ -668,10 +668,12 @@ class _DesktopLyricSwitch extends StatelessWidget {
             tooltip: snapshot.data != null ? "桌面歌词：启用" : "桌面歌词",
             onPressed: snapshot.data == null
                 ? desktopLyricService.startDesktopLyric
-                : desktopLyricService.killDesktopLyric,
+                : desktopLyricService.isLocked
+                    ? desktopLyricService.sendUnlockMessage
+                    : desktopLyricService.killDesktopLyric,
             icon: snapshot.connectionState == ConnectionState.done
                 ? Icon(
-                    Symbols.toast,
+                    desktopLyricService.isLocked ? Symbols.lock : Symbols.toast,
                     fill: snapshot.data == null ? 0 : 1,
                   )
                 : const SizedBox(

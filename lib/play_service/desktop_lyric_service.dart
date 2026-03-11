@@ -28,6 +28,8 @@ class DesktopLyricService extends ChangeNotifier {
   LyricLine? _currentLyricLine;
   Timer? _positionTimer;
 
+  bool isLocked = false;
+
   Future<void> startDesktopLyric() async {
     final desktopLyricPath = path.join(
       path.dirname(Platform.resolvedExecutable),
@@ -110,7 +112,7 @@ class DesktopLyricService extends ChangeNotifier {
     });
   }
 
-  void killDesktopLyric() {
+   void killDesktopLyric() {
     _positionTimer?.cancel();
     _positionTimer = null;
     
@@ -123,10 +125,17 @@ class DesktopLyricService extends ChangeNotifier {
       _desktopLyricSubscription?.cancel();
       _desktopLyricSubscription = null;
 
+      isLocked = false;
       notifyListeners();
     }).catchError((err, trace) {
       logger.e(err, stackTrace: trace);
     });
+  }
+
+  void sendUnlockMessage() {
+    sendMessage(msg.UnlockMessage());
+    isLocked = false;
+    notifyListeners();
   }
 
   void sendThemeModeMessage(bool darkMode) {
@@ -305,7 +314,8 @@ class DesktopLyricService extends ChangeNotifier {
             _playbackService.nextAudio();
             break;
           case msg.ControlEvent.lock:
-            logger.i("[desktop lyric] received lock event");
+            isLocked = true;
+            notifyListeners();
             break;
           case msg.ControlEvent.close:
             killDesktopLyric();
