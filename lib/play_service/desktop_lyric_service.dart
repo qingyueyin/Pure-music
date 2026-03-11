@@ -304,6 +304,9 @@ class DesktopLyricService extends ChangeNotifier {
           case msg.ControlEvent.nextAudio:
             _playbackService.nextAudio();
             break;
+          case msg.ControlEvent.lock:
+            logger.i("[desktop lyric] received lock event");
+            break;
           case msg.ControlEvent.close:
             killDesktopLyric();
             break;

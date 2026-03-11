@@ -51,7 +51,8 @@ enum ControlEvent {
   start(1),
   previousAudio(2),
   nextAudio(3),
-  close(4);
+  lock(4),
+  close(5);
 
   const ControlEvent(this.code);
   final int code;
@@ -268,4 +269,11 @@ class ThemeChangedMessage extends Message {
         'surfaceContainer': surfaceContainer,
         'onSurface': onSurface,
       };
+}
+
+class UnlockMessage extends Message {
+  const UnlockMessage();
+
+  @override
+  Map<String, dynamic> toMessageJson() => {};
 }
