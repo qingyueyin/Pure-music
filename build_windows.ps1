@@ -105,6 +105,33 @@ else {
     Write-Warning "app_icon.ico not found in project root. The application icon might be default."
 }
 
+function Update-RcVersion([string]$version) {
+    $rcPath = Join-Path $PSScriptRoot "windows\runner\Runner.rc"
+    if (-not (Test-Path $rcPath)) { return }
+    
+    $content = Get-Content -Path $rcPath -Raw
+    
+    $parts = $version -split '\+'
+    $verNum = $parts[0]
+    $verParts = $verNum -split '\.'
+    
+    $major = if ($verParts.Length -gt 0) { $verParts[0] } else { "0" }
+    $minor = if ($verParts.Length -gt 1) { $verParts[1] } else { "0" }
+    $patch = if ($verParts.Length -gt 2) { $verParts[2] } else { "0" }
+    $build = if ($parts.Length -gt 1) { $parts[1] } else { "0" }
+    
+    $newNumber = "$major,$minor,$patch,$build"
+    $newString = """$version"""
+    
+    $content = $content -replace '#define VERSION_AS_NUMBER .+', "#define VERSION_AS_NUMBER $newNumber"
+    $content = $content -replace '#define VERSION_AS_STRING ".+"', "#define VERSION_AS_STRING $newString"
+    
+    Set-Content -Path $rcPath -Value $content -NoNewline
+    Write-Host "Updated Runner.rc version to $version" -ForegroundColor Green
+}
+
+Update-RcVersion -version $version
+
 function Set-ExeIcon([string]$exePath, [string]$icoPath) {
     if (-not (Test-Path $exePath)) { return }
     if (-not (Test-Path $icoPath)) { return }

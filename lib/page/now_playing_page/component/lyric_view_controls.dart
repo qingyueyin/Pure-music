@@ -5,13 +5,29 @@ import 'package:pure_music/core/enums.dart';
 import 'package:provider/provider.dart';
 
 class LyricViewController extends ChangeNotifier {
+  static LyricViewController? _instance;
+  
+  static LyricViewController get instance {
+    _instance ??= LyricViewController._internal();
+    return _instance!;
+  }
+  
+  LyricViewController._internal() {
+    lyricTextAlign = nowPlayingPagePref.lyricTextAlign;
+    lyricFontSize = nowPlayingPagePref.lyricFontSize;
+    translationFontSize = nowPlayingPagePref.translationFontSize;
+    showLyricTranslation = nowPlayingPagePref.showLyricTranslation;
+    lyricFontWeight = nowPlayingPagePref.lyricFontWeight;
+    enableLyricBlur = nowPlayingPagePref.enableLyricBlur;
+  }
+  
   final nowPlayingPagePref = AppPreference.instance.nowPlayingPagePref;
-  late LyricTextAlign lyricTextAlign = nowPlayingPagePref.lyricTextAlign;
-  late double lyricFontSize = nowPlayingPagePref.lyricFontSize;
-  late double translationFontSize = nowPlayingPagePref.translationFontSize;
-  late bool showLyricTranslation = nowPlayingPagePref.showLyricTranslation;
-  late int lyricFontWeight = nowPlayingPagePref.lyricFontWeight;
-  late bool enableLyricBlur = nowPlayingPagePref.enableLyricBlur;
+  late LyricTextAlign lyricTextAlign;
+  late double lyricFontSize;
+  late double translationFontSize;
+  late bool showLyricTranslation;
+  late int lyricFontWeight;
+  late bool enableLyricBlur;
 
   /// 在左对齐、居中、右对齐之间循环切换
   void switchLyricTextAlign() {
@@ -85,21 +101,21 @@ class LyricViewControls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.all(8.0),
+    return Padding(
+      padding: const EdgeInsets.all(8.0),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          _LyricTranslationSwitchBtn(),
+          const _LyricTranslationSwitchBtn(),
           SizedBox(height: 8.0),
-          _LyricBlurSwitchBtn(),
+          const _LyricBlurSwitchBtn(),
           SizedBox(height: 8.0),
-          _LyricAlignSwitchBtn(),
+          const _LyricAlignSwitchBtn(),
           SizedBox(height: 8.0),
-          _FontSizeBtn(),
+          const _FontSizeBtn(),
           SizedBox(height: 8.0),
-          _FontWeightBtn(),
+          const _FontWeightBtn(),
         ],
       ),
     );

@@ -25,7 +25,8 @@ class DesktopLyricService extends ChangeNotifier {
   String _stdoutBuffer = '';
   Future<void> _sendQueue = Future.value();
 
-  bool isLocked = false;
+  LyricLine? _currentLyricLine;
+  Timer? _positionTimer;
 
   Future<void> startDesktopLyric() async {
     final desktopLyricPath = path.join(
@@ -110,6 +111,9 @@ class DesktopLyricService extends ChangeNotifier {
   }
 
   void killDesktopLyric() {
+    _positionTimer?.cancel();
+    _positionTimer = null;
+    
     desktopLyric.then((value) {
       value?.kill();
       desktopLyric = Future.value(null);
@@ -123,12 +127,6 @@ class DesktopLyricService extends ChangeNotifier {
     }).catchError((err, trace) {
       logger.e(err, stackTrace: trace);
     });
-  }
-
-  void sendUnlockMessage() {
-    sendMessage(msg.UnlockMessage());
-    isLocked = false;
-    notifyListeners();
   }
 
   void sendThemeModeMessage(bool darkMode) {
@@ -147,6 +145,57 @@ class DesktopLyricService extends ChangeNotifier {
 
   void sendPlayerStateMessage(bool isPlaying) {
     sendMessage(msg.PlayerStateChangedMessage(isPlaying));
+    
+    if (_positionTimer != null) {
+      _positionTimer?.cancel();
+      _positionTimer = null;
+    }
+    
+    if (isPlaying) {
+      _startPositionTimer();
+    }
+  }
+
+  void _startPositionTimer() {
+    _positionTimer?.cancel();
+    _positionTimer = Timer.periodic(const Duration(milliseconds: 20), (_) {
+      _sendPositionMessage();
+    });
+  }
+
+  void _sendPositionMessage() {
+    if (_currentLyricLine is! SyncLyricLine) return;
+    
+    final line = _currentLyricLine as SyncLyricLine;
+    final currentMs = (_playbackService.position * 1000).round();
+    final lineStartMs = line.start.inMilliseconds;
+    
+    if (currentMs < lineStartMs) return;
+    
+    final words = line.words;
+    int wordIndex = -1;
+    for (int i = 0; i < words.length; i++) {
+      final wordStart = words[i].start.inMilliseconds;
+      if (currentMs >= wordStart) {
+        wordIndex = i;
+      } else {
+        break;
+      }
+    }
+    
+    if (wordIndex < 0) return;
+    
+    final currentWord = words[wordIndex];
+    final wordStartMs = currentWord.start.inMilliseconds;
+    final wordLengthMs = currentWord.length.inMilliseconds;
+    
+    double progress = 0.0;
+    if (wordLengthMs > 0) {
+      final elapsed = currentMs - wordStartMs;
+      progress = (elapsed / wordLengthMs * 100).clamp(0.0, 100.0);
+    }
+    
+    sendMessage(msg.PositionMessage(wordIndex, progress));
   }
 
   void sendNowPlayingMessage(Audio nowPlaying) {
@@ -157,7 +206,50 @@ class DesktopLyricService extends ChangeNotifier {
     ));
   }
 
-  void sendLyricLineMessage(LyricLine line) {
+  void sendLyricLineMessage(LyricLine line, {LyricLine? nextLine}) {
+    _currentLyricLine = line;
+    
+    List<msg.LyricWord>? words;
+    if (line is SyncLyricLine) {
+      final progressMs = ((_playbackService.position * 1000).round() -
+              line.start.inMilliseconds)
+          .clamp(0, line.length.inMilliseconds);
+      final lineStartMs = line.start.inMilliseconds;
+      words = line.words
+          .map((w) => msg.LyricWord(
+                w.start.inMilliseconds - lineStartMs,
+                w.length.inMilliseconds,
+                w.content,
+              ))
+          .toList();
+      logger.i("[desktop lyric] sendLyricLineMessage: line is SyncLyricLine, words count = ${words.length}, progressMs=$progressMs");
+      if (words.isNotEmpty) {
+        logger.i("[desktop lyric] first word: ${words[0].content}, startMs=${words[0].startMs}, lengthMs=${words[0].lengthMs}");
+      }
+    } else {
+      logger.i("[desktop lyric] sendLyricLineMessage: line is ${line.runtimeType}, words = null");
+    }
+
+    String? nextContent;
+    String? nextTranslation;
+    List<msg.LyricWord>? nextWords;
+    if (nextLine != null) {
+      if (nextLine is SyncLyricLine) {
+        nextContent = nextLine.content;
+        nextTranslation = nextLine.translation;
+        nextWords = nextLine.words
+            .map((w) => msg.LyricWord(
+                  w.start.inMilliseconds,
+                  w.length.inMilliseconds,
+                  w.content,
+                ))
+            .toList();
+      } else if (nextLine is UnsyncLyricLine) {
+        nextContent = nextLine.content;
+        nextTranslation = nextLine.translation;
+      }
+    }
+
     if (line is SyncLyricLine) {
       final progressMs = ((_playbackService.position * 1000).round() -
               line.start.inMilliseconds)
@@ -166,8 +258,11 @@ class DesktopLyricService extends ChangeNotifier {
         line.content,
         line.length,
         line.translation,
-        null,
+        words,
         progressMs,
+        nextContent,
+        nextTranslation,
+        nextWords,
       ));
     } else if (line is LrcLine) {
       final splitted = line.content.split("┃");
@@ -180,8 +275,11 @@ class DesktopLyricService extends ChangeNotifier {
         content,
         line.length,
         translation,
-        null,
+        words,
         progressMs,
+        nextContent,
+        nextTranslation,
+        nextWords,
       ));
     }
   }
@@ -205,10 +303,6 @@ class DesktopLyricService extends ChangeNotifier {
             break;
           case msg.ControlEvent.nextAudio:
             _playbackService.nextAudio();
-            break;
-          case msg.ControlEvent.lock:
-            isLocked = true;
-            notifyListeners();
             break;
           case msg.ControlEvent.close:
             killDesktopLyric();
@@ -239,7 +333,8 @@ class DesktopLyricService extends ChangeNotifier {
         }
       }
       if (lyric.lines.isEmpty) return;
-      sendLyricLineMessage(lyric.lines[idx]);
+      final nextLine = idx + 1 < lyric.lines.length ? lyric.lines[idx + 1] : null;
+      sendLyricLineMessage(lyric.lines[idx], nextLine: nextLine);
     });
   }
 }

@@ -51,8 +51,7 @@ enum ControlEvent {
   start(1),
   previousAudio(2),
   nextAudio(3),
-  lock(4),
-  close(5);
+  close(4);
 
   const ControlEvent(this.code);
   final int code;
@@ -148,6 +147,9 @@ class LyricLineChangedMessage extends Message {
   final Duration length;
   final List<LyricWord>? words;
   final int? progressMs;
+  final String? nextContent;
+  final String? nextTranslation;
+  final List<LyricWord>? nextWords;
 
   const LyricLineChangedMessage(
     this.content,
@@ -155,6 +157,9 @@ class LyricLineChangedMessage extends Message {
     this.translation,
     this.words,
     this.progressMs,
+    this.nextContent,
+    this.nextTranslation,
+    this.nextWords,
   ]);
 
   factory LyricLineChangedMessage.fromJson(Map<String, dynamic> json) {
@@ -166,6 +171,11 @@ class LyricLineChangedMessage extends Message {
           ?.map((e) => LyricWord.fromJson(e as Map<String, dynamic>))
           .toList(growable: false),
       (json['progressMs'] as num?)?.toInt(),
+      json['nextContent'] as String?,
+      json['nextTranslation'] as String?,
+      (json['nextWords'] as List?)
+          ?.map((e) => LyricWord.fromJson(e as Map<String, dynamic>))
+          .toList(growable: false),
     );
   }
 
@@ -176,28 +186,51 @@ class LyricLineChangedMessage extends Message {
         'length': length.inMicroseconds,
         'words': words?.map((e) => e.toJson()).toList(growable: false),
         'progressMs': progressMs,
+        'nextContent': nextContent,
+        'nextTranslation': nextTranslation,
+        'nextWords': nextWords?.map((e) => e.toJson()).toList(growable: false),
       };
 }
 
 class LyricWord {
-  final int start;
-  final int length;
+  final int startMs;
+  final int lengthMs;
   final String content;
 
-  const LyricWord(this.start, this.length, this.content);
+  const LyricWord(this.startMs, this.lengthMs, this.content);
 
   factory LyricWord.fromJson(Map<String, dynamic> json) {
     return LyricWord(
-      (json['start'] as num).toInt(),
-      (json['length'] as num).toInt(),
+      (json['startMs'] as num).toInt(),
+      (json['lengthMs'] as num).toInt(),
       json['content'] as String,
     );
   }
 
   Map<String, dynamic> toJson() => {
-        'start': start,
-        'length': length,
+        'startMs': startMs,
+        'lengthMs': lengthMs,
         'content': content,
+      };
+}
+
+class PositionMessage extends Message {
+  final int wordIndex;
+  final double progress;
+
+  const PositionMessage(this.wordIndex, this.progress);
+
+  factory PositionMessage.fromJson(Map<String, dynamic> json) {
+    return PositionMessage(
+      (json['wordIndex'] as num).toInt(),
+      (json['progress'] as num).toDouble(),
+    );
+  }
+
+  @override
+  Map<String, dynamic> toMessageJson() => {
+        'wordIndex': wordIndex,
+        'progress': progress,
       };
 }
 
@@ -235,15 +268,4 @@ class ThemeChangedMessage extends Message {
         'surfaceContainer': surfaceContainer,
         'onSurface': onSurface,
       };
-}
-
-class UnlockMessage extends Message {
-  const UnlockMessage();
-
-  factory UnlockMessage.fromJson(Map<String, dynamic> json) {
-    return const UnlockMessage();
-  }
-
-  @override
-  Map<String, dynamic> toMessageJson() => const {};
 }
