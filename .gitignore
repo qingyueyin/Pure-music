@@ -85,3 +85,8 @@ output/
 output/data/
 release/
 build_release.ps1
+
+# Generated / Local only
+AGENTS.md
+lib/amll_background/
+lib/amll_lyric/

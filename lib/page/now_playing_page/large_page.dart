@@ -30,7 +30,7 @@ class _NowPlayingLargePage extends StatelessWidget {
                                 constraints:
                                     const BoxConstraints(maxWidth: 820.0),
                                 child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(16.0),
+                                  borderRadius: BorderRadius.circular(20.0),
                                   child: Stack(
                                     fit: StackFit.expand,
                                     children: [

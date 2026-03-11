@@ -38,7 +38,7 @@ class VerticalLyricView extends StatefulWidget {
 
 class _VerticalLyricViewState extends State<VerticalLyricView> {
   bool isHovering = false;
-  final lyricViewController = LyricViewController();
+  final lyricViewController = LyricViewController.instance;
 
   @override
   Widget build(BuildContext context) {

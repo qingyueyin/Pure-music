@@ -665,15 +665,13 @@ class _DesktopLyricSwitch extends StatelessWidget {
         return FutureBuilder(
           future: desktopLyricService.desktopLyric,
           builder: (context, snapshot) => IconButton(
-            tooltip: snapshot.data != null ? "桌面歌词；启用" : "桌面歌词",
+            tooltip: snapshot.data != null ? "桌面歌词：启用" : "桌面歌词",
             onPressed: snapshot.data == null
                 ? desktopLyricService.startDesktopLyric
-                : desktopLyricService.isLocked
-                    ? desktopLyricService.sendUnlockMessage
-                    : desktopLyricService.killDesktopLyric,
+                : desktopLyricService.killDesktopLyric,
             icon: snapshot.connectionState == ConnectionState.done
                 ? Icon(
-                    desktopLyricService.isLocked ? Symbols.lock : Symbols.toast,
+                    Symbols.toast,
                     fill: snapshot.data == null ? 0 : 1,
                   )
                 : const SizedBox(
@@ -1889,7 +1887,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
             ? Center(child: placeholder)
             : Container(
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12.0),
+                  borderRadius: BorderRadius.circular(20.0),
                   boxShadow: [
                     // 1. 环境光晕 (Ambient Glow)
                     BoxShadow(
@@ -1915,7 +1913,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
                   ],
                 ),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12.0),
+                  borderRadius: BorderRadius.circular(20.0),
                   child: Image(
                     image: currentCover,
                     fit: BoxFit.cover,

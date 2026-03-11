@@ -1,4 +1,5 @@
 import 'package:pure_music/lyric/lyric.dart';
+import 'dart:math';
 
 class Yrc extends Lyric {
   Yrc(super.lines);
@@ -6,8 +7,19 @@ class Yrc extends Lyric {
   static Yrc fromYrcText(String yrc, [String? transRawStr]) {
     final List<YrcLine> lines = [];
     final splited = yrc.split("\n");
+
+    int? offsetInMilliseconds;
+    final offsetPattern = RegExp(r'\[\s*offset\s*:\s*([+-]?\d+)\s*\]');
+    for (final line in splited) {
+      final matched = offsetPattern.firstMatch(line);
+      if (matched == null) continue;
+      offsetInMilliseconds = int.tryParse(matched.group(1) ?? "");
+      break;
+    }
+    final offset = offsetInMilliseconds ?? 0;
+
     for (final item in splited) {
-      final yrcLine = YrcLine.fromLine(item);
+      final yrcLine = YrcLine.fromLine(item, null, offset);
       if (yrcLine == null) continue;
       lines.add(yrcLine);
     }
@@ -66,7 +78,7 @@ class YrcLine extends SyncLyricLine {
     return YrcLine(start, length, []);
   }
 
-  static YrcLine? fromLine(String line, [String? translation]) {
+  static YrcLine? fromLine(String line, [String? translation, int offset = 0]) {
     final splitedLine = line.split("]");
     if (splitedLine.isEmpty) return null;
 
@@ -76,19 +88,19 @@ class YrcLine extends SyncLyricLine {
     if (splitedTime.length != 2) return null;
 
     final Duration start = Duration(
-      milliseconds: int.tryParse(splitedTime[0]) ?? 0,
+      milliseconds: max((int.tryParse(splitedTime[0]) ?? 0) - offset, 0),
     );
     final Duration length = Duration(
       milliseconds: int.tryParse(splitedTime[1]) ?? 0,
     );
 
     final splitedContent = splitedLine[1];
-    final List<YrcWord> words = _parseWords(splitedContent, start, length);
+    final List<YrcWord> words = _parseWords(splitedContent, start, length, offset);
 
     return YrcLine(start, length, words, translation);
   }
 
-  static List<YrcWord> _parseWords(String content, Duration lineStart, Duration lineLength) {
+  static List<YrcWord> _parseWords(String content, Duration lineStart, Duration lineLength, [int offset = 0]) {
     final List<YrcWord> words = [];
     final wordRegex = RegExp(r'\((\d+),(\d+),\d+\)([^(]*?)');
 
@@ -100,7 +112,7 @@ class YrcLine extends SyncLyricLine {
       if (text.isEmpty) continue;
 
       words.add(YrcWord(
-        Duration(milliseconds: startMs) + lineStart,
+        Duration(milliseconds: max(startMs - offset, 0)) + lineStart,
         Duration(milliseconds: durationMs),
         text,
       ));

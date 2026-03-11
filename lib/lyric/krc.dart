@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:pure_music/lyric/lyric.dart';
+import 'dart:math';
 
 class Krc extends Lyric {
   Krc(super.lines);
@@ -10,6 +11,17 @@ class Krc extends Lyric {
     String? languageFrame;
 
     final splited = krc.split("\n");
+
+    int? offsetInMilliseconds;
+    final offsetPattern = RegExp(r'\[\s*offset\s*:\s*([+-]?\d+)\s*\]');
+    for (final line in splited) {
+      final matched = offsetPattern.firstMatch(line);
+      if (matched == null) continue;
+      offsetInMilliseconds = int.tryParse(matched.group(1) ?? "");
+      break;
+    }
+    final offset = offsetInMilliseconds ?? 0;
+
     for (final item in splited) {
       if (languageFrame == null) {
         final tag = item.substring(
@@ -23,7 +35,7 @@ class Krc extends Lyric {
         }
       }
 
-      final krcLine = KrcLine.fromLine(item);
+      final krcLine = KrcLine.fromLine(item, null, offset);
 
       if (krcLine == null) continue;
 
@@ -81,7 +93,7 @@ class Krc extends Lyric {
 class KrcLine extends SyncLyricLine {
   KrcLine(super.start, super.length, super.words, [super.translation]);
 
-  static KrcLine? fromLine(String line, [String? translation]) {
+  static KrcLine? fromLine(String line, [String? translation, int offset = 0]) {
     final splitedLine = line.split("]");
     final from = splitedLine[0].indexOf("[") + 1;
     final splitedTime = splitedLine[0].substring(from).split(",");
@@ -89,7 +101,7 @@ class KrcLine extends SyncLyricLine {
     if (splitedTime.length != 2) return null;
 
     final Duration start = Duration(
-      milliseconds: int.tryParse(splitedTime[0]) ?? 0,
+      milliseconds: max((int.tryParse(splitedTime[0]) ?? 0) - offset, 0),
     );
     final Duration length = Duration(
       milliseconds: int.tryParse(splitedTime[1]) ?? 0,
@@ -98,7 +110,7 @@ class KrcLine extends SyncLyricLine {
     final splitedContent = splitedLine[1].split("<");
     final List<KrcWord> words = [];
     for (final item in splitedContent) {
-      final qrcWord = KrcWord.fromWord(item, start);
+      final qrcWord = KrcWord.fromWord(item, start, offset);
 
       if (qrcWord == null) continue;
 
@@ -112,7 +124,7 @@ class KrcLine extends SyncLyricLine {
 class KrcWord extends SyncLyricWord {
   KrcWord(super.start, super.length, super.content);
 
-  static KrcWord? fromWord(String word, Duration lineStart) {
+  static KrcWord? fromWord(String word, Duration lineStart, [int offset = 0]) {
     final splitedWord = word.split(">");
     if (splitedWord.length != 2) return null;
 
@@ -121,7 +133,7 @@ class KrcWord extends SyncLyricWord {
     if (splitedTime.length < 2) return null;
 
     final Duration start = Duration(
-          milliseconds: int.tryParse(splitedTime[0]) ?? 0,
+          milliseconds: max((int.tryParse(splitedTime[0]) ?? 0) - offset, 0),
         ) +
         lineStart;
     final Duration length = Duration(

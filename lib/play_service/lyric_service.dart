@@ -86,10 +86,12 @@ class LyricService extends ChangeNotifier {
 
       if (currLineIndex != _lastDesktopLyricLineIndex) {
         _lastDesktopLyricLineIndex = currLineIndex;
+        final nextLine = currLineIndex + 1 < lyric.lines.length ? lyric.lines[currLineIndex + 1] : null;
         playService.desktopLyricService.canSendMessage.then((canSend) {
           if (!canSend) return;
           playService.desktopLyricService.sendLyricLineMessage(
             lyric.lines[currLineIndex],
+            nextLine: nextLine,
           );
         });
       }
@@ -264,10 +266,12 @@ class LyricService extends ChangeNotifier {
     if (currLineIndex < 0 || currLineIndex >= lyric.lines.length) return;
     if (currLineIndex != _lastDesktopLyricLineIndex) {
       _lastDesktopLyricLineIndex = currLineIndex;
+      final nextLine = currLineIndex + 1 < lyric.lines.length ? lyric.lines[currLineIndex + 1] : null;
       playService.desktopLyricService.canSendMessage.then((canSend) {
         if (!canSend) return;
         playService.desktopLyricService.sendLyricLineMessage(
           lyric.lines[currLineIndex],
+          nextLine: nextLine,
         );
       });
     }
@@ -333,7 +337,7 @@ class LyricService extends ChangeNotifier {
 
     final lyricSource = lyricSources[audioPath];
     if (lyricSource == null) {
-      currLyricFuture = _getLyricDefault(AppSettings.instance.localLyricFirst);
+      currLyricFuture = Lrc.fromAudioPath(nowPlaying);
     } else {
       if (lyricSource.source == LyricSourceType.local) {
         currLyricFuture = Lrc.fromAudioPath(nowPlaying);
