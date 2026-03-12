@@ -736,29 +736,32 @@ class BassPlayer {
         _positionUpdater?.cancel();
         _removeEQ();
         if (_streamWasapiExclusive) {
+          // 之前是独占模式，需要清理 WASAPI
           _bassWasapi.BASS_WASAPI_Stop(bass.TRUE);
           _bassWasapi.BASS_WASAPI_Free();
         } else {
+          // 之前是共享模式，停止通常的播放
           _bass.BASS_ChannelStop(_fstream!);
         }
         freeFStream();
       }
       if (prevState) {
+        // 从独占模式切换出来，需要清理 WASAPI 并重新初始化 BASS
         _bassWasapi.BASS_WASAPI_Stop(bass.TRUE);
         _bassWasapi.BASS_WASAPI_Free();
         _bassInit();
       }
       wasapiExclusive = exclusive;
-    // 通知独占模式状态变化
-    onExclusiveModeChanged?.call(exclusive);
-    if (pathToReload != null) {
+      // 通知独占模式状态变化
+      onExclusiveModeChanged?.call(exclusive);
+      if (pathToReload != null) {
         setSource(pathToReload);
         setVolumeDsp(AppPreference.instance.playbackPref.volumeDsp);
         seek(lastPos);
         start();
-    }
-    _logAudioState("useExclusiveMode(end,$exclusive)");
-    return true;
+      }
+      _logAudioState("useExclusiveMode(end,$exclusive)");
+      return true;
     } catch (err) {
       logger.e("[use exclusive mode] $err");
       showTextOnSnackBar(err.toString());
@@ -775,6 +778,7 @@ class BassPlayer {
       _positionUpdater?.cancel();
       _removeEQ();
       final oldHandle = _fstream!;
+      // 正确处理旧流的清理，根据之前的模式
       if (_streamWasapiExclusive) {
         _bassWasapi.BASS_WASAPI_Stop(bass.TRUE);
         _bassWasapi.BASS_WASAPI_Free();
@@ -793,6 +797,7 @@ class BassPlayer {
         );
       }
       _fstream = null;
+      _streamWasapiExclusive = false; // 重置流的状态标志
     }
     final pathPointer = path.toNativeUtf16() as ffi.Pointer<ffi.Void>;
 
@@ -819,7 +824,7 @@ class BassPlayer {
     );
 
     if (handle != 0 && !wasapiExclusive) {
-      // 创建 Tempo 流
+      // 创建 Tempo 流（只在非独占模式下）
       // 如果没有加载 bass_fx 或者创建失败，就回退到原始流（但原始流是 decode 的，不能直接播，需要重新创建）
       try {
         if (_bassFx != null) {
@@ -860,13 +865,12 @@ class BassPlayer {
           flags,
         );
       }
-    } else if (handle != 0 && wasapiExclusive) {
-      // exclusive 模式本身就需要 decode 流，不需要 FX
     }
 
     if (handle != 0) {
       _fstream = handle;
       _fPath = path;
+      // 标记当前流是否为独占模式流
       _streamWasapiExclusive = wasapiExclusive;
 
       try {
@@ -875,16 +879,17 @@ class BassPlayer {
         logger.e("SetSource refreshEQ failed: $e");
       }
 
-      if (_rate != 1.0) {
+      if (_rate != 1.0 && !wasapiExclusive) {
         setRate(_rate);
       }
-      if (_pitch != 0.0) {
+      if (_pitch != 0.0 && !wasapiExclusive) {
         setPitch(_pitch);
       }
       _logAudioState("setSource(ok)");
     } else {
       _fstream = null;
       _fPath = null;
+      _streamWasapiExclusive = false;
       switch (_bass.BASS_ErrorGetCode()) {
         case bass.BASS_ERROR_INIT:
           _bassInit();
@@ -1017,18 +1022,16 @@ class BassPlayer {
   void _bassWasapiInit() {
     if (_fstream == null) return;
 
-    final pref = AppPreference.instance.playbackPref;
-    final bufferSec = pref.wasapiBufferSec.clamp(0.05, 0.30).toDouble();
-    final flags = bass_wasapi.BASS_WASAPI_EXCLUSIVE;
-
     // 重置WASAPI状态
     _bassWasapi.BASS_WASAPI_Stop(bass.TRUE);
     _bassWasapi.BASS_WASAPI_Free();
 
-    // 使用默认采样率 44100，让BASS自动选择合适的格式
-    const initFreq = 44100;
+    // 使用参考项目的标准配置
+    const flags = bass_wasapi.BASS_WASAPI_EXCLUSIVE | bass_wasapi.BASS_WASAPI_EVENT;
+    const bufferSec = 0.05; // 固定 50ms 缓冲，经过验证的稳定值
+    const initFreq = 0; // 让 WASAPI 自动选择合适的采样率
 
-    // 正确转换句柄为指针类型
+    // 转换句柄为指针：_fstream 是整数 handle，需要转换成指针
     if (_bassWasapi.BASS_WASAPI_Init(
           -1, // 默认设备
           initFreq,
@@ -1036,8 +1039,8 @@ class BassPlayer {
           flags,
           bufferSec,
           0.0,
-          ffi.Pointer<bass_wasapi.WASAPIPROC>.fromAddress(0), // 空指针
-          ffi.Pointer<ffi.Void>.fromAddress(_fstream!), // 正确转换句柄为指针
+          ffi.Pointer<bass_wasapi.WASAPIPROC>.fromAddress(-1), // -1 表示无自定义回调
+          ffi.Pointer<ffi.Void>.fromAddress(_fstream!), // 使用整数 handle
         ) ==
         bass.FALSE) {
       switch (_bass.BASS_ErrorGetCode()) {
@@ -1095,19 +1098,23 @@ class BassPlayer {
       _bassWasapiInit();
     } catch (err) {
       logger.w("[bass] wasapi exclusive init failed, fallback to shared: $err");
-      showTextOnSnackBar("独占模式初始化失败，已切回共享模式");
+      showTextOnSnackBar("独占模式初始化失败，已切回共享模式: $err");
       useExclusiveMode(false);
       return;
     }
 
     if (_bassWasapi.BASS_WASAPI_Start() == bass.FALSE) {
-      switch (_bass.BASS_ErrorGetCode()) {
+      final errorCode = _bass.BASS_ErrorGetCode();
+      logger.e("[bass] BASS_WASAPI_Start failed: $errorCode");
+      switch (errorCode) {
         case bass.BASS_ERROR_INIT:
           _bassWasapiInit();
           _startWasapiExclusive();
           break;
         case bass.BASS_ERROR_UNKNOWN:
           throw const FormatException("Some other mystery problem!");
+        default:
+          throw FormatException("WASAPI Start failed with error: $errorCode");
       }
     }
     _playerStateStreamController.add(playerState);
@@ -1258,6 +1265,7 @@ class BassPlayer {
   ///
   /// Also free the bass.dll.
   void free() {
+    // 如果当前是独占模式，需要先清理 WASAPI
     if (wasapiExclusive) {
       _bassWasapi.BASS_WASAPI_Stop(bass.TRUE);
       _bassWasapi.BASS_WASAPI_Free();
