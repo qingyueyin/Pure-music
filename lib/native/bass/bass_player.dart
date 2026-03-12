@@ -730,6 +730,11 @@ class BassPlayer {
         return false;
       }
       final lastPos = position;
+      // Stop current playback before mode switch
+      if (_fstream != null && !prevState) {
+        // Only stop if we're currently in shared mode (transitioning TO exclusive)
+        _bass.BASS_ChannelStop(_fstream!);
+      }
       if (prevState) {
         _bassWasapi.BASS_WASAPI_Free();
         _bassInit();
@@ -759,17 +764,13 @@ class BassPlayer {
       _positionUpdater?.cancel();
       _removeEQ();
       final oldHandle = _fstream!;
-      // 正确处理旧流的清理，根据之前的模式
-      if (_streamWasapiExclusive) {
-        _bassWasapi.BASS_WASAPI_Stop(bass.TRUE);
-        _bassWasapi.BASS_WASAPI_Free();
-      } else {
-        final stopped = _bass.BASS_ChannelStop(oldHandle);
-        if (stopped == 0) {
-          logger.w(
-            "[bass] cleanup stop failed: err=${_bass.BASS_ErrorGetCode()} handle=$oldHandle",
-          );
-        }
+      // Only stop the channel, don't call BASS_WASAPI_Free here
+      // That's handled in useExclusiveMode when switching modes
+      final stopped = _bass.BASS_ChannelStop(oldHandle);
+      if (stopped == 0) {
+        logger.w(
+          "[bass] cleanup stop failed: err=${_bass.BASS_ErrorGetCode()} handle=$oldHandle",
+        );
       }
       final freed = _bass.BASS_StreamFree(oldHandle);
       if (freed == 0) {
