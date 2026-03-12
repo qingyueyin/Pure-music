@@ -724,43 +724,24 @@ class BassPlayer {
   bool useExclusiveMode(bool exclusive) {
     final prevState = wasapiExclusive;
     try {
-      _logAudioState("useExclusiveMode(begin,$exclusive)");
       if (exclusive && !_eqBypass && !_isEqFlat) {
         logger.w("[bass] Cannot enable exclusive mode while EQ is enabled");
         showTextOnSnackBar("独占模式与均衡器冲突，请先关闭均衡器（全部归零）");
         return false;
       }
-      final pathToReload = _fPath;
       final lastPos = position;
-      if (_fstream != null) {
-        _positionUpdater?.cancel();
-        _removeEQ();
-        if (_streamWasapiExclusive) {
-          // 之前是独占模式，需要清理 WASAPI
-          _bassWasapi.BASS_WASAPI_Stop(bass.TRUE);
-          _bassWasapi.BASS_WASAPI_Free();
-        } else {
-          // 之前是共享模式，停止通常的播放
-          _bass.BASS_ChannelStop(_fstream!);
-        }
-        freeFStream();
-      }
       if (prevState) {
-        // 从独占模式切换出来，需要清理 WASAPI 并重新初始化 BASS
-        _bassWasapi.BASS_WASAPI_Stop(bass.TRUE);
         _bassWasapi.BASS_WASAPI_Free();
         _bassInit();
       }
       wasapiExclusive = exclusive;
-      // 通知独占模式状态变化
-      onExclusiveModeChanged?.call(exclusive);
-      if (pathToReload != null) {
-        setSource(pathToReload);
+      if (_fstream != null && _fPath != null) {
+        setSource(_fPath!);
         setVolumeDsp(AppPreference.instance.playbackPref.volumeDsp);
         seek(lastPos);
         start();
       }
-      _logAudioState("useExclusiveMode(end,$exclusive)");
+      onExclusiveModeChanged?.call(exclusive);
       return true;
     } catch (err) {
       logger.e("[use exclusive mode] $err");
@@ -1094,27 +1075,16 @@ class BassPlayer {
   }
 
   void _startWasapiExclusive() {
-    try {
-      _bassWasapiInit();
-    } catch (err) {
-      logger.w("[bass] wasapi exclusive init failed, fallback to shared: $err");
-      showTextOnSnackBar("独占模式初始化失败，已切回共享模式: $err");
-      useExclusiveMode(false);
-      return;
-    }
+    _bassWasapiInit();
 
     if (_bassWasapi.BASS_WASAPI_Start() == bass.FALSE) {
-      final errorCode = _bass.BASS_ErrorGetCode();
-      logger.e("[bass] BASS_WASAPI_Start failed: $errorCode");
-      switch (errorCode) {
+      switch (_bass.BASS_ErrorGetCode()) {
         case bass.BASS_ERROR_INIT:
           _bassWasapiInit();
           _startWasapiExclusive();
           break;
         case bass.BASS_ERROR_UNKNOWN:
           throw const FormatException("Some other mystery problem!");
-        default:
-          throw FormatException("WASAPI Start failed with error: $errorCode");
       }
     }
     _playerStateStreamController.add(playerState);
@@ -1161,11 +1131,9 @@ class BassPlayer {
   }
 
   void _pauseWasapiExclusive() {
-    if (_bassWasapi.BASS_WASAPI_Stop(bass.TRUE) == bass.TRUE) {
+    if (_bassWasapi.BASS_WASAPI_Stop(bass.FALSE) == bass.TRUE) {
       _playerStateStreamController.add(playerState);
       _positionUpdater?.cancel();
-      _positionUpdater = _getPositionUpdater(const Duration(milliseconds: 120));
-      _positionStreamController.add(position);
     }
   }
 
