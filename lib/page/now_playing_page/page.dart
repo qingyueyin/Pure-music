@@ -23,6 +23,7 @@ import 'package:pure_music/page/now_playing_page/component/lyric_source_view.dar
 import 'package:pure_music/page/now_playing_page/component/now_playing_shader_background.dart';
 import 'package:pure_music/page/now_playing_page/component/pitch_control.dart';
 import 'package:pure_music/page/now_playing_page/component/vertical_lyric_view.dart';
+import 'package:pure_music/page/now_playing_page/component/amll_background.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/playback_service.dart';
@@ -308,25 +309,13 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
-                          ColoredBox(color: scheme.surface),
-                          NowPlayingShaderBackground(
-                            repaint: _bgController,
-                            scheme: scheme,
-                            brightness: brightness,
-                            spectrumStream: playbackService.spectrumStream,
-                            intensity: brightness == Brightness.dark ? 1.0 : 0.9,
-                            dominantColor: _dominantColor,
-                            fallback: RepaintBoundary(
-                              child: CustomPaint(
-                                painter: _MeshBackgroundPainter(
-                                  scheme: scheme,
-                                  brightness: brightness,
-                                  repaint: _bgController,
-                                ),
-                                child: const SizedBox.expand(),
-                              ),
-                            ),
-                          ),
+              ColoredBox(color: scheme.surface),
+              AmllBackground(
+                dominantColor: _dominantColor,
+                flowSpeed: 1.0,
+                intensity: brightness == Brightness.dark ? 1.0 : 0.9,
+                spectrumStream: playbackService.spectrumStream,
+              ),
                           AnimatedSwitcher(
                             duration: const Duration(milliseconds: 560),
                             switchInCurve: Curves.easeInOutCubic,
