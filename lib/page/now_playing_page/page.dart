@@ -20,7 +20,6 @@ import 'package:pure_music/component/responsive_builder.dart';
 import 'package:pure_music/page/now_playing_page/component/current_playlist_view.dart';
 import 'package:pure_music/page/now_playing_page/component/equalizer_dialog.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_source_view.dart';
-import 'package:pure_music/page/now_playing_page/component/now_playing_shader_background.dart';
 import 'package:pure_music/page/now_playing_page/component/pitch_control.dart';
 import 'package:pure_music/page/now_playing_page/component/vertical_lyric_view.dart';
 import 'package:pure_music/page/now_playing_page/component/amll_background.dart';
@@ -148,6 +147,8 @@ class _NowPlayingPageState extends State<NowPlayingPage>
   bool _lastImmersive = false;
   Color? _dominantColor;
   final ColorExtractionService _colorService = ColorExtractionService();
+  /// Track AMLL background preference changes
+  late final ValueNotifier<bool> _enableAmllBackgroundNotifier;
 
   void _bumpCursor() {
     _cursorHideTimer?.cancel();
@@ -162,6 +163,34 @@ class _NowPlayingPageState extends State<NowPlayingPage>
         _cursorHidden = true;
       });
     });
+  }
+
+  /// Build background widget based on current preference
+  Widget _buildBackgroundWidget(
+    ColorScheme scheme,
+    Brightness brightness,
+    bool enableAmllBackground,
+  ) {
+    if (enableAmllBackground) {
+      return AmllBackground(
+        dominantColor: _dominantColor,
+        flowSpeed: 1.0,
+        intensity: brightness == Brightness.dark ? 1.0 : 0.9,
+        spectrumStream: playbackService.spectrumStream,
+      );
+    } else {
+      return AnimatedBuilder(
+        animation: _bgController,
+        builder: (context, child) => CustomPaint(
+          painter: _MeshBackgroundPainter(
+            scheme: scheme,
+            brightness: brightness,
+            repaint: _bgController,
+          ),
+          child: const SizedBox.expand(),
+        ),
+      );
+    }
   }
 
   void updateCover() {
@@ -226,6 +255,12 @@ class _NowPlayingPageState extends State<NowPlayingPage>
       vsync: this,
       duration: const Duration(seconds: 22),
     )..repeat();
+    
+    // Initialize AMLL background preference notifier
+    _enableAmllBackgroundNotifier = ValueNotifier(
+      AppPreference.instance.nowPlayingPagePref.enableAmllBackground,
+    );
+    
     playbackService.addListener(updateCover);
     updateCover();
     _bumpCursor();
@@ -240,6 +275,7 @@ class _NowPlayingPageState extends State<NowPlayingPage>
   void dispose() {
     playbackService.removeListener(updateCover);
     _bgController.dispose();
+    _enableAmllBackgroundNotifier.dispose();
     _coverDebounceTimer?.cancel();
     _cursorHideTimer?.cancel();
     super.dispose();
@@ -305,18 +341,25 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                   fit: StackFit.expand,
                   alignment: AlignmentDirectional.center,
                   children: [
-                    RepaintBoundary(
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-              ColoredBox(color: scheme.surface),
-              AmllBackground(
-                dominantColor: _dominantColor,
-                flowSpeed: 1.0,
-                intensity: brightness == Brightness.dark ? 1.0 : 0.9,
-                spectrumStream: playbackService.spectrumStream,
-              ),
-                          AnimatedSwitcher(
+                      RepaintBoundary(
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                    ColoredBox(color: scheme.surface),
+                    ValueListenableBuilder<bool>(
+                      valueListenable: _enableAmllBackgroundNotifier,
+                      builder: (context, enableAmllBackground, _) {
+                        return AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 300),
+                          child: _buildBackgroundWidget(
+                            scheme,
+                            brightness,
+                            enableAmllBackground,
+                          ),
+                        );
+                      },
+                    ),
+                                    AnimatedSwitcher(
                             duration: const Duration(milliseconds: 560),
                             switchInCurve: Curves.easeInOutCubic,
                             switchOutCurve: Curves.easeInOutCubic,

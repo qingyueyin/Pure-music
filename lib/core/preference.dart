@@ -33,6 +33,8 @@ class NowPlayingPagePreference {
   bool showLyricTranslation;
   int lyricFontWeight;
   bool enableLyricBlur;
+  /// Enable AMLL Mesh Gradient background (Windows only)
+  bool enableAmllBackground;
 
   NowPlayingPagePreference(
     this.nowPlayingViewMode,
@@ -41,8 +43,9 @@ class NowPlayingPagePreference {
     this.translationFontSize,
     this.showLyricTranslation,
     this.lyricFontWeight,
-    this.enableLyricBlur,
-  );
+    this.enableLyricBlur, {
+    this.enableAmllBackground = true,
+  });
 
   Map toMap() => {
         "nowPlayingViewMode": nowPlayingViewMode.name,
@@ -52,6 +55,7 @@ class NowPlayingPagePreference {
         "showLyricTranslation": showLyricTranslation,
         "lyricFontWeight": lyricFontWeight,
         "enableLyricBlur": enableLyricBlur,
+        "enableAmllBackground": enableAmllBackground,
       };
 
   factory NowPlayingPagePreference.fromMap(Map map) {
@@ -64,6 +68,7 @@ class NowPlayingPagePreference {
       map["showLyricTranslation"] ?? true,
       map["lyricFontWeight"] ?? 400,
       map["enableLyricBlur"] ?? false,
+      enableAmllBackground: map["enableAmllBackground"] ?? true,
     );
   }
 }
@@ -202,7 +207,8 @@ class AppPreference {
       18.0,
       true,
       400,
-      false);
+      false,
+      enableAmllBackground: true);
 
   String customCpFeedbackKey = "";
   String updateRepoSlug = "qingyueyin/Pure-music";
