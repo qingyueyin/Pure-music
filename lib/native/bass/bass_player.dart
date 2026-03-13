@@ -54,6 +54,8 @@ class BassPlayer {
   String? _fPath;
   int? _fstream;
   bool _streamWasapiExclusive = false;
+  // Temporarily stores EQ bypass state before entering exclusive mode
+  // (field declared earlier) bool? _eqBypassBeforeExclusive;
 
   // Equalizer
   final List<int> _eqHandles = [];
@@ -96,6 +98,8 @@ class BassPlayer {
 
   /// 是否启用 wasapi 独占模式
   bool wasapiExclusive = false;
+  // Temporarily store EQ bypass state before entering exclusive mode
+  bool? _eqBypassBeforeExclusive;
 
   /// 独占模式状态变化回调
   Function(bool)? onExclusiveModeChanged;
@@ -724,6 +728,16 @@ class BassPlayer {
   bool useExclusiveMode(bool exclusive) {
     final prevState = wasapiExclusive;
     try {
+      // Temporarily disable EQ when entering exclusive mode; restore on exit
+      if (exclusive) {
+        _eqBypassBeforeExclusive ??= AppPreference.instance.playbackPref.eqBypass;
+        AppPreference.instance.playbackPref.eqBypass = true;
+      } else {
+        if (_eqBypassBeforeExclusive != null) {
+          AppPreference.instance.playbackPref.eqBypass = _eqBypassBeforeExclusive!;
+          _eqBypassBeforeExclusive = null;
+        }
+      }
       if (exclusive && !_eqBypass && !_isEqFlat) {
         logger.w("[bass] Cannot enable exclusive mode while EQ is enabled");
         showTextOnSnackBar("独占模式与均衡器冲突，请先关闭均衡器（全部归零）");
@@ -747,10 +761,19 @@ class BassPlayer {
         start();
       }
       onExclusiveModeChanged?.call(exclusive);
+      // Clear saved EQ bypass state after successful switch
+      _eqBypassBeforeExclusive = null;
       return true;
     } catch (err) {
       logger.e("[use exclusive mode] $err");
       showTextOnSnackBar(err.toString());
+      // On failure, rollback EQ bypass if it was saved
+      if (_eqBypassBeforeExclusive != null) {
+        AppPreference.instance.playbackPref.eqBypass = _eqBypassBeforeExclusive!;
+        _eqBypassBeforeExclusive = null;
+      }
+      // Ensure UI reflects the actual internal state
+      _playerStateStreamController.add(playerState);
     }
     wasapiExclusive = prevState;
     return false;
