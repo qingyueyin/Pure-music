@@ -54,6 +54,8 @@ class SettingsPage extends StatelessWidget {
           ThemeModeControl(),
           const SizedBox(height: 16.0),
           const AppearanceAdvancedSettingsTile(),
+          const SizedBox(height: 16.0),
+          const AmllBackgroundToggle(),
 
           const SizedBox(height: 24.0),
           const _SettingsSectionHeader("高级与关于"),

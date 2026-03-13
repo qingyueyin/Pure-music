@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/component/settings_tile.dart';
@@ -279,6 +280,39 @@ class _WasapiBufferControlState extends State<WasapiBufferControl> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// AMLL Mesh Gradient Background Toggle (Windows only)
+class AmllBackgroundToggle extends StatefulWidget {
+  const AmllBackgroundToggle({super.key});
+
+  @override
+  State<AmllBackgroundToggle> createState() => _AmllBackgroundToggleState();
+}
+
+class _AmllBackgroundToggleState extends State<AmllBackgroundToggle> {
+  final pref = AppPreference.instance.nowPlayingPagePref;
+
+  @override
+  Widget build(BuildContext context) {
+    /// Only show on Windows platform
+    if (!Platform.isWindows) {
+      return const SizedBox.shrink();
+    }
+
+    return SettingsTile(
+      description: "AMLL 网格渐变背景",
+      action: Switch(
+        value: pref.enableAmllBackground,
+        onChanged: (v) async {
+          setState(() {
+            pref.enableAmllBackground = v;
+          });
+          await AppPreference.instance.save();
+        },
       ),
     );
   }
