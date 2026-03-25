@@ -10,6 +10,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  palette_generator: ^0.3.3+7
+  material_color_utilities: ^0.11.1
   flutter_localizations:
     sdk: flutter
 
@@ -18,7 +20,7 @@ dependencies:
   filepicker_windows: ^2.1.4
   flex_color_picker: ^3.7.1
   flutter_markdown_plus: ^1.0.7
-  flutter_rust_bridge: 2.11.1
+  flutter_rust_bridge: ^2.11.1
   flutter_volume_controller: ^1.3.3
   go_router: ^17.1.0
   github: ^9.24.0
@@ -33,7 +35,6 @@ dependencies:
   sqlite3_flutter_libs: ^0.5.0
   window_manager: ^0.5.1
   xml: ^6.5.0
-  palette_generator: ^0.3.3+4
   vector_math: ^2.1.4
 
   desktop_lyric:
@@ -42,7 +43,7 @@ dependencies:
     git:
       url: https://github.com/yhsj0919/music_api.git
 
-  rust_lib_coriander_player:
+  rust_lib_pure_music:
     path: rust_builder
 
 dev_dependencies:
@@ -58,7 +59,8 @@ flutter:
     - assets/fonts/MiSans/MiSansVF.ttf
     - app_icon.ico
   shaders:
-    - assets/shaders/now_playing_bg.frag
+    - assets/shaders/amll_background.frag
+    - assets/shaders/mesh_gradient_runtime.frag
   fonts:
     - family: MiSans
       fonts:
