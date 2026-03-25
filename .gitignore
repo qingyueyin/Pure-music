@@ -45,8 +45,8 @@ app.*.map.json
 /.fvm
 lib/page/settings_page/cpfeedback_key.dart
 
-# Local Environment & AI
-.trae/
+# Local Environment
+.tmp/
 .vscode/
 
 # Rust
@@ -59,6 +59,7 @@ CMakeUserPresets.json
 CMakeCache.txt
 *.obj
 *.pdb
+nul
 
 # Temporary files
 *.swp
@@ -84,7 +85,6 @@ docs/
 output/
 output/data/
 release/
-build_release.ps1
 
 # Generated / Local only
 AGENTS.md
