@@ -7,6 +7,7 @@ class BreathingDots extends StatefulWidget {
   final Color dotColor;
   final Duration breathDuration;
   final VoidCallback? onTap;
+  final AnimationController? controller;
 
   const BreathingDots({
     super.key,
@@ -14,6 +15,7 @@ class BreathingDots extends StatefulWidget {
     this.dotColor = Colors.white,
     this.breathDuration = const Duration(seconds: 2),
     this.onTap,
+    this.controller,
   });
 
   @override
@@ -22,42 +24,49 @@ class BreathingDots extends StatefulWidget {
 
 class _BreathingDotsState extends State<BreathingDots>
     with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _animation;
+  AnimationController? _fallbackController;
+
+  AnimationController get _controller {
+    return widget.controller ?? _ensureFallbackController();
+  }
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
+    if (widget.controller == null) {
+      _ensureFallbackController();
+    }
+  }
+
+  AnimationController _ensureFallbackController() {
+    return _fallbackController ??= AnimationController(
       vsync: this,
       duration: widget.breathDuration,
     )..repeat(reverse: true);
-
-    _animation = CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeInOut,
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: widget.onTap,
-      child: AnimatedBuilder(
-        animation: _animation,
-        builder: (context, child) {
-          return Opacity(
-            opacity: 0.3 + _animation.value * 0.7,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildDot(0),
-                _buildDot(1),
-                _buildDot(2),
-              ],
-            ),
-          );
-        },
+      child: RepaintBoundary(
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            final eased = Curves.easeInOut.transform(_controller.value);
+            return Opacity(
+              opacity: 0.3 + eased * 0.7,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildDot(0),
+                  _buildDot(1),
+                  _buildDot(2),
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -91,7 +100,7 @@ class _BreathingDotsState extends State<BreathingDots>
 
   @override
   void dispose() {
-    _controller.dispose();
+    _fallbackController?.dispose();
     super.dispose();
   }
 }
