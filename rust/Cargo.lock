@@ -2021,7 +2021,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rust_lib_coriander_player"
+name = "rust_lib_pure_music"
 version = "0.1.0"
 dependencies = [
  "aes",

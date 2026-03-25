@@ -83,7 +83,10 @@ fn init_schema(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn write_index_value_to_sqlite(index_dir: &Path, index: &serde_json::Value) -> Result<()> {
+pub(crate) fn write_index_value_to_sqlite(
+    index_dir: &Path,
+    index: &serde_json::Value,
+) -> Result<()> {
     let folders = index
         .get("folders")
         .and_then(|v| v.as_array())
@@ -144,7 +147,10 @@ pub(crate) fn write_index_value_to_sqlite(index_dir: &Path, index: &serde_json::
                 let sample_rate = audio.get("sample_rate").and_then(|v| v.as_u64());
                 let modified = audio.get("modified").and_then(|v| v.as_u64()).unwrap_or(0);
                 let created = audio.get("created").and_then(|v| v.as_u64()).unwrap_or(0);
-                let by = audio.get("by").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let by = audio
+                    .get("by")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
 
                 audio_stmt.execute(params![
                     path,
@@ -183,7 +189,9 @@ pub fn read_index_from_sqlite(index_path: String) -> Result<Vec<IndexFolder>> {
     init_schema(&conn)?;
 
     let version: Option<String> = conn
-        .query_row("SELECT value FROM meta WHERE key = 'version'", [], |row| row.get(0))
+        .query_row("SELECT value FROM meta WHERE key = 'version'", [], |row| {
+            row.get(0)
+        })
         .optional()?;
     if version.is_none() {
         return Err(anyhow!("sqlite index not initialized"));
@@ -262,15 +270,14 @@ mod tests {
 
     #[test]
     fn roundtrip_index() {
-        let base = std::env::temp_dir()
-            .join(format!(
-                "coriander_player_test_{}_{}",
-                std::process::id(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis()
-            ));
+        let base = std::env::temp_dir().join(format!(
+            "pure_music_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
         std::fs::create_dir_all(&base).unwrap();
 
         let index = serde_json::json!({
