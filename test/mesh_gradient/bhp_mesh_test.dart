@@ -1,12 +1,11 @@
-/// Unit tests for Phase 2: Mesh Generation and Rendering components.
-///
-/// Tests cover:
-/// - BHPMesh generation and deformation
-/// - AudioReactor spectrum processing
-/// - Canvas rendering
-/// - Configuration presets
-/// - Integration between components
-library bhp_mesh_test;
+// Unit tests for Phase 2: Mesh Generation and Rendering components.
+//
+// Tests cover:
+// - BHPMesh generation and deformation
+// - AudioReactor spectrum processing
+// - Canvas rendering
+// - Configuration presets
+// - Integration between components
 
 import 'package:flutter_test/flutter_test.dart';
 import 'dart:typed_data';
