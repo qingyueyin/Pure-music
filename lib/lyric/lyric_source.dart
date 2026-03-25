@@ -57,7 +57,8 @@ Future<void> readLyricSources() async {
   lyricSources = {};
   try {
     final dir = await getAppDataDir();
-    final jsonFile = File("${dir.path}\lyric_source.json");
+    final jsonFile =
+        File('${dir.path}${Platform.pathSeparator}lyric_source.json');
 
     final db = await AppDb.instance.db();
     final count =

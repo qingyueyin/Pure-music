@@ -94,11 +94,12 @@ class QrcLine extends SyncLyricLine {
     final Duration length = Duration(
       milliseconds: int.tryParse(splitedTime[1]) ?? 0,
     );
+    final lineStartMs = start.inMilliseconds;
 
     final splitedContent = splitedLine[1].split(")");
     final List<QrcWord> words = [];
     for (final item in splitedContent) {
-      final qrcWord = QrcWord.fromWord(item, offset);
+      final qrcWord = QrcWord.fromWord(item, lineStartMs: lineStartMs);
 
       if (qrcWord == null) continue;
 
@@ -112,7 +113,7 @@ class QrcLine extends SyncLyricLine {
 class QrcWord extends SyncLyricWord {
   QrcWord(super.start, super.length, super.content);
 
-  static QrcWord? fromWord(String word, [int offset = 0]) {
+  static QrcWord? fromWord(String word, {required int lineStartMs}) {
     final splitedWord = word.split("(");
     if (splitedWord.length != 2) return null;
 
@@ -121,7 +122,7 @@ class QrcWord extends SyncLyricWord {
     if (splitedTime.length != 2) return null;
 
     final Duration start = Duration(
-      milliseconds: max((int.tryParse(splitedTime[0]) ?? 0) - offset, 0),
+      milliseconds: lineStartMs + max(int.tryParse(splitedTime[0]) ?? 0, 0),
     );
     final Duration length = Duration(
       milliseconds: int.tryParse(splitedTime[1]) ?? 0,

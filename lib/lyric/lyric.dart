@@ -13,8 +13,10 @@ class LyricLine {
   final Duration start;
   Duration length;
   String? translation;
+  String? romanLyric;
 
-  LyricLine(this.start, this.length, [this.translation]);
+  LyricLine(this.start, this.length, [this.translation])
+      : romanLyric = null;
 }
 
 class SyncLyricLine extends LyricLine {
@@ -29,8 +31,9 @@ class SyncLyricWord {
   final Duration start;
   Duration length;
   final String content;
+  bool obscene;
 
-  SyncLyricWord(this.start, this.length, this.content);
+  SyncLyricWord(this.start, this.length, this.content) : obscene = false;
 }
 
 class UnsyncLyricLine extends LyricLine {
