@@ -182,8 +182,13 @@ class BassPlayer {
     if (_fstream == null) return 0;
 
     final volDsp = malloc.allocate<ffi.Float>(ffi.sizeOf<ffi.Float>());
-    _bass.BASS_ChannelGetAttribute(_fstream!, bass.BASS_ATTRIB_VOLDSP, volDsp);
-    return volDsp.value;
+    try {
+      _bass.BASS_ChannelGetAttribute(
+          _fstream!, bass.BASS_ATTRIB_VOLDSP, volDsp);
+      return volDsp.value;
+    } finally {
+      malloc.free(volDsp);
+    }
   }
 
   /// update every 33ms
@@ -201,7 +206,12 @@ class BassPlayer {
   int _lastSpectrumUpdateUs = 0;
   Duration _spectrumTickPeriod = const Duration(milliseconds: 16);
   SpectrumUpdateMode spectrumUpdateMode = SpectrumUpdateMode.auto;
+  static const int _spectrumBandCount = 8;
   final Float32List _spectrumSmoothed = Float32List(8);
+  final Float32List _spectrumBands = Float32List(_spectrumBandCount);
+  final Int32List _spectrumBandStarts = Int32List(_spectrumBandCount);
+  final Int32List _spectrumBandEnds = Int32List(_spectrumBandCount);
+  double _spectrumBandsSampleRate = 0.0;
 
   void setSpectrumUpdateMode(SpectrumUpdateMode mode) {
     spectrumUpdateMode = mode;
@@ -223,7 +233,7 @@ class BassPlayer {
 
   Timer _getPositionUpdater(Duration period) {
     return Timer.periodic(period, (timer) {
-      _positionStreamController.add(position);
+      _emitPositionSnapshot();
       _maybeUpdateSpectrum();
 
       /// check if the channel has completed
@@ -231,6 +241,12 @@ class BassPlayer {
         _playerStateStreamController.add(PlayerState.completed);
       }
     });
+  }
+
+  void _emitPositionSnapshot() {
+    if (_positionStreamController.hasListener) {
+      _positionStreamController.add(position);
+    }
   }
 
   Duration _computePlayingTickPeriod() {
@@ -256,10 +272,14 @@ class BassPlayer {
     if (_fstream == null) return;
     final freqPtr = malloc.allocate<ffi.Float>(ffi.sizeOf<ffi.Float>());
     try {
-      final ok =
-          _bass.BASS_ChannelGetAttribute(_fstream!, bass.BASS_ATTRIB_FREQ, freqPtr);
+      final ok = _bass.BASS_ChannelGetAttribute(
+          _fstream!, bass.BASS_ATTRIB_FREQ, freqPtr);
       if (ok != 0 && freqPtr.value.isFinite && freqPtr.value > 1.0) {
-        _streamSampleRate = freqPtr.value.toDouble();
+        final nextRate = freqPtr.value.toDouble();
+        if ((_streamSampleRate - nextRate).abs() > 1e-3) {
+          _streamSampleRate = nextRate;
+          _spectrumBandsSampleRate = 0.0;
+        }
       }
     } finally {
       malloc.free(freqPtr);
@@ -270,6 +290,10 @@ class BassPlayer {
     if (_fstream == null) return;
     if (_bassChannelGetData == null) return;
     if (playerState != PlayerState.playing) return;
+    if (!_spectrumStreamController.hasListener) return;
+
+    // In WASAPI exclusive mode, the decoding stream must not be consumed by FFT.
+    if (wasapiExclusive || _streamWasapiExclusive) return;
 
     final nowUs = DateTime.now().microsecondsSinceEpoch;
     final intervalUs = _spectrumTickPeriod.inMicroseconds;
@@ -281,18 +305,21 @@ class BassPlayer {
   void _emitSpectrumFrame() {
     final handle = _fstream;
     if (handle == null) return;
+    if (!_spectrumStreamController.hasListener) return;
     final getData = _bassChannelGetData;
     if (getData == null) return;
+    if (wasapiExclusive || _streamWasapiExclusive) return;
 
     _fftBuffer ??= malloc.allocate<ffi.Float>(1024 * ffi.sizeOf<ffi.Float>());
-    final bytesRead = getData(handle, _fftBuffer!.cast<ffi.Void>(), _bassDataFft2048);
+    final bytesRead =
+        getData(handle, _fftBuffer!.cast<ffi.Void>(), _bassDataFft2048);
     if (bytesRead <= 0) return;
 
     final fft = _fftBuffer!.asTypedList(1024);
-    final bands = _computeSpectrum8(fft, _streamSampleRate);
-    final out = Float32List(8);
-    for (int i = 0; i < 8; i++) {
-      final target = bands[i];
+    _computeSpectrum8Into(fft, _streamSampleRate, _spectrumBands);
+    final out = Float32List(_spectrumBandCount);
+    for (int i = 0; i < _spectrumBandCount; i++) {
+      final target = _spectrumBands[i];
       final prev = _spectrumSmoothed[i];
       final a = target > prev ? 0.35 : 0.18;
       final next = (prev + (target - prev) * a).clamp(0.0, 1.0).toDouble();
@@ -302,39 +329,61 @@ class BassPlayer {
     _spectrumStreamController.add(out);
   }
 
-  Float32List _computeSpectrum8(Float32List fft, double sampleRate) {
+  void _ensureSpectrumBandBins(double sampleRate) {
     const fftSize = 2048.0;
     const minF = 45.0;
     const maxF = 16000.0;
-    const bands = 8;
+    if ((_spectrumBandsSampleRate - sampleRate).abs() < 1e-3 &&
+        _spectrumBandsSampleRate > 0) {
+      return;
+    }
 
-    final out = Float32List(bands);
     final nyquist = sampleRate * 0.5;
     final clampedMaxF = math.min(maxF, nyquist - 1.0);
-    if (clampedMaxF <= minF || nyquist <= 1.0) return out;
+    if (clampedMaxF <= minF || nyquist <= 1.0) {
+      for (int i = 0; i < _spectrumBandCount; i++) {
+        _spectrumBandStarts[i] = 1;
+        _spectrumBandEnds[i] = 2;
+      }
+      _spectrumBandsSampleRate = sampleRate;
+      return;
+    }
 
-    for (int i = 0; i < bands; i++) {
-      final a = i / bands;
-      final b = (i + 1) / bands;
-      final fa = minF * math.pow(clampedMaxF / minF, a).toDouble();
-      final fb = minF * math.pow(clampedMaxF / minF, b).toDouble();
-      final ia = ((fa / sampleRate) * fftSize).floor().clamp(1, 1023).toInt();
-      final ib = ((fb / sampleRate) * fftSize)
-          .ceil()
-          .clamp(ia + 1, 1023)
-          .toInt();
+    final ratio = clampedMaxF / minF;
+    for (int i = 0; i < _spectrumBandCount; i++) {
+      final a = i / _spectrumBandCount;
+      final b = (i + 1) / _spectrumBandCount;
+      final fa = minF * math.pow(ratio, a).toDouble();
+      final fb = minF * math.pow(ratio, b).toDouble();
+      final start =
+          ((fa / sampleRate) * fftSize).floor().clamp(1, 1023).toInt();
+      final end =
+          ((fb / sampleRate) * fftSize).ceil().clamp(start + 1, 1023).toInt();
+      _spectrumBandStarts[i] = start;
+      _spectrumBandEnds[i] = end;
+    }
+    _spectrumBandsSampleRate = sampleRate;
+  }
 
+  void _computeSpectrum8Into(
+    Float32List fft,
+    double sampleRate,
+    Float32List out,
+  ) {
+    _ensureSpectrumBandBins(sampleRate);
+
+    for (int i = 0; i < _spectrumBandCount; i++) {
+      final start = _spectrumBandStarts[i];
+      final end = _spectrumBandEnds[i];
       double m = 0.0;
-      for (int k = ia; k < ib; k++) {
+      for (int k = start; k < end; k++) {
         final v = fft[k];
         if (v.isFinite && v > m) m = v.toDouble();
       }
-      final scaled = (math.log(1.0 + m * 18.0) / math.log(19.0))
+      out[i] = (math.log(1.0 + m * 18.0) / math.log(19.0))
           .clamp(0.0, 1.0)
           .toDouble();
-      out[i] = scaled;
     }
-    return out;
   }
 
   void setEQ(int band, double gain) {
@@ -730,11 +779,13 @@ class BassPlayer {
     try {
       // Temporarily disable EQ when entering exclusive mode; restore on exit
       if (exclusive) {
-        _eqBypassBeforeExclusive ??= AppPreference.instance.playbackPref.eqBypass;
+        _eqBypassBeforeExclusive ??=
+            AppPreference.instance.playbackPref.eqBypass;
         AppPreference.instance.playbackPref.eqBypass = true;
       } else {
         if (_eqBypassBeforeExclusive != null) {
-          AppPreference.instance.playbackPref.eqBypass = _eqBypassBeforeExclusive!;
+          AppPreference.instance.playbackPref.eqBypass =
+              _eqBypassBeforeExclusive!;
           _eqBypassBeforeExclusive = null;
         }
       }
@@ -769,7 +820,8 @@ class BassPlayer {
       showTextOnSnackBar(err.toString());
       // On failure, rollback EQ bypass if it was saved
       if (_eqBypassBeforeExclusive != null) {
-        AppPreference.instance.playbackPref.eqBypass = _eqBypassBeforeExclusive!;
+        AppPreference.instance.playbackPref.eqBypass =
+            _eqBypassBeforeExclusive!;
         _eqBypassBeforeExclusive = null;
       }
       // Ensure UI reflects the actual internal state
@@ -1032,7 +1084,8 @@ class BassPlayer {
     _bassWasapi.BASS_WASAPI_Free();
 
     // 使用参考项目的标准配置
-    const flags = bass_wasapi.BASS_WASAPI_EXCLUSIVE | bass_wasapi.BASS_WASAPI_EVENT;
+    const flags =
+        bass_wasapi.BASS_WASAPI_EXCLUSIVE | bass_wasapi.BASS_WASAPI_EVENT;
     const bufferSec = 0.05; // 固定 50ms 缓冲，经过验证的稳定值
     const initFreq = 0; // 让 WASAPI 自动选择合适的采样率
 
@@ -1158,6 +1211,7 @@ class BassPlayer {
     if (_bassWasapi.BASS_WASAPI_Stop(bass.FALSE) == bass.TRUE) {
       _playerStateStreamController.add(playerState);
       _positionUpdater?.cancel();
+      _emitPositionSnapshot();
     }
   }
 
@@ -1188,8 +1242,7 @@ class BassPlayer {
 
     _playerStateStreamController.add(playerState);
     _positionUpdater?.cancel();
-    _positionUpdater = _getPositionUpdater(const Duration(milliseconds: 120));
-    _positionStreamController.add(position);
+    _emitPositionSnapshot();
     _logAudioState("pause(done)");
   }
 
@@ -1224,7 +1277,7 @@ class BassPlayer {
           throw const FormatException("Some other mystery problem!");
       }
     }
-    _positionStreamController.add(this.position);
+    _emitPositionSnapshot();
     _logAudioState("seek(end,$position)");
   }
 
