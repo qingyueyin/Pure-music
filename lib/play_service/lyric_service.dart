@@ -3,10 +3,11 @@ import 'dart:math';
 import 'dart:collection';
 import 'dart:io';
 
-import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/library/audio_library.dart';
+import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
+import 'package:pure_music/lyric/lyric_timing_preprocessor.dart';
 import 'package:pure_music/lyric/lyric_source.dart';
 import 'package:pure_music/core/matcher.dart';
 import 'package:pure_music/play_service/play_service.dart';
@@ -18,7 +19,7 @@ const int _kLyricCacheCapacity = 32;
 
 class LyricCache {
   final LinkedHashMap<String, Lyric> _cache = LinkedHashMap();
-  
+
   Lyric? get(String path) {
     final lyric = _cache[path];
     if (lyric != null) {
@@ -27,7 +28,7 @@ class LyricCache {
     }
     return lyric;
   }
-  
+
   void put(String path, Lyric lyric) {
     if (_cache.containsKey(path)) {
       _cache.remove(path);
@@ -36,11 +37,11 @@ class LyricCache {
     }
     _cache[path] = lyric;
   }
-  
+
   void remove(String path) {
     _cache.remove(path);
   }
-  
+
   void clear() {
     _cache.clear();
   }
@@ -86,7 +87,9 @@ class LyricService extends ChangeNotifier {
 
       if (currLineIndex != _lastDesktopLyricLineIndex) {
         _lastDesktopLyricLineIndex = currLineIndex;
-        final nextLine = currLineIndex + 1 < lyric.lines.length ? lyric.lines[currLineIndex + 1] : null;
+        final nextLine = currLineIndex + 1 < lyric.lines.length
+            ? lyric.lines[currLineIndex + 1]
+            : null;
         playService.desktopLyricService.canSendMessage.then((canSend) {
           if (!canSend) return;
           playService.desktopLyricService.sendLyricLineMessage(
@@ -197,7 +200,8 @@ class LyricService extends ChangeNotifier {
     await writeLyricToPath(path: nowPlaying.path, lyric: lrcText);
   }
 
-  Future<String?> saveCurrentLyricAsLrc({bool enhancedIfPossible = true}) async {
+  Future<String?> saveCurrentLyricAsLrc(
+      {bool enhancedIfPossible = true}) async {
     final nowPlaying = _getNowPlaying();
     if (nowPlaying == null) return null;
 
@@ -266,7 +270,9 @@ class LyricService extends ChangeNotifier {
     if (currLineIndex < 0 || currLineIndex >= lyric.lines.length) return;
     if (currLineIndex != _lastDesktopLyricLineIndex) {
       _lastDesktopLyricLineIndex = currLineIndex;
-      final nextLine = currLineIndex + 1 < lyric.lines.length ? lyric.lines[currLineIndex + 1] : null;
+      final nextLine = currLineIndex + 1 < lyric.lines.length
+          ? lyric.lines[currLineIndex + 1]
+          : null;
       playService.desktopLyricService.canSendMessage.then((canSend) {
         if (!canSend) return;
         playService.desktopLyricService.sendLyricLineMessage(
@@ -294,30 +300,24 @@ class LyricService extends ChangeNotifier {
 
   void _setCurrLyric(Lyric lyric) {
     _currLyric = lyric;
-    _lineStartMs = lyric.lines.map((e) => e.start.inMilliseconds).toList();
+    _lineStartMs =
+        _buildTimingPreprocessor().preprocess(lyric).effectiveLineStartMs;
   }
 
-  Future<Lyric?> _getLyricDefault(bool localFirst) async {
-    final nowPlaying = _getNowPlaying();
-    if (nowPlaying == null) return Future.value(null);
+  LyricTimingPreprocessor _buildTimingPreprocessor() {
+    final pref = AppPreference.instance.nowPlayingPagePref;
+    return LyricTimingPreprocessor(
+      advanceMs: pref.enableAdvanceLyricTiming ? 220 : 0,
+    );
+  }
 
-    final cached = _lyricCache.get(nowPlaying.path);
-    if (cached != null) return cached;
-
-    final lyric = localFirst
-        ? (await Lrc.fromAudioPath(nowPlaying)) ??
-            (await getMostMatchedLyric(nowPlaying))
-        : (await getMostMatchedLyric(nowPlaying)) ??
-            (await Lrc.fromAudioPath(nowPlaying));
-    
-    if (lyric != null) {
-      _lyricCache.put(nowPlaying.path, lyric);
-      // 当获取到网络歌词时，自动写入音乐标签
-      if (!localFirst) {
-        await writeCurrentLyricToTag();
-      }
-    }
-    return lyric;
+  void recomputeTiming() {
+    final lyric = _currLyric;
+    if (lyric == null) return;
+    _lineStartMs =
+        _buildTimingPreprocessor().preprocess(lyric).effectiveLineStartMs;
+    _nextLyricLine = 0;
+    findCurrLyricLine();
   }
 
   /// 根据默认歌词来源获取歌词：
