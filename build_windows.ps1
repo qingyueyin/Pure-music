@@ -1,5 +1,20 @@
 # Windows Build Script for Pure Music
 
+[CmdletBinding()]
+param(
+    [ValidateSet("portable", "exe")]
+    [string]$Distribution = "",
+
+    [string]$Version = "",
+
+    [ValidateSet("Release", "Debug")]
+    [string]$BuildMode = "Release",
+
+    [switch]$SkipPubGet,
+
+    [switch]$VerboseBuild
+)
+
 try { chcp 65001 | Out-Null } catch {}
 try { $OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 try { [Console]::InputEncoding = [System.Text.Encoding]::UTF8 } catch {}
@@ -7,8 +22,6 @@ try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 
 $ErrorActionPreference = "Stop"
 
-# Hardcode BuildMode to Release as requested
-$BuildMode = "Release"
 $finalOutputDir = Join-Path $PSScriptRoot "output"
 
 try {
@@ -42,23 +55,40 @@ function Read-Input([string]$prompt) {
     return $v
 }
 
-$distInput = Read-Input "Distribution: 1)portable  2)exe (non-portable)  (default 1)"
-if ($distInput -eq "2") {
-    $dist = "exe"
-    $portableBuild = "false"
+if ([string]::IsNullOrWhiteSpace($Distribution)) {
+    $distInput = Read-Input "Distribution: 1)portable  2)exe (non-portable)  (default 1)"
+    if ($distInput -eq "2") {
+        $dist = "exe"
+        $portableBuild = "false"
+    }
+    else {
+        $dist = "portable"
+        $portableBuild = "true"
+    }
 }
 else {
-    $dist = "portable"
-    $portableBuild = "true"
+    $dist = $Distribution
+    if ($dist -eq "portable") {
+        $portableBuild = "true"
+    }
+    else {
+        $portableBuild = "false"
+    }
 }
 
 $tag = "release"
 
 $defaultVersion = Get-AppSettingsVersion
 if ([string]::IsNullOrWhiteSpace($defaultVersion)) { $defaultVersion = "unknown" }
-$versionInput = (Read-Input "Version").Trim()
-if ([string]::IsNullOrWhiteSpace($versionInput)) { $versionInput = $defaultVersion }
-$version = $versionInput
+if ([string]::IsNullOrWhiteSpace($Version)) {
+    $versionInput = (Read-Input "Version").Trim()
+    if ([string]::IsNullOrWhiteSpace($versionInput)) { $versionInput = $defaultVersion }
+    $version = $versionInput
+}
+else {
+    $version = $Version.Trim()
+    if ([string]::IsNullOrWhiteSpace($version)) { $version = $defaultVersion }
+}
 
 $bassPluginMode = "full"
 
@@ -66,7 +96,37 @@ $artifactRoot = Join-Path $finalOutputDir ("pure_music_{0}_{1}_{2}" -f $version,
 $finalAppDir = Join-Path $artifactRoot "app"
 $finalDllDir = Join-Path $finalAppDir "dll"
 
-Write-Host "Starting build process (Release Mode)..." -ForegroundColor Green
+Write-Host ("Starting build process ({0} Mode)..." -f $BuildMode) -ForegroundColor Green
+
+# Speed knobs (safe defaults)
+# - CMake drives the native Windows build; parallelism can dramatically reduce build time.
+#   https://cmake.org/cmake/help/latest/envvar/CMAKE_BUILD_PARALLEL_LEVEL.html
+if (-not $env:CMAKE_BUILD_PARALLEL_LEVEL) {
+    try {
+        $env:CMAKE_BUILD_PARALLEL_LEVEL = [Environment]::ProcessorCount
+    } catch {
+        $env:CMAKE_BUILD_PARALLEL_LEVEL = 8
+    }
+}
+Write-Host ("CMAKE_BUILD_PARALLEL_LEVEL={0}" -f $env:CMAKE_BUILD_PARALLEL_LEVEL) -ForegroundColor Gray
+
+function Invoke-Step([string]$name, [scriptblock]$action) {
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    Write-Host ("\n>>> {0}" -f $name) -ForegroundColor Cyan
+    & $action
+    $sw.Stop()
+    Write-Host ("<<< {0} done in {1:n1}s" -f $name, $sw.Elapsed.TotalSeconds) -ForegroundColor Gray
+}
+
+function Invoke-RoboCopy([string]$src, [string]$dest) {
+    if (-not (Test-Path $src)) { throw "Source not found: $src" }
+    if (-not (Test-Path $dest)) { New-Item -ItemType Directory -Force -Path $dest | Out-Null }
+    # robocopy exit codes: 0-7 are success (including copied files).
+    robocopy $src $dest /E /NFL /NDL /NJH /NJS /NP /R:2 /W:1 | Out-Null
+    if ($LASTEXITCODE -gt 7) {
+        throw "robocopy failed (code=$LASTEXITCODE) src=$src dest=$dest"
+    }
+}
 
 # Check if flutter is available
 if (-not (Get-Command "flutter" -ErrorAction SilentlyContinue)) {
@@ -75,23 +135,29 @@ if (-not (Get-Command "flutter" -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-# 1. Smart flutter pub get
-$needPubGet = $true
-$packageConfig = ".dart_tool\package_config.json"
-if ((Test-Path "pubspec.lock") -and (Test-Path $packageConfig)) {
-    $yamlTime = (Get-Item "pubspec.yaml").LastWriteTime
-    $lockTime = (Get-Item "pubspec.lock").LastWriteTime
-    if ($yamlTime -le $lockTime) {
-        $needPubGet = $false
+Invoke-Step "pub get" {
+    if ($SkipPubGet) {
+        Write-Host "Skipping flutter pub get (SkipPubGet)." -ForegroundColor Gray
+        return
     }
-}
 
-if ($needPubGet) {
-    Write-Host "Running flutter pub get..." -ForegroundColor Cyan
-    flutter pub get
-}
-else {
-    Write-Host "Skipping flutter pub get (dependencies are up to date)." -ForegroundColor Gray
+    # Smart flutter pub get
+    $needPubGet = $true
+    $packageConfig = ".dart_tool\package_config.json"
+    if ((Test-Path "pubspec.lock") -and (Test-Path $packageConfig)) {
+        $yamlTime = (Get-Item "pubspec.yaml").LastWriteTime
+        $lockTime = (Get-Item "pubspec.lock").LastWriteTime
+        if ($yamlTime -le $lockTime) {
+            $needPubGet = $false
+        }
+    }
+
+    if ($needPubGet) {
+        flutter pub get
+    }
+    else {
+        Write-Host "Dependencies up to date; skipping pub get." -ForegroundColor Gray
+    }
 }
 
 # 2. Pre-build: Copy app icon to resources
@@ -104,33 +170,6 @@ if (Test-Path $appIconSource) {
 else {
     Write-Warning "app_icon.ico not found in project root. The application icon might be default."
 }
-
-function Update-RcVersion([string]$version) {
-    $rcPath = Join-Path $PSScriptRoot "windows\runner\Runner.rc"
-    if (-not (Test-Path $rcPath)) { return }
-    
-    $content = Get-Content -Path $rcPath -Raw
-    
-    $parts = $version -split '\+'
-    $verNum = $parts[0]
-    $verParts = $verNum -split '\.'
-    
-    $major = if ($verParts.Length -gt 0) { $verParts[0] } else { "0" }
-    $minor = if ($verParts.Length -gt 1) { $verParts[1] } else { "0" }
-    $patch = if ($verParts.Length -gt 2) { $verParts[2] } else { "0" }
-    $build = if ($parts.Length -gt 1) { $parts[1] } else { "0" }
-    
-    $newNumber = "$major,$minor,$patch,$build"
-    $newString = """$version"""
-    
-    $content = $content -replace '#define VERSION_AS_NUMBER .+', "#define VERSION_AS_NUMBER $newNumber"
-    $content = $content -replace '#define VERSION_AS_STRING ".+"', "#define VERSION_AS_STRING $newString"
-    
-    Set-Content -Path $rcPath -Value $content -NoNewline
-    Write-Host "Updated Runner.rc version to $version" -ForegroundColor Green
-}
-
-Update-RcVersion -version $version
 
 function Set-ExeIcon([string]$exePath, [string]$icoPath) {
     if (-not (Test-Path $exePath)) { return }
@@ -309,15 +348,23 @@ public static class ExeIconPatcher
     [ExeIconPatcher]::SetIcon($exePath, $icoPath)
 }
 
-# 3. Build Windows
-Write-Host "Building Windows ($BuildMode)..." -ForegroundColor Cyan
-$flutterArgs = @(
-    "build",
-    "windows",
-    "--release",
-    "--dart-define=PORTABLE_BUILD=$portableBuild",
-    "--dart-define=APP_VERSION=$version"
-)
+Invoke-Step "flutter build windows" {
+    Write-Host "Building Windows ($BuildMode)..." -ForegroundColor Cyan
+    $modeFlag = "--release"
+    if ($BuildMode -ne "Release") {
+        $modeFlag = "--debug"
+    }
+    $flutterArgs = @(
+        "build",
+        "windows",
+        $modeFlag,
+        "--no-pub",
+        "--dart-define=PORTABLE_BUILD=$portableBuild",
+        "--dart-define=APP_VERSION=$version"
+    )
+    if ($VerboseBuild) {
+        $flutterArgs += "--verbose"
+    }
 $issueReportingEnabled = $false
 if ($env:ENABLE_ISSUE_REPORTING) {
     $issueReportingEnabled = $true
@@ -336,9 +383,10 @@ if ($issueReportingEnabled) {
 }
 
 if (-not $issueReportingEnabled) {
-    Write-Host "Issue reporting disabled (default)." -ForegroundColor Gray
+        Write-Host "Issue reporting disabled (default)." -ForegroundColor Gray
+    }
+    flutter @flutterArgs
 }
-flutter @flutterArgs
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Build failed!"
@@ -369,9 +417,10 @@ New-Item -ItemType Directory -Force -Path $artifactRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $finalAppDir | Out-Null
 New-Item -ItemType Directory -Force -Path $finalDllDir | Out-Null
 
-# 5. Copy Build Artifacts to Output Directory
-Write-Host "Copying build artifacts to output directory..." -ForegroundColor Cyan
-Copy-Item -Path "$buildDir\*" -Destination $finalAppDir -Recurse -Force
+Invoke-Step "copy build artifacts" {
+    Write-Host "Copying build artifacts to output directory..." -ForegroundColor Cyan
+    Invoke-RoboCopy $buildDir $finalAppDir
+}
 
 Write-Host "Normalizing plugin DLL locations..." -ForegroundColor Cyan
 Get-ChildItem -Path $finalAppDir -Recurse -File -Filter "*_plugin.dll" -ErrorAction SilentlyContinue | ForEach-Object {
@@ -426,7 +475,7 @@ Set-Content -Path $buildInfoPath -Value $buildInfoText -Encoding UTF8
 
 # 6. Copy Additional Dependencies to Output Directory
 
-# Copy BASS DLLs
+Invoke-Step "copy BASS DLLs" {
 $bassSrcDir = "BASS"
 $bassDestDir = Join-Path $finalDllDir "BASS"
 if (Test-Path $bassSrcDir) {
@@ -447,7 +496,7 @@ if (Test-Path $bassSrcDir) {
     }
 
     if ($bassPluginMode -eq "full") {
-        Copy-Item -Path "$bassSrcDir\*" -Destination $bassDestDir -Recurse -Force
+        Invoke-RoboCopy $bassSrcDir $bassDestDir
     }
     else {
         $litePlugins = @("bassflac.dll", "bassape.dll", "bassopus.dll")
@@ -473,28 +522,27 @@ if (Test-Path $bassSrcDir) {
         Read-Host "Press Enter to exit..."
         exit 1
     }
-}
-else {
-    Write-Error "BASS directory not found in project root ($bassSrcDir)."
-    Write-Error "The application cannot play audio without bass.dll, basswasapi.dll and bass_fx.dll."
-    Read-Host "Press Enter to exit..."
-    exit 1
+    }
+    else {
+        Write-Error "BASS directory not found in project root ($bassSrcDir)."
+        Write-Error "The application cannot play audio without bass.dll, basswasapi.dll and bass_fx.dll."
+        Read-Host "Press Enter to exit..."
+        exit 1
+    }
 }
 
-# Copy desktop_lyric
-$desktopLyricSrc = "desktop_lyric"
-$desktopLyricDest = Join-Path $finalAppDir "desktop_lyric"
-if (Test-Path $desktopLyricSrc) {
-    Write-Host "Copying desktop_lyric..." -ForegroundColor Cyan
-    if (-not (Test-Path $desktopLyricDest)) {
-        New-Item -ItemType Directory -Force -Path $desktopLyricDest | Out-Null
+Invoke-Step "copy desktop_lyric" {
+    $desktopLyricSrc = "desktop_lyric"
+    $desktopLyricDest = Join-Path $finalAppDir "desktop_lyric"
+    if (Test-Path $desktopLyricSrc) {
+        Write-Host "Copying desktop_lyric..." -ForegroundColor Cyan
+        Invoke-RoboCopy $desktopLyricSrc $desktopLyricDest
+        $desktopLyricExe = Join-Path $desktopLyricDest "desktop_lyric.exe"
+        Set-ExeIcon $desktopLyricExe $appIconSource
     }
-    Copy-Item -Path "$desktopLyricSrc\*" -Destination $desktopLyricDest -Recurse -Force
-    $desktopLyricExe = Join-Path $desktopLyricDest "desktop_lyric.exe"
-    Set-ExeIcon $desktopLyricExe $appIconSource
-}
-else {
-    Write-Warning "desktop_lyric directory not found in project root ($desktopLyricSrc)!"
+    else {
+        Write-Warning "desktop_lyric directory not found in project root ($desktopLyricSrc)!"
+    }
 }
 
 # Note: app_icon.ico is embedded in exe via Runner.rc during compilation
