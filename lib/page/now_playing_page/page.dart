@@ -1,9 +1,10 @@
 // ignore_for_file: camel_case_types
 
 import 'dart:async';
-import 'dart:math';
+import 'dart:typed_data';
 import 'dart:ui';
 
+import 'package:pure_music/core/advanced_color_extraction.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/component/hotkey_ui_feedback.dart';
 import 'package:pure_music/component/motion.dart';
@@ -22,7 +23,7 @@ import 'package:pure_music/page/now_playing_page/component/equalizer_dialog.dart
 import 'package:pure_music/page/now_playing_page/component/lyric_source_view.dart';
 import 'package:pure_music/page/now_playing_page/component/pitch_control.dart';
 import 'package:pure_music/page/now_playing_page/component/vertical_lyric_view.dart';
-import 'package:pure_music/page/now_playing_page/component/amll_background.dart';
+import 'package:pure_music/page/now_playing_page/component/now_playing_background.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/playback_service.dart';
@@ -42,91 +43,6 @@ final nowPlayingViewMode = ValueNotifier(
   AppPreference.instance.nowPlayingPagePref.nowPlayingViewMode,
 );
 
-class _MeshBackgroundPainter extends CustomPainter {
-  final ColorScheme scheme;
-  final Brightness brightness;
-  final Animation<double> animation;
-
-  _MeshBackgroundPainter({
-    required this.scheme,
-    required this.brightness,
-    required Listenable repaint,
-  })  : animation = repaint as Animation<double>,
-        super(repaint: repaint);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-    if (!w.isFinite || !h.isFinite || w <= 1 || h <= 1) return;
-
-    final t = animation.value * 6.283185307179586;
-    final alphaBase = brightness == Brightness.dark ? 0.20 : 0.16;
-    final blur = brightness == Brightness.dark ? 120.0 : 140.0;
-
-    void circle({
-      required Color color,
-      required Offset center,
-      required double radius,
-      double alpha = 1.0,
-    }) {
-      final paint = Paint()
-        ..color = color.withValues(alpha: (alphaBase * alpha).clamp(0.0, 1.0))
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, blur);
-      canvas.drawCircle(center, radius, paint);
-    }
-
-    circle(
-      color: scheme.primary,
-      center: Offset(
-        w * (0.22 + 0.10 * sin(t * 0.9 + 0.2)),
-        h * (0.25 + 0.10 * cos(t * 0.7 + 0.8)),
-      ),
-      radius: w * 0.45,
-      alpha: 1.0,
-    );
-    circle(
-      color: scheme.tertiary,
-      center: Offset(
-        w * (0.78 + 0.10 * cos(t * 0.8 + 1.6)),
-        h * (0.20 + 0.12 * sin(t * 0.6 + 0.4)),
-      ),
-      radius: w * 0.40,
-      alpha: 0.95,
-    );
-    circle(
-      color: scheme.secondary,
-      center: Offset(
-        w * (0.62 + 0.14 * sin(t * 0.65 + 2.2)),
-        h * (0.78 + 0.10 * cos(t * 0.55 + 1.1)),
-      ),
-      radius: w * 0.52,
-      alpha: 0.85,
-    );
-    circle(
-      color: scheme.primaryContainer,
-      center: Offset(
-        w * (0.30 + 0.10 * cos(t * 0.5 + 0.6)),
-        h * (0.78 + 0.14 * sin(t * 0.7 + 2.8)),
-      ),
-      radius: w * 0.36,
-      alpha: 0.70,
-    );
-
-    final overlay = Paint()
-      ..color = (brightness == Brightness.dark
-              ? Colors.black.withValues(alpha: 0.10)
-              : Colors.white.withValues(alpha: 0.06))
-          .withValues(alpha: 1.0);
-    canvas.drawRect(Offset.zero & size, overlay);
-  }
-
-  @override
-  bool shouldRepaint(covariant _MeshBackgroundPainter oldDelegate) {
-    return oldDelegate.scheme != scheme || oldDelegate.brightness != brightness;
-  }
-}
-
 class NowPlayingPage extends StatefulWidget {
   const NowPlayingPage({super.key});
 
@@ -134,21 +50,20 @@ class NowPlayingPage extends StatefulWidget {
   State<NowPlayingPage> createState() => _NowPlayingPageState();
 }
 
-class _NowPlayingPageState extends State<NowPlayingPage>
-    with SingleTickerProviderStateMixin {
+class _NowPlayingPageState extends State<NowPlayingPage> {
   final playbackService = PlayService.instance.playbackService;
   ImageProvider<Object>? nowPlayingCover;
-  ImageProvider<Object>? nowPlayingBgCover;
+  Uint8List? _nowPlayingCoverBytes;
   String? _nowPlayingCoverPath;
   Timer? _coverDebounceTimer;
   Timer? _cursorHideTimer;
-  late final AnimationController _bgController;
   bool _cursorHidden = false;
   bool _lastImmersive = false;
   Color? _dominantColor;
+  MonetColorScheme? _monetScheme;
   final ColorExtractionService _colorService = ColorExtractionService();
-  /// Track AMLL background preference changes
-  late final ValueNotifier<bool> _enableAmllBackgroundNotifier;
+  final AdvancedColorExtractionService _advancedColorService =
+      AdvancedColorExtractionService();
 
   void _bumpCursor() {
     _cursorHideTimer?.cancel();
@@ -165,34 +80,6 @@ class _NowPlayingPageState extends State<NowPlayingPage>
     });
   }
 
-  /// Build background widget based on current preference
-  Widget _buildBackgroundWidget(
-    ColorScheme scheme,
-    Brightness brightness,
-    bool enableAmllBackground,
-  ) {
-    if (enableAmllBackground) {
-      return AmllBackground(
-        dominantColor: _dominantColor,
-        flowSpeed: 1.0,
-        intensity: brightness == Brightness.dark ? 1.0 : 0.9,
-        spectrumStream: playbackService.spectrumStream,
-      );
-    } else {
-      return AnimatedBuilder(
-        animation: _bgController,
-        builder: (context, child) => CustomPaint(
-          painter: _MeshBackgroundPainter(
-            scheme: scheme,
-            brightness: brightness,
-            repaint: _bgController,
-          ),
-          child: const SizedBox.expand(),
-        ),
-      );
-    }
-  }
-
   void updateCover() {
     final path = playbackService.nowPlaying?.path;
     if (path == null) {
@@ -201,8 +88,9 @@ class _NowPlayingPageState extends State<NowPlayingPage>
         setState(() {
           _nowPlayingCoverPath = null;
           nowPlayingCover = null;
-          nowPlayingBgCover = null;
+          _nowPlayingCoverBytes = null;
           _dominantColor = null;
+          _monetScheme = null;
         });
       }
       return;
@@ -222,28 +110,46 @@ class _NowPlayingPageState extends State<NowPlayingPage>
 
       if (cover != null) {
         precacheImage(cover, context);
-        final bytes = await getPictureFromPath(path: path, width: 100, height: 100);
+        final bytes = await getPictureFromPath(
+          path: path,
+          width: 160,
+          height: 160,
+        );
+        if (!mounted) return;
+        if (playbackService.nowPlaying?.path != path) return;
         if (bytes != null && mounted) {
-          final color = await _colorService.extractDominantColor(bytes);
-          if (mounted && color != null) {
-            setState(() {
-              _dominantColor = color;
-            });
-          }
+          final results = await Future.wait<Object?>([
+            _colorService.extractDominantColor(bytes),
+            _advancedColorService.extractMonetScheme(bytes),
+          ]);
+          if (!mounted) return;
+          if (playbackService.nowPlaying?.path != path) return;
+          final monetScheme = results[1] as MonetColorScheme?;
+          final color =
+              (results[0] as Color?) ?? monetScheme?.primary;
+          setState(() {
+            _nowPlayingCoverBytes = bytes;
+            _dominantColor = monetScheme?.primary ?? color;
+            _monetScheme = monetScheme;
+          });
+        } else if (mounted) {
+          setState(() {
+            _nowPlayingCoverBytes = null;
+            _dominantColor = null;
+            _monetScheme = null;
+          });
         }
+      } else {
+        setState(() {
+          _nowPlayingCoverBytes = null;
+          _dominantColor = null;
+          _monetScheme = null;
+        });
       }
 
       if (nowPlayingCover == cover) return;
       setState(() {
         nowPlayingCover = cover;
-        nowPlayingBgCover = cover == null
-            ? null
-            : ResizeImage(
-                cover,
-                width: 64,
-                height: 64,
-                allowUpscaling: true,
-              );
       });
     });
   }
@@ -251,16 +157,6 @@ class _NowPlayingPageState extends State<NowPlayingPage>
   @override
   void initState() {
     super.initState();
-    _bgController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 22),
-    )..repeat();
-    
-    // Initialize AMLL background preference notifier
-    _enableAmllBackgroundNotifier = ValueNotifier(
-      AppPreference.instance.nowPlayingPagePref.enableAmllBackground,
-    );
-    
     playbackService.addListener(updateCover);
     updateCover();
     _bumpCursor();
@@ -274,8 +170,6 @@ class _NowPlayingPageState extends State<NowPlayingPage>
   @override
   void dispose() {
     playbackService.removeListener(updateCover);
-    _bgController.dispose();
-    _enableAmllBackgroundNotifier.dispose();
     _coverDebounceTimer?.cancel();
     _cursorHideTimer?.cancel();
     super.dispose();
@@ -341,100 +235,42 @@ class _NowPlayingPageState extends State<NowPlayingPage>
                   fit: StackFit.expand,
                   alignment: AlignmentDirectional.center,
                   children: [
-                      RepaintBoundary(
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                    ColoredBox(color: scheme.surface),
-                    ValueListenableBuilder<bool>(
-                      valueListenable: _enableAmllBackgroundNotifier,
-                      builder: (context, enableAmllBackground, _) {
-                        return AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 300),
-                          child: _buildBackgroundWidget(
-                            scheme,
-                            brightness,
-                            enableAmllBackground,
-                          ),
-                        );
-                      },
-                    ),
-                                    AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 560),
-                            switchInCurve: Curves.easeInOutCubic,
-                            switchOutCurve: Curves.easeInOutCubic,
-                            layoutBuilder: (currentChild, previousChildren) {
-                              return Stack(
-                                fit: StackFit.expand,
-                                children: [
-                                  ...previousChildren,
-                                  if (currentChild != null) currentChild,
-                                ],
+                    RepaintBoundary(
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          ColoredBox(color: scheme.surface),
+                          ValueListenableBuilder<NowPlayingBackgroundMode>(
+                            valueListenable: nowPlayingBackgroundModeNotifier,
+                            builder: (context, backgroundMode, _) {
+                              return StreamBuilder<PlayerState>(
+                                stream: playbackService.playerStateStream,
+                                initialData: playbackService.playerState,
+                                builder: (context, snapshot) {
+                                  final playerState =
+                                      snapshot.data ?? playbackService.playerState;
+                                  final backgroundInputs =
+                                      NowPlayingBackgroundInputs(
+                                    albumCoverBytes: _nowPlayingCoverBytes,
+                                    dominantColor: _dominantColor,
+                                    monetScheme: _monetScheme,
+                                    spectrumStream: playbackService.spectrumStream,
+                                    enableAnimation: true,
+                                    isVisible:
+                                        ModalRoute.of(context)?.isCurrent ?? true,
+                                    playerState: playerState,
+                                    flowSpeed: 1.0,
+                                    intensity:
+                                        brightness == Brightness.dark ? 1.0 : 0.9,
+                                  );
+                                  return NowPlayingBackground(
+                                    mode: backgroundMode,
+                                    inputs: backgroundInputs,
+                                    fallbackColor: scheme.surface,
+                                  );
+                                },
                               );
                             },
-                            transitionBuilder: (child, animation) {
-                              final fade = CurvedAnimation(
-                                parent: animation,
-                                curve: Curves.easeInOutCubic,
-                              );
-                              return FadeTransition(opacity: fade, child: child);
-                            },
-                            child: nowPlayingCover == null
-                                ? const SizedBox.expand(
-                                    key: ValueKey("now-playing-bg-none"),
-                                  )
-                                : KeyedSubtree(
-                                    key: ValueKey(_nowPlayingCoverPath),
-                                    child: Stack(
-                                      fit: StackFit.expand,
-                                      children: [
-                                        Opacity(
-                                          opacity: 0.24,
-                                          child: ImageFiltered(
-                                            imageFilter: ImageFilter.blur(
-                                              sigmaX: 22,
-                                              sigmaY: 22,
-                                            ),
-                                            child: Image(
-                                              image: nowPlayingBgCover ?? nowPlayingCover!,
-                                              fit: BoxFit.cover,
-                                              filterQuality: FilterQuality.low,
-                                              errorBuilder: (_, __, ___) =>
-                                                  const SizedBox.shrink(),
-                                            ),
-                                          ),
-                                        ),
-                                        DecoratedBox(
-                                          decoration: BoxDecoration(
-                                            gradient: LinearGradient(
-                                              begin: Alignment.topCenter,
-                                              end: Alignment.bottomCenter,
-                                              colors: switch (brightness) {
-                                                Brightness.dark => [
-                                                    Colors.black.withValues(
-                                                        alpha: 0.44),
-                                                    Colors.black.withValues(
-                                                        alpha: 0.20),
-                                                    Colors.black.withValues(
-                                                        alpha: 0.44),
-                                                  ],
-                                                Brightness.light => [
-                                                    Colors.black.withValues(
-                                                        alpha: 0.34),
-                                                    Colors.black.withValues(
-                                                        alpha: 0.18),
-                                                    Colors.black.withValues(
-                                                        alpha: 0.34),
-                                                  ],
-                                              },
-                                              stops: const [0.0, 0.6, 1.0],
-                                            ),
-                                          ),
-                                          child: const SizedBox.expand(),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
                           ),
                         ],
                       ),
@@ -1546,32 +1382,22 @@ class _NowPlayingSlider extends StatefulWidget {
   State<_NowPlayingSlider> createState() => _NowPlayingSliderState();
 }
 
-class _NowPlayingSliderState extends State<_NowPlayingSlider>
-    with SingleTickerProviderStateMixin {
+class _NowPlayingSliderState extends State<_NowPlayingSlider> {
   final dragPosition = ValueNotifier(0.0);
   bool isDragging = false;
-  late AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    )..repeat();
-  }
 
   @override
   void dispose() {
-    _controller.dispose();
+    dragPosition.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final playbackService = context.watch<PlaybackService>();
+    final playbackService = context.read<PlaybackService>();
     final nowPlayingLength = playbackService.length;
+    final nowPlayingPath = playbackService.nowPlaying?.path;
 
     return SizedBox(
       height: 24, // Slider height
@@ -1584,23 +1410,11 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
             top: 0,
             bottom: 0,
             child: Center(
-              child: StreamBuilder(
-                stream: playbackService.positionStream,
-                initialData: playbackService.position,
-                builder: (context, snapshot) {
-                  final pos = snapshot.data ?? 0.0;
-                  return Text(
-                    Duration(milliseconds: (pos * 1000).toInt())
-                        .toStringMSS(),
-                    style: TextStyle(
-                      color: scheme.onSecondaryContainer,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.5,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                    ),
-                  );
-                },
+              child: _PlaybackPositionText(
+                positionStream: playbackService.positionStream,
+                initialPosition: playbackService.position,
+                trackKey: nowPlayingPath,
+                color: scheme.onSecondaryContainer,
               ),
             ),
           ),
@@ -1627,71 +1441,61 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
           Padding(
             padding: const EdgeInsets.symmetric(
                 horizontal: 84.0), // Space for time text
-            child: StreamBuilder(
-              stream: playbackService.playerStateStream,
-              initialData: playbackService.playerState,
-              builder: (context, playerStateSnapshot) => ListenableBuilder(
-                listenable: dragPosition,
-                builder: (context, _) => StreamBuilder(
-                  stream: playbackService.positionStream,
-                  initialData: playbackService.position,
-                  builder: (context, positionSnapshot) {
-                    final position = isDragging
-                        ? dragPosition.value
-                        : positionSnapshot.data! > nowPlayingLength
-                            ? nowPlayingLength
-                            : positionSnapshot.data!;
-                    final max = nowPlayingLength > 0 ? nowPlayingLength : 1.0;
-                    final fraction = (position / max).clamp(0.0, 1.0);
+            child: ListenableBuilder(
+              listenable: dragPosition,
+              builder: (context, _) => StreamBuilder(
+                stream: playbackService.positionStream,
+                initialData: playbackService.position,
+                builder: (context, positionSnapshot) {
+                  final position = isDragging
+                      ? dragPosition.value
+                      : positionSnapshot.data! > nowPlayingLength
+                          ? nowPlayingLength
+                          : positionSnapshot.data!;
+                  final max = nowPlayingLength > 0 ? nowPlayingLength : 1.0;
+                  final fraction = (position / max).clamp(0.0, 1.0);
 
-                    return LayoutBuilder(
-                      builder: (context, constraints) {
-                        final width = constraints.maxWidth;
-                        return GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onHorizontalDragStart: (details) {
-                            isDragging = true;
-                            final value = (details.localPosition.dx / width)
-                                    .clamp(0.0, 1.0) *
-                                max;
-                            dragPosition.value = value;
-                          },
-                          onHorizontalDragUpdate: (details) {
-                            final value = (details.localPosition.dx / width)
-                                    .clamp(0.0, 1.0) *
-                                max;
-                            dragPosition.value = value;
-                          },
-                          onHorizontalDragEnd: (details) {
-                            isDragging = false;
-                            playbackService.seek(dragPosition.value);
-                          },
-                          onTapDown: (details) {
-                            final value = (details.localPosition.dx / width)
-                                    .clamp(0.0, 1.0) *
-                                max;
-                            playbackService.seek(value);
-                          },
-                          child: AnimatedBuilder(
-                            animation: _controller,
-                            builder: (context, child) {
-                              return CustomPaint(
-                                painter: _GlowSliderPainter(
-                                  fraction: fraction,
-                                  color: scheme.primary,
-                                  glowColor: scheme.primaryContainer,
-                                  animationValue: _controller.value,
-                                  inactiveColor: scheme.surfaceContainerHighest,
-                                ),
-                                size: Size(width, 24),
-                              );
-                            },
+                  return LayoutBuilder(
+                    builder: (context, constraints) {
+                      final width = constraints.maxWidth;
+                      return GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onHorizontalDragStart: (details) {
+                          isDragging = true;
+                          final value = (details.localPosition.dx / width)
+                                  .clamp(0.0, 1.0) *
+                              max;
+                          dragPosition.value = value;
+                        },
+                        onHorizontalDragUpdate: (details) {
+                          final value = (details.localPosition.dx / width)
+                                  .clamp(0.0, 1.0) *
+                              max;
+                          dragPosition.value = value;
+                        },
+                        onHorizontalDragEnd: (details) {
+                          isDragging = false;
+                          playbackService.seek(dragPosition.value);
+                        },
+                        onTapDown: (details) {
+                          final value = (details.localPosition.dx / width)
+                                  .clamp(0.0, 1.0) *
+                              max;
+                          playbackService.seek(value);
+                        },
+                        child: CustomPaint(
+                          painter: _GlowSliderPainter(
+                            fraction: fraction,
+                            color: scheme.primary,
+                            glowColor: scheme.primaryContainer,
+                            inactiveColor: scheme.surfaceContainerHighest,
                           ),
-                        );
-                      },
-                    );
-                  },
-                ),
+                          size: Size(width, 24),
+                        ),
+                      );
+                    },
+                  );
+                },
               ),
             ),
           ),
@@ -1701,21 +1505,88 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
   }
 }
 
-// _NowPlayingTimeDisplay removed
+class _PlaybackPositionText extends StatefulWidget {
+  const _PlaybackPositionText({
+    required this.positionStream,
+    required this.initialPosition,
+    required this.trackKey,
+    required this.color,
+  });
+
+  final Stream<double> positionStream;
+  final double initialPosition;
+  final String? trackKey;
+  final Color color;
+
+  @override
+  State<_PlaybackPositionText> createState() => _PlaybackPositionTextState();
+}
+
+class _PlaybackPositionTextState extends State<_PlaybackPositionText> {
+  StreamSubscription<double>? _subscription;
+  late int _displaySeconds;
+
+  @override
+  void initState() {
+    super.initState();
+    _displaySeconds = widget.initialPosition.floor();
+    _bindStream();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PlaybackPositionText oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.positionStream != widget.positionStream) {
+      _bindStream();
+    }
+    if (oldWidget.trackKey != widget.trackKey) {
+      _displaySeconds = widget.initialPosition.floor();
+    }
+  }
+
+  void _bindStream() {
+    _subscription?.cancel();
+    _subscription = widget.positionStream.listen((position) {
+      final nextSeconds = position.floor();
+      if (nextSeconds == _displaySeconds || !mounted) return;
+      setState(() {
+        _displaySeconds = nextSeconds;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      Duration(seconds: _displaySeconds).toStringMSS(),
+      style: TextStyle(
+        color: widget.color,
+        fontSize: 12,
+        fontWeight: FontWeight.bold,
+        letterSpacing: 0.5,
+        fontFeatures: const [FontFeature.tabularFigures()],
+      ),
+    );
+  }
+}
 
 class _GlowSliderPainter extends CustomPainter {
   final double fraction;
   final Color color;
   final Color glowColor;
   final Color inactiveColor;
-  final double animationValue;
 
   _GlowSliderPainter({
     required this.fraction,
     required this.color,
     required this.glowColor,
     required this.inactiveColor,
-    required this.animationValue,
   });
 
   @override
@@ -1768,7 +1639,9 @@ class _GlowSliderPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _GlowSliderPainter oldDelegate) {
     return oldDelegate.fraction != fraction ||
-        oldDelegate.animationValue != animationValue;
+        oldDelegate.color != color ||
+        oldDelegate.glowColor != glowColor ||
+        oldDelegate.inactiveColor != inactiveColor;
   }
 }
 
@@ -2016,7 +1889,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
                 ),
                 const SizedBox(height: 24.0),
                 Text(
-                  nowPlaying == null ? "Coriander Music" : nowPlaying.title,
+                  nowPlaying == null ? "Pure Music" : nowPlaying.title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(

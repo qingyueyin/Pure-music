@@ -1,39 +1,22 @@
 import 'dart:async';
 import 'dart:math';
-import 'dart:ui' show FontVariation, ImageFilter;
+import 'dart:typed_data';
 
 import 'package:pure_music/core/enums.dart';
+import 'package:pure_music/core/lyric_render_config.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
+import 'package:pure_music/page/now_playing_page/component/lyric_line_motion.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.dart';
+import 'package:pure_music/page/now_playing_page/component/lyric_word_highlight_mask.dart';
+import 'package:pure_music/page/now_playing_page/component/word_emphasis_helper.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 
-FontWeight _discreteFontWeight(int weight) {
-  final w = weight.clamp(100, 900);
-  return FontWeight.values[((w / 100).round() - 1).clamp(0, 8)];
-}
-
-double _primaryLineHeight(int weight) {
-  final w = weight.clamp(100, 900);
-  return w >= 650 ? 1.62 : 1.50;
-}
-
-double _translationLineHeight(int weight) {
-  final w = weight.clamp(100, 900);
-  return w >= 650 ? 1.18 : 1.10;
-}
-
-double _lyricLetterSpacing(double fontSize, int weight) {
-  final w = weight.clamp(100, 900);
-  final t = ((w - 600).clamp(0, 300) / 300);
-  if (t <= 0) return 0.0;
-  return (fontSize / 48.0) * (0.8 * t);
-}
-
 TextStyle _lyricTextStyle({
+  required LyricRenderConfig config,
   required Color color,
   required double fontSize,
   required int weight,
@@ -47,9 +30,9 @@ TextStyle _lyricTextStyle({
     color: color,
     fontSize: fontSize,
     fontVariations: [FontVariation('wght', w.toDouble())],
-    fontWeight: _discreteFontWeight(w),
-    height: height ?? 1.5,
-    letterSpacing: _lyricLetterSpacing(fontSize, w),
+    fontWeight: config.discreteFontWeight(w),
+    height: height ?? config.translationLineHeight(w),
+    letterSpacing: config.letterSpacing(fontSize: fontSize, weight: w),
     shadows: [
       Shadow(
         color: shadowColor,
@@ -58,20 +41,6 @@ TextStyle _lyricTextStyle({
       ),
     ],
   );
-}
-
-const double _mainLinePrimaryScale = 1.00;
-const double _mainLineTranslationScale = 0.78;
-const double _subLinePrimaryScale = 0.88;
-const double _subLineTranslationScale = 0.70;
-
-double _effectiveLyricFontSize(double base, {required bool isMainLine}) {
-  return base * (isMainLine ? _mainLinePrimaryScale : _subLinePrimaryScale);
-}
-
-double _effectiveTranslationFontSize(double base, {required bool isMainLine}) {
-  return base *
-      (isMainLine ? _mainLineTranslationScale : _subLineTranslationScale);
 }
 
 class LyricViewTile extends StatelessWidget {
@@ -91,10 +60,10 @@ class LyricViewTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final lyricViewController = context.watch<LyricViewController>();
+    final config = lyricViewController.renderConfig;
     final d = distance ?? (opacity == 1.0 ? 0 : 999);
     final isMainLine = d == 0;
-    final blurSigma =
-        lyricViewController.enableLyricBlur ? min(d * 1.6, 6.0) : 0.0;
+    final blurSigma = config.blurSigmaForDistance(d);
 
     Widget content = InkWell(
       onTap: onTap,
@@ -110,7 +79,7 @@ class LyricViewTile extends StatelessWidget {
             ),
     );
 
-    final alignment = switch (lyricViewController.lyricTextAlign) {
+    final alignment = switch (config.textAlign) {
       LyricTextAlign.left => Alignment.centerLeft,
       LyricTextAlign.center => Alignment.center,
       LyricTextAlign.right => Alignment.centerRight,
@@ -127,30 +96,35 @@ class LyricViewTile extends StatelessWidget {
     }
 
     double computeSafeScale(BoxConstraints constraints) {
-      if (!isMainLine) return 1.0;
-      const desired = 1.1;
+      if (!isMainLine) {
+        return config.enableLineScale
+            ? config.inactiveLineScaleMultiplier
+            : 1.0;
+      }
+      final desired =
+          config.enableLineScale ? config.activeLineScaleMultiplier : 1.0;
       final maxWidth = constraints.maxWidth;
       if (!maxWidth.isFinite || maxWidth <= 1) return desired;
 
-      final baseFontSize = lyricViewController.lyricFontSize;
-      final showTranslation = lyricViewController.showLyricTranslation;
-      final weight = lyricViewController.lyricFontWeight;
-      final primarySize =
-          _effectiveLyricFontSize(baseFontSize, isMainLine: isMainLine);
+      final showTranslation = config.showTranslation;
+      final weight = config.fontWeight;
+      final primarySize = config.primaryFontSize(isMainLine: isMainLine);
       final translationSize =
-          _effectiveTranslationFontSize(baseFontSize, isMainLine: isMainLine);
+          config.translationFontSize(isMainLine: isMainLine);
 
       final primaryStyle = _lyricTextStyle(
+        config: config,
         color: Colors.white,
         fontSize: primarySize,
         weight: weight,
-        height: _primaryLineHeight(weight),
+        height: config.primaryLineHeight(weight),
       );
       final translationStyle = _lyricTextStyle(
+        config: config,
         color: Colors.white.withValues(alpha: 0.70),
         fontSize: translationSize,
         weight: (weight - 50).clamp(100, 900),
-        height: _translationLineHeight(weight),
+        height: config.translationLineHeight(weight),
       );
 
       final List<String> primaryTexts = [];
@@ -196,41 +170,18 @@ class LyricViewTile extends StatelessWidget {
         child: LayoutBuilder(
           builder: (context, constraints) {
             final scale = computeSafeScale(constraints);
-            return ClipRect(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12.0),
-                child: TweenAnimationBuilder<double>(
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeInOutQuad,
-                  tween: Tween(begin: 0.0, end: blurSigma),
-                  builder: (context, sigma, child) {
-                    final filtered = sigma <= 0.01
-                        ? child!
-                        : ImageFiltered(
-                            imageFilter:
-                                ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-                            child: child,
-                          );
-                    return AnimatedOpacity(
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeInOutQuad,
-                      opacity: opacity,
-                      child: AnimatedSlide(
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeInOutQuad,
-                        offset: Offset.zero,
-                        child: AnimatedScale(
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeInOutQuad,
-                          alignment: alignment,
-                          scale: scale,
-                          child: filtered,
-                        ),
-                      ),
-                    );
-                  },
-                  child: content,
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12.0),
+              child: LyricLineSpringMotion(
+                targetState: LyricLineVisualState(
+                  opacity: opacity,
+                  blurSigma: blurSigma,
+                  scale: scale,
                 ),
+                spring: config.lineSpring,
+                alignment: alignment,
+                enabled: config.enableLineSpring,
+                child: content,
               ),
             );
           },
@@ -258,22 +209,15 @@ class _SyncLineContent extends StatelessWidget {
 
     final scheme = Theme.of(context).colorScheme;
     final lyricViewController = context.watch<LyricViewController>();
+    final config = lyricViewController.renderConfig;
 
-    final lyricFontSize = lyricViewController.lyricFontSize;
-    final alignment = lyricViewController.lyricTextAlign;
-    final showTranslation = lyricViewController.showLyricTranslation;
-    final fontWeight = lyricViewController.lyricFontWeight;
-    final gapBoost =
-        ((fontWeight - 550).clamp(0, 350) / 350) * (isMainLine ? 2.0 : 1.5);
-
-    final primarySize =
-        _effectiveLyricFontSize(lyricFontSize, isMainLine: isMainLine);
-    final translationSize =
-        _effectiveTranslationFontSize(lyricFontSize, isMainLine: isMainLine);
-    final verticalPad = (lyricFontSize *
-            0.35 *
-            (1.0 + ((fontWeight - 600).clamp(0, 300) / 300) * 0.10))
-        .clamp(10.0, 20.0);
+    final alignment = config.textAlign;
+    final showTranslation = config.showTranslation;
+    final showRoman = config.showRoman;
+    final fontWeight = config.fontWeight;
+    final primarySize = config.primaryFontSize(isMainLine: isMainLine);
+    final translationSize = config.translationFontSize(isMainLine: isMainLine);
+    final verticalPad = config.syncVerticalPadding(isMainLine: isMainLine);
 
     if (!isMainLine) {
       if (syncLine.words.isEmpty) {
@@ -281,24 +225,41 @@ class _SyncLineContent extends StatelessWidget {
       }
 
       final List<Widget> contents = [
-        buildPrimaryText(
-          syncLine.content,
-          scheme,
-          alignment,
-          primarySize,
-          fontWeight,
-          opacity: 0.6,
+        _SyncWordsWrap(
+          syncLine: syncLine,
+          alignment: alignment,
+          config: config,
+          primarySize: primarySize,
+          fontWeight: fontWeight,
+          inactiveOpacity: 0.6,
         ),
       ];
       if (showTranslation && syncLine.translation != null) {
-        contents.add(SizedBox(height: (isMainLine ? 6.0 : 4.0) + gapBoost));
+        contents.add(
+          SizedBox(height: config.syncTranslationGap(isMainLine: false)),
+        );
         contents.add(buildSecondaryText(
           syncLine.translation!,
           scheme,
           alignment,
           translationSize,
           fontWeight,
+          config: config,
           opacity: 0.5,
+        ));
+      }
+      if (showRoman &&
+          syncLine.romanLyric != null &&
+          syncLine.romanLyric!.isNotEmpty) {
+        contents.add(SizedBox(height: 4.0));
+        contents.add(buildSecondaryText(
+          syncLine.romanLyric!,
+          scheme,
+          alignment,
+          translationSize * 0.85,
+          fontWeight - 100,
+          config: config,
+          opacity: 0.35,
         ));
       }
 
@@ -315,106 +276,56 @@ class _SyncLineContent extends StatelessWidget {
       );
     }
 
-    final List<Widget> contents = [
-      StreamBuilder(
-        stream: PlayService.instance.playbackService.positionStream,
-        builder: (context, snapshot) {
-          final posInMs = (snapshot.data ?? 0) * 1000;
-          final strut = StrutStyle(
-            fontSize: primarySize,
-            height: _primaryLineHeight(fontWeight),
-          );
-          return Wrap(
-            alignment: switch (alignment) {
-              LyricTextAlign.left => WrapAlignment.start,
-              LyricTextAlign.center => WrapAlignment.center,
-              LyricTextAlign.right => WrapAlignment.end,
-            },
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: List.generate(syncLine.words.length, (i) {
-              final word = syncLine.words[i];
-              final wordLenMs = word.length.inMilliseconds;
-              final wordStartMs = word.start.inMilliseconds.toDouble();
-              final wordEndMs = wordStartMs + wordLenMs;
-              final progress = wordLenMs <= 0
-                  ? (posInMs >= wordEndMs ? 1.0 : 0.0)
-                  : ((posInMs - wordStartMs) / wordLenMs).clamp(0.0, 1.0);
-              
-              final glowIntensity = progress.clamp(0.0, 1.0);
-              final glowAlpha = 0.3 + (glowIntensity * 0.4);
-              final glowBlur = 6.0 + (glowIntensity * 10.0);
-              
-              return Stack(
-                children: [
-                  Text(
-                    word.content,
-                    strutStyle: strut,
-                    style: _lyricTextStyle(
-                      color: Colors.white.withValues(alpha: 0.22),
-                      fontSize: primarySize,
-                      weight: fontWeight,
-                      height: _primaryLineHeight(fontWeight),
-                    ),
-                  ),
-                  if (progress > 0.0)
-                    ShaderMask(
-                      blendMode: BlendMode.dstIn,
-                      shaderCallback: (bounds) {
-                        final gradientProgress = progress.clamp(0.0, 1.0);
-                        return LinearGradient(
-                          colors: const [
-                            Colors.white,
-                            Colors.white,
-                            Colors.transparent,
-                            Colors.transparent
-                          ],
-                          stops: [
-                            0,
-                            gradientProgress,
-                            gradientProgress + 0.08,
-                            1
-                          ],
-                          begin: Alignment.centerLeft,
-                          end: Alignment.centerRight,
-                        ).createShader(bounds);
-                      },
-                      child: Text(
-                        word.content,
-                        strutStyle: strut,
-                        style: _lyricTextStyle(
-                          color: Colors.white,
-                          fontSize: primarySize,
-                          weight: fontWeight,
-                          height: _primaryLineHeight(fontWeight),
-                        ).copyWith(
-                          shadows: [
-                            Shadow(
-                              color: Colors.white.withValues(alpha: glowAlpha),
-                              blurRadius: glowBlur,
-                            ),
-                            Shadow(
-                              color: Colors.white.withValues(alpha: glowAlpha * 0.6),
-                              blurRadius: glowBlur * 1.5,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                ],
+    final wordsWidget = config.enableAudioReactive
+        ? StreamBuilder<Float32List>(
+            stream: PlayService.instance.playbackService.spectrumStream,
+            builder: (context, spectrumSnapshot) {
+              return StreamBuilder(
+                stream: PlayService.instance.playbackService.positionStream,
+                builder: (context, snapshot) {
+                  final posInMs = (snapshot.data ?? 0) * 1000;
+                  return _SyncWordsWrap(
+                    syncLine: syncLine,
+                    alignment: alignment,
+                    config: config,
+                    primarySize: primarySize,
+                    fontWeight: fontWeight,
+                    positionMs: posInMs,
+                    spectrumBands: spectrumSnapshot.data,
+                  );
+                },
               );
-            }),
+            },
+          )
+        : StreamBuilder(
+            stream: PlayService.instance.playbackService.positionStream,
+            builder: (context, snapshot) {
+              final posInMs = (snapshot.data ?? 0) * 1000;
+              return _SyncWordsWrap(
+                syncLine: syncLine,
+                alignment: alignment,
+                config: config,
+                primarySize: primarySize,
+                fontWeight: fontWeight,
+                positionMs: posInMs,
+              );
+            },
           );
-        },
-      )
+
+    final List<Widget> contents = [
+      wordsWidget,
     ];
     if (showTranslation && syncLine.translation != null) {
-      contents.add(SizedBox(height: (isMainLine ? 8.0 : 4.0) + gapBoost));
+      contents.add(
+        SizedBox(height: config.syncTranslationGap(isMainLine: true)),
+      );
       contents.add(buildSecondaryText(
         syncLine.translation!,
         scheme,
         alignment,
         translationSize,
         fontWeight,
+        config: config,
       ));
     }
     return Padding(
@@ -436,6 +347,7 @@ class _SyncLineContent extends StatelessWidget {
     LyricTextAlign align,
     double fontSize,
     int fontWeight, {
+    required LyricRenderConfig config,
     double opacity = 1.0,
   }) {
     return Text(
@@ -448,10 +360,11 @@ class _SyncLineContent extends StatelessWidget {
         LyricTextAlign.right => TextAlign.right,
       },
       style: _lyricTextStyle(
+        config: config,
         color: Colors.white.withValues(alpha: opacity),
         fontSize: fontSize,
         weight: fontWeight,
-        height: _primaryLineHeight(fontWeight),
+        height: config.primaryLineHeight(fontWeight),
       ),
     );
   }
@@ -462,6 +375,7 @@ class _SyncLineContent extends StatelessWidget {
     LyricTextAlign align,
     double fontSize,
     int fontWeight, {
+    required LyricRenderConfig config,
     double opacity = 0.70,
   }) {
     final translationWeight = (fontWeight - 50).clamp(100, 900);
@@ -475,10 +389,283 @@ class _SyncLineContent extends StatelessWidget {
         LyricTextAlign.right => TextAlign.right,
       },
       style: _lyricTextStyle(
+        config: config,
         color: Colors.white.withValues(alpha: opacity),
         fontSize: fontSize,
         weight: translationWeight,
-        height: _translationLineHeight(fontWeight),
+        height: config.translationLineHeight(fontWeight),
+      ),
+    );
+  }
+}
+
+class _SyncWordsWrap extends StatelessWidget {
+  const _SyncWordsWrap({
+    required this.syncLine,
+    required this.alignment,
+    required this.config,
+    required this.primarySize,
+    required this.fontWeight,
+    this.positionMs,
+    this.spectrumBands,
+    this.inactiveOpacity = 0.22,
+  });
+
+  final SyncLyricLine syncLine;
+  final LyricTextAlign alignment;
+  final LyricRenderConfig config;
+  final double primarySize;
+  final int fontWeight;
+  final double? positionMs;
+  final Float32List? spectrumBands;
+  final double inactiveOpacity;
+
+  @override
+  Widget build(BuildContext context) {
+    final strut = StrutStyle(
+      fontSize: primarySize,
+      height: config.primaryLineHeight(fontWeight),
+      forceStrutHeight: false,
+    );
+    final inactiveStyle = _lyricTextStyle(
+      config: config,
+      color: Colors.white.withValues(alpha: inactiveOpacity),
+      fontSize: primarySize,
+      weight: fontWeight,
+      height: config.primaryLineHeight(fontWeight),
+    );
+    final activeBaseStyle = _lyricTextStyle(
+      config: config,
+      color: Colors.white,
+      fontSize: primarySize,
+      weight: fontWeight,
+      height: config.primaryLineHeight(fontWeight),
+    );
+
+    return Wrap(
+      alignment: switch (alignment) {
+        LyricTextAlign.left => WrapAlignment.start,
+        LyricTextAlign.center => WrapAlignment.center,
+        LyricTextAlign.right => WrapAlignment.end,
+      },
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: List.generate(syncLine.words.length, (i) {
+        final word = syncLine.words[i];
+        final wordLenMs = word.length.inMilliseconds;
+        final wordStartMs = word.start.inMilliseconds.toDouble();
+        final wordEndMs = wordStartMs + wordLenMs;
+        final progress = positionMs == null
+            ? 0.0
+            : wordLenMs <= 0
+                ? (positionMs! >= wordEndMs ? 1.0 : 0.0)
+                : ((positionMs! - wordStartMs) / wordLenMs).clamp(0.0, 1.0);
+
+        final emphasis = WordEmphasisHelper.resolve(
+          progress: progress,
+          baseSize: primarySize,
+          config: config,
+          word: word,
+          spectrumBands: spectrumBands,
+        );
+        final metrics = _measureWordMetrics(word.content, activeBaseStyle);
+        final highlightMask = LyricWordHighlightMask.fromMetrics(
+          progress: progress,
+          fadeScale: config.wordFadeWidth,
+          wordWidth: metrics.$1,
+          wordHeight: metrics.$2,
+        );
+        final activeStyle = emphasis.glowAlpha > 0.0
+            ? activeBaseStyle.copyWith(
+                shadows: [
+                  Shadow(
+                    color: Colors.white.withValues(
+                      alpha: emphasis.glowAlpha,
+                    ),
+                    blurRadius: emphasis.glowBlur,
+                  ),
+                  Shadow(
+                    color: Colors.white.withValues(
+                      alpha: emphasis.glowAlpha * 0.6,
+                    ),
+                    blurRadius: emphasis.glowBlur * 1.5,
+                  ),
+                ],
+              )
+            : activeBaseStyle;
+
+        return Padding(
+          padding: _wordVisualPadding(word),
+          child: Transform.translate(
+            offset: Offset(0, emphasis.yOffset),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                _buildWordLayer(
+                  word: word,
+                  style: inactiveStyle,
+                  strut: strut,
+                  activeLayer: false,
+                ),
+                if (highlightMask.shouldHighlight)
+                  Transform.scale(
+                    scale: emphasis.scale,
+                    alignment: Alignment.center,
+                    child: ShaderMask(
+                      blendMode: BlendMode.dstIn,
+                      shaderCallback: (bounds) {
+                        return LinearGradient(
+                          colors: const [
+                            Colors.white,
+                            Colors.white,
+                            Colors.transparent,
+                            Colors.transparent
+                          ],
+                          stops: highlightMask.stops,
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                        ).createShader(bounds);
+                      },
+                      child: _buildWordLayer(
+                        word: word,
+                        style: activeStyle,
+                        strut: strut,
+                        activeLayer: true,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      }),
+    );
+  }
+
+  (double, double) _measureWordMetrics(String text, TextStyle style) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout();
+    return (painter.width, painter.height);
+  }
+
+  EdgeInsets _wordVisualPadding(SyncLyricWord word) {
+    final emphasize = WordEmphasisHelper.shouldEmphasizeWord(word);
+    final horizontal = emphasize ? primarySize * 0.06 : primarySize * 0.02;
+    final top = emphasize ? primarySize * 0.18 : primarySize * 0.10;
+    final bottom = emphasize ? primarySize * 0.24 : primarySize * 0.16;
+    return EdgeInsets.fromLTRB(horizontal, top, horizontal, bottom);
+  }
+
+  Widget _buildWordLayer({
+    required SyncLyricWord word,
+    required TextStyle style,
+    required StrutStyle strut,
+    required bool activeLayer,
+  }) {
+    final content = word.content;
+    final match = RegExp(r'^(\s*)(.*?)(\s*)$').firstMatch(content);
+    final prefix = match?.group(1) ?? '';
+    final core = match?.group(2) ?? content;
+    final suffix = match?.group(3) ?? '';
+
+    if (!activeLayer ||
+        !WordEmphasisHelper.shouldEmphasizeWord(word) ||
+        core.characters.length <= 1) {
+      return Text(
+        content,
+        strutStyle: strut,
+        style: style,
+        textHeightBehavior: const TextHeightBehavior(
+          applyHeightToFirstAscent: true,
+          applyHeightToLastDescent: true,
+        ),
+      );
+    }
+
+    final chars = core.characters.toList(growable: false);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (prefix.isNotEmpty)
+          Text(
+            prefix,
+            strutStyle: strut,
+            style: style,
+            textHeightBehavior: const TextHeightBehavior(
+              applyHeightToFirstAscent: true,
+              applyHeightToLastDescent: true,
+            ),
+          ),
+        for (var i = 0; i < chars.length; i++)
+          _buildCharacterLayer(
+            word: word,
+            style: style,
+            strut: strut,
+            content: chars[i],
+            characterIndex: i,
+            characterCount: chars.length,
+          ),
+        if (suffix.isNotEmpty)
+          Text(
+            suffix,
+            strutStyle: strut,
+            style: style,
+            textHeightBehavior: const TextHeightBehavior(
+              applyHeightToFirstAscent: true,
+              applyHeightToLastDescent: true,
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildCharacterLayer({
+    required SyncLyricWord word,
+    required TextStyle style,
+    required StrutStyle strut,
+    required String content,
+    required int characterIndex,
+    required int characterCount,
+  }) {
+    final wordLengthMs = word.length.inMilliseconds;
+    final progress = positionMs == null || wordLengthMs <= 0
+        ? 0.0
+        : ((positionMs! - word.start.inMilliseconds) / wordLengthMs)
+            .clamp(0.0, 1.0);
+    final emphasis = WordEmphasisHelper.resolve(
+      progress: progress,
+      baseSize: primarySize,
+      config: config,
+      word: word,
+      spectrumBands: spectrumBands,
+      characterIndex: characterIndex,
+      characterCount: characterCount,
+    );
+    return Transform.translate(
+      offset: Offset(0, emphasis.yOffset * 0.35),
+      child: Transform.scale(
+        scale: 1.0 + ((emphasis.scale - 1.0) * 0.4),
+        alignment: Alignment.center,
+        child: Text(
+          content,
+          strutStyle: strut,
+          style: style.copyWith(
+            shadows: emphasis.glowAlpha > 0.0
+                ? [
+                    Shadow(
+                      color: Colors.white.withValues(alpha: emphasis.glowAlpha),
+                      blurRadius: emphasis.glowBlur,
+                    ),
+                  ]
+                : style.shadows,
+          ),
+          textHeightBehavior: const TextHeightBehavior(
+            applyHeightToFirstAscent: true,
+            applyHeightToLastDescent: true,
+          ),
+        ),
       ),
     );
   }
@@ -502,22 +689,15 @@ class _LrcLineContent extends StatelessWidget {
 
     final scheme = Theme.of(context).colorScheme;
     final lyricViewController = context.watch<LyricViewController>();
+    final config = lyricViewController.renderConfig;
 
-    final lyricFontSize = lyricViewController.lyricFontSize;
-    final alignment = lyricViewController.lyricTextAlign;
-    final showTranslation = lyricViewController.showLyricTranslation;
-    final fontWeight = lyricViewController.lyricFontWeight;
-    final gapBoost =
-        ((fontWeight - 550).clamp(0, 350) / 350) * (isMainLine ? 2.0 : 1.5);
-
-    final primarySize =
-        _effectiveLyricFontSize(lyricFontSize, isMainLine: isMainLine);
-    final translationSize =
-        _effectiveTranslationFontSize(lyricFontSize, isMainLine: isMainLine);
-    final verticalPad = (lyricFontSize *
-            0.32 *
-            (1.0 + ((fontWeight - 600).clamp(0, 300) / 300) * 0.10))
-        .clamp(10.0, 18.0);
+    final alignment = config.textAlign;
+    final showTranslation = config.showTranslation;
+    final showRoman = config.showRoman;
+    final fontWeight = config.fontWeight;
+    final primarySize = config.primaryFontSize(isMainLine: isMainLine);
+    final translationSize = config.translationFontSize(isMainLine: isMainLine);
+    final verticalPad = config.lrcVerticalPadding();
 
     final splited = lrcLine.content.split("┃");
     final List<Widget> contents = [
@@ -527,12 +707,16 @@ class _LrcLineContent extends StatelessWidget {
         alignment,
         primarySize,
         fontWeight,
+        config: config,
       )
     ];
     if (showTranslation) {
       for (var i = 1; i < splited.length; i++) {
         contents.add(SizedBox(
-          height: i == 1 ? (isMainLine ? 6.0 : 4.0) + gapBoost : 2.0,
+          height: config.lrcTranslationGap(
+            isMainLine: isMainLine,
+            translationIndex: i - 1,
+          ),
         ));
         contents.add(buildSecondaryText(
           splited[i],
@@ -540,8 +724,22 @@ class _LrcLineContent extends StatelessWidget {
           alignment,
           translationSize,
           fontWeight,
+          config: config,
         ));
       }
+    }
+    if (showRoman &&
+        lrcLine.romanLyric != null &&
+        lrcLine.romanLyric!.isNotEmpty) {
+      contents.add(SizedBox(height: 4.0));
+      contents.add(buildSecondaryText(
+        lrcLine.romanLyric!,
+        scheme,
+        alignment,
+        translationSize * 0.85,
+        fontWeight - 100,
+        config: config,
+      ));
     }
 
     return Padding(
@@ -557,13 +755,9 @@ class _LrcLineContent extends StatelessWidget {
     );
   }
 
-  Text buildPrimaryText(
-    String text,
-    ColorScheme scheme,
-    LyricTextAlign align,
-    double fontSize,
-    int fontWeight,
-  ) {
+  Text buildPrimaryText(String text, ColorScheme scheme, LyricTextAlign align,
+      double fontSize, int fontWeight,
+      {required LyricRenderConfig config}) {
     return Text(
       text,
       softWrap: true,
@@ -574,21 +768,18 @@ class _LrcLineContent extends StatelessWidget {
         LyricTextAlign.right => TextAlign.right,
       },
       style: _lyricTextStyle(
+        config: config,
         color: Colors.white,
         fontSize: fontSize,
         weight: fontWeight,
-        height: _primaryLineHeight(fontWeight),
+        height: config.primaryLineHeight(fontWeight),
       ),
     );
   }
 
-  Text buildSecondaryText(
-    String text,
-    ColorScheme scheme,
-    LyricTextAlign align,
-    double fontSize,
-    int fontWeight,
-  ) {
+  Text buildSecondaryText(String text, ColorScheme scheme, LyricTextAlign align,
+      double fontSize, int fontWeight,
+      {required LyricRenderConfig config}) {
     final translationWeight = (fontWeight - 50).clamp(100, 900);
     return Text(
       text,
@@ -600,10 +791,11 @@ class _LrcLineContent extends StatelessWidget {
         LyricTextAlign.right => TextAlign.right,
       },
       style: _lyricTextStyle(
+        config: config,
         color: Colors.white.withValues(alpha: 0.70),
         fontSize: fontSize,
         weight: translationWeight,
-        height: _translationLineHeight(fontWeight),
+        height: config.translationLineHeight(fontWeight),
       ),
     );
   }
