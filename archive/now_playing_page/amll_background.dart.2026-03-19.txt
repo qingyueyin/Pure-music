@@ -1,0 +1,622 @@
+import 'dart:async';
+import 'dart:math' as math;
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
+import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:pure_music/core/advanced_color_extraction.dart';
+import 'package:pure_music/core/amll_palette.dart';
+import 'package:pure_music/core/cover_art_background.dart';
+import 'package:pure_music/mesh_gradient/audio_reactor.dart';
+import 'package:pure_music/mesh_gradient/config.dart';
+import 'package:pure_music/mesh_gradient/core/bhp_mesh.dart';
+import 'package:pure_music/mesh_gradient/core/control_point.dart';
+
+/// 更接近 AMLL 原版的贴图网格背景。
+///
+/// 使用模糊后的封面纹理 + 变形网格来实现流动效果，
+/// 旧的 fragment shader 保留为 fallback。
+class AmllBackground extends StatefulWidget {
+  final Color? dominantColor;
+  final MonetColorScheme? monetColorScheme;
+  final Uint8List? albumCoverBytes;
+  final double flowSpeed;
+  final double intensity;
+  final Stream<Float32List>? spectrumStream;
+  final Widget? child;
+
+  const AmllBackground({
+    super.key,
+    this.dominantColor,
+    this.monetColorScheme,
+    this.albumCoverBytes,
+    this.flowSpeed = 1.0,
+    this.intensity = 1.0,
+    this.spectrumStream,
+    this.child,
+  });
+
+  @override
+  State<AmllBackground> createState() => _AmllBackgroundState();
+}
+
+class _AmllBackgroundState extends State<AmllBackground>
+    with TickerProviderStateMixin {
+  static final MeshGradientConfig _meshConfig =
+      MeshGradientConfig.balanced.copyWith(
+    frequencyBands: 8,
+    frequencySensitivity: 1.0,
+    smoothingFactor: 0.16,
+    maxDeformationScale: 0.055,
+    opacity: 1.0,
+  );
+
+  ui.FragmentProgram? _fallbackProgram;
+  ui.Image? _currentTexture;
+  ui.Image? _previousTexture;
+  StreamSubscription<Float32List>? _spectrumSub;
+  late final AudioReactor _audioReactor;
+  late final Ticker _ticker;
+  late final AnimationController _paletteController;
+  late final AnimationController _textureFadeController;
+  late BHPMesh _mesh;
+
+  Duration _lastTickElapsed = Duration.zero;
+  Duration _lastSpectrumElapsed = Duration.zero;
+  double _lowFreqVolume = 0.0;
+  double _time = 0.0;
+
+  AmllPalette _palette = const AmllPalette(
+    base: Colors.blue,
+    support: Colors.purple,
+    shadow: Colors.indigo,
+    highlight: Colors.cyan,
+  );
+
+  Animation<Color?>? _aBase;
+  Animation<Color?>? _aSupport;
+  Animation<Color?>? _aShadow;
+  Animation<Color?>? _aHighlight;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _audioReactor = AudioReactor(config: _meshConfig)..setViewportSize(1.0);
+    _mesh = _createMesh(_palette);
+
+    _paletteController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 420),
+    );
+    _textureFadeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 460),
+    )
+      ..value = 1.0
+      ..addListener(() {
+        if (mounted) setState(() {});
+      })
+      ..addStatusListener((status) {
+        if (status == AnimationStatus.completed && _previousTexture != null) {
+          _previousTexture!.dispose();
+          _previousTexture = null;
+        }
+      });
+
+    _loadFallbackProgram();
+    _updateColors();
+    _bindSpectrumStream();
+    _updateTextureFromCover();
+
+    _ticker = createTicker((elapsed) {
+      final dt = (elapsed - _lastTickElapsed).inMicroseconds / 1000000.0;
+      _lastTickElapsed = elapsed;
+      if (!mounted) return;
+
+      if ((_lastTickElapsed - _lastSpectrumElapsed).inMilliseconds > 220) {
+        _applySpectrum(Float32List(_meshConfig.frequencyBands));
+        _lowFreqVolume *= 0.96;
+      }
+
+      setState(() {
+        _time += dt * widget.flowSpeed;
+      });
+    });
+    _ticker.start();
+  }
+
+  Future<void> _loadFallbackProgram() async {
+    try {
+      final program = await ui.FragmentProgram.fromAsset(
+        'assets/shaders/amll_background.frag',
+      );
+      if (mounted) {
+        setState(() => _fallbackProgram = program);
+      }
+    } catch (e) {
+      debugPrint('Failed to load amll_background shader: $e');
+    }
+  }
+
+  List<Color> _resolvedPaletteColors() {
+    return [
+      _aBase?.value ?? _palette.base,
+      _aSupport?.value ?? _palette.support,
+      _aShadow?.value ?? _palette.shadow,
+      _aHighlight?.value ?? _palette.highlight,
+    ];
+  }
+
+  BHPMesh _createMesh(AmllPalette palette) {
+    final colors = [
+      palette.base,
+      palette.support,
+      palette.highlight,
+      palette.shadow,
+    ];
+    final controlPoints = <ControlPoint>[];
+
+    for (var y = 0; y < 4; y++) {
+      for (var x = 0; x < 4; x++) {
+        final nx = x / 3;
+        final ny = y / 3;
+        final base = colors[(x + y) % colors.length];
+        final accent = colors[(x * 2 + y) % colors.length];
+        final color = Color.lerp(base, accent, 0.35) ?? base;
+
+        controlPoints.add(
+          ControlPoint(
+            x: 0.05 + nx * 0.9,
+            y: 0.05 + ny * 0.9,
+            r: color.r,
+            g: color.g,
+            b: color.b,
+            uRot: (ny - 0.5) * 0.9,
+            vRot: (0.5 - nx) * 0.9,
+            uScale: 0.16 + nx * 0.07,
+            vScale: 0.16 + ny * 0.07,
+          ),
+        );
+      }
+    }
+
+    return BHPMesh(
+      initialControlPoints: controlPoints,
+      config: _meshConfig,
+    );
+  }
+
+  void _updateColors() {
+    final next = deriveAmllPalette(
+      monet: widget.monetColorScheme,
+      fallback: widget.dominantColor,
+    );
+
+    if (!_paletteController.isAnimating && _aBase == null) {
+      setState(() {
+        _palette = next;
+        _mesh = _createMesh(next);
+      });
+      return;
+    }
+
+    final curved = CurvedAnimation(
+      parent: _paletteController,
+      curve: Curves.easeInOutCubic,
+    );
+
+    _aBase = ColorTween(begin: _palette.base, end: next.base).animate(curved);
+    _aSupport =
+        ColorTween(begin: _palette.support, end: next.support).animate(curved);
+    _aShadow =
+        ColorTween(begin: _palette.shadow, end: next.shadow).animate(curved);
+    _aHighlight = ColorTween(
+      begin: _palette.highlight,
+      end: next.highlight,
+    ).animate(curved);
+
+    _paletteController.forward(from: 0).whenComplete(() {
+      if (!mounted) return;
+      setState(() {
+        _palette = next;
+        _mesh = _createMesh(next);
+        _aBase = null;
+        _aSupport = null;
+        _aShadow = null;
+        _aHighlight = null;
+      });
+    });
+  }
+
+  Future<void> _updateTextureFromCover() async {
+    final coverBytes = widget.albumCoverBytes;
+    if (coverBytes == null || coverBytes.isEmpty) {
+      _previousTexture?.dispose();
+      _previousTexture = null;
+      _currentTexture?.dispose();
+      _currentTexture = null;
+      if (mounted) setState(() {});
+      return;
+    }
+
+    final texture = await buildMeshTextureFromCover(
+      coverBytes,
+      textureSize: 96,
+      blurSigma: 7,
+      darken: 0.05,
+    );
+    if (texture == null) return;
+
+    if (!mounted || widget.albumCoverBytes != coverBytes) {
+      texture.dispose();
+      return;
+    }
+
+    setState(() {
+      if (_currentTexture == null) {
+        _currentTexture = texture;
+        _textureFadeController.value = 1.0;
+      } else {
+        _previousTexture?.dispose();
+        _previousTexture = _currentTexture;
+        _currentTexture = texture;
+        _textureFadeController.forward(from: 0);
+      }
+    });
+  }
+
+  void _bindSpectrumStream() {
+    _spectrumSub?.cancel();
+    final stream = widget.spectrumStream;
+    if (stream == null) return;
+
+    _spectrumSub = stream.listen((frame) {
+      if (!mounted || frame.isEmpty) return;
+      _lastSpectrumElapsed = _lastTickElapsed;
+      _applySpectrum(frame);
+    });
+  }
+
+  void _applySpectrum(Float32List frame) {
+    final frequencyData = _audioReactor.processSpectrum(frame);
+    final deformations = _audioReactor.generateDeformations(frequencyData);
+    _mesh.applyDeformation(deformations, _meshConfig.smoothingFactor);
+    _lowFreqVolume =
+        (_lowFreqVolume * 0.75 + frequencyData.averageEnergy * 0.25)
+            .clamp(0.0, 1.0);
+  }
+
+  @override
+  void didUpdateWidget(AmllBackground oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (widget.monetColorScheme != oldWidget.monetColorScheme ||
+        widget.dominantColor != oldWidget.dominantColor) {
+      _updateColors();
+    }
+
+    if (widget.albumCoverBytes != oldWidget.albumCoverBytes) {
+      _updateTextureFromCover();
+    }
+
+    if (widget.spectrumStream != oldWidget.spectrumStream) {
+      _bindSpectrumStream();
+    }
+  }
+
+  @override
+  void dispose() {
+    _spectrumSub?.cancel();
+    _paletteController.dispose();
+    _textureFadeController.dispose();
+    _ticker.dispose();
+    _currentTexture?.dispose();
+    _previousTexture?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final texture = _currentTexture;
+    final previousTexture = _previousTexture;
+
+    if (texture != null || previousTexture != null) {
+      final colors = _resolvedPaletteColors();
+      return RepaintBoundary(
+        child: CustomPaint(
+          painter: _TexturedMeshBackgroundPainter(
+            mesh: _mesh,
+            texture: texture,
+            previousTexture: previousTexture,
+            textureMix: _textureFadeController.value,
+            colors: colors,
+            time: _time,
+            intensity: widget.intensity.clamp(0.35, 1.25).toDouble(),
+            lowFreqVolume: _lowFreqVolume,
+          ),
+          child: widget.child ?? const SizedBox.expand(),
+        ),
+      );
+    }
+
+    final program = _fallbackProgram;
+    if (program == null) {
+      return _buildFallbackBackground();
+    }
+
+    return RepaintBoundary(
+      child: CustomPaint(
+        painter: _FallbackShaderBackgroundPainter(
+          program: program,
+          color1: _aBase?.value ?? _palette.base,
+          color2: _aSupport?.value ?? _palette.support,
+          color3: _aShadow?.value ?? _palette.shadow,
+          color4: _aHighlight?.value ?? _palette.highlight,
+          time: _time,
+          intensity: widget.intensity.clamp(0.35, 1.25).toDouble(),
+          lowFreqVolume: _lowFreqVolume,
+        ),
+        child: widget.child ?? const SizedBox.expand(),
+      ),
+    );
+  }
+
+  Widget _buildFallbackBackground() {
+    final base = widget.dominantColor ?? Colors.blue;
+    final hsl = HSLColor.fromColor(base);
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 500),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            base,
+            hsl.withHue((hsl.hue + 60) % 360).toColor(),
+            hsl.withHue((hsl.hue + 120) % 360).toColor(),
+            hsl.withHue((hsl.hue + 180) % 360).toColor(),
+          ],
+        ),
+      ),
+      child: widget.child ?? const SizedBox.expand(),
+    );
+  }
+}
+
+class _TexturedMeshBackgroundPainter extends CustomPainter {
+  final BHPMesh mesh;
+  final ui.Image? texture;
+  final ui.Image? previousTexture;
+  final double textureMix;
+  final List<Color> colors;
+  final double time;
+  final double intensity;
+  final double lowFreqVolume;
+
+  _TexturedMeshBackgroundPainter({
+    required this.mesh,
+    required this.texture,
+    required this.previousTexture,
+    required this.textureMix,
+    required this.colors,
+    required this.time,
+    required this.intensity,
+    required this.lowFreqVolume,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    canvas.drawRect(rect, Paint()..color = const Color(0xFF06070A));
+
+    final oldTexture = previousTexture;
+    if (oldTexture != null && textureMix < 0.999) {
+      _drawTexturedMesh(
+        canvas,
+        size,
+        oldTexture,
+        opacity: 1.0 - textureMix,
+        phase: -0.35,
+      );
+    }
+
+    final newTexture = texture;
+    if (newTexture != null) {
+      _drawTexturedMesh(
+        canvas,
+        size,
+        newTexture,
+        opacity: oldTexture == null ? 1.0 : textureMix,
+        phase: 0.0,
+      );
+    }
+
+    final accentPaint = Paint()
+      ..blendMode = BlendMode.softLight
+      ..shader = ui.Gradient.linear(
+        Offset(size.width * 0.2, 0),
+        Offset(size.width * 0.8, size.height),
+        [
+          colors[3].withValues(alpha: 0.14 * intensity),
+          colors[0].withValues(alpha: 0.06 * intensity),
+          colors[1].withValues(alpha: 0.12 * intensity),
+        ],
+      );
+    canvas.drawRect(rect, accentPaint);
+
+    final vignettePaint = Paint()
+      ..shader = ui.Gradient.radial(
+        Offset(size.width / 2, size.height / 2),
+        size.longestSide * 0.82,
+        [
+          const Color(0x00000000),
+          colors[2].withValues(alpha: 0.08),
+          const Color(0xC0000000),
+        ],
+        const [0.42, 0.76, 1.0],
+      );
+    canvas.drawRect(rect, vignettePaint);
+  }
+
+  void _drawTexturedMesh(
+    Canvas canvas,
+    Size size,
+    ui.Image image, {
+    required double opacity,
+    required double phase,
+  }) {
+    if (opacity <= 0) return;
+
+    final vertexCount = mesh.vertices.length;
+    final positions = Float32List(vertexCount * 2);
+    final textureCoordinates = Float32List(vertexCount * 2);
+    final indices = Uint16List(mesh.triangles.length * 3);
+    final sinR = math.sin((time * 0.18 + lowFreqVolume * 0.6 + phase));
+    final cosR = math.cos((time * 0.18 + lowFreqVolume * 0.6 + phase));
+    final uvScale = math.max(0.7, 1.02 - lowFreqVolume * 0.18);
+    final waveAmplitude = 0.018 * (0.75 + intensity * 0.35);
+
+    for (var i = 0; i < vertexCount; i++) {
+      final vertex = mesh.vertices[i];
+      final offset = i * 2;
+
+      positions[offset] = vertex.x * size.width;
+      positions[offset + 1] = vertex.y * size.height;
+
+      final centeredU = vertex.u - 0.5;
+      final centeredV = vertex.v - 0.5;
+      var warpedU = centeredU * cosR - centeredV * sinR;
+      var warpedV = centeredU * sinR + centeredV * cosR;
+
+      warpedU *= uvScale;
+      warpedV *= uvScale;
+
+      warpedU += math.sin(warpedV * 8.0 + time * 0.9 + phase) * waveAmplitude;
+      warpedV +=
+          math.cos(centeredU * 7.0 - time * 0.75 - phase) * waveAmplitude;
+
+      textureCoordinates[offset] = (warpedU + 0.5) * image.width;
+      textureCoordinates[offset + 1] = (warpedV + 0.5) * image.height;
+    }
+
+    for (var i = 0; i < mesh.triangles.length; i++) {
+      final triangle = mesh.triangles[i];
+      final offset = i * 3;
+      indices[offset] = triangle.v1;
+      indices[offset + 1] = triangle.v2;
+      indices[offset + 2] = triangle.v3;
+    }
+
+    final vertices = ui.Vertices.raw(
+      ui.VertexMode.triangles,
+      positions,
+      textureCoordinates: textureCoordinates,
+      indices: indices,
+    );
+
+    final paint = Paint()
+      ..isAntiAlias = true
+      ..filterQuality = FilterQuality.medium
+      ..shader = ImageShader(
+        image,
+        TileMode.mirror,
+        TileMode.mirror,
+        Matrix4.identity().storage,
+      );
+
+    if (opacity < 0.999) {
+      canvas.saveLayer(
+        Offset.zero & size,
+        Paint()..color = Colors.white.withValues(alpha: opacity),
+      );
+      canvas.drawVertices(vertices, BlendMode.srcOver, paint);
+      canvas.restore();
+      return;
+    }
+
+    canvas.drawVertices(vertices, BlendMode.srcOver, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _TexturedMeshBackgroundPainter oldDelegate) {
+    return oldDelegate.mesh != mesh ||
+        oldDelegate.texture != texture ||
+        oldDelegate.previousTexture != previousTexture ||
+        oldDelegate.textureMix != textureMix ||
+        oldDelegate.time != time ||
+        oldDelegate.intensity != intensity ||
+        oldDelegate.lowFreqVolume != lowFreqVolume ||
+        oldDelegate.colors[0] != colors[0] ||
+        oldDelegate.colors[1] != colors[1] ||
+        oldDelegate.colors[2] != colors[2] ||
+        oldDelegate.colors[3] != colors[3];
+  }
+}
+
+class _FallbackShaderBackgroundPainter extends CustomPainter {
+  final ui.FragmentProgram program;
+  final Color color1;
+  final Color color2;
+  final Color color3;
+  final Color color4;
+  final double time;
+  final double intensity;
+  final double lowFreqVolume;
+
+  _FallbackShaderBackgroundPainter({
+    required this.program,
+    required this.color1,
+    required this.color2,
+    required this.color3,
+    required this.color4,
+    required this.time,
+    required this.intensity,
+    required this.lowFreqVolume,
+  });
+
+  double _c(double channel) => channel.clamp(0.0, 1.0).toDouble();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    if (!w.isFinite || !h.isFinite || w <= 1 || h <= 1) return;
+
+    final shader = program.fragmentShader();
+    final timeScaled = time * 18.0;
+    shader.setFloat(0, w);
+    shader.setFloat(1, h);
+    shader.setFloat(2, timeScaled);
+    shader.setFloat(3, intensity);
+    shader.setFloat(4, lowFreqVolume);
+    shader.setFloat(5, _c(color1.r));
+    shader.setFloat(6, _c(color1.g));
+    shader.setFloat(7, _c(color1.b));
+    shader.setFloat(8, _c(color2.r));
+    shader.setFloat(9, _c(color2.g));
+    shader.setFloat(10, _c(color2.b));
+    shader.setFloat(11, _c(color3.r));
+    shader.setFloat(12, _c(color3.g));
+    shader.setFloat(13, _c(color3.b));
+    shader.setFloat(14, _c(color4.r));
+    shader.setFloat(15, _c(color4.g));
+    shader.setFloat(16, _c(color4.b));
+
+    final paint = Paint()..shader = shader;
+    canvas.drawRect(Offset.zero & size, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _FallbackShaderBackgroundPainter oldDelegate) {
+    return oldDelegate.time != time ||
+        oldDelegate.intensity != intensity ||
+        oldDelegate.lowFreqVolume != lowFreqVolume ||
+        oldDelegate.color1 != color1 ||
+        oldDelegate.color2 != color2 ||
+        oldDelegate.color3 != color3 ||
+        oldDelegate.color4 != color4;
+  }
+}
