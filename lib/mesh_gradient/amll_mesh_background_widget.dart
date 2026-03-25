@@ -1,7 +1,7 @@
-/// Stateful widget for AMLL mesh gradient background animation.
-///
-/// Integrates the mesh gradient system with Pure Music's PlayService
-/// and theme system. Provides animation ticker and audio reactivity.
+// Stateful widget for AMLL mesh gradient background animation.
+//
+// Integrates the mesh gradient system with Pure Music's PlayService
+// and theme system. Provides animation ticker and audio reactivity.
 
 import 'dart:typed_data';
 import 'package:flutter/material.dart';

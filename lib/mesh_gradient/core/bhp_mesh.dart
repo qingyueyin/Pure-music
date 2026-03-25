@@ -1,10 +1,10 @@
-/// Bicubic Hermite Patch (BHP) mesh generator for gradient animation.
-///
-/// Manages a 4×4 control point grid and generates smooth mesh surfaces
-/// using pre-computed Hermite basis functions. Supports audio-reactive
-/// deformation for frequency-responsive animation.
-///
-/// Algorithm reference: AMLL mesh-renderer implementation
+// Bicubic Hermite Patch (BHP) mesh generator for gradient animation.
+//
+// Manages a 4×4 control point grid and generates smooth mesh surfaces
+// using pre-computed Hermite basis functions. Supports audio-reactive
+// deformation for frequency-responsive animation.
+//
+// Algorithm reference: AMLL mesh-renderer implementation
 
 import 'dart:typed_data';
 import 'package:vector_math/vector_math.dart';
