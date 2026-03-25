@@ -1,12 +1,12 @@
-/// Audio-reactive spectrum processing for mesh deformation.
-///
-/// Processes frequency spectrum data from the audio stream and maps it to
-/// control point deformations for audio-reactive mesh animation.
-///
-/// Features:
-/// - Frequency band sampling and smoothing
-/// - Control point deformation mapping
-/// - Configurable sensitivity and thresholds
+// Audio-reactive spectrum processing for mesh deformation.
+//
+// Processes frequency spectrum data from the audio stream and maps it to
+// control point deformations for audio-reactive mesh animation.
+//
+// Features:
+// - Frequency band sampling and smoothing
+// - Control point deformation mapping
+// - Configurable sensitivity and thresholds
 
 import 'dart:typed_data';
 import 'dart:math' as math;

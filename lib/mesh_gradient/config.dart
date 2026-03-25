@@ -1,8 +1,7 @@
-/// Configuration for AMLL mesh gradient animation system.
-///
-/// Provides resolution presets, animation parameters, and tunable sensitivity values
-/// for frequency-reactive mesh deformation.
-library mesh_gradient_config;
+// Configuration for AMLL mesh gradient animation system.
+//
+// Provides resolution presets, animation parameters, and tunable sensitivity values
+// for frequency-reactive mesh deformation.
 
 enum MeshResolution {
   /// High quality: 64x64 subdivisions per patch, ~10,000 triangles

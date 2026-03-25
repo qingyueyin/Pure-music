@@ -1,7 +1,7 @@
-/// Flutter Canvas painter for mesh gradient rendering.
-///
-/// Renders triangle-based mesh with color interpolation using Flutter's
-/// canvas API. Supports multiple blending modes and opacity control.
+// Flutter Canvas painter for mesh gradient rendering.
+//
+// Renders triangle-based mesh with color interpolation using Flutter's
+// canvas API. Supports multiple blending modes and opacity control.
 
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
@@ -209,25 +209,24 @@ class MeshBatchRenderer {
         ..close();
 
       // Average color
-      final r = (vertexColors[v1Idx].red +
-              vertexColors[v2Idx].red +
-              vertexColors[v3Idx].red) /
+      final rf = (vertexColors[v1Idx].r +
+              vertexColors[v2Idx].r +
+              vertexColors[v3Idx].r) /
           3;
-      final g = (vertexColors[v1Idx].green +
-              vertexColors[v2Idx].green +
-              vertexColors[v3Idx].green) /
+      final gf = (vertexColors[v1Idx].g +
+              vertexColors[v2Idx].g +
+              vertexColors[v3Idx].g) /
           3;
-      final b = (vertexColors[v1Idx].blue +
-              vertexColors[v2Idx].blue +
-              vertexColors[v3Idx].blue) /
+      final bf = (vertexColors[v1Idx].b +
+              vertexColors[v2Idx].b +
+              vertexColors[v3Idx].b) /
           3;
 
-      paint.color = Color.fromARGB(
-        opacityAlpha,
-        r.toInt().clamp(0, 255),
-        g.toInt().clamp(0, 255),
-        b.toInt().clamp(0, 255),
-      );
+      final r = (rf * 255.0).round().clamp(0, 255);
+      final g = (gf * 255.0).round().clamp(0, 255);
+      final b = (bf * 255.0).round().clamp(0, 255);
+
+      paint.color = Color.fromARGB(opacityAlpha, r, g, b);
       canvas.drawPath(path, paint);
     }
   }
