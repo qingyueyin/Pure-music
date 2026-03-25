@@ -1,5 +1,5 @@
 [package]
-name = "rust_lib_coriander_player"
+name = "rust_lib_pure_music"
 version = "0.1.0"
 edition = "2021"
 
@@ -29,6 +29,7 @@ windows = { version = "0.57.0", features = [
     "Win32_Media_Audio",
     "Win32_Media_Audio_Endpoints",
     "Win32_System_Com",
+    "Win32_System_WinRT",
     "Win32_System_Com_StructuredStorage",
     "Win32_System_Variant",
     "Win32_System_Ole",
