@@ -1,5 +1,7 @@
 import 'dart:io';
+
 import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/component/settings_tile.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
@@ -285,15 +287,17 @@ class _WasapiBufferControlState extends State<WasapiBufferControl> {
   }
 }
 
-/// AMLL Mesh Gradient Background Toggle (Windows only)
-class AmllBackgroundToggle extends StatefulWidget {
-  const AmllBackgroundToggle({super.key});
+/// 播放页背景模式（Windows only）
+class NowPlayingBackgroundModeToggle extends StatefulWidget {
+  const NowPlayingBackgroundModeToggle({super.key});
 
   @override
-  State<AmllBackgroundToggle> createState() => _AmllBackgroundToggleState();
+  State<NowPlayingBackgroundModeToggle> createState() =>
+      _NowPlayingBackgroundModeToggleState();
 }
 
-class _AmllBackgroundToggleState extends State<AmllBackgroundToggle> {
+class _NowPlayingBackgroundModeToggleState
+    extends State<NowPlayingBackgroundModeToggle> {
   final pref = AppPreference.instance.nowPlayingPagePref;
 
   @override
@@ -304,13 +308,27 @@ class _AmllBackgroundToggleState extends State<AmllBackgroundToggle> {
     }
 
     return SettingsTile(
-      description: "AMLL 网格渐变背景",
-      action: Switch(
-        value: pref.enableAmllBackground,
-        onChanged: (v) async {
+      description: "播放页背景模式",
+      action: SegmentedButton<NowPlayingBackgroundMode>(
+        showSelectedIcon: false,
+        segments: const [
+          ButtonSegment<NowPlayingBackgroundMode>(
+            value: NowPlayingBackgroundMode.meshGradient,
+            label: Text("网格"),
+          ),
+          ButtonSegment<NowPlayingBackgroundMode>(
+            value: NowPlayingBackgroundMode.simpleFallback,
+            label: Text("纯色"),
+          ),
+        ],
+        selected: {pref.backgroundMode},
+        onSelectionChanged: (selection) async {
+          final nextMode = selection.first;
+          if (nextMode == pref.backgroundMode) return;
           setState(() {
-            pref.enableAmllBackground = v;
+            pref.backgroundMode = nextMode;
           });
+          nowPlayingBackgroundModeNotifier.value = nextMode;
           await AppPreference.instance.save();
         },
       ),

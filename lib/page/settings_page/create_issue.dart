@@ -106,9 +106,11 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
       },
       "nowPlaying": {
         "nowPlayingViewMode": np.nowPlayingViewMode.name,
+        "backgroundMode": np.backgroundMode.name,
         "lyricTextAlign": np.lyricTextAlign.name,
         "lyricFontSize": np.lyricFontSize,
         "translationFontSize": np.translationFontSize,
+        "wordFadeWidth": np.wordFadeWidth,
         "showLyricTranslation": np.showLyricTranslation,
         "lyricFontWeight": np.lyricFontWeight,
         "enableLyricBlur": np.enableLyricBlur,
