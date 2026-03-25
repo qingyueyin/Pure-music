@@ -35,6 +35,22 @@ enum NowPlayingViewMode {
   }
 }
 
+enum NowPlayingBackgroundMode {
+  meshGradient,
+  simpleFallback;
+
+  static NowPlayingBackgroundMode? fromString(String? backgroundMode) {
+    if (backgroundMode == null) return null;
+    if (backgroundMode == "shaderFallback") {
+      return NowPlayingBackgroundMode.meshGradient;
+    }
+    for (var value in NowPlayingBackgroundMode.values) {
+      if (value.name == backgroundMode) return value;
+    }
+    return null;
+  }
+}
+
 enum LyricTextAlign {
   left,
   center,

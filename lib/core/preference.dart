@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+import 'package:pure_music/core/lyric_render_config.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/utils.dart';
@@ -31,10 +33,14 @@ class NowPlayingPagePreference {
   double lyricFontSize;
   double translationFontSize;
   bool showLyricTranslation;
+  bool showLyricRoman;
   int lyricFontWeight;
   bool enableLyricBlur;
-  /// Enable AMLL Mesh Gradient background (Windows only)
-  bool enableAmllBackground;
+  bool enableLyricScale;
+  bool enableLyricSpring;
+  bool enableAdvanceLyricTiming;
+  double wordFadeWidth;
+  NowPlayingBackgroundMode backgroundMode;
 
   NowPlayingPagePreference(
     this.nowPlayingViewMode,
@@ -44,8 +50,27 @@ class NowPlayingPagePreference {
     this.showLyricTranslation,
     this.lyricFontWeight,
     this.enableLyricBlur, {
-    this.enableAmllBackground = true,
+    this.showLyricRoman = false,
+    this.enableLyricScale = true,
+    this.enableLyricSpring = true,
+    this.enableAdvanceLyricTiming = true,
+    this.wordFadeWidth = 0.5,
+    this.backgroundMode = NowPlayingBackgroundMode.meshGradient,
   });
+
+  LyricRenderConfig get lyricRenderConfig => LyricRenderConfig(
+        textAlign: lyricTextAlign,
+        baseFontSize: lyricFontSize,
+        translationBaseFontSize: translationFontSize,
+        showTranslation: showLyricTranslation,
+        showRoman: showLyricRoman,
+        fontWeight: lyricFontWeight,
+        enableBlur: enableLyricBlur,
+        enableWordEmphasis: true,
+        enableLineScale: enableLyricScale,
+        enableLineSpring: enableLyricSpring,
+        wordFadeWidth: wordFadeWidth,
+      );
 
   Map toMap() => {
         "nowPlayingViewMode": nowPlayingViewMode.name,
@@ -53,12 +78,20 @@ class NowPlayingPagePreference {
         "lyricFontSize": lyricFontSize,
         "translationFontSize": translationFontSize,
         "showLyricTranslation": showLyricTranslation,
+        "showLyricRoman": showLyricRoman,
         "lyricFontWeight": lyricFontWeight,
         "enableLyricBlur": enableLyricBlur,
-        "enableAmllBackground": enableAmllBackground,
+        "enableLyricScale": enableLyricScale,
+        "enableLyricSpring": enableLyricSpring,
+        "enableAdvanceLyricTiming": enableAdvanceLyricTiming,
+        "wordFadeWidth": wordFadeWidth,
+        "backgroundMode": backgroundMode.name,
       };
 
   factory NowPlayingPagePreference.fromMap(Map map) {
+    final backgroundMode =
+        NowPlayingBackgroundMode.fromString(map["backgroundMode"]) ??
+            NowPlayingBackgroundMode.meshGradient;
     return NowPlayingPagePreference(
       NowPlayingViewMode.fromString(map["nowPlayingViewMode"]) ??
           NowPlayingViewMode.withLyric,
@@ -67,8 +100,13 @@ class NowPlayingPagePreference {
       map["translationFontSize"] ?? 18.0,
       map["showLyricTranslation"] ?? true,
       map["lyricFontWeight"] ?? 400,
-      map["enableLyricBlur"] ?? false,
-      enableAmllBackground: map["enableAmllBackground"] ?? true,
+      map["enableLyricBlur"] ?? true,
+      showLyricRoman: map["showLyricRoman"] ?? false,
+      enableLyricScale: map["enableLyricScale"] ?? true,
+      enableLyricSpring: map["enableLyricSpring"] ?? true,
+      enableAdvanceLyricTiming: map["enableAdvanceLyricTiming"] ?? true,
+      wordFadeWidth: (map["wordFadeWidth"] ?? 0.5).toDouble(),
+      backgroundMode: backgroundMode,
     );
   }
 }
@@ -90,6 +128,20 @@ class EqPreset {
       );
 }
 
+enum PlaybackOutputBackend {
+  system,
+  asio;
+
+  static PlaybackOutputBackend fromStoredValue(Object? value) {
+    if (value is String) {
+      for (final backend in PlaybackOutputBackend.values) {
+        if (backend.name == value) return backend;
+      }
+    }
+    return PlaybackOutputBackend.system;
+  }
+}
+
 class PlaybackPreference {
   PlayMode playMode;
   double volumeDsp;
@@ -105,6 +157,8 @@ class PlaybackPreference {
   double wasapiBufferSec;
   bool wasapiEventDriven;
   bool reinitOnSetSource;
+  PlaybackOutputBackend outputBackend;
+  int asioDeviceIndex;
 
   PlaybackPreference(
     this.playMode,
@@ -121,6 +175,8 @@ class PlaybackPreference {
     this.wasapiBufferSec = 0.10,
     this.wasapiEventDriven = false,
     this.reinitOnSetSource = false,
+    this.outputBackend = PlaybackOutputBackend.system,
+    this.asioDeviceIndex = 0,
   });
 
   Map toMap() => {
@@ -138,6 +194,8 @@ class PlaybackPreference {
         "wasapiBufferSec": wasapiBufferSec,
         "wasapiEventDriven": wasapiEventDriven,
         "reinitOnSetSource": reinitOnSetSource,
+        "outputBackend": outputBackend.name,
+        "asioDeviceIndex": asioDeviceIndex,
       };
 
   factory PlaybackPreference.fromMap(Map map) => PlaybackPreference(
@@ -163,6 +221,11 @@ class PlaybackPreference {
         wasapiBufferSec: (map["wasapiBufferSec"] ?? 0.10).toDouble(),
         wasapiEventDriven: map["wasapiEventDriven"] ?? false,
         reinitOnSetSource: map["reinitOnSetSource"] ?? false,
+        outputBackend:
+            PlaybackOutputBackend.fromStoredValue(map["outputBackend"]),
+        asioDeviceIndex: (map["asioDeviceIndex"] ?? 0) is int
+            ? map["asioDeviceIndex"] ?? 0
+            : int.tryParse("${map["asioDeviceIndex"]}") ?? 0,
       );
 }
 
@@ -208,7 +271,7 @@ class AppPreference {
       true,
       400,
       false,
-      enableAmllBackground: true);
+      backgroundMode: NowPlayingBackgroundMode.meshGradient);
 
   String customCpFeedbackKey = "";
   String updateRepoSlug = "qingyueyin/Pure-music";
@@ -281,6 +344,8 @@ class AppPreference {
           PlaybackPreference.fromMap(prefMap["playbackPref"]);
       instance.nowPlayingPagePref =
           NowPlayingPagePreference.fromMap(prefMap["nowPlayingPagePref"]);
+      _nowPlayingBackgroundModeNotifier?.value =
+          instance.nowPlayingPagePref.backgroundMode;
       instance.customCpFeedbackKey = prefMap["customCpFeedbackKey"] ?? "";
       instance.updateRepoSlug =
           prefMap["updateRepoSlug"] ?? "qingyueyin/Pure-music";
@@ -290,4 +355,12 @@ class AppPreference {
   }
 
   static final AppPreference instance = AppPreference();
+}
+
+ValueNotifier<NowPlayingBackgroundMode>? _nowPlayingBackgroundModeNotifier;
+
+ValueNotifier<NowPlayingBackgroundMode> get nowPlayingBackgroundModeNotifier {
+  return _nowPlayingBackgroundModeNotifier ??= ValueNotifier(
+    AppPreference.instance.nowPlayingPagePref.backgroundMode,
+  );
 }

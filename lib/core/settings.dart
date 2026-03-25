@@ -18,7 +18,6 @@ Future<void> migrateAppData() async {
       candidates.add(await getApplicationSupportDirectory());
       final docs = await getApplicationDocumentsDirectory();
       candidates.add(Directory(path.join(docs.path, "pure_music")));
-      candidates.add(Directory(path.join(docs.path, "coriander_player")));
 
       for (final oldDir in candidates) {
         if (!oldDir.existsSync()) continue;
