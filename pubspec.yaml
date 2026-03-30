@@ -11,7 +11,7 @@ dependencies:
   flutter:
     sdk: flutter
   palette_generator: ^0.3.3+7
-  material_color_utilities: ^0.11.1
+  material_color_utilities: ^0.13.0
   flutter_localizations:
     sdk: flutter
 

@@ -96,71 +96,11 @@ class LyricViewTile extends StatelessWidget {
     }
 
     double computeSafeScale(BoxConstraints constraints) {
-      if (!isMainLine) {
-        return config.enableLineScale
-            ? config.inactiveLineScaleMultiplier
-            : 1.0;
-      }
-      final desired =
-          config.enableLineScale ? config.activeLineScaleMultiplier : 1.0;
-      final maxWidth = constraints.maxWidth;
-      if (!maxWidth.isFinite || maxWidth <= 1) return desired;
-
-      final showTranslation = config.showTranslation;
-      final weight = config.fontWeight;
-      final primarySize = config.primaryFontSize(isMainLine: isMainLine);
-      final translationSize =
-          config.translationFontSize(isMainLine: isMainLine);
-
-      final primaryStyle = _lyricTextStyle(
-        config: config,
-        color: Colors.white,
-        fontSize: primarySize,
-        weight: weight,
-        height: config.primaryLineHeight(weight),
-      );
-      final translationStyle = _lyricTextStyle(
-        config: config,
-        color: Colors.white.withValues(alpha: 0.70),
-        fontSize: translationSize,
-        weight: (weight - 50).clamp(100, 900),
-        height: config.translationLineHeight(weight),
-      );
-
-      final List<String> primaryTexts = [];
-      final List<String> translationTexts = [];
-      if (line is SyncLyricLine) {
-        final sync = line as SyncLyricLine;
-        primaryTexts.add(sync.content);
-        if (showTranslation && sync.translation != null) {
-          translationTexts.add(sync.translation!);
-        }
-      } else if (line is LrcLine) {
-        final lrc = line as LrcLine;
-        final splited = lrc.content.split("┃");
-        if (splited.isNotEmpty) {
-          primaryTexts.add(splited.first);
-          if (showTranslation && splited.length > 1) {
-            translationTexts.addAll(splited.skip(1));
-          }
-        }
-      }
-
-      double measured = 0.0;
-      for (final t in primaryTexts) {
-        measured = max(measured, measureTextWidth(t, primaryStyle));
-      }
-      for (final t in translationTexts) {
-        measured = max(measured, measureTextWidth(t, translationStyle));
-      }
-
-      const outerPad = 24.0;
-      const innerPad = 24.0;
-      final available = maxWidth - outerPad;
-      final contentWidth = measured + innerPad;
-      if (available <= 1.0 || contentWidth <= 1.0) return desired;
-      final cap = (available / contentWidth).clamp(0.0, desired).toDouble();
-      return cap < 1.0 ? 1.0 : cap;
+      return config.enableLineScale
+          ? (isMainLine
+              ? config.activeLineScaleMultiplier
+              : config.inactiveLineScaleMultiplier)
+          : 1.0;
     }
 
     return Align(
@@ -579,7 +519,7 @@ class _SyncWordsWrap extends StatelessWidget {
         style: style,
         textHeightBehavior: const TextHeightBehavior(
           applyHeightToFirstAscent: true,
-          applyHeightToLastDescent: true,
+          applyHeightToLastDescent: false,
         ),
       );
     }
@@ -595,7 +535,7 @@ class _SyncWordsWrap extends StatelessWidget {
             style: style,
             textHeightBehavior: const TextHeightBehavior(
               applyHeightToFirstAscent: true,
-              applyHeightToLastDescent: true,
+              applyHeightToLastDescent: false,
             ),
           ),
         for (var i = 0; i < chars.length; i++)
@@ -614,7 +554,7 @@ class _SyncWordsWrap extends StatelessWidget {
             style: style,
             textHeightBehavior: const TextHeightBehavior(
               applyHeightToFirstAscent: true,
-              applyHeightToLastDescent: true,
+              applyHeightToLastDescent: false,
             ),
           ),
       ],
@@ -663,7 +603,7 @@ class _SyncWordsWrap extends StatelessWidget {
           ),
           textHeightBehavior: const TextHeightBehavior(
             applyHeightToFirstAscent: true,
-            applyHeightToLastDescent: true,
+            applyHeightToLastDescent: false,
           ),
         ),
       ),
