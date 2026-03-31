@@ -603,10 +603,10 @@ class PlaybackService extends ChangeNotifier {
     playService.lyricService.findCurrLyricLineAt(position);
   }
 
-  void close() {
-    _playerStateStreamSub.cancel();
-    _smtcEventStreamSub.cancel();
+  Future<void> close() async {
+    _displayUpdateTimer?.cancel();
+    await _playerStateStreamSub.cancel();
+    await _smtcEventStreamSub.cancel();
     _player.free();
-    _smtc.close();
   }
 }
