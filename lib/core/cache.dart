@@ -349,3 +349,100 @@ class _AsyncSemaphore {
     _inUse = max(0, _inUse - 1);
   }
 }
+
+/// 简单的 LRU 缓存实现
+class _SimpleLRUCache<K, V extends Object> {
+  final int maxSize;
+  final _map = <K, V>{};
+
+  _SimpleLRUCache(this.maxSize);
+
+  V? get(K key) {
+    if (!_map.containsKey(key)) return null;
+    // 移动到末尾（最近使用）
+    final value = _map.remove(key);
+    if (value == null) return null;
+    _map[key] = value;
+    return value;
+  }
+
+  void set(K key, V value) {
+    if (_map.containsKey(key)) {
+      _map.remove(key);
+    } else if (_map.length >= maxSize) {
+      _map.remove(_map.keys.first);
+    }
+    _map[key] = value;
+  }
+
+  void clear() => _map.clear();
+}
+
+/// 共享封面缓存 - SMTC/Theme/Audio 共用
+/// 避免重复调用 Rust FFI getPictureFromPath
+class CoverCache {
+  static final instance = CoverCache._();
+  CoverCache._();
+
+  static const _maxSize = 20;
+  final _cache = _SimpleLRUCache<String, Uint8List>(_maxSize);
+  final _pending = <String, Future<Uint8List?>>{};
+
+  /// 获取封面，返回 MemoryImage
+  /// [path] 音频文件路径
+  /// [width] [height] 请求的图片尺寸
+  Future<ImageProvider?> getCover({
+    required String path,
+    required int width,
+    required int height,
+  }) async {
+    final key = '$path|${width}x$height';
+
+    // 命中缓存
+    final cached = _cache.get(key);
+    if (cached != null) {
+      return MemoryImage(cached);
+    }
+
+    // 已有pending的请求
+    final pending = _pending[key];
+    if (pending != null) {
+      final result = await pending;
+      if (result != null) return MemoryImage(result);
+      return null;
+    }
+
+    // 发起新请求
+    final future = getPictureFromPath(
+      path: path,
+      width: width,
+      height: height,
+    );
+    _pending[key] = future;
+
+    try {
+      final result = await future;
+      if (result != null) {
+        _cache.set(key, result);
+        return MemoryImage(result);
+      }
+      return null;
+    } finally {
+      _pending.remove(key);
+    }
+  }
+
+  /// 预加载下一首的封面
+  void preloadNext(String? nextPath) {
+    if (nextPath == null) return;
+    // 预加载多个尺寸
+    getCover(path: nextPath, width: 48, height: 48).ignore();
+    getCover(path: nextPath, width: 256, height: 256).ignore();
+  }
+
+  /// 清除所有缓存
+  void clear() {
+    _cache.clear();
+    _pending.clear();
+  }
+}
