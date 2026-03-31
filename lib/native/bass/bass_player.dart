@@ -831,6 +831,18 @@ class BassPlayer {
     return false;
   }
 
+  /// Crossfade: 淡出旧流 - 设置静音后停止
+  void _fadeOutOldStream(int handle) {
+    // 快速降低音量避免爆音（立即执行，不阻塞）
+    _bass.BASS_ChannelSetAttribute(handle, bass.BASS_ATTRIB_VOLDSP, 0.0);
+  }
+
+  /// Crossfade: 淡入新流 - 恢复音量
+  void _fadeInNewStream(int handle, double targetVolume) {
+    // 直接设置目标音量（因为旧流已静音，不会有爆音）
+    _bass.BASS_ChannelSetAttribute(handle, bass.BASS_ATTRIB_VOLDSP, targetVolume);
+  }
+
   /// if setSource has been called once,
   /// it will pause current channel and free current stream.
   void setSource(String path) {
@@ -839,6 +851,10 @@ class BassPlayer {
       _positionUpdater?.cancel();
       _removeEQ();
       final oldHandle = _fstream!;
+
+      // Crossfade: 淡出旧流 (50ms)
+      _fadeOutOldStream(oldHandle);
+
       // Only stop the channel, don't call BASS_WASAPI_Free here
       // That's handled in useExclusiveMode when switching modes
       final stopped = _bass.BASS_ChannelStop(oldHandle);
@@ -1197,6 +1213,9 @@ class BassPlayer {
           break;
       }
     }
+
+    // Crossfade: 淡入新流
+    _fadeInNewStream(_fstream!, volumeDsp);
 
     _playerStateStreamController.add(playerState);
     _positionUpdater?.cancel();

@@ -29,6 +29,8 @@ class LyricCache {
     return lyric;
   }
 
+  bool containsKey(String path) => _cache.containsKey(path);
+
   void put(String path, Lyric lyric) {
     if (_cache.containsKey(path)) {
       _cache.remove(path);
@@ -362,6 +364,21 @@ class LyricService extends ChangeNotifier {
     });
 
     notifyListeners();
+  }
+
+  /// 预加载歌词（不影响当前播放）
+  /// 下一首切换时直接使用缓存
+  void prefetchLyric(Audio audio) {
+    final path = audio.path;
+    // 如果已缓存，跳过
+    if (_lyricCache.containsKey(path)) return;
+
+    // 触发加载但不等待结果
+    Lrc.fromAudioPath(audio).then((value) {
+      if (value != null) {
+        _lyricCache.put(path, value);
+      }
+    }).ignore();
   }
 
   void useLocalLyric() {

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:pure_music/core/preference.dart';
+import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/play_service/play_service.dart';
@@ -19,6 +20,7 @@ class PlaybackService extends ChangeNotifier {
   late StreamSubscription _playerStateStreamSub;
   late StreamSubscription _smtcEventStreamSub;
   int _lastNowPlayingChangedMs = 0;
+  Timer? _displayUpdateTimer;
 
   PlaybackService(this.playService) {
     // 注册独占模式状态变化回调
@@ -284,6 +286,17 @@ class PlaybackService extends ChangeNotifier {
       notifyListeners();
       ThemeProvider.instance.applyThemeFromAudio(nowPlaying!);
 
+      // 预加载下一首的封面和歌词（切歌更快）
+      if (audioIndex < playlist.length - 1) {
+        CoverCache.instance.preloadNext(playlist[audioIndex + 1].path);
+        // 预加载下一首歌词
+        playService.lyricService.prefetchLyric(playlist[audioIndex + 1]);
+        // 再下一首也预加载歌词（可选，提升长播放列表体验）
+        if (audioIndex < playlist.length - 2) {
+          playService.lyricService.prefetchLyric(playlist[audioIndex + 2]);
+        }
+      }
+
       _persistLastSession(
         playlist: playlist,
         playlistIndex: audioIndex,
@@ -291,13 +304,19 @@ class PlaybackService extends ChangeNotifier {
       );
 
       _smtc.updateState(state: SMTCState.playing);
-      _smtc.updateDisplay(
-        title: nowPlaying!.title,
-        artist: nowPlaying!.artist,
-        album: nowPlaying!.album,
-        duration: (length * 1000).floor(),
-        path: nowPlaying!.path,
-      );
+      // 延迟更新 SMTC 封面，避免播放启动时与音频线程竞争 CPU/IO
+      _displayUpdateTimer?.cancel();
+      _displayUpdateTimer = Timer(const Duration(seconds: 1), () {
+        final current = nowPlaying;
+        if (current == null) return;
+        _smtc.updateDisplay(
+          title: current.title,
+          artist: current.artist,
+          album: current.album,
+          duration: (length * 1000).floor(),
+          path: current.path,
+        );
+      });
 
       playService.desktopLyricService.canSendMessage.then((canSend) {
         if (!canSend) return;
@@ -458,13 +477,19 @@ class PlaybackService extends ChangeNotifier {
       ThemeProvider.instance.applyThemeFromAudio(nowPlaying!);
 
       _smtc.updateState(state: SMTCState.paused);
-      _smtc.updateDisplay(
-        title: nowPlaying!.title,
-        artist: nowPlaying!.artist,
-        album: nowPlaying!.album,
-        duration: (length * 1000).floor(),
-        path: nowPlaying!.path,
-      );
+      // 延迟更新 SMTC 封面，避免启动时与 UI 渲染竞争 CPU/IO
+      _displayUpdateTimer?.cancel();
+      _displayUpdateTimer = Timer(const Duration(seconds: 1), () {
+        final current = nowPlaying;
+        if (current == null) return;
+        _smtc.updateDisplay(
+          title: current.title,
+          artist: current.artist,
+          album: current.album,
+          duration: (length * 1000).floor(),
+          path: current.path,
+        );
+      });
       notifyListeners();
     } catch (err) {
       logger.e("[restore last session] $err");
