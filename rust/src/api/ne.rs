@@ -134,8 +134,10 @@ pub struct LyricResult {
     pub tlyric: Option<LyricContent>,
     pub yrc: Option<LyricContent>,
     pub romalrc: Option<LyricContent>,
-    pub lyricUser: Option<LyricUser>,
-    pub transUser: Option<LyricUser>,
+    #[serde(rename = "lyricUser")]
+    pub lyric_user: Option<LyricUser>,
+    #[serde(rename = "transUser")]
+    pub trans_user: Option<LyricUser>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
