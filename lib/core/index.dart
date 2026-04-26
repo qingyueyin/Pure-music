@@ -8,4 +8,4 @@ export 'paths.dart';
 export 'preference.dart';
 export 'settings.dart';
 export 'theme.dart';
-export 'utils.dart';
+export 'utils.dart' hide logger;
