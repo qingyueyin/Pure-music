@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -10,11 +11,13 @@ class LyricLineVisualState {
   final double opacity;
   final double blurSigma;
   final double scale;
+  final double offsetY;
 
   const LyricLineVisualState({
     required this.opacity,
     required this.blurSigma,
     required this.scale,
+    this.offsetY = 0.0,
   });
 
   static LyricLineVisualState lerp(
@@ -26,13 +29,15 @@ class LyricLineVisualState {
       opacity: lerpDouble(a.opacity, b.opacity, t) ?? b.opacity,
       blurSigma: lerpDouble(a.blurSigma, b.blurSigma, t) ?? b.blurSigma,
       scale: lerpDouble(a.scale, b.scale, t) ?? b.scale,
+      offsetY: lerpDouble(a.offsetY, b.offsetY, t) ?? b.offsetY,
     );
   }
 
   bool isCloseTo(LyricLineVisualState other, {double epsilon = 1e-3}) {
     return (opacity - other.opacity).abs() <= epsilon &&
         (blurSigma - other.blurSigma).abs() <= epsilon &&
-        (scale - other.scale).abs() <= epsilon;
+        (scale - other.scale).abs() <= epsilon &&
+        (offsetY - other.offsetY).abs() <= epsilon;
   }
 
   @override
@@ -41,11 +46,12 @@ class LyricLineVisualState {
     return other is LyricLineVisualState &&
         other.opacity == opacity &&
         other.blurSigma == blurSigma &&
-        other.scale == scale;
+        other.scale == scale &&
+        other.offsetY == offsetY;
   }
 
   @override
-  int get hashCode => Object.hash(opacity, blurSigma, scale);
+  int get hashCode => Object.hash(opacity, blurSigma, scale, offsetY);
 }
 
 class LyricLineVisualStateTween extends Tween<LyricLineVisualState> {
@@ -67,6 +73,7 @@ class LyricLineSpringMotion extends StatefulWidget {
     required this.spring,
     required this.alignment,
     this.enabled = true,
+    this.staggerDelay = Duration.zero,
     required this.child,
   });
 
@@ -74,6 +81,7 @@ class LyricLineSpringMotion extends StatefulWidget {
   final LyricSpringDescription spring;
   final Alignment alignment;
   final bool enabled;
+  final Duration staggerDelay;
   final Widget child;
 
   @override
@@ -84,6 +92,7 @@ class _LyricLineSpringMotionState extends State<LyricLineSpringMotion>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late LyricLineVisualStateTween _stateTween;
+  Timer? _staggerTimer;
 
   SpringDescription get _spring => SpringDescription(
         mass: widget.spring.mass,
@@ -112,7 +121,8 @@ class _LyricLineSpringMotionState extends State<LyricLineSpringMotion>
     if (_currentState.isCloseTo(widget.targetState) &&
         oldWidget.spring == widget.spring &&
         oldWidget.enabled == widget.enabled &&
-        oldWidget.alignment == widget.alignment) {
+        oldWidget.alignment == widget.alignment &&
+        oldWidget.staggerDelay == widget.staggerDelay) {
       _stateTween = LyricLineVisualStateTween(
         begin: widget.targetState,
         end: widget.targetState,
@@ -136,17 +146,31 @@ class _LyricLineSpringMotionState extends State<LyricLineSpringMotion>
       _controller
         ..stop()
         ..value = 1.0;
+      _staggerTimer?.cancel();
       return;
     }
 
-    _controller
-      ..stop()
-      ..value = 0.0
-      ..animateWith(SpringSimulation(_spring, 0.0, 1.0, 0.0));
+    _staggerTimer?.cancel();
+
+    if (widget.staggerDelay.inMilliseconds > 0) {
+      _staggerTimer = Timer(widget.staggerDelay, () {
+        if (!mounted || !widget.enabled) return;
+        _controller
+          ..stop()
+          ..value = 0.0
+          ..animateWith(SpringSimulation(_spring, 0.0, 1.0, 0.0));
+      });
+    } else {
+      _controller
+        ..stop()
+        ..value = 0.0
+        ..animateWith(SpringSimulation(_spring, 0.0, 1.0, 0.0));
+    }
   }
 
   @override
   void dispose() {
+    _staggerTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -158,11 +182,22 @@ class _LyricLineSpringMotionState extends State<LyricLineSpringMotion>
       child: widget.child,
       builder: (context, child) {
         final visualState = widget.enabled ? _currentState : widget.targetState;
-        Widget current = Transform.scale(
-          scale: visualState.scale,
-          alignment: widget.alignment,
-          child: child,
-        );
+        Widget current = child!;
+
+        if (visualState.offsetY.abs() > 0.01) {
+          current = Transform.translate(
+            offset: Offset(0, visualState.offsetY),
+            child: current,
+          );
+        }
+
+        if (visualState.scale != 1.0) {
+          current = Transform.scale(
+            scale: visualState.scale,
+            alignment: widget.alignment,
+            child: current,
+          );
+        }
 
         if (visualState.blurSigma > 0.01) {
           current = ImageFiltered(
