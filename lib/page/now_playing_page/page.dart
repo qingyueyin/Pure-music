@@ -65,6 +65,19 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   final AdvancedColorExtractionService _advancedColorService =
       AdvancedColorExtractionService();
 
+  static Color _softenColor(Color color, {required bool isDark}) {
+    final hsl = HSLColor.fromColor(color);
+    if (isDark) {
+      // Keep saturation intact, only darken slightly for readability
+      final softLightness = (hsl.lightness * 0.55).clamp(0.10, 0.40);
+      return hsl.withLightness(softLightness).toColor();
+    } else {
+      // Keep saturation intact, only lighten slightly for readability
+      final softLightness = (hsl.lightness * 0.50 + 0.38).clamp(0.50, 0.80);
+      return hsl.withLightness(softLightness).toColor();
+    }
+  }
+
   void _bumpCursor() {
     _cursorHideTimer?.cancel();
     if (_cursorHidden) {
@@ -157,7 +170,8 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   @override
   void initState() {
     super.initState();
-    playbackService.addListener(updateCover);
+    playbackService.nowPlayingNotifier.addListener(updateCover);
+    playbackService.playerStateNotifier.addListener(_updatePlayPauseState);
     updateCover();
     _bumpCursor();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -167,9 +181,17 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     });
   }
 
+  void _updatePlayPauseState() {
+    // Trigger rebuild when play/pause state changes
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   @override
   void dispose() {
-    playbackService.removeListener(updateCover);
+    playbackService.nowPlayingNotifier.removeListener(updateCover);
+    playbackService.playerStateNotifier.removeListener(_updatePlayPauseState);
     _coverDebounceTimer?.cancel();
     _cursorHideTimer?.cancel();
     super.dispose();
@@ -263,10 +285,13 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                                     intensity:
                                         brightness == Brightness.dark ? 1.0 : 0.9,
                                   );
+                                  final softBg = _dominantColor != null
+                                      ? _softenColor(_dominantColor!, isDark: brightness == Brightness.dark)
+                                      : _softenColor(scheme.primary, isDark: brightness == Brightness.dark);
                                   return NowPlayingBackground(
                                     mode: backgroundMode,
                                     inputs: backgroundInputs,
-                                    fallbackColor: scheme.surface,
+                                    fallbackColor: softBg,
                                   );
                                 },
                               );
@@ -327,32 +352,39 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                           child: Padding(
                             padding:
                                 const EdgeInsets.symmetric(horizontal: 12.0),
-                            child: Row(
-                              children: [
-                                ResponsiveBuilder2(
-                                  builder: (context, screenType) {
-                                    if (screenType != ScreenType.small) {
-                                      return const SizedBox.shrink();
-                                    }
-                                    return Builder(
-                                      builder: (context) => IconButton(
-                                        tooltip: "侧边栏",
-                                        onPressed: () {
-                                          Scaffold.of(context).openDrawer();
-                                        },
-                                        icon: const Icon(Symbols.menu),
+                            child: AnimatedOpacity(
+                              duration: const Duration(milliseconds: 150),
+                              opacity: _cursorHidden ? 0.0 : 1.0,
+                              child: IgnorePointer(
+                                ignoring: _cursorHidden,
+                                child: Row(
+                                  children: [
+                                    ResponsiveBuilder2(
+                                      builder: (context, screenType) {
+                                        if (screenType != ScreenType.small) {
+                                          return const SizedBox.shrink();
+                                        }
+                                        return Builder(
+                                          builder: (context) => IconButton(
+                                            tooltip: "侧边栏",
+                                            onPressed: () {
+                                              Scaffold.of(context).openDrawer();
+                                            },
+                                            icon: const Icon(Symbols.menu),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                    const NavBackBtn(),
+                                    const Expanded(
+                                      child: DragToMoveArea(
+                                        child: SizedBox.expand(),
                                       ),
-                                    );
-                                  },
+                                    ),
+                                    const WindowControlls(),
+                                  ],
                                 ),
-                                const NavBackBtn(),
-                                const Expanded(
-                                  child: DragToMoveArea(
-                                    child: SizedBox.expand(),
-                                  ),
-                                ),
-                                const WindowControlls(),
-                              ],
+                              ),
                             ),
                           ),
                         ),
@@ -380,10 +412,11 @@ class _ExclusiveModeSwitch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return ValueListenableBuilder(
       valueListenable: PlayService.instance.playbackService.wasapiExclusive,
       builder: (context, exclusive, _) => IconButton(
-        tooltip: exclusive ? "独占模式：启用" : "独占模式",
+        tooltip: exclusive ? "关闭独占" : "打开独占",
         onPressed: () {
           PlayService.instance.playbackService.useExclusiveMode(!exclusive);
         },
@@ -393,6 +426,7 @@ class _ExclusiveModeSwitch extends StatelessWidget {
             style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
           ),
         ),
+        color: scheme.onSurface,
       ),
     );
   }
@@ -422,7 +456,7 @@ class _NowPlayingMoreAction extends StatelessWidget {
         tooltip: "更多",
         onPressed: null,
         icon: const Icon(Symbols.more_vert),
-        color: scheme.onSecondaryContainer,
+        color: scheme.onSurface,
       );
     }
 
@@ -513,7 +547,7 @@ class _NowPlayingMoreAction extends StatelessWidget {
             }
           },
           icon: const Icon(Symbols.more_vert),
-          color: scheme.onSecondaryContainer,
+          color: scheme.onSurface,
         ),
       ),
     );
@@ -533,7 +567,7 @@ class _DesktopLyricSwitch extends StatelessWidget {
         return FutureBuilder(
           future: desktopLyricService.desktopLyric,
           builder: (context, snapshot) => IconButton(
-            tooltip: snapshot.data != null ? "桌面歌词：启用" : "桌面歌词",
+            tooltip: snapshot.data != null ? "关闭桌面歌词" : "打开桌面歌词",
             onPressed: snapshot.data == null
                 ? desktopLyricService.startDesktopLyric
                 : desktopLyricService.isLocked
@@ -549,7 +583,7 @@ class _DesktopLyricSwitch extends StatelessWidget {
                     height: 20,
                     child: CircularProgressIndicator(),
                   ),
-            color: scheme.onSecondaryContainer,
+            color: scheme.onSurface,
           ),
         );
       },
@@ -628,7 +662,7 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
     };
     hotkeyUiFeedback.addListener(_hotkeyListener);
     _lastVolumeDsp = playbackService.volumeDsp;
-    playbackService.addListener(() {
+    playbackService.nowPlayingNotifier.addListener(() {
       if (!mounted) return;
       final v = playbackService.volumeDsp;
       if ((v - _lastVolumeDsp).abs() <= 0.0001) return;
@@ -916,7 +950,7 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
             }
           },
           icon: const Icon(Symbols.volume_up),
-          color: scheme.onSecondaryContainer,
+          color: scheme.onSurface,
         );
       },
     );
@@ -1019,10 +1053,6 @@ class _NowPlayingPlaybackModeSwitch extends StatelessWidget {
         };
 
         return IconButton(
-          style: const ButtonStyle(
-            backgroundColor: WidgetStatePropertyAll(Colors.transparent),
-            overlayColor: WidgetStatePropertyAll(Colors.transparent),
-          ),
           tooltip: modeText,
           onPressed: () {
             if (!shuffle && playMode != PlayMode.singleLoop) {
@@ -1040,7 +1070,7 @@ class _NowPlayingPlaybackModeSwitch extends StatelessWidget {
             playbackService.setPlayMode(PlayMode.forward);
           },
           icon: Icon(icon, fill: 0.0, weight: 400.0),
-          color: scheme.onSecondaryContainer,
+          color: scheme.onSurface,
         );
       },
     );
@@ -1059,13 +1089,14 @@ class _NowPlayingMainControls extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _GlowingIconButton(
+        IconButton(
           tooltip: "上一曲",
           onPressed: playbackService.lastAudio,
-          iconData: Symbols.skip_previous,
-          size: 32,
-          glowColor: scheme.primary.withValues(alpha: 0.5),
-          iconColor: scheme.onSecondaryContainer,
+          icon: const Icon(
+            Symbols.skip_previous,
+            fill: 1.0,
+          ),
+          color: scheme.onSurface,
         ),
         const SizedBox(width: 32),
         StreamBuilder(
@@ -1073,26 +1104,37 @@ class _NowPlayingMainControls extends StatelessWidget {
           initialData: playbackService.playerState,
           builder: (context, snapshot) {
             final playerState = snapshot.data!;
-            return _MorphPlayPauseButton(
-              playerState: playerState,
-              onPlay: playbackService.start,
-              onPause: playbackService.pause,
-              onReplay: playbackService.playAgain,
-              size: 56,
-              glowColor: scheme.primary.withValues(alpha: 0.6),
-              color: scheme.primary,
-              playerStateStream: playbackService.playerStateStream,
+            final isPlaying = playerState == PlayerState.playing;
+            final isCompleted = playerState == PlayerState.completed;
+            
+            return IconButton(
+              tooltip: isPlaying ? "暂停" : "播放",
+              onPressed: () {
+                if (isPlaying) {
+                  playbackService.pause();
+                } else if (isCompleted) {
+                  playbackService.playAgain();
+                } else {
+                  playbackService.start();
+                }
+              },
+              icon: Icon(
+                isPlaying ? Symbols.pause : Symbols.play_arrow,
+                fill: 1.0,
+              ),
+              color: scheme.onSurface,
             );
           },
         ),
         const SizedBox(width: 32),
-        _GlowingIconButton(
+        IconButton(
           tooltip: "下一曲",
           onPressed: playbackService.nextAudio,
-          iconData: Symbols.skip_next,
-          size: 32,
-          glowColor: scheme.primary.withValues(alpha: 0.5),
-          iconColor: scheme.onSecondaryContainer,
+          icon: const Icon(
+            Symbols.skip_next,
+            fill: 1.0,
+          ),
+          color: scheme.onSurface,
         ),
       ],
     );
@@ -1127,54 +1169,74 @@ class _GlowingIconButtonState extends State<_GlowingIconButton> {
   @override
   Widget build(BuildContext context) {
     final showGlow = _isHovering;
+    final scheme = Theme.of(context).colorScheme;
+    final isHoverOrPressed = _isHovering || _isPressed;
+    final hoverBgAlpha = _isPressed ? 0.04 : 0.02;
 
-    return MouseRegion(
-      onEnter: (_) => setState(() => _isHovering = true),
-      onExit: (_) => setState(() => _isHovering = false),
-      child: GestureDetector(
-        onTapDown: (_) => setState(() => _isPressed = true),
-        onTapUp: (_) => setState(() => _isPressed = false),
-        onTapCancel: () => setState(() => _isPressed = false),
-        onTap: widget.onPressed,
-        child: SizedBox(
-          width: widget.size + 16,
-          height: widget.size + 16,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              // Glow Layer
-              if (showGlow)
-                Positioned.fill(
-                  child: ImageFiltered(
-                    imageFilter: ImageFilter.blur(
-                      sigmaX: 10,
-                      sigmaY: 10,
-                    ),
-                    child: Center(
-                      child: Icon(
-                        widget.iconData,
-                        size: widget.size,
-                        color: widget.glowColor,
-                        fill: 0.0,
-                        weight: 400.0,
+    return Tooltip(
+      message: widget.tooltip,
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _isHovering = true),
+        onExit: (_) => setState(() => _isHovering = false),
+        child: GestureDetector(
+          onTapDown: (_) => setState(() => _isPressed = true),
+          onTapUp: (_) => setState(() => _isPressed = false),
+          onTapCancel: () => setState(() => _isPressed = false),
+          onTap: widget.onPressed,
+          child: SizedBox(
+            width: widget.size + 16,
+            height: widget.size + 16,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // Hover Background
+                AnimatedOpacity(
+                  duration: MotionDuration.fast,
+                  curve: MotionCurve.standard,
+                  opacity: isHoverOrPressed ? 1.0 : 0.0,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: scheme.onSecondaryContainer.withValues(
+                        alpha: hoverBgAlpha,
                       ),
+                      borderRadius: BorderRadius.circular(8),
                     ),
                   ),
                 ),
-              // Icon Layer
-              AnimatedScale(
-                duration: const Duration(milliseconds: 120),
-                curve: const Cubic(0.4, 0, 0.2, 1),
-                scale: _isPressed ? 0.9 : 1.0,
-                child: Icon(
-                  widget.iconData,
-                  size: widget.size,
-                  color: widget.iconColor,
-                  fill: 0.0,
-                  weight: 400.0,
+                // Glow Layer
+                if (showGlow)
+                  Positioned.fill(
+                    child: ImageFiltered(
+                      imageFilter: ImageFilter.blur(
+                        sigmaX: 10,
+                        sigmaY: 10,
+                      ),
+                      child: Center(
+                        child: Icon(
+                          widget.iconData,
+                          size: widget.size,
+                          color: widget.glowColor,
+                          fill: 0.0,
+                          weight: 400.0,
+                        ),
+                      ),
+                    ),
+                  ),
+                // Icon Layer
+                AnimatedScale(
+                  duration: const Duration(milliseconds: 120),
+                  curve: const Cubic(0.4, 0, 0.2, 1),
+                  scale: _isPressed ? 0.9 : 1.0,
+                  child: Icon(
+                    widget.iconData,
+                    size: widget.size,
+                    color: widget.iconColor,
+                    fill: 0.0,
+                    weight: 400.0,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -1228,6 +1290,7 @@ class _MorphPlayPauseButtonState extends State<_MorphPlayPauseButton>
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovering = true),
       onExit: (_) => setState(() => _isHovering = false),
@@ -1257,6 +1320,8 @@ class _MorphPlayPauseButtonState extends State<_MorphPlayPauseButton>
             }
 
             final showGlow = _isHovering;
+            final isHoverOrPressed = _isHovering || _isPressed;
+            final hoverBgAlpha = _isPressed ? 0.04 : 0.02;
 
             return SizedBox(
               width: widget.size + 16,
@@ -1264,6 +1329,20 @@ class _MorphPlayPauseButtonState extends State<_MorphPlayPauseButton>
               child: Stack(
                 alignment: Alignment.center,
                 children: [
+                  // Hover Background
+                  AnimatedOpacity(
+                    duration: MotionDuration.fast,
+                    curve: MotionCurve.standard,
+                    opacity: isHoverOrPressed ? 1.0 : 0.0,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: scheme.onSecondaryContainer.withValues(
+                          alpha: hoverBgAlpha,
+                        ),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
                   if (showGlow)
                     Positioned.fill(
                       child: ImageFiltered(
@@ -1293,6 +1372,8 @@ class _MorphPlayPauseButtonState extends State<_MorphPlayPauseButton>
                       ),
                       style: ButtonStyle(
                         backgroundColor:
+                            const WidgetStatePropertyAll(Colors.transparent),
+                        overlayColor:
                             const WidgetStatePropertyAll(Colors.transparent),
                       ),
                     ),
@@ -1399,108 +1480,102 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider> {
     final nowPlayingLength = playbackService.length;
     final nowPlayingPath = playbackService.nowPlaying?.path;
 
-    return SizedBox(
-      height: 24, // Slider height
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          // Current Time (Left)
-          Positioned(
-            left: 24,
-            top: 0,
-            bottom: 0,
-            child: Center(
-              child: _PlaybackPositionText(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Time labels on top
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _PlaybackPositionText(
                 positionStream: playbackService.positionStream,
                 initialPosition: playbackService.position,
                 trackKey: nowPlayingPath,
-                color: scheme.onSecondaryContainer,
+                color: scheme.onSurface,
               ),
-            ),
-          ),
-          // Total Time (Right)
-          Positioned(
-            right: 24,
-            top: 0,
-            bottom: 0,
-            child: Center(
-              child: Text(
+              Text(
                 Duration(milliseconds: (nowPlayingLength * 1000).toInt())
                     .toStringMSS(),
                 style: TextStyle(
-                  color: scheme.onSecondaryContainer,
+                  color: scheme.onSurface,
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 0.5,
                   fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),
-            ),
+            ],
           ),
-          // Slider
-          Padding(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 84.0), // Space for time text
+        ),
+        // Slider (align with controls below)
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          child: SizedBox(
+            height: 24,
             child: ListenableBuilder(
               listenable: dragPosition,
               builder: (context, _) => StreamBuilder(
-                stream: playbackService.positionStream,
-                initialData: playbackService.position,
-                builder: (context, positionSnapshot) {
-                  final position = isDragging
-                      ? dragPosition.value
-                      : positionSnapshot.data! > nowPlayingLength
-                          ? nowPlayingLength
-                          : positionSnapshot.data!;
-                  final max = nowPlayingLength > 0 ? nowPlayingLength : 1.0;
-                  final fraction = (position / max).clamp(0.0, 1.0);
+              stream: playbackService.positionStream,
+              initialData: playbackService.position,
+              builder: (context, positionSnapshot) {
+                final position = isDragging
+                    ? dragPosition.value
+                    : positionSnapshot.data! > nowPlayingLength
+                        ? nowPlayingLength
+                        : positionSnapshot.data!;
+                final max = nowPlayingLength > 0 ? nowPlayingLength : 1.0;
+                final fraction = (position / max).clamp(0.0, 1.0);
 
-                  return LayoutBuilder(
-                    builder: (context, constraints) {
-                      final width = constraints.maxWidth;
-                      return GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onHorizontalDragStart: (details) {
-                          isDragging = true;
-                          final value = (details.localPosition.dx / width)
-                                  .clamp(0.0, 1.0) *
-                              max;
-                          dragPosition.value = value;
-                        },
-                        onHorizontalDragUpdate: (details) {
-                          final value = (details.localPosition.dx / width)
-                                  .clamp(0.0, 1.0) *
-                              max;
-                          dragPosition.value = value;
-                        },
-                        onHorizontalDragEnd: (details) {
-                          isDragging = false;
-                          playbackService.seek(dragPosition.value);
-                        },
-                        onTapDown: (details) {
-                          final value = (details.localPosition.dx / width)
-                                  .clamp(0.0, 1.0) *
-                              max;
-                          playbackService.seek(value);
-                        },
-                        child: CustomPaint(
-                          painter: _GlowSliderPainter(
-                            fraction: fraction,
-                            color: scheme.primary,
-                            glowColor: scheme.primaryContainer,
-                            inactiveColor: scheme.surfaceContainerHighest,
-                          ),
-                          size: Size(width, 24),
+                return LayoutBuilder(
+                  builder: (context, constraints) {
+                    final width = constraints.maxWidth;
+                    return GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onHorizontalDragStart: (details) {
+                        isDragging = true;
+                        final value = (details.localPosition.dx / width)
+                                .clamp(0.0, 1.0) *
+                            max;
+                        dragPosition.value = value;
+                      },
+                      onHorizontalDragUpdate: (details) {
+                        final value = (details.localPosition.dx / width)
+                                .clamp(0.0, 1.0) *
+                            max;
+                        dragPosition.value = value;
+                      },
+                      onHorizontalDragEnd: (details) {
+                        isDragging = false;
+                        playbackService.seek(dragPosition.value);
+                      },
+                      onTapDown: (details) {
+                        final value = (details.localPosition.dx / width)
+                                .clamp(0.0, 1.0) *
+                            max;
+                        playbackService.seek(value);
+                      },
+                      child: CustomPaint(
+                        painter: _GlowSliderPainter(
+                          fraction: fraction,
+                          color: scheme.primary,
+                          glowColor: scheme.primaryContainer,
+                          inactiveColor: scheme.brightness == Brightness.dark
+                              ? scheme.surfaceContainerHighest
+                              : const Color(0x33FFFFFF),
                         ),
-                      );
-                    },
-                  );
-                },
-              ),
+                        size: Size(width, 24),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -1728,7 +1803,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
   @override
   void initState() {
     super.initState();
-    playbackService.addListener(_onPlaybackChange);
+    playbackService.nowPlayingNotifier.addListener(_onPlaybackChange);
     // Initial load
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -1762,7 +1837,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
       errorBuilder: (_, __, ___) => Icon(
         Symbols.broken_image,
         size: 400.0,
-        color: scheme.onSecondaryContainer,
+        color: scheme.onSurface,
       ),
     );
 
@@ -1796,23 +1871,8 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(20.0),
                   boxShadow: [
-                    // 1. 环境光晕 (Ambient Glow)
                     BoxShadow(
-                      color: scheme.primary.withAlpha(64),
-                      spreadRadius: -4,
-                      blurRadius: 24,
-                      offset: const Offset(0, 8),
-                    ),
-                    // 2. 轮廓描边 (Outline)
-                    BoxShadow(
-                      color: scheme.primary.withAlpha(38),
-                      spreadRadius: 1,
-                      blurRadius: 0,
-                      offset: Offset.zero,
-                    ),
-                    // 3. 深邃阴影 (Depth Shadow)
-                    BoxShadow(
-                      color: Colors.black.withAlpha(51),
+                      color: scheme.shadow.withValues(alpha: 0.2),
                       spreadRadius: 0,
                       blurRadius: 16,
                       offset: const Offset(0, 8),
@@ -1893,7 +1953,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: Colors.white,
+                    color: scheme.onSurface,
                     fontWeight: FontWeight.bold,
                     fontSize: 24,
                     height: 1.2,
@@ -1906,7 +1966,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.7),
+                    color: scheme.onSurface.withValues(alpha: 0.7),
                     fontSize: 16,
                     height: 1.2,
                   ),
