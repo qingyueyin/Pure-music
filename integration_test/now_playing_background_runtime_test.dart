@@ -100,7 +100,7 @@ void main() {
     expect(tester.takeException(), isNull);
 
     isVisible = true;
-    mode = NowPlayingBackgroundMode.simpleFallback;
+    mode = NowPlayingBackgroundMode.blurCover;
     await pumpHost();
     await tester.pump(const Duration(milliseconds: 250));
     expect(find.byType(NowPlayingBackground), findsOneWidget);
