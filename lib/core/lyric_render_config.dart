@@ -45,7 +45,6 @@ class LyricRenderConfig {
   final bool enableAudioReactive;
   final double audioReactiveStrength;
   final double viewportFadeExtent;
-  final double wordFadeWidth;
   final double emphasisLiftPx;
   final double emphasisScaleBoost;
   final double emphasisGlowIntensity;
@@ -80,8 +79,7 @@ class LyricRenderConfig {
     this.enableStaggeredAnimation = true,
     this.enableAudioReactive = false,
     this.audioReactiveStrength = 0.5,
-    this.viewportFadeExtent = 0.08,
-    this.wordFadeWidth = 0.08,
+    this.viewportFadeExtent = 0.04,
     this.emphasisLiftPx = 0.5,
     this.emphasisScaleBoost = 0.035,
     this.emphasisGlowIntensity = 0.2,
@@ -89,12 +87,12 @@ class LyricRenderConfig {
     this.emphasisReleaseRatio = 0.3,
     this.mainLineScale = 1.0,
     this.subLineScale = 1.0,
-    this.mainTranslationScale = 0.95,
-    this.subTranslationScale = 0.86,
-    this.activeLineScaleMultiplier = 1.03,
-    this.inactiveLineScaleMultiplier = 0.97,
-    this.blurSigmaStep = 2.5,
-    this.blurSigmaMax = 12.0,
+    this.mainTranslationScale = 0.78,
+    this.subTranslationScale = 0.70,
+    this.activeLineScaleMultiplier = 1.0,
+    this.inactiveLineScaleMultiplier = 0.90,
+    this.blurSigmaStep = 1.0,
+    this.blurSigmaMax = 4.0,
     this.implicitAnimationDuration = const Duration(milliseconds: 300),
     this.lineSpring = const LyricSpringDescription(
       stiffness: 90.0,
@@ -124,7 +122,6 @@ class LyricRenderConfig {
     bool? enableAudioReactive,
     double? audioReactiveStrength,
     double? viewportFadeExtent,
-    double? wordFadeWidth,
     double? emphasisLiftPx,
     double? emphasisScaleBoost,
     double? emphasisGlowIntensity,
@@ -163,7 +160,6 @@ class LyricRenderConfig {
       audioReactiveStrength:
           audioReactiveStrength ?? this.audioReactiveStrength,
       viewportFadeExtent: viewportFadeExtent ?? this.viewportFadeExtent,
-      wordFadeWidth: wordFadeWidth ?? this.wordFadeWidth,
       emphasisLiftPx: emphasisLiftPx ?? this.emphasisLiftPx,
       emphasisScaleBoost: emphasisScaleBoost ?? this.emphasisScaleBoost,
       emphasisGlowIntensity:
