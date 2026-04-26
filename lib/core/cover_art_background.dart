@@ -5,12 +5,10 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show kDebugMode;
 
-/// Build a HyperCeiler-like "cover art" background:
-/// - crop center square
-/// - create a tile
-/// - draw 2x2 collage with deterministic rotations/flips
-/// - apply blur
-/// - apply dark overlay to keep text readable
+/// Build a Apple Music–style cover art background:
+/// - Crop center square, scale up large
+/// - Apply heavy blur so cover content is invisible, only colors remain
+/// - Slight darken for text readability
 Future<ui.Image?> buildCoverArtBackground(
   Uint8List coverPngBytes, {
   required int canvasSize,
@@ -18,12 +16,24 @@ Future<ui.Image?> buildCoverArtBackground(
   required double blurSigma,
   required double darken,
 }) async {
-  if (coverPngBytes.isEmpty) return null;
-  if (canvasSize <= 8 || tileSize <= 8) return null;
+  return _buildCoverArtBackgroundApple(
+    coverPngBytes,
+    canvasSize: canvasSize,
+    blurSigma: blurSigma,
+    darken: darken,
+  );
+}
 
-  // In widget tests (and generally in debug mode on Windows), repeated
-  // `Picture.toImage` rasterization can hang. Keep the function fast and
-  // deterministic in debug builds.
+/// Apple Music–style: just scale up + blur + darken. No tile collage.
+Future<ui.Image?> _buildCoverArtBackgroundApple(
+  Uint8List coverPngBytes, {
+  required int canvasSize,
+  required double blurSigma,
+  required double darken,
+}) async {
+  if (coverPngBytes.isEmpty) return null;
+  if (canvasSize <= 8) return null;
+
   if (kDebugMode) {
     final codec = await ui.instantiateImageCodec(
       coverPngBytes,
@@ -38,121 +48,15 @@ Future<ui.Image?> buildCoverArtBackground(
     }
   }
 
-  Future<ui.Image?> buildFull() async {
-    final src = await _decodeImage(coverPngBytes);
-    ui.Image? tile;
-    ui.Image? small;
-    try {
-      final seed = _seedFromBytes(coverPngBytes);
-      final rng = math.Random(seed);
-
-      // Crop center square
-      final sw = src.width.toDouble();
-      final sh = src.height.toDouble();
-      final s = math.min(sw, sh);
-      final sx = (sw - s) / 2.0;
-      final sy = (sh - s) / 2.0;
-
-      tile = await _renderTile(
-        src: src,
-        srcRect: ui.Rect.fromLTWH(sx, sy, s, s),
-        size: tileSize,
-      );
-      if (tile == null) return null;
-
-      final recorder = ui.PictureRecorder();
-      final canvas = ui.Canvas(recorder);
-      final paint = ui.Paint()..filterQuality = ui.FilterQuality.medium;
-
-      // Background base (near-black) so blur edges look clean.
-      canvas.drawRect(
-        ui.Rect.fromLTWH(0, 0, canvasSize.toDouble(), canvasSize.toDouble()),
-        ui.Paint()..color = const ui.Color(0xFF06070A),
-      );
-
-      // Draw 4 tiles with deterministic transforms.
-      _drawTile(canvas, tile, rng, dx: 0, dy: 0, size: tileSize, paint: paint);
-      _drawTile(canvas, tile, rng, dx: tileSize, dy: 0, size: tileSize, paint: paint);
-      _drawTile(canvas, tile, rng, dx: 0, dy: tileSize, size: tileSize, paint: paint);
-      _drawTile(canvas, tile, rng,
-          dx: tileSize, dy: tileSize, size: tileSize, paint: paint);
-
-      // Add a small accent tile (like HyperCeiler center-ish).
-      final smallSize = (tileSize / 2).round();
-      small = await _renderTile(
-        src: src,
-        srcRect: ui.Rect.fromLTWH(sx, sy, s, s),
-        size: smallSize,
-      );
-      if (small != null) {
-        final ox = tileSize * 1.5 - smallSize * 0.5;
-        final oy = tileSize * 1.5 - smallSize * 0.5;
-        canvas.drawImage(small, ui.Offset(ox, oy), paint);
-      }
-
-      final rawPic = recorder.endRecording();
-      final raw = await _toImage(rawPic, canvasSize, canvasSize);
-      final blurred =
-          await _approxBlur(raw, canvasSize: canvasSize, sigma: blurSigma);
-      if (!identical(blurred, raw)) {
-        raw.dispose();
-      }
-
-      final outRec = ui.PictureRecorder();
-      final outCanvas = ui.Canvas(outRec);
-      outCanvas.drawImage(blurred, ui.Offset.zero, ui.Paint());
-
-      // Dark overlay for readability.
-      final d = darken.clamp(0.0, 1.0);
-      final overlay =
-          ui.Paint()..color = ui.Color.fromARGB((d * 255).round(), 0, 0, 0);
-      outCanvas.drawRect(
-        ui.Rect.fromLTWH(0, 0, canvasSize.toDouble(), canvasSize.toDouble()),
-        overlay,
-      );
-
-      // Gentle vignette.
-      final vignettePaint = ui.Paint()
-        ..shader = ui.Gradient.radial(
-          ui.Offset(canvasSize / 2.0, canvasSize / 2.0),
-          canvasSize * 0.72,
-          [
-            const ui.Color(0x00000000),
-            ui.Color.fromARGB(
-              (math.min(0.55, d + 0.20) * 255).round(),
-              0,
-              0,
-              0,
-            ),
-          ],
-          [0.55, 1.0],
-          ui.TileMode.clamp,
-        );
-      outCanvas.drawRect(
-        ui.Rect.fromLTWH(0, 0, canvasSize.toDouble(), canvasSize.toDouble()),
-        vignettePaint,
-      );
-
-      final outPic = outRec.endRecording();
-      final out = await _toImage(outPic, canvasSize, canvasSize);
-      blurred.dispose();
-      return out;
-    } finally {
-      src.dispose();
-      tile?.dispose();
-      small?.dispose();
-    }
-  }
-
   try {
-    // Prevent pathological hangs from stalling the app/test suite.
-    final img = await buildFull().timeout(const Duration(seconds: 2));
-    if (img != null) return img;
+    final src = await _decodeImage(coverPngBytes);
+    final out = await _buildAppleBg(src, canvasSize, blurSigma, darken);
+    src.dispose();
+    return out;
   } on TimeoutException {
-    // Fall back to a simple deterministic background.
+    // Fallback
   }
 
-  // Fallback: just decode & resize.
   final codec = await ui.instantiateImageCodec(
     coverPngBytes,
     targetWidth: canvasSize,
@@ -166,6 +70,104 @@ Future<ui.Image?> buildCoverArtBackground(
   }
 }
 
+Future<ui.Image> _buildAppleBg(
+  ui.Image src,
+  int canvasSize,
+  double blurSigma,
+  double darken,
+) async {
+  final sw = src.width.toDouble();
+  final sh = src.height.toDouble();
+  final s = math.min(sw, sh);
+  final sx = (sw - s) / 2.0;
+  final sy = (sh - s) / 2.0;
+  final srcRect = ui.Rect.fromLTWH(sx, sy, s, s);
+
+  // Scale the cover up so individual details blur away.
+  // Apple Music appears to scale to roughly 1.6–2.0× the canvas.
+  final scaleFactor = 1.8;
+  final scaledSize = (canvasSize * scaleFactor).round();
+
+  // Step 1: scale up the center square.
+  final rec1 = ui.PictureRecorder();
+  final c1 = ui.Canvas(rec1);
+  final paint = ui.Paint()..filterQuality = ui.FilterQuality.high;
+  c1.drawImageRect(
+    src,
+    srcRect,
+    ui.Rect.fromLTWH(0, 0, scaledSize.toDouble(), scaledSize.toDouble()),
+    paint,
+  );
+  final pic1 = rec1.endRecording();
+  final scaled = await _toImage(pic1, scaledSize, scaledSize);
+
+  // Step 2: downsample to blur heavily.
+  final ds = math.max(16, (canvasSize / (1.0 + blurSigma / 15.0)).round());
+  final rec2 = ui.PictureRecorder();
+  final c2 = ui.Canvas(rec2);
+  c2.drawImageRect(
+    scaled,
+    ui.Rect.fromLTWH(0, 0, scaledSize.toDouble(), scaledSize.toDouble()),
+    ui.Rect.fromLTWH(0, 0, ds.toDouble(), ds.toDouble()),
+    paint,
+  );
+  final pic2 = rec2.endRecording();
+  final small = await _toImage(pic2, ds, ds);
+
+  final rec3 = ui.PictureRecorder();
+  final c3 = ui.Canvas(rec3);
+  c3.drawImageRect(
+    small,
+    ui.Rect.fromLTWH(0, 0, ds.toDouble(), ds.toDouble()),
+    ui.Rect.fromLTWH(0, 0, canvasSize.toDouble(), canvasSize.toDouble()),
+    paint,
+  );
+  final pic3 = rec3.endRecording();
+  final blurred = await _toImage(pic3, canvasSize, canvasSize);
+  scaled.dispose();
+  small.dispose();
+
+  // Step 3: add slight darken + vignette.
+  final outRec = ui.PictureRecorder();
+  final outCanvas = ui.Canvas(outRec);
+  outCanvas.drawImage(blurred, ui.Offset.zero, ui.Paint());
+
+  final d = darken.clamp(0.0, 1.0);
+  final overlay = ui.Paint()
+    ..color = ui.Color.fromARGB((d * 200).round(), 0, 0, 0);
+  outCanvas.drawRect(
+    ui.Rect.fromLTWH(0, 0, canvasSize.toDouble(), canvasSize.toDouble()),
+    overlay,
+  );
+
+  // Subtle vignette.
+  final vignettePaint = ui.Paint()
+    ..shader = ui.Gradient.radial(
+      ui.Offset(canvasSize / 2.0, canvasSize / 2.0),
+      canvasSize * 0.65,
+      [
+        const ui.Color(0x00000000),
+        ui.Color.fromARGB(
+          (math.min(0.45, d + 0.15) * 255).round(),
+          0,
+          0,
+          0,
+        ),
+      ],
+      [0.50, 1.0],
+      ui.TileMode.clamp,
+    );
+  outCanvas.drawRect(
+    ui.Rect.fromLTWH(0, 0, canvasSize.toDouble(), canvasSize.toDouble()),
+    vignettePaint,
+  );
+
+  blurred.dispose();
+  final outPic = outRec.endRecording();
+  return _toImage(outPic, canvasSize, canvasSize);
+}
+
+// ignore: unused_element
 Future<ui.Image> _approxBlur(
   ui.Image src, {
   required int canvasSize,
@@ -219,6 +221,7 @@ Future<ui.Image> _decodeImage(Uint8List bytes) async {
   }
 }
 
+// ignore: unused_element
 int _seedFromBytes(Uint8List bytes) {
   // Cheap deterministic seed.
   final n = bytes.length;
@@ -230,6 +233,7 @@ int _seedFromBytes(Uint8List bytes) {
   return (n ^ (a << 24) ^ (b << 16) ^ (c << 8) ^ d) & 0x7FFFFFFF;
 }
 
+// ignore: unused_element
 Future<ui.Image?> _renderTile({
   required ui.Image src,
   required ui.Rect srcRect,
@@ -257,6 +261,7 @@ Future<ui.Image> _toImage(ui.Picture pic, int width, int height) async {
   return img;
 }
 
+// ignore: unused_element
 void _drawTile(
   ui.Canvas canvas,
   ui.Image tile,
