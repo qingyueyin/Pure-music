@@ -183,26 +183,29 @@ class DesktopLyricService extends ChangeNotifier {
     
     final words = line.words;
     int wordIndex = -1;
+    double progress = 0.0;
+    
     for (int i = 0; i < words.length; i++) {
       final wordStart = words[i].start.inMilliseconds;
-      if (currentMs >= wordStart) {
+      final wordEnd = wordStart + words[i].length.inMilliseconds;
+      
+      if (currentMs >= wordStart && currentMs < wordEnd) {
         wordIndex = i;
+        final wordLengthMs = words[i].length.inMilliseconds;
+        if (wordLengthMs > 0) {
+          final elapsed = currentMs - wordStart;
+          progress = (elapsed / wordLengthMs * 100).clamp(0.0, 100.0);
+        }
+        break;
+      } else if (currentMs >= wordEnd) {
+        wordIndex = i;
+        progress = 100.0;
       } else {
         break;
       }
     }
     
     if (wordIndex < 0) return;
-    
-    final currentWord = words[wordIndex];
-    final wordStartMs = currentWord.start.inMilliseconds;
-    final wordLengthMs = currentWord.length.inMilliseconds;
-    
-    double progress = 0.0;
-    if (wordLengthMs > 0) {
-      final elapsed = currentMs - wordStartMs;
-      progress = (elapsed / wordLengthMs * 100).clamp(0.0, 100.0);
-    }
     
     sendMessage(msg.PositionMessage(wordIndex, progress));
   }
@@ -337,7 +340,7 @@ class DesktopLyricService extends ChangeNotifier {
     playService.lyricService.currLyricFuture.then((lyric) {
       if (lyric == null) return;
       final posMs = (_playbackService.position * 1000).floor();
-      int idx = 0;
+      int idx = -1;
       for (int i = 0; i < lyric.lines.length; i++) {
         if (lyric.lines[i].start.inMilliseconds <= posMs) {
           idx = i;
@@ -346,6 +349,7 @@ class DesktopLyricService extends ChangeNotifier {
         }
       }
       if (lyric.lines.isEmpty) return;
+      if (idx < 0) return;
       final nextLine = idx + 1 < lyric.lines.length ? lyric.lines[idx + 1] : null;
       sendLyricLineMessage(lyric.lines[idx], nextLine: nextLine);
     });
