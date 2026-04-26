@@ -135,7 +135,7 @@ class _LyricHorizontalScrollAreaState
     final scheme = Theme.of(context).colorScheme;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+      padding: const EdgeInsets.symmetric(horizontal: 8.0),
       child: SingleChildScrollView(
         controller: scrollController,
         scrollDirection: Axis.horizontal,
