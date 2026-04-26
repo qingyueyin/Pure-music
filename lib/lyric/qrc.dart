@@ -1,4 +1,5 @@
 import 'package:pure_music/lyric/lyric.dart';
+import 'package:pure_music/page/now_playing_page/component/word_emphasis_helper.dart';
 import 'dart:math';
 
 class Qrc extends Lyric {
@@ -97,21 +98,49 @@ class QrcLine extends SyncLyricLine {
     final lineStartMs = start.inMilliseconds;
 
     final splitedContent = splitedLine[1].split(")");
-    final List<QrcWord> words = [];
-    for (final item in splitedContent) {
-      final qrcWord = QrcWord.fromWord(item, lineStartMs: lineStartMs);
+    final List<QrcWord> words = _parseWords(splitedContent, lineStartMs, start, length);
 
+    return QrcLine(start, length, words, translation);
+  }
+
+  static List<QrcWord> _parseWords(List<String> contentParts, int lineStartMs, Duration start, Duration length) {
+    final List<QrcWord> words = [];
+    for (final item in contentParts) {
+      final qrcWord = QrcWord.fromWord(item, lineStartMs: lineStartMs);
       if (qrcWord == null) continue;
+
+      if (words.isNotEmpty && _shouldMergeWords(qrcWord, words.last)) {
+        final last = words.last;
+        final mergedEnd = last.start + last.length;
+        if (mergedEnd >= qrcWord.start) {
+          words[words.length - 1] = _mergeWords(last, qrcWord);
+          continue;
+        }
+      }
 
       words.add(qrcWord);
     }
+    return words;
+  }
 
-    return QrcLine(start, length, words, translation);
+  static bool _shouldMergeWords(QrcWord curr, QrcWord last) {
+    return curr.start == last.start ||
+        (curr.length.inMilliseconds <= 60 && last.start > Duration.zero) ||
+        (last.length.inMilliseconds <= 60 && last.start > Duration.zero);
+  }
+
+  static QrcWord _mergeWords(QrcWord last, QrcWord curr) {
+    return QrcWord(
+      last.start,
+      Duration(milliseconds: last.length.inMilliseconds + curr.length.inMilliseconds),
+      last.content + curr.content,
+      marks: last.marks,
+    );
   }
 }
 
 class QrcWord extends SyncLyricWord {
-  QrcWord(super.start, super.length, super.content);
+  QrcWord(super.start, super.length, super.content, {super.marks});
 
   static QrcWord? fromWord(String word, {required int lineStartMs}) {
     final splitedWord = word.split("(");
@@ -128,6 +157,12 @@ class QrcWord extends SyncLyricWord {
       milliseconds: int.tryParse(splitedTime[1]) ?? 0,
     );
 
-    return QrcWord(start, length, splitedWord[0]);
+    final content = splitedWord[0];
+    final marks = WordMarkingUtil.analyzeWithDuration(
+      content,
+      length.inMilliseconds,
+    );
+
+    return QrcWord(start, length, content, marks: marks);
   }
 }
