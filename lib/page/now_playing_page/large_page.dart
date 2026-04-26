@@ -14,7 +14,11 @@ class _NowPlayingLargePage extends StatelessWidget {
             child: LayoutBuilder(builder: (context, constraints) {
               return Row(
                 children: [
-                  const Expanded(child: Center(child: _NowPlayingInfo())),
+                  // 左侧：封面 + 歌曲信息 (50%)
+                  Expanded(
+                    child: Center(child: _NowPlayingInfo()),
+                  ),
+                  // 右侧：歌词区域 (50%)
                   Expanded(
                     child: ValueListenableBuilder(
                       valueListenable: nowPlayingViewMode,
@@ -26,21 +30,11 @@ class _NowPlayingLargePage extends StatelessWidget {
                           NowPlayingViewMode.withPlaylist =>
                             const CurrentPlaylistView(),
                           _ => Center(
-                              child: ConstrainedBox(
-                                constraints:
-                                    const BoxConstraints(maxWidth: 820.0),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(20.0),
-                                  child: Stack(
-                                    fit: StackFit.expand,
-                                    children: [
-                                      const Padding(
-                                        padding: EdgeInsets.symmetric(
-                                            horizontal: 8.0),
-                                        child: VerticalLyricView(),
-                                      ),
-                                    ],
-                                  ),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                child: VerticalLyricView(
+                                  enableEdgeSpacer: true,
+                                  currentLineAlignment: 0.45,
                                 ),
                               ),
                             ),
@@ -53,10 +47,10 @@ class _NowPlayingLargePage extends StatelessWidget {
             }),
           ),
         ),
-        const SizedBox(height: 12.0),
+        const SizedBox(height: 8.0),
         const _NowPlayingSlider(),
         Padding(
-          padding: EdgeInsets.fromLTRB(16, 0, 16, 20),
+          padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
           child: Stack(
             alignment: Alignment.center,
             children: [
@@ -78,7 +72,7 @@ class _NowPlayingLargePage extends StatelessWidget {
                         );
                       },
                       icon: const Icon(Symbols.graphic_eq),
-                      color: Theme.of(context).colorScheme.onSecondaryContainer,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ],
                 ),
@@ -89,17 +83,14 @@ class _NowPlayingLargePage extends StatelessWidget {
                   children: [
                     const _NowPlayingPlaybackModeSwitch(),
                     spacer,
-                    _GlowingIconButton(
+                    IconButton(
                       tooltip: "上一曲",
                       onPressed: PlayService.instance.playbackService.lastAudio,
-                      iconData: Symbols.skip_previous,
-                      size: 32,
-                      glowColor: Theme.of(context)
-                          .colorScheme
-                          .primary
-                          .withValues(alpha: 0.5),
-                      iconColor:
-                          Theme.of(context).colorScheme.onSecondaryContainer,
+                      icon: const Icon(
+                        Symbols.skip_previous,
+                        fill: 1.0,
+                      ),
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                     spacer,
                     StreamBuilder(
@@ -109,36 +100,38 @@ class _NowPlayingLargePage extends StatelessWidget {
                           PlayService.instance.playbackService.playerState,
                       builder: (context, snapshot) {
                         final state = snapshot.data!;
-                        final service = PlayService.instance.playbackService;
-                        return _MorphPlayPauseButton(
-                          playerState: state,
-                          onPlay: service.start,
-                          onPause: service.pause,
-                          onReplay: service.playAgain,
-                          size: 32,
-                          glowColor: Theme.of(context)
-                              .colorScheme
-                              .primary
-                              .withValues(alpha: 0.5),
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSecondaryContainer,
-                          playerStateStream: service.playerStateStream,
+                        final isPlaying = state == PlayerState.playing;
+                        final isCompleted = state == PlayerState.completed;
+                        
+                        return IconButton(
+                          tooltip: isPlaying ? "暂停" : "播放",
+                          onPressed: () {
+                            final service = PlayService.instance.playbackService;
+                            if (isPlaying) {
+                              service.pause();
+                            } else if (isCompleted) {
+                              service.playAgain();
+                            } else {
+                              service.start();
+                            }
+                          },
+                          icon: Icon(
+                            isPlaying ? Symbols.pause : Symbols.play_arrow,
+                            fill: 1.0,
+                          ),
+                          color: Theme.of(context).colorScheme.onSurface,
                         );
                       },
                     ),
                     spacer,
-                    _GlowingIconButton(
+                    IconButton(
                       tooltip: "下一曲",
                       onPressed: PlayService.instance.playbackService.nextAudio,
-                      iconData: Symbols.skip_next,
-                      size: 32,
-                      glowColor: Theme.of(context)
-                          .colorScheme
-                          .primary
-                          .withValues(alpha: 0.5),
-                      iconColor:
-                          Theme.of(context).colorScheme.onSecondaryContainer,
+                      icon: const Icon(
+                        Symbols.skip_next,
+                        fill: 1.0,
+                      ),
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                     spacer,
                     const _NowPlayingLargeViewSwitch(),
@@ -228,115 +221,18 @@ class _NowPlayingLargeViewSwitch extends StatelessWidget {
           }
         },
         icon: switch (value) {
-          NowPlayingViewMode.withPlaylist => const _MergedPlaylistIcon(),
-          _ => const Icon(Symbols.queue_music),
+          NowPlayingViewMode.withPlaylist => const Icon(
+            Symbols.lyrics,
+            fill: 1.0,
+          ),
+          _ => const Icon(
+            Symbols.queue_music,
+            fill: 1.0,
+          ),
         },
-        color: scheme.onSecondaryContainer,
+        color: scheme.onSurface,
       ),
     );
   }
 }
 
-class _MergedPlaylistIcon extends StatelessWidget {
-  const _MergedPlaylistIcon();
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return CustomPaint(
-      size: const Size(24, 24),
-      painter: _MergedPlaylistIconPainter(
-        noteColor: scheme.primary,
-        listColor: scheme.onSecondaryContainer,
-      ),
-    );
-  }
-}
-
-class _MergedPlaylistIconPainter extends CustomPainter {
-  final Color noteColor;
-  final Color listColor;
-
-  _MergedPlaylistIconPainter({
-    required this.noteColor,
-    required this.listColor,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..style = PaintingStyle.fill
-      ..strokeCap = StrokeCap.round;
-
-    // Drawing parameters
-    const double barHeight = 3.0;
-    const double startX = 11.0;
-    const double endX = 22.0;
-    const double headRadius = 3.5;
-
-    // Y positions for the three bars (centered vertically approx)
-    const double topY = 6.0;
-    const double midY = 12.0;
-    const double botY = 18.0;
-
-    // 1. Draw List Lines (Right side)
-    paint.color = listColor;
-
-    // Top Bar
-    canvas.drawRRect(
-      RRect.fromLTRBR(
-        startX,
-        topY - barHeight / 2,
-        endX,
-        topY + barHeight / 2,
-        const Radius.circular(barHeight / 2),
-      ),
-      paint,
-    );
-
-    // Mid Bar
-    canvas.drawRRect(
-      RRect.fromLTRBR(
-        startX,
-        midY - barHeight / 2,
-        endX,
-        midY + barHeight / 2,
-        const Radius.circular(barHeight / 2),
-      ),
-      paint,
-    );
-
-    // Bot Bar
-    canvas.drawRRect(
-      RRect.fromLTRBR(
-        startX,
-        botY - barHeight / 2,
-        endX,
-        botY + barHeight / 2,
-        const Radius.circular(barHeight / 2),
-      ),
-      paint,
-    );
-
-    // 2. Draw Music Note (Left side)
-    paint.color = noteColor;
-
-    // Note Head
-    const headCenter = Offset(6.0, 18.0);
-    canvas.drawCircle(headCenter, headRadius, paint);
-
-    // Stem
-    const double stemWidth = 2.5;
-    final stemRect = RRect.fromLTRBR(
-      headCenter.dx + headRadius - stemWidth,
-      4.0, // Top of stem
-      headCenter.dx + headRadius,
-      18.0, // Bottom of stem (center of head)
-      const Radius.circular(1.0),
-    );
-    canvas.drawRRect(stemRect, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
