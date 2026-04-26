@@ -358,6 +358,8 @@ class _UniPageState<T> extends State<UniPage<T>> {
 
   Widget result(
       MultiSelectController<T>? multiSelectController, List<Widget> actions) {
+    final scheme = Theme.of(context).colorScheme;
+
     return PageScaffold(
       title: widget.title,
       subtitle: widget.subtitle,
@@ -370,34 +372,61 @@ class _UniPageState<T> extends State<UniPage<T>> {
         type: MaterialType.transparency,
         child: Stack(
           children: [
-            switch (currContentView) {
-              ContentView.list => ListView.builder(
-                  controller: scrollController,
-                  padding: const EdgeInsets.only(bottom: 96.0),
-                  itemCount: widget.contentList.length,
-                  itemExtent: 64,
-                  itemBuilder: (context, i) => widget.contentBuilder(
-                    context,
-                    widget.contentList[i],
-                    i,
-                    multiSelectController,
-                    ContentView.list,
+            Row(
+              children: [
+                Expanded(
+                  child: switch (currContentView) {
+                    ContentView.list => ListView.builder(
+                        controller: scrollController,
+                        padding: const EdgeInsets.only(bottom: 96.0),
+                        itemCount: widget.contentList.length,
+                        itemExtent: 64,
+                        itemBuilder: (context, i) => widget.contentBuilder(
+                          context,
+                          widget.contentList[i],
+                          i,
+                          multiSelectController,
+                          ContentView.list,
+                        ),
+                      ),
+                    ContentView.table => GridView.builder(
+                        controller: scrollController,
+                        padding: const EdgeInsets.only(bottom: 96.0),
+                        gridDelegate: widget.gridDelegate ?? gridDelegate,
+                        itemCount: widget.contentList.length,
+                        itemBuilder: (context, i) => widget.contentBuilder(
+                          context,
+                          widget.contentList[i],
+                          i,
+                          multiSelectController,
+                          ContentView.table,
+                        ),
+                      ),
+                  },
+                ),
+                const SizedBox(width: 12),
+              ],
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: IgnorePointer(
+                child: Container(
+                  height: 48,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.transparent,
+                        scheme.surfaceContainer.withValues(alpha: 0.06),
+                      ],
+                    ),
                   ),
                 ),
-              ContentView.table => GridView.builder(
-                  controller: scrollController,
-                  padding: const EdgeInsets.only(bottom: 96.0),
-                  gridDelegate: widget.gridDelegate ?? gridDelegate,
-                  itemCount: widget.contentList.length,
-                  itemBuilder: (context, i) => widget.contentBuilder(
-                    context,
-                    widget.contentList[i],
-                    i,
-                    multiSelectController,
-                    ContentView.table,
-                  ),
-                ),
-            },
+              ),
+            ),
             _scrollToTopButton(),
             _locateNowPlayingButton(),
           ],
