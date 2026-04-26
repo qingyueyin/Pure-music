@@ -1,4 +1,5 @@
 import 'package:pure_music/lyric/lyric.dart';
+import 'package:pure_music/page/now_playing_page/component/word_emphasis_helper.dart';
 import 'dart:math';
 
 class Yrc extends Lyric {
@@ -111,21 +112,46 @@ class YrcLine extends SyncLyricLine {
 
       if (text.isEmpty) continue;
 
-      words.add(YrcWord(
-        Duration(milliseconds: max(startMs - offset, 0)) + lineStart,
-        Duration(milliseconds: durationMs),
-        text,
-      ));
+      final wordStart = Duration(milliseconds: max(startMs - offset, 0)) + lineStart;
+      final marks = WordMarkingUtil.analyzeWithDuration(text, durationMs);
+      final newWord = YrcWord(wordStart, Duration(milliseconds: durationMs), text, marks: marks);
+
+      if (words.isNotEmpty && _shouldMergeWords(newWord, words.last)) {
+        final last = words.last;
+        final mergedEnd = last.start + last.length;
+        if (mergedEnd >= newWord.start) {
+          words[words.length - 1] = _mergeWords(last, newWord);
+          continue;
+        }
+      }
+
+      words.add(newWord);
     }
 
     if (words.isEmpty && content.isNotEmpty) {
-      words.add(YrcWord(lineStart, lineLength, content));
+      final marks = WordMarkingUtil.analyze(content);
+      words.add(YrcWord(lineStart, lineLength, content, marks: marks));
     }
 
     return words;
   }
+
+  static bool _shouldMergeWords(YrcWord curr, YrcWord last) {
+    return curr.start == last.start ||
+        (curr.length.inMilliseconds <= 60 && last.start > Duration.zero) ||
+        (last.length.inMilliseconds <= 60 && last.start > Duration.zero);
+  }
+
+  static YrcWord _mergeWords(YrcWord last, YrcWord curr) {
+    return YrcWord(
+      last.start,
+      Duration(milliseconds: last.length.inMilliseconds + curr.length.inMilliseconds),
+      last.content + curr.content,
+      marks: last.marks,
+    );
+  }
 }
 
 class YrcWord extends SyncLyricWord {
-  YrcWord(super.start, super.length, super.content);
+  YrcWord(super.start, super.length, super.content, {super.marks});
 }
