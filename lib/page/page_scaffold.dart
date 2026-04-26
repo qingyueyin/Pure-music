@@ -104,26 +104,36 @@ class PageScaffold extends StatelessWidget {
         }
       }
 
-      return ColoredBox(
-        color: scheme.surfaceContainer,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 16.0,
-            vertical: 8.0,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: rowChildren,
+      return Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: 16.0,
+          vertical: 8.0,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: rowChildren,
+              ),
+            ),
+            Container(
+              height: 10,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    scheme.surfaceContainer.withValues(alpha: 0.08),
+                    Colors.transparent,
+                  ],
                 ),
               ),
-              Expanded(child: body),
-            ],
-          ),
+            ),
+            Expanded(child: body),
+          ],
         ),
       );
     });
