@@ -1,5 +1,6 @@
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/lyric/lrc.dart';
+import 'package:pure_music/page/now_playing_page/component/word_emphasis_helper.dart';
 import 'package:xml/xml.dart';
 
 class Ttml extends Lyric {
@@ -120,6 +121,7 @@ class Ttml extends Lyric {
               wordBegin,
               wordLength,
               text,
+              marks: WordMarkingUtil.analyzeWithDuration(text, wordLength.inMilliseconds),
             ));
           }
         } else {
@@ -140,7 +142,16 @@ class Ttml extends Lyric {
       if (text.isNotEmpty) {
         final parts = separator != null ? text.split(separator) : [text];
         if (parts.isNotEmpty) {
-          words.add(TtmlWord(begin, length, parts.first.trim()));
+          final wordContent = parts.first.trim();
+          words.add(TtmlWord(
+            begin,
+            length,
+            wordContent,
+            marks: WordMarkingUtil.analyzeWithDuration(
+              wordContent,
+              length.inMilliseconds,
+            ),
+          ));
           if (parts.length > 1) {
             translation = parts.sublist(1).join(separator ?? '').trim();
           }
@@ -197,5 +208,5 @@ class TtmlLine extends SyncLyricLine {
 }
 
 class TtmlWord extends SyncLyricWord {
-  TtmlWord(super.start, super.length, super.content);
+  TtmlWord(super.start, super.length, super.content, {super.marks});
 }
