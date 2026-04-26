@@ -374,7 +374,8 @@ class AudioDetailPage extends StatelessWidget {
                               label: "修改时间",
                               child: Text(
                                 DateTime.fromMillisecondsSinceEpoch(audio.modified * 1000)
-                                    .toString(),
+                                    .toString()
+                                    .substring(0, 19),
                                 style: styleContent,
                               ),
                             ),
@@ -385,7 +386,8 @@ class AudioDetailPage extends StatelessWidget {
                               label: "创建时间",
                               child: Text(
                                 DateTime.fromMillisecondsSinceEpoch(audio.created * 1000)
-                                    .toString(),
+                                    .toString()
+                                    .substring(0, 19),
                                 style: styleContent,
                               ),
                             ),
