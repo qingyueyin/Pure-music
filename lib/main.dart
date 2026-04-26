@@ -65,18 +65,17 @@ Future<void> loadPrefFont() async {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
   await RustLib.init();
 
   initRustLogger().listen((msg) {
     logger.i("[rs]: $msg");
   });
 
+  await migrateAppData();
+
   // For hot reload, `unregisterAll()` needs to be called.
   await HotkeysHelper.unregisterAll();
   HotkeysHelper.registerHotKeys();
-
-  await migrateAppData();
 
   final supportPath = (await getAppDataDir()).path;
   final settingsDir = await getSettingsDir();
@@ -88,6 +87,7 @@ Future<void> main() async {
     await AppPreference.read();
   }
   await AlbumColorCache.instance.init();
+
   final welcome = !File("$supportPath\\index.json").existsSync();
 
   await initWindow();
