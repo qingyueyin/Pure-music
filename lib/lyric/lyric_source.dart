@@ -19,7 +19,7 @@ enum LyricSourceType {
 /// 默认歌词来源
 class LyricSource {
   LyricSourceType source;
-  int? qqSongId;
+  String? qqSongId;
   String? kugouSongHash;
   int? neSongId;
 
@@ -27,7 +27,7 @@ class LyricSource {
 
   static LyricSource fromMap(Map map) {
     if (map["source"] == "qq") {
-      return LyricSource(LyricSourceType.qq, qqSongId: map["id"]);
+      return LyricSource(LyricSourceType.qq, qqSongId: map["id"]?.toString());
     } else if (map["source"] == "kugou") {
       return LyricSource(LyricSourceType.kugou, kugouSongHash: map["id"]);
     } else if (map["source"] == "ne") {
@@ -149,7 +149,7 @@ LyricSource? _lyricSourceFromDb(String source, String? id) {
   if (source == LyricSourceType.qq.name) {
     return LyricSource(
       LyricSourceType.qq,
-      qqSongId: id == null ? null : int.tryParse(id),
+      qqSongId: id,
     );
   }
   if (source == LyricSourceType.kugou.name) {
