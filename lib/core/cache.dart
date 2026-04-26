@@ -105,7 +105,7 @@ class AlbumColorCache {
     await Future.wait(futures);
   }
 
-  Future<void> recomputeAllAlbums(
+    Future<void> recomputeAllAlbums(
     Iterable<Album> albums, {
     int concurrency = 2,
     void Function(int done, int total)? onProgress,
