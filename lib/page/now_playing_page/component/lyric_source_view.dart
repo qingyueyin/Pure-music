@@ -22,18 +22,40 @@ class ManualLyricSearchDialog extends StatefulWidget {
 
 class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
   final _searchController = TextEditingController();
-  List<SongSearchResult> _allResults = [];
-  List<SongSearchResult> _displayResults = [];
+  
+  // 按源存储结果
+  final Map<ResultSource, List<SongSearchResult>> _resultsMap = {
+    ResultSource.qq: [],
+    ResultSource.ne: [],
+    ResultSource.kugou: [],
+  };
+  
+  // 按源存储当前页码
+  final Map<ResultSource, int> _pageMap = {
+    ResultSource.qq: 0,
+    ResultSource.ne: 0,
+    ResultSource.kugou: 0,
+  };
+
+  ResultSource _activeSource = ResultSource.qq;
   bool _isSearching = false;
-  String _currentQuery = "";
-  int _currentPage = 0;
   static const int _pageSize = 5;
-  late final Future<List<SongSearchResult>> _autoSearchResults;
 
   @override
   void initState() {
     super.initState();
-    _autoSearchResults = uniSearch(widget.audio);
+    // Run auto-search and populate _resultsMap when results arrive.
+    // We intentionally don't await the Future; the UI will update
+    // via setState in the then callback.
+    uniSearch(widget.audio).then((results) {
+      if (mounted) {
+        setState(() {
+          _resultsMap[ResultSource.qq] = results.where((r) => r.source == ResultSource.qq).toList();
+          _resultsMap[ResultSource.ne] = results.where((r) => r.source == ResultSource.ne).toList();
+          _resultsMap[ResultSource.kugou] = results.where((r) => r.source == ResultSource.kugou).toList();
+        });
+      }
+    });
   }
 
   @override
@@ -46,23 +68,39 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
     final query = _searchController.text.trim();
     if (query.isEmpty) return;
     
-    _currentQuery = query;
-    _currentPage = 0;
+    final prevSource = _activeSource;
     
     setState(() {
       _isSearching = true;
-      _displayResults = [];
+      // 重置所有源的数据和页码
+      _resultsMap.forEach((k, v) {
+        v.clear();
+        _pageMap[k] = 0;
+      });
     });
     
     manualSearch(widget.audio, query, limit: 15).then((results) {
-      if (mounted && _currentQuery == query) {
+      if (mounted) {
         setState(() {
-          _allResults = results;
-          _displayResults = results.take(_pageSize).toList();
+          _resultsMap[ResultSource.qq] = results.where((r) => r.source == ResultSource.qq).toList();
+          _resultsMap[ResultSource.ne] = results.where((r) => r.source == ResultSource.ne).toList();
+          _resultsMap[ResultSource.kugou] = results.where((r) => r.source == ResultSource.kugou).toList();
           _isSearching = false;
+          // 保持用户之前选的Tab，除非那个源没结果
+          if (_resultsMap[prevSource]!.isEmpty) {
+            // 找第一个有结果的源
+            if (_resultsMap[ResultSource.qq]!.isNotEmpty) {
+              _activeSource = ResultSource.qq;
+            } else if (_resultsMap[ResultSource.ne]!.isNotEmpty) {
+              _activeSource = ResultSource.ne;
+            } else if (_resultsMap[ResultSource.kugou]!.isNotEmpty) {
+              _activeSource = ResultSource.kugou;
+            }
+          }
         });
       }
-    }).catchError((_) {
+    }).catchError((e, stack) {
+      logger.w('Manual search error: $e', stackTrace: stack);
       if (mounted) {
         setState(() {
           _isSearching = false;
@@ -71,25 +109,117 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
     });
   }
 
-  void _nextPage() {
-    _currentPage++;
-    final start = _currentPage * _pageSize;
-    final end = start + _pageSize;
-    if (start < _allResults.length) {
+  void _changePage(int delta) {
+    final source = _activeSource;
+    final newList = _resultsMap[source]!;
+    final currentPage = _pageMap[source]!;
+    final nextPage = currentPage + delta;
+    final maxPage = (newList.length / _pageSize).ceil() - 1;
+
+    if (nextPage >= 0 && nextPage <= maxPage) {
       setState(() {
-        _displayResults = _allResults.sublist(start, end.clamp(0, _allResults.length));
+        _pageMap[source] = nextPage;
       });
     }
   }
 
-  void _prevPage() {
-    if (_currentPage > 0) {
-      _currentPage--;
-      final start = _currentPage * _pageSize;
-      setState(() {
-        _displayResults = _allResults.sublist(start, (start + _pageSize).clamp(0, _allResults.length));
-      });
+  Widget _buildTab(ResultSource source, String label) {
+    final isActive = _activeSource == source;
+    final scheme = Theme.of(context).colorScheme;
+    final count = _resultsMap[source]!.length;
+
+    return GestureDetector(
+      onTap: () => setState(() => _activeSource = source),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isActive ? scheme.primaryContainer : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                color: isActive ? scheme.onPrimaryContainer : scheme.onSurfaceVariant,
+                fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+            if (count > 0) ...[
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: isActive ? scheme.primary : scheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '$count',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: isActive ? scheme.onPrimary : scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ]
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSourceContent(ResultSource source) {
+    final scheme = Theme.of(context).colorScheme;
+    final fullList = _resultsMap[source]!;
+    final currentPage = _pageMap[source]!;
+    final start = currentPage * _pageSize;
+    final end = (start + _pageSize).clamp(0, fullList.length);
+    final displayList = fullList.sublist(start, end);
+
+    if (fullList.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32.0),
+          child: Text("该源未找到结果", style: TextStyle(color: scheme.onSurfaceVariant)),
+        ),
+      );
     }
+
+    return Column(
+      children: [
+        Expanded(
+          child: ListView.builder(
+            itemCount: displayList.length,
+            itemBuilder: (context, i) => _ManualSearchTile(
+              audio: widget.audio,
+              searchResult: displayList[i],
+            ),
+          ),
+        ),
+        if (fullList.length > _pageSize)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.chevron_left),
+                  onPressed: start > 0 ? () => _changePage(-1) : null,
+                  tooltip: "上一页",
+                ),
+                Text("第 ${currentPage + 1}/${(fullList.length / _pageSize).ceil()} 页"),
+                IconButton(
+                  icon: const Icon(Icons.chevron_right),
+                  onPressed: end < fullList.length ? () => _changePage(1) : null,
+                  tooltip: "下一页",
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
   }
 
   @override
@@ -106,6 +236,7 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Header
               Padding(
                 padding: const EdgeInsets.only(bottom: 16.0),
                 child: Row(
@@ -126,6 +257,7 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
                   ],
                 ),
               ),
+              // Search Bar
               Row(
                 children: [
                   Expanded(
@@ -155,95 +287,25 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
-              if (_displayResults.isNotEmpty)
-                Flexible(
-                  child: Column(
-                    children: [
-                      Expanded(
-                        child: ListView.builder(
-                          shrinkWrap: true,
-                          itemCount: _displayResults.length,
-                          itemBuilder: (context, i) => _ManualSearchTile(
-                            audio: widget.audio,
-                            searchResult: _displayResults[i],
-                          ),
-                        ),
-                      ),
-                      if (_allResults.length > _pageSize)
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.chevron_left),
-                              onPressed: _currentPage > 0 ? _prevPage : null,
-                              tooltip: "上一页",
-                            ),
-                            Text("第 ${_currentPage + 1} 页"),
-                            IconButton(
-                              icon: const Icon(Icons.chevron_right),
-                              onPressed: (_currentPage + 1) * _pageSize < _allResults.length ? _nextPage : null,
-                              tooltip: "下一页",
-                            ),
-                          ],
-                        ),
-                    ],
-                  ),
-                )
-              else if (_isSearching)
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(16.0),
-                    child: CircularProgressIndicator(),
-                  ),
-                )
-              else
-                FutureBuilder(
-                  future: _autoSearchResults,
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState != ConnectionState.done) {
-                      return const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(16.0),
-                          child: CircularProgressIndicator(),
-                        ),
-                      );
-                    }
-                    final results = snapshot.data ?? [];
-                    if (results.isEmpty) {
-                      return const Padding(
-                        padding: EdgeInsets.all(16.0),
-                        child: Center(child: Text("未找到结果，请手动搜索")),
-                      );
-                    }
-                    return Flexible(
-                      child: Column(
-                        children: [
-                          const Padding(
-                            padding: EdgeInsets.only(bottom: 8.0),
-                            child: Text(
-                              "自动匹配结果",
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.grey,
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            child: ListView.builder(
-                              shrinkWrap: true,
-                              itemCount: results.length,
-                              itemBuilder: (context, i) => _ManualSearchTile(
-                                audio: widget.audio,
-                                searchResult: results[i],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
+              const SizedBox(height: 12),
+              // Tabs
+              Row(
+                children: [
+                  _buildTab(ResultSource.qq, "QQ"),
+                  const SizedBox(width: 8),
+                  _buildTab(ResultSource.ne, "网易云"),
+                  const SizedBox(width: 8),
+                  _buildTab(ResultSource.kugou, "酷狗"),
+                ],
+              ),
+              const SizedBox(height: 8),
+              // Content
+              SizedBox(
+                height: 300,
+                child: _isSearching
+                    ? const Center(child: CircularProgressIndicator())
+                    : _buildSourceContent(_activeSource),
+              ),
             ],
           ),
         ),
@@ -524,6 +586,7 @@ class _LyricSourceTileState extends State<_LyricSourceTile> {
   late final lyric = getOnlineLyric(
     qqSongId: widget.searchResult.qqSongId,
     kugouSongHash: widget.searchResult.kugouSongHash,
+    neSongId: widget.searchResult.neSongId,
   );
 
   @override
@@ -575,7 +638,7 @@ class _LyricSourceTileState extends State<_LyricSourceTile> {
         LyricSourceType source = switch (searchResult.source) {
           ResultSource.qq => LyricSourceType.qq,
           ResultSource.kugou => LyricSourceType.kugou,
-          ResultSource.ne => LyricSourceType.kugou,
+          ResultSource.ne => LyricSourceType.ne,
         };
         lyricSources[audio.path] = LyricSource(
           source,
