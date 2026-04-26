@@ -96,7 +96,6 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
       "playback": {
         "playMode": pb.playMode.name,
         "volumeDsp": pb.volumeDsp,
-        "eqBypass": pb.eqBypass,
         "eqPreampDb": pb.eqPreampDb,
         "eqAutoGainEnabled": pb.eqAutoGainEnabled,
         "eqAutoHeadroomDb": pb.eqAutoHeadroomDb,
@@ -110,7 +109,6 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
         "lyricTextAlign": np.lyricTextAlign.name,
         "lyricFontSize": np.lyricFontSize,
         "translationFontSize": np.translationFontSize,
-        "wordFadeWidth": np.wordFadeWidth,
         "showLyricTranslation": np.showLyricTranslation,
         "lyricFontWeight": np.lyricFontWeight,
         "enableLyricBlur": np.enableLyricBlur,
