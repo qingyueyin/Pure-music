@@ -36,6 +36,7 @@ dependencies:
   window_manager: ^0.5.1
   xml: ^6.5.0
   vector_math: ^2.1.4
+  mesh_gradient: ^1.3.8
 
   desktop_lyric:
     path: packages/desktop_lyric
@@ -45,6 +46,7 @@ dependencies:
 
   rust_lib_pure_music:
     path: rust_builder
+  crypto: ^3.0.7
 
 dev_dependencies:
   flutter_lints: ^6.0.0
@@ -59,7 +61,6 @@ flutter:
     - assets/fonts/MiSans/MiSansVF.ttf
     - app_icon.ico
   shaders:
-    - assets/shaders/amll_background.frag
     - assets/shaders/mesh_gradient_runtime.frag
   fonts:
     - family: MiSans
