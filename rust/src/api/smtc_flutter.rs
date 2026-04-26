@@ -1,3 +1,4 @@
+use std::sync::RwLock;
 use std::time::Duration;
 
 use flutter_rust_bridge::frb;
@@ -5,6 +6,7 @@ use windows::{
     core::HSTRING,
     Foundation::{TimeSpan, TypedEventHandler},
     Media::{
+        Core::MediaSource,
         MediaPlaybackStatus, MediaPlaybackType, Playback::MediaPlayer,
         SystemMediaTransportControls, SystemMediaTransportControlsButton,
         SystemMediaTransportControlsButtonPressedEventArgs,
@@ -21,11 +23,31 @@ use crate::frb_generated::StreamSink;
 
 use super::{logger::log_to_dart, tag_reader};
 
+static SMTC_SINK: RwLock<Option<StreamSink<SMTCControlEvent>>> = RwLock::new(None);
+
+const SILENT_WAV: &[u8] = &[
+    b'R', b'I', b'F', b'F',
+    0x24, 0x00, 0x00, 0x00,
+    b'W', b'A', b'V', b'E',
+    b'f', b'm', b't', b' ',
+    0x10, 0x00, 0x00, 0x00,
+    0x01, 0x00,
+    0x01, 0x00,
+    0x44, 0xAC, 0x00, 0x00,
+    0x88, 0x58, 0x01, 0x00,
+    0x02, 0x00,
+    0x10, 0x00,
+    b'd', b'a', b't', b'a',
+    0x00, 0x00, 0x00, 0x00,
+];
+
 pub struct SMTCFlutter {
     _smtc: SystemMediaTransportControls,
     _player: MediaPlayer,
+    _button_pressed_token: windows::Foundation::EventRegistrationToken,
 }
 
+#[derive(Debug, Clone)]
 pub enum SMTCControlEvent {
     Play,
     Pause,
@@ -47,24 +69,13 @@ impl SMTCFlutter {
     }
 
     pub fn subscribe_to_control_events(&self, sink: StreamSink<SMTCControlEvent>) {
-        self._smtc
-            .ButtonPressed(&TypedEventHandler::<
-                SystemMediaTransportControls,
-                SystemMediaTransportControlsButtonPressedEventArgs,
-            >::new(move |_, event| {
-                let event = event.as_ref().unwrap().Button().unwrap();
-                let event = match event {
-                    SystemMediaTransportControlsButton::Play => SMTCControlEvent::Play,
-                    SystemMediaTransportControlsButton::Pause => SMTCControlEvent::Pause,
-                    SystemMediaTransportControlsButton::Next => SMTCControlEvent::Next,
-                    SystemMediaTransportControlsButton::Previous => SMTCControlEvent::Previous,
-                    _ => SMTCControlEvent::Unknown,
-                };
-                sink.add(event).unwrap();
-
-                Ok(())
-            }))
-            .unwrap();
+        log_to_dart("SMTC: Setting up control event sink...".to_string());
+        
+        let mut sink_guard = SMTC_SINK.write().unwrap();
+        *sink_guard = Some(sink);
+        drop(sink_guard);
+        
+        log_to_dart("SMTC: Control event sink stored".to_string());
     }
 
     pub fn update_state(&self, state: SMTCState) {
@@ -106,26 +117,86 @@ impl SMTCFlutter {
 
 impl SMTCFlutter {
     fn _init_controls(smtc: &SystemMediaTransportControls) -> Result<(), windows::core::Error> {
-        // 下一首
+        smtc.SetIsEnabled(true)?;
         smtc.SetIsNextEnabled(true)?;
-        // 暂停
         smtc.SetIsPauseEnabled(true)?;
-        // 播放（恢复）
         smtc.SetIsPlayEnabled(true)?;
-        // 上一首
         smtc.SetIsPreviousEnabled(true)?;
-
         Ok(())
+    }
+
+    fn _create_silent_media_source() -> Result<MediaSource, windows::core::Error> {
+        use windows::core::Interface;
+        
+        let stream = InMemoryRandomAccessStream::new()?;
+        let writer = DataWriter::CreateDataWriter(&stream)?;
+        writer.WriteBytes(SILENT_WAV)?;
+        writer.StoreAsync()?.get()?;
+        writer.DetachStream()?;
+        stream.Seek(0)?;
+        
+        let ras = stream.cast::<windows::Storage::Streams::IRandomAccessStream>()?;
+        MediaSource::CreateFromStream(&ras, &HSTRING::from("audio/wav"))
     }
 
     fn _new() -> Result<Self, windows::core::Error> {
         let _player = MediaPlayer::new()?;
         _player.CommandManager()?.SetIsEnabled(false)?;
+        _player.SetIsMuted(true)?;
+        _player.SetVolume(0.0)?;
+        
+        if let Ok(source) = Self::_create_silent_media_source() {
+            _player.SetSource(&source)?;
+        }
 
         let _smtc = _player.SystemMediaTransportControls()?;
         Self::_init_controls(&_smtc)?;
 
-        Ok(Self { _smtc, _player })
+        let handler = TypedEventHandler::<
+            SystemMediaTransportControls,
+            SystemMediaTransportControlsButtonPressedEventArgs,
+        >::new(move |_, event| {
+            if let Some(e) = event {
+                if let Ok(button) = e.Button() {
+                    let control_event = match button {
+                        SystemMediaTransportControlsButton::Play => SMTCControlEvent::Play,
+                        SystemMediaTransportControlsButton::Pause => SMTCControlEvent::Pause,
+                        SystemMediaTransportControlsButton::Next => SMTCControlEvent::Next,
+                        SystemMediaTransportControlsButton::Previous => SMTCControlEvent::Previous,
+                        _ => SMTCControlEvent::Unknown,
+                    };
+                    
+                    log_to_dart(format!("SMTC: Button pressed - {:?}", control_event));
+                    
+                    let sink_guard = SMTC_SINK.read().unwrap();
+                    if let Some(sink) = sink_guard.as_ref() {
+                        if let Err(e) = sink.add(control_event.clone()) {
+                            log_to_dart(format!("SMTC: Failed to send event: {}", e));
+                        } else {
+                            log_to_dart("SMTC: Event sent successfully".to_string());
+                        }
+                    } else {
+                        log_to_dart("SMTC: No sink registered for events".to_string());
+                    }
+                } else {
+                    log_to_dart("SMTC: Failed to get button from event".to_string());
+                }
+            } else {
+                log_to_dart("SMTC: Event is None".to_string());
+            }
+
+            Ok(())
+        });
+
+        let _button_pressed_token = _smtc.ButtonPressed(&handler)?;
+        log_to_dart("SMTC: ButtonPressed handler registered during init".to_string());
+
+        let updater = _smtc.DisplayUpdater()?;
+        updater.SetType(MediaPlaybackType::Music)?;
+        updater.Update()?;
+        log_to_dart("SMTC: DisplayUpdater.Update() called during init".to_string());
+
+        Ok(Self { _smtc, _player, _button_pressed_token })
     }
 
     fn _update_state(&self, state: SMTCState) -> Result<(), windows::core::Error> {
@@ -156,9 +227,6 @@ impl SMTCFlutter {
         writer.WriteBytes(picture_data)?;
         writer.StoreAsync()?.get()?;
 
-        // 调用 DetachStream() 的意义在于“把流从 DataWriter 脱附”，
-        // 这样可以安全地释放/关闭 DataWriter 而不影响流的生命周期。
-        // stream 不会因为 writer drop 而被销毁
         writer.DetachStream()?;
 
         stream.Seek(0)?;
