@@ -38,8 +38,6 @@ class NowPlayingPagePreference {
   bool enableLyricBlur;
   bool enableLyricScale;
   bool enableLyricSpring;
-  bool enableAdvanceLyricTiming;
-  double wordFadeWidth;
   NowPlayingBackgroundMode backgroundMode;
 
   NowPlayingPagePreference(
@@ -53,9 +51,7 @@ class NowPlayingPagePreference {
     this.showLyricRoman = false,
     this.enableLyricScale = true,
     this.enableLyricSpring = true,
-    this.enableAdvanceLyricTiming = true,
-    this.wordFadeWidth = 0.5,
-    this.backgroundMode = NowPlayingBackgroundMode.meshGradient,
+    this.backgroundMode = NowPlayingBackgroundMode.hybrid,
   });
 
   LyricRenderConfig get lyricRenderConfig => LyricRenderConfig(
@@ -69,7 +65,6 @@ class NowPlayingPagePreference {
         enableWordEmphasis: true,
         enableLineScale: enableLyricScale,
         enableLineSpring: enableLyricSpring,
-        wordFadeWidth: wordFadeWidth,
       );
 
   Map toMap() => {
@@ -83,8 +78,6 @@ class NowPlayingPagePreference {
         "enableLyricBlur": enableLyricBlur,
         "enableLyricScale": enableLyricScale,
         "enableLyricSpring": enableLyricSpring,
-        "enableAdvanceLyricTiming": enableAdvanceLyricTiming,
-        "wordFadeWidth": wordFadeWidth,
         "backgroundMode": backgroundMode.name,
       };
 
@@ -104,8 +97,6 @@ class NowPlayingPagePreference {
       showLyricRoman: map["showLyricRoman"] ?? false,
       enableLyricScale: map["enableLyricScale"] ?? true,
       enableLyricSpring: map["enableLyricSpring"] ?? true,
-      enableAdvanceLyricTiming: map["enableAdvanceLyricTiming"] ?? true,
-      wordFadeWidth: (map["wordFadeWidth"] ?? 0.5).toDouble(),
       backgroundMode: backgroundMode,
     );
   }
@@ -146,7 +137,6 @@ class PlaybackPreference {
   PlayMode playMode;
   double volumeDsp;
   List<double> eqGains;
-  bool eqBypass;
   double eqPreampDb;
   bool eqAutoGainEnabled;
   double eqAutoHeadroomDb;
@@ -165,7 +155,6 @@ class PlaybackPreference {
     this.volumeDsp,
     this.eqGains,
     this.eqPresets, {
-    this.eqBypass = false,
     this.eqPreampDb = 0.0,
     this.eqAutoGainEnabled = true,
     this.eqAutoHeadroomDb = 1.0,
@@ -183,7 +172,6 @@ class PlaybackPreference {
         "playMode": playMode.name,
         "volumeDsp": volumeDsp,
         "eqGains": eqGains,
-        "eqBypass": eqBypass,
         "eqPreampDb": eqPreampDb,
         "eqAutoGainEnabled": eqAutoGainEnabled,
         "eqAutoHeadroomDb": eqAutoHeadroomDb,
@@ -209,7 +197,6 @@ class PlaybackPreference {
                 .map((e) => EqPreset.fromMap(e))
                 .toList()
             : [],
-        eqBypass: map["eqBypass"] ?? false,
         eqPreampDb: (map["eqPreampDb"] ?? 0.0).toDouble(),
         eqAutoGainEnabled: map["eqAutoGainEnabled"] ?? true,
         eqAutoHeadroomDb: (map["eqAutoHeadroomDb"] ?? 1.0).toDouble(),
@@ -271,7 +258,7 @@ class AppPreference {
       true,
       400,
       false,
-      backgroundMode: NowPlayingBackgroundMode.meshGradient);
+      backgroundMode: NowPlayingBackgroundMode.hybrid);
 
   String customCpFeedbackKey = "";
   String updateRepoSlug = "qingyueyin/Pure-music";
@@ -302,6 +289,34 @@ class AppPreference {
       final prefJson = json.encode(prefMap);
       final output = await File(appPreferencePath).create(recursive: true);
       await output.writeAsString(prefJson);
+    } catch (err, trace) {
+      logger.e(err, stackTrace: trace);
+    }
+  }
+
+  Future<void> savePlaybackOnly() async {
+    try {
+      final settingsDir = await getSettingsDir();
+      final playbackPrefPath = "${settingsDir.path}\\playback_pref.json";
+
+      final prefJson = json.encode(playbackPref.toMap());
+      final output = await File(playbackPrefPath).create(recursive: true);
+      await output.writeAsString(prefJson);
+    } catch (err, trace) {
+      logger.e(err, stackTrace: trace);
+    }
+  }
+
+  Future<void> loadPlaybackOnly() async {
+    try {
+      final settingsDir = await getSettingsDir();
+      final playbackPrefPath = "${settingsDir.path}\\playback_pref.json";
+
+      if (File(playbackPrefPath).existsSync()) {
+        final prefJson = await File(playbackPrefPath).readAsString();
+        final prefMap = json.decode(prefJson);
+        instance.playbackPref = PlaybackPreference.fromMap(prefMap);
+      }
     } catch (err, trace) {
       logger.e(err, stackTrace: trace);
     }
