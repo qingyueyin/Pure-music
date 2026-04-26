@@ -5,7 +5,27 @@ import 'bass.dart';
 
 const int BASS_WASAPI_EXCLUSIVE = 1;
 
+const int BASS_WASAPI_AUTOFORMAT = 2;
+
+const int BASS_WASAPI_BUFFER = 4;
+
 const int BASS_WASAPI_EVENT = 16;
+
+const int BASS_WASAPI_SAMPLES = 32;
+
+const int BASS_DATA_AVAILABLE = 0;
+
+// FFT flags (same as BASS_ChannelGetData flags, used with BASS_WASAPI_GetData)
+const int BASS_DATA_FLOAT = 0x40000000;
+const int BASS_DATA_FFT256 = 0x80000000;
+const int BASS_DATA_FFT512 = 0x80000001;
+const int BASS_DATA_FFT1024 = 0x80000002;
+const int BASS_DATA_FFT2048 = 0x80000003;
+const int BASS_DATA_FFT4096 = 0x80000004;
+const int BASS_DATA_FFT8192 = 0x80000005;
+const int BASS_DATA_FFT16384 = 0x80000006;
+const int BASS_DATA_FFT_NOWINDOW = 0x20000000;
+const int BASS_DATA_FFT_INDIVIDUAL = 0x10000000;
 
 const int BASS_ERROR_WASAPI = 5000;
 
@@ -116,4 +136,20 @@ class BassWasapi {
       _lookup<ffi.NativeFunction<BOOL Function()>>('BASS_WASAPI_Free');
   late final _BASS_WASAPI_Free =
       _BASS_WASAPI_FreePtr.asFunction<int Function()>();
+
+  int BASS_WASAPI_GetData(
+    ffi.Pointer<ffi.Void> buffer,
+    int length,
+  ) {
+    return _BASS_WASAPI_GetData(
+      buffer,
+      length,
+    );
+  }
+
+  late final _BASS_WASAPI_GetDataPtr = _lookup<
+      ffi.NativeFunction<DWORD Function(ffi.Pointer<ffi.Void>, DWORD)>>(
+          'BASS_WASAPI_GetData');
+  late final _BASS_WASAPI_GetData = _BASS_WASAPI_GetDataPtr.asFunction<
+      int Function(ffi.Pointer<ffi.Void>, int)>();
 }
