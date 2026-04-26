@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:pure_music/lyric/lyric.dart';
+import 'package:pure_music/page/now_playing_page/component/word_emphasis_helper.dart';
 import 'dart:math';
 
 class Krc extends Lyric {
@@ -122,7 +123,7 @@ class KrcLine extends SyncLyricLine {
 }
 
 class KrcWord extends SyncLyricWord {
-  KrcWord(super.start, super.length, super.content);
+  KrcWord(super.start, super.length, super.content, {super.marks});
 
   static KrcWord? fromWord(String word, Duration lineStart, [int offset = 0]) {
     final splitedWord = word.split(">");
@@ -140,6 +141,12 @@ class KrcWord extends SyncLyricWord {
       milliseconds: int.tryParse(splitedTime[1]) ?? 0,
     );
 
-    return KrcWord(start, length, splitedWord[1]);
+    final content = splitedWord[1];
+    final marks = WordMarkingUtil.analyzeWithDuration(
+      content,
+      length.inMilliseconds,
+    );
+
+    return KrcWord(start, length, content, marks: marks);
   }
 }
