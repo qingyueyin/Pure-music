@@ -12,10 +12,11 @@ class AppScrollBehavior extends MaterialScrollBehavior {
     return RawScrollbar(
       controller: details.controller,
       interactive: true,
-      thickness: 10,
+      thickness: 8,
       radius: const Radius.circular(999),
       mainAxisMargin: 4,
-      crossAxisMargin: 4,
+      crossAxisMargin: 0,
+      thumbVisibility: true,
       child: child,
     );
   }
