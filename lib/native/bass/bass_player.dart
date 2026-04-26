@@ -54,8 +54,6 @@ class BassPlayer {
   String? _fPath;
   int? _fstream;
   bool _streamWasapiExclusive = false;
-  // Temporarily stores EQ bypass state before entering exclusive mode
-  // (field declared earlier) bool? _eqBypassBeforeExclusive;
 
   // Equalizer
   final List<int> _eqHandles = [];
@@ -94,15 +92,26 @@ class BassPlayer {
   double get rate => _rate;
 
   bool get _isEqFlat => _eqGains.every((g) => g.abs() < 1e-6);
-  bool get _eqBypass => AppPreference.instance.playbackPref.eqBypass;
 
   /// 是否启用 wasapi 独占模式
   bool wasapiExclusive = false;
-  // Temporarily store EQ bypass state before entering exclusive mode
-  bool? _eqBypassBeforeExclusive;
 
   /// 独占模式状态变化回调
   Function(bool)? onExclusiveModeChanged;
+
+  /// 同步阻塞 Sleep 函数（Windows kernel32.dll）
+  void Function(int milliseconds)? _windowsSleep;
+
+  /// 同步阻塞等待指定毫秒数（必须用于同步函数中的延迟）
+  void _sleepSync(int ms) {
+    if (_windowsSleep != null) {
+      _windowsSleep!(ms);
+    } else {
+      // 回退到忙等待（非 Windows 或 kernel32 加载失败）
+      final end = DateTime.now().millisecondsSinceEpoch + ms;
+      while (DateTime.now().millisecondsSinceEpoch < end) {}
+    }
+  }
 
   Timer? _positionUpdater;
   final _positionStreamController = StreamController<double>.broadcast();
@@ -143,10 +152,33 @@ class BassPlayer {
   /// current position in seconds
   double get position => _fstream == null
       ? 0.0
-      : _bass.BASS_ChannelBytes2Seconds(
-          _fstream!,
-          _bass.BASS_ChannelGetPosition(_fstream!, bass.BASS_POS_BYTE),
-        );
+      : _getPosition();
+
+  double _getPosition() {
+    final posBytes =
+        _bass.BASS_ChannelGetPosition(_fstream!, bass.BASS_POS_BYTE);
+    if (posBytes == -1) {
+      final errCode = _bass.BASS_ErrorGetCode();
+      if (errCode == bass.BASS_ERROR_HANDLE) {
+        freeFStream();
+      }
+      return 0.0;
+    }
+
+    // 独占模式下，需要减去缓冲区残留（参考 ZeroBit-Player 实现）
+    var finalBytes = posBytes;
+    if (wasapiExclusive || _streamWasapiExclusive) {
+      final decodeBytes = _bassWasapi.BASS_WASAPI_GetData(
+        ffi.nullptr,
+        bass_wasapi.BASS_DATA_AVAILABLE,
+      );
+      if (decodeBytes > 0 && decodeBytes != -1) {
+        finalBytes = finalBytes - decodeBytes;
+      }
+    }
+
+    return _bass.BASS_ChannelBytes2Seconds(_fstream!, finalBytes).clamp(0.0, length);
+  }
 
   PlayerState get playerState {
     if (_fstream == null) {
@@ -202,6 +234,7 @@ class BassPlayer {
   static const int _bassDataFft2048 = 0x80000003;
   int Function(int, ffi.Pointer<ffi.Void>, int)? _bassChannelGetData;
   ffi.Pointer<ffi.Float>? _fftBuffer;
+  ffi.Pointer<ffi.Float>? _wasapiFftBuffer;
   double _streamSampleRate = 44100.0;
   int _lastSpectrumUpdateUs = 0;
   Duration _spectrumTickPeriod = const Duration(milliseconds: 16);
@@ -286,20 +319,36 @@ class BassPlayer {
     }
   }
 
+  /// 根据音频采样率动态计算 WASAPI 缓冲区大小
+  /// 低码率音频用较小缓冲降低延迟，高码率音乐会文件用更大缓冲防卡顿
+  double _computeWasapiBufferSec() {
+    _refreshStreamSampleRate();
+    // 根据采样率分档：44.1kHz 以下用 80ms，48kHz 用 100ms，96kHz+ 用 150ms
+    if (_streamSampleRate <= 44100) return 0.08;
+    if (_streamSampleRate <= 48000) return 0.10;
+    if (_streamSampleRate <= 96000) return 0.12;
+    return 0.15;
+  }
+
   void _maybeUpdateSpectrum() {
     if (_fstream == null) return;
-    if (_bassChannelGetData == null) return;
     if (playerState != PlayerState.playing) return;
     if (!_spectrumStreamController.hasListener) return;
 
-    // In WASAPI exclusive mode, the decoding stream must not be consumed by FFT.
-    if (wasapiExclusive || _streamWasapiExclusive) return;
+    // Exclusive mode uses BASS_WASAPI_GetData (separate path),
+    // shared mode uses BASS_ChannelGetData. Neither is blocked now.
+    if (_bassChannelGetData == null && !wasapiExclusive && !_streamWasapiExclusive) return;
 
     final nowUs = DateTime.now().microsecondsSinceEpoch;
     final intervalUs = _spectrumTickPeriod.inMicroseconds;
     if (nowUs - _lastSpectrumUpdateUs < intervalUs) return;
     _lastSpectrumUpdateUs = nowUs;
-    _emitSpectrumFrame();
+
+    if (wasapiExclusive || _streamWasapiExclusive) {
+      _emitWasapiSpectrumFrame();
+    } else {
+      _emitSpectrumFrame();
+    }
   }
 
   void _emitSpectrumFrame() {
@@ -308,7 +357,6 @@ class BassPlayer {
     if (!_spectrumStreamController.hasListener) return;
     final getData = _bassChannelGetData;
     if (getData == null) return;
-    if (wasapiExclusive || _streamWasapiExclusive) return;
 
     _fftBuffer ??= malloc.allocate<ffi.Float>(1024 * ffi.sizeOf<ffi.Float>());
     final bytesRead =
@@ -317,11 +365,32 @@ class BassPlayer {
 
     final fft = _fftBuffer!.asTypedList(1024);
     _computeSpectrum8Into(fft, _streamSampleRate, _spectrumBands);
+    _emitSmoothedSpectrum();
+  }
+
+  void _emitWasapiSpectrumFrame() {
+    if (!_spectrumStreamController.hasListener) return;
+
+    _wasapiFftBuffer ??= malloc.allocate<ffi.Float>(1024 * ffi.sizeOf<ffi.Float>());
+    final bytesRead = _bassWasapi.BASS_WASAPI_GetData(
+      _wasapiFftBuffer!.cast<ffi.Void>(),
+      bass_wasapi.BASS_DATA_FFT2048,
+    );
+    // BASS_WASAPI_GetData returns the number of bytes written; negative means error
+    if (bytesRead <= 0) return;
+
+    final fft = _wasapiFftBuffer!.asTypedList(1024);
+    _computeSpectrum8Into(fft, _streamSampleRate, _spectrumBands);
+    _emitSmoothedSpectrum();
+  }
+
+  void _emitSmoothedSpectrum() {
     final out = Float32List(_spectrumBandCount);
     for (int i = 0; i < _spectrumBandCount; i++) {
       final target = _spectrumBands[i];
       final prev = _spectrumSmoothed[i];
-      final a = target > prev ? 0.35 : 0.18;
+      // Attack/release IIR: fast rise (0.6), slower fall (0.4)
+      final a = target > prev ? 0.6 : 0.4;
       final next = (prev + (target - prev) * a).clamp(0.0, 1.0).toDouble();
       _spectrumSmoothed[i] = next;
       out[i] = next;
@@ -400,11 +469,6 @@ class BassPlayer {
       return;
     }
 
-    if (_eqBypass) {
-      _removeEQ();
-      return;
-    }
-
     if (_isEqFlat) {
       if (!wasFlat) {
         _removeEQ();
@@ -421,7 +485,7 @@ class BassPlayer {
 
   void refreshEQ() {
     if (_fstream == null) return;
-    if (wasapiExclusive || _eqBypass || _isEqFlat) {
+    if (wasapiExclusive || _isEqFlat) {
       _removeEQ();
       return;
     }
@@ -640,6 +704,9 @@ class BassPlayer {
     if (Platform.isWindows) {
       try {
         final kernel32 = ffi.DynamicLibrary.open('kernel32.dll');
+        _windowsSleep = kernel32
+            .lookupFunction<ffi.Void Function(ffi.Uint32), void Function(int)>(
+                'Sleep');
         final setDllDirectory = kernel32.lookupFunction<
             ffi.Int32 Function(ffi.Pointer<Utf16>),
             int Function(ffi.Pointer<Utf16>)>('SetDllDirectoryW');
@@ -777,33 +844,20 @@ class BassPlayer {
   bool useExclusiveMode(bool exclusive) {
     final prevState = wasapiExclusive;
     try {
-      // Temporarily disable EQ when entering exclusive mode; restore on exit
-      if (exclusive) {
-        _eqBypassBeforeExclusive ??=
-            AppPreference.instance.playbackPref.eqBypass;
-        AppPreference.instance.playbackPref.eqBypass = true;
-      } else {
-        if (_eqBypassBeforeExclusive != null) {
-          AppPreference.instance.playbackPref.eqBypass =
-              _eqBypassBeforeExclusive!;
-          _eqBypassBeforeExclusive = null;
-        }
-      }
-      if (exclusive && !_eqBypass && !_isEqFlat) {
+      if (exclusive && !_isEqFlat) {
         logger.w("[bass] Cannot enable exclusive mode while EQ is enabled");
         showTextOnSnackBar("独占模式与均衡器冲突，请先关闭均衡器（全部归零）");
         return false;
       }
       final lastPos = position;
-      // Stop current playback before mode switch
       if (_fstream != null && !prevState) {
-        // Only stop if we're currently in shared mode (transitioning TO exclusive)
         _bass.BASS_ChannelStop(_fstream!);
       }
       if (prevState) {
         _bassWasapi.BASS_WASAPI_Free();
         _bassInit();
       }
+      _sleepSync(50);
       wasapiExclusive = exclusive;
       if (_fstream != null && _fPath != null) {
         setSource(_fPath!);
@@ -812,19 +866,10 @@ class BassPlayer {
         start();
       }
       onExclusiveModeChanged?.call(exclusive);
-      // Clear saved EQ bypass state after successful switch
-      _eqBypassBeforeExclusive = null;
       return true;
     } catch (err) {
       logger.e("[use exclusive mode] $err");
       showTextOnSnackBar(err.toString());
-      // On failure, rollback EQ bypass if it was saved
-      if (_eqBypassBeforeExclusive != null) {
-        AppPreference.instance.playbackPref.eqBypass =
-            _eqBypassBeforeExclusive!;
-        _eqBypassBeforeExclusive = null;
-      }
-      // Ensure UI reflects the actual internal state
       _playerStateStreamController.add(playerState);
     }
     wasapiExclusive = prevState;
@@ -1099,24 +1144,39 @@ class BassPlayer {
     _bassWasapi.BASS_WASAPI_Stop(bass.TRUE);
     _bassWasapi.BASS_WASAPI_Free();
 
-    // 使用参考项目的标准配置
-    const flags =
-        bass_wasapi.BASS_WASAPI_EXCLUSIVE | bass_wasapi.BASS_WASAPI_EVENT;
-    const bufferSec = 0.05; // 固定 50ms 缓冲，经过验证的稳定值
+    // 结合 ZeroBit-Player 的最佳实践：添加 AUTOFORMAT 和 BUFFER 标志
+    const flags = bass_wasapi.BASS_WASAPI_EXCLUSIVE |
+        bass_wasapi.BASS_WASAPI_AUTOFORMAT |
+        bass_wasapi.BASS_WASAPI_EVENT |
+        bass_wasapi.BASS_WASAPI_BUFFER;
+    // 根据音频采样率动态计算缓冲区，高码率文件自动获得更大缓冲
+    final bufferSec = _computeWasapiBufferSec();
     const initFreq = 0; // 让 WASAPI 自动选择合适的采样率
 
-    // 转换句柄为指针：_fstream 是整数 handle，需要转换成指针
-    if (_bassWasapi.BASS_WASAPI_Init(
-          -1, // 默认设备
-          initFreq,
-          0, // 自动选择声道数
-          flags,
-          bufferSec,
-          0.0,
-          ffi.Pointer<bass_wasapi.WASAPIPROC>.fromAddress(-1), // -1 表示无自定义回调
-          ffi.Pointer<ffi.Void>.fromAddress(_fstream!), // 使用整数 handle
-        ) ==
-        bass.FALSE) {
+    // 参考 ZeroBit-Player 的重试机制：最多重试 3 次以解决 BASS_ERROR_BUSY
+    int result = bass.FALSE;
+    for (int attempt = 0; attempt < 3; attempt++) {
+      result = _bassWasapi.BASS_WASAPI_Init(
+        -1, // 默认设备
+        initFreq,
+        0, // 自动选择声道数
+        flags,
+        bufferSec,
+        0.0,
+        ffi.Pointer<bass_wasapi.WASAPIPROC>.fromAddress(-1), // -1 表示无自定义回调
+        ffi.Pointer<ffi.Void>.fromAddress(_fstream!), // 使用整数 handle
+      );
+
+      if (result != bass.FALSE) break; // 成功，跳出循环
+
+      final errCode = _bass.BASS_ErrorGetCode();
+      if (errCode != bass.BASS_ERROR_BUSY) break; // 非 BUSY 错误，不重试
+
+      // 等待 50ms 让流完全释放后再重试
+      _sleepSync(50);
+    }
+
+    if (result == bass.FALSE) {
       switch (_bass.BASS_ErrorGetCode()) {
         case bass_wasapi.BASS_ERROR_WASAPI:
           throw const FormatException("WASAPI is not available.");
@@ -1168,7 +1228,14 @@ class BassPlayer {
   }
 
   void _startWasapiExclusive() {
-    _bassWasapiInit();
+    try {
+      _bassWasapiInit();
+    } catch (err) {
+      logger.w("[bass] wasapi exclusive init failed, fallback to shared: $err");
+      showTextOnSnackBar("独占模式初始化失败，已切回共享模式");
+      useExclusiveMode(false);
+      return;
+    }
 
     if (_bassWasapi.BASS_WASAPI_Start() == bass.FALSE) {
       switch (_bass.BASS_ErrorGetCode()) {
@@ -1357,6 +1424,10 @@ class BassPlayer {
     if (_fftBuffer != null) {
       malloc.free(_fftBuffer!);
       _fftBuffer = null;
+    }
+    if (_wasapiFftBuffer != null) {
+      malloc.free(_wasapiFftBuffer!);
+      _wasapiFftBuffer = null;
     }
   }
 }
