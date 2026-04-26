@@ -48,6 +48,11 @@ lib/page/settings_page/cpfeedback_key.dart
 # Local Environment
 .tmp/
 .vscode/
+# .trae/
+
+# Trae specific - ignore rules and skills but keep other .trae files
+.trae/rules/
+.trae/Skills/
 
 # Rust
 target/

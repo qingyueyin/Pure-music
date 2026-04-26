@@ -173,9 +173,12 @@ pure-music/
 | [BASS](https://www.un4seen.com/bass.html)                           | 音频播放核心            |
 | [flutter_rust_bridge](https://pub.dev/packages/flutter_rust_bridge) | Flutter-Rust 跨语言调用 |
 
-### 💡 灵感来源
+### 💡 致谢
+项目在开发过程中参考/使用了以下优秀的项目:
 
-- [coriander_player](https://github.com/Ferry-200/coriander_player) — 参考此项目界面的设计思路
+- [coriander_player][https://github.com/Ferry-200/coriander_player] — Windows端本地音乐播放器，使用Material You配色。Dart (Flutter) + Rust (lofty, windows-rs) + C (bass lib) 跨语言项目
+
+- [ZeroBit-Player](https://github.com/Ferry-200/zerobit) — 基于 flutter(dart) + rust + bass 开发的Material风格本地音乐播放器 
 
 ### 🎨 图标
 
@@ -198,3 +201,6 @@ MIT License
 Made with ❤️ by qingyueyin
 
 </div>
+
+
+[def]: https://github.com/Ferry-200/coriander_player
