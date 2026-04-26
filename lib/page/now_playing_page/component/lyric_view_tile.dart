@@ -20,26 +20,30 @@ TextStyle _lyricTextStyle({
   required Color color,
   required double fontSize,
   required int weight,
+  required ColorScheme scheme,
   double? height,
+  bool enableShadow = true,
 }) {
   final w = weight.clamp(100, 900);
-  final shadowColor = color.computeLuminance() > 0.6
-      ? Colors.black.withValues(alpha: 0.55)
-      : Colors.white.withValues(alpha: 0.40);
   return TextStyle(
+    fontFamily: 'sans-serif',
     color: color,
     fontSize: fontSize,
     fontVariations: [FontVariation('wght', w.toDouble())],
     fontWeight: config.discreteFontWeight(w),
     height: height ?? config.translationLineHeight(w),
     letterSpacing: config.letterSpacing(fontSize: fontSize, weight: w),
-    shadows: [
-      Shadow(
-        color: shadowColor,
-        blurRadius: 3.0,
-        offset: const Offset(0, 1),
-      ),
-    ],
+    shadows: enableShadow
+        ? [
+            Shadow(
+              color: color.computeLuminance() > 0.6
+                  ? Colors.black.withValues(alpha: 0.55)
+                  : scheme.onSurface.withValues(alpha: 0.40),
+              blurRadius: 3.0,
+              offset: const Offset(0, 1),
+            ),
+          ]
+        : null,
   );
 }
 
@@ -49,12 +53,14 @@ class LyricViewTile extends StatelessWidget {
     required this.line,
     required this.opacity,
     this.distance,
+    this.staggerDelay = Duration.zero,
     this.onTap,
   });
 
   final LyricLine line;
   final double opacity;
   final int? distance;
+  final Duration staggerDelay;
   final void Function()? onTap;
 
   @override
@@ -85,16 +91,6 @@ class LyricViewTile extends StatelessWidget {
       LyricTextAlign.right => Alignment.centerRight,
     };
 
-    double measureTextWidth(String text, TextStyle style) {
-      if (text.isEmpty) return 0.0;
-      final painter = TextPainter(
-        text: TextSpan(text: text, style: style),
-        textDirection: Directionality.of(context),
-        maxLines: 1,
-      )..layout();
-      return painter.width;
-    }
-
     double computeSafeScale(BoxConstraints constraints) {
       return config.enableLineScale
           ? (isMainLine
@@ -121,6 +117,7 @@ class LyricViewTile extends StatelessWidget {
                 spring: config.lineSpring,
                 alignment: alignment,
                 enabled: config.enableLineSpring,
+                staggerDelay: staggerDelay,
                 child: content,
               ),
             );
@@ -171,7 +168,7 @@ class _SyncLineContent extends StatelessWidget {
           config: config,
           primarySize: primarySize,
           fontWeight: fontWeight,
-          inactiveOpacity: 0.6,
+          inactiveOpacity: 0.35,
         ),
       ];
       if (showTranslation && syncLine.translation != null) {
@@ -301,10 +298,12 @@ class _SyncLineContent extends StatelessWidget {
       },
       style: _lyricTextStyle(
         config: config,
-        color: Colors.white.withValues(alpha: opacity),
+        color: scheme.onSurface.withValues(alpha: opacity),
         fontSize: fontSize,
         weight: fontWeight,
+        scheme: scheme,
         height: config.primaryLineHeight(fontWeight),
+        enableShadow: false,
       ),
     );
   }
@@ -330,10 +329,12 @@ class _SyncLineContent extends StatelessWidget {
       },
       style: _lyricTextStyle(
         config: config,
-        color: Colors.white.withValues(alpha: opacity),
+        color: scheme.onSurface.withValues(alpha: opacity),
         fontSize: fontSize,
         weight: translationWeight,
+        scheme: scheme,
         height: config.translationLineHeight(fontWeight),
+        enableShadow: false,
       ),
     );
   }
@@ -348,7 +349,7 @@ class _SyncWordsWrap extends StatelessWidget {
     required this.fontWeight,
     this.positionMs,
     this.spectrumBands,
-    this.inactiveOpacity = 0.22,
+    this.inactiveOpacity = 0.35,
   });
 
   final SyncLyricLine syncLine;
@@ -362,6 +363,7 @@ class _SyncWordsWrap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final strut = StrutStyle(
       fontSize: primarySize,
       height: config.primaryLineHeight(fontWeight),
@@ -369,17 +371,21 @@ class _SyncWordsWrap extends StatelessWidget {
     );
     final inactiveStyle = _lyricTextStyle(
       config: config,
-      color: Colors.white.withValues(alpha: inactiveOpacity),
+      color: scheme.onSurface.withValues(alpha: inactiveOpacity),
       fontSize: primarySize,
       weight: fontWeight,
+      scheme: scheme,
       height: config.primaryLineHeight(fontWeight),
+      enableShadow: false,
     );
     final activeBaseStyle = _lyricTextStyle(
       config: config,
-      color: Colors.white,
+      color: scheme.onSurface,
       fontSize: primarySize,
       weight: fontWeight,
+      scheme: scheme,
       height: config.primaryLineHeight(fontWeight),
+      enableShadow: false,
     );
 
     return Wrap(
@@ -410,7 +416,7 @@ class _SyncWordsWrap extends StatelessWidget {
         final metrics = _measureWordMetrics(word.content, activeBaseStyle);
         final highlightMask = LyricWordHighlightMask.fromMetrics(
           progress: progress,
-          fadeScale: config.wordFadeWidth,
+          fadeScale: 0.5,
           wordWidth: metrics.$1,
           wordHeight: metrics.$2,
         );
@@ -418,13 +424,13 @@ class _SyncWordsWrap extends StatelessWidget {
             ? activeBaseStyle.copyWith(
                 shadows: [
                   Shadow(
-                    color: Colors.white.withValues(
+                    color: scheme.onSurface.withValues(
                       alpha: emphasis.glowAlpha,
                     ),
                     blurRadius: emphasis.glowBlur,
                   ),
                   Shadow(
-                    color: Colors.white.withValues(
+                    color: scheme.onSurface.withValues(
                       alpha: emphasis.glowAlpha * 0.6,
                     ),
                     blurRadius: emphasis.glowBlur * 1.5,
@@ -453,16 +459,20 @@ class _SyncWordsWrap extends StatelessWidget {
                     child: ShaderMask(
                       blendMode: BlendMode.dstIn,
                       shaderCallback: (bounds) {
+                        final scale = LyricWordHighlightMask.calcMaskScale(
+                          wordLenMs.toDouble(),
+                        );
                         return LinearGradient(
-                          colors: const [
-                            Colors.white,
-                            Colors.white,
-                            Colors.transparent,
-                            Colors.transparent
-                          ],
+                          colors: LyricWordHighlightMask.createGradientColors(
+                            scheme,
+                          ),
                           stops: highlightMask.stops,
                           begin: Alignment.centerLeft,
                           end: Alignment.centerRight,
+                          transform: ScaledTranslateGradientTransform(
+                            dx: (-0.666 * bounds.width) * (1 - progress),
+                            scale: scale,
+                          ),
                         ).createShader(bounds);
                       },
                       child: _buildWordLayer(
@@ -491,10 +501,9 @@ class _SyncWordsWrap extends StatelessWidget {
   }
 
   EdgeInsets _wordVisualPadding(SyncLyricWord word) {
-    final emphasize = WordEmphasisHelper.shouldEmphasizeWord(word);
-    final horizontal = emphasize ? primarySize * 0.06 : primarySize * 0.02;
-    final top = emphasize ? primarySize * 0.18 : primarySize * 0.10;
-    final bottom = emphasize ? primarySize * 0.24 : primarySize * 0.16;
+    final horizontal = primarySize * 0.02;
+    final top = primarySize * 0.10;
+    final bottom = primarySize * 0.16;
     return EdgeInsets.fromLTRB(horizontal, top, horizontal, bottom);
   }
 
@@ -510,7 +519,14 @@ class _SyncWordsWrap extends StatelessWidget {
     final core = match?.group(2) ?? content;
     final suffix = match?.group(3) ?? '';
 
+    final wordProgress = positionMs == null
+        ? 0.0
+        : ((positionMs! - word.start.inMilliseconds) / word.length.inMilliseconds)
+            .clamp(0.0, 1.0);
+    final playbackComplete = wordProgress >= 1.0;
+
     if (!activeLayer ||
+        playbackComplete ||
         !WordEmphasisHelper.shouldEmphasizeWord(word) ||
         core.characters.length <= 1) {
       return Text(
@@ -595,7 +611,7 @@ class _SyncWordsWrap extends StatelessWidget {
             shadows: emphasis.glowAlpha > 0.0
                 ? [
                     Shadow(
-                      color: Colors.white.withValues(alpha: emphasis.glowAlpha),
+                      color: (style.color ?? Colors.white).withValues(alpha: emphasis.glowAlpha),
                       blurRadius: emphasis.glowBlur,
                     ),
                   ]
@@ -612,7 +628,10 @@ class _SyncWordsWrap extends StatelessWidget {
 }
 
 class _LrcLineContent extends StatelessWidget {
-  const _LrcLineContent({required this.lrcLine, required this.isMainLine});
+  const _LrcLineContent({
+    required this.lrcLine,
+    required this.isMainLine,
+  });
 
   final LrcLine lrcLine;
   final bool isMainLine;
@@ -625,6 +644,29 @@ class _LrcLineContent extends StatelessWidget {
       } else {
         return const SizedBox.shrink();
       }
+    }
+
+    if (lrcLine.isMetadata) {
+      final lyricViewController = context.watch<LyricViewController>();
+      final config = lyricViewController.renderConfig;
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4.0),
+        child: Text(
+          lrcLine.content,
+          style: _lyricTextStyle(
+            config: config,
+            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70),
+            fontSize: config.primaryFontSize(isMainLine: isMainLine) * 0.85,
+            weight: config.fontWeight - 100,
+            scheme: Theme.of(context).colorScheme,
+          ),
+          textAlign: config.textAlign == LyricTextAlign.left
+              ? TextAlign.left
+              : config.textAlign == LyricTextAlign.center
+                  ? TextAlign.center
+                  : TextAlign.right,
+        ),
+      );
     }
 
     final scheme = Theme.of(context).colorScheme;
@@ -679,6 +721,7 @@ class _LrcLineContent extends StatelessWidget {
         translationSize * 0.85,
         fontWeight - 100,
         config: config,
+        opacity: 0.70 * 0.5,
       ));
     }
 
@@ -697,7 +740,7 @@ class _LrcLineContent extends StatelessWidget {
 
   Text buildPrimaryText(String text, ColorScheme scheme, LyricTextAlign align,
       double fontSize, int fontWeight,
-      {required LyricRenderConfig config}) {
+      {required LyricRenderConfig config, double opacity = 1.0}) {
     return Text(
       text,
       softWrap: true,
@@ -709,9 +752,10 @@ class _LrcLineContent extends StatelessWidget {
       },
       style: _lyricTextStyle(
         config: config,
-        color: Colors.white,
+        color: scheme.onSurface.withValues(alpha: opacity),
         fontSize: fontSize,
         weight: fontWeight,
+        scheme: scheme,
         height: config.primaryLineHeight(fontWeight),
       ),
     );
@@ -719,7 +763,7 @@ class _LrcLineContent extends StatelessWidget {
 
   Text buildSecondaryText(String text, ColorScheme scheme, LyricTextAlign align,
       double fontSize, int fontWeight,
-      {required LyricRenderConfig config}) {
+      {required LyricRenderConfig config, double opacity = 0.70}) {
     final translationWeight = (fontWeight - 50).clamp(100, 900);
     return Text(
       text,
@@ -732,9 +776,10 @@ class _LrcLineContent extends StatelessWidget {
       },
       style: _lyricTextStyle(
         config: config,
-        color: Colors.white.withValues(alpha: 0.70),
+        color: scheme.onSurface.withValues(alpha: opacity),
         fontSize: fontSize,
         weight: translationWeight,
+        scheme: scheme,
         height: config.translationLineHeight(fontWeight),
       ),
     );
