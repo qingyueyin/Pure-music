@@ -15,6 +15,25 @@ Uint8List _hexDecode(String hexString) {
 
 final Uint8List _qrcKey = Uint8List.fromList(utf8.encode(r'!@#)(*$%123ZXC!@!@#)(NHL'));
 
+class TripleDesDecryptor {
+  static final Uint8List _decryptKey = Uint8List.fromList(utf8.encode(r'!@#)(*$%123ZXC!@!@#)(NHL'));
+
+  static Uint8List decrypt(Uint8List data) {
+    final schedule = _tripleDesKeySetup(_decryptKey, _devrypt);
+    final result = <int>[];
+
+    for (int i = 0; i < data.length; i += 8) {
+      if (i + 8 <= data.length) {
+        final block = data.sublist(i, i + 8);
+        final decrypted = _tripleDesCrypt(block, schedule);
+        result.addAll(decrypted);
+      }
+    }
+
+    return Uint8List.fromList(result);
+  }
+}
+
 final Uint8List _privKey = Uint8List.fromList([
   0xc3, 0x4a, 0xd6, 0xca, 0x90, 0x67, 0xf7, 0x52,
   0xd8, 0xa1, 0x66, 0x62, 0x9f, 0x5b, 0x09, 0x00,
