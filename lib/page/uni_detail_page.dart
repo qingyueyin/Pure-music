@@ -295,8 +295,12 @@ class _UniDetailPageHeader extends StatelessWidget {
             },
           ),
           switch (brightness) {
-            Brightness.dark => const ColoredBox(color: Colors.black38),
-            Brightness.light => const ColoredBox(color: Colors.white30),
+            Brightness.dark => ColoredBox(
+                color: scheme.surface.withValues(alpha: 0.38),
+              ),
+            Brightness.light => ColoredBox(
+                color: scheme.surface.withValues(alpha: 0.70),
+              ),
           },
           BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 100, sigmaY: 100),
