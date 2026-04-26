@@ -68,7 +68,7 @@ class _TitleBar_Small extends StatelessWidget {
                   ),
                 ),
                 IconButton(
-                tooltip: "搜索",
+                  tooltip: "搜索",
                   onPressed: () => SearchDialog.show(context),
                   icon: const Icon(Symbols.search),
                 ),
@@ -122,7 +122,7 @@ class _TitleBar_Medium extends StatelessWidget {
                 ),
               ),
               IconButton(
-                  tooltip: "搜索",
+                tooltip: "搜索",
                 onPressed: () => SearchDialog.show(context),
                 icon: const Icon(Symbols.search),
               ),
@@ -168,22 +168,22 @@ class _TitleBar_Large extends StatelessWidget {
                                 "Pure Music",
                                 style: TextStyle(
                                   color: scheme.onSurface,
-                            fontSize: 16,
+                                  fontSize: 16,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Expanded(
+                          child: Padding(
+                            padding: EdgeInsets.fromLTRB(0, 8.0, 16.0, 8.0),
+                            child: HorizontalLyricView(),
                           ),
                         ),
                       ],
                     ),
                   ),
-                  const Expanded(
-                    child: Padding(
-                      padding: EdgeInsets.fromLTRB(0, 8.0, 16.0, 8.0),
-                      child: HorizontalLyricView(),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+                ),
                 IconButton(
                   tooltip: "搜索",
                   onPressed: () => SearchDialog.show(context),
@@ -274,8 +274,6 @@ class _WindowControllsState extends State<WindowControlls> with WindowListener {
     } catch (e) {
       rethrow;
     } finally {
-      // 无论成功还是失败，最终都重置处理状态
-      // 调用_updateWindowStates()确保状态同步，即使监听器没有触发
       if (mounted) {
         await _updateWindowStates();
       }
@@ -311,21 +309,18 @@ class _WindowControllsState extends State<WindowControlls> with WindowListener {
   @override
   void onWindowMaximize() {
     _updateWindowStates();
-    // 窗口最大化时保存设置
     AppSettings.instance.saveSettings();
   }
 
   @override
   void onWindowUnmaximize() {
     _updateWindowStates();
-    // 窗口还原时保存设置
     AppSettings.instance.saveSettings();
   }
 
   @override
   void onWindowRestore() {
     _updateWindowStates();
-    // 窗口从最小化恢复时保存设置
     AppSettings.instance.saveSettings();
   }
 
