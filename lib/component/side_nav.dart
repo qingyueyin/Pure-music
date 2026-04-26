@@ -38,7 +38,6 @@ class _SideNavState extends State<SideNav> {
   final sidebarExpanded = ValueNotifier(AppPreference.instance.sidebarExpanded);
   static const double _collapsedWidth = 80.0;
   static const double _expandedWidth = 240.0;
-  static const double _iconSize = 24.0;
   static const double _itemHeight = 54.0;
 
   @override
@@ -128,13 +127,10 @@ class _SmoothLargeSideNav extends StatelessWidget {
   final void Function(int) onSelect;
 
   static const double _collapsedWidth = _SideNavState._collapsedWidth;
-  static const double _iconSize = _SideNavState._iconSize;
   static const double _itemHeight = _SideNavState._itemHeight;
 
   @override
   Widget build(BuildContext context) {
-    final iconLeft = (_collapsedWidth - _iconSize) / 2;
-
     return RepaintBoundary(
       child: TweenAnimationBuilder<double>(
         duration: MotionDuration.medium,
@@ -147,19 +143,21 @@ class _SmoothLargeSideNav extends StatelessWidget {
           return SizedBox(
             width: visibleWidth,
             height: double.infinity,
-            child: DecoratedBox(
-              decoration: BoxDecoration(color: colorScheme.surfaceContainer),
-              child: ClipRect(
-                child: OverflowBox(
-                  alignment: Alignment.centerLeft,
-                  minWidth: expandedWidth,
-                  maxWidth: expandedWidth,
+            child: Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(28.0),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(28.0),
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       const SizedBox(height: 12),
                       _NavItem(
                         height: _itemHeight,
-                        iconLeft: iconLeft,
                         icon: isDrawer
                             ? Symbols.close
                             : expanded
@@ -179,7 +177,6 @@ class _SmoothLargeSideNav extends StatelessWidget {
                             final selected = selectedIndex == i;
                             return _NavItem(
                               height: _itemHeight,
-                              iconLeft: iconLeft,
                               icon: destinations[i].icon,
                               label: destinations[i].label,
                               expandedT: t,
@@ -208,7 +205,6 @@ class _SmoothLargeSideNav extends StatelessWidget {
 class _NavItem extends StatelessWidget {
   const _NavItem({
     required this.height,
-    required this.iconLeft,
     required this.icon,
     required this.label,
     required this.expandedT,
@@ -217,7 +213,6 @@ class _NavItem extends StatelessWidget {
   });
 
   final double height;
-  final double iconLeft;
   final IconData icon;
   final String label;
   final double expandedT;
@@ -232,50 +227,53 @@ class _NavItem extends StatelessWidget {
         : Colors.transparent;
     final fg = selected ? scheme.onSecondaryContainer : scheme.onSurface;
     final textOpacity = expandedT.clamp(0.0, 1.0);
-    final dx = lerpDouble(-12, 0, expandedT) ?? 0.0;
-    const hPad = 10.0;
+    const iconSize = 24.0;
+    const collapsedIconLeftPad = 20.0;
+    const expandedIconLeftPad = 20.0;
+    const textLeftPad = 8.0;
+    final iconLeftPad = lerpDouble(
+      collapsedIconLeftPad,
+      expandedIconLeftPad,
+      expandedT,
+    )!;
 
     return SizedBox(
       height: height,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: hPad, vertical: 4),
-        child: Material(
-          color: bg,
+      child: Material(
+        color: bg,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
           borderRadius: BorderRadius.circular(14),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(14),
-            onTap: onTap,
-            child: Stack(
-              alignment: Alignment.centerLeft,
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Positioned(
-                  left: iconLeft - hPad,
-                  child: Icon(icon, size: 24, color: fg.withValues(alpha: 0.90)),
+                SizedBox(width: iconLeftPad),
+                SizedBox(
+                  width: iconSize,
+                  child: Icon(icon, size: iconSize, color: fg.withValues(alpha: 0.90)),
                 ),
-                Positioned(
-                  left: 56,
-                  right: 12,
-                  child: IgnorePointer(
-                    ignoring: expandedT < 0.98,
-                    child: Opacity(
-                      opacity: textOpacity,
-                      child: Transform.translate(
-                        offset: Offset(dx, 0),
-                        child: Text(
-                          label,
-                          maxLines: 1,
-                          overflow: TextOverflow.fade,
-                          softWrap: false,
-                          style: TextStyle(
-                            color: fg,
-                            fontSize: 14.5,
-                            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                          ),
+                if (expandedT > 0.01)
+                  Opacity(
+                    opacity: textOpacity,
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: textLeftPad),
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.fade,
+                        softWrap: false,
+                        style: TextStyle(
+                          color: fg,
+                          fontSize: 14.5,
+                          fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                         ),
                       ),
                     ),
                   ),
-                ),
+                const Spacer(),
               ],
             ),
           ),
