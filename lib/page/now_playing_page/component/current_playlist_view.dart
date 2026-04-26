@@ -1,4 +1,5 @@
 import 'package:pure_music/play_service/play_service.dart';
+import 'package:pure_music/library/audio_library.dart';
 import 'package:flutter/material.dart';
 
 class CurrentPlaylistView extends StatefulWidget {
@@ -28,7 +29,8 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
     scrollController = ScrollController(
       initialScrollOffset: playbackService.playlistIndex * 56.0,
     );
-    playbackService.addListener(_toNowPlaying);
+    playbackService.nowPlayingNotifier.addListener(_toNowPlaying);
+    playbackService.playlistNotifier.addListener(_toNowPlaying);
   }
 
   @override
@@ -55,12 +57,17 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
             child: ListenableBuilder(
               listenable: playbackService.shuffle,
               builder: (context, _) {
-                return ListView.builder(
-                  controller: scrollController,
-                  itemCount: playbackService.playlist.value.length,
-                  itemExtent: 56.0,
-                  itemBuilder: (context, index) {
-                    return _PlaylistViewItem(index: index);
+                return ValueListenableBuilder<List<Audio>>(
+                  valueListenable: playbackService.playlistNotifier,
+                  builder: (context, playlist, _) {
+                    return ListView.builder(
+                      controller: scrollController,
+                      itemCount: playlist.length,
+                      itemExtent: 56.0,
+                      itemBuilder: (context, index) {
+                        return _PlaylistViewItem(index: index);
+                      },
+                    );
                   },
                 );
               },
@@ -74,7 +81,8 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
   @override
   void dispose() {
     super.dispose();
-    playbackService.removeListener(_toNowPlaying);
+    playbackService.nowPlayingNotifier.removeListener(_toNowPlaying);
+    playbackService.playlistNotifier.removeListener(_toNowPlaying);
     scrollController.dispose();
   }
 }
