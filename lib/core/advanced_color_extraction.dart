@@ -56,8 +56,8 @@ class AdvancedColorExtractionService {
     final imageProvider = MemoryImage(imageBytes);
     final palette = await PaletteGenerator.fromImageProvider(
       imageProvider,
-      size: const Size(64, 64),
-      maximumColorCount: 16,
+      size: const Size(128, 128),
+      maximumColorCount: 32,
     );
 
     final colors = palette.colors.toList();
@@ -212,9 +212,9 @@ class AdvancedColorExtractionService {
 
   bool _isUsableSeed(Color c) {
     final b = _brightness(c) / 255.0;
-    if (b < 0.08 || b > 0.92) return false;
+    if (b < 0.06 || b > 0.97) return false;
     final hsl = HSLColor.fromColor(c);
-    if (hsl.saturation < 0.12) return false;
+    if (hsl.saturation < 0.08) return false;
     return true;
   }
 
