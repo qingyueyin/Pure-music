@@ -53,8 +53,7 @@ class AudioEchoLogRecorder {
       '|wasapiEventDriven=${AppPreference.instance.playbackPref.wasapiEventDriven}',
     );
     _writeLine(
-      'RECORDER|eqBypass=${AppPreference.instance.playbackPref.eqBypass}'
-      '|eqGains=${AppPreference.instance.playbackPref.eqGains.join(",")}',
+      'RECORDER|eqGains=${AppPreference.instance.playbackPref.eqGains.join(",")}',
     );
     _writeLine(
         'RECORDER|audios=${AudioLibrary.instance.audioCollection.length}');
@@ -119,7 +118,6 @@ class AudioEchoLogRecorder {
         'exclusive': pb.wasapiExclusive.value,
         'bufferSec': AppPreference.instance.playbackPref.wasapiBufferSec,
         'eventDriven': AppPreference.instance.playbackPref.wasapiEventDriven,
-        'eqBypass': AppPreference.instance.playbackPref.eqBypass,
         'playlistIndex': pb.playlistIndex,
         'playlistLen': pb.playlist.value.length,
         'nowPlayingPath': nowPlayingPath,
@@ -133,7 +131,6 @@ class AudioEchoLogRecorder {
         'tag': tag,
         'bufferSec': AppPreference.instance.playbackPref.wasapiBufferSec,
         'eventDriven': AppPreference.instance.playbackPref.wasapiEventDriven,
-        'eqBypass': AppPreference.instance.playbackPref.eqBypass,
       };
       _writeLine(
         'SNAPSHOT|${payload.entries.map((e) => '${e.key}=${e.value}').join('|')}',
