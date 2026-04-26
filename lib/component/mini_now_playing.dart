@@ -198,7 +198,7 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
                             onPressed: playbackService.lastAudio,
                             icon: const Icon(
                               Symbols.skip_previous,
-                              fill: 0.0,
+                              fill: 1.0,
                               weight: 400.0,
                             ),
                             color: scheme.onSecondaryContainer,
@@ -213,7 +213,7 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
                             onPressed: playbackService.nextAudio,
                             icon: const Icon(
                               Symbols.skip_next,
-                              fill: 0.0,
+                              fill: 1.0,
                               weight: 400.0,
                             ),
                             color: scheme.onSecondaryContainer,
