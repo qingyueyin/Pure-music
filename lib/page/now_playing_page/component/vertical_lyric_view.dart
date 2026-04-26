@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:pure_music/core/interlude_detector.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
+import 'package:pure_music/page/now_playing_page/component/collapsible_lyric_controls.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_tile.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_viewport_strategy.dart';
@@ -27,11 +28,15 @@ class VerticalLyricView extends StatefulWidget {
     this.showControls = true,
     this.enableSeekOnTap = true,
     this.centerVertically = true,
+    this.currentLineAlignment = 0.5,
+    this.enableEdgeSpacer = false,
   });
 
   final bool showControls;
   final bool enableSeekOnTap;
   final bool centerVertically;
+  final double currentLineAlignment;
+  final bool enableEdgeSpacer;
 
   @override
   State<VerticalLyricView> createState() => _VerticalLyricViewState();
@@ -98,13 +103,16 @@ class _VerticalLyricViewState extends State<VerticalLyricView> {
                                 lyric: lyricNullable,
                                 enableSeekOnTap: widget.enableSeekOnTap,
                                 centerVertically: widget.centerVertically,
+                                currentLineAlignment: widget.currentLineAlignment,
+                                enableEdgeSpacer: widget.enableEdgeSpacer,
                               ),
                       },
                       if (widget.showControls &&
                           (isHovering || alwaysShowLyricViewControls))
                         const Align(
+                          key: ValueKey('lyric_controls'),
                           alignment: Alignment.bottomRight,
-                          child: LyricViewControls(),
+                          child: CollapsibleLyricControls(),
                         )
                     ],
                   );
@@ -123,11 +131,15 @@ class _VerticalLyricScrollView extends StatefulWidget {
     required this.lyric,
     required this.enableSeekOnTap,
     required this.centerVertically,
+    required this.currentLineAlignment,
+    required this.enableEdgeSpacer,
   });
 
   final Lyric lyric;
   final bool enableSeekOnTap;
   final bool centerVertically;
+  final double currentLineAlignment;
+  final bool enableEdgeSpacer;
 
   @override
   State<_VerticalLyricScrollView> createState() =>
@@ -234,9 +246,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
       final primarySize = isMain ? mainSize : subSize;
       final transSize = isMain ? mainTransSize : subTransSize;
-      // LyricViewTile has an outer horizontal padding (12 * 2) and most
-      // content blocks also have an inner horizontal padding (12 * 2).
-      final contentWidth = maxWidth - 48.0;
+      final contentWidth = maxWidth - 24.0;
 
       double h = 0.0;
 
@@ -499,7 +509,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       final targetObject = targetContext.findRenderObject();
       if (targetObject is RenderBox) {
         final viewport = RenderAbstractViewport.of(targetObject);
-        final alignment = widget.centerVertically ? 0.5 : 0.25;
+        final alignment = widget.currentLineAlignment;
         final revealed = viewport.getOffsetToReveal(targetObject, alignment);
         _animateTo(revealed.offset, duration: duration);
         return;
@@ -511,8 +521,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
         _cachedHeights != null &&
         _mainLine < _cachedOffsets!.length) {
       final viewport = scrollController.position.viewportDimension;
-      final spacer = widget.centerVertically ? viewport / 2.0 : 0.0;
-      final alignment = widget.centerVertically ? 0.5 : 0.25;
+      final spacer = widget.centerVertically ? viewport * 0.25 : 0.0;
+      final alignment = widget.currentLineAlignment;
 
       final lineTop = _cachedOffsets![_mainLine];
       final lineHeight = _cachedHeights![_mainLine];
@@ -629,65 +639,60 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       }
 
       final spacerHeight = constraints.maxHeight / 2.0;
+      final viewportHeight = constraints.maxHeight;
+      final extraTopPadding = widget.enableEdgeSpacer ? viewportHeight : 0.0;
+      final extraBottomPadding = widget.enableEdgeSpacer ? viewportHeight : 0.0;
       return Stack(
         children: [
           RepaintBoundary(
-            child: ShaderMask(
-              blendMode: BlendMode.dstIn,
-              shaderCallback: (bounds) {
-                return LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: const [
-                    Colors.transparent,
-                    Colors.white,
-                    Colors.white,
-                    Colors.transparent,
-                  ],
-                  stops: renderConfig.viewportMaskStops(),
-                ).createShader(bounds);
+            key: const ValueKey('lyric_list_view'),
+            child: NotificationListener<ScrollNotification>(
+              onNotification: (notification) {
+                if (notification is ScrollStartNotification &&
+                    notification.dragDetails != null) {
+                  _markUserScrolling();
+                } else if (notification is ScrollUpdateNotification &&
+                    notification.dragDetails != null) {
+                  _markUserScrolling();
+                }
+                return false;
               },
-              child: NotificationListener<ScrollNotification>(
-                onNotification: (notification) {
-                  if (notification is ScrollStartNotification &&
-                      notification.dragDetails != null) {
-                    _markUserScrolling();
-                  } else if (notification is ScrollUpdateNotification &&
-                      notification.dragDetails != null) {
-                    _markUserScrolling();
-                  }
-                  return false;
-                },
-                child: ListView.builder(
-                  key: ValueKey(widget.lyric.hashCode),
-                  controller: scrollController,
-                  cacheExtent:
-                      viewportStrategy.cacheExtent(constraints.maxHeight),
-                  padding: EdgeInsets.symmetric(
-                    vertical: widget.centerVertically ? spacerHeight : 0,
-                  ),
-                  itemCount: widget.lyric.lines.length,
-                  itemBuilder: (context, i) {
-                    final dist = (i - _mainLine).abs();
-                    final opacity = dist == 0
-                        ? 1.0
-                        : pow(0.72, dist).toDouble().clamp(0.16, 0.78);
-                    return LyricViewTile(
-                      key: dist == 0 ? currentLyricTileKey : null,
-                      line: widget.lyric.lines[i],
-                      opacity: opacity,
-                      distance: dist,
-                      onTap: widget.enableSeekOnTap
-                          ? () => _seekToLyricLine(i)
-                          : null,
-                    );
-                  },
+              child: ListView.builder(
+                key: ValueKey(widget.lyric.hashCode),
+                controller: scrollController,
+                cacheExtent:
+                    viewportStrategy.cacheExtent(constraints.maxHeight),
+                padding: EdgeInsets.only(
+                  top: (widget.centerVertically ? spacerHeight : 0) + extraTopPadding,
+                  bottom: (widget.centerVertically ? spacerHeight : 0) + extraBottomPadding,
                 ),
+                itemCount: widget.lyric.lines.length,
+                itemBuilder: (context, i) {
+                  final dist = (i - _mainLine).abs();
+                  final opacity = dist == 0
+                      ? 1.0
+                      : pow(0.72, dist).toDouble().clamp(0.16, 0.78);
+                  final staggerDelay = Duration(
+                      milliseconds: _lyricViewController?.renderConfig.enableStaggeredAnimation == true
+                          ? ((dist + 1) * 60).clamp(0, 600)
+                          : 0);
+                  return LyricViewTile(
+                    key: dist == 0 ? currentLyricTileKey : null,
+                    line: widget.lyric.lines[i],
+                    opacity: opacity,
+                    distance: dist,
+                    staggerDelay: staggerDelay,
+                    onTap: widget.enableSeekOnTap
+                        ? () => _seekToLyricLine(i)
+                        : null,
+                  );
+                },
               ),
             ),
           ),
           if (_scrollState == LyricScrollState.userDragging)
             Positioned(
+              key: const ValueKey('user_dragging_hint'),
               top: 16,
               left: 0,
               right: 0,
@@ -709,70 +714,20 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                 ),
               ),
             ),
-          if (_isInInterlude)
-            Positioned(
-              top: 0,
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: FadeTransition(
-                  opacity: _interludeFadeAnimation,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 30, vertical: 20),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(30),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          '间奏',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w300,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        BreathingDots(
-                          key: const ValueKey('interlude_breathing_dots'),
-                          dotSize: 10,
-                          dotColor: Colors.white,
-                          breathDuration: const Duration(seconds: 2),
-                          controller: _interludeDotsController,
-                          onTap: _onInterludeTap,
-                        ),
-                        Builder(builder: (context) {
-                          final remaining =
-                              InterludeDetector.getInterludeRemaining(
-                            widget.lyric,
-                            Duration(
-                                milliseconds:
-                                    (playbackService.position * 1000).round()),
-                          ).inSeconds;
-                          if (remaining > 0) {
-                            return Padding(
-                              padding: const EdgeInsets.only(top: 12),
-                              child: Text(
-                                '剩余 $remaining 秒',
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.5),
-                                  fontSize: 12,
-                                ),
-                              ),
-                            );
-                          }
-                          return const SizedBox.shrink();
-                        }),
-                      ],
-                    ),
-                  ),
+          Positioned.fill(
+            child: FadeTransition(
+              opacity: _interludeFadeAnimation,
+              child: IgnorePointer(
+                ignoring: !_isInInterlude,
+                child: InterludeOverlay(
+                  key: const ValueKey('interlude_overlay'),
+                  lyric: widget.lyric,
+                  dotsController: _interludeDotsController,
+                  onInterludeTap: _onInterludeTap,
                 ),
               ),
             ),
+          ),
         ],
       );
     });
@@ -790,5 +745,80 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     scrollController.dispose();
     _interludeFadeController.dispose();
     _interludeDotsController.dispose();
+  }
+}
+
+class InterludeOverlay extends StatefulWidget {
+  final Lyric lyric;
+  final AnimationController dotsController;
+  final VoidCallback onInterludeTap;
+
+  const InterludeOverlay({
+    super.key,
+    required this.lyric,
+    required this.dotsController,
+    required this.onInterludeTap,
+  });
+
+  @override
+  State<InterludeOverlay> createState() => _InterludeOverlayState();
+}
+
+class _InterludeOverlayState extends State<InterludeOverlay> {
+  @override
+  Widget build(BuildContext context) {
+    final playbackService = PlayService.instance.playbackService;
+    return StreamBuilder<double>(
+      stream: playbackService.positionStream,
+      initialData: playbackService.position,
+      builder: (context, snapshot) {
+        final position = snapshot.data ?? 0.0;
+        final remaining = InterludeDetector.getInterludeRemaining(
+          widget.lyric,
+          Duration(milliseconds: (position * 1000).round()),
+        ).inSeconds;
+        return Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 20),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(30),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  '间奏',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w300,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                BreathingDots(
+                  dotSize: 10,
+                  dotColor: Colors.white,
+                  breathDuration: const Duration(seconds: 2),
+                  controller: widget.dotsController,
+                  onTap: widget.onInterludeTap,
+                ),
+                if (remaining > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Text(
+                      '剩余 $remaining 秒',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.5),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 }
