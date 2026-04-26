@@ -150,6 +150,15 @@ bool Win32Window::Create(const std::wstring& title,
 }
 
 bool Win32Window::Show() {
+#ifndef DWMWA_GPU_PREFERENCE
+#define DWMWA_GPU_PREFERENCE 38
+#endif
+#ifndef DWMWA_GPU_PREFERENCE_HIGH_PERFORMANCE
+#define DWMWA_GPU_PREFERENCE_HIGH_PERFORMANCE 2
+#endif
+  DWORD gpu_preference = DWMWA_GPU_PREFERENCE_HIGH_PERFORMANCE;
+  DwmSetWindowAttribute(window_handle_, DWMWA_GPU_PREFERENCE,
+                        &gpu_preference, sizeof(gpu_preference));
   return ShowWindow(window_handle_, SW_SHOWNORMAL);
 }
 
