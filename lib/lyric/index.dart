@@ -6,3 +6,5 @@ export 'qrc.dart';
 export 'qrc_decryptor.dart';
 export 'ttml.dart';
 export 'yrc.dart';
+export 'dom_lyric_spring.dart';
+export 'dom_lyric_player.dart';
