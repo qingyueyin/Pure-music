@@ -5,7 +5,6 @@ import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/component/settings_tile.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
-import 'package:pure_music/play_service/play_service.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
@@ -163,34 +162,6 @@ class AdvancedPlaybackSettingsTile extends StatelessWidget {
   }
 }
 
-class EqBypassSwitch extends StatefulWidget {
-  const EqBypassSwitch({super.key});
-
-  @override
-  State<EqBypassSwitch> createState() => _EqBypassSwitchState();
-}
-
-class _EqBypassSwitchState extends State<EqBypassSwitch> {
-  final pref = AppPreference.instance.playbackPref;
-
-  @override
-  Widget build(BuildContext context) {
-    return SettingsTile(
-      description: "均衡器旁路",
-      action: Switch(
-        value: pref.eqBypass,
-        onChanged: (v) async {
-          setState(() {
-            pref.eqBypass = v;
-          });
-          await AppPreference.instance.save();
-          PlayService.instance.playbackService.refreshEQ();
-        },
-      ),
-    );
-  }
-}
-
 class WasapiBufferControl extends StatefulWidget {
   const WasapiBufferControl({super.key});
 
@@ -317,8 +288,12 @@ class _NowPlayingBackgroundModeToggleState
             label: Text("网格"),
           ),
           ButtonSegment<NowPlayingBackgroundMode>(
-            value: NowPlayingBackgroundMode.simpleFallback,
-            label: Text("纯色"),
+            value: NowPlayingBackgroundMode.blurCover,
+            label: Text("封面模糊"),
+          ),
+          ButtonSegment<NowPlayingBackgroundMode>(
+            value: NowPlayingBackgroundMode.hybrid,
+            label: Text("混合"),
           ),
         ],
         selected: {pref.backgroundMode},
