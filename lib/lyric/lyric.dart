@@ -27,13 +27,32 @@ class SyncLyricLine extends LyricLine {
   String get content => words.map((w) => w.content).join();
 }
 
+enum WordMark {
+  punctuation,
+  emoji,
+  descender,
+  longNote,
+  singleChar,
+}
+
 class SyncLyricWord {
   final Duration start;
   Duration length;
   final String content;
   bool obscene;
+  final Set<WordMark> marks;
 
-  SyncLyricWord(this.start, this.length, this.content) : obscene = false;
+  SyncLyricWord(this.start, this.length, this.content, {Set<WordMark>? marks})
+      : obscene = false,
+        marks = marks ?? const {};
+
+  bool hasMark(WordMark mark) => marks.contains(mark);
+
+  bool get isPunctuation => hasMark(WordMark.punctuation);
+  bool get isEmoji => hasMark(WordMark.emoji);
+  bool get hasDescender => hasMark(WordMark.descender);
+  bool get isLongNote => hasMark(WordMark.longNote);
+  bool get isSingleChar => hasMark(WordMark.singleChar);
 }
 
 class UnsyncLyricLine extends LyricLine {
