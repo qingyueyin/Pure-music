@@ -14,11 +14,6 @@ void main() {
       false,
       700,
       true,
-      showLyricRoman: true,
-      wordFadeWidth: 1.0,
-      enableLyricScale: false,
-      enableLyricSpring: false,
-      enableAdvanceLyricTiming: false,
     );
 
     final config = pref.lyricRenderConfig;
@@ -27,15 +22,13 @@ void main() {
     expect(config.baseFontSize, 28.0);
     expect(config.translationBaseFontSize, 20.0);
     expect(config.showTranslation, isFalse);
-    expect(config.showRoman, isTrue);
+    expect(config.showRoman, isFalse);
     expect(config.fontWeight, 700);
     expect(config.enableBlur, isTrue);
-    expect(config.viewportFadeExtent, 0.08);
-    expect(config.wordFadeWidth, 1.0);
-    expect(config.enableLineScale, isFalse);
-    expect(config.enableLineSpring, isFalse);
-    expect(pref.enableAdvanceLyricTiming, isFalse);
-    expect(config.activeLineScaleMultiplier, 1.03);
+    expect(config.viewportFadeExtent, 0.04);
+    expect(config.enableLineScale, isTrue);
+    expect(config.enableLineSpring, isTrue);
+    expect(config.activeLineScaleMultiplier, 1.0);
     expect(config.lineSpring.stiffness, 90.0);
     expect(config.lineSpring.damping, 15.0);
     expect(config.lineSpring.mass, 0.9);
@@ -58,22 +51,22 @@ void main() {
     expect(config.primaryFontSize(isMainLine: false), 22.0);
     expect(
       config.translationFontSize(isMainLine: true),
-      closeTo(17.1, 1e-9),
+      closeTo(14.04, 1e-9),
     );
     expect(
       config.translationFontSize(isMainLine: false),
-      closeTo(15.48, 1e-9),
+      closeTo(12.6, 1e-9),
     );
     expect(config.primaryLineHeight(400), 1.2);
     expect(config.blurSigmaForDistance(5), 12.0);
     const highlightMask = LyricWordHighlightMask(
       progress: 0.95,
-      fadeWidth: 0.08,
     );
-    expect(highlightMask.stops, const [0.0, 0.95, 1.0, 1.0]);
+    expect(highlightMask.stops, const [0.0, 0.333, 0.666]);
+    expect(highlightMask.shouldHighlight, isTrue);
     expect(
       config.viewportMaskStops(),
-      const [0.0, 0.08, 0.92, 1.0],
+      const [0.0, 0.04, 0.96, 1.0],
     );
   });
 
@@ -93,7 +86,7 @@ void main() {
     expect(config.shouldApplyWordEmphasis, isFalse);
   });
 
-  test('NowPlayingPagePreference round-trips wordFadeWidth through map', () {
+  test('NowPlayingPagePreference round-trips through map', () {
     final pref = NowPlayingPagePreference(
       NowPlayingViewMode.withLyric,
       LyricTextAlign.left,
@@ -102,37 +95,37 @@ void main() {
       true,
       400,
       false,
-      wordFadeWidth: 0.5,
-      enableLyricScale: false,
-      enableLyricSpring: false,
-      enableAdvanceLyricTiming: false,
     );
 
     final map = pref.toMap();
-    expect(map['wordFadeWidth'], 0.5);
-    expect(map['enableLyricScale'], isFalse);
-    expect(map['enableLyricSpring'], isFalse);
-    expect(map['enableAdvanceLyricTiming'], isFalse);
+    expect(map['lyricTextAlign'], 'left');
+    expect(map['lyricFontSize'], 22.0);
+    expect(map['translationFontSize'], 18.0);
+    expect(map['showLyricTranslation'], isTrue);
+    expect(map['lyricFontWeight'], 400);
+    expect(map['enableLyricBlur'], isFalse);
 
     final restored = NowPlayingPagePreference.fromMap(map);
-    expect(restored.wordFadeWidth, 0.5);
-    expect(restored.enableLyricScale, isFalse);
-    expect(restored.enableLyricSpring, isFalse);
-    expect(restored.enableAdvanceLyricTiming, isFalse);
-    expect(restored.lyricRenderConfig.wordFadeWidth, 0.5);
+    expect(restored.lyricTextAlign, LyricTextAlign.left);
+    expect(restored.lyricFontSize, 22.0);
+    expect(restored.translationFontSize, 18.0);
+    expect(restored.showLyricTranslation, isTrue);
+    expect(restored.lyricFontWeight, 400);
+    expect(restored.enableLyricBlur, isFalse);
   });
 
-  test('NowPlayingPagePreference defaults wordFadeWidth to AMLL-style 0.5', () {
-    final pref = NowPlayingPagePreference(
-      NowPlayingViewMode.withLyric,
-      LyricTextAlign.left,
-      22.0,
-      18.0,
-      true,
-      400,
-      true,
+  test('LyricRenderConfig viewportFadeExtent defaults to 0.04', () {
+    const config = LyricRenderConfig(
+      textAlign: LyricTextAlign.left,
+      baseFontSize: 22.0,
+      translationBaseFontSize: 18.0,
+      showTranslation: true,
+      showRoman: false,
+      fontWeight: 400,
+      enableBlur: true,
+      enableWordEmphasis: true,
     );
 
-    expect(pref.wordFadeWidth, 0.5);
+    expect(config.viewportFadeExtent, 0.04);
   });
 }
