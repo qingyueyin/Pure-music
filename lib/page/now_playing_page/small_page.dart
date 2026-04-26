@@ -53,21 +53,15 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
     }
     setState(() {
       views = desView;
-      if (viewMode != NowPlayingViewMode.withLyric) {
-        _hideBottomPanel = false;
-      }
     });
     nowPlayingViewMode.value = viewMode;
     AppPreference.instance.nowPlayingPagePref.nowPlayingViewMode = viewMode;
   }
 
-  bool _hideBottomPanel = false;
-
   @override
   Widget build(BuildContext context) {
-    final showLyric = views[1] == NowPlayingViewMode.withLyric;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: Column(
         children: [
           Expanded(
@@ -87,41 +81,15 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
                       NowPlayingViewMode.onlyMain =>
                         const Center(child: _NowPlayingInfo()),
                       NowPlayingViewMode.withLyric => Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                          padding: const EdgeInsets.symmetric(horizontal: 0),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(16.0),
-                            child: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                Padding(
-                                  padding:
-                                      EdgeInsets.symmetric(horizontal: 8.0),
-                                  child: VerticalLyricView(
-                                    showControls: !_hideBottomPanel,
-                                    centerVertically: _hideBottomPanel,
-                                  ),
-                                ),
-                                Positioned(
-                                  top: 10,
-                                  right: 10,
-                                  child: IconButton.filledTonal(
-                                    tooltip: _hideBottomPanel
-                                        ? "显示控制栏"
-                                        : "隐藏控制栏并扩展歌词",
-                                    onPressed: () {
-                                      setState(() {
-                                        _hideBottomPanel = !_hideBottomPanel;
-                                      });
-                                    },
-                                    icon: Icon(
-                                      _hideBottomPanel
-                                          ? Symbols.expand_content
-                                          : Symbols.collapse_content,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
+                            child: VerticalLyricView(
+                            showControls: true,
+                            centerVertically: false,
+                            enableEdgeSpacer: true,
+                            currentLineAlignment: 0.3,
+                          ),
                           ),
                         ),
                       NowPlayingViewMode.withPlaylist =>
@@ -136,40 +104,36 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
               ],
             ),
           ),
-          if (!_hideBottomPanel) ...[
-            const SizedBox(height: 6.0),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              child: _NowPlayingSlider(),
-            ),
-            const SizedBox(height: 6.0),
-            const _NowPlayingMainControls(),
-            const SizedBox(height: 6.0),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                const _DesktopLyricSwitch(),
-                const _NowPlayingPlaybackModeSwitch(),
-                const NowPlayingPitchControl(),
-                const _NowPlayingVolDspSlider(),
-                const _ExclusiveModeSwitch(),
-                IconButton(
-                  tooltip: "均衡器",
-                  onPressed: () {
-                    showDialog(
-                      context: context,
-                      builder: (context) => const EqualizerDialog(),
-                    );
-                  },
-                  icon: const Icon(Symbols.graphic_eq),
-                  color: Theme.of(context).colorScheme.onSecondaryContainer,
-                ),
-                const _NowPlayingMoreAction(),
-              ],
-            )
-          ] else ...[
-            if (!showLyric) const SizedBox(height: 6.0),
-          ],
+          const SizedBox(height: 4.0),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: _NowPlayingSlider(),
+          ),
+          const SizedBox(height: 4.0),
+          const _NowPlayingMainControls(),
+          const SizedBox(height: 4.0),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              const _DesktopLyricSwitch(),
+              const _NowPlayingPlaybackModeSwitch(),
+              const NowPlayingPitchControl(),
+              const _NowPlayingVolDspSlider(),
+              const _ExclusiveModeSwitch(),
+              IconButton(
+                tooltip: "均衡器",
+                onPressed: () {
+                  showDialog(
+                    context: context,
+                    builder: (context) => const EqualizerDialog(),
+                  );
+                },
+                icon: const Icon(Symbols.graphic_eq),
+                color: Theme.of(context).colorScheme.onSecondaryContainer,
+              ),
+              const _NowPlayingMoreAction(),
+            ],
+          )
         ],
       ),
     );
@@ -196,7 +160,7 @@ class _NowPlayingSmallViewSwitchState
     final scheme = Theme.of(context).colorScheme;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+      padding: const EdgeInsets.symmetric(horizontal: 4.0),
       child: SizedBox(
         width: 32,
         child: Material(
@@ -212,9 +176,9 @@ class _NowPlayingSmallViewSwitchState
               scale: visible ? 1.0 : 0.94,
               child: InkWell(
                 borderRadius: BorderRadius.circular(16.0),
-                hoverColor: scheme.onSecondaryContainer.withAlpha(20),
-                highlightColor: scheme.onSecondaryContainer.withAlpha(31),
-                splashColor: scheme.onSecondaryContainer.withAlpha(31),
+                hoverColor: scheme.onSecondaryContainer.withValues(alpha: 0.02),
+                highlightColor: scheme.onSecondaryContainer.withValues(alpha: 0.04),
+                splashColor: Colors.transparent,
                 onTap: widget.onTap,
                 onHover: (hasEntered) {
                   setState(() {
