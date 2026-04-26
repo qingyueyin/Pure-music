@@ -3,7 +3,6 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/lyric_render_config.dart';
 import 'package:pure_music/core/enums.dart';
-import 'package:pure_music/play_service/play_service.dart';
 import 'package:provider/provider.dart';
 
 class LyricViewController extends ChangeNotifier {
@@ -24,12 +23,7 @@ class LyricViewController extends ChangeNotifier {
     showLyricRoman = nowPlayingPagePref.showLyricRoman;
     enableLyricScale = nowPlayingPagePref.enableLyricScale;
     enableLyricSpring = nowPlayingPagePref.enableLyricSpring;
-    enableAdvanceLyricTiming = nowPlayingPagePref.enableAdvanceLyricTiming;
     enableWordEmphasis = true;
-    enableStaggeredAnimation = true;
-    enableAudioReactive = false;
-    audioReactiveStrength = 0.5;
-    wordFadeWidth = nowPlayingPagePref.wordFadeWidth;
   }
 
   final nowPlayingPagePref = AppPreference.instance.nowPlayingPagePref;
@@ -42,12 +36,7 @@ class LyricViewController extends ChangeNotifier {
   late bool enableLyricBlur;
   late bool enableLyricScale;
   late bool enableLyricSpring;
-  late bool enableAdvanceLyricTiming;
   late bool enableWordEmphasis;
-  late bool enableStaggeredAnimation;
-  late bool enableAudioReactive;
-  late double audioReactiveStrength;
-  late double wordFadeWidth;
 
   LyricRenderConfig get renderConfig =>
       nowPlayingPagePref.lyricRenderConfig.copyWith(
@@ -61,10 +50,6 @@ class LyricViewController extends ChangeNotifier {
         enableWordEmphasis: enableWordEmphasis,
         enableLineScale: enableLyricScale,
         enableLineSpring: enableLyricSpring,
-        enableStaggeredAnimation: enableStaggeredAnimation,
-        enableAudioReactive: enableAudioReactive,
-        audioReactiveStrength: audioReactiveStrength,
-        wordFadeWidth: wordFadeWidth,
       );
 
   /// 在左对齐、居中、右对齐之间循环切换
@@ -126,14 +111,6 @@ class LyricViewController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void toggleAdvanceLyricTiming() {
-    enableAdvanceLyricTiming = !enableAdvanceLyricTiming;
-    nowPlayingPagePref.enableAdvanceLyricTiming = enableAdvanceLyricTiming;
-    AppPreference.instance.save();
-    PlayService.instance.lyricService.recomputeTiming();
-    notifyListeners();
-  }
-
   void setFontWeight(int weight) {
     if (weight < 100) weight = 100;
     if (weight > 900) weight = 900;
@@ -159,64 +136,6 @@ class LyricViewController extends ChangeNotifier {
     enableWordEmphasis = !enableWordEmphasis;
     notifyListeners();
   }
-
-  void setWordFadeWidth(double value) {
-    final presets = _wordFadeWidthPresets;
-    var closest = presets.first;
-    var minDistance = double.infinity;
-    for (final preset in presets) {
-      final distance = (preset - value).abs();
-      if (distance < minDistance) {
-        minDistance = distance;
-        closest = preset;
-      }
-    }
-    wordFadeWidth = closest;
-    nowPlayingPagePref.wordFadeWidth = wordFadeWidth;
-    AppPreference.instance.save();
-    notifyListeners();
-  }
-
-  void increaseWordFadeWidth() {
-    final presets = _wordFadeWidthPresets;
-    final currentIndex = presets.indexOf(wordFadeWidth);
-    final nextIndex = (currentIndex + 1).clamp(0, presets.length - 1);
-    setWordFadeWidth(presets[nextIndex]);
-  }
-
-  void decreaseWordFadeWidth() {
-    final presets = _wordFadeWidthPresets;
-    final currentIndex = presets.indexOf(wordFadeWidth);
-    final previousIndex = (currentIndex - 1).clamp(0, presets.length - 1);
-    setWordFadeWidth(presets[previousIndex]);
-  }
-
-  static const List<double> _wordFadeWidthPresets = [0.0, 0.5, 1.0];
-
-  void toggleStaggeredAnimation() {
-    enableStaggeredAnimation = !enableStaggeredAnimation;
-    notifyListeners();
-  }
-
-  void toggleAudioReactive() {
-    enableAudioReactive = !enableAudioReactive;
-    notifyListeners();
-  }
-
-  void setAudioReactiveStrength(double strength) {
-    audioReactiveStrength = strength.clamp(0.0, 1.0);
-    notifyListeners();
-  }
-
-  void increaseAudioReactiveStrength() {
-    audioReactiveStrength = (audioReactiveStrength + 0.1).clamp(0.0, 1.0);
-    notifyListeners();
-  }
-
-  void decreaseAudioReactiveStrength() {
-    audioReactiveStrength = (audioReactiveStrength - 0.1).clamp(0.0, 1.0);
-    notifyListeners();
-  }
 }
 
 class LyricViewControls extends StatelessWidget {
@@ -224,31 +143,22 @@ class LyricViewControls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          const _LyricTranslationSwitchBtn(),
-          SizedBox(height: 8.0),
-          const _LyricBlurSwitchBtn(),
-          SizedBox(height: 8.0),
-          const _LyricAlignSwitchBtn(),
-          SizedBox(height: 8.0),
-          const _FontSizeBtn(),
-          SizedBox(height: 8.0),
-          const _FontWeightBtn(),
-          SizedBox(height: 8.0),
-          const _WordEmphasisSwitchBtn(),
-          SizedBox(height: 8.0),
-          const _WordFadeWidthBtn(),
-          SizedBox(height: 8.0),
-          const _StaggeredAnimationSwitchBtn(),
-          SizedBox(height: 8.0),
-          const _AudioReactiveSwitchBtn(),
-        ],
-      ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        const _LyricTranslationSwitchBtn(),
+        SizedBox(height: 8.0),
+        const _LyricBlurSwitchBtn(),
+        SizedBox(height: 8.0),
+        const _LyricAlignSwitchBtn(),
+        SizedBox(height: 8.0),
+        const _FontSizeBtn(),
+        SizedBox(height: 8.0),
+        const _FontWeightBtn(),
+        SizedBox(height: 8.0),
+        const _WordEmphasisSwitchBtn(),
+      ],
     );
   }
 }
@@ -391,74 +301,6 @@ class _WordEmphasisSwitchBtn extends StatelessWidget {
       icon: Icon(
         Symbols.text_fields,
         fill: enabled ? 1 : 0,
-      ),
-    );
-  }
-}
-
-class _WordFadeWidthBtn extends StatelessWidget {
-  const _WordFadeWidthBtn();
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final lyricViewController = context.watch<LyricViewController>();
-
-    return GestureDetector(
-      onSecondaryTap: lyricViewController.decreaseWordFadeWidth,
-      child: IconButton(
-        onPressed: lyricViewController.increaseWordFadeWidth,
-        tooltip:
-            "逐词渐变宽度：左键增加 / 右键减小 (${lyricViewController.wordFadeWidth.toStringAsFixed(2)})",
-        color: scheme.onSecondaryContainer,
-        icon: Icon(Symbols.gradient),
-      ),
-    );
-  }
-}
-
-class _StaggeredAnimationSwitchBtn extends StatelessWidget {
-  const _StaggeredAnimationSwitchBtn();
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final lyricViewController = context.watch<LyricViewController>();
-    final enabled = lyricViewController.enableStaggeredAnimation;
-
-    return IconButton(
-      onPressed: lyricViewController.toggleStaggeredAnimation,
-      tooltip: enabled ? "交错动画：开启" : "交错动画：关闭",
-      color: scheme.onSecondaryContainer,
-      icon: Icon(
-        Symbols.animation,
-        fill: enabled ? 1 : 0,
-      ),
-    );
-  }
-}
-
-class _AudioReactiveSwitchBtn extends StatelessWidget {
-  const _AudioReactiveSwitchBtn();
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final lyricViewController = context.watch<LyricViewController>();
-    final enabled = lyricViewController.enableAudioReactive;
-
-    return GestureDetector(
-      onSecondaryTap: lyricViewController.decreaseAudioReactiveStrength,
-      child: IconButton(
-        onPressed: lyricViewController.increaseAudioReactiveStrength,
-        tooltip: enabled
-            ? "音频响应：开启 (强度: ${(lyricViewController.audioReactiveStrength * 100).toStringAsFixed(0)}%)"
-            : "音频响应：关闭",
-        color: scheme.onSecondaryContainer,
-        icon: Icon(
-          Symbols.graphic_eq,
-          fill: enabled ? 1 : 0,
-        ),
       ),
     );
   }
