@@ -49,6 +49,34 @@ function Get-AppSettingsVersion() {
     return ""
 }
 
+function Update-RunnerRcVersion([string]$version, [string]$buildMode) {
+    $runnerRcPath = Join-Path $PSScriptRoot "windows\runner\Runner.rc"
+    if (-not (Test-Path $runnerRcPath)) {
+        Write-Warning "Runner.rc not found at $runnerRcPath, skipping version sync."
+        return
+    }
+
+    $cleanVersion = $version -replace '^[a-zA-Z]+', ''
+    $parts = $cleanVersion -split '\.'
+    $major = if ($parts.Count -ge 1) { $parts[0] } else { "0" }
+    $minor = if ($parts.Count -ge 2) { $parts[1] } else { "0" }
+    $patch = if ($parts.Count -ge 3) { $parts[2] } else { "0" }
+    $build = "0"
+
+    $productVersion = "`"$major.$minor.$patch`""
+    $fileVersion = "`"$major.$minor.$patch-$buildMode`""
+    $versionAsNumber = "$major,$minor,$patch,$build"
+
+    $content = Get-Content -Path $runnerRcPath -Raw -Encoding UTF8
+
+    $content = $content -replace '(?m)^#define\s+VERSION_AS_NUMBER\s+[\d,]+$', "#define VERSION_AS_NUMBER $versionAsNumber"
+    $content = $content -replace '(?m)^#define\s+PRODUCT_VERSION\s+"[^"]*"', "#define PRODUCT_VERSION $productVersion"
+    $content = $content -replace '(?m)^#define\s+FILE_VERSION_STR\s+"[^"]*"', "#define FILE_VERSION_STR $fileVersion"
+
+    Set-Content -Path $runnerRcPath -Value $content -Encoding UTF8 -NoNewline
+    Write-Host ("Synced Runner.rc: ProductVersion=$major.$minor.$patch, FileVersion=$major.$minor.$patch-$buildMode" -f $version, $buildMode) -ForegroundColor Gray
+}
+
 function Read-Input([string]$prompt) {
     $v = Read-Host $prompt
     if ($null -eq $v) { return "" }
@@ -171,181 +199,8 @@ else {
     Write-Warning "app_icon.ico not found in project root. The application icon might be default."
 }
 
-function Set-ExeIcon([string]$exePath, [string]$icoPath) {
-    if (-not (Test-Path $exePath)) { return }
-    if (-not (Test-Path $icoPath)) { return }
-
-    Add-Type -TypeDefinition @'
-using System;
-using System.IO;
-using System.Runtime.InteropServices;
-
-public static class ExeIconPatcher
-{
-    private const int RT_ICON = 3;
-    private const int RT_GROUP_ICON = 14;
-
-    [StructLayout(LayoutKind.Sequential, Pack = 1)]
-    private struct ICONDIR
-    {
-        public UInt16 Reserved;
-        public UInt16 Type;
-        public UInt16 Count;
-    }
-
-    [StructLayout(LayoutKind.Sequential, Pack = 1)]
-    private struct ICONDIRENTRY
-    {
-        public byte Width;
-        public byte Height;
-        public byte ColorCount;
-        public byte Reserved;
-        public UInt16 Planes;
-        public UInt16 BitCount;
-        public UInt32 BytesInRes;
-        public UInt32 ImageOffset;
-    }
-
-    [StructLayout(LayoutKind.Sequential, Pack = 1)]
-    private struct GRPICONDIRENTRY
-    {
-        public byte Width;
-        public byte Height;
-        public byte ColorCount;
-        public byte Reserved;
-        public UInt16 Planes;
-        public UInt16 BitCount;
-        public UInt32 BytesInRes;
-        public UInt16 Id;
-    }
-
-    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    private static extern IntPtr BeginUpdateResource(string pFileName, [MarshalAs(UnmanagedType.Bool)] bool bDeleteExistingResources);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern bool UpdateResource(IntPtr hUpdate, IntPtr lpType, IntPtr lpName, UInt16 wLanguage, byte[] lpData, UInt32 cbData);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern bool EndUpdateResource(IntPtr hUpdate, [MarshalAs(UnmanagedType.Bool)] bool fDiscard);
-
-    private static IntPtr MakeIntResource(int id)
-    {
-        return (IntPtr)id;
-    }
-
-    public static void SetIcon(string exePath, string icoPath)
-    {
-        var icoBytes = File.ReadAllBytes(icoPath);
-        ICONDIR dir;
-        ICONDIRENTRY[] entries;
-        byte[][] images;
-
-        using (var ms = new MemoryStream(icoBytes))
-        using (var br = new BinaryReader(ms))
-        {
-            dir = new ICONDIR
-            {
-                Reserved = br.ReadUInt16(),
-                Type = br.ReadUInt16(),
-                Count = br.ReadUInt16(),
-            };
-            if (dir.Reserved != 0 || dir.Type != 1 || dir.Count == 0)
-                throw new InvalidDataException("Invalid ico header");
-
-            entries = new ICONDIRENTRY[dir.Count];
-            images = new byte[dir.Count][];
-            for (int i = 0; i < dir.Count; i++)
-            {
-                entries[i] = new ICONDIRENTRY
-                {
-                    Width = br.ReadByte(),
-                    Height = br.ReadByte(),
-                    ColorCount = br.ReadByte(),
-                    Reserved = br.ReadByte(),
-                    Planes = br.ReadUInt16(),
-                    BitCount = br.ReadUInt16(),
-                    BytesInRes = br.ReadUInt32(),
-                    ImageOffset = br.ReadUInt32(),
-                };
-            }
-
-            for (int i = 0; i < dir.Count; i++)
-            {
-                var e = entries[i];
-                if (e.ImageOffset + e.BytesInRes > icoBytes.Length)
-                    throw new InvalidDataException("Invalid ico image offset");
-                images[i] = new byte[e.BytesInRes];
-                Buffer.BlockCopy(icoBytes, (int)e.ImageOffset, images[i], 0, (int)e.BytesInRes);
-            }
-        }
-
-        var hUpdate = BeginUpdateResource(exePath, false);
-        if (hUpdate == IntPtr.Zero)
-            throw new Exception("BeginUpdateResource failed: " + Marshal.GetLastWin32Error());
-
-        try
-        {
-            for (int i = 0; i < images.Length; i++)
-            {
-                var ok = UpdateResource(
-                    hUpdate,
-                    MakeIntResource(RT_ICON),
-                    MakeIntResource(i + 1),
-                    0,
-                    images[i],
-                    (UInt32)images[i].Length
-                );
-                if (!ok) throw new Exception("UpdateResource RT_ICON failed: " + Marshal.GetLastWin32Error());
-            }
-
-            var grp = BuildGroupIconData(dir, entries);
-            {
-                var ok = UpdateResource(
-                    hUpdate,
-                    MakeIntResource(RT_GROUP_ICON),
-                    MakeIntResource(1),
-                    0,
-                    grp,
-                    (UInt32)grp.Length
-                );
-                if (!ok) throw new Exception("UpdateResource RT_GROUP_ICON failed: " + Marshal.GetLastWin32Error());
-            }
-        }
-        finally
-        {
-            if (!EndUpdateResource(hUpdate, false))
-                throw new Exception("EndUpdateResource failed: " + Marshal.GetLastWin32Error());
-        }
-    }
-
-    private static byte[] BuildGroupIconData(ICONDIR dir, ICONDIRENTRY[] entries)
-    {
-        using (var ms = new MemoryStream())
-        using (var bw = new BinaryWriter(ms))
-        {
-            bw.Write((UInt16)0);
-            bw.Write((UInt16)1);
-            bw.Write((UInt16)entries.Length);
-            for (int i = 0; i < entries.Length; i++)
-            {
-                var e = entries[i];
-                bw.Write(e.Width);
-                bw.Write(e.Height);
-                bw.Write(e.ColorCount);
-                bw.Write(e.Reserved);
-                bw.Write(e.Planes);
-                bw.Write(e.BitCount);
-                bw.Write(e.BytesInRes);
-                bw.Write((UInt16)(i + 1));
-            }
-            bw.Flush();
-            return ms.ToArray();
-        }
-    }
-}
-'@ -Language CSharp -ErrorAction Stop
-
-    [ExeIconPatcher]::SetIcon($exePath, $icoPath)
+Invoke-Step "sync version to Runner.rc" {
+    Update-RunnerRcVersion $version $BuildMode
 }
 
 Invoke-Step "flutter build windows" {
@@ -537,8 +392,6 @@ Invoke-Step "copy desktop_lyric" {
     if (Test-Path $desktopLyricSrc) {
         Write-Host "Copying desktop_lyric..." -ForegroundColor Cyan
         Invoke-RoboCopy $desktopLyricSrc $desktopLyricDest
-        $desktopLyricExe = Join-Path $desktopLyricDest "desktop_lyric.exe"
-        Set-ExeIcon $desktopLyricExe $appIconSource
     }
     else {
         Write-Warning "desktop_lyric directory not found in project root ($desktopLyricSrc)!"
