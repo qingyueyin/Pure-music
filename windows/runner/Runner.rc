@@ -1,4 +1,4 @@
-// Microsoft Visual C++ generated resource script.
+﻿// Microsoft Visual C++ generated resource script.
 //
 #pragma code_page(65001)
 #include "resource.h"
@@ -62,7 +62,9 @@ IDI_APP_ICON            ICON                    "resources\\app_icon.ico"
 
 #define VERSION_AS_NUMBER 1,0,0,0
 
-#define VERSION_AS_STRING "1.0.0"
+#define PRODUCT_VERSION "2.0.0"
+
+#define FILE_VERSION_STR "2.0.0-Release"
 
 VS_VERSION_INFO VERSIONINFO
  FILEVERSION VERSION_AS_NUMBER
@@ -83,12 +85,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "qingyueyin" "\0"
             VALUE "FileDescription", "Pure Music" "\0"
-            VALUE "FileVersion", VERSION_AS_STRING "\0"
+            VALUE "FileVersion", FILE_VERSION_STR "\0"
             VALUE "InternalName", "pure_music" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 qingyueyin. All rights reserved." "\0"
             VALUE "OriginalFilename", "pure_music.exe" "\0"
             VALUE "ProductName", "Pure Music" "\0"
-            VALUE "ProductVersion", VERSION_AS_STRING "\0"
+            VALUE "ProductVersion", PRODUCT_VERSION "\0"
         END
     END
     BLOCK "VarFileInfo"
