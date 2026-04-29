@@ -2,8 +2,10 @@
 
 import 'dart:ui';
 
+import 'package:pure_music/core/database.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/component/horizontal_lyric_view.dart';
 import 'package:pure_music/component/responsive_builder.dart';
 import 'package:pure_music/component/search_dialog.dart';
@@ -241,6 +243,14 @@ class _WindowControllsState extends State<WindowControlls> with WindowListener {
   bool _isProcessing = false;
   bool _isClosing = false;
 
+  Future<void> _withTimeout(Future<void> future, Duration duration, String name) async {
+    try {
+      await future.timeout(duration);
+    } catch (e) {
+      logger.w("$name timeout or error: $e");
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -290,15 +300,64 @@ class _WindowControllsState extends State<WindowControlls> with WindowListener {
     if (_isClosing) return;
     _isClosing = true;
 
-    await PlayService.instance.close();
+    try {
+      // 1. 先隐藏窗口，给用户即时反馈
+      try {
+        await windowManager.hide().timeout(const Duration(milliseconds: 500));
+      } catch (_) {}
 
-    await savePlaylists();
-    await saveLyricSources();
-    await AppSettings.instance.saveSettings();
-    await AppPreference.instance.save();
+      // 2. 快速取消快捷键注册（轻量操作）
+      try {
+        await HotkeysHelper.unregisterAll().timeout(const Duration(milliseconds: 300));
+      } catch (_) {}
 
-    await HotkeysHelper.unregisterAll();
-    await windowManager.destroy();
+      // 3. 并行执行独立的保存操作（带超时保护）
+      final saveFutures = <Future<void>>[
+        // 播放列表保存到数据库
+        _withTimeout(savePlaylists(), const Duration(seconds: 2), "savePlaylists"),
+        // 歌词源保存到数据库
+        _withTimeout(saveLyricSources(), const Duration(seconds: 2), "saveLyricSources"),
+        // 保存应用设置
+        _withTimeout(AppSettings.instance.saveSettings(), const Duration(seconds: 1), "saveSettings"),
+        // 保存偏好设置
+        _withTimeout(AppPreference.instance.save(), const Duration(seconds: 1), "savePreference"),
+      ];
+
+      // 4. 先关闭播放服务（可能包含音频资源释放，耗时较长）
+      try {
+        await _withTimeout(PlayService.instance.close(), const Duration(seconds: 3), "PlayService.close");
+      } catch (e) {
+        logger.w("PlayService.close error: $e");
+      }
+
+      // 5. 等待所有保存操作完成（整体超时 5 秒）
+      try {
+        await _withTimeout(Future.wait(saveFutures, eagerError: false), const Duration(seconds: 5), "All save operations");
+      } catch (e) {
+        logger.w("Save operations error: $e");
+      }
+
+      // 6. 关闭数据库连接（释放 SQLite 资源）
+      try {
+        AppDb.instance.dispose();
+      } catch (e) {
+        logger.w("AppDb.dispose error: $e");
+      }
+
+      // 7. 最终销毁窗口
+      try {
+        await _withTimeout(windowManager.destroy(), const Duration(seconds: 2), "windowManager.destroy");
+      } catch (_) {
+        // 如果 destroy 超时，强制退出
+        logger.w("windowManager.destroy timeout, force exit");
+      }
+    } catch (e, trace) {
+      // 最后的兜底：确保能退出
+      logger.e("_shutdownAndExit error: $e\n$trace");
+      try {
+        await windowManager.destroy();
+      } catch (_) {}
+    }
   }
 
   @override
