@@ -33,39 +33,23 @@ class PlaybackService extends ChangeNotifier {
       }
     });
 
-    _smtcEventStreamSub = _smtc.subscribeToControlEvents().listen(
-      (event) {
-        logger.i("[SMTC] Received event: $event");
-        switch (event) {
-          case SMTCControlEvent.play:
-            logger.i("[SMTC] Play button pressed");
-            start();
-            break;
-          case SMTCControlEvent.pause:
-            logger.i("[SMTC] Pause button pressed");
-            pause();
-            break;
-          case SMTCControlEvent.previous:
-            logger.i("[SMTC] Previous button pressed");
-            lastAudio();
-            break;
-          case SMTCControlEvent.next:
-            logger.i("[SMTC] Next button pressed");
-            nextAudio();
-            break;
-          case SMTCControlEvent.unknown:
-            logger.w("[SMTC] Unknown event received");
-        }
-      },
-      onError: (error) {
-        logger.e("[SMTC] Stream error: $error");
-      },
-      onDone: () {
-        logger.w("[SMTC] Stream completed unexpectedly");
-      },
-    );
-
-    logger.i("[SMTC] Control event subscription initialized");
+    _smtcEventStreamSub = _smtc.subscribeToControlEvents().listen((event) {
+      switch (event) {
+        case SMTCControlEvent.play:
+          start();
+          break;
+        case SMTCControlEvent.pause:
+          pause();
+          break;
+        case SMTCControlEvent.previous:
+          lastAudio();
+          break;
+        case SMTCControlEvent.next:
+          nextAudio();
+          break;
+        case SMTCControlEvent.unknown:
+      }
+    });
 
     positionStream.listen((progress) {
       _smtc.updateTimeProperties(progress: (progress * 1000).floor());

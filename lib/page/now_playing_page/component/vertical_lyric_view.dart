@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math';
 
-import 'package:pure_music/core/interlude_detector.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/page/now_playing_page/component/collapsible_lyric_controls.dart';
@@ -9,7 +8,6 @@ import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.d
 import 'package:pure_music/page/now_playing_page/component/lyric_view_tile.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_viewport_strategy.dart';
 import 'package:pure_music/play_service/play_service.dart';
-import 'package:pure_music/widget/breathing_dots.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
@@ -83,7 +81,7 @@ class _VerticalLyricViewState extends State<VerticalLyricView> {
                   final lyricNullable = snapshot.data;
                   final noLyricWidget = Center(
                     child: Text(
-                      "无歌词",
+                      '无歌词',
                       style: TextStyle(
                         fontSize: 22,
                         color: scheme.onSecondaryContainer,
@@ -103,7 +101,8 @@ class _VerticalLyricViewState extends State<VerticalLyricView> {
                                 lyric: lyricNullable,
                                 enableSeekOnTap: widget.enableSeekOnTap,
                                 centerVertically: widget.centerVertically,
-                                currentLineAlignment: widget.currentLineAlignment,
+                                currentLineAlignment:
+                                    widget.currentLineAlignment,
                                 enableEdgeSpacer: widget.enableEdgeSpacer,
                               ),
                       },
@@ -113,7 +112,7 @@ class _VerticalLyricViewState extends State<VerticalLyricView> {
                           key: ValueKey('lyric_controls'),
                           alignment: Alignment.bottomRight,
                           child: CollapsibleLyricControls(),
-                        )
+                        ),
                     ],
                   );
                 },
@@ -146,8 +145,7 @@ class _VerticalLyricScrollView extends StatefulWidget {
       _VerticalLyricScrollViewState();
 }
 
-class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
-    with SingleTickerProviderStateMixin {
+class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView> {
   final playbackService = PlayService.instance.playbackService;
   final lyricService = PlayService.instance.lyricService;
   late StreamSubscription lyricLineStreamSubscription;
@@ -160,37 +158,18 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   LyricScrollState _scrollState = LyricScrollState.idle;
   int _mainLine = 0;
   int _pendingScrollRetries = 0;
-  bool _isInInterlude = false;
   LyricViewportRange _viewportRange =
       const LyricViewportRange(start: 0, end: 0);
-  late AnimationController _interludeFadeController;
-  late AnimationController _interludeDotsController;
-  late Animation<double> _interludeFadeAnimation;
 
-  /// 用来定位到当前歌词
   final currentLyricTileKey = GlobalKey();
 
   List<double>? _cachedOffsets;
-  List<double>? _cachedHeights; // Store heights to center current line
+  List<double>? _cachedHeights;
   double _cachedMaxWidth = 0.0;
 
   @override
   void initState() {
     super.initState();
-
-    _interludeFadeController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 500),
-    );
-    _interludeDotsController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    )..repeat(reverse: true);
-    _interludeFadeAnimation = CurvedAnimation(
-      parent: _interludeFadeController,
-      curve: Curves.easeInOut,
-    );
-
     _initLyricView();
     lyricLineStreamSubscription =
         lyricService.lyricLineStream.listen(_updateNextLyricLine);
@@ -203,7 +182,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   void _computeOffsets(double maxWidth) {
     if (maxWidth <= 0) return;
 
-    // Get style config
     final controller = context.read<LyricViewController>();
     final config = controller.renderConfig;
     final baseSize = config.baseFontSize;
@@ -224,7 +202,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     final painter = TextPainter(textDirection: TextDirection.ltr);
 
     double measureLine(LyricLine line, bool isMain) {
-      // Check for TransitionTile condition
       if (isMain) {
         if (line is SyncLyricLine) {
           if (line.words.isEmpty && line.length > const Duration(seconds: 5)) {
@@ -237,7 +214,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
         }
       }
 
-      // Check for empty/shrink condition
       if (line is SyncLyricLine) {
         if (line.words.isEmpty) return 0.0;
       } else if (line is LrcLine) {
@@ -250,7 +226,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
       double h = 0.0;
 
-      // Determine vertical padding based on line type
       final double vertPad;
       if (line is SyncLyricLine) {
         vertPad = config.syncVerticalPadding(isMainLine: isMain);
@@ -258,7 +233,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
         vertPad = config.lrcVerticalPadding();
       }
 
-      // Primary text
       String text = "";
       if (line is SyncLyricLine) {
         text = line.content;
@@ -279,7 +253,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       painter.layout(maxWidth: contentWidth);
       h += painter.height;
 
-      // Translation
       if (showTrans) {
         if (line is SyncLyricLine && line.translation != null) {
           h += config.syncTranslationGap(isMainLine: isMain);
@@ -329,7 +302,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
         }
       }
 
-      // Romanization
       if (showRoman) {
         String? roman;
         if (line is SyncLyricLine) {
@@ -358,7 +330,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
         }
       }
 
-      // Vertical padding (top + bottom)
       h += vertPad * 2;
       return h;
     }
@@ -369,16 +340,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
     for (int i = 0; i < widget.lyric.lines.length; i++) {
       offsets.add(currentOffset);
-      // We assume all previous lines are NOT main lines (sub style)
-      // The current line will be rendered as Main, but for offset calculation of *next* lines,
-      // this line (when it becomes previous) will be Sub.
-      // So cachedOffsets[i] represents the top position of line i.
-
-      // We also need the height of line i IF it is Main, to center it.
       final hAsMain = measureLine(widget.lyric.lines[i], true);
       heights.add(hAsMain);
-
-      // Advance offset by its Sub height (for next items)
       final hAsSub = measureLine(widget.lyric.lines[i], false);
       currentOffset += hAsSub;
     }
@@ -397,7 +360,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     _lyricViewController = controller;
     _lyricViewController?.addListener(_scheduleEnsureCurrentVisible);
 
-    // Clear cache to recompute on next layout (font size might change)
     _cachedMaxWidth = 0.0;
     _cachedOffsets = null;
 
@@ -407,11 +369,11 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   }
 
   void _scheduleEnsureCurrentVisible() {
-    _cachedMaxWidth = 0.0; // Force recompute
+    _cachedMaxWidth = 0.0;
     _ensureVisibleTimer?.cancel();
     _ensureVisibleTimer = Timer(const Duration(milliseconds: 60), () {
       if (!mounted) return;
-      if (mounted) setState(() {}); // Trigger rebuild to recompute
+      if (mounted) setState(() {});
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToCurrent());
     });
   }
@@ -503,7 +465,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
     _scrollState = LyricScrollState.programScrolling;
 
-    // 1. Try to use the actual rendered object (most accurate)
     final targetContext = currentLyricTileKey.currentContext;
     if (targetContext != null && targetContext.mounted) {
       final targetObject = targetContext.findRenderObject();
@@ -516,7 +477,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       }
     }
 
-    // 2. Fallback to cached offsets (approximation)
     if (_cachedOffsets != null &&
         _cachedHeights != null &&
         _mainLine < _cachedOffsets!.length) {
@@ -567,7 +527,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
   void _updateNextLyricLine(int lyricLine) {
     if (_mainLine == lyricLine) {
-      _checkInterlude();
       return;
     }
 
@@ -589,36 +548,10 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       _viewportRange = followDecision.nextRange;
     });
 
-    _checkInterlude();
-
     if (followDecision.shouldScroll) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _scrollToCurrent();
       });
-    }
-  }
-
-  void _checkInterlude() {
-    final wasInInterlude = _isInInterlude;
-    _isInInterlude = InterludeDetector.isInInterlude(
-      widget.lyric,
-      Duration(milliseconds: (playbackService.position * 1000).round()),
-    );
-
-    if (_isInInterlude && !wasInInterlude) {
-      _interludeFadeController.forward();
-    } else if (!_isInInterlude && wasInInterlude) {
-      _interludeFadeController.reverse();
-    }
-  }
-
-  void _onInterludeTap() {
-    final nextTime = InterludeDetector.getNextLyricTime(
-      widget.lyric,
-      Duration(milliseconds: (playbackService.position * 1000).round()),
-    );
-    if (nextTime != null) {
-      playbackService.seek(nextTime.inMilliseconds / 1000);
     }
   }
 
@@ -642,7 +575,28 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       final viewportHeight = constraints.maxHeight;
       final extraTopPadding = widget.enableEdgeSpacer ? viewportHeight : 0.0;
       final extraBottomPadding = widget.enableEdgeSpacer ? viewportHeight : 0.0;
-      return Stack(
+      final alignTopPadding = (!widget.centerVertically && !widget.enableEdgeSpacer)
+          ? viewportHeight * widget.currentLineAlignment
+          : 0.0;
+      final alignBottomPadding = (!widget.centerVertically && !widget.enableEdgeSpacer)
+          ? viewportHeight * (1.0 - widget.currentLineAlignment)
+          : 0.0;
+      return ShaderMask(
+          shaderCallback: (Rect bounds) {
+            return const LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.transparent,
+                Colors.black,       
+                Colors.black,       
+                Colors.transparent
+              ],
+              stops: [0.0, 0.15, 0.85, 1.0],
+            ).createShader(bounds);
+          },
+          blendMode: BlendMode.dstIn,
+          child: Stack(
         children: [
           RepaintBoundary(
             key: const ValueKey('lyric_list_view'),
@@ -663,12 +617,13 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                 cacheExtent:
                     viewportStrategy.cacheExtent(constraints.maxHeight),
                 padding: EdgeInsets.only(
-                  top: (widget.centerVertically ? spacerHeight : 0) + extraTopPadding,
-                  bottom: (widget.centerVertically ? spacerHeight : 0) + extraBottomPadding,
+                  top: (widget.centerVertically ? spacerHeight : 0) + extraTopPadding + alignTopPadding,
+                  bottom: (widget.centerVertically ? spacerHeight : 0) + extraBottomPadding + alignBottomPadding,
                 ),
                 itemCount: widget.lyric.lines.length,
                 itemBuilder: (context, i) {
-                  final dist = (i - _mainLine).abs();
+                  final signedDist = i - _mainLine;
+                  final dist = signedDist.abs();
                   final opacity = dist == 0
                       ? 1.0
                       : pow(0.72, dist).toDouble().clamp(0.16, 0.78);
@@ -714,21 +669,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                 ),
               ),
             ),
-          Positioned.fill(
-            child: FadeTransition(
-              opacity: _interludeFadeAnimation,
-              child: IgnorePointer(
-                ignoring: !_isInInterlude,
-                child: InterludeOverlay(
-                  key: const ValueKey('interlude_overlay'),
-                  lyric: widget.lyric,
-                  dotsController: _interludeDotsController,
-                  onInterludeTap: _onInterludeTap,
-                ),
-              ),
-            ),
-          ),
         ],
+      ),
       );
     });
   }
@@ -743,82 +685,5 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     _lyricViewController?.removeListener(_scheduleEnsureCurrentVisible);
     lyricLineStreamSubscription.cancel();
     scrollController.dispose();
-    _interludeFadeController.dispose();
-    _interludeDotsController.dispose();
-  }
-}
-
-class InterludeOverlay extends StatefulWidget {
-  final Lyric lyric;
-  final AnimationController dotsController;
-  final VoidCallback onInterludeTap;
-
-  const InterludeOverlay({
-    super.key,
-    required this.lyric,
-    required this.dotsController,
-    required this.onInterludeTap,
-  });
-
-  @override
-  State<InterludeOverlay> createState() => _InterludeOverlayState();
-}
-
-class _InterludeOverlayState extends State<InterludeOverlay> {
-  @override
-  Widget build(BuildContext context) {
-    final playbackService = PlayService.instance.playbackService;
-    return StreamBuilder<double>(
-      stream: playbackService.positionStream,
-      initialData: playbackService.position,
-      builder: (context, snapshot) {
-        final position = snapshot.data ?? 0.0;
-        final remaining = InterludeDetector.getInterludeRemaining(
-          widget.lyric,
-          Duration(milliseconds: (position * 1000).round()),
-        ).inSeconds;
-        return Center(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 20),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.3),
-              borderRadius: BorderRadius.circular(30),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  '间奏',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w300,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                BreathingDots(
-                  dotSize: 10,
-                  dotColor: Colors.white,
-                  breathDuration: const Duration(seconds: 2),
-                  controller: widget.dotsController,
-                  onTap: widget.onInterludeTap,
-                ),
-                if (remaining > 0)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 12),
-                    child: Text(
-                      '剩余 $remaining 秒',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.5),
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
   }
 }

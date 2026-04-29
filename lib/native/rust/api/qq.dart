@@ -30,7 +30,7 @@ final _mutex = _Mutex();
 
 class _Mutex {
   Future<T> withLock<T>(Future<T> Function() body) async {
-    return await body();
+    return body();
   }
 }
 
@@ -136,20 +136,20 @@ Future<String> _doRequest(QmRequestBody body) async {
     final request = await client.postUrl(uri);
 
     request.headers.set('Content-Type', 'application/json');
-    request.headers.set(
-        'User-Agent',
+    request.headers.set('User-Agent',
         'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Safari/537.36 Chrome/91.0.4472.164');
     request.headers.set('Referer', 'https://y.qq.com/');
     request.headers.set('Accept', '*/*');
 
     request.write(body.toJson());
-    logger.d('QmSource: request body: ${body.toJson().substring(0, body.toJson().length.clamp(0, 300))}...');
+    logger.d(
+        'QmSource: request body: ${body.toJson().substring(0, body.toJson().length.clamp(0, 300))}...');
     final response = await request.close();
     logger.d('QmSource: HTTP ${response.statusCode}');
 
-    final responseBodyBytes =
-        await response.fold<BytesBuilder>(BytesBuilder(), (b, d) => b..add(d))
-            .then((b) => b.takeBytes());
+    final responseBodyBytes = await response
+        .fold<BytesBuilder>(BytesBuilder(), (b, d) => b..add(d))
+        .then((b) => b.takeBytes());
     client.close();
 
     if (responseBodyBytes.isEmpty) {
@@ -158,7 +158,8 @@ Future<String> _doRequest(QmRequestBody body) async {
     }
 
     final respStr = utf8.decode(responseBodyBytes);
-    logger.d('QmSource: response: ${respStr.substring(0, respStr.length.clamp(0, 300))}...');
+    logger.d(
+        'QmSource: response: ${respStr.substring(0, respStr.length.clamp(0, 300))}...');
     return respStr;
   } catch (e, st) {
     logger.e('QmSource: 请求失败: $e', stackTrace: st);
@@ -179,9 +180,9 @@ Future<List<Map<String, dynamic>>> qqSearch(String keyword,
         module: 'music.search.SearchCgiService',
         method: 'DoSearchForQQMusicLite',
         param: {
-          'search_id': (10000000000000000 +
-                  Random.secure().nextInt(80000000000000000))
-              .toString(),
+          'search_id':
+              (10000000000000000 + Random.secure().nextInt(80000000000000000))
+                  .toString(),
           'remoteplace': 'search.android.keyboard',
           'query': keyword,
           'search_type': 0,
@@ -202,20 +203,23 @@ Future<List<Map<String, dynamic>>> qqSearch(String keyword,
     final result = resp['req_0']?['data']?['body']?['item_song'] as List?;
     if (result == null) return [];
 
-    return result.map((song) {
-      return {
-        'id': song['id']?.toString() ?? '',
-        'mid': song['mid'] ?? '',
-        'name': song['title'] ?? '',
-        'artists': (song['singer'] as List?)
-                ?.map((s) => s['name']?.toString() ?? '')
-                .toList() ??
-            [],
-        'album': song['album']?['name'] ?? '',
-        'duration': song['interval'] as int? ?? 0,
-        'publishTime': song['time_public'] ?? '',
-      };
-    }).toList().cast<Map<String, dynamic>>();
+    return result
+        .map((song) {
+          return {
+            'id': song['id']?.toString() ?? '',
+            'mid': song['mid'] ?? '',
+            'name': song['title'] ?? '',
+            'artists': (song['singer'] as List?)
+                    ?.map((s) => s['name']?.toString() ?? '')
+                    .toList() ??
+                [],
+            'album': song['album']?['name'] ?? '',
+            'duration': song['interval'] as int? ?? 0,
+            'publishTime': song['time_public'] ?? '',
+          };
+        })
+        .toList()
+        .cast<Map<String, dynamic>>();
   } catch (e) {
     logger.e('QQ search failed: $e');
     return [];

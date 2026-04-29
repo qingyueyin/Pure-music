@@ -90,6 +90,7 @@ class _NowPlayingLargePage extends StatelessWidget {
                         Symbols.skip_previous,
                         fill: 1.0,
                       ),
+                      iconSize: 28,
                       color: Theme.of(context).colorScheme.onSurface,
                     ),
                     spacer,
@@ -119,6 +120,7 @@ class _NowPlayingLargePage extends StatelessWidget {
                             isPlaying ? Symbols.pause : Symbols.play_arrow,
                             fill: 1.0,
                           ),
+                          iconSize: 36,
                           color: Theme.of(context).colorScheme.onSurface,
                         );
                       },
@@ -131,6 +133,7 @@ class _NowPlayingLargePage extends StatelessWidget {
                         Symbols.skip_next,
                         fill: 1.0,
                       ),
+                      iconSize: 28,
                       color: Theme.of(context).colorScheme.onSurface,
                     ),
                     spacer,

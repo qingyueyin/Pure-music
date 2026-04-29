@@ -566,25 +566,32 @@ class _DesktopLyricSwitch extends StatelessWidget {
         final desktopLyricService = PlayService.instance.desktopLyricService;
         return FutureBuilder(
           future: desktopLyricService.desktopLyric,
-          builder: (context, snapshot) => IconButton(
-            tooltip: snapshot.data != null ? "关闭桌面歌词" : "打开桌面歌词",
-            onPressed: snapshot.data == null
-                ? desktopLyricService.startDesktopLyric
-                : desktopLyricService.isLocked
-                    ? desktopLyricService.sendUnlockMessage
-                    : desktopLyricService.killDesktopLyric,
-            icon: snapshot.connectionState == ConnectionState.done
-                ? Icon(
-                    desktopLyricService.isLocked ? Symbols.lock : Symbols.toast,
-                    fill: snapshot.data == null ? 0 : 1,
-                  )
-                : const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(),
-                  ),
-            color: scheme.onSurface,
-          ),
+          builder: (context, snapshot) {
+            final isRunning = snapshot.data != null;
+            return IconButton(
+              tooltip: !isRunning
+                  ? "打开桌面歌词"
+                  : desktopLyricService.isLocked
+                      ? "解锁桌面歌词"
+                      : "关闭桌面歌词",
+              onPressed: !isRunning
+                  ? desktopLyricService.startDesktopLyric
+                  : desktopLyricService.isLocked
+                      ? desktopLyricService.sendUnlockMessage
+                      : desktopLyricService.killDesktopLyric,
+              icon: snapshot.connectionState == ConnectionState.done
+                  ? Icon(
+                      desktopLyricService.isLocked ? Symbols.lock : Symbols.toast,
+                      fill: isRunning ? 1 : 0,
+                    )
+                  : const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(),
+                    ),
+              color: scheme.onSurface,
+            );
+          },
         );
       },
     );
@@ -1096,6 +1103,7 @@ class _NowPlayingMainControls extends StatelessWidget {
             Symbols.skip_previous,
             fill: 1.0,
           ),
+          iconSize: 28,
           color: scheme.onSurface,
         ),
         const SizedBox(width: 32),
@@ -1122,6 +1130,7 @@ class _NowPlayingMainControls extends StatelessWidget {
                 isPlaying ? Symbols.pause : Symbols.play_arrow,
                 fill: 1.0,
               ),
+              iconSize: 36,
               color: scheme.onSurface,
             );
           },
@@ -1134,6 +1143,7 @@ class _NowPlayingMainControls extends StatelessWidget {
             Symbols.skip_next,
             fill: 1.0,
           ),
+          iconSize: 28,
           color: scheme.onSurface,
         ),
       ],
@@ -1869,7 +1879,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
             ? Center(child: placeholder)
             : Container(
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(20.0),
+                  borderRadius: BorderRadius.circular(18.0),
                   boxShadow: [
                     BoxShadow(
                       color: scheme.shadow.withValues(alpha: 0.2),
@@ -1880,7 +1890,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
                   ],
                 ),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(20.0),
+                  borderRadius: BorderRadius.circular(18.0),
                   child: Image(
                     image: currentCover,
                     fit: BoxFit.cover,

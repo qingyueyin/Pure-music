@@ -322,10 +322,7 @@ Future<List<SongSearchResult>> _searchNeWithTimeout(
     String query, Audio audio, int seconds) async {
   try {
     logger.d('[NE] searching: "$query"');
-    final neResult = await neSearch(query, limit: 8).timeout(
-      Duration(seconds: seconds),
-      onTimeout: () => throw TimeoutException("NetEase search timeout"),
-    );
+    final neResult = neSearch(keyword: query, limit: 8);
     logger.d('[NE] got ${neResult.length} raw results');
     for (final song in neResult) {
       logger.d('[NE] item: ${song['name']} - ${song['artists']}');
@@ -393,7 +390,7 @@ Future<List<SongSearchResult>> manualSearch(Audio audio, String query,
   // NetEase
   try {
     logger.d('[MS] querying NetEase...');
-    final neResult = await neSearch(query, limit: pageSize);
+    final neResult = neSearch(keyword: query, limit: pageSize);
     logger.d('[MS] NE got ${neResult.length} raw');
     for (final song in neResult) {
       final searchResult = SongSearchResult.fromNeSearchResult(song, audio);
@@ -403,7 +400,7 @@ Future<List<SongSearchResult>> manualSearch(Audio audio, String query,
     }
     logger.d('[MS] NE accepted, total now: ${result.length}');
   } catch (err, trace) {
-    logger.w("Manual search NetEase failed: $err", stackTrace: trace);
+    logger.w('Manual search NetEase failed: $err', stackTrace: trace);
   }
 
   result.sort((a, b) => b.score.compareTo(a.score));
@@ -461,28 +458,30 @@ Future<Krc?> _getKugouSyncLyric(String kugouSongHash) async {
 
 Future<Lyric?> _getNeSyncLyric(int neSongId) async {
   try {
-    final result = await neLyric(neSongId.toString());
-    if (result == null) return null;
+    final resultStr = neLyric(songId: neSongId);
+    if (resultStr.isEmpty) return null;
 
-    final yrcText = result["yrc"]?["lyric"];
+    final result = jsonDecode(resultStr) as Map<String, dynamic>;
+
+    final yrcText = result['yrc']?['lyric'];
     if (yrcText is String && yrcText.isNotEmpty) {
-      final transStr = result["tlyric"]?["lyric"] as String?;
+      final transStr = result['tlyric']?['lyric'] as String?;
       return Yrc.fromYrcText(yrcText, transStr);
     }
 
-    final lrcText = result["lrc"]?["lyric"];
+    final lrcText = result['lrc']?['lyric'];
     if (lrcText is String && lrcText.isNotEmpty) {
-      final transStr = result["tlyric"]?["lyric"] as String?;
+      final transStr = result['tlyric']?['lyric'] as String?;
       if (transStr is String && transStr.isNotEmpty) {
         return Lrc.fromLrcText(lrcText + transStr, LrcSource.web,
-            separator: "┃");
+            separator: '┃');
       }
       return Lrc.fromLrcText(lrcText, LrcSource.web);
     }
 
     return null;
   } catch (err, trace) {
-    logger.e("Failed to get NetEase lyric: $err", stackTrace: trace);
+    logger.e('Failed to get NetEase lyric: $err', stackTrace: trace);
   }
 
   return null;

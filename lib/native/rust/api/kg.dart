@@ -31,7 +31,7 @@ final _mutex = _Mutex();
 
 class _Mutex {
   Future<T> withLock<T>(Future<T> Function() body) async {
-    return await body();
+    return body();
   }
 }
 
@@ -61,7 +61,22 @@ class KgCryptoUtils {
 
       final dataBytes = encryptedBytes.sublist(4);
       final key = <int>[
-        64, 71, 97, 119, 94, 50, 116, 71, 81, 54, 49, 45, 206, 210, 110, 105
+        64,
+        71,
+        97,
+        119,
+        94,
+        50,
+        116,
+        71,
+        81,
+        54,
+        49,
+        45,
+        206,
+        210,
+        110,
+        105
       ];
 
       for (int i = 0; i < dataBytes.length; i++) {
@@ -83,54 +98,57 @@ Future<void> _ensureInit() async {
     if (_session.isValid()) return;
 
     try {
-      final deviceMid = KgCryptoUtils.md5(
-          DateTime.now().millisecondsSinceEpoch.toString());
+      final deviceMid =
+          KgCryptoUtils.md5(DateTime.now().millisecondsSinceEpoch.toString());
       final params = {
         'appid': '1014',
         'platid': '4',
         'mid': deviceMid,
       };
 
-      final sortedValues = params.values
-          .where((v) => v.isNotEmpty)
-          .toList()
+      final sortedValues = params.values.where((v) => v.isNotEmpty).toList()
         ..sort();
       final sortedString = sortedValues.join('');
-      final signature =
-          KgCryptoUtils.md5('1014${sortedString}1014');
+      final signature = KgCryptoUtils.md5('1014${sortedString}1014');
       params['signature'] = signature;
 
-      final queryStr = params.entries.map((e) => '${e.key}=${e.value}').join('&');
-      final uri = Uri.parse('https://userservice.kugou.com/risk/v1/r_register_dev?$queryStr');
+      final queryStr =
+          params.entries.map((e) => '${e.key}=${e.value}').join('&');
+      final uri = Uri.parse(
+          'https://userservice.kugou.com/risk/v1/r_register_dev?$queryStr');
 
       final client = HttpClient();
       final request = await client.postUrl(uri);
 
       request.headers.set('Content-Type', 'text/plain');
-      final bodyJson = '{"uuid":""}';
+      const bodyJson = '{"uuid":""}';
       final bodyBase64 = base64Encode(utf8.encode(bodyJson));
       request.write(bodyBase64);
 
       final response = await request.close();
       logger.d('[KG] init HTTP ${response.statusCode}');
 
-      final responseBodyBytes =
-          await response.fold<BytesBuilder>(BytesBuilder(), (b, d) => b..add(d))
-              .then((b) => b.takeBytes());
+      final responseBodyBytes = await response
+          .fold<BytesBuilder>(BytesBuilder(), (b, d) => b..add(d))
+          .then((b) => b.takeBytes());
       client.close();
 
       if (responseBodyBytes.isNotEmpty) {
         final respStr = utf8.decode(responseBodyBytes);
         logger.d('[KG] init response: $respStr');
         final resp = jsonDecode(respStr);
-        if (resp['status'] == 1 && resp['data'] != null && resp['error_code'] == 0) {
+        if (resp['status'] == 1 &&
+            resp['data'] != null &&
+            resp['error_code'] == 0) {
           _session.dfid = resp['data']['dfid'];
           _session.mid = deviceMid;
           _session.isInitialized = true;
           _session.initTime = DateTime.now().millisecondsSinceEpoch;
-          logger.d('KgSource: 初始化成功: dfid=${_session.dfid}, mid=${_session.mid}');
+          logger
+              .d('KgSource: 初始化成功: dfid=${_session.dfid}, mid=${_session.mid}');
         } else {
-          logger.e('KgSource: init failed: ${resp['error_code']} data=${resp['data']}');
+          logger.e(
+              'KgSource: init failed: ${resp['error_code']} data=${resp['data']}');
         }
       }
     } catch (e) {
@@ -163,9 +181,11 @@ Map<String, String> _buildSearchSignedParams({
 
   final sortedEntries = baseParams.entries.toList()
     ..sort((a, b) => a.key.compareTo(b.key));
-  final sortedParamStr = sortedEntries.map((e) => '${e.key}=${e.value}').join('');
+  final sortedParamStr =
+      sortedEntries.map((e) => '${e.key}=${e.value}').join('');
 
-  final raw = '${KgCryptoUtils.signSalt}$sortedParamStr${KgCryptoUtils.signSalt}';
+  final raw =
+      '${KgCryptoUtils.signSalt}$sortedParamStr${KgCryptoUtils.signSalt}';
   baseParams['signature'] = KgCryptoUtils.md5(raw);
 
   return baseParams;
@@ -184,7 +204,8 @@ Future<List<Map<String, dynamic>>> kgSearch(String keyword,
     );
 
     final queryStr = params.entries.map((e) => '${e.key}=${e.value}').join('&');
-    final uri = Uri.parse('http://complexsearch.kugou.com/v2/search/song?$queryStr');
+    final uri =
+        Uri.parse('http://complexsearch.kugou.com/v2/search/song?$queryStr');
     logger.d('[KG] uri: $uri');
 
     final client = HttpClient();
@@ -194,9 +215,9 @@ Future<List<Map<String, dynamic>>> kgSearch(String keyword,
     final response = await request.close();
     logger.d('[KG] status: ${response.statusCode}');
 
-    final responseBodyBytes =
-        await response.fold<BytesBuilder>(BytesBuilder(), (b, d) => b..add(d))
-            .then((b) => b.takeBytes());
+    final responseBodyBytes = await response
+        .fold<BytesBuilder>(BytesBuilder(), (b, d) => b..add(d))
+        .then((b) => b.takeBytes());
     client.close();
 
     if (responseBodyBytes.isEmpty) {
@@ -206,7 +227,8 @@ Future<List<Map<String, dynamic>>> kgSearch(String keyword,
 
     final respStr = utf8.decode(responseBodyBytes);
     final resp = jsonDecode(respStr);
-    logger.d('[KG] status=${resp['status']}, data=${resp['data'] != null ? "present" : "null"}');
+    logger.d(
+        '[KG] status=${resp['status']}, data=${resp['data'] != null ? "present" : "null"}');
     if (resp['status'] != 1 || resp['data'] == null) {
       logger.e('[KG] API error: ${resp['data'] ?? resp}');
       return [];
@@ -219,24 +241,24 @@ Future<List<Map<String, dynamic>>> kgSearch(String keyword,
     }
     logger.d('[KG] got ${lists.length} items');
 
-    return lists.map((song) {
-      final singers = song['Singers'] as List?;
-      final singername = singers
-              ?.map((s) => s['name']?.toString() ?? '')
-              .join('、') ??
-          '';
-      return {
-        'songname': song['SongName'] ?? '',
-        'album_name': song['AlbumName'] ?? '',
-        'singername': singername,
-        'hash': song['FileHash'] ?? '',
-        'id': song['ID']?.toString() ?? '',
-        'duration': song['Duration'] != null
-            ? (song['Duration'] as int) * 1000
-            : 0,
-        'publishDate': song['PublishDate'] ?? '',
-      };
-    }).toList().cast<Map<String, dynamic>>();
+    return lists
+        .map((song) {
+          final singers = song['Singers'] as List?;
+          final singername =
+              singers?.map((s) => s['name']?.toString() ?? '').join('、') ?? '';
+          return {
+            'songname': song['SongName'] ?? '',
+            'album_name': song['AlbumName'] ?? '',
+            'singername': singername,
+            'hash': song['FileHash'] ?? '',
+            'id': song['ID']?.toString() ?? '',
+            'duration':
+                song['Duration'] != null ? (song['Duration'] as int) * 1000 : 0,
+            'publishDate': song['PublishDate'] ?? '',
+          };
+        })
+        .toList()
+        .cast<Map<String, dynamic>>();
   } catch (e) {
     logger.e('[KG] search failed: $e');
     return [];
@@ -259,9 +281,9 @@ Future<Map<String, dynamic>?> kgLyric(String hash) async {
     request.headers.set('User-Agent',
         'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.101 Safari/537.36');
     var response = await request.close();
-    var responseBodyBytes =
-        await response.fold<BytesBuilder>(BytesBuilder(), (b, d) => b..add(d))
-            .then((b) => b.takeBytes());
+    var responseBodyBytes = await response
+        .fold<BytesBuilder>(BytesBuilder(), (b, d) => b..add(d))
+        .then((b) => b.takeBytes());
     client.close();
 
     if (responseBodyBytes.isEmpty) return null;
@@ -282,9 +304,9 @@ Future<Map<String, dynamic>?> kgLyric(String hash) async {
     request.headers.set('User-Agent',
         'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.101 Safari/537.36');
     response = await request.close();
-    responseBodyBytes =
-        await response.fold<BytesBuilder>(BytesBuilder(), (b, d) => b..add(d))
-            .then((b) => b.takeBytes());
+    responseBodyBytes = await response
+        .fold<BytesBuilder>(BytesBuilder(), (b, d) => b..add(d))
+        .then((b) => b.takeBytes());
     client.close();
 
     if (responseBodyBytes.isEmpty) return null;

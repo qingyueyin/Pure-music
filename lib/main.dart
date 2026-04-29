@@ -34,7 +34,6 @@ Future<void> initWindow() async {
     minimumSize: minimumSize,
     size: targetSize,
     center: true,
-    backgroundColor: Colors.transparent,
     skipTaskbar: false,
     titleBarStyle: TitleBarStyle.hidden,
   );
@@ -65,7 +64,11 @@ Future<void> loadPrefFont() async {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await RustLib.init();
+  try {
+    await RustLib.init();
+  } catch (e, s) {
+    logger.e('RustLib.init failed: $e\n$s');
+  }
 
   initRustLogger().listen((msg) {
     logger.i("[rs]: $msg");
