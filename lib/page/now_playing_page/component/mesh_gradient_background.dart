@@ -268,7 +268,7 @@ class _MeshGradientBackgroundInternalState
                 animation: _transitionController,
                 builder: (context, child) {
                   return _buildMesh(
-                    _isPlaying ? 0.6 : 0.0,
+                    _isPlaying ? 0.6 : 0.01,
                     _interpolateColors(_transitionController.value),
                   );
                 },

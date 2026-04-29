@@ -30,7 +30,7 @@ class _HybridBackgroundState extends State<HybridBackground>
   List<Color> _paletteColors = [];
   bool _isPlaying = false;
   double _breathScale = 1.0;
-  double _meshOpacity = 0.40;
+  double _meshOpacity = 0.55;
   StreamSubscription<Float32List>? _spectrumSubscription;
 
   late AnimationController _transitionController;
@@ -81,7 +81,7 @@ class _HybridBackgroundState extends State<HybridBackground>
         _spectrumSubscription?.cancel();
         _spectrumSubscription = null;
         _breathScale = 1.0;
-        _meshOpacity = 0.40;
+        _meshOpacity = 0.55;
       }
     } else if (nowPlaying && _spectrumSubscription == null) {
       _listenSpectrum();
@@ -121,8 +121,8 @@ class _HybridBackgroundState extends State<HybridBackground>
       final subBass = spectrum.length > 1 ? spectrum[1] : 0.0;
       final energy = (lowFreq * 0.7 + subBass * 0.3).clamp(0.0, 1.0);
 
-      final targetScale = 1.0 + energy * 0.04 * widget.inputs.intensity;
-      final targetOpacity = 0.40 + energy * 0.12 * widget.inputs.intensity;
+      final targetScale = 1.0 + energy * 0.05 * widget.inputs.intensity;
+      final targetOpacity = 0.55 + energy * 0.15 * widget.inputs.intensity;
 
       if ((targetScale - _breathScale).abs() > 0.001 ||
           (targetOpacity - _meshOpacity).abs() > 0.005) {
@@ -241,7 +241,7 @@ class _HybridBackgroundState extends State<HybridBackground>
         AnimatedOpacity(
           duration: const Duration(milliseconds: 600),
           curve: Curves.easeInOut,
-          opacity: _isPlaying ? _meshOpacity : 0.30,
+          opacity: _isPlaying ? _meshOpacity : 0.45,
           child: AnimatedBuilder(
             animation: _transitionController,
             builder: (context, child) {
@@ -256,7 +256,7 @@ class _HybridBackgroundState extends State<HybridBackground>
                     options: AnimatedMeshGradientOptions(
                       frequency: 3,
                       amplitude: 50,
-                      speed: _isPlaying ? 0.5 : 0.0,
+                      speed: _isPlaying ? 0.6 : 0.01,
                       grain: 0,
                     ),
                     child: Container(),
@@ -268,7 +268,7 @@ class _HybridBackgroundState extends State<HybridBackground>
         ),
 
         Container(
-          color: scheme.surface.withValues(alpha: 0.12),
+          color: scheme.surface.withValues(alpha: 0.10),
         ),
       ],
     );
@@ -297,12 +297,12 @@ class _BlurredCover extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Opacity(
-      opacity: brightness == Brightness.dark ? 0.75 : 0.55,
+      opacity: brightness == Brightness.dark ? 0.60 : 0.40,
       child: ClipRRect(
         child: ImageFiltered(
           imageFilter: ui.ImageFilter.blur(
-            sigmaX: 90,
-            sigmaY: 90,
+            sigmaX: 80,
+            sigmaY: 80,
             tileMode: ui.TileMode.clamp,
           ),
           child: ShaderMask(

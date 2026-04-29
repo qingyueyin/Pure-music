@@ -404,7 +404,7 @@ class _UniPageState<T> extends State<UniPage<T>> {
                       ),
                   },
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 20),
               ],
             ),
             Positioned(

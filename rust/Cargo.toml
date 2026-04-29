@@ -7,7 +7,7 @@ edition = "2021"
 crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
-flutter_rust_bridge = "=2.11.1"
+flutter_rust_bridge = "=2.12.0"
 lofty = "0.21.1"
 serde_json = "1.0.117"
 phf = { version = "0.11", features = ["macros"] }
@@ -15,8 +15,8 @@ windows-core = "0.57.0"
 rusqlite = { version = "0.31.0", features = ["bundled"] }
 windows = { version = "0.57.0", features = [
     "implement",
-    "Media_Playback",
     "Media_Core",
+    "Media_Playback",
     "Storage",
     "Storage_Streams",
     "Storage_FileProperties",

@@ -46,10 +46,25 @@ class ThemeProvider extends ChangeNotifier {
       themeMode == ThemeMode.dark ? darkScheme : lightScheme;
 
   ThemeMode themeMode = AppSettings.instance.themeMode;
+  static const int _maxCacheSize = 50;
   final Map<String, ColorScheme> _schemeCache = {};
   final Map<String, Future<ColorScheme>> _schemeFutureCache = {};
+  final List<String> _cacheAccessOrder = [];
   int _themeRequestToken = 0;
   Timer? _themeDebounceTimer;
+
+  void _evictCacheIfNeeded() {
+    while (_cacheAccessOrder.length >= _maxCacheSize) {
+      final oldestKey = _cacheAccessOrder.removeAt(0);
+      _schemeCache.remove(oldestKey);
+      _schemeFutureCache.remove(oldestKey);
+    }
+  }
+
+  void _touchCacheEntry(String key) {
+    _cacheAccessOrder.remove(key);
+    _cacheAccessOrder.add(key);
+  }
 
   static ThemeProvider? _instance;
 
@@ -94,6 +109,7 @@ class ThemeProvider extends ChangeNotifier {
     final key = cacheKey == null ? null : "$cacheKey|${brightness.name}";
     final cached = key == null ? null : _schemeCache[key];
     if (cached != null) {
+      if (key != null) _touchCacheEntry(key);
       switch (brightness) {
         case Brightness.light:
           lightScheme = _applyLightSurfacePalette(cached);
@@ -131,8 +147,10 @@ class ThemeProvider extends ChangeNotifier {
 
     future.then((value) {
       if (key != null) {
+        _evictCacheIfNeeded();
         _schemeFutureCache.remove(key);
         _schemeCache[key] = value;
+        _touchCacheEntry(key);
       }
 
       if (requestToken != null && requestToken != _themeRequestToken) return;

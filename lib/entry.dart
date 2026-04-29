@@ -111,29 +111,11 @@ class Entry extends StatefulWidget {
   State<Entry> createState() => _EntryState();
 }
 
-class _EntryState extends State<Entry> with WindowListener, SingleTickerProviderStateMixin {
-  late final AnimationController _restoreAnimController;
-  late final Animation<double> _scaleAnimation;
-  late final Animation<double> _opacityAnimation;
-
+class _EntryState extends State<Entry> with WindowListener {
   @override
   void initState() {
     super.initState();
     windowManager.addListener(this);
-    
-    _restoreAnimController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 400),
-      value: 1.0, // Initially show content fully
-    );
-
-    _scaleAnimation = Tween<double>(begin: 0.92, end: 1.0).animate(
-      CurvedAnimation(parent: _restoreAnimController, curve: Curves.easeOutQuart),
-    );
-
-    _opacityAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _restoreAnimController, curve: Curves.easeOut),
-    );
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (Platform.environment['CP_ECHO_RECORD'] == '1') {
@@ -145,15 +127,12 @@ class _EntryState extends State<Entry> with WindowListener, SingleTickerProvider
   @override
   void dispose() {
     windowManager.removeListener(this);
-    _restoreAnimController.dispose();
     super.dispose();
   }
 
   @override
-  void onWindowRestore() {
-    // Play animation when restored from minimization
-    _restoreAnimController.value = 0.0;
-    _restoreAnimController.forward();
+  void onWindowFocus() {
+    // Window focus handler
   }
 
   ThemeData fromSchemeAndFontFamily({
@@ -188,40 +167,25 @@ class _EntryState extends State<Entry> with WindowListener, SingleTickerProvider
   Widget build(BuildContext context) {
     return ChangeNotifierProvider.value(
       value: ThemeProvider.instance,
-      builder: (context, _) {
-        final theme = Provider.of<ThemeProvider>(context);
-        return AnimatedBuilder(
-          animation: _restoreAnimController,
-          builder: (context, child) {
-            return Transform.scale(
-              scale: _scaleAnimation.value,
-              child: Opacity(
-                opacity: _opacityAnimation.value,
-                child: child,
-              ),
-            );
-          },
-          child: MaterialApp.router(
-            scaffoldMessengerKey: scaffoldMessengerKey,
-            debugShowCheckedModeBanner: false,
-            scrollBehavior: const AppScrollBehavior(),
-            theme: fromSchemeAndFontFamily(
-              fontFamily: theme.fontFamily,
-              colorScheme: theme.lightScheme,
-            ),
-            darkTheme: fromSchemeAndFontFamily(
-              fontFamily: theme.fontFamily,
-              colorScheme: theme.darkScheme,
-            ),
-            themeAnimationDuration: const Duration(milliseconds: 560),
-            themeAnimationCurve: Curves.easeInOutCubic,
-            themeMode: theme.themeMode,
-            localizationsDelegates: GlobalMaterialLocalizations.delegates,
-            supportedLocales: supportedLocales,
-            routerConfig: config,
-          ),
-        );
-      },
+      child: MaterialApp.router(
+        scaffoldMessengerKey: scaffoldMessengerKey,
+        debugShowCheckedModeBanner: false,
+        scrollBehavior: const AppScrollBehavior(),
+        theme: fromSchemeAndFontFamily(
+          fontFamily: ThemeProvider.instance.fontFamily,
+          colorScheme: ThemeProvider.instance.lightScheme,
+        ),
+        darkTheme: fromSchemeAndFontFamily(
+          fontFamily: ThemeProvider.instance.fontFamily,
+          colorScheme: ThemeProvider.instance.darkScheme,
+        ),
+        themeAnimationDuration: const Duration(milliseconds: 560),
+        themeAnimationCurve: Curves.easeInOutCubic,
+        themeMode: ThemeProvider.instance.themeMode,
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
+        supportedLocales: supportedLocales,
+        routerConfig: config,
+      ),
     );
   }
 

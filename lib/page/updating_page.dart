@@ -12,8 +12,30 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 
-class UpdatingPage extends StatelessWidget {
+class UpdatingPage extends StatefulWidget {
   const UpdatingPage({super.key});
+
+  @override
+  State<UpdatingPage> createState() => _UpdatingPageState();
+}
+
+class _UpdatingPageState extends State<UpdatingPage> {
+  late final Future<Directory?> _appDataDirFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _appDataDirFuture = _getAppDataDirSafe();
+  }
+
+  Future<Directory?> _getAppDataDirSafe() async {
+    try {
+      return await getAppDataDir();
+    } catch (e) {
+      logger.e('getAppDataDir failed: $e');
+      return null;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -22,12 +44,32 @@ class UpdatingPage extends StatelessWidget {
     return Scaffold(
       backgroundColor: scheme.surface,
       body: Center(
-        child: FutureBuilder(
-          future: getAppDataDir(),
+        child: FutureBuilder<Directory?>(
+          future: _appDataDirFuture,
           builder: (context, snapshot) {
-            if (snapshot.data == null) {
-              return const Center(
-                child: Text("Fail to get app data dir."),
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: scheme.primary),
+                  const SizedBox(height: 16),
+                  Text("加载中...", style: TextStyle(color: scheme.onSurface)),
+                ],
+              );
+            }
+
+            if (snapshot.hasError || !snapshot.hasData || snapshot.data == null) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text("初始化失败: ${snapshot.error ?? "超时"}",
+                      style: TextStyle(color: scheme.error)),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () => exit(1),
+                    child: const Text("退出"),
+                  ),
+                ],
               );
             }
 
@@ -87,27 +129,41 @@ class _UpdatingStateViewState extends State<UpdatingStateView> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
-    return SizedBox(
-      width: 400.0,
-      child: StreamBuilder(
-        stream: updateIndexStream,
-        builder: (context, snapshot) {
-          return Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              LinearProgressIndicator(
-                value: snapshot.data?.progress,
-                borderRadius: BorderRadius.circular(2.0),
-              ),
-              const SizedBox(height: 8.0),
-              Text(
-                "${snapshot.data?.message}",
-                style: TextStyle(color: scheme.onSurface),
-              ),
-            ],
-          );
-        },
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            StreamBuilder<IndexActionState>(
+              stream: updateIndexStream,
+              builder: (context, snapshot) {
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    LinearProgressIndicator(
+                      value: snapshot.data?.progress,
+                      backgroundColor: scheme.onSurface.withOpacity(0.1),
+                      color: scheme.primary,
+                      borderRadius: BorderRadius.circular(2.0),
+                      minHeight: 8,
+                    ),
+                    const SizedBox(height: 16.0),
+                    Text(
+                      snapshot.data?.message ?? "正在初始化...",
+                      style: TextStyle(
+                        color: scheme.onSurface,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ],
+        ),
       ),
     );
   }

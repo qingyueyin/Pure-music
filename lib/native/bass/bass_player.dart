@@ -267,12 +267,13 @@ class BassPlayer {
   Timer _getPositionUpdater(Duration period) {
     return Timer.periodic(period, (timer) {
       _emitPositionSnapshot();
-      _maybeUpdateSpectrum();
 
       /// check if the channel has completed
       if (playerState == PlayerState.stopped) {
         _playerStateStreamController.add(PlayerState.completed);
       }
+
+      _maybeUpdateSpectrum();
     });
   }
 

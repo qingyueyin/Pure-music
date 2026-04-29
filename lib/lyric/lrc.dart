@@ -301,12 +301,51 @@ class Lrc extends Lyric {
       return null;
     }
 
-    for (var i = 0; i < lines.length - 1; i++) {
-      lines[i].length = lines[i + 1].start - lines[i].start;
+    // 估算每行的实际显示时长，并在行间隙超过阈值时插入间奏空白行
+    final estimatedFinalLines = <LrcLine>[];
+    const interludeThreshold = Duration(milliseconds: 5000);
+    
+    for (var i = 0; i < lines.length; i++) {
+      final currentLine = lines[i];
+      final nextLine = i < lines.length - 1 ? lines[i + 1] : null;
+      
+      if (nextLine != null) {
+        final timeGap = nextLine.start - currentLine.start;
+        // 估算：如果时间间隔很大（>=5秒），认为当前行歌词较短，剩余时间是间奏
+        // 这里使用经验值：假设歌词行显示 3-4 秒，剩余时间作为间奏
+        const estimatedLyricDisplayMs = Duration(milliseconds: 3500);
+        
+        if (timeGap >= interludeThreshold) {
+          // 有间奏：歌词行长度设为估计显示时间
+          currentLine.length = estimatedLyricDisplayMs;
+          estimatedFinalLines.add(currentLine);
+          
+          // 插入间奏空白行
+          final interludeStart = currentLine.start + currentLine.length;
+          final interludeDuration = nextLine.start - interludeStart;
+          if (interludeDuration > Duration.zero) {
+            estimatedFinalLines.add(
+              LrcLine(
+                interludeStart,
+                '',
+                requiredIsBlank: true,
+              )..length = interludeDuration,
+            );
+          }
+        } else {
+          // 无间奏：正常设置 length
+          currentLine.length = timeGap;
+          estimatedFinalLines.add(currentLine);
+        }
+      } else {
+        // 最后一行
+        currentLine.length = Duration.zero;
+        estimatedFinalLines.add(currentLine);
+      }
     }
-    if (lines.isNotEmpty) {
-      lines.last.length = Duration.zero;
-    }
+    
+    lines.clear();
+    lines.addAll(estimatedFinalLines);
 
     // 为前奏间隙创建空白行（第一句歌词开始前有时间间隙）
     if (lines.isNotEmpty && lines.first.start > Duration.zero) {
@@ -567,7 +606,7 @@ class Lrc extends Lyric {
     }
 
     final finalLines = <LyricLine>[];
-    const gapThreshold = Duration(milliseconds: 1200);
+    const gapThreshold = Duration(milliseconds: 5000);
     for (int i = 0; i < parsedLines.length; i++) {
       final line = parsedLines[i];
       finalLines.add(line);
@@ -576,7 +615,7 @@ class Lrc extends Lyric {
       final nextStart = parsedLines[i + 1].start;
       final gapStart = line.start + line.length;
       final gapLen = nextStart - gapStart;
-      if (gapLen > gapThreshold) {
+      if (gapLen >= gapThreshold) {
         finalLines.add(
           EnhancedLrcLine(
             gapStart,
@@ -804,7 +843,7 @@ class Lrc extends Lyric {
     }
 
     final finalLines = <LyricLine>[];
-    const gapThreshold = Duration(milliseconds: 1200);
+    const gapThreshold = Duration(milliseconds: 5000);
     for (int i = 0; i < parsedLines.length; i++) {
       final line = parsedLines[i];
       finalLines.add(line);
@@ -813,7 +852,7 @@ class Lrc extends Lyric {
       final nextStart = parsedLines[i + 1].start;
       final gapStart = line.start + line.length;
       final gapLen = nextStart - gapStart;
-      if (gapLen > gapThreshold) {
+      if (gapLen >= gapThreshold) {
         finalLines.add(
           LrcLine(
             gapStart,

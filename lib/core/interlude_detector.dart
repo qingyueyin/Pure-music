@@ -1,7 +1,8 @@
+import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
 
 class InterludeDetector {
-  static const int defaultThresholdMs = 3000;
+  static const int defaultThresholdMs = 5000;
 
   static bool isInInterlude(
     Lyric lyric,
@@ -24,19 +25,24 @@ class InterludeDetector {
 
     if (currentLineIndex == -1) {
       return currentMs < lines.first.start.inMilliseconds &&
-          (lines.first.start.inMilliseconds - currentMs) > thresholdMs;
+          (lines.first.start.inMilliseconds - currentMs) >= thresholdMs;
     }
+
+    final currentLine = lines[currentLineIndex];
+
+    // 优先检查：是否为解析阶段插入的空白行（明确标记的间奏）
+    if (currentLine is LrcLine && currentLine.isBlank) return true;
+    if (currentLine is SyncLyricLine && currentLine.words.isEmpty) return true;
 
     if (currentLineIndex == lines.length - 1) {
       final lastLineEnd = lines.last.start.inMilliseconds +
           lines.last.length.inMilliseconds;
       if (currentMs > lastLineEnd) {
-        return (currentMs - lastLineEnd) > thresholdMs;
+        return (currentMs - lastLineEnd) >= thresholdMs;
       }
       return false;
     }
 
-    final currentLine = lines[currentLineIndex];
     final currentLineEnd =
         currentLine.start.inMilliseconds + currentLine.length.inMilliseconds;
     final nextLineStart = lines[currentLineIndex + 1].start.inMilliseconds;
@@ -44,7 +50,7 @@ class InterludeDetector {
 
     return currentMs > currentLineEnd &&
         currentMs < nextLineStart &&
-        gap > thresholdMs;
+        gap >= thresholdMs;
   }
 
   static Duration? getNextLyricTime(

@@ -15,9 +15,17 @@ Future<void> migrateAppData() async {
 
     if (!hasData) {
       final candidates = <Directory>[];
+      final appData = Platform.environment['APPDATA'];
+      if (appData != null) {
+        candidates.add(Directory(path.join(appData, "pure_music")));
+      }
       candidates.add(await getApplicationSupportDirectory());
-      final docs = await getApplicationDocumentsDirectory();
-      candidates.add(Directory(path.join(docs.path, "pure_music")));
+      final userProfile = Platform.environment['USERPROFILE'];
+      if (userProfile != null) {
+        final docsPath = path.join(userProfile, "Documents");
+        candidates.add(Directory(path.join(docsPath, "pure_music")));
+        candidates.add(Directory(path.join(docsPath, "coriander_player")));
+      }
 
       for (final oldDir in candidates) {
         if (!oldDir.existsSync()) continue;
@@ -60,8 +68,19 @@ Future<Directory> getAppDataDir() async {
     } catch (_) {}
   }
 
-  final dir = await getApplicationDocumentsDirectory();
-  return Directory(path.join(dir.path, "pure_music")).create(recursive: true);
+  final appData = Platform.environment['APPDATA'];
+  if (appData != null) {
+    final dir = Directory(path.join(appData, "pure_music"));
+    return dir.create(recursive: true);
+  }
+
+  final userProfile = Platform.environment['USERPROFILE'];
+  if (userProfile != null) {
+    final dir = Directory(path.join(userProfile, "AppData", "Roaming", "pure_music"));
+    return dir.create(recursive: true);
+  }
+
+  throw StateError("Unable to determine app data directory");
 }
 
 Future<Directory> getSettingsDir() async {

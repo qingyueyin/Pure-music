@@ -83,13 +83,29 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
                       NowPlayingViewMode.withLyric => Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 0),
                           child: ClipRRect(
-                            borderRadius: BorderRadius.circular(16.0),
-                            child: VerticalLyricView(
-                            showControls: true,
-                            centerVertically: false,
-                            enableEdgeSpacer: true,
-                            currentLineAlignment: 0.3,
-                          ),
+                            borderRadius: BorderRadius.circular(18.0),
+                            child: ShaderMask(
+                              shaderCallback: (Rect bounds) {
+                                return const LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Colors.transparent,
+                                    Colors.black,
+                                    Colors.black,
+                                    Colors.transparent,
+                                  ],
+                                  stops: [0.0, 0.08, 0.92, 1.0],
+                                ).createShader(bounds);
+                              },
+                              blendMode: BlendMode.dstIn,
+                              child: VerticalLyricView(
+                                showControls: true,
+                                centerVertically: false,
+                                enableEdgeSpacer: true,
+                                currentLineAlignment: 0.3,
+                              ),
+                            ),
                           ),
                         ),
                       NowPlayingViewMode.withPlaylist =>

@@ -371,6 +371,61 @@ impl NetEaseCloud {
 
         Ok(result)
     }
+
+    pub fn search(&self, keyword: String, limit: i32) -> Result<Vec<HashMap<String, String>>, String> {
+        self.init()?;
+
+        let params = serde_json::json!({
+            "s": keyword,
+            "type": "1",
+            "limit": limit,
+            "e_r": true,
+            "header": self.get_params_header(),
+        });
+
+        let params_str = params.to_string();
+        let path = b"/eapi/cloudsearch/pc".to_vec();
+        let encrypted = eapi_params_encrypt(&path, &params_str);
+
+        let url = "https://interface.music.163.com/eapi/cloudsearch/pc";
+        let headers = self.get_request_header();
+
+        let mut request = self.client.post(url);
+        for (k, v) in headers {
+            request = request.header(&k, &v);
+        }
+        request = request.body(encrypted);
+
+        let response = request.send().map_err(|e| e.to_string())?;
+        let data = eapi_response_decrypt(response.bytes().map_err(|e| e.to_string())?.as_ref());
+        let json_str = String::from_utf8(data).map_err(|e| e.to_string())?;
+        let json: serde_json::Value = serde_json::from_str(&json_str).map_err(|e| e.to_string())?;
+
+        if json["code"].as_i64().unwrap_or(-1) != 200 {
+            return Err(format!("Search failed with code: {}", json["code"].as_i64().unwrap_or(-1)));
+        }
+
+        let mut results = Vec::new();
+        if let Some(songs) = json["result"]["songs"].as_array() {
+            for song in songs {
+                let mut map = HashMap::new();
+                map.insert("id".to_string(), song["id"].as_i64().unwrap_or(0).to_string());
+                map.insert("name".to_string(), song["name"].as_str().unwrap_or("").to_string());
+                if let Some(artists) = song["artists"].as_array() {
+                    let artist_names: Vec<String> = artists.iter()
+                        .filter_map(|a| a["name"].as_str().map(String::from))
+                        .collect();
+                    map.insert("artists".to_string(), artist_names.join(", "));
+                }
+                if let Some(album) = song["album"].as_object() {
+                    map.insert("album".to_string(), album.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string());
+                }
+                results.push(map);
+            }
+        }
+
+        Ok(results)
+    }
 }
 
 impl Default for NetEaseCloud {
@@ -386,4 +441,9 @@ static NETEASE_CLOUD: std::sync::LazyLock<NetEaseCloud> =
 pub fn ne_lyric(song_id: i64) -> Result<String, String> {
     let result = NETEASE_CLOUD.get_lyric(song_id)?;
     serde_json::to_string(&result).map_err(|e| e.to_string())
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn ne_search(keyword: String, limit: i32) -> Result<Vec<HashMap<String, String>>, String> {
+    NETEASE_CLOUD.search(keyword, limit)
 }

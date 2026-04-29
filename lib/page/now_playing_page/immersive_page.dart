@@ -28,11 +28,11 @@ class _ImmersivePortraitLayout extends StatelessWidget {
     return Stack(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16.0, 48.0, 16.0, 16.0),
+          padding: const EdgeInsets.fromLTRB(24.0, 32.0, 16.0, 16.0),
           child: Column(
             children: [
               Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   SizedBox(
                     width: 80.0,
@@ -41,30 +41,44 @@ class _ImmersivePortraitLayout extends StatelessWidget {
                   ),
                   const SizedBox(width: 12.0),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        _ImmersiveTitleText(),
-                        const SizedBox(height: 2),
-                        _ImmersiveArtistText(),
-                      ],
+                    child: Align(
+                      alignment: Alignment.bottomLeft,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _ImmersiveTitleText(),
+                          const SizedBox(height: 2),
+                          _ImmersiveArtistText(),
+                        ],
+                      ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                  child: RepaintBoundary(
-                    child: VerticalLyricView(
-                      showControls: false,
-                      enableSeekOnTap: true,
-                      centerVertically: false,
-                      enableEdgeSpacer: true,
-                      currentLineAlignment: 0.3,
-                    ),
+                child: ShaderMask(
+                  shaderCallback: (Rect bounds) {
+                    return const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.transparent,
+                        Colors.black,       
+                        Colors.black,       
+                        Colors.transparent,
+                      ],
+                      stops: [0.0, 0.05, 0.95, 1.0],
+                    ).createShader(bounds);
+                  },
+                  blendMode: BlendMode.dstIn,
+                  child: VerticalLyricView(
+                    showControls: false,
+                    enableSeekOnTap: true,
+                    centerVertically: false,
+                    enableEdgeSpacer: false,
+                    currentLineAlignment: 0.3,
                   ),
                 ),
               ),
@@ -252,7 +266,7 @@ class _ImmersiveCoverThumbnailState extends State<_ImmersiveCoverThumbnail> {
 
     if (nextAudio.path == _coverPath) return;
 
-    nextAudio.cover.then((image) {
+    nextAudio.mediumCover.then((image) {
       if (!mounted) return;
       if (playbackService.nowPlaying?.path != nextAudio.path) return;
 
@@ -289,7 +303,7 @@ class _ImmersiveCoverThumbnailState extends State<_ImmersiveCoverThumbnail> {
     }
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(12.0),
+      borderRadius: BorderRadius.circular(18.0),
       child: Image(
         image: _cover!,
         fit: BoxFit.cover,
@@ -361,7 +375,7 @@ class _ImmersiveLandscapeLayout extends StatelessWidget {
     return Stack(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(24.0, 64.0, 24.0, 24.0),
+          padding: const EdgeInsets.fromLTRB(24.0, 32.0, 24.0, 32.0),
           child: Row(
             children: [
               // 左侧：封面 + 歌曲信息 (50%)
@@ -383,16 +397,27 @@ class _ImmersiveLandscapeLayout extends StatelessWidget {
               ),
               // 右侧：歌词区域 (50%)
               Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                  child: RepaintBoundary(
-                    child: VerticalLyricView(
-                      showControls: false,
-                      enableSeekOnTap: false,
-                      centerVertically: true,
-                      enableEdgeSpacer: true,
-                      currentLineAlignment: 0.5,
-                    ),
+                child: ShaderMask(
+                  shaderCallback: (Rect bounds) {
+                    return const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.transparent,
+                        Colors.black,
+                        Colors.black,
+                        Colors.transparent,
+                      ],
+                      stops: [0.0, 0.05, 0.95, 1.0],
+                    ).createShader(bounds);
+                  },
+                  blendMode: BlendMode.dstIn,
+                  child: VerticalLyricView(
+                    showControls: false,
+                    enableSeekOnTap: false,
+                    centerVertically: false,
+                    enableEdgeSpacer: false,
+                    currentLineAlignment: 0.5,
                   ),
                 ),
               ),

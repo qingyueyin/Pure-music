@@ -290,7 +290,7 @@ class _WindowControllsState extends State<WindowControlls> with WindowListener {
     if (_isClosing) return;
     _isClosing = true;
 
-    PlayService.instance.close();
+    await PlayService.instance.close();
 
     await savePlaylists();
     await saveLyricSources();
