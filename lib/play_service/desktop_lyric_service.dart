@@ -112,24 +112,35 @@ class DesktopLyricService extends ChangeNotifier {
     });
   }
 
-   void killDesktopLyric() {
+   Future<void> killDesktopLyric() async {
     _positionTimer?.cancel();
     _positionTimer = null;
     
-    desktopLyric.then((value) {
-      value?.kill();
-      desktopLyric = Future.value(null);
-      _sendQueue = Future.value();
-      _stdoutBuffer = '';
+    // 使用超时保护，防止子进程卡死
+    try {
+      await desktopLyric.timeout(const Duration(milliseconds: 500), onTimeout: () {
+        logger.w("killDesktopLyric timeout, force kill");
+        return null;
+      }).then((value) {
+        if (value != null) {
+          try {
+            value.kill(ProcessSignal.sigkill);
+          } catch (_) {}
+        }
+      });
+    } catch (e) {
+      logger.w("killDesktopLyric error: $e");
+    }
+    
+    desktopLyric = Future.value(null);
+    _sendQueue = Future.value();
+    _stdoutBuffer = '';
 
-      _desktopLyricSubscription?.cancel();
-      _desktopLyricSubscription = null;
+    await _desktopLyricSubscription?.cancel().timeout(const Duration(milliseconds: 200)).catchError((_) {});
+    _desktopLyricSubscription = null;
 
-      isLocked = false;
-      notifyListeners();
-    }).catchError((err, trace) {
-      logger.e(err, stackTrace: trace);
-    });
+    isLocked = false;
+    notifyListeners();
   }
 
   void sendUnlockMessage() {

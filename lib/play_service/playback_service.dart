@@ -599,10 +599,24 @@ class PlaybackService extends ChangeNotifier {
     playService.lyricService.findCurrLyricLineAt(position);
   }
 
-  void close() {
-    _playerStateStreamSub.cancel();
-    _smtcEventStreamSub.cancel();
-    _player.free();
-    _smtc.close();
+  Future<void> close() async {
+    try {
+      _playerStateStreamSub.cancel();
+    } catch (_) {}
+    try {
+      _smtcEventStreamSub.cancel();
+    } catch (_) {}
+    
+    // 释放播放器资源（可能耗时）
+    try {
+      _player.free();
+    } catch (e) {
+      logger.w("_player.free error: $e");
+    }
+    
+    // 关闭 SMTC
+    try {
+      await _smtc.close().timeout(const Duration(milliseconds: 500)).catchError((_) {});
+    } catch (_) {}
   }
 }
