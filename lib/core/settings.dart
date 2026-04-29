@@ -11,9 +11,9 @@ import 'package:window_manager/window_manager.dart';
 Future<void> migrateAppData() async {
   try {
     final newAppDataDir = await getAppDataDir();
-    final hasData = newAppDataDir.listSync().isNotEmpty;
+    final newIndexExists = File(path.join(newAppDataDir.path, "index.json")).existsSync();
 
-    if (!hasData) {
+    if (!newIndexExists) {
       final candidates = <Directory>[];
       final appData = Platform.environment['APPDATA'];
       if (appData != null) {
@@ -33,7 +33,8 @@ Future<void> migrateAppData() async {
             path.canonicalize(newAppDataDir.path)) {
           continue;
         }
-        if (oldDir.listSync().isEmpty) continue;
+        final oldIndexExists = File(path.join(oldDir.path, "index.json")).existsSync();
+        if (!oldIndexExists) continue;
 
         for (final entity in oldDir.listSync(followLinks: false)) {
           final basename = path.basename(entity.path);
@@ -273,15 +274,16 @@ class AppSettings {
       if (!_instance.useSystemTheme) {
         _instance.defaultTheme = settingsMap["DefaultTheme"];
       }
-      if (!_instance.useSystemThemeMode) {
-        _instance.themeMode = (settingsMap["ThemeMode"] ?? false)
-            ? ThemeMode.dark
-            : ThemeMode.light;
-      }
-
       final dt = settingsMap["DynamicTheme"];
       if (dt != null) {
-        _instance.dynamicTheme = dt;
+        _instance.dynamicTheme = dt is bool ? dt : dt == 1;
+      }
+
+      final themeModeValue = settingsMap["ThemeMode"];
+      if (!_instance.useSystemThemeMode && themeModeValue != null) {
+        _instance.themeMode = themeModeValue is bool
+            ? (themeModeValue ? ThemeMode.dark : ThemeMode.light)
+            : (themeModeValue == 1 ? ThemeMode.dark : ThemeMode.light);
       }
 
       final as = settingsMap["ArtistSeparator"];
