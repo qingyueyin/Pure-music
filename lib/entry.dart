@@ -167,25 +167,28 @@ class _EntryState extends State<Entry> with WindowListener {
   Widget build(BuildContext context) {
     return ChangeNotifierProvider.value(
       value: ThemeProvider.instance,
-      child: MaterialApp.router(
-        scaffoldMessengerKey: scaffoldMessengerKey,
-        debugShowCheckedModeBanner: false,
-        scrollBehavior: const AppScrollBehavior(),
-        theme: fromSchemeAndFontFamily(
-          fontFamily: ThemeProvider.instance.fontFamily,
-          colorScheme: ThemeProvider.instance.lightScheme,
-        ),
-        darkTheme: fromSchemeAndFontFamily(
-          fontFamily: ThemeProvider.instance.fontFamily,
-          colorScheme: ThemeProvider.instance.darkScheme,
-        ),
-        themeAnimationDuration: const Duration(milliseconds: 560),
-        themeAnimationCurve: Curves.easeInOutCubic,
-        themeMode: ThemeProvider.instance.themeMode,
-        localizationsDelegates: GlobalMaterialLocalizations.delegates,
-        supportedLocales: supportedLocales,
-        routerConfig: config,
-      ),
+      builder: (context, _) {
+        final theme = Provider.of<ThemeProvider>(context);
+        return MaterialApp.router(
+          scaffoldMessengerKey: scaffoldMessengerKey,
+          debugShowCheckedModeBanner: false,
+          scrollBehavior: const AppScrollBehavior(),
+          theme: fromSchemeAndFontFamily(
+            fontFamily: theme.fontFamily,
+            colorScheme: theme.lightScheme,
+          ),
+          darkTheme: fromSchemeAndFontFamily(
+            fontFamily: theme.fontFamily,
+            colorScheme: theme.darkScheme,
+          ),
+          themeAnimationDuration: const Duration(milliseconds: 560),
+          themeAnimationCurve: Curves.easeInOutCubic,
+          themeMode: theme.themeMode,
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
+          supportedLocales: supportedLocales,
+          routerConfig: config,
+        );
+      },
     );
   }
 
