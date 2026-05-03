@@ -24,7 +24,7 @@
 | Material You 动态取色 | WASAPI 独占模式 | 本地/在线歌词 | 10 段均衡器 |
 | 跟随封面自动取色 | 降调调节 | 逐字歌词高亮 | 音调调节 (±12 半音) |
 | 系统主题同步 | BASS_FX 音效 | 多格式歌词支持 | 预音量控制 |
-| Mesh 渐变背景 | SMTC 系统集成 | 桌面歌词 | EQ 自动增益 |
+| 动态/静态背景 | SMTC 系统集成 | 桌面歌词 | EQ 自动增益 |
 
 ---
 
@@ -32,37 +32,31 @@
 
 ### 深色模式
 
-<img src="screenshot/深色主页.png" width="45%" alt="深色主页"> <img src="screenshot/深色专辑页.png" width="45%" alt="深色专辑页">
-
-<img src="screenshot/深色竖屏响应式布局.png" width="45%" alt="深色竖屏响应式布局">
+<img src="screenshot/深色主页.png" width="400" alt="深色主页">
+<img src="screenshot/深色专辑页.png" width="400" alt="深色专辑页">
+<img src="screenshot/深色横屏响应式布局.png" width="400" alt="深色横屏">
+<img src="screenshot/横屏沉浸模式+歌词行模糊.png" width="400" alt="横屏沉浸">
+<img src="screenshot/竖屏模式.png" width="225" alt="竖屏模式">
+<img src="screenshot/竖屏模式2.png" width="225" alt="竖屏模式2">
+<img src="screenshot/竖屏沉浸模式+歌词行模糊.png" width="225" alt="竖屏沉浸">
 
 ### 浅色模式
 
-<img src="screenshot/浅色主页.png" width="45%" alt="浅色主页"> <img src="screenshot/浅色专辑页.png" width="45%" alt="浅色专辑页">
-
-<img src="screenshot/浅色歌手页.png" width="45%" alt="浅色歌手页">
-
-### 横屏模式
-
-<img src="screenshot/深色横屏响应式布局.png" width="45%" alt="深色横屏响应式布局"> <img src="screenshot/浅色横屏模式.png" width="45%" alt="浅色横屏模式">
-
-### 竖屏模式
-
-<img src="screenshot/竖屏模式.png" width="45%" alt="竖屏模式"> <img src="screenshot/竖屏模式2.png" width="45%" alt="竖屏模式2">
-
-### 沉浸模式 & 歌词行模糊
-
-<img src="screenshot/横屏沉浸模式+歌词行模糊.png" width="45%" alt="横屏沉浸模式+歌词行模糊"> <img src="screenshot/竖屏沉浸模式+歌词行模糊.png" width="45%" alt="竖屏沉浸模式+歌词行模糊">
-
-<img src="screenshot/浅色横屏+歌词行模糊.png" width="45%" alt="浅色横屏+歌词行模糊">
+<img src="screenshot/浅色主页.png" width="400" alt="浅色主页">
+<img src="screenshot/浅色专辑页.png" width="400" alt="浅色专辑页">
+<img src="screenshot/浅色横屏模式.png" width="400" alt="浅色横屏"> 
+<img src="screenshot/浅色横屏+歌词行模糊.png" width="400" alt="浅色横屏模糊">
+<img src="screenshot/浅色歌手页.png" width="400" alt="浅色歌手页">
 
 ### 封面模糊效果
 
-<img src="screenshot/深色封面模糊.png" width="45%" alt="深色封面模糊"> <img src="screenshot/浅色封面模糊.png" width="45%" alt="浅色封面模糊">
+<img src="screenshot/深色封面模糊.png" width="400" alt="深色封面模糊">
+<img src="screenshot/浅色封面模糊.png" width="400" alt="浅色封面模糊">
 
 ### 桌面歌词
 
-<img src="screenshot/桌面歌词.png" width="45%" alt="桌面歌词"> <img src="screenshot/桌面歌词隐藏.png" width="45%" alt="桌面歌词隐藏">
+<img src="screenshot/桌面歌词.png" width="400" alt="桌面歌词">
+<img src="screenshot/桌面歌词隐藏.png" width="400" alt="桌面歌词隐藏">
 
 ---
 
