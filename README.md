@@ -287,7 +287,7 @@ cd rust_builder && flutter pub run build_runner build
 
 - [coriander_player](https://github.com/Ferry-200/coriander_player) — Windows 端本地音乐播放器，Material You 配色。Dart (Flutter) + Rust (lofty, windows-rs) + C (bass lib) 跨语言项目
 
-- [ZeroBit-Player](https://github.com/Ferry-200/zerobit) — 基于 Flutter(dart) + Rust + BASS 开发的 Material 风格本地音乐播放器
+- [ZeroBit-Player](https://github.com/Empty-57/ZeroBit-Player) — 基于 Flutter(dart) + Rust + BASS 开发的 Material 风格本地音乐播放器
 
 ---
 
