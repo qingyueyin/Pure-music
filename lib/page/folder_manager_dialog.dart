@@ -1,5 +1,6 @@
 import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/component/build_index_state_view.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/library/playlist.dart';
@@ -24,10 +25,7 @@ class FolderManagerDialog extends StatefulWidget {
 }
 
 class _FolderManagerDialogState extends State<FolderManagerDialog> {
-  final folders = List.generate(
-    AudioLibrary.instance.folders.length,
-    (i) => AudioLibrary.instance.folders[i].path,
-  );
+  List<String> folders = List.from(AppPreference.instance.userFolders);
 
   final applicationSupportDirectory = getAppDataDir();
 
@@ -141,7 +139,26 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
                   ),
                   const SizedBox(width: 8.0),
                   TextButton(
-                    onPressed: () {
+                    onPressed: () async {
+                      // 将新增的文件夹保存到偏好设置
+                      final toSave = folders
+                          .where((f) =>
+                              !AppPreference.instance.userFolders.contains(f))
+                          .toList();
+                      final toRemove = AppPreference.instance.userFolders
+                          .where((f) => !folders.contains(f))
+                          .toList();
+
+                      final updated = List<String>.from(
+                        AppPreference.instance.userFolders,
+                      );
+                      updated.addAll(toSave);
+                      updated.removeWhere((f) => toRemove.contains(f));
+
+                      AppPreference.instance.userFolders = updated;
+                      await AppPreference.instance.save();
+
+                      // 退出编辑模式，触发 BuildIndexStateView 显示索引构建进度
                       setState(() {
                         editing = false;
                       });
