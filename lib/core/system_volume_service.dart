@@ -86,5 +86,14 @@ class SystemVolumeService {
       }
     });
   }
+
+  void dispose() {
+    _windowsPollTimer?.cancel();
+    if (_bound) {
+      FlutterVolumeController.removeListener();
+      _bound = false;
+    }
+    volume.dispose();
+  }
 }
 
