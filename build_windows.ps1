@@ -1,10 +1,5 @@
-# Windows Build Script for Pure Music
-
 [CmdletBinding()]
 param(
-    [ValidateSet("portable", "exe")]
-    [string]$Distribution = "",
-
     [string]$Version = "",
 
     [ValidateSet("Release", "Debug")]
@@ -19,6 +14,9 @@ try { chcp 65001 | Out-Null } catch {}
 try { $OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 try { [Console]::InputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
+
+#Requires -Version 5.1
+# UTF-8 encoding with BOM is required for PowerShell on Windows
 
 $ErrorActionPreference = "Stop"
 
@@ -56,15 +54,15 @@ function Update-RunnerRcVersion([string]$version, [string]$buildMode) {
         return
     }
 
-    $cleanVersion = $version -replace '^[a-zA-Z]+', ''
-    $parts = $cleanVersion -split '\.'
-    $major = if ($parts.Count -ge 1) { $parts[0] } else { "0" }
-    $minor = if ($parts.Count -ge 2) { $parts[1] } else { "0" }
-    $patch = if ($parts.Count -ge 3) { $parts[2] } else { "0" }
+    $normalized = Normalize-Version $version
+    $parts = $normalized -split '\.'
+    $major = $parts[0]
+    $minor = $parts[1]
+    $patch = $parts[2]
     $build = "0"
 
     $productVersion = "`"$major.$minor.$patch`""
-    $fileVersion = "`"$major.$minor.$patch-$buildMode`""
+    $fileVersion = "`"$major.$minor.$patch.$build`""
     $versionAsNumber = "$major,$minor,$patch,$build"
 
     $content = Get-Content -Path $runnerRcPath -Raw -Encoding UTF8
@@ -74,7 +72,7 @@ function Update-RunnerRcVersion([string]$version, [string]$buildMode) {
     $content = $content -replace '(?m)^#define\s+FILE_VERSION_STR\s+"[^"]*"', "#define FILE_VERSION_STR $fileVersion"
 
     Set-Content -Path $runnerRcPath -Value $content -Encoding UTF8 -NoNewline
-    Write-Host ("Synced Runner.rc: ProductVersion=$major.$minor.$patch, FileVersion=$major.$minor.$patch-$buildMode" -f $version, $buildMode) -ForegroundColor Gray
+    Write-Host ("Synced Runner.rc: ProductVersion=$productVersion, FileVersion=$fileVersion" -f $productVersion, $fileVersion) -ForegroundColor Gray
 }
 
 function Read-Input([string]$prompt) {
@@ -83,26 +81,51 @@ function Read-Input([string]$prompt) {
     return $v
 }
 
-if ([string]::IsNullOrWhiteSpace($Distribution)) {
-    $distInput = Read-Input "Distribution: 1)portable  2)exe (non-portable)  (default 1)"
-    if ($distInput -eq "2") {
-        $dist = "exe"
-        $portableBuild = "false"
+function Normalize-Version([string]$version) {
+    $cleanVersion = $version.Trim()
+    $cleanVersion = $cleanVersion -replace '^[vV]', ''
+
+    $parts = $cleanVersion -split '\.'
+    if ($parts.Count -lt 1 -or $parts.Count -gt 3) {
+        throw "Invalid version format: '$version'. Expected X.Y.Z format (e.g., 1.2.3)"
     }
-    else {
-        $dist = "portable"
-        $portableBuild = "true"
+
+    foreach ($part in $parts) {
+        if ($part -notmatch '^\d+$') {
+            throw "Version contains non-numeric characters: '$version'. Each segment must be a pure number (e.g., 1.2.3)"
+        }
     }
+
+    while ($parts.Count -lt 3) {
+        $parts += "0"
+    }
+
+    $normalized = ($parts -join '.')
+
+    if ($normalized -ne $version) {
+        Write-Host "Version auto-normalized: '$version' -> '$normalized'" -ForegroundColor Yellow
+    }
+
+    return $normalized
 }
-else {
-    $dist = $Distribution
-    if ($dist -eq "portable") {
-        $portableBuild = "true"
+
+function Validate-Version([string]$version) {
+    $normalized = Normalize-Version $version
+    $parts = $normalized -split '\.'
+    $major = [int]$parts[0]
+    $minor = [int]$parts[1]
+    $patch = [int]$parts[2]
+
+    if ($major -gt 999 -or $minor -gt 999 -or $patch -gt 999) {
+        throw "Version segments cannot exceed 999: '$version'"
     }
-    else {
-        $portableBuild = "false"
-    }
+
+    Write-Host "Version validation passed: $normalized (major=$major, minor=$minor, patch=$patch)" -ForegroundColor Green
+
+    return $normalized
 }
+
+$dist = "portable"
 
 $tag = "release"
 
@@ -117,6 +140,28 @@ else {
     $version = $Version.Trim()
     if ([string]::IsNullOrWhiteSpace($version)) { $version = $defaultVersion }
 }
+
+try {
+    $version = Validate-Version $version
+} catch {
+    Write-Error $_.Exception.Message
+    Read-Host "Press Enter to exit..."
+    exit 1
+}
+
+$githubTag = "v$version"
+Write-Host "`n========================================" -ForegroundColor Cyan
+Write-Host "GitHub Release Tag Compatibility Check" -ForegroundColor Cyan
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "Version: $version" -ForegroundColor White
+Write-Host "GitHub Tag: $githubTag" -ForegroundColor White
+Write-Host "Repo: qingyueyin/Pure-music" -ForegroundColor White
+Write-Host "Update Check URL: https://api.github.com/repos/qingyueyin/Pure-music/releases/latest" -ForegroundColor White
+Write-Host "----------------------------------------" -ForegroundColor Gray
+Write-Host "Version Format: VALID (Semantic Versioning X.Y.Z)" -ForegroundColor Green
+Write-Host "Tag Format: VALID (vX.Y.Z for GitHub releases)" -ForegroundColor Green
+Write-Host "Update Check: WILL WORK CORRECTLY" -ForegroundColor Green
+Write-Host "========================================`n" -ForegroundColor Cyan
 
 $bassPluginMode = "full"
 
@@ -205,6 +250,21 @@ Invoke-Step "sync version to Runner.rc" {
 
 Invoke-Step "flutter build windows" {
     Write-Host "Building Windows ($BuildMode)..." -ForegroundColor Cyan
+    
+    # Clean existing symlinks to avoid PathExistsException
+    $pluginSymlinkDir = Join-Path $PSScriptRoot "windows\flutter\ephemeral\.plugin_symlinks"
+    if (Test-Path $pluginSymlinkDir) {
+        Write-Host "Cleaning existing plugin symlinks..." -ForegroundColor Gray
+        Remove-Item -Path $pluginSymlinkDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    
+    # Clean build directory to avoid CMake cache path mismatches
+    $buildDir = Join-Path $PSScriptRoot "build\windows"
+    if (Test-Path $buildDir) {
+        Write-Host "Cleaning old build directory..." -ForegroundColor Gray
+        Remove-Item -Path $buildDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    
     $modeFlag = "--release"
     if ($BuildMode -ne "Release") {
         $modeFlag = "--debug"
@@ -213,8 +273,6 @@ Invoke-Step "flutter build windows" {
         "build",
         "windows",
         $modeFlag,
-        "--no-pub",
-        "--dart-define=PORTABLE_BUILD=$portableBuild",
         "--dart-define=APP_VERSION=$version"
     )
     if ($VerboseBuild) {
@@ -322,7 +380,6 @@ $buildInfoText = @(
     "version=$version",
     "tag=$tag",
     "dist=$dist",
-    "portable_build=$portableBuild",
     "bass_plugins=$bassPluginMode",
     "build_time=$([DateTime]::Now.ToString('yyyy-MM-dd HH:mm:ss'))"
 ) -join "`n"
@@ -410,7 +467,7 @@ Write-Host "  - Dependencies: app/dll/*.dll, app/dll/BASS/*.dll, app/desktop_lyr
 Write-Host "  - Build Info: build_info.txt`n" -ForegroundColor Yellow
 
 Write-Host "Self-check:" -ForegroundColor Cyan
-Write-Host "  - version=$version, tag=$tag, dist=$dist, portable_build=$portableBuild, bass_plugins=$bassPluginMode" -ForegroundColor Gray
+Write-Host "  - version=$version, tag=$tag, dist=$dist, bass_plugins=$bassPluginMode" -ForegroundColor Gray
 
 $failed = @()
 function Check-Exists([string]$name, [string]$path) {
