@@ -29,6 +29,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
     setState(() {
       PLAYLISTS.add(Playlist(name, {}));
     });
+    await savePlaylists();
   }
 
   void editPlaylist(
@@ -43,6 +44,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
     setState(() {
       playlist.name = name;
     });
+    await savePlaylists();
   }
 
   @override
@@ -93,9 +95,12 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
               ),
               MenuItemButton(
                 style: menuItemStyle,
-                onPressed: () => setState(() {
-                  PLAYLISTS.remove(playlist);
-                }),
+                onPressed: () async {
+                  setState(() {
+                    PLAYLISTS.remove(playlist);
+                  });
+                  await savePlaylists();
+                },
                 leadingIcon: Icon(Symbols.delete, color: scheme.error),
                 child: const Text("删除"),
               ),
@@ -141,9 +146,12 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                           const SizedBox(width: 8.0),
                           IconButton(
                             tooltip: "删除",
-                            onPressed: () => setState(() {
-                              PLAYLISTS.remove(playlist);
-                            }),
+                            onPressed: () async {
+                              setState(() {
+                                PLAYLISTS.remove(playlist);
+                              });
+                              await savePlaylists();
+                            },
                             color: scheme.error,
                             icon: const Icon(Symbols.delete),
                           ),
@@ -201,12 +209,13 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
             tooltip: "删除选中歌单",
             onPressed: multiSelectController.selected.isEmpty
                 ? null
-                : () {
+                : () async {
                     setState(() {
                       PLAYLISTS.removeWhere(
                         (p) => multiSelectController.selected.contains(p),
                       );
                     });
+                    await savePlaylists();
                     multiSelectController.useMultiSelectView(false);
                     multiSelectController.clear();
                   },
