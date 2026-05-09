@@ -1,5 +1,4 @@
 import 'package:pure_music/lyric/lyric.dart';
-import 'package:pure_music/page/now_playing_page/component/word_emphasis_helper.dart';
 import 'dart:math';
 
 class Yrc extends Lyric {
@@ -31,10 +30,11 @@ class Yrc extends Lyric {
       for (var transLine in splitedTrans) {
         if (lineIt > lines.length - 1) break;
 
-        final timeStr = transLine.substring(
-          transLine.indexOf("[") + 1,
-          transLine.indexOf("]"),
-        );
+        final bracketStart = transLine.indexOf("[");
+        final bracketEnd = transLine.indexOf("]");
+        if (bracketStart == -1 || bracketEnd == -1 || bracketEnd <= bracketStart) continue;
+
+        final timeStr = transLine.substring(bracketStart + 1, bracketEnd);
         if (int.tryParse(timeStr.split(":").first) != null) {
           final t = transLine.replaceAll(RegExp(r"\[\d{2}:\d{2}\.\d{2,}\]"), "");
           if (t.isNotEmpty) {
@@ -113,8 +113,7 @@ class YrcLine extends SyncLyricLine {
       if (text.isEmpty) continue;
 
       final wordStart = Duration(milliseconds: max(startMs - offset, 0)) + lineStart;
-      final marks = WordMarkingUtil.analyzeWithDuration(text, durationMs);
-      final newWord = YrcWord(wordStart, Duration(milliseconds: durationMs), text, marks: marks);
+      final newWord = YrcWord(wordStart, Duration(milliseconds: durationMs), text);
 
       if (words.isNotEmpty && _shouldMergeWords(newWord, words.last)) {
         final last = words.last;
@@ -129,8 +128,7 @@ class YrcLine extends SyncLyricLine {
     }
 
     if (words.isEmpty && content.isNotEmpty) {
-      final marks = WordMarkingUtil.analyze(content);
-      words.add(YrcWord(lineStart, lineLength, content, marks: marks));
+      words.add(YrcWord(lineStart, lineLength, content));
     }
 
     return words;
@@ -147,11 +145,10 @@ class YrcLine extends SyncLyricLine {
       last.start,
       Duration(milliseconds: last.length.inMilliseconds + curr.length.inMilliseconds),
       last.content + curr.content,
-      marks: last.marks,
     );
   }
 }
 
 class YrcWord extends SyncLyricWord {
-  YrcWord(super.start, super.length, super.content, {super.marks});
+  YrcWord(super.start, super.length, super.content);
 }
