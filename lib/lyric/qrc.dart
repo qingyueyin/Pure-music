@@ -1,5 +1,4 @@
 import 'package:pure_music/lyric/lyric.dart';
-import 'package:pure_music/page/now_playing_page/component/word_emphasis_helper.dart';
 import 'dart:math';
 
 class Qrc extends Lyric {
@@ -35,10 +34,11 @@ class Qrc extends Lyric {
           break;
         }
 
-        final timeStr = transLine.substring(
-          transLine.indexOf("[") + 1,
-          transLine.indexOf("]"),
-        );
+        final bracketStart = transLine.indexOf("[");
+        final bracketEnd = transLine.indexOf("]");
+        if (bracketStart == -1 || bracketEnd == -1 || bracketEnd <= bracketStart) continue;
+
+        final timeStr = transLine.substring(bracketStart + 1, bracketEnd);
         // 如果是翻译行就加到歌词去
         if (int.tryParse(timeStr.split(":").first) != null) {
           final t =
@@ -134,13 +134,12 @@ class QrcLine extends SyncLyricLine {
       last.start,
       Duration(milliseconds: last.length.inMilliseconds + curr.length.inMilliseconds),
       last.content + curr.content,
-      marks: last.marks,
     );
   }
 }
 
 class QrcWord extends SyncLyricWord {
-  QrcWord(super.start, super.length, super.content, {super.marks});
+  QrcWord(super.start, super.length, super.content);
 
   static QrcWord? fromWord(String word, {required int lineStartMs}) {
     final splitedWord = word.split("(");
@@ -158,11 +157,7 @@ class QrcWord extends SyncLyricWord {
     );
 
     final content = splitedWord[0];
-    final marks = WordMarkingUtil.analyzeWithDuration(
-      content,
-      length.inMilliseconds,
-    );
 
-    return QrcWord(start, length, content, marks: marks);
+    return QrcWord(start, length, content);
   }
 }
