@@ -114,6 +114,7 @@ class BassPlayer {
   }
 
   Timer? _positionUpdater;
+  int _positionUpdaterVersion = 0;
   final _positionStreamController = StreamController<double>.broadcast();
   final _spectrumStreamController = StreamController<Float32List>.broadcast();
   final _playerStateStreamController =
@@ -165,7 +166,7 @@ class BassPlayer {
       return 0.0;
     }
 
-    // 独占模式下，需要减去缓冲区残留（参考 ZeroBit-Player 实现）
+    // 独占模式下，需要减去 WASAPI 缓冲区残留
     var finalBytes = posBytes;
     if (wasapiExclusive || _streamWasapiExclusive) {
       final decodeBytes = _bassWasapi.BASS_WASAPI_GetData(
@@ -265,7 +266,13 @@ class BassPlayer {
   }
 
   Timer _getPositionUpdater(Duration period) {
+    final myVersion = _positionUpdaterVersion;
     return Timer.periodic(period, (timer) {
+      // 如果版本号已变更（切歌了），立即停止此 Timer
+      if (myVersion != _positionUpdaterVersion) {
+        timer.cancel();
+        return;
+      }
       _emitPositionSnapshot();
 
       /// check if the channel has completed
@@ -858,13 +865,9 @@ class BassPlayer {
         _bassWasapi.BASS_WASAPI_Free();
         _bassInit();
       }
-      _sleepSync(50);
       wasapiExclusive = exclusive;
       if (_fstream != null && _fPath != null) {
-        setSource(_fPath!);
-        setVolumeDsp(AppPreference.instance.playbackPref.volumeDsp);
-        seek(lastPos);
-        start();
+        _rebuildStream(_fPath!, lastPos);
       }
       onExclusiveModeChanged?.call(exclusive);
       return true;
@@ -875,6 +878,136 @@ class BassPlayer {
     }
     wasapiExclusive = prevState;
     return false;
+  }
+
+  /// 重建音频流（用于模式切换时避免调用完整的 setSource）
+  void _rebuildStream(String path, double seekTo) {
+    _logAudioState("_rebuildStream(begin)");
+    _positionUpdaterVersion++;
+    _positionUpdater?.cancel();
+    _positionUpdater = null;
+
+    final oldHandle = _fstream!;
+    _fadeOutOldStream(oldHandle);
+    _bass.BASS_ChannelStop(oldHandle);
+    _bass.BASS_StreamFree(oldHandle);
+    _fstream = null;
+
+    wasapiExclusive
+        ? _createWasapiStream(path, seekTo)
+        : _createSharedStream(path, seekTo);
+    _logAudioState("_rebuildStream(done)");
+  }
+
+  /// 创建独占模式流
+  void _createWasapiStream(String path, double seekTo) {
+    const flags =
+        bass.BASS_UNICODE | bass.BASS_SAMPLE_FLOAT | bass.BASS_ASYNCFILE | bass.BASS_STREAM_DECODE;
+
+    final pathPointer = path.toNativeUtf16() as ffi.Pointer<ffi.Void>;
+    var handle = _bass.BASS_StreamCreateFile(
+      bass.FALSE,
+      pathPointer,
+      0,
+      0,
+      flags,
+    );
+
+    if (handle == 0) {
+      throw Exception("Failed to create WASAPI exclusive stream");
+    }
+
+    _fstream = handle;
+    _streamWasapiExclusive = true;
+
+    setVolumeDsp(AppPreference.instance.playbackPref.volumeDsp);
+    if (seekTo > 0.0) {
+      seek(seekTo);
+    }
+    start();
+  }
+
+  /// 创建共享模式流
+  void _createSharedStream(String path, double seekTo) {
+    const flags =
+        bass.BASS_UNICODE | bass.BASS_SAMPLE_FLOAT | bass.BASS_ASYNCFILE;
+
+    final pathPointer = path.toNativeUtf16() as ffi.Pointer<ffi.Void>;
+    var handle = _bass.BASS_StreamCreateFile(
+      bass.FALSE,
+      pathPointer,
+      0,
+      0,
+      flags,
+    );
+
+    if (handle == 0) {
+      throw Exception("Failed to create shared stream");
+    }
+
+    // 创建 Tempo 流以支持变速/变调
+    try {
+      if (_bassFx != null) {
+        final tempoHandle =
+            _bassFx!.BASS_FX_TempoCreate(handle, BASS_FX_FREESOURCE);
+        if (tempoHandle != 0) {
+          handle = tempoHandle;
+        } else {
+          _bass.BASS_StreamFree(handle);
+          handle = _bass.BASS_StreamCreateFile(
+            bass.FALSE,
+            pathPointer,
+            0,
+            0,
+            flags,
+          );
+        }
+      } else {
+        _bass.BASS_StreamFree(handle);
+        handle = _bass.BASS_StreamCreateFile(
+          bass.FALSE,
+          pathPointer,
+          0,
+          0,
+          flags,
+        );
+      }
+    } catch (e) {
+      _bass.BASS_StreamFree(handle);
+      handle = _bass.BASS_StreamCreateFile(
+        bass.FALSE,
+        pathPointer,
+        0,
+        0,
+        flags,
+      );
+    }
+
+    if (handle == 0) {
+      throw Exception("Failed to create shared stream with fallback");
+    }
+
+    _fstream = handle;
+    _streamWasapiExclusive = false;
+
+    // 恢复 EQ（只在 EQ 启用时）
+    if (!_isEqFlat) {
+      refreshEQ();
+    }
+
+    // 恢复变速/变调
+    if (_rate != 1.0) {
+      setRate(_rate);
+    }
+    if (_pitch != 0.0) {
+      setPitch(_pitch);
+    }
+
+    setVolumeDsp(AppPreference.instance.playbackPref.volumeDsp);
+    if (seekTo > 0.0) {
+      seek(seekTo);
+    }
+    start();
   }
 
   /// Crossfade: 淡出旧流 - 设置静音后停止
@@ -894,7 +1027,9 @@ class BassPlayer {
   void setSource(String path) {
     _logAudioState("setSource(begin)");
     if (_fstream != null) {
+      _positionUpdaterVersion++;
       _positionUpdater?.cancel();
+      _positionUpdater = null;
       _removeEQ();
       final oldHandle = _fstream!;
 
@@ -1145,7 +1280,7 @@ class BassPlayer {
     _bassWasapi.BASS_WASAPI_Stop(bass.TRUE);
     _bassWasapi.BASS_WASAPI_Free();
 
-    // 结合 ZeroBit-Player 的最佳实践：添加 AUTOFORMAT 和 BUFFER 标志
+    // 添加 AUTOFORMAT 和 BUFFER 标志
     const flags = bass_wasapi.BASS_WASAPI_EXCLUSIVE |
         bass_wasapi.BASS_WASAPI_AUTOFORMAT |
         bass_wasapi.BASS_WASAPI_EVENT |
@@ -1154,7 +1289,7 @@ class BassPlayer {
     final bufferSec = _computeWasapiBufferSec();
     const initFreq = 0; // 让 WASAPI 自动选择合适的采样率
 
-    // 参考 ZeroBit-Player 的重试机制：最多重试 3 次以解决 BASS_ERROR_BUSY
+    // WASAPI 初始化重试机制：最多重试 3 次以解决 BASS_ERROR_BUSY
     int result = bass.FALSE;
     for (int attempt = 0; attempt < 3; attempt++) {
       result = _bassWasapi.BASS_WASAPI_Init(
@@ -1397,6 +1532,10 @@ class BassPlayer {
   ///
   /// Also free the bass.dll.
   void free() {
+    _positionUpdaterVersion++;
+    _positionUpdater?.cancel();
+    _positionUpdater = null;
+
     // 如果当前是独占模式，需要先清理 WASAPI
     if (wasapiExclusive) {
       _bassWasapi.BASS_WASAPI_Stop(bass.TRUE);
@@ -1418,7 +1557,6 @@ class BassPlayer {
     _bassWasapiLib.close();
     _bassLib.close();
 
-    _positionUpdater?.cancel();
     _playerStateStreamController.close();
     _positionStreamController.close();
     _spectrumStreamController.close();
