@@ -1,10 +1,11 @@
-import 'dart:math';
-
 import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/lyric/lyric_source.dart';
+import 'package:pure_music/lyric/qrc.dart';
+import 'package:pure_music/lyric/yrc.dart';
+import 'package:pure_music/lyric/krc.dart';
 import 'package:pure_music/core/matcher.dart';
 import 'package:pure_music/page/now_playing_page/component/vertical_lyric_view.dart';
 import 'package:pure_music/play_service/play_service.dart';
@@ -494,7 +495,7 @@ class SetLyricSourceDialog extends StatelessWidget {
   }
 }
 
-class _ManualSearchTile extends StatefulWidget {
+class _ManualSearchTile extends StatelessWidget {
   const _ManualSearchTile({
     required this.searchResult,
     required this.audio,
@@ -504,66 +505,46 @@ class _ManualSearchTile extends StatefulWidget {
   final SongSearchResult searchResult;
 
   @override
-  State<_ManualSearchTile> createState() => _ManualSearchTileState();
-}
-
-class _ManualSearchTileState extends State<_ManualSearchTile> {
-  late final lyric = getOnlineLyric(
-    qqSongId: widget.searchResult.qqSongId,
-    kugouSongHash: widget.searchResult.kugouSongHash,
-    neSongId: widget.searchResult.neSongId,
-  );
-
-  @override
   Widget build(BuildContext context) {
-    return FutureBuilder<Lyric?>(
-      future: lyric,
-      builder: (context, lyricSnapshot) {
-        if (lyricSnapshot.connectionState != ConnectionState.done ||
-            lyricSnapshot.data == null ||
-            lyricSnapshot.data!.lines.isEmpty) {
-          return const SizedBox.shrink();
-        }
+    final sourceText = switch (searchResult.source) {
+      ResultSource.qq => "QQ",
+      ResultSource.kugou => "酷狗",
+      ResultSource.ne => "网易云",
+    };
 
-        final sourceText = switch (widget.searchResult.source) {
-          ResultSource.qq => "QQ",
-          ResultSource.kugou => "酷狗",
-          ResultSource.ne => "网易云",
-        };
-
-        return ListTile(
-          title: Text(widget.searchResult.title),
-          subtitle: Text("${widget.searchResult.artists} - ${widget.searchResult.album}"),
-          trailing: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primaryContainer,
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              sourceText,
-              style: TextStyle(
-                fontSize: 10,
-                color: Theme.of(context).colorScheme.onPrimaryContainer,
-              ),
-            ),
+    return ListTile(
+      title: Text(searchResult.title),
+      subtitle: Text("${searchResult.artists} - ${searchResult.album}"),
+      trailing: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.primaryContainer,
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          sourceText,
+          style: TextStyle(
+            fontSize: 10,
+            color: Theme.of(context).colorScheme.onPrimaryContainer,
           ),
-          onTap: () {
-            final source = switch (widget.searchResult.source) {
-              ResultSource.qq => LyricSourceType.qq,
-              ResultSource.kugou => LyricSourceType.kugou,
-              ResultSource.ne => LyricSourceType.ne,
-            };
-            lyricSources[widget.audio.path] = LyricSource(
-              source,
-              qqSongId: widget.searchResult.qqSongId,
-              kugouSongHash: widget.searchResult.kugouSongHash,
-              neSongId: widget.searchResult.neSongId,
-            );
-            PlayService.instance.lyricService.useOnlineLyric();
-            Navigator.pop(context);
-          },
+        ),
+      ),
+      onTap: () {
+        final source = switch (searchResult.source) {
+          ResultSource.qq => LyricSourceType.qq,
+          ResultSource.kugou => LyricSourceType.kugou,
+          ResultSource.ne => LyricSourceType.ne,
+        };
+        lyricSources[audio.path] = LyricSource(
+          source,
+          qqSongId: searchResult.qqSongId,
+          kugouSongHash: searchResult.kugouSongHash,
+          neSongId: searchResult.neSongId,
         );
+        Navigator.pop(context);
+
+        // 点击后异步获取歌词
+        PlayService.instance.lyricService.useOnlineLyric();
       },
     );
   }
@@ -610,7 +591,7 @@ class _LyricSourceTileState extends State<_LyricSourceTile> {
         ConnectionState.active => loadingWidget,
         ConnectionState.done =>
           lyricSnapshot.data == null || lyricSnapshot.data!.lines.isEmpty
-              ? const SizedBox.shrink()
+              ? _buildNoLyricTile(context)
               : buildTile(
                   context,
                   widget.audio,
@@ -621,6 +602,37 @@ class _LyricSourceTileState extends State<_LyricSourceTile> {
     );
   }
 
+  Widget _buildNoLyricTile(BuildContext context) {
+    final sourceText = switch (widget.searchResult.source) {
+      ResultSource.qq => "QQ音乐",
+      ResultSource.kugou => "酷狗",
+      ResultSource.ne => "网易云",
+    };
+    return ListTile(
+      leading: _buildSourceLabel(context, sourceText),
+      title: Text(widget.searchResult.title),
+      subtitle: Text("${widget.searchResult.artists} - ${widget.searchResult.album}"),
+    );
+  }
+
+  Widget _buildSourceLabel(BuildContext context, String sourceText) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.primaryContainer,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        sourceText,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: Theme.of(context).colorScheme.onPrimaryContainer,
+        ),
+      ),
+    );
+  }
+
   Widget buildTile(
     BuildContext context,
     Audio audio,
@@ -628,10 +640,40 @@ class _LyricSourceTileState extends State<_LyricSourceTile> {
     Lyric lyric,
   ) {
     final sourceText = switch (searchResult.source) {
-      ResultSource.qq => "QQ",
+      ResultSource.qq => "QQ音乐",
       ResultSource.kugou => "酷狗",
       ResultSource.ne => "网易云",
     };
+
+    final lyricTypeText = switch (lyric.runtimeType) {
+      _ when lyric is Qrc || lyric is Yrc || lyric is Krc => '逐字',
+      _ when lyric is Lrc => '逐行',
+      _ => '',
+    };
+
+    final hasTranslation = lyric.lines.any((line) {
+      if (line is LrcLine) return line.translation?.isNotEmpty == true;
+      if (line is SyncLyricLine) return line.translation?.isNotEmpty == true;
+      return false;
+    });
+
+    final isJapaneseSong = lyric.lines.any((line) {
+      final text = line is SyncLyricLine
+          ? line.content
+          : line is LrcLine
+              ? line.content
+              : '';
+      return text.contains(RegExp(r'[\u3040-\u309F\u30A0-\u30FF]'));
+    });
+
+    final hasRomanization = isJapaneseSong &&
+        lyric.lines.any((line) {
+          if (line is SyncLyricLine) {
+            if (line.romanLyric?.isNotEmpty == true) return true;
+            if (line.words.any((w) => w.content.isNotEmpty) == true) return true;
+          }
+          return false;
+        });
 
     return ListTile(
       onTap: () {
@@ -653,57 +695,108 @@ class _LyricSourceTileState extends State<_LyricSourceTile> {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8.0),
       ),
-      leading: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
+      leading: _buildSourceLabel(context, sourceText),
+      title: Row(
         children: [
-          Text(sourceText),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  searchResult.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  "${searchResult.artists} - ${searchResult.album}",
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          if (lyricTypeText.isNotEmpty) ...[
+            const SizedBox(width: 4),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.tertiaryContainer,
+                borderRadius: BorderRadius.circular(3),
+              ),
+              child: Text(
+                lyricTypeText,
+                style: TextStyle(
+                  fontSize: 9,
+                  color: Theme.of(context).colorScheme.onTertiaryContainer,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+          if (hasTranslation) ...[
+            const SizedBox(width: 4),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.secondaryContainer,
+                borderRadius: BorderRadius.circular(3),
+              ),
+              child: Text(
+                '译',
+                style: TextStyle(
+                  fontSize: 9,
+                  color: Theme.of(context).colorScheme.onSecondaryContainer,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+          if (hasRomanization) ...[
+            const SizedBox(width: 4),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(3),
+              ),
+              child: Text(
+                '罗马音',
+                style: TextStyle(
+                  fontSize: 9,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
-      title: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            searchResult.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          Text(
-            "${searchResult.artists} - ${searchResult.album}",
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
-      ),
-      subtitle: StreamBuilder(
-        stream: PlayService.instance.playbackService.positionStream,
-        builder: (context, positionSnapshot) {
-          final currLineIndex = max(lyric.lines.lastIndexWhere(
-            (element) {
-              return element.start.inMilliseconds <
-                  (positionSnapshot.data ?? 0) * 1000;
-            },
-          ), 0);
+      subtitle: _buildStaticSubtitle(lyric),
+    );
+  }
 
-          final LyricLine currLine = lyric.lines[currLineIndex];
-          if (currLine is LrcLine) {
-            return Text(
-              currLine.content,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            );
-          } else {
-            final syncLine = currLine as SyncLyricLine;
-
-            return Text(
-              "${syncLine.content}${syncLine.translation != null ? "┃${syncLine.translation}" : ""}",
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            );
-          }
-        },
-      ),
+  Widget _buildStaticSubtitle(Lyric lyric) {
+    final firstLine = lyric.lines.isNotEmpty ? lyric.lines.first : null;
+    final content = firstLine is SyncLyricLine
+        ? firstLine.content
+        : firstLine is LrcLine
+            ? firstLine.content
+            : '';
+    final translation = firstLine?.translation;
+    
+    if (translation != null && translation.isNotEmpty) {
+      return Text(
+        "$content ┃ $translation",
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      );
+    }
+    
+    return Text(
+      content.isEmpty ? "暂无歌词内容" : content,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
     );
   }
 }
