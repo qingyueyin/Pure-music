@@ -115,11 +115,15 @@ class Playlist {
 
   factory Playlist.fromMap(Map map) {
     final Map<String, Audio> audios = {};
-    final List audioMaps = map["audios"];
-    for (var item in audioMaps) {
-      final audio = Audio.fromMap(item);
-      audios[audio.path] = audio;
+    final rawAudios = map["audios"];
+    if (rawAudios is List) {
+      for (var item in rawAudios) {
+        if (item is Map) {
+          final audio = Audio.fromMap(item);
+          audios[audio.path] = audio;
+        }
+      }
     }
-    return Playlist(map["name"], audios);
+    return Playlist(map["name"] ?? '', audios);
   }
 }
