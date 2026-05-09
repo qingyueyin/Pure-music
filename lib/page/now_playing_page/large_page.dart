@@ -10,11 +10,11 @@ class _NowPlayingLargePage extends StatelessWidget {
       children: [
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(24.0, 8.0, 24.0, 0),
+            padding: const EdgeInsets.fromLTRB(24.0, 8.0, 24.0, 8.0),
             child: LayoutBuilder(builder: (context, constraints) {
               return Row(
                 children: [
-                  // 左侧：封面 + 歌曲信息 (50%)
+                  // 左侧：封面 + 歌曲信息 (50%) - 垂直居中
                   Expanded(
                     child: Center(child: _NowPlayingInfo()),
                   ),
@@ -47,115 +47,119 @@ class _NowPlayingLargePage extends StatelessWidget {
             }),
           ),
         ),
-        const SizedBox(height: 8.0),
-        const _NowPlayingSlider(),
-        Padding(
-          padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _DesktopLyricSwitch(),
-                    spacer,
-                    _ExclusiveModeSwitch(),
-                    spacer,
-                    IconButton(
-                      tooltip: "均衡器",
-                      onPressed: () {
-                        showDialog(
-                          context: context,
-                          builder: (context) => const EqualizerDialog(),
-                        );
-                      },
-                      icon: const Icon(Symbols.graphic_eq),
-                      color: Theme.of(context).colorScheme.onSurface,
-                    ),
-                  ],
-                ),
-              ),
-              _AutoHidingControlBar(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const _NowPlayingPlaybackModeSwitch(),
-                    spacer,
-                    IconButton(
-                      tooltip: "上一曲",
-                      onPressed: PlayService.instance.playbackService.lastAudio,
-                      icon: const Icon(
-                        Symbols.skip_previous,
-                        fill: 1.0,
-                      ),
-                      iconSize: 28,
-                      color: Theme.of(context).colorScheme.onSurface,
-                    ),
-                    spacer,
-                    StreamBuilder(
-                      stream: PlayService
-                          .instance.playbackService.playerStateStream,
-                      initialData:
-                          PlayService.instance.playbackService.playerState,
-                      builder: (context, snapshot) {
-                        final state = snapshot.data!;
-                        final isPlaying = state == PlayerState.playing;
-                        final isCompleted = state == PlayerState.completed;
-                        
-                        return IconButton(
-                          tooltip: isPlaying ? "暂停" : "播放",
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const _NowPlayingSlider(),
+            Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _DesktopLyricSwitch(),
+                        spacer,
+                        _ExclusiveModeSwitch(),
+                        spacer,
+                        IconButton(
+                          tooltip: "均衡器",
                           onPressed: () {
-                            final service = PlayService.instance.playbackService;
-                            if (isPlaying) {
-                              service.pause();
-                            } else if (isCompleted) {
-                              service.playAgain();
-                            } else {
-                              service.start();
-                            }
+                            showDialog(
+                              context: context,
+                              builder: (context) => const EqualizerDialog(),
+                            );
                           },
-                          icon: Icon(
-                            isPlaying ? Symbols.pause : Symbols.play_arrow,
+                          icon: const Icon(Symbols.graphic_eq),
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                      ],
+                    ),
+                  ),
+                  _AutoHidingControlBar(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const _NowPlayingPlaybackModeSwitch(),
+                        spacer,
+                        IconButton(
+                          tooltip: "上一曲",
+                          onPressed: PlayService.instance.playbackService.lastAudio,
+                          icon: const Icon(
+                            Symbols.skip_previous,
                             fill: 1.0,
                           ),
-                          iconSize: 36,
+                          iconSize: 28,
                           color: Theme.of(context).colorScheme.onSurface,
-                        );
-                      },
+                        ),
+                        spacer,
+                        StreamBuilder(
+                          stream: PlayService
+                              .instance.playbackService.playerStateStream,
+                          initialData:
+                              PlayService.instance.playbackService.playerState,
+                          builder: (context, snapshot) {
+                            final state = snapshot.data!;
+                            final isPlaying = state == PlayerState.playing;
+                            final isCompleted = state == PlayerState.completed;
+                            
+                            return IconButton(
+                              tooltip: isPlaying ? "暂停" : "播放",
+                              onPressed: () {
+                                final service = PlayService.instance.playbackService;
+                                if (isPlaying) {
+                                  service.pause();
+                                } else if (isCompleted) {
+                                  service.playAgain();
+                                } else {
+                                  service.start();
+                                }
+                              },
+                              icon: Icon(
+                                isPlaying ? Symbols.pause : Symbols.play_arrow,
+                                fill: 1.0,
+                              ),
+                              iconSize: 36,
+                              color: Theme.of(context).colorScheme.onSurface,
+                            );
+                          },
+                        ),
+                        spacer,
+                        IconButton(
+                          tooltip: "下一曲",
+                          onPressed: PlayService.instance.playbackService.nextAudio,
+                          icon: const Icon(
+                            Symbols.skip_next,
+                            fill: 1.0,
+                          ),
+                          iconSize: 28,
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                        spacer,
+                        const _NowPlayingLargeViewSwitch(),
+                      ],
                     ),
-                    spacer,
-                    IconButton(
-                      tooltip: "下一曲",
-                      onPressed: PlayService.instance.playbackService.nextAudio,
-                      icon: const Icon(
-                        Symbols.skip_next,
-                        fill: 1.0,
-                      ),
-                      iconSize: 28,
-                      color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const _NowPlayingVolDspSlider(),
+                        spacer,
+                        const NowPlayingPitchControl(),
+                        spacer,
+                        _NowPlayingMoreAction(),
+                      ],
                     ),
-                    spacer,
-                    const _NowPlayingLargeViewSwitch(),
-                  ],
-                ),
+                  )
+                ],
               ),
-              Align(
-                alignment: Alignment.centerRight,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const _NowPlayingVolDspSlider(),
-                    spacer,
-                    const NowPlayingPitchControl(),
-                    spacer,
-                    _NowPlayingMoreAction(),
-                  ],
-                ),
-              )
-            ],
-          ),
+            ),
+          ],
         ),
       ],
     );
