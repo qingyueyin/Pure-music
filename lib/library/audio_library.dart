@@ -212,7 +212,7 @@ class AudioFolder {
   AudioFolder(this.audios, this.path, this.modified, this.latest);
 
   factory AudioFolder.fromMap(Map map, List<Audio> audios) =>
-      AudioFolder(audios, map["path"], map["modified"], map["latest"]);
+      AudioFolder(audios, map["path"] ?? '', map["modified"] ?? 0, map["latest"] ?? 0);
 
   @override
   String toString() {
@@ -290,17 +290,17 @@ class Audio {
                 .split(RegExp(AppSettings.instance.artistSplitPattern));
 
   factory Audio.fromMap(Map map) => Audio(
-        map["title"],
-        map["artist"],
-        map["album"],
+        map["title"] ?? '',
+        map["artist"] ?? '',
+        map["album"] ?? '',
         map["album_artist"],
         map["track"] ?? 0,
         map["duration"] ?? 0,
         map["bitrate"],
         map["sample_rate"],
-        map["path"],
-        map["modified"],
-        map["created"],
+        map["path"] ?? '',
+        map["modified"] ?? 0,
+        map["created"] ?? 0,
         map["by"],
       );
 
@@ -373,6 +373,16 @@ class Audio {
       return _cover;
     })();
     return _coverFuture!;
+  }
+
+  /// 释放封面缓存（用于长时间不用时释放内存）
+  void evictCoverCache() {
+    if (_cover != null) {
+      _cover?.evict();
+      _cover = null;
+    }
+    _coverFuture = null;
+    _mediumCoverFuture = null;
   }
 
   /// audio detail page 不需要频繁调用，所以不缓存图片
