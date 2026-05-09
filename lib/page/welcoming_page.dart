@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/component/build_index_state_view.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
@@ -124,7 +125,9 @@ class _FolderSelectorViewState extends State<FolderSelectorView> {
               child: const Text("添加文件夹"),
             ),
             FilledButton(
-              onPressed: () {
+              onPressed: () async {
+                AppPreference.instance.userFolders = List.from(folders);
+                await AppPreference.instance.save();
                 setState(() {
                   selecting = false;
                 });
