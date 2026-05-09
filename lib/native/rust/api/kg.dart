@@ -157,27 +157,30 @@ Future<void> _ensureInit() async {
   });
 }
 
-Map<String, String> _buildSearchSignedParams({
-  required String keyword,
-  required int page,
-  required int pageSize,
+Map<String, String> _buildSignedParams(
+  Map<String, String> customParams, {
+  required String module,
 }) {
   final currentTime = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-  final baseParams = <String, String>{
-    'userid': '0',
-    'appid': '3116',
-    'token': '',
-    'clienttime': currentTime.toString(),
-    'iscorrection': '1',
-    'uuid': '-',
-    'mid': _session.mid ?? '-',
-    'dfid': '-',
-    'clientver': '11070',
-    'platform': 'AndroidFilter',
-    'keyword': keyword,
-    'page': page.toString(),
-    'pagesize': pageSize.toString(),
-  };
+  final baseParams = <String, String>{};
+
+  if (module == 'Lyric') {
+    baseParams['appid'] = '3116';
+    baseParams['clientver'] = '11070';
+  } else {
+    baseParams['userid'] = '0';
+    baseParams['appid'] = '3116';
+    baseParams['token'] = '';
+    baseParams['clienttime'] = currentTime.toString();
+    baseParams['iscorrection'] = '1';
+    baseParams['uuid'] = '-';
+    baseParams['mid'] = _session.mid ?? '-';
+    baseParams['dfid'] = _session.dfid ?? '-';
+    baseParams['clientver'] = '11070';
+    baseParams['platform'] = 'AndroidFilter';
+  }
+
+  baseParams.addAll(customParams);
 
   final sortedEntries = baseParams.entries.toList()
     ..sort((a, b) => a.key.compareTo(b.key));
@@ -197,11 +200,11 @@ Future<List<Map<String, dynamic>>> kgSearch(String keyword,
     logger.d('[KG] kgSearch: keyword="$keyword" limit=$limit');
     await _ensureInit();
 
-    final params = _buildSearchSignedParams(
-      keyword: keyword,
-      page: 1,
-      pageSize: limit,
-    );
+    final params = _buildSignedParams({
+      'keyword': keyword,
+      'page': '1',
+      'pagesize': limit.toString(),
+    }, module: 'Search');
 
     final queryStr = params.entries.map((e) => '${e.key}=${e.value}').join('&');
     final uri =
@@ -273,49 +276,87 @@ Future<Map<String, dynamic>?> kgLyric(String hash) async {
       return null;
     }
 
-    final searchUri = Uri.parse(
-        'https://lyrics.kugou.com/v1/search?keyword=&accesskey=&hash=$hash&dfid=${_session.dfid ?? ''}&mid=${_session.mid ?? ''}&clienttime=${DateTime.now().millisecondsSinceEpoch}');
+    // Step 1: Search lyrics candidates with signature
+    final searchParams = _buildSignedParams({
+      'hash': hash,
+      'keyword': '',
+      'lrctxt': '1',
+      'man': 'no',
+    }, module: 'Lyric');
+
+    final queryStr = searchParams.entries.map((e) => '${e.key}=${e.value}').join('&');
+    final searchUri = Uri.parse('https://lyrics.kugou.com/v1/search?$queryStr');
+    logger.d('[KG] lyric: search uri=$searchUri');
 
     var client = HttpClient();
     var request = await client.getUrl(searchUri);
     request.headers.set('User-Agent',
         'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.101 Safari/537.36');
     var response = await request.close();
+    logger.d('[KG] lyric: search HTTP ${response.statusCode}');
     var responseBodyBytes = await response
         .fold<BytesBuilder>(BytesBuilder(), (b, d) => b..add(d))
         .then((b) => b.takeBytes());
     client.close();
 
-    if (responseBodyBytes.isEmpty) return null;
+    if (responseBodyBytes.isEmpty) {
+      logger.d('[KG] lyric: search response body empty');
+      return null;
+    }
 
     final searchResp = jsonDecode(utf8.decode(responseBodyBytes));
     final candidates = searchResp['candidates'] as List?;
-    if (candidates == null || candidates.isEmpty) return null;
+    logger.d('[KG] lyric: candidates count=${candidates?.length}');
+    if (candidates == null || candidates.isEmpty) {
+      logger.d('[KG] lyric: no candidates, resp=${jsonEncode(searchResp)}');
+      return null;
+    }
 
-    final candidate = candidates.first;
+    final candidate = candidates.first as Map<String, dynamic>;
     final id = candidate['id'];
     final accessKey = candidate['accesskey'];
+    logger.d('[KG] lyric: candidate id=$id accesskey=$accessKey');
 
-    final downloadUri = Uri.parse(
-        'http://lyrics.kugou.com/download?ver=1&clienttime=${DateTime.now().millisecondsSinceEpoch}&id=$id&accesskey=$accessKey&dfid=${_session.dfid ?? ''}&mid=${_session.mid ?? ''}');
+    // Step 2: Download lyric with signature
+    final downloadParams = _buildSignedParams({
+      'accesskey': accessKey,
+      'charset': 'utf8',
+      'client': 'mobi',
+      'fmt': 'krc',
+      'id': id,
+      'ver': '1',
+    }, module: 'Lyric');
+
+    final downloadQueryStr = downloadParams.entries.map((e) => '${e.key}=${e.value}').join('&');
+    final downloadUri = Uri.parse('http://lyrics.kugou.com/download?$downloadQueryStr');
+    logger.d('[KG] lyric: download uri=$downloadUri');
 
     client = HttpClient();
     request = await client.getUrl(downloadUri);
     request.headers.set('User-Agent',
         'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.101 Safari/537.36');
     response = await request.close();
+    logger.d('[KG] lyric: download HTTP ${response.statusCode}');
     responseBodyBytes = await response
         .fold<BytesBuilder>(BytesBuilder(), (b, d) => b..add(d))
         .then((b) => b.takeBytes());
     client.close();
 
-    if (responseBodyBytes.isEmpty) return null;
+    if (responseBodyBytes.isEmpty) {
+      logger.d('[KG] lyric: download response body empty');
+      return null;
+    }
 
     final downloadResp = jsonDecode(utf8.decode(responseBodyBytes));
+    logger.d('[KG] lyric: resp keys=${downloadResp.keys.toList()}, code=${downloadResp['code']}');
     final content = downloadResp['content'];
     final contentType = downloadResp['contenttype'];
+    logger.d('[KG] lyric: content length=${content?.toString().length}, contentType=$contentType');
 
-    if (content == null || content.isEmpty) return null;
+    if (content == null || content.isEmpty) {
+      logger.d('[KG] lyric: content null or empty, resp=${jsonEncode(downloadResp)}');
+      return null;
+    }
 
     String? lyricText;
     if (contentType == 0 || contentType == 1) {
