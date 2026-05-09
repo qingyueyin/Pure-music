@@ -44,12 +44,14 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
       multiSelectViewActions: [
         IconButton.filled(
           tooltip: "移除选中歌曲",
-          onPressed: () {
+          onPressed: () async {
             setState(() {
               for (var item in multiSelectController.selected) {
                 widget.playlist.audios.remove(item.path);
               }
             });
+            await savePlaylists();
+            if (!mounted) return;
             multiSelectController.useMultiSelectView(false);
           },
           style: ButtonStyle(
