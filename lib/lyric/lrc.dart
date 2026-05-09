@@ -10,7 +10,6 @@ import 'package:pure_music/lyric/qrc.dart';
 import 'package:pure_music/lyric/qrc_decryptor.dart';
 import 'package:pure_music/lyric/yrc.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart';
-import 'package:pure_music/page/now_playing_page/component/word_emphasis_helper.dart';
 
 /// 智能清理空白行：
 /// 1. 移除连续的空白行（只保留第一个）
@@ -44,6 +43,12 @@ bool _isBlankLine(LyricLine line) {
   return false;
 }
 
+String _lineContent(LyricLine line) {
+  if (line is LrcLine) return line.content;
+  if (line is SyncLyricLine) return line.content;
+  return '';
+}
+
 class EnhancedLrc extends Lyric {
   final LrcSource source;
   EnhancedLrc(super.lines, this.source);
@@ -65,7 +70,7 @@ class _EnhancedLrcRawLine {
 }
 
 class EnhancedLrcWord extends SyncLyricWord {
-  EnhancedLrcWord(super.start, super.length, super.content, {super.marks});
+  EnhancedLrcWord(super.start, super.length, super.content);
 }
 
 class Crc extends Lyric {
@@ -83,7 +88,7 @@ class CrcLine extends SyncLyricLine {
 }
 
 class CrcWord extends SyncLyricWord {
-  CrcWord(super.start, super.length, super.content, {super.marks});
+  CrcWord(super.start, super.length, super.content);
 }
 
 class LrcLine extends UnsyncLyricLine {
@@ -237,14 +242,53 @@ class Lrc extends Lyric {
           combinedLines.add(primary);
         }
       } else {
-        // 三行或更多：注音 + 原文 + 翻译
-        final roma = group[0] as LrcLine;
-        final primary = group[1] as LrcLine;
-        final trans = group.length > 2 ? group[2] as LrcLine? : null;
+        // 三行或更多：需要正确识别 注音、原文、翻译
+        // 使用 _isRomanization 判断哪行是注音，哪行是原文
+        int? romanIndex, primaryIndex, transIndex;
 
-        primary.romanLyric = _stripTags(roma.content);
-        if (trans != null) {
-          primary.translation = _stripTags(trans.content);
+        for (int i = 0; i < group.length; i++) {
+          final lineContent = _lineContent(group[i]);
+          if (primaryIndex == null &&
+              !_isRomanization(lineContent) &&
+              lineContent.isNotEmpty) {
+            primaryIndex = i;
+          } else if (romanIndex == null && _isRomanization(lineContent)) {
+            romanIndex = i;
+          } else {
+            transIndex = i;
+          }
+        }
+
+        // Fallback：如果没找到原文，取第一个非注音行
+        if (primaryIndex == null) {
+          for (int i = 0; i < group.length; i++) {
+            if (i != romanIndex) {
+              primaryIndex = i;
+              break;
+            }
+          }
+        }
+
+        // Fallback：如果没找到注音，假设第一个是注音
+        if (romanIndex == null && primaryIndex != null) {
+          for (int i = 0; i < group.length; i++) {
+            if (i != primaryIndex) {
+              romanIndex = i;
+              break;
+            }
+          }
+        }
+
+        final primary = primaryIndex != null ? group[primaryIndex] as LrcLine : group[0] as LrcLine;
+        primary.translation = _extractTranslation(primary.content, separator);
+
+        if (romanIndex != null && romanIndex != primaryIndex) {
+          primary.romanLyric = _stripTags(_lineContent(group[romanIndex]));
+        }
+        if (transIndex != null && transIndex != romanIndex) {
+          if (primary.translation == null || primary.translation!.isEmpty) {
+            primary.translation = _stripTags(_lineContent(group[transIndex]));
+          }
         }
         combinedLines.add(primary);
       }
@@ -538,13 +582,11 @@ class Lrc extends Lyric {
         final wordStartMs = parseTimeTagToMs(timeStr);
         if (wordStartMs == null) continue;
 
-        final marks = WordMarkingUtil.analyze(text);
         words.add(
           EnhancedLrcWord(
             Duration(milliseconds: wordStartMs),
             Duration.zero,
             text,
-            marks: marks,
           ),
         );
         hasWordTimestamps = true;
@@ -553,13 +595,11 @@ class Lrc extends Lyric {
       if (!hasWordTimestamps && primaryText.isNotEmpty) {
         final cleanedText = primaryText.replaceAll(RegExp(r'<[^>]*>'), '').trim();
         if (cleanedText.isNotEmpty) {
-          final marks = WordMarkingUtil.analyze(cleanedText);
           words.add(
             EnhancedLrcWord(
               start,
               Duration.zero,
               cleanedText,
-              marks: marks,
             ),
           );
         }
@@ -769,12 +809,10 @@ class Lrc extends Lyric {
         if (timeStr == null || text.isEmpty) continue;
         final wordStartMs = parseTimeTagToMs(timeStr);
         if (wordStartMs == null) continue;
-        final marks = WordMarkingUtil.analyze(text);
         words.add(CrcWord(
           Duration(milliseconds: wordStartMs),
           Duration.zero,
           text,
-          marks: marks,
         ));
         hasWordTimestamps = true;
       }
@@ -798,8 +836,7 @@ class Lrc extends Lyric {
       if (!hasWordTimestamps && primaryText.isNotEmpty) {
         final cleanedText = primaryText.replaceAll(RegExp(r'<[^>]*>'), '').trim();
         if (cleanedText.isNotEmpty) {
-          final marks = WordMarkingUtil.analyze(cleanedText);
-          words.add(CrcWord(start, Duration.zero, cleanedText, marks: marks));
+          words.add(CrcWord(start, Duration.zero, cleanedText));
         }
       }
 
