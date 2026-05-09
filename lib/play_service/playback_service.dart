@@ -231,6 +231,15 @@ class PlaybackService extends ChangeNotifier {
   late final _shuffle = ValueNotifier(false);
   ValueNotifier<bool> get shuffle => _shuffle;
 
+  /// 替换 nowPlaying
+  void setNowPlaying([Audio? newNowPlaying]) {
+    final old = nowPlaying;
+    if (old != null) {
+      old.evictCoverCache();
+    }
+    _nowPlaying.value = newNowPlaying;
+  }
+
   late final _playerState = ValueNotifier(PlayerState.stopped);
   ValueNotifier<PlayerState> get playerStateNotifier => _playerState;
   PlayerState get playerState => _playerState.value;
@@ -282,6 +291,12 @@ class PlaybackService extends ChangeNotifier {
   /// 6. 通知并更新主题色
   void _loadAndPlay(int audioIndex, List<Audio> playlist) {
     try {
+      // 释放旧歌曲的封面缓存
+      final oldAudio = nowPlaying;
+      if (oldAudio != null && oldAudio.path != playlist[audioIndex].path) {
+        oldAudio.evictCoverCache();
+      }
+
       _playlistIndex = audioIndex;
       _nowPlaying.value = playlist[audioIndex];
       _lastNowPlayingChangedMs = DateTime.now().millisecondsSinceEpoch;
