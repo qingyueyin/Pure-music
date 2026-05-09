@@ -9,9 +9,16 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+macro_rules! ne_log {
+    ($level:literal, $($arg:tt)*) => {
+        eprintln!("[NE-{}] {}", $level, format!($($arg)*));
+    };
+}
+
 const EAPI_KEY: &[u8; 16] = b"e82ckenh8dichen8";
 const CACHE_KEY_KEY: &[u8; 16] = b")(13daqP@ssw0rd~";
 const DEVICE_ID_XOR_KEY: &str = "3go8&$8*3*3h0k(2)2";
+const DIGEST_FORMAT: &str = "nobody%suse%smd5forencrypt";
 
 fn pkcs7_pad(data: &[u8], block_size: usize) -> Vec<u8> {
     let pad_len = block_size - (data.len() % block_size);
@@ -34,7 +41,13 @@ fn aes_encrypt(data: &[u8], key: &[u8; 16]) -> Vec<u8> {
     result
 }
 
-fn aes_decrypt(data: &[u8], key: &[u8; 16]) -> Vec<u8> {
+fn aes_decrypt(data: &[u8], key: &[u8; 16]) -> Result<Vec<u8>, String> {
+    if data.is_empty() {
+        return Err("empty decryption data".to_string());
+    }
+    if data.len() % 16 != 0 {
+        return Err(format!("invalid encrypted data length: {} (not a multiple of 16)", data.len()));
+    }
     let cipher = Aes128::new(key.into());
     let mut result = Vec::new();
     for chunk in data.chunks(16) {
@@ -48,30 +61,35 @@ fn aes_decrypt(data: &[u8], key: &[u8; 16]) -> Vec<u8> {
     if pad_len > 0 && pad_len <= 16 {
         result.truncate(result.len() - pad_len);
     }
-    result
+    Ok(result)
 }
 
-fn eapi_params_encrypt(path: &[u8], params: &str) -> String {
+/// MD5 digest in the same format as Lyrico: "nobody{url}use{params}md5forencrypt"
+fn eapi_md5(url: &str, params: &str) -> String {
+    let message = format!("nobody{}use{}md5forencrypt", url, params);
     let mut hasher = Md5::new();
-    hasher.update(b"nobody");
-    hasher.update(path);
-    hasher.update(b"use");
-    hasher.update(params.as_bytes());
-    hasher.update(b"md5forencrypt");
-    let sign = format!("{:x}", hasher.finalize());
-
-    let mut src = Vec::new();
-    src.extend_from_slice(path);
-    src.extend_from_slice(b"-36cd479b6b5-");
-    src.extend_from_slice(params.as_bytes());
-    src.extend_from_slice(b"-36cd479b6b5-");
-    src.extend_from_slice(sign.as_bytes());
-
-    let encrypted = aes_encrypt(&src, EAPI_KEY);
-    format!("params={}", hex::encode(encrypted).to_uppercase())
+    hasher.update(message.as_bytes());
+    format!("{:x}", hasher.finalize())
 }
 
-fn eapi_response_decrypt(data: &[u8]) -> Vec<u8> {
+/// Encrypt params exactly like Lyrico's NeCryptoUtils.encryptParams
+/// Returns "params=UPPERCASE_HEX_STRING" format
+fn eapi_params_encrypt(encrypt_path: &str, params: &str) -> String {
+    let digest = eapi_md5(encrypt_path, params);
+    let data = format!("{}-36cd479b6b5-{}-36cd479b6b5-{}", encrypt_path, params, digest);
+    let encrypted = aes_encrypt(data.as_bytes(), EAPI_KEY);
+    let hex_str: String = encrypted.iter().map(|b| format!("{:02X}", b)).collect();
+    format!("params={}", hex_str)
+}
+
+fn hex_preview(data: &[u8], max_len: usize) -> String {
+    let len = data.len().min(max_len);
+    let preview: Vec<String> = data[..len].iter().map(|b| format!("{:02X}", b)).collect();
+    let suffix = if data.len() > max_len { "..." } else { "" };
+    format!("{}{}", preview.join(" "), suffix)
+}
+
+fn eapi_response_decrypt(data: &[u8]) -> Result<Vec<u8>, String> {
     aes_decrypt(data, EAPI_KEY)
 }
 
@@ -183,27 +201,17 @@ impl NetEaseCloud {
         .to_string()
     }
 
+    /// Headers exactly like Lyrico: User-Agent, Referer, Cookie (only 3)
     fn get_request_header(&self) -> Vec<(String, String)> {
         let cookies = self.cookies.lock().unwrap();
         let mut headers = vec![
-            ("accept".to_string(), "*/*".to_string()),
-            ("content-type".to_string(), "application/x-www-form-urlencoded".to_string()),
-            ("mconfig-info".to_string(), r#"{"IuRPVVmc3WWul9fT":{"version":733184,"appver":"3.1.3.203419"}}"#.to_string()),
-            ("origin".to_string(), "orpheus://orpheus".to_string()),
-            ("user-agent".to_string(), "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Safari/537.36 Chrome/91.0.4472.164 NeteaseMusicDesktop/3.1.3.203419".to_string()),
-            ("sec-ch-ua".to_string(), "\"Chromium\";v=\"91\"".to_string()),
-            ("sec-ch-ua-mobile".to_string(), "?0".to_string()),
-            ("sec-fetch-site".to_string(), "cross-site".to_string()),
-            ("sec-fetch-mode".to_string(), "cors".to_string()),
-            ("sec-fetch-dest".to_string(), "empty".to_string()),
-            ("accept-encoding".to_string(), "gzip, deflate, br".to_string()),
-            ("accept-language".to_string(), "en-US,en;q=0.9".to_string()),
+            ("User-Agent".to_string(), "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Safari/537.36 Chrome/91.0.4472.164 NeteaseMusicDesktop/3.1.3.203419".to_string()),
+            ("Referer".to_string(), "https://music.163.com/".to_string()),
         ];
-
-        for (k, v) in cookies.iter() {
-            headers.push(("cookie".to_string(), format!("{}={}", k, v)));
+        let cookie_str: String = cookies.iter().map(|(k, v)| format!("{}={}", k, v)).collect::<Vec<_>>().join("; ");
+        if !cookie_str.is_empty() {
+            headers.push(("Cookie".to_string(), cookie_str));
         }
-
         headers
     }
 
@@ -211,9 +219,12 @@ impl NetEaseCloud {
         let now = get_current_timestamp();
         let expire = self.expire.lock().unwrap();
         if *expire > now {
+            ne_log!("D", "init: session still valid, expire={}", *expire);
             return Ok(());
         }
         drop(expire);
+
+        ne_log!("I", "init: starting anonymous login");
 
         let device_id = generate_device_id();
         let username = get_anonimous_username(&device_id);
@@ -234,68 +245,87 @@ impl NetEaseCloud {
 
         let client_sign = generate_device_id();
 
-        let pre_cookies = serde_json::json!({
-            "os": "pc",
-            "deviceId": device_id,
-            "osver": osver,
-            "clientSign": client_sign,
-            "channel": "netease",
-            "mode": mode,
-            "appver": "3.1.3.203419",
-        });
+        let pre_cookies: HashMap<String, String> = [
+            ("os".to_string(), "pc".to_string()),
+            ("deviceId".to_string(), device_id.clone()),
+            ("osver".to_string(), osver.clone()),
+            ("clientSign".to_string(), client_sign.clone()),
+            ("channel".to_string(), "netease".to_string()),
+            ("mode".to_string(), mode.to_string()),
+            ("appver".to_string(), "3.1.3.203419".to_string()),
+        ].iter().cloned().collect();
 
         let params = serde_json::json!({
             "username": username,
-            "e_r": true,
-            "header": self.get_params_header(),
         });
 
         let params_str = params.to_string();
-        let path = b"/eapi/register/anonimous".to_vec();
-        let encrypted = eapi_params_encrypt(&path, &params_str);
+        // Lyrico: path.replace("/eapi/", "/api/") => /eapi/register/anonimous -> /api/register/anonimous
+        let encrypt_path = "/api/register/anonimous";
+        // body is "params=HEXSTRING" with Content-Type already set by eapi_params_encrypt
+        let body = eapi_params_encrypt(encrypt_path, &params_str);
 
         let url = "https://interface.music.163.com/eapi/register/anonimous";
+        ne_log!("D", "init: POST {}", url);
         let headers = self.get_request_header();
 
         let mut request = self.client.post(url);
         for (k, v) in headers {
             request = request.header(&k, &v);
         }
-        request = request.body(encrypted);
+        request = request.body(body);
 
-        let response = request.send().map_err(|e| e.to_string())?;
+        let response = request.send().map_err(|e| {
+            ne_log!("E", "init: request failed: {}", e);
+            e.to_string()
+        })?;
+
+        let status = response.status();
+        ne_log!("D", "init: status={}", status);
+
+        let headers_map: HashMap<String, String> = response.headers()
+            .iter()
+            .map(|(k, v)| (k.as_str().to_string(), v.to_str().unwrap_or("").to_string()))
+            .collect();
+        ne_log!("D", "init: response headers: {:?}", headers_map);
 
         let cookie_header = response.headers().get("set-cookie").cloned();
 
-        let data = eapi_response_decrypt(response.bytes().map_err(|e| e.to_string())?.as_ref());
-        let json_str = String::from_utf8(data).map_err(|e| e.to_string())?;
-        let json: serde_json::Value = serde_json::from_str(&json_str).map_err(|e| e.to_string())?;
+        let response_bytes = response.bytes().map_err(|e| {
+            ne_log!("E", "init: failed to read response body: {}", e);
+            e.to_string()
+        })?;
+        ne_log!("D", "init: response body size={} bytes", response_bytes.len());
+        ne_log!("D", "init: response hex preview: {}", hex_preview(&response_bytes, 64));
+
+        let data = eapi_response_decrypt(response_bytes.as_ref()).map_err(|e| {
+            ne_log!("E", "init: decrypt failed: {}", e);
+            ne_log!("E", "init: raw response hex: {}", hex_preview(&response_bytes, 256));
+            format!("decrypt failed: {}", e)
+        })?;
+
+        let json_str = String::from_utf8(data).map_err(|e| {
+            ne_log!("E", "init: UTF8 decode failed: {}", e);
+            e.to_string()
+        })?;
+        ne_log!("D", "init: decrypted: {}", json_str);
+
+        let json: serde_json::Value = serde_json::from_str(&json_str).map_err(|e| {
+            ne_log!("E", "init: JSON parse failed: {}", e);
+            e.to_string()
+        })?;
 
         if json["code"].as_i64().unwrap_or(-1) != 200 {
+            ne_log!("E", "init: login failed, code={}, body={}", json["code"].as_i64().unwrap_or(-1), json_str);
             return Err(format!("Anon login failed: {}", json_str));
         }
 
+        ne_log!("I", "init: login successful, userId={}", json["userId"].as_i64().unwrap_or(0));
+
         let mut cookies = self.cookies.lock().unwrap();
-        cookies.insert("WEVNSM".to_string(), "1.0.0".to_string());
-        cookies.insert("os".to_string(), "pc".to_string());
-        cookies.insert(
-            "deviceId".to_string(),
-            pre_cookies["deviceId"].as_str().unwrap_or("").to_string(),
-        );
-        cookies.insert(
-            "osver".to_string(),
-            pre_cookies["osver"].as_str().unwrap_or("").to_string(),
-        );
-        cookies.insert(
-            "clientSign".to_string(),
-            pre_cookies["clientSign"].as_str().unwrap_or("").to_string(),
-        );
-        cookies.insert("channel".to_string(), "netease".to_string());
-        cookies.insert(
-            "mode".to_string(),
-            pre_cookies["mode"].as_str().unwrap_or("").to_string(),
-        );
-        cookies.insert("appver".to_string(), "3.1.3.203419".to_string());
+        for (k, v) in &pre_cookies {
+            cookies.insert(k.clone(), v.clone());
+        }
 
         if let Some(cookies_header) = cookie_header {
             let cookie_str = cookies_header.to_str().unwrap_or("");
@@ -304,14 +334,8 @@ impl NetEaseCloud {
                     let name = cookie_pair[..eq_pos].trim().to_string();
                     let value = cookie_pair[eq_pos + 1..].trim().to_string();
                     match name.as_str() {
-                        "NMTID" => {
-                            cookies.insert("NMTID".to_string(), value);
-                        }
-                        "MUSIC_A" => {
-                            cookies.insert("MUSIC_A".to_string(), value);
-                        }
-                        "__csrf" => {
-                            cookies.insert("__csrf".to_string(), value);
+                        "NMTID" | "MUSIC_A" | "__csrf" => {
+                            cookies.insert(name, value);
                         }
                         _ => {}
                     }
@@ -330,6 +354,7 @@ impl NetEaseCloud {
 
     pub fn get_lyric(&self, song_id: i64) -> Result<LyricResult, String> {
         self.init()?;
+        ne_log!("D", "get_lyric: song_id={}", song_id);
 
         let params = serde_json::json!({
             "id": song_id,
@@ -337,16 +362,15 @@ impl NetEaseCloud {
             "tv": "-1",
             "rv": "-1",
             "yv": "-1",
-            "e_r": true,
-            "header": self.get_params_header(),
-            "cache_key": get_cache_key(&format!("e_r=true&id={}", song_id)),
         });
 
         let params_str = params.to_string();
-        let path = b"/eapi/song/lyric/v1".to_vec();
-        let encrypted = eapi_params_encrypt(&path, &params_str);
+        // Lyrico: /eapi/song/lyric/v1 -> /api/song/lyric/v1
+        let encrypt_path = "/api/song/lyric/v1";
+        let body = eapi_params_encrypt(encrypt_path, &params_str);
 
         let url = "https://interface.music.163.com/eapi/song/lyric/v1";
+        ne_log!("D", "get_lyric: POST {}", url);
         let headers = self.get_request_header();
 
         let mut request = self.client.post(url);
@@ -358,72 +382,154 @@ impl NetEaseCloud {
                 "cache_key",
                 get_cache_key(&format!("e_r=true&id={}", song_id)),
             )])
-            .body(encrypted);
+            .body(body);
 
-        let response = request.send().map_err(|e| e.to_string())?;
-        let data = eapi_response_decrypt(response.bytes().map_err(|e| e.to_string())?.as_ref());
-        let json_str = String::from_utf8(data).map_err(|e| e.to_string())?;
-        let result: LyricResult = serde_json::from_str(&json_str).map_err(|e| e.to_string())?;
+        let response = request.send().map_err(|e| {
+            ne_log!("E", "get_lyric: request failed: {}", e);
+            e.to_string()
+        })?;
+
+        let status = response.status();
+        ne_log!("D", "get_lyric: status={}", status);
+
+        let response_bytes = response.bytes().map_err(|e| {
+            ne_log!("E", "get_lyric: failed to read response body: {}", e);
+            e.to_string()
+        })?;
+        ne_log!("D", "get_lyric: response body size={} bytes", response_bytes.len());
+        ne_log!("D", "get_lyric: response hex preview: {}", hex_preview(&response_bytes, 64));
+
+        let data = eapi_response_decrypt(response_bytes.as_ref()).map_err(|e| {
+            ne_log!("E", "get_lyric: decrypt failed: {}", e);
+            ne_log!("E", "get_lyric: raw response hex: {}", hex_preview(&response_bytes, 256));
+            format!("decrypt failed: {}", e)
+        })?;
+
+        let json_str = String::from_utf8(data).map_err(|e| {
+            ne_log!("E", "get_lyric: UTF8 decode failed: {}", e);
+            e.to_string()
+        })?;
+        ne_log!("D", "get_lyric: decrypted (first 200 chars): {}", &json_str[..json_str.len().min(200)]);
+
+        let result: LyricResult = serde_json::from_str(&json_str).map_err(|e| {
+            ne_log!("E", "get_lyric: JSON parse failed: {}", e);
+            e.to_string()
+        })?;
 
         if result.code != 200 {
+            ne_log!("W", "get_lyric: API returned code={}", result.code);
             return Err(format!("Get lyric failed with code: {}", result.code));
         }
+
+        ne_log!("I", "get_lyric: success, lrc={}, yrc={}, tlyric={}",
+            result.lrc.as_ref().map(|l| l.lyric.len()).unwrap_or(0),
+            result.yrc.as_ref().map(|l| l.lyric.len()).unwrap_or(0),
+            result.tlyric.as_ref().map(|l| l.lyric.len()).unwrap_or(0));
 
         Ok(result)
     }
 
+    /// Search exactly like Lyrico's NeSource.search
     pub fn search(&self, keyword: String, limit: i32) -> Result<Vec<HashMap<String, String>>, String> {
         self.init()?;
+        ne_log!("I", "search: keyword='{}', limit={}", keyword, limit);
 
         let params = serde_json::json!({
-            "s": keyword,
-            "type": "1",
-            "limit": limit,
-            "e_r": true,
-            "header": self.get_params_header(),
+            "limit": limit.to_string(),
+            "offset": "0",
+            "keyword": keyword,
+            "scene": "NORMAL",
+            "needCorrect": "true",
         });
 
         let params_str = params.to_string();
-        let path = b"/eapi/cloudsearch/pc".to_vec();
-        let encrypted = eapi_params_encrypt(&path, &params_str);
+        // Lyrico: /eapi/search/song/list/page -> /api/search/song/list/page
+        let encrypt_path = "/api/search/song/list/page";
+        let body = eapi_params_encrypt(encrypt_path, &params_str);
 
-        let url = "https://interface.music.163.com/eapi/cloudsearch/pc";
+        let url = "https://interface.music.163.com/eapi/search/song/list/page";
+        ne_log!("D", "search: POST {}", url);
         let headers = self.get_request_header();
 
         let mut request = self.client.post(url);
         for (k, v) in headers {
             request = request.header(&k, &v);
         }
-        request = request.body(encrypted);
+        request = request.body(body);
 
-        let response = request.send().map_err(|e| e.to_string())?;
-        let data = eapi_response_decrypt(response.bytes().map_err(|e| e.to_string())?.as_ref());
-        let json_str = String::from_utf8(data).map_err(|e| e.to_string())?;
-        let json: serde_json::Value = serde_json::from_str(&json_str).map_err(|e| e.to_string())?;
+        let response = request.send().map_err(|e| {
+            ne_log!("E", "search: request failed: {}", e);
+            e.to_string()
+        })?;
 
-        if json["code"].as_i64().unwrap_or(-1) != 200 {
-            return Err(format!("Search failed with code: {}", json["code"].as_i64().unwrap_or(-1)));
+        let status = response.status();
+        ne_log!("D", "search: status={}", status);
+
+        let response_bytes = response.bytes().map_err(|e| {
+            ne_log!("E", "search: failed to read response body: {}", e);
+            e.to_string()
+        })?;
+
+        ne_log!("D", "search: response body size={} bytes", response_bytes.len());
+        ne_log!("D", "search: response hex preview: {}", hex_preview(&response_bytes, 128));
+
+        if response_bytes.is_empty() {
+            ne_log!("E", "search: empty response from NetEase");
+            return Err("empty response from NetEase".to_string());
+        }
+
+        let data = eapi_response_decrypt(response_bytes.as_ref()).map_err(|e| {
+            ne_log!("E", "search: decrypt failed: {}", e);
+            ne_log!("E", "search: raw response hex: {}", hex_preview(&response_bytes, 512));
+            format!("decrypt failed: {}", e)
+        })?;
+
+        let json_str = String::from_utf8(data).map_err(|e| {
+            ne_log!("E", "search: UTF8 decode failed: {}", e);
+            e.to_string()
+        })?;
+        ne_log!("D", "search: decrypted (first 500 chars): {}", &json_str[..json_str.len().min(500)]);
+
+        let json: serde_json::Value = serde_json::from_str(&json_str).map_err(|e| {
+            ne_log!("E", "search: JSON parse failed: {}", e);
+            e.to_string()
+        })?;
+
+        let code = json["code"].as_i64().unwrap_or(-1);
+        ne_log!("D", "search: response code={}", code);
+        if code != 200 {
+            ne_log!("W", "search: API returned code={}, body: {}", code, &json_str[..json_str.len().min(500)]);
+            return Err(format!("Search failed with code: {}", code));
         }
 
         let mut results = Vec::new();
-        if let Some(songs) = json["result"]["songs"].as_array() {
-            for song in songs {
-                let mut map = HashMap::new();
-                map.insert("id".to_string(), song["id"].as_i64().unwrap_or(0).to_string());
-                map.insert("name".to_string(), song["name"].as_str().unwrap_or("").to_string());
-                if let Some(artists) = song["artists"].as_array() {
-                    let artist_names: Vec<String> = artists.iter()
-                        .filter_map(|a| a["name"].as_str().map(String::from))
-                        .collect();
-                    map.insert("artists".to_string(), artist_names.join(", "));
+        if let Some(resources) = json["data"]["resources"].as_array() {
+            ne_log!("D", "search: found {} resources", resources.len());
+            for (i, resource) in resources.iter().enumerate() {
+                if let Some(song) = resource["baseInfo"]["simpleSongData"].as_object() {
+                    let mut map = HashMap::new();
+                    map.insert("id".to_string(), song["id"].as_i64().unwrap_or(0).to_string());
+                    let name = song["name"].as_str().unwrap_or("").to_string();
+                    map.insert("name".to_string(), name.clone());
+                    if let Some(artists) = song["ar"].as_array() {
+                        let artist_names: Vec<String> = artists.iter()
+                            .filter_map(|a| a["name"].as_str().map(String::from))
+                            .collect();
+                        let artists_str = artist_names.join(", ");
+                        map.insert("artists".to_string(), artists_str);
+                    }
+                    if let Some(album) = song["al"].as_object() {
+                        map.insert("album".to_string(), album.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string());
+                    }
+                    ne_log!("D", "search: [{}] {} - {}", i, name, map.get("artists").cloned().unwrap_or_default());
+                    results.push(map);
                 }
-                if let Some(album) = song["album"].as_object() {
-                    map.insert("album".to_string(), album.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string());
-                }
-                results.push(map);
             }
+        } else {
+            ne_log!("W", "search: no data.resources found in response");
         }
 
+        ne_log!("I", "search: returning {} results", results.len());
         Ok(results)
     }
 }
