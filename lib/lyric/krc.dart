@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:pure_music/lyric/lyric.dart';
-import 'package:pure_music/page/now_playing_page/component/word_emphasis_helper.dart';
 import 'dart:math';
 
 class Krc extends Lyric {
@@ -25,10 +24,12 @@ class Krc extends Lyric {
 
     for (final item in splited) {
       if (languageFrame == null) {
-        final tag = item.substring(
-          item.indexOf("[") + 1,
-          item.indexOf("]"),
-        );
+        final bracketStart = item.indexOf("[");
+        final bracketEnd = item.indexOf("]");
+        if (bracketStart == -1 || bracketEnd == -1 || bracketEnd <= bracketStart) {
+          continue;
+        }
+        final tag = item.substring(bracketStart + 1, bracketEnd);
         var splitedTag = tag.split(":");
         final tagName = splitedTag.firstOrNull;
         if (tagName?.contains("language") == true) {
@@ -56,7 +57,7 @@ class Krc extends Lyric {
         }
       }
       int linesIt = 0, transIt = 0;
-      while ((linesIt < lines.length) || (transIt < trans.length)) {
+      while (linesIt < lines.length && transIt < trans.length) {
         lines[linesIt].translation = trans[transIt];
         linesIt += 1;
         transIt += 1;
@@ -123,7 +124,7 @@ class KrcLine extends SyncLyricLine {
 }
 
 class KrcWord extends SyncLyricWord {
-  KrcWord(super.start, super.length, super.content, {super.marks});
+  KrcWord(super.start, super.length, super.content);
 
   static KrcWord? fromWord(String word, Duration lineStart, [int offset = 0]) {
     final splitedWord = word.split(">");
@@ -142,11 +143,7 @@ class KrcWord extends SyncLyricWord {
     );
 
     final content = splitedWord[1];
-    final marks = WordMarkingUtil.analyzeWithDuration(
-      content,
-      length.inMilliseconds,
-    );
 
-    return KrcWord(start, length, content, marks: marks);
+    return KrcWord(start, length, content);
   }
 }
