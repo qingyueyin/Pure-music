@@ -1,3 +1,6 @@
+import 'package:pure_music/core/cache.dart';
+import 'package:pure_music/core/theme.dart';
+import 'package:pure_music/core/system_volume_service.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
 import 'package:pure_music/play_service/desktop_lyric_service.dart';
@@ -60,5 +63,9 @@ class PlayService {
     } catch (e) {
       logger.w("AudioEchoLogRecorder.stop error: $e");
     }
+
+    ThemeProvider.instance.dispose();
+    SystemVolumeService.instance.dispose();
+    AlbumColorCache.instance.dispose();
   }
 }
