@@ -19,6 +19,8 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:window_manager/window_manager.dart';
 
 class TitleBar extends StatelessWidget {
+  static final _blurFilter = ImageFilter.blur(sigmaX: 20, sigmaY: 20);
+
   const TitleBar({super.key});
 
   @override
@@ -47,7 +49,7 @@ class _TitleBar_Small extends StatelessWidget {
 
     return ClipRect(
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        filter: TitleBar._blurFilter,
         child: Container(
           color: scheme.surface.withAlpha(31),
           height: 56.0,
@@ -93,7 +95,7 @@ class _TitleBar_Medium extends StatelessWidget {
 
     return ClipRect(
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        filter: TitleBar._blurFilter,
         child: Container(
           color: scheme.surface.withAlpha(31),
           child: Row(
@@ -147,7 +149,7 @@ class _TitleBar_Large extends StatelessWidget {
 
     return ClipRect(
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        filter: TitleBar._blurFilter,
         child: Container(
           color: scheme.surface.withAlpha(31),
           child: Padding(
