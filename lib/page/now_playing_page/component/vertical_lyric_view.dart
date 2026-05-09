@@ -20,6 +20,18 @@ enum LyricScrollState {
   programScrolling,
 }
 
+List<LyricLine> _filterEmptyLines(List<LyricLine> lines, bool removeEmpty) {
+  if (!removeEmpty) return lines;
+  return lines.where((line) {
+    if (line is SyncLyricLine) {
+      return line.words.isNotEmpty || line.length <= const Duration(seconds: 3);
+    } else if (line is LrcLine) {
+      return !line.isBlank || line.length <= const Duration(seconds: 3);
+    }
+    return true;
+  }).toList();
+}
+
 class VerticalLyricView extends StatefulWidget {
   const VerticalLyricView({
     super.key,
@@ -40,14 +52,17 @@ class VerticalLyricView extends StatefulWidget {
   State<VerticalLyricView> createState() => _VerticalLyricViewState();
 }
 
-class _VerticalLyricViewState extends State<VerticalLyricView> {
+class _VerticalLyricViewState extends State<VerticalLyricView>
+    with AutomaticKeepAliveClientMixin {
   bool isHovering = false;
   final lyricViewController = LyricViewController.instance;
 
   @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+  bool get wantKeepAlive => true;
 
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
     const loadingWidget = Center(
       child: SizedBox(
         width: 24,
@@ -79,12 +94,11 @@ class _VerticalLyricViewState extends State<VerticalLyricView> {
                 future: PlayService.instance.lyricService.currLyricFuture,
                 builder: (context, snapshot) {
                   final lyricNullable = snapshot.data;
-                  final noLyricWidget = Center(
+                  const noLyricWidget = Center(
                     child: Text(
                       '无歌词',
                       style: TextStyle(
                         fontSize: 22,
-                        color: scheme.onSecondaryContainer,
                       ),
                     ),
                   );
@@ -166,6 +180,29 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView> {
   List<double>? _cachedOffsets;
   List<double>? _cachedHeights;
   double _cachedMaxWidth = 0.0;
+  List<LyricLine>? _filteredLines;
+  Map<int, int>? _originalToFilteredIndexMap;
+
+  void _rebuildFilteredLines() {
+    final removeEmpty = _lyricViewController?.removeEmptyLines ?? true;
+    _filteredLines = _filterEmptyLines(widget.lyric.lines, removeEmpty);
+    _originalToFilteredIndexMap = {};
+    int filteredIdx = 0;
+    for (int origIdx = 0; origIdx < widget.lyric.lines.length; origIdx++) {
+      final line = widget.lyric.lines[origIdx];
+      if (filteredIdx < _filteredLines!.length && identical(_filteredLines![filteredIdx], line)) {
+        _originalToFilteredIndexMap![origIdx] = filteredIdx;
+        filteredIdx++;
+      }
+    }
+  }
+
+  List<LyricLine> get _effectiveLines {
+    if (_filteredLines == null) {
+      _rebuildFilteredLines();
+    }
+    return _filteredLines!;
+  }
 
   @override
   void initState() {
@@ -181,6 +218,10 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView> {
 
   void _computeOffsets(double maxWidth) {
     if (maxWidth <= 0) return;
+
+    final removeEmpty = _lyricViewController?.removeEmptyLines ?? true;
+    final lines = _filterEmptyLines(widget.lyric.lines, removeEmpty);
+    _filteredLines = lines;
 
     final controller = context.read<LyricViewController>();
     final config = controller.renderConfig;
@@ -204,11 +245,11 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView> {
     double measureLine(LyricLine line, bool isMain) {
       if (isMain) {
         if (line is SyncLyricLine) {
-          if (line.words.isEmpty && line.length > const Duration(seconds: 5)) {
+          if (line.words.isEmpty && line.length > const Duration(seconds: 3)) {
             return 40.0;
           }
         } else if (line is LrcLine) {
-          if (line.isBlank && line.length > const Duration(seconds: 5)) {
+          if (line.isBlank && line.length > const Duration(seconds: 3)) {
             return 40.0;
           }
         }
@@ -338,11 +379,11 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView> {
     final heights = <double>[];
     double currentOffset = 0.0;
 
-    for (int i = 0; i < widget.lyric.lines.length; i++) {
+    for (int i = 0; i < lines.length; i++) {
       offsets.add(currentOffset);
-      final hAsMain = measureLine(widget.lyric.lines[i], true);
+      final hAsMain = measureLine(lines[i], true);
       heights.add(hAsMain);
-      final hAsSub = measureLine(widget.lyric.lines[i], false);
+      final hAsSub = measureLine(lines[i], false);
       currentOffset += hAsSub;
     }
 
@@ -360,21 +401,45 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView> {
     _lyricViewController = controller;
     _lyricViewController?.addListener(_scheduleEnsureCurrentVisible);
 
-    _cachedMaxWidth = 0.0;
-    _cachedOffsets = null;
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _scrollToCurrent(const Duration(milliseconds: 100));
     });
   }
 
+  @override
+  void didUpdateWidget(covariant _VerticalLyricScrollView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.lyric != widget.lyric) {
+      _cachedMaxWidth = 0.0;
+      _cachedOffsets = null;
+      _cachedHeights = null;
+      _filteredLines = null;
+      _originalToFilteredIndexMap = null;
+      _mainLine = 0;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _initLyricView();
+        }
+      });
+    }
+  }
+
   void _scheduleEnsureCurrentVisible() {
-    _cachedMaxWidth = 0.0;
     _ensureVisibleTimer?.cancel();
     _ensureVisibleTimer = Timer(const Duration(milliseconds: 60), () {
       if (!mounted) return;
-      if (mounted) setState(() {});
-      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToCurrent());
+      _cachedMaxWidth = 0.0;
+      _filteredLines = null;
+      _originalToFilteredIndexMap = null;
+      final oldMainLine = _mainLine;
+      setState(() {});
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (_mainLine >= _effectiveLines.length) {
+          _mainLine = oldMainLine.clamp(0, _effectiveLines.length - 1);
+        }
+        _scrollToCurrent();
+      });
     });
   }
 
@@ -415,6 +480,11 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView> {
   }
 
   void _markUserScrolling() {
+    if (_scrollState != LyricScrollState.userDragging) {
+      setState(() {
+        _scrollState = LyricScrollState.userDragging;
+      });
+    }
     final renderConfig = context.read<LyricViewController>().renderConfig;
     final viewportStrategy = LyricViewportStrategy(
       leadingLines: renderConfig.viewportLeadingLines,
@@ -423,10 +493,11 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView> {
       userScrollHoldDuration: renderConfig.userScrollHoldDuration,
     );
     _userScrollHoldTimer?.cancel();
-    _scrollState = LyricScrollState.userDragging;
     _userScrollHoldTimer = Timer(viewportStrategy.userScrollHoldDuration, () {
       if (!mounted) return;
-      _scrollState = LyricScrollState.idle;
+      setState(() {
+        _scrollState = LyricScrollState.idle;
+      });
       _updateViewportRange(force: true);
       _scrollToCurrent();
     });
@@ -501,11 +572,12 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView> {
   }
 
   void _initLyricView() {
-    final next = widget.lyric.lines.indexWhere(
+    final lines = _effectiveLines;
+    final next = lines.indexWhere(
       (element) =>
           element.start.inMilliseconds / 1000 > playbackService.position,
     );
-    final nextLyricLine = next == -1 ? widget.lyric.lines.length : next;
+    final nextLyricLine = next == -1 ? lines.length : next;
     _mainLine = max(nextLyricLine - 1, 0);
     _updateViewportRange(force: true);
 
@@ -525,11 +597,27 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView> {
     });
   }
 
+  void _seekToLyricLineWithOriginalIndex(LyricLine line) {
+    final originalIndex = widget.lyric.lines.indexOf(line);
+    if (originalIndex >= 0) {
+      _seekToLyricLine(originalIndex);
+    }
+  }
+
+  int _originalIndexToFilteredIndex(int originalIndex) {
+    if (_originalToFilteredIndexMap == null) {
+      _rebuildFilteredLines();
+    }
+    return _originalToFilteredIndexMap![originalIndex] ?? originalIndex;
+  }
+
   void _updateNextLyricLine(int lyricLine) {
-    if (_mainLine == lyricLine) {
+    final filteredIndex = _originalIndexToFilteredIndex(lyricLine);
+    if (_mainLine == filteredIndex) {
       return;
     }
 
+    final lines = _effectiveLines;
     final renderConfig = context.read<LyricViewController>().renderConfig;
     final viewportStrategy = LyricViewportStrategy(
       leadingLines: renderConfig.viewportLeadingLines,
@@ -539,12 +627,12 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView> {
     );
     final followDecision = viewportStrategy.followDecision(
       currentRange: _viewportRange,
-      nextMainLine: lyricLine,
-      totalLines: widget.lyric.lines.length,
+      nextMainLine: filteredIndex,
+      totalLines: lines.length,
     );
 
     setState(() {
-      _mainLine = lyricLine;
+      _mainLine = filteredIndex;
       _viewportRange = followDecision.nextRange;
     });
 
@@ -581,22 +669,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView> {
       final alignBottomPadding = (!widget.centerVertically && !widget.enableEdgeSpacer)
           ? viewportHeight * (1.0 - widget.currentLineAlignment)
           : 0.0;
-      return ShaderMask(
-          shaderCallback: (Rect bounds) {
-            return const LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Colors.transparent,
-                Colors.black,       
-                Colors.black,       
-                Colors.transparent
-              ],
-              stops: [0.0, 0.15, 0.85, 1.0],
-            ).createShader(bounds);
-          },
-          blendMode: BlendMode.dstIn,
-          child: Stack(
+      final userIsDragging = _scrollState == LyricScrollState.userDragging;
+      return Stack(
         children: [
           RepaintBoundary(
             key: const ValueKey('lyric_list_view'),
@@ -611,41 +685,59 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView> {
                 }
                 return false;
               },
-              child: ListView.builder(
-                key: ValueKey(widget.lyric.hashCode),
-                controller: scrollController,
-                cacheExtent:
-                    viewportStrategy.cacheExtent(constraints.maxHeight),
-                padding: EdgeInsets.only(
-                  top: (widget.centerVertically ? spacerHeight : 0) + extraTopPadding + alignTopPadding,
-                  bottom: (widget.centerVertically ? spacerHeight : 0) + extraBottomPadding + alignBottomPadding,
-                ),
-                itemCount: widget.lyric.lines.length,
-                itemBuilder: (context, i) {
-                  final signedDist = i - _mainLine;
-                  final dist = signedDist.abs();
-                  final opacity = dist == 0
-                      ? 1.0
-                      : pow(0.72, dist).toDouble().clamp(0.16, 0.78);
-                  final staggerDelay = Duration(
-                      milliseconds: _lyricViewController?.renderConfig.enableStaggeredAnimation == true
-                          ? ((dist + 1) * 60).clamp(0, 600)
-                          : 0);
-                  return LyricViewTile(
-                    key: dist == 0 ? currentLyricTileKey : null,
-                    line: widget.lyric.lines[i],
-                    opacity: opacity,
-                    distance: dist,
-                    staggerDelay: staggerDelay,
-                    onTap: widget.enableSeekOnTap
-                        ? () => _seekToLyricLine(i)
-                        : null,
-                  );
+              child: ShaderMask(
+                shaderCallback: (Rect bounds) {
+                  return const LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black,
+                      Colors.black,
+                      Colors.transparent
+                    ],
+                    stops: [0.0, 0.2, 0.8, 1.0],
+                  ).createShader(bounds);
                 },
+                blendMode: BlendMode.dstIn,
+                child: ListView.builder(
+                  key: const ValueKey('lyric_list_view_inner'),
+                  controller: scrollController,
+                  cacheExtent:
+                      viewportStrategy.cacheExtent(constraints.maxHeight),
+                  padding: EdgeInsets.only(
+                    top: (widget.centerVertically ? spacerHeight : 0) + extraTopPadding + alignTopPadding,
+                    bottom: (widget.centerVertically ? spacerHeight : 0) + extraBottomPadding + alignBottomPadding,
+                  ),
+                  itemCount: _effectiveLines.length,
+                  itemBuilder: (context, i) {
+                    final line = _effectiveLines[i];
+                    final signedDist = i - _mainLine;
+                    final dist = signedDist.abs();
+                    final opacity = dist == 0
+                        ? 1.0
+                        : pow(0.88, dist).toDouble().clamp(0.30, 0.90);
+                    final staggerDelay = Duration(
+                        milliseconds: _lyricViewController?.renderConfig.enableStaggeredAnimation == true
+                            ? ((dist + 1) * 60).clamp(0, 600)
+                            : 0);
+                    return LyricViewTile(
+                      key: dist == 0 ? currentLyricTileKey : null,
+                      line: line,
+                      opacity: opacity,
+                      distance: dist,
+                      staggerDelay: staggerDelay,
+                      isUserScrolling: userIsDragging,
+                      onTap: widget.enableSeekOnTap
+                          ? () => _seekToLyricLineWithOriginalIndex(line)
+                          : null,
+                    );
+                  },
+                ),
               ),
             ),
           ),
-          if (_scrollState == LyricScrollState.userDragging)
+          if (userIsDragging)
             Positioned(
               key: const ValueKey('user_dragging_hint'),
               top: 16,
@@ -670,7 +762,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView> {
               ),
             ),
         ],
-      ),
       );
     });
   }
