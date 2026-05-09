@@ -38,18 +38,12 @@ class LyricRenderConfig {
   final bool showRoman;
   final int fontWeight;
   final bool enableBlur;
-  final bool enableWordEmphasis;
   final bool enableLineScale;
   final bool enableLineSpring;
   final bool enableStaggeredAnimation;
   final bool enableAudioReactive;
   final double audioReactiveStrength;
   final double viewportFadeExtent;
-  final double emphasisLiftPx;
-  final double emphasisScaleBoost;
-  final double emphasisGlowIntensity;
-  final double emphasisAttackRatio;
-  final double emphasisReleaseRatio;
   final double mainLineScale;
   final double subLineScale;
   final double mainTranslationScale;
@@ -73,18 +67,12 @@ class LyricRenderConfig {
     required this.showRoman,
     required this.fontWeight,
     required this.enableBlur,
-    required this.enableWordEmphasis,
     this.enableLineScale = true,
     this.enableLineSpring = true,
     this.enableStaggeredAnimation = true,
     this.enableAudioReactive = false,
     this.audioReactiveStrength = 0.5,
     this.viewportFadeExtent = 0.04,
-    this.emphasisLiftPx = 0.5,
-    this.emphasisScaleBoost = 0.035,
-    this.emphasisGlowIntensity = 0.2,
-    this.emphasisAttackRatio = 0.3,
-    this.emphasisReleaseRatio = 0.3,
     this.mainLineScale = 1.0,
     this.subLineScale = 1.0,
     this.mainTranslationScale = 0.78,
@@ -105,8 +93,6 @@ class LyricRenderConfig {
     this.userScrollHoldDuration = const Duration(seconds: 2),
   });
 
-  bool get shouldApplyWordEmphasis => enableWordEmphasis;
-
   LyricRenderConfig copyWith({
     LyricTextAlign? textAlign,
     double? baseFontSize,
@@ -115,18 +101,12 @@ class LyricRenderConfig {
     bool? showRoman,
     int? fontWeight,
     bool? enableBlur,
-    bool? enableWordEmphasis,
     bool? enableLineScale,
     bool? enableLineSpring,
     bool? enableStaggeredAnimation,
     bool? enableAudioReactive,
     double? audioReactiveStrength,
     double? viewportFadeExtent,
-    double? emphasisLiftPx,
-    double? emphasisScaleBoost,
-    double? emphasisGlowIntensity,
-    double? emphasisAttackRatio,
-    double? emphasisReleaseRatio,
     double? mainLineScale,
     double? subLineScale,
     double? mainTranslationScale,
@@ -151,7 +131,6 @@ class LyricRenderConfig {
       showRoman: showRoman ?? this.showRoman,
       fontWeight: fontWeight ?? this.fontWeight,
       enableBlur: enableBlur ?? this.enableBlur,
-      enableWordEmphasis: enableWordEmphasis ?? this.enableWordEmphasis,
       enableLineScale: enableLineScale ?? this.enableLineScale,
       enableLineSpring: enableLineSpring ?? this.enableLineSpring,
       enableStaggeredAnimation:
@@ -160,12 +139,6 @@ class LyricRenderConfig {
       audioReactiveStrength:
           audioReactiveStrength ?? this.audioReactiveStrength,
       viewportFadeExtent: viewportFadeExtent ?? this.viewportFadeExtent,
-      emphasisLiftPx: emphasisLiftPx ?? this.emphasisLiftPx,
-      emphasisScaleBoost: emphasisScaleBoost ?? this.emphasisScaleBoost,
-      emphasisGlowIntensity:
-          emphasisGlowIntensity ?? this.emphasisGlowIntensity,
-      emphasisAttackRatio: emphasisAttackRatio ?? this.emphasisAttackRatio,
-      emphasisReleaseRatio: emphasisReleaseRatio ?? this.emphasisReleaseRatio,
       mainLineScale: mainLineScale ?? this.mainLineScale,
       subLineScale: subLineScale ?? this.subLineScale,
       mainTranslationScale: mainTranslationScale ?? this.mainTranslationScale,
