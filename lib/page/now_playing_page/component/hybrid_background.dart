@@ -8,7 +8,7 @@ import 'package:pure_music/core/hsl_color_sampler.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/page/now_playing_page/component/now_playing_background_inputs.dart';
 
-const int _coverRenderSize = 600;
+const int _coverRenderSize = 400;
 
 class HybridBackground extends StatefulWidget {
   final NowPlayingBackgroundInputs inputs;
@@ -26,6 +26,7 @@ class HybridBackground extends StatefulWidget {
 
 class _HybridBackgroundState extends State<HybridBackground>
     with SingleTickerProviderStateMixin {
+  ui.Image? _decodedImage;
   Uint8List? _currentCoverBytes;
   List<Color> _paletteColors = [];
   bool _isPlaying = false;
@@ -91,6 +92,8 @@ class _HybridBackgroundState extends State<HybridBackground>
   void _coverBytesChanged(Uint8List? newBytes, Uint8List? oldBytes) {
     if (newBytes == null || newBytes.isEmpty) {
       if (_currentCoverBytes != null) {
+        _decodedImage?.dispose();
+        _decodedImage = null;
         setState(() => _currentCoverBytes = null);
       }
       return;
@@ -138,6 +141,8 @@ class _HybridBackgroundState extends State<HybridBackground>
     final bytes = widget.inputs.albumCoverBytes;
     if (bytes == null || bytes.isEmpty) {
       if (_currentCoverBytes != null) {
+        _decodedImage?.dispose();
+        _decodedImage = null;
         setState(() => _currentCoverBytes = null);
       }
       return;
@@ -145,11 +150,40 @@ class _HybridBackgroundState extends State<HybridBackground>
 
     if (_disposed) return;
 
+    if (identical(bytes, _currentCoverBytes) && _decodedImage != null) return;
+
+    final oldImage = _decodedImage;
+    _decodedImage = null;
+
     setState(() {
       _currentCoverBytes = bytes;
     });
 
     _extractPaletteWithTransition(bytes);
+
+    _decodeCover(bytes).then((newImage) {
+      if (_disposed || !mounted) {
+        newImage?.dispose();
+        return;
+      }
+      oldImage?.dispose();
+      _decodedImage = newImage;
+      if (mounted) setState(() {});
+    });
+  }
+
+  Future<ui.Image?> _decodeCover(Uint8List bytes) async {
+    try {
+      final codec = await ui.instantiateImageCodec(
+        bytes,
+        targetWidth: _coverRenderSize,
+        targetHeight: _coverRenderSize,
+      );
+      final frame = await codec.getNextFrame();
+      return frame.image;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _extractPaletteWithTransition(Uint8List bytes) async {
@@ -216,6 +250,8 @@ class _HybridBackgroundState extends State<HybridBackground>
     _transitionController.removeStatusListener(_onTransitionStatusChanged);
     _transitionController.dispose();
     _spectrumSubscription?.cancel();
+    _decodedImage?.dispose();
+    _decodedImage = null;
     super.dispose();
   }
 
@@ -223,17 +259,17 @@ class _HybridBackgroundState extends State<HybridBackground>
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final brightness = scheme.brightness;
-    final coverBytes = _currentCoverBytes;
+    final decodedImage = _decodedImage;
 
     return Stack(
       fit: StackFit.expand,
       children: [
         ColoredBox(color: scheme.surface),
 
-        if (coverBytes != null)
+        if (decodedImage != null)
           RepaintBoundary(
             child: _BlurredCover(
-              coverBytes: coverBytes,
+              image: decodedImage,
               brightness: brightness,
             ),
           ),
@@ -276,23 +312,19 @@ class _HybridBackgroundState extends State<HybridBackground>
 }
 
 class _BlurredCover extends StatelessWidget {
-  final Uint8List coverBytes;
+  final ui.Image image;
   final Brightness brightness;
 
   const _BlurredCover({
-    required this.coverBytes,
+    required this.image,
     required this.brightness,
   });
 
-  Widget get _cover => SizedBox.expand(
-        child: Image.memory(
-          coverBytes,
-          cacheWidth: _coverRenderSize,
-          cacheHeight: _coverRenderSize,
-          fit: BoxFit.cover,
-          gaplessPlayback: true,
-        ),
-      );
+  static final _blurFilter = ui.ImageFilter.blur(
+    sigmaX: 80,
+    sigmaY: 80,
+    tileMode: ui.TileMode.clamp,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -300,11 +332,7 @@ class _BlurredCover extends StatelessWidget {
       opacity: brightness == Brightness.dark ? 0.60 : 0.40,
       child: ClipRRect(
         child: ImageFiltered(
-          imageFilter: ui.ImageFilter.blur(
-            sigmaX: 80,
-            sigmaY: 80,
-            tileMode: ui.TileMode.clamp,
-          ),
+          imageFilter: _blurFilter,
           child: ShaderMask(
             blendMode: BlendMode.modulate,
             shaderCallback: (Rect bounds) {
@@ -319,7 +347,12 @@ class _BlurredCover extends StatelessWidget {
                 stops: [0.0, 0.25, 1.0],
               ).createShader(bounds);
             },
-            child: _cover,
+            child: SizedBox.expand(
+              child: RawImage(
+                image: image,
+                fit: BoxFit.cover,
+              ),
+            ),
           ),
         ),
       ),
