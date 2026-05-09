@@ -25,13 +25,22 @@ class LyricSource {
 
   LyricSource(this.source, {this.qqSongId, this.kugouSongHash, this.neSongId});
 
-  static LyricSource fromMap(Map map) {
-    if (map["source"] == "qq") {
+  static LyricSource? fromMap(Map? map) {
+    if (map == null) return null;
+    final source = map["source"]?.toString();
+    if (source == "qq") {
       return LyricSource(LyricSourceType.qq, qqSongId: map["id"]?.toString());
-    } else if (map["source"] == "kugou") {
-      return LyricSource(LyricSourceType.kugou, kugouSongHash: map["id"]);
-    } else if (map["source"] == "ne") {
-      return LyricSource(LyricSourceType.ne, neSongId: map["id"]);
+    } else if (source == "kugou") {
+      return LyricSource(LyricSourceType.kugou, kugouSongHash: map["id"]?.toString());
+    } else if (source == "ne") {
+      final rawId = map["id"];
+      int? neSongId;
+      if (rawId is int) {
+        neSongId = rawId;
+      } else if (rawId is String) {
+        neSongId = int.tryParse(rawId);
+      }
+      return LyricSource(LyricSourceType.ne, neSongId: neSongId);
     } else {
       return LyricSource(LyricSourceType.local);
     }
@@ -107,7 +116,10 @@ Map<String, LyricSource> _readLyricSourcesFromJson(File jsonFile) {
     if (item.key is! String || item.value is! Map) continue;
     final p = item.key as String;
     if (!File(p).existsSync()) continue;
-    result[p] = LyricSource.fromMap(item.value as Map);
+    final source = LyricSource.fromMap(item.value as Map);
+    if (source != null) {
+      result[p] = source;
+    }
   }
   return result;
 }
