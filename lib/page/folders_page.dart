@@ -101,7 +101,7 @@ class AudioFolderTile extends StatelessWidget {
           maxLines: 1,
         ),
         subtitle: Text(
-          "修改日期：${DateTime.fromMillisecondsSinceEpoch(audioFolder.modified * 1000).toString()}",
+          "修改日期：${DateTime.fromMillisecondsSinceEpoch(audioFolder.modified * 1000).toString().substring(0, 19)}",
           softWrap: false,
           maxLines: 1,
         ),
