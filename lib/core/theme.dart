@@ -198,6 +198,7 @@ class ThemeProvider extends ChangeNotifier {
 
     _themeDebounceTimer?.cancel();
     _themeDebounceTimer = Timer(const Duration(milliseconds: 200), () {
+      if (token != _themeRequestToken) return;
       audio.cover.then((image) {
         if (image == null) return;
         if (token != _themeRequestToken) return;
@@ -347,4 +348,12 @@ class ThemeProvider extends ChangeNotifier {
         floatingLabelStyle: TextStyle(color: currScheme.primary),
         focusColor: currScheme.primary,
       );
+
+  void dispose() {
+    _themeDebounceTimer?.cancel();
+    _schemeCache.clear();
+    _schemeFutureCache.clear();
+    _cacheAccessOrder.clear();
+    super.dispose();
+  }
 }
