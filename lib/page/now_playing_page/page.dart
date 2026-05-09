@@ -4,7 +4,6 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui';
 
-import 'package:pure_music/core/advanced_color_extraction.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/component/hotkey_ui_feedback.dart';
 import 'package:pure_music/component/motion.dart';
@@ -57,13 +56,11 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   String? _nowPlayingCoverPath;
   Timer? _coverDebounceTimer;
   Timer? _cursorHideTimer;
+  int _coverRequestToken = 0;
   bool _cursorHidden = false;
   bool _lastImmersive = false;
   Color? _dominantColor;
-  MonetColorScheme? _monetScheme;
   final ColorExtractionService _colorService = ColorExtractionService();
-  final AdvancedColorExtractionService _advancedColorService =
-      AdvancedColorExtractionService();
 
   static Color _softenColor(Color color, {required bool isDark}) {
     final hsl = HSLColor.fromColor(color);
@@ -98,12 +95,12 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     if (path == null) {
       if (_nowPlayingCoverPath != null || nowPlayingCover != null) {
         _coverDebounceTimer?.cancel();
+        _coverRequestToken++;
         setState(() {
           _nowPlayingCoverPath = null;
           nowPlayingCover = null;
           _nowPlayingCoverBytes = null;
           _dominantColor = null;
-          _monetScheme = null;
         });
       }
       return;
@@ -113,12 +110,17 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     _nowPlayingCoverPath = path;
 
     _coverDebounceTimer?.cancel();
+    _coverRequestToken++;
+    final token = _coverRequestToken;
+
     _coverDebounceTimer = Timer(MotionDuration.base, () async {
       final audio = playbackService.nowPlaying;
       if (audio == null || audio.path != path) return;
+      if (token != _coverRequestToken) return;
 
       final cover = await audio.cover;
       if (!mounted) return;
+      if (token != _coverRequestToken) return;
       if (playbackService.nowPlaying?.path != path) return;
 
       if (cover != null) {
@@ -129,34 +131,27 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
           height: 160,
         );
         if (!mounted) return;
+        if (token != _coverRequestToken) return;
         if (playbackService.nowPlaying?.path != path) return;
         if (bytes != null && mounted) {
-          final results = await Future.wait<Object?>([
-            _colorService.extractDominantColor(bytes),
-            _advancedColorService.extractMonetScheme(bytes),
-          ]);
+          final color = await _colorService.extractDominantColor(bytes);
           if (!mounted) return;
+          if (token != _coverRequestToken) return;
           if (playbackService.nowPlaying?.path != path) return;
-          final monetScheme = results[1] as MonetColorScheme?;
-          final color =
-              (results[0] as Color?) ?? monetScheme?.primary;
           setState(() {
             _nowPlayingCoverBytes = bytes;
-            _dominantColor = monetScheme?.primary ?? color;
-            _monetScheme = monetScheme;
+            _dominantColor = color;
           });
         } else if (mounted) {
           setState(() {
             _nowPlayingCoverBytes = null;
             _dominantColor = null;
-            _monetScheme = null;
           });
         }
       } else {
         setState(() {
           _nowPlayingCoverBytes = null;
           _dominantColor = null;
-          _monetScheme = null;
         });
       }
 
@@ -275,7 +270,6 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                                       NowPlayingBackgroundInputs(
                                     albumCoverBytes: _nowPlayingCoverBytes,
                                     dominantColor: _dominantColor,
-                                    monetScheme: _monetScheme,
                                     spectrumStream: playbackService.spectrumStream,
                                     enableAnimation: true,
                                     isVisible:
@@ -564,34 +558,39 @@ class _DesktopLyricSwitch extends StatelessWidget {
       listenable: PlayService.instance.desktopLyricService,
       builder: (context, _) {
         final desktopLyricService = PlayService.instance.desktopLyricService;
-        return FutureBuilder(
-          future: desktopLyricService.desktopLyric,
-          builder: (context, snapshot) {
-            final isRunning = snapshot.data != null;
-            return IconButton(
-              tooltip: !isRunning
-                  ? "打开桌面歌词"
-                  : desktopLyricService.isLocked
-                      ? "解锁桌面歌词"
-                      : "关闭桌面歌词",
-              onPressed: !isRunning
-                  ? desktopLyricService.startDesktopLyric
-                  : desktopLyricService.isLocked
-                      ? desktopLyricService.sendUnlockMessage
-                      : desktopLyricService.killDesktopLyric,
-              icon: snapshot.connectionState == ConnectionState.done
-                  ? Icon(
-                      desktopLyricService.isLocked ? Symbols.lock : Symbols.toast,
-                      fill: isRunning ? 1 : 0,
-                    )
-                  : const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(),
-                    ),
-              color: scheme.onSurface,
-            );
-          },
+        final isRunning = desktopLyricService.isRunning;
+        final isKilling = desktopLyricService.isKilling;
+        
+        // 关闭过程中显示 loading 并禁用按钮
+        if (isKilling) {
+          return IconButton(
+            tooltip: "正在关闭桌面歌词...",
+            onPressed: null,
+            icon: const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(),
+            ),
+            color: scheme.onSurface,
+          );
+        }
+        
+        return IconButton(
+          tooltip: !isRunning
+              ? "打开桌面歌词"
+              : desktopLyricService.isLocked
+                  ? "解锁桌面歌词"
+                  : "关闭桌面歌词",
+          onPressed: !isRunning
+              ? desktopLyricService.startDesktopLyric
+              : desktopLyricService.isLocked
+                  ? desktopLyricService.sendUnlockMessage
+                  : desktopLyricService.killDesktopLyric,
+          icon: Icon(
+            desktopLyricService.isLocked ? Symbols.lock : Symbols.toast,
+            fill: isRunning ? 1 : 0,
+          ),
+          color: scheme.onSurface,
         );
       },
     );
@@ -1152,6 +1151,8 @@ class _NowPlayingMainControls extends StatelessWidget {
 }
 
 class _GlowingIconButton extends StatefulWidget {
+  static final _glowBlurFilter = ImageFilter.blur(sigmaX: 10, sigmaY: 10);
+
   final String tooltip;
   final VoidCallback onPressed;
   final IconData iconData;
@@ -1217,10 +1218,7 @@ class _GlowingIconButtonState extends State<_GlowingIconButton> {
                 if (showGlow)
                   Positioned.fill(
                     child: ImageFiltered(
-                      imageFilter: ImageFilter.blur(
-                        sigmaX: 10,
-                        sigmaY: 10,
-                      ),
+                      imageFilter: _GlowingIconButton._glowBlurFilter,
                       child: Center(
                         child: Icon(
                           widget.iconData,
@@ -1255,6 +1253,8 @@ class _GlowingIconButtonState extends State<_GlowingIconButton> {
 }
 
 class _MorphPlayPauseButton extends StatefulWidget {
+  static final _glowBlurFilter = ImageFilter.blur(sigmaX: 10, sigmaY: 10);
+
   const _MorphPlayPauseButton({
     required this.playerState,
     required this.onPlay,
@@ -1356,7 +1356,7 @@ class _MorphPlayPauseButtonState extends State<_MorphPlayPauseButton>
                   if (showGlow)
                     Positioned.fill(
                       child: ImageFiltered(
-                        imageFilter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                        imageFilter: _MorphPlayPauseButton._glowBlurFilter,
                         child: Center(
                           child: AnimatedIcon(
                             icon: AnimatedIcons.play_pause,
@@ -1879,7 +1879,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
             ? Center(child: placeholder)
             : Container(
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(18.0),
+                  borderRadius: BorderRadius.circular(12.0),
                   boxShadow: [
                     BoxShadow(
                       color: scheme.shadow.withValues(alpha: 0.2),
@@ -1890,7 +1890,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
                   ],
                 ),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(18.0),
+                  borderRadius: BorderRadius.circular(12.0),
                   child: Image(
                     image: currentCover,
                     fit: BoxFit.cover,
@@ -1991,7 +1991,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
 
   @override
   void dispose() {
-    playbackService.removeListener(_onPlaybackChange);
+    playbackService.nowPlayingNotifier.removeListener(_onPlaybackChange);
     _hiResDebounceTimer?.cancel();
     super.dispose();
   }
