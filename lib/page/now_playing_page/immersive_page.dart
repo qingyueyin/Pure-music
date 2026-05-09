@@ -303,7 +303,7 @@ class _ImmersiveCoverThumbnailState extends State<_ImmersiveCoverThumbnail> {
     }
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(18.0),
+      borderRadius: BorderRadius.circular(12.0),
       child: Image(
         image: _cover!,
         fit: BoxFit.cover,
