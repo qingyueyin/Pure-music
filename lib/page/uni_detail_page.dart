@@ -251,6 +251,7 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
 enum PicShape { oval, rrect }
 
 class _UniDetailPageHeader extends StatelessWidget {
+  static final _blurFilter = ImageFilter.blur(sigmaX: 100, sigmaY: 100);
   const _UniDetailPageHeader({
     required this.pic,
     required this.backgroundPic,
@@ -303,7 +304,7 @@ class _UniDetailPageHeader extends StatelessWidget {
               ),
           },
           BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 100, sigmaY: 100),
+            filter: _UniDetailPageHeader._blurFilter,
             child: const ColoredBox(color: Colors.transparent),
           ),
           Row(
