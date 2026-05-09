@@ -83,7 +83,7 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
                       NowPlayingViewMode.withLyric => Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 0),
                           child: ClipRRect(
-                            borderRadius: BorderRadius.circular(18.0),
+                            borderRadius: BorderRadius.circular(12.0),
                             child: ShaderMask(
                               shaderCallback: (Rect bounds) {
                                 return const LinearGradient(
