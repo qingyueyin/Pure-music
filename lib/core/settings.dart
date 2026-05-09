@@ -2,57 +2,12 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:pure_music/native/rust/api/system_theme.dart';
 import 'package:pure_music/core/utils.dart';
+import 'package:pure_music/core/zh_converter.dart';
 import 'package:flutter/material.dart';
 import 'package:github/github.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:window_manager/window_manager.dart';
-
-Future<void> migrateAppData() async {
-  try {
-    final newAppDataDir = await getAppDataDir();
-    final newIndexExists = File(path.join(newAppDataDir.path, "index.json")).existsSync();
-
-    if (!newIndexExists) {
-      final candidates = <Directory>[];
-      final appData = Platform.environment['APPDATA'];
-      if (appData != null) {
-        candidates.add(Directory(path.join(appData, "pure_music")));
-      }
-      candidates.add(await getApplicationSupportDirectory());
-      final userProfile = Platform.environment['USERPROFILE'];
-      if (userProfile != null) {
-        final docsPath = path.join(userProfile, "Documents");
-        candidates.add(Directory(path.join(docsPath, "pure_music")));
-        candidates.add(Directory(path.join(docsPath, "coriander_player")));
-      }
-
-      for (final oldDir in candidates) {
-        if (!oldDir.existsSync()) continue;
-        if (path.canonicalize(oldDir.path) ==
-            path.canonicalize(newAppDataDir.path)) {
-          continue;
-        }
-        final oldIndexExists = File(path.join(oldDir.path, "index.json")).existsSync();
-        if (!oldIndexExists) continue;
-
-        for (final entity in oldDir.listSync(followLinks: false)) {
-          final basename = path.basename(entity.path);
-          final target = path.join(newAppDataDir.path, basename);
-          if (entity is File) {
-            entity.copySync(target);
-          } else if (entity is Directory) {
-            _copyDirectory(entity, Directory(target));
-          }
-        }
-        break;
-      }
-    }
-    await migrateAppDataLayout();
-  } catch (err, trace) {
-    logger.e(err, stackTrace: trace);
-  }
-}
 
 const bool portableBuild = bool.fromEnvironment(
   'PORTABLE_BUILD',
@@ -99,58 +54,12 @@ Future<Directory> getDbDir() async {
   return Directory(path.join(root.path, "db")).create(recursive: true);
 }
 
-Future<void> migrateAppDataLayout() async {
-  try {
-    final root = await getAppDataDir();
-    final settingsDir = await getSettingsDir();
-    final cacheDir = await getCacheDir();
-    final dbDir = await getDbDir();
 
-    final moves = <(String, String)>[
-      (path.join(root.path, "settings.json"),
-          path.join(settingsDir.path, "settings.json")),
-      (path.join(root.path, "app_preference.json"),
-          path.join(settingsDir.path, "app_preference.json")),
-      (path.join(root.path, "album_colors.json"),
-          path.join(cacheDir.path, "album_colors.json")),
-      (path.join(root.path, "app.sqlite"), path.join(dbDir.path, "app.sqlite")),
-      (path.join(root.path, "app.sqlite-wal"),
-          path.join(dbDir.path, "app.sqlite-wal")),
-      (path.join(root.path, "app.sqlite-shm"),
-          path.join(dbDir.path, "app.sqlite-shm")),
-    ];
-
-    for (final m in moves) {
-      final from = File(m.$1);
-      if (!from.existsSync()) continue;
-      final to = File(m.$2);
-      if (to.existsSync()) continue;
-      try {
-        await from.rename(to.path);
-      } catch (_) {
-        await to.create(recursive: true);
-        await from.copy(to.path);
-        try {
-          await from.delete();
-        } catch (_) {}
-      }
-    }
-  } catch (err, trace) {
-    logger.e(err, stackTrace: trace);
-  }
-}
-
-void _copyDirectory(Directory source, Directory dest) {
-  dest.createSync(recursive: true);
-  for (final entity in source.listSync(followLinks: false)) {
-    final name = path.basename(entity.path);
-    final target = path.join(dest.path, name);
-    if (entity is File) {
-      entity.copySync(target);
-    } else if (entity is Directory) {
-      _copyDirectory(entity, Directory(target));
-    }
-  }
+/// 歌词显示模式（控制显示哪些内容）
+enum LyricDisplayMode {
+  plain,       // 纯原文（不显示翻译/罗马音/空行）
+  verbatim,    // 原文+罗马音（逐字歌词适用）
+  enhanced,    // 原文+翻译+罗马音（完整）
 }
 
 class AppSettings {
@@ -174,6 +83,11 @@ class AppSettings {
   List artistSeparator = ["/", "、"];
 
   bool localLyricFirst = true;
+  bool showTranslation = true;
+  bool showRomanization = true;
+  LyricDisplayMode lyricDisplayMode = LyricDisplayMode.enhanced;
+  ZhConversionMode zhConversionMode = ZhConversionMode.none;
+  bool removeEmptyLines = true;
   Size windowSize = const Size(1280, 756);
   bool isWindowMaximized = false;
 
@@ -234,6 +148,15 @@ class AppSettings {
     final llf = settingsMap["LocalLyricFirst"];
     if (llf != null) {
       _instance.localLyricFirst = llf == 1 ? true : false;
+    }
+
+    final st = settingsMap["ShowTranslation"];
+    if (st != null) {
+      _instance.showTranslation = st is bool ? st : st == 1;
+    }
+    final sr = settingsMap["ShowRomanization"];
+    if (sr != null) {
+      _instance.showRomanization = sr is bool ? sr : sr == 1;
     }
 
     final sizeStr = settingsMap["WindowSize"];
@@ -297,6 +220,40 @@ class AppSettings {
         _instance.localLyricFirst = llf;
       }
 
+      final st = settingsMap["ShowTranslation"];
+      if (st != null) {
+        _instance.showTranslation = st;
+      }
+      final sr = settingsMap["ShowRomanization"];
+      if (sr != null) {
+        _instance.showRomanization = sr;
+      }
+
+      final ldm = settingsMap["LyricDisplayMode"];
+      if (ldm != null) {
+        _instance.lyricDisplayMode = switch (ldm) {
+          'plain' => LyricDisplayMode.plain,
+          'verbatim' => LyricDisplayMode.verbatim,
+          'enhanced' => LyricDisplayMode.enhanced,
+          _ => LyricDisplayMode.enhanced,
+        };
+      }
+
+      final zcm = settingsMap["ZhConversionMode"];
+      if (zcm != null) {
+        _instance.zhConversionMode = switch (zcm) {
+          'none' => ZhConversionMode.none,
+          't2s' => ZhConversionMode.traditionalToSimplified,
+          's2t' => ZhConversionMode.simplifiedToTraditional,
+          _ => ZhConversionMode.none,
+        };
+      }
+
+      final rel = settingsMap["RemoveEmptyLines"];
+      if (rel != null) {
+        _instance.removeEmptyLines = rel;
+      }
+
       final sizeStr = settingsMap["WindowSize"];
       if (sizeStr != null) {
         final sizeStrs = (sizeStr as String).split(",");
@@ -332,6 +289,11 @@ class AppSettings {
         "DefaultTheme": defaultTheme,
         "ArtistSeparator": artistSeparator,
         "LocalLyricFirst": localLyricFirst,
+        "ShowTranslation": showTranslation,
+        "ShowRomanization": showRomanization,
+        "LyricDisplayMode": lyricDisplayMode.name,
+        "ZhConversionMode": zhConversionMode.name,
+        "RemoveEmptyLines": removeEmptyLines,
         "IsWindowMaximized": isMaximized,
         "FontFamily": fontFamily,
         "FontPath": fontPath,
