@@ -94,6 +94,20 @@ class _LyricLineSpringMotionState extends State<LyricLineSpringMotion>
   late LyricLineVisualStateTween _stateTween;
   Timer? _staggerTimer;
 
+  static final Map<double, ImageFilter> _blurFilterCache = {};
+
+  static double _roundSigma(double sigma) {
+    return (sigma * 2).roundToDouble() / 2;
+  }
+
+  static ImageFilter _getBlurFilter(double sigma) {
+    final key = _roundSigma(sigma);
+    return _blurFilterCache.putIfAbsent(
+      key,
+      () => ImageFilter.blur(sigmaX: key, sigmaY: key),
+    );
+  }
+
   SpringDescription get _spring => SpringDescription(
         mass: widget.spring.mass,
         stiffness: widget.spring.stiffness,
@@ -201,10 +215,7 @@ class _LyricLineSpringMotionState extends State<LyricLineSpringMotion>
 
         if (visualState.blurSigma > 0.01) {
           current = ImageFiltered(
-            imageFilter: ImageFilter.blur(
-              sigmaX: visualState.blurSigma,
-              sigmaY: visualState.blurSigma,
-            ),
+            imageFilter: _getBlurFilter(visualState.blurSigma),
             child: current,
           );
         }
