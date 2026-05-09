@@ -13,6 +13,7 @@ import 'package:pure_music/core/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:flutter_single_instance/flutter_single_instance.dart';
 
 Future<void> initWindow() async {
   await windowManager.ensureInitialized();
@@ -64,6 +65,13 @@ Future<void> loadPrefFont() async {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  final singleInstance = FlutterSingleInstance();
+  if (!await singleInstance.isFirstInstance()) {
+    await singleInstance.focus();
+    exit(0);
+  }
+
   try {
     await RustLib.init();
   } catch (e, s) {
@@ -73,8 +81,6 @@ Future<void> main() async {
   initRustLogger().listen((msg) {
     logger.i("[rs]: $msg");
   });
-
-  await migrateAppData();
 
   // For hot reload, `unregisterAll()` needs to be called.
   await HotkeysHelper.unregisterAll();
