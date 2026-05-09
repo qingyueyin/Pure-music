@@ -181,6 +181,14 @@ class AlbumColorCache {
     } catch (_) {}
   }
 
+  void dispose() {
+    _flushTimer?.cancel();
+    _flushTimer = null;
+    _inFlight.clear();
+    _entries.clear();
+    _initialized = false;
+  }
+
   void _loadFromDb(Database db) {
     final verRows = db.select(
       "SELECT value FROM meta WHERE key = 'album_colors_version' LIMIT 1",
@@ -384,7 +392,7 @@ class CoverCache {
   static final instance = CoverCache._();
   CoverCache._();
 
-  static const _maxSize = 20;
+  static const _maxSize = 8;
   final _cache = _SimpleLRUCache<String, Uint8List>(_maxSize);
   final _pending = <String, Future<Uint8List?>>{};
 
@@ -432,12 +440,11 @@ class CoverCache {
     }
   }
 
-  /// 预加载下一首的封面
+  /// 预加载下一首的封面（仅加载小尺寸）
   void preloadNext(String? nextPath) {
     if (nextPath == null) return;
-    // 预加载多个尺寸
+    // 仅预加载一个小尺寸，避免内存飙升
     getCover(path: nextPath, width: 48, height: 48).ignore();
-    getCover(path: nextPath, width: 256, height: 256).ignore();
   }
 
   /// 清除所有缓存
