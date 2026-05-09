@@ -20,52 +20,106 @@ class DesktopLyricService extends ChangeNotifier {
 
   PlaybackService get _playbackService => playService.playbackService;
 
-  Future<Process?> desktopLyric = Future.value(null);
+  Process? _process;
+  Completer<Process>? _processCompleter;
   StreamSubscription? _desktopLyricSubscription;
+  StreamSubscription? _stderrSubscription;
   String _stdoutBuffer = '';
   Future<void> _sendQueue = Future.value();
 
   LyricLine? _currentLyricLine;
-  Timer? _positionTimer;
+  StreamSubscription? _positionStreamSub;
 
   bool isLocked = false;
+  bool _isKilling = false;
+  bool _isRunning = false;
+
+  /// 桌面歌词是否正在运行
+  bool get isRunning => _isRunning;
+
+  /// 是否正在关闭中（用于 UI 层禁用按钮）
+  bool get isKilling => _isKilling;
+
+  void _monitorProcessExit(Process process) {
+    process.exitCode.then((code) {
+      logger.i("[desktop lyric] process exited with code: $code");
+      if (_isRunning) {
+        _cleanupAfterExit();
+      }
+    }).catchError((e) {
+      logger.w("[desktop lyric] process exit monitoring error: $e");
+    });
+  }
+
+  void _cleanupAfterExit() {
+    _desktopLyricSubscription?.cancel().catchError((_) {});
+    _stderrSubscription?.cancel().catchError((_) {});
+    _positionStreamSub?.cancel().catchError((_) {});
+    _desktopLyricSubscription = null;
+    _stderrSubscription = null;
+    _positionStreamSub = null;
+    _process = null;
+    _processCompleter = null;
+    _sendQueue = Future.value();
+    _stdoutBuffer = '';
+    _isRunning = false;
+    _isKilling = false;
+    isLocked = false;
+    notifyListeners();
+  }
 
   Future<void> startDesktopLyric() async {
+    if (_isRunning) return;
+
+    if (_isKilling) {
+      while (_isKilling) {
+        await Future.delayed(const Duration(milliseconds: 50));
+      }
+    }
+
     final desktopLyricPath = path.join(
       path.dirname(Platform.resolvedExecutable),
       "desktop_lyric",
       'desktop_lyric.exe',
     );
     if (!File(desktopLyricPath).existsSync()) {
-      logger
-          .e("[desktop lyric] desktop_lyric.exe not found: $desktopLyricPath");
+      logger.e("[desktop lyric] desktop_lyric.exe not found: $desktopLyricPath");
       return;
     }
 
     final nowPlaying = _playbackService.nowPlaying;
     final currScheme = ThemeProvider.instance.darkScheme;
     const isDarkMode = true;
-    desktopLyric = Process.start(desktopLyricPath, [
-      json.encode(msg.InitArgsMessage(
-        _playbackService.playerState == PlayerState.playing,
-        nowPlaying?.title ?? "无",
-        nowPlaying?.artist ?? "无",
-        nowPlaying?.album ?? "无",
-        isDarkMode,
-        currScheme.primary.toARGB32(),
-        currScheme.surfaceContainer.toARGB32(),
-        currScheme.onSurface.toARGB32(),
-      ).toJson())
-    ]);
 
-    final process = await desktopLyric;
+    Process process;
+    try {
+      process = await Process.start(desktopLyricPath, [
+        json.encode(msg.InitArgsMessage(
+          _playbackService.playerState == PlayerState.playing,
+          nowPlaying?.title ?? "无",
+          nowPlaying?.artist ?? "无",
+          nowPlaying?.album ?? "无",
+          isDarkMode,
+          currScheme.primary.toARGB32(),
+          currScheme.surfaceContainer.toARGB32(),
+          currScheme.onSurface.toARGB32(),
+        ).toJson())
+      ]);
+    } catch (e) {
+      logger.e("[desktop lyric] failed to start process: $e");
+      return;
+    }
+
+    _process = process;
+    _processCompleter = Completer<Process>()..complete(process);
+    _isRunning = true;
     _sendQueue = Future.value();
 
-    process?.stderr.transform(utf8.decoder).listen((event) {
-      logger.e("[desktop lyric] $event");
-    });
+    _stderrSubscription = process.stderr.transform(utf8.decoder).listen(
+      (event) => logger.e("[desktop lyric] $event"),
+    );
 
-    _desktopLyricSubscription = process?.stdout.transform(utf8.decoder).listen(
+    _desktopLyricSubscription = process.stdout.transform(utf8.decoder).listen(
       (event) {
         _stdoutBuffer += event;
         while (true) {
@@ -90,57 +144,61 @@ class DesktopLyricService extends ChangeNotifier {
     );
 
     _stdoutBuffer = '';
+    _monitorProcessExit(process);
     _sendInitialState();
     notifyListeners();
   }
 
-  Future<bool> get canSendMessage => desktopLyric.then(
-        (value) => value != null,
-      );
+  Future<bool> get canSendMessage async => _process != null && _isRunning;
 
   void sendMessage(msg.Message message) {
+    if (_process == null || !_isRunning) return;
+
     _sendQueue = _sendQueue.then((_) async {
-      final value = await desktopLyric;
-      if (value == null) return;
+      final proc = _process;
+      if (proc == null || !_isRunning) return;
       try {
-        value.stdin.writeln(message.buildMessageJson());
-        await value.stdin.flush();
-        await Future.delayed(const Duration(milliseconds: 10));
+        proc.stdin.writeln(message.buildMessageJson());
+        await proc.stdin.flush();
       } catch (err, trace) {
-        logger.e(err, stackTrace: trace);
+        logger.e("[desktop lyric] send message error: $err", stackTrace: trace);
+        _process = null;
+        _isRunning = false;
       }
+    }).catchError((e) {
+      logger.w("[desktop lyric] send queue error: $e");
     });
   }
 
-   Future<void> killDesktopLyric() async {
-    _positionTimer?.cancel();
-    _positionTimer = null;
-    
-    // 使用超时保护，防止子进程卡死
-    try {
-      await desktopLyric.timeout(const Duration(milliseconds: 500), onTimeout: () {
-        logger.w("killDesktopLyric timeout, force kill");
-        return null;
-      }).then((value) {
-        if (value != null) {
-          try {
-            value.kill(ProcessSignal.sigkill);
-          } catch (_) {}
-        }
-      });
-    } catch (e) {
-      logger.w("killDesktopLyric error: $e");
-    }
-    
-    desktopLyric = Future.value(null);
-    _sendQueue = Future.value();
-    _stdoutBuffer = '';
+  Future<void> killDesktopLyric() async {
+    if (!_isRunning) return;
 
-    await _desktopLyricSubscription?.cancel().timeout(const Duration(milliseconds: 200)).catchError((_) {});
-    _desktopLyricSubscription = null;
-
-    isLocked = false;
+    _isKilling = true;
     notifyListeners();
+
+    _positionStreamSub?.cancel();
+    _positionStreamSub = null;
+
+    final process = _process;
+    if (process != null) {
+      try {
+        final alreadyExited = await process.exitCode.timeout(
+          const Duration(milliseconds: 200),
+        ).then((_) => true).catchError((_) => false);
+
+        if (!alreadyExited) {
+          if (Platform.isWindows) {
+            Process.run('taskkill', ['/pid', '${process.pid}', '/f']).catchError((_) => ProcessResult(0, 1, '', ''));
+          } else {
+            process.kill(ProcessSignal.sigterm);
+          }
+        }
+      } catch (e) {
+        logger.w("[desktop lyric] killDesktopLyric error: $e");
+      }
+    }
+
+    _cleanupAfterExit();
   }
 
   void sendUnlockMessage() {
@@ -166,21 +224,14 @@ class DesktopLyricService extends ChangeNotifier {
   void sendPlayerStateMessage(bool isPlaying) {
     sendMessage(msg.PlayerStateChangedMessage(isPlaying));
     
-    if (_positionTimer != null) {
-      _positionTimer?.cancel();
-      _positionTimer = null;
-    }
+    _positionStreamSub?.cancel();
+    _positionStreamSub = null;
     
     if (isPlaying) {
-      _startPositionTimer();
+      _positionStreamSub = _playbackService.positionStream.listen((_) {
+        _sendPositionMessage();
+      });
     }
-  }
-
-  void _startPositionTimer() {
-    _positionTimer?.cancel();
-    _positionTimer = Timer.periodic(const Duration(milliseconds: 20), (_) {
-      _sendPositionMessage();
-    });
   }
 
   void _sendPositionMessage() {
@@ -192,23 +243,26 @@ class DesktopLyricService extends ChangeNotifier {
     
     if (currentMs < lineStartMs) return;
     
+    // Offset into the current line
+    final offsetMs = currentMs - lineStartMs;
+    
     final words = line.words;
     int wordIndex = -1;
     double progress = 0.0;
     
     for (int i = 0; i < words.length; i++) {
-      final wordStart = words[i].start.inMilliseconds;
-      final wordEnd = wordStart + words[i].length.inMilliseconds;
+      final wordStart = words[i].start.inMilliseconds - lineStartMs;
+      final wordLengthMs = words[i].length.inMilliseconds;
+      final wordEnd = wordStart + wordLengthMs;
       
-      if (currentMs >= wordStart && currentMs < wordEnd) {
+      if (offsetMs >= wordStart && offsetMs < wordEnd) {
         wordIndex = i;
-        final wordLengthMs = words[i].length.inMilliseconds;
         if (wordLengthMs > 0) {
-          final elapsed = currentMs - wordStart;
+          final elapsed = offsetMs - wordStart;
           progress = (elapsed / wordLengthMs * 100).clamp(0.0, 100.0);
         }
         break;
-      } else if (currentMs >= wordEnd) {
+      } else if (offsetMs >= wordEnd) {
         wordIndex = i;
         progress = 100.0;
       } else {
