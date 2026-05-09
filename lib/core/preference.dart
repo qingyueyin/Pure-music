@@ -62,7 +62,6 @@ class NowPlayingPagePreference {
         showRoman: showLyricRoman,
         fontWeight: lyricFontWeight,
         enableBlur: enableLyricBlur,
-        enableWordEmphasis: true,
         enableLineScale: enableLyricScale,
         enableLineSpring: enableLyricSpring,
       );
@@ -114,8 +113,8 @@ class EqPreset {
       };
 
   factory EqPreset.fromMap(Map map) => EqPreset(
-        map["name"],
-        List<double>.from(map["gains"]),
+        map["name"] ?? '',
+        map["gains"] != null ? List<double>.from(map["gains"]) : <double>[],
       );
 }
 
@@ -263,6 +262,9 @@ class AppPreference {
   String customCpFeedbackKey = "";
   String updateRepoSlug = "qingyueyin/Pure-music";
 
+  /// 用户手动添加的文件夹路径列表（不包括自动发现的子文件夹）
+  List<String> userFolders = [];
+
   Future<void> save() async {
     try {
       final settingsDir = await getSettingsDir();
@@ -284,6 +286,7 @@ class AppPreference {
         "nowPlayingPagePref": nowPlayingPagePref.toMap(),
         "customCpFeedbackKey": customCpFeedbackKey,
         "updateRepoSlug": updateRepoSlug,
+        "userFolders": userFolders,
       };
 
       final prefJson = json.encode(prefMap);
@@ -364,6 +367,13 @@ class AppPreference {
       instance.customCpFeedbackKey = prefMap["customCpFeedbackKey"] ?? "";
       instance.updateRepoSlug =
           prefMap["updateRepoSlug"] ?? "qingyueyin/Pure-music";
+      instance.userFolders = prefMap["userFolders"] != null
+          ? List<String>.from(prefMap["userFolders"])
+          : [];
+
+      if (instance.userFolders.isEmpty) {
+        logger.i("userFolders is empty, will be set after first folder scan");
+      }
     } catch (err, trace) {
       logger.e(err, stackTrace: trace);
     }
