@@ -53,7 +53,7 @@ class _UpdatingPageState extends State<UpdatingPage> {
                 children: [
                   CircularProgressIndicator(color: scheme.primary),
                   const SizedBox(height: 16),
-                  Text("加载中...", style: TextStyle(color: scheme.onSurface)),
+                  Text('加载中...', style: TextStyle(color: scheme.onSurface)),
                 ],
               );
             }
@@ -67,7 +67,7 @@ class _UpdatingPageState extends State<UpdatingPage> {
                   const SizedBox(height: 16),
                   ElevatedButton(
                     onPressed: () => exit(1),
-                    child: const Text("退出"),
+                    child: const Text('退出'),
                   ),
                 ],
               );
@@ -119,7 +119,7 @@ class _UpdatingStateViewState extends State<UpdatingStateView> {
 
     _subscription = updateIndexStream.listen(
       (action) {
-        logger.i("[update index] ${action.progress}: ${action.message}");
+        logger.i('[update index] ${action.progress}: ${action.message}');
       },
       onDone: whenIndexUpdated,
     );
@@ -145,14 +145,14 @@ class _UpdatingStateViewState extends State<UpdatingStateView> {
                   children: [
                     LinearProgressIndicator(
                       value: snapshot.data?.progress,
-                      backgroundColor: scheme.onSurface.withOpacity(0.1),
+                      backgroundColor: scheme.onSurface.withValues(alpha: 0.1),
                       color: scheme.primary,
                       borderRadius: BorderRadius.circular(2.0),
                       minHeight: 8,
                     ),
                     const SizedBox(height: 16.0),
                     Text(
-                      snapshot.data?.message ?? "正在初始化...",
+                      snapshot.data?.message ?? '正在初始化...',
                       style: TextStyle(
                         color: scheme.onSurface,
                         fontSize: 14,
