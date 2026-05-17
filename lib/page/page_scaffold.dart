@@ -79,7 +79,7 @@ class PageScaffold extends StatelessWidget {
                       style: menuStyle,
                       menuChildren: foldedColumn,
                       builder: (_, controller, __) => IconButton.filledTonal(
-                        tooltip: "更多",
+                        tooltip: '更多',
                         onPressed: () {
                           controller.isOpen
                               ? controller.close()
