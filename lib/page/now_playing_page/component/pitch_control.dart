@@ -31,14 +31,14 @@ class _NowPlayingPitchControlState extends State<NowPlayingPitchControl> {
               controller.open();
             }
           },
-          tooltip: "音调",
+          tooltip: '音调',
           icon: const Icon(Symbols.music_note),
           color: scheme.onSecondaryContainer,
         );
       },
-      menuChildren: [
+      menuChildren: const [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
+          padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
           child: NowPlayingPitchPanel(width: 300),
         ),
       ],
@@ -53,8 +53,8 @@ class NowPlayingPitchDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
+      child: const Padding(
+        padding: EdgeInsets.all(16.0),
         child: NowPlayingPitchPanel(width: 360),
       ),
     );
@@ -111,18 +111,18 @@ class _NowPlayingPitchPanelState extends State<NowPlayingPitchPanel> {
                 borderRadius: BorderRadius.circular(8.0),
               ),
               child: Text(
-                "BASS_FX missing",
+                'BASS_FX missing',
                 style: TextStyle(color: scheme.onErrorContainer, fontSize: 12),
               ),
             ),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text("音调(半音)", style: TextStyle(color: scheme.onSurface)),
+              Text('音调(半音)', style: TextStyle(color: scheme.onSurface)),
               IconButton(
                 icon: const Icon(Symbols.restart_alt, size: 16),
                 onPressed: () => playbackService.setPitch(0.0),
-                tooltip: "重置音调",
+                tooltip: '重置音调',
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
               ),
