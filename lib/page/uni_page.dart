@@ -197,7 +197,7 @@ class _UniPageState<T> extends State<UniPage<T>> {
                   ),
                 ),
                 child: IconButton.filledTonal(
-                  tooltip: "定位正在播放",
+                  tooltip: '定位正在播放',
                   onPressed: () => _scrollToIndex(targetAt),
                   icon: const Icon(Symbols.my_location),
                 ),
@@ -232,7 +232,7 @@ class _UniPageState<T> extends State<UniPage<T>> {
               ),
             ),
             child: IconButton.filledTonal(
-              tooltip: "回到顶部",
+              tooltip: '回到顶部',
               onPressed: () {
                 if (!scrollController.hasClients) return;
                 scrollController.animateTo(
