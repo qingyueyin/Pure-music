@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/lyric/lrc.dart';
@@ -23,15 +25,13 @@ class ManualLyricSearchDialog extends StatefulWidget {
 
 class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
   final _searchController = TextEditingController();
-  
-  // 按源存储结果
+
   final Map<ResultSource, List<SongSearchResult>> _resultsMap = {
     ResultSource.qq: [],
     ResultSource.ne: [],
     ResultSource.kugou: [],
   };
-  
-  // 按源存储当前页码
+
   final Map<ResultSource, int> _pageMap = {
     ResultSource.qq: 0,
     ResultSource.ne: 0,
@@ -45,9 +45,6 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
   @override
   void initState() {
     super.initState();
-    // Run auto-search and populate _resultsMap when results arrive.
-    // We intentionally don't await the Future; the UI will update
-    // via setState in the then callback.
     uniSearch(widget.audio).then((results) {
       if (mounted) {
         setState(() {
@@ -68,18 +65,17 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
   void _performSearch() {
     final query = _searchController.text.trim();
     if (query.isEmpty) return;
-    
+
     final prevSource = _activeSource;
-    
+
     setState(() {
       _isSearching = true;
-      // 重置所有源的数据和页码
       _resultsMap.forEach((k, v) {
         v.clear();
         _pageMap[k] = 0;
       });
     });
-    
+
     manualSearch(widget.audio, query, limit: 15).then((results) {
       if (mounted) {
         setState(() {
@@ -87,9 +83,7 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
           _resultsMap[ResultSource.ne] = results.where((r) => r.source == ResultSource.ne).toList();
           _resultsMap[ResultSource.kugou] = results.where((r) => r.source == ResultSource.kugou).toList();
           _isSearching = false;
-          // 保持用户之前选的Tab，除非那个源没结果
           if (_resultsMap[prevSource]!.isEmpty) {
-            // 找第一个有结果的源
             if (_resultsMap[ResultSource.qq]!.isNotEmpty) {
               _activeSource = ResultSource.qq;
             } else if (_resultsMap[ResultSource.ne]!.isNotEmpty) {
@@ -183,7 +177,7 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(32.0),
-          child: Text("该源未找到结果", style: TextStyle(color: scheme.onSurfaceVariant)),
+          child: Text('该源未找到结果', style: TextStyle(color: scheme.onSurfaceVariant)),
         ),
       );
     }
@@ -208,13 +202,13 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
                 IconButton(
                   icon: const Icon(Icons.chevron_left),
                   onPressed: start > 0 ? () => _changePage(-1) : null,
-                  tooltip: "上一页",
+                  tooltip: '上一页',
                 ),
-                Text("第 ${currentPage + 1}/${(fullList.length / _pageSize).ceil()} 页"),
+                Text('第 ${currentPage + 1}/${(fullList.length / _pageSize).ceil()} 页'),
                 IconButton(
                   icon: const Icon(Icons.chevron_right),
                   onPressed: end < fullList.length ? () => _changePage(1) : null,
-                  tooltip: "下一页",
+                  tooltip: '下一页',
                 ),
               ],
             ),
@@ -237,13 +231,12 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Header
               Padding(
                 padding: const EdgeInsets.only(bottom: 16.0),
                 child: Row(
                   children: [
                     Text(
-                      "搜索歌词",
+                      '搜索歌词',
                       style: TextStyle(
                         color: scheme.onSurface,
                         fontSize: 18.0,
@@ -258,7 +251,6 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
                   ],
                 ),
               ),
-              // Search Bar
               Row(
                 children: [
                   Expanded(
@@ -267,7 +259,7 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
                       child: TextField(
                         controller: _searchController,
                         decoration: const InputDecoration(
-                          hintText: "输入歌曲名或歌手...",
+                          hintText: '输入歌曲名或歌手...',
                           border: OutlineInputBorder(),
                           contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         ),
@@ -277,7 +269,7 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
                   ),
                   const SizedBox(width: 8),
                   IconButton(
-                    icon: _isSearching 
+                    icon: _isSearching
                         ? const SizedBox(
                             width: 20,
                             height: 20,
@@ -289,18 +281,16 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
                 ],
               ),
               const SizedBox(height: 12),
-              // Tabs
               Row(
                 children: [
-                  _buildTab(ResultSource.qq, "QQ"),
+                  _buildTab(ResultSource.qq, 'QQ'),
                   const SizedBox(width: 8),
-                  _buildTab(ResultSource.ne, "网易云"),
+                  _buildTab(ResultSource.ne, '网易云'),
                   const SizedBox(width: 8),
-                  _buildTab(ResultSource.kugou, "酷狗"),
+                  _buildTab(ResultSource.kugou, '酷狗'),
                 ],
               ),
               const SizedBox(height: 8),
-              // Content
               SizedBox(
                 height: 300,
                 child: _isSearching
@@ -337,7 +327,7 @@ class SetLyricSourceBtn extends StatelessWidget {
           final isLocal = lyricNullable == null
               ? null
               : (lyricNullable is Lrc &&
-                  lyricNullable.source == LrcSource.local);
+                  lyricNullable.source == LyricFormat.local);
           return switch (snapshot.connectionState) {
             ConnectionState.none => loadingWidget,
             ConnectionState.waiting => loadingWidget,
@@ -374,17 +364,17 @@ class _SetLyricSourceBtn extends StatelessWidget {
               builder: (context) => SetLyricSourceDialog(audio: nowPlaying!),
             );
           },
-          child: const Text("指定默认歌词"),
+          child: const Text('指定默认歌词'),
         ),
         MenuItemButton(
           onPressed: lyricService.useOnlineLyric,
           leadingIcon: isLocal == false ? const Icon(Symbols.check) : null,
-          child: const Text("在线"),
+          child: const Text('在线'),
         ),
         MenuItemButton(
           onPressed: lyricService.useLocalLyric,
           leadingIcon: isLocal == true ? const Icon(Symbols.check) : null,
-          child: const Text("本地"),
+          child: const Text('本地'),
         ),
       ],
       builder: (context, controller, _) => IconButton(
@@ -404,10 +394,21 @@ class _SetLyricSourceBtn extends StatelessWidget {
   }
 }
 
-class SetLyricSourceDialog extends StatelessWidget {
+class SetLyricSourceDialog extends StatefulWidget {
   const SetLyricSourceDialog({super.key, required this.audio});
 
   final Audio audio;
+
+  @override
+  State<SetLyricSourceDialog> createState() => _SetLyricSourceDialogState();
+}
+
+class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
+  late final Future<List<SongSearchResult>> _searchFuture = uniSearch(widget.audio)
+      .timeout(const Duration(seconds: 20), onTimeout: () {
+    logger.w('SetLyricSourceDialog uniSearch timeout');
+    return [];
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -426,7 +427,7 @@ class SetLyricSourceDialog extends StatelessWidget {
               Row(
                 children: [
                   Text(
-                    "默认歌词",
+                    '默认歌词',
                     style: TextStyle(
                       color: scheme.onSurface,
                       fontSize: 18.0,
@@ -436,33 +437,33 @@ class SetLyricSourceDialog extends StatelessWidget {
                   const Spacer(),
                   IconButton(
                     icon: const Icon(Icons.search),
-                    tooltip: "手动搜索",
+                    tooltip: '手动搜索',
                     onPressed: () {
                       showDialog(
                         context: context,
-                        builder: (context) => ManualLyricSearchDialog(audio: audio),
+                        builder: (context) => ManualLyricSearchDialog(audio: widget.audio),
                       );
                     },
                   ),
                 ],
               ),
               ListTile(
-                title: const Text("使用本地歌词"),
+                title: const Text('使用本地歌词'),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8.0),
                 ),
                 onTap: () {
-                  lyricSources[audio.path] = LyricSource(LyricSourceType.local);
+                  lyricSources[widget.audio.path] = LyricSource(LyricSourceType.local);
                   PlayService.instance.lyricService.useLocalLyric();
                   Navigator.pop(context);
                 },
               ),
               const Divider(),
               Flexible(
-                child: FutureBuilder(
-                  future: uniSearch(audio),
+                child: FutureBuilder<List<SongSearchResult>>(
+                  future: _searchFuture,
                   builder: (context, snapshot) {
-                    if (snapshot.data == null) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
                       return const Center(
                         child: SizedBox(
                           width: 24,
@@ -471,16 +472,19 @@ class SetLyricSourceDialog extends StatelessWidget {
                         ),
                       );
                     }
-                    if (snapshot.data!.isEmpty) {
-                      return const Center(
-                        child: Text("未找到在线歌词"),
+                    if (snapshot.hasError || snapshot.data == null || snapshot.data!.isEmpty) {
+                      return Center(
+                        child: Text(
+                          snapshot.hasError ? '搜索失败' : '未找到在线歌词',
+                          style: TextStyle(color: scheme.onSurfaceVariant),
+                        ),
                       );
                     }
                     return ListView.builder(
                       shrinkWrap: true,
                       itemCount: snapshot.data!.length,
                       itemBuilder: (context, i) => _LyricSourceTile(
-                        audio: audio,
+                        audio: widget.audio,
                         searchResult: snapshot.data![i],
                       ),
                     );
@@ -507,14 +511,14 @@ class _ManualSearchTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final sourceText = switch (searchResult.source) {
-      ResultSource.qq => "QQ",
-      ResultSource.kugou => "酷狗",
-      ResultSource.ne => "网易云",
+      ResultSource.qq => 'QQ',
+      ResultSource.kugou => '酷狗',
+      ResultSource.ne => '网易云',
     };
 
     return ListTile(
       title: Text(searchResult.title),
-      subtitle: Text("${searchResult.artists} - ${searchResult.album}"),
+      subtitle: Text('${searchResult.artists} - ${searchResult.album}'),
       trailing: Container(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         decoration: BoxDecoration(
@@ -543,7 +547,6 @@ class _ManualSearchTile extends StatelessWidget {
         );
         Navigator.pop(context);
 
-        // 点击后异步获取歌词
         PlayService.instance.lyricService.useOnlineLyric();
       },
     );
@@ -568,7 +571,10 @@ class _LyricSourceTileState extends State<_LyricSourceTile> {
     qqSongId: widget.searchResult.qqSongId,
     kugouSongHash: widget.searchResult.kugouSongHash,
     neSongId: widget.searchResult.neSongId,
-  );
+  ).timeout(const Duration(seconds: 15), onTimeout: () {
+    logger.w('_LyricSourceTile getOnlineLyric timeout');
+    return null;
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -604,14 +610,14 @@ class _LyricSourceTileState extends State<_LyricSourceTile> {
 
   Widget _buildNoLyricTile(BuildContext context) {
     final sourceText = switch (widget.searchResult.source) {
-      ResultSource.qq => "QQ音乐",
-      ResultSource.kugou => "酷狗",
-      ResultSource.ne => "网易云",
+      ResultSource.qq => 'QQ音乐',
+      ResultSource.kugou => '酷狗',
+      ResultSource.ne => '网易云',
     };
     return ListTile(
       leading: _buildSourceLabel(context, sourceText),
       title: Text(widget.searchResult.title),
-      subtitle: Text("${widget.searchResult.artists} - ${widget.searchResult.album}"),
+      subtitle: Text('${widget.searchResult.artists} - ${widget.searchResult.album}'),
     );
   }
 
@@ -640,9 +646,9 @@ class _LyricSourceTileState extends State<_LyricSourceTile> {
     Lyric lyric,
   ) {
     final sourceText = switch (searchResult.source) {
-      ResultSource.qq => "QQ音乐",
-      ResultSource.kugou => "酷狗",
-      ResultSource.ne => "网易云",
+      ResultSource.qq => 'QQ音乐',
+      ResultSource.kugou => '酷狗',
+      ResultSource.ne => '网易云',
     };
 
     final lyricTypeText = switch (lyric.runtimeType) {
@@ -709,7 +715,7 @@ class _LyricSourceTileState extends State<_LyricSourceTile> {
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
-                  "${searchResult.artists} - ${searchResult.album}",
+                  '${searchResult.artists} - ${searchResult.album}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -772,31 +778,37 @@ class _LyricSourceTileState extends State<_LyricSourceTile> {
           ],
         ],
       ),
-      subtitle: _buildStaticSubtitle(lyric),
-    );
-  }
+      subtitle: StreamBuilder<double>(
+        stream: PlayService.instance.playbackService.positionStream,
+        builder: (context, positionSnapshot) {
+          final positionMs = (positionSnapshot.data ?? 0) * 1000;
+          final currLineIndex = max(lyric.lines.lastIndexWhere(
+            (element) => element.start.inMilliseconds <= positionMs,
+          ), 0);
 
-  Widget _buildStaticSubtitle(Lyric lyric) {
-    final firstLine = lyric.lines.isNotEmpty ? lyric.lines.first : null;
-    final content = firstLine is SyncLyricLine
-        ? firstLine.content
-        : firstLine is LrcLine
-            ? firstLine.content
-            : '';
-    final translation = firstLine?.translation;
-    
-    if (translation != null && translation.isNotEmpty) {
-      return Text(
-        "$content ┃ $translation",
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      );
-    }
-    
-    return Text(
-      content.isEmpty ? "暂无歌词内容" : content,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
+          final currLine = lyric.lines[currLineIndex];
+          final content = currLine is SyncLyricLine
+              ? currLine.content
+              : currLine is LrcLine
+                  ? currLine.content
+                  : '';
+          final translation = currLine.translation;
+
+          if (translation != null && translation.isNotEmpty) {
+            return Text(
+              '当前：$content ┃ $translation',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            );
+          }
+
+          return Text(
+            '当前：${content.isEmpty ? '暂无歌词' : content}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          );
+        },
+      ),
     );
   }
 }
