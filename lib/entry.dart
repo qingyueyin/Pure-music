@@ -24,9 +24,11 @@ import 'package:pure_music/page/welcoming_page.dart';
 import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
 import 'package:pure_music/component/app_scroll_behavior.dart';
+import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/painting.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -111,11 +113,12 @@ class Entry extends StatefulWidget {
   State<Entry> createState() => _EntryState();
 }
 
-class _EntryState extends State<Entry> with WindowListener {
+class _EntryState extends State<Entry> with WindowListener, WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
     windowManager.addListener(this);
+    WidgetsBinding.instance.addObserver(this);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (Platform.environment['CP_ECHO_RECORD'] == '1') {
@@ -126,13 +129,36 @@ class _EntryState extends State<Entry> with WindowListener {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     windowManager.removeListener(this);
     super.dispose();
   }
 
   @override
+  void didHaveMemoryPressure() {
+    _onLowMemory();
+  }
+
+  @override
+  void onWindowMinimized() {
+    // 窗口最小化：用户看不见任何内容，释放 GPU 图片缓存
+    // 保留小图（CoverImageCache small tier）以便恢复时快速显示
+    PaintingBinding.instance.imageCache.clear();
+    CoverImageCache.instance.trimMemory(); // 清中/大图，保留小图
+    logger.i('[mem] window minimized - cleared invisible caches');
+  }
+
+  @override
   void onWindowFocus() {
     // Window focus handler
+  }
+
+  /// 内存不足时的统一清理入口
+  void _onLowMemory() {
+    CoverImageCache.instance.clear();
+    AudioLibrary.instance.evictStaleCoverBytes();
+    PaintingBinding.instance.imageCache.clear();
+    logger.w('[mem] low memory - cleared all caches');
   }
 
   ThemeData fromSchemeAndFontFamily({
@@ -214,7 +240,7 @@ class _EntryState extends State<Entry> with WindowListener {
             },
             routes: [
               GoRoute(
-                path: "detail",
+                path: 'detail',
                 pageBuilder: (context, state) => DetailTransitionPage(
                   key: state.pageKey,
                   child: AudioDetailPage(audio: state.extra as Audio),
@@ -230,7 +256,7 @@ class _EntryState extends State<Entry> with WindowListener {
                 NoTransitionPage(key: state.pageKey, child: const ArtistsPage()),
             routes: [
               GoRoute(
-                path: "detail",
+                path: 'detail',
                 pageBuilder: (context, state) => SlideTransitionPage(
                   key: state.pageKey,
                   child: ArtistDetailPage(artist: state.extra as Artist),
@@ -246,7 +272,7 @@ class _EntryState extends State<Entry> with WindowListener {
                 NoTransitionPage(key: state.pageKey, child: const AlbumsPage()),
             routes: [
               GoRoute(
-                path: "detail",
+                path: 'detail',
                 pageBuilder: (context, state) => SlideTransitionPage(
                   key: state.pageKey,
                   child: AlbumDetailPage(album: state.extra as Album),
@@ -263,7 +289,7 @@ class _EntryState extends State<Entry> with WindowListener {
             routes: [
               /// folder detail page
               GoRoute(
-                path: "detail",
+                path: 'detail',
                 pageBuilder: (context, state) {
                   final folder = state.extra as AudioFolder;
                   return SlideTransitionPage(
@@ -282,7 +308,7 @@ class _EntryState extends State<Entry> with WindowListener {
                 NoTransitionPage(key: state.pageKey, child: const PlaylistsPage()),
             routes: [
               GoRoute(
-                path: "detail",
+                path: 'detail',
                 pageBuilder: (context, state) {
                   final playlist = state.extra as Playlist;
                   return SlideTransitionPage(
@@ -301,7 +327,7 @@ class _EntryState extends State<Entry> with WindowListener {
                 NoTransitionPage(key: state.pageKey, child: const SearchPage()),
             routes: [
               GoRoute(
-                path: "result",
+                path: 'result',
                 pageBuilder: (context, state) {
                   final extra = state.extra;
                   if (extra is UnionSearchResult) {
@@ -328,7 +354,7 @@ class _EntryState extends State<Entry> with WindowListener {
                   ),
               routes: [
                 GoRoute(
-                  path: "issue",
+                  path: 'issue',
                   pageBuilder: (context, state) => SlideTransitionPage(
                     key: state.pageKey,
                     child: const SettingsIssuePage(),
@@ -384,6 +410,6 @@ class _EntryState extends State<Entry> with WindowListener {
         languageCode: 'zh', scriptCode: 'Hant', countryCode: 'TW'),
     Locale.fromSubtags(
         languageCode: 'zh', scriptCode: 'Hant', countryCode: 'HK'),
-    Locale("en", "US"),
+    Locale('en', 'US'),
   ];
 }
