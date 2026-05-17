@@ -1,10 +1,12 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
-import 'dart:ui';
+import 'dart:ui' show PlatformDispatcher;
 import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/native/rust/api/library_db.dart' as library_db;
-import 'package:pure_music/native/rust/api/tag_reader.dart';
 import 'package:pure_music/core/utils.dart';
+import 'package:pure_music/play_service/play_service.dart';
 import 'package:flutter/painting.dart';
 
 /// from index.json
@@ -48,8 +50,8 @@ class AudioLibrary {
     final stopwatch = Stopwatch()..start();
     try {
       final supportPath = (await getAppDataDir()).path;
-      final indexPath = "$supportPath\\index.json";
-      final sqlitePath = "$supportPath\\library.sqlite";
+      final indexPath = '$supportPath\\index.json';
+      final sqlitePath = '$supportPath\\library.sqlite';
 
       if (!File(sqlitePath).existsSync() && File(indexPath).existsSync()) {
         try {
@@ -67,18 +69,18 @@ class AudioLibrary {
           final audios = <Audio>[];
           for (final audio in folder.audios) {
             audios.add(Audio.fromMap({
-              "title": audio.title,
-              "artist": audio.artist,
-              "album": audio.album,
-              "album_artist": audio.albumArtist,
-              "track": audio.track,
-              "duration": audio.duration.toInt(),
-              "bitrate": audio.bitrate,
-              "sample_rate": audio.sampleRate,
-              "path": audio.path,
-              "modified": audio.modified.toInt(),
-              "created": audio.created.toInt(),
-              "by": audio.by,
+              'title': audio.title,
+              'artist': audio.artist,
+              'album': audio.album,
+              'album_artist': audio.albumArtist,
+              'track': audio.track,
+              'duration': audio.duration.toInt(),
+              'bitrate': audio.bitrate,
+              'sample_rate': audio.sampleRate,
+              'path': audio.path,
+              'modified': audio.modified.toInt(),
+              'created': audio.created.toInt(),
+              'by': audio.by,
             }));
           }
           folders.add(
@@ -95,20 +97,20 @@ class AudioLibrary {
         instance.artistCollection.clear();
         instance.albumCollection.clear();
         instance._buildCollections();
-
+      instance._startCoverBytesEviction();
         logger.i(
-          "AudioLibrary init from sqlite: ${stopwatch.elapsedMilliseconds}ms, audios=${instance.audioCollection.length}",
+          'AudioLibrary init from sqlite: ${stopwatch.elapsedMilliseconds}ms, audios=${instance.audioCollection.length}',
         );
         return;
       } catch (_) {}
 
       final indexStr = await File(indexPath).readAsString();
       final Map indexJson = json.decode(indexStr);
-      final List foldersJson = indexJson["folders"];
+      final List foldersJson = indexJson['folders'];
       final List<AudioFolder> folders = [];
 
       for (Map folderMap in foldersJson) {
-        final List audiosJson = folderMap["audios"];
+        final List audiosJson = folderMap['audios'];
         final List<Audio> audios = [];
         for (Map audioMap in audiosJson) {
           audios.add(Audio.fromMap(audioMap));
@@ -121,8 +123,9 @@ class AudioLibrary {
       instance.artistCollection.clear();
       instance.albumCollection.clear();
       instance._buildCollections();
+      instance._startCoverBytesEviction();
       logger.i(
-        "AudioLibrary init from json: ${stopwatch.elapsedMilliseconds}ms, audios=${instance.audioCollection.length}",
+        'AudioLibrary init from json: ${stopwatch.elapsedMilliseconds}ms, audios=${instance.audioCollection.length}',
       );
     } catch (err, trace) {
       logger.e(err, stackTrace: trace);
@@ -195,6 +198,48 @@ class AudioLibrary {
   String toString() {
     return folders.toString();
   }
+
+  /// 定时清理 Audio 实例中的原始 cover bytes。
+  /// 大曲库下 _coverBytes 会占用大量内存，周期性释放可减少内存压力。
+  /// Cover 仍可通过 CoverImageCache 重新获取。
+  Timer? _coverBytesEvictionTimer;
+
+  void _startCoverBytesEviction() {
+    _coverBytesEvictionTimer?.cancel();
+    // 每 5 分钟清理一次非当前播放的 audio 的 raw bytes
+    _coverBytesEvictionTimer = Timer.periodic(
+      const Duration(minutes: 2),
+      (_) => evictStaleCoverBytes(),
+    );
+  }
+
+  /// 只清理 60 秒内未被访问过的"冷"封面，保护当前播放歌曲
+  void evictStaleCoverBytes() {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    const coldMs = 30 * 1000; // 30 秒冷阈值
+    final playingPath = PlayService.instance.playbackService.nowPlaying?.path;
+    int evicted = 0;
+    for (final audio in audioCollection) {
+      if (audio._coverImage == null && audio._mediumCoverImage == null && audio._largeCoverImage == null) continue;
+      if (audio.path == playingPath) continue; // 保护当前播放
+      if (now - audio._coverLastAccessMs < coldMs) continue; // 热数据
+      audio.evictCoverCache();
+      evicted++;
+    }
+    if (evicted > 0) {
+      logger.i('[mem] evicted $evicted cold cover caches');
+    }
+  }
+
+  /// 完全释放数据库资源
+  void dispose() {
+    _coverBytesEvictionTimer?.cancel();
+    _coverBytesEvictionTimer = null;
+    audioCollection.clear();
+    artistCollection.clear();
+    albumCollection.clear();
+    folders.clear();
+  }
 }
 
 class AudioFolder {
@@ -212,14 +257,14 @@ class AudioFolder {
   AudioFolder(this.audios, this.path, this.modified, this.latest);
 
   factory AudioFolder.fromMap(Map map, List<Audio> audios) =>
-      AudioFolder(audios, map["path"] ?? '', map["modified"] ?? 0, map["latest"] ?? 0);
+      AudioFolder(audios, map['path'] ?? '', map['modified'] ?? 0, map['latest'] ?? 0);
 
   @override
   String toString() {
     return {
-      "audios": audios.toString(),
-      "path": path,
-      "modified":
+      'audios': audios.toString(),
+      'path': path,
+      'modified':
           DateTime.fromMillisecondsSinceEpoch(modified * 1000).toString(),
     }.toString();
   }
@@ -263,11 +308,18 @@ class Audio {
   /// 标签来源（Lofty、Windows、null）
   String? by;
 
-  ImageProvider? _cover;
-  Future<ImageProvider?>? _coverFuture;
+  /// 缓存 ImageProvider 实例，避免每次创建新实例导致 Flutter ImageCache 失效
+  ImageProvider? _coverImage;
+  ImageProvider? _mediumCoverImage;
+  ImageProvider? _largeCoverImage;
 
-  /// 以“、”和“/”分割艺术家，会把名称中带有这些符号的艺术家分割。
-  /// 暂时想不到别的方法。
+  /// 上一次封面被访问的时间戳，用于冷数据回收
+  int _coverLastAccessMs = 0;
+
+  void _touchCoverAccess() {
+    _coverLastAccessMs = DateTime.now().millisecondsSinceEpoch;
+  }
+
   Audio(
     this.title,
     this.artist,
@@ -284,57 +336,40 @@ class Audio {
   )   : splitedArtists = artist.split(
           RegExp(AppSettings.instance.artistSplitPattern),
         ),
-        splitedAlbumArtists = (albumArtist ?? "").isEmpty
+        splitedAlbumArtists = (albumArtist ?? '').isEmpty
             ? const []
             : albumArtist!
                 .split(RegExp(AppSettings.instance.artistSplitPattern));
 
   factory Audio.fromMap(Map map) => Audio(
-        map["title"] ?? '',
-        map["artist"] ?? '',
-        map["album"] ?? '',
-        map["album_artist"],
-        map["track"] ?? 0,
-        map["duration"] ?? 0,
-        map["bitrate"],
-        map["sample_rate"],
-        map["path"] ?? '',
-        map["modified"] ?? 0,
-        map["created"] ?? 0,
-        map["by"],
+        map['title'] ?? '',
+        map['artist'] ?? '',
+        map['album'] ?? '',
+        map['album_artist'],
+        map['track'] ?? 0,
+        map['duration'] ?? 0,
+        map['bitrate'],
+        map['sample_rate'],
+        map['path'] ?? '',
+        map['modified'] ?? 0,
+        map['created'] ?? 0,
+        map['by'],
       );
 
   Map toMap() => {
-        "title": title,
-        "artist": artist,
-        "album": album,
-        "album_artist": albumArtist,
-        "track": track,
-        "duration": duration,
-        "bitrate": bitrate,
-        "sample_rate": sampleRate,
-        "path": path,
-        "modified": modified,
-        "created": created,
-        "by": by
+        'title': title,
+        'artist': artist,
+        'album': album,
+        'album_artist': albumArtist,
+        'track': track,
+        'duration': duration,
+        'bitrate': bitrate,
+        'sample_rate': sampleRate,
+        'path': path,
+        'modified': modified,
+        'created': created,
+        'by': by
       };
-
-  /// 读取音乐文件的图片，自动适应缩放
-  Future<ImageProvider?> _getResizedPic({
-    required int width,
-    required int height,
-  }) async {
-    final ratio = PlatformDispatcher.instance.views.first.devicePixelRatio;
-    return getPictureFromPath(
-      path: path,
-      width: (width * ratio).round(),
-      height: (height * ratio).round(),
-    ).then((pic) {
-      if (pic == null) return null;
-
-      return MemoryImage(pic);
-    });
-  }
 
   Future<ImageProvider?> _getFolderCover({
     required int width,
@@ -343,8 +378,8 @@ class Audio {
     try {
       final dir = Directory(File(path).parent.path);
       final candidates = [
-        File("${dir.path}\\cover.jpg"),
-        File("${dir.path}\\cover.png"),
+        File('${dir.path}\\cover.jpg'),
+        File('${dir.path}\\cover.png'),
       ];
       for (final f in candidates) {
         if (f.existsSync()) {
@@ -361,55 +396,88 @@ class Audio {
     return null;
   }
 
-  /// 缓存ImageProvider而不是Uint8List（bytes）
+  /// 缓存ImageProvider实例，避免每次创建新实例导致Flutter ImageCache失效
   /// 缓存bytes时，每次加载图片都要重新解码，内存占用很大。快速滚动时能到700mb
   /// 缓存ImageProvider不用重新解码。快速滚动时最多250mb
-  /// 48*48
-  Future<ImageProvider?> get cover {
-    _coverFuture ??= (() async {
-      if (_cover != null) return _cover;
-      final value = await _getResizedPic(width: 48, height: 48);
-      if (value != null) _cover = value;
-      return _cover;
-    })();
-    return _coverFuture!;
+  /// 
+  /// ZeroBit pattern: 先检查_coverImage，命中直接返回同一实例；再检查_coverBytes，创建并缓存新实例；永不走FFI
+  Future<ImageProvider?> get cover async {
+    _touchCoverAccess();
+    if (_coverImage != null) return _coverImage;
+    try {
+      final data = await CoverImageCache.instance.get(
+        path: path,
+        width: 48,
+        height: 48,
+      );
+      return _coverImage = data;
+    } catch (_) {
+      return null;
+    }
   }
+
+  /// 同步获取已缓存的封面（不触发异步加载）
+  /// 用于需要立即显示封面的场景，避免异步等待导致的闪烁
+  ImageProvider? get cachedMediumCover => _mediumCoverImage;
 
   /// 释放封面缓存（用于长时间不用时释放内存）
   void evictCoverCache() {
-    if (_cover != null) {
-      _cover?.evict();
-      _cover = null;
-    }
-    _coverFuture = null;
-    _mediumCoverFuture = null;
+    _coverImage?.evict();
+    _coverImage = null;
+    _mediumCoverImage?.evict();
+    _mediumCoverImage = null;
+    _largeCoverImage?.evict();
+    _largeCoverImage = null;
   }
 
-  /// audio detail page 不需要频繁调用，所以不缓存图片
+  /// audio detail page
   /// 200 * 200
-  Future<ImageProvider?> get mediumCover {
-    _mediumCoverFuture ??= _getResizedPic(width: 200, height: 200);
-    return _mediumCoverFuture!;
+  Future<ImageProvider?> get mediumCover async {
+    _touchCoverAccess();
+    if (_mediumCoverImage != null) return _mediumCoverImage;
+    try {
+      final data = await CoverImageCache.instance.get(
+        path: path,
+        width: 200,
+        height: 200,
+      );
+      return _mediumCoverImage = data;
+    } catch (_) {
+      return null;
+    }
   }
-  Future<ImageProvider?>? _mediumCoverFuture;
 
-  /// now playing 不需要频繁调用，所以不缓存图片
-  /// size: 400 * devicePixelRatio（屏幕缩放大小）
-  Future<ImageProvider?> get largeCover =>
-      _getResizedPic(width: 400, height: 400);
+  /// now playing
+  /// size: 520 * devicePixelRatio（屏幕缩放大小）
+  Future<ImageProvider?> get largeCover async {
+    _touchCoverAccess();
+    if (_largeCoverImage != null) return _largeCoverImage;
+    try {
+      final data = await CoverImageCache.instance.get(
+        path: path,
+        width: 520,
+        height: 520,
+      );
+      return _largeCoverImage = data;
+    } catch (_) {
+      return null;
+    }
+  }
 
   @override
   String toString() {
     return {
-      "title": title,
-      "artist": artist,
-      "album": album,
-      "path": path,
-      "modified":
+      'title': title,
+      'artist': artist,
+      'album': album,
+      'path': path,
+      'modified':
           DateTime.fromMillisecondsSinceEpoch(modified * 1000).toString(),
-      "created": DateTime.fromMillisecondsSinceEpoch(created * 1000).toString(),
+      'created': DateTime.fromMillisecondsSinceEpoch(created * 1000).toString(),
     }.toString();
   }
+
+  // _globalLargeCover removed - was write-only, wasted memory
 }
 
 class Artist {
@@ -421,10 +489,20 @@ class Artist {
   /// 作品
   List<Audio> works = [];
 
+  /// 缓存 ImageProvider 实例
+  ImageProvider? _pictureCache;
+
   /// 只能用在artist detail page
   /// 200*200
-  Future<ImageProvider?> get picture =>
-      works.first._getResizedPic(width: 200, height: 200);
+  Future<ImageProvider?> get picture async {
+    if (_pictureCache != null) return _pictureCache;
+    if (works.isEmpty) return null;
+    return _pictureCache = await CoverImageCache.instance.get(
+      path: works.first.path,
+      width: 200,
+      height: 200,
+    );
+  }
 
   Artist({required this.name});
 }
@@ -438,13 +516,24 @@ class Album {
   /// 作品
   List<Audio> works = [];
 
+  /// 缓存 ImageProvider 实例
+  ImageProvider? _coverCache;
+
   /// 只能用在album detail page
   /// 200*200
   Future<ImageProvider?> get cover async {
+    if (_coverCache != null) return _coverCache;
+    if (works.isEmpty) return null;
     final folderCover =
         await works.first._getFolderCover(width: 200, height: 200);
-    if (folderCover != null) return folderCover;
-    return works.first._getResizedPic(width: 200, height: 200);
+    if (folderCover != null) {
+      return _coverCache = folderCover;
+    }
+    return _coverCache = await CoverImageCache.instance.get(
+      path: works.first.path,
+      width: 200,
+      height: 200,
+    );
   }
 
   Album({required this.name});
