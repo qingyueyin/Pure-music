@@ -1,10 +1,10 @@
 import 'dart:async';
+import 'package:file_picker/file_picker.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/component/build_index_state_view.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
-import 'package:filepicker_windows/filepicker_windows.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -30,7 +30,7 @@ class WelcomingPage extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(
-                "你的音乐放在哪些文件夹呢？",
+                '你的音乐放在哪些文件夹呢？',
                 style: TextStyle(
                   color: scheme.onSurface,
                   fontWeight: FontWeight.bold,
@@ -38,7 +38,7 @@ class WelcomingPage extends StatelessWidget {
                 ),
               ),
               Text(
-                "软件会扫描这些文件夹（包括所有子文件夹）下的音乐并建立索引。",
+                '软件会扫描这些文件夹（包括所有子文件夹）下的音乐并建立索引。',
                 style: TextStyle(color: scheme.onSurface),
               ),
               const SizedBox(height: 16),
@@ -79,7 +79,7 @@ class _FolderSelectorViewState extends State<FolderSelectorView> {
                 builder: (context, snapshot) {
                   if (snapshot.data == null) {
                     return const Center(
-                      child: Text("Fail to get app data dir."),
+                      child: Text('Fail to get app data dir.'),
                     );
                   }
 
@@ -110,19 +110,16 @@ class _FolderSelectorViewState extends State<FolderSelectorView> {
           children: [
             FilledButton(
               onPressed: () async {
-                // final path = await pickSingleFolder();
-                // if (path == null) return;
-                final dirPicker = DirectoryPicker();
-                dirPicker.title = "选择文件夹";
-
-                final dir = dirPicker.getDirectory();
-                if (dir == null) return;
+                final path = await FilePicker.platform.getDirectoryPath(
+                  dialogTitle: '选择文件夹',
+                );
+                if (path == null) return;
 
                 setState(() {
-                  folders.add(dir.path);
+                  folders.add(path);
                 });
               },
-              child: const Text("添加文件夹"),
+              child: const Text('添加文件夹'),
             ),
             FilledButton(
               onPressed: () async {
@@ -132,7 +129,7 @@ class _FolderSelectorViewState extends State<FolderSelectorView> {
                   selecting = false;
                 });
               },
-              child: const Text("扫描"),
+              child: const Text('扫描'),
             ),
           ],
         ),
@@ -143,7 +140,7 @@ class _FolderSelectorViewState extends State<FolderSelectorView> {
             itemBuilder: (context, i) => ListTile(
               title: Text(folders[i]),
               trailing: IconButton(
-                tooltip: "移除",
+                tooltip: '移除',
                 onPressed: () {
                   setState(() {
                     folders.removeAt(i);
@@ -178,10 +175,10 @@ class _TitleBar extends StatelessWidget {
                 children: [
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                    child: Image.asset("app_icon.ico", width: 24, height: 24),
+                    child: Image.asset('app_icon.ico', width: 24, height: 24),
                   ),
                   Text(
-                    "Pure Music",
+                    'Pure Music',
                     style: TextStyle(color: scheme.onSurface, fontSize: 16),
                   ),
                 ],
@@ -238,7 +235,7 @@ class __WindowControllsState extends State<_WindowControlls>
       spacing: 8.0,
       children: [
         IconButton(
-          tooltip: "最小化",
+          tooltip: '最小化',
           onPressed: windowManager.minimize,
           icon: const Icon(Symbols.remove),
         ),
@@ -247,7 +244,7 @@ class __WindowControllsState extends State<_WindowControlls>
           builder: (context, snapshot) {
             final isMaximized = snapshot.data ?? false;
             return IconButton(
-              tooltip: isMaximized ? "还原" : "最大化",
+              tooltip: isMaximized ? '还原' : '最大化',
               onPressed: isMaximized
                   ? windowManager.unmaximize
                   : windowManager.maximize,
@@ -258,7 +255,7 @@ class __WindowControllsState extends State<_WindowControlls>
           },
         ),
         IconButton(
-          tooltip: "退出",
+          tooltip: '退出',
           onPressed: windowManager.close,
           icon: const Icon(Symbols.close),
         ),
