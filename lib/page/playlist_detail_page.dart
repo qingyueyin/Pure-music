@@ -23,13 +23,13 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    final contentList = widget.playlist.audios.values.toList();
+    final contentList = widget.playlist.audios;
     final scheme = Theme.of(context).colorScheme;
 
     return UniPage<Audio>(
       pref: AppPreference.instance.playlistDetailPagePref,
       title: widget.playlist.name,
-      subtitle: "${contentList.length} 首乐曲",
+      subtitle: '${contentList.length} 首乐曲',
       contentList: contentList,
       contentBuilder: (context, item, i, multiSelectController, _) => AudioTile(
         audioIndex: i,
@@ -43,11 +43,11 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
       multiSelectController: multiSelectController,
       multiSelectViewActions: [
         IconButton.filled(
-          tooltip: "移除选中歌曲",
+          tooltip: '移除选中歌曲',
           onPressed: () async {
             setState(() {
               for (var item in multiSelectController.selected) {
-                widget.playlist.audios.remove(item.path);
+                widget.playlist.removeByPath(item.path);
               }
             });
             await savePlaylists();
@@ -69,7 +69,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
       sortMethods: [
         SortMethodDesc(
           icon: Symbols.title,
-          name: "标题",
+          name: '标题',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
@@ -83,7 +83,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
         ),
         SortMethodDesc(
           icon: Symbols.artist,
-          name: "艺术家",
+          name: '艺术家',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
@@ -97,7 +97,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
         ),
         SortMethodDesc(
           icon: Symbols.album,
-          name: "专辑",
+          name: '专辑',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
@@ -111,7 +111,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
         ),
         SortMethodDesc(
           icon: Symbols.add,
-          name: "创建时间",
+          name: '创建时间',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
@@ -125,7 +125,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
         ),
         SortMethodDesc(
           icon: Symbols.edit,
-          name: "修改时间",
+          name: '修改时间',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
