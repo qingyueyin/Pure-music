@@ -22,8 +22,7 @@ class BlurCoverBackground extends StatefulWidget {
 }
 
 class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
-  ui.Image? _decodedImage;
-  Uint8List? _loadedBytes;
+  Uint8List? _currentCoverBytes;
   bool _isLoading = false;
   bool _disposed = false;
 
@@ -45,11 +44,8 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
 
   void _coverBytesChanged(Uint8List? newBytes, Uint8List? oldBytes) {
     if (newBytes == null || newBytes.isEmpty) {
-      if (_decodedImage != null && !_disposed) {
-        _decodedImage!.dispose();
-        _decodedImage = null;
-        _loadedBytes = null;
-        setState(() {});
+      if (_currentCoverBytes != null && !_disposed) {
+        setState(() => _currentCoverBytes = null);
       }
       return;
     }
@@ -70,54 +66,23 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
   Future<void> _loadCover() async {
     final bytes = widget.inputs.albumCoverBytes;
     if (bytes == null || bytes.isEmpty) {
-      if (_decodedImage != null) {
-        final old = _decodedImage;
-        _decodedImage = null;
-        _loadedBytes = null;
-        old!.dispose();
-        setState(() {});
+      if (_currentCoverBytes != null) {
+        setState(() => _currentCoverBytes = null);
       }
       return;
     }
 
     if (_disposed) return;
 
-    if (identical(bytes, _loadedBytes) && _decodedImage != null) return;
-
-    setState(() => _isLoading = true);
-
-    try {
-      final codec = await ui.instantiateImageCodec(
-        bytes,
-        targetWidth: _coverBigRenderSize,
-        targetHeight: _coverBigRenderSize,
-      );
-      final frame = await codec.getNextFrame();
-      final newImage = frame.image;
-
-      if (_disposed || !mounted) {
-        newImage.dispose();
-        return;
-      }
-
-      final oldImage = _decodedImage;
-      _decodedImage = newImage;
-      _loadedBytes = bytes;
-      oldImage?.dispose();
-
-      setState(() => _isLoading = false);
-    } catch (_) {
-      if (!_disposed && mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
+    setState(() {
+      _currentCoverBytes = bytes;
+      _isLoading = false;
+    });
   }
 
   @override
   void dispose() {
     _disposed = true;
-    _decodedImage?.dispose();
-    _decodedImage = null;
     super.dispose();
   }
 
@@ -125,7 +90,7 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final brightness = scheme.brightness;
-    final decodedImage = _decodedImage;
+    final coverBytes = _currentCoverBytes;
 
     return Stack(
       fit: StackFit.expand,
@@ -137,9 +102,9 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
             opacity: _isLoading ? 0.0 : 1.0,
             duration: const Duration(milliseconds: 600),
             curve: Curves.easeInOut,
-            child: decodedImage != null
+            child: coverBytes != null
                 ? _BlurredCover(
-                    image: decodedImage,
+                    coverBytes: coverBytes,
                     brightness: brightness,
                   )
                 : ColoredBox(color: widget.fallbackColor),
@@ -157,19 +122,23 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
 }
 
 class _BlurredCover extends StatelessWidget {
-  final ui.Image image;
+  final Uint8List coverBytes;
   final Brightness brightness;
 
   const _BlurredCover({
-    required this.image,
+    required this.coverBytes,
     required this.brightness,
   });
 
-  static final _blurFilter = ui.ImageFilter.blur(
-    sigmaX: 80,
-    sigmaY: 80,
-    tileMode: ui.TileMode.clamp,
-  );
+  Widget get _cover => SizedBox.expand(
+        child: Image.memory(
+          coverBytes,
+          cacheWidth: _coverBigRenderSize,
+          cacheHeight: _coverBigRenderSize,
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -177,7 +146,11 @@ class _BlurredCover extends StatelessWidget {
       opacity: brightness == Brightness.dark ? 0.9 : 0.6,
       child: ClipRRect(
         child: ImageFiltered(
-          imageFilter: _blurFilter,
+          imageFilter: ui.ImageFilter.blur(
+            sigmaX: 80,
+            sigmaY: 80,
+            tileMode: ui.TileMode.clamp,
+          ),
           child: ShaderMask(
             blendMode: BlendMode.modulate,
             shaderCallback: (Rect bounds) {
@@ -192,12 +165,7 @@ class _BlurredCover extends StatelessWidget {
                 stops: [0.0, 0.3, 1.0],
               ).createShader(bounds);
             },
-            child: SizedBox.expand(
-              child: RawImage(
-                image: image,
-                fit: BoxFit.cover,
-              ),
-            ),
+            child: _cover,
           ),
         ),
       ),
