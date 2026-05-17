@@ -30,7 +30,7 @@ class HorizontalLyricView extends StatelessWidget {
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    "Enjoy Music",
+                    'Enjoy Music',
                     style: TextStyle(color: scheme.onSecondaryContainer),
                   ),
                 ),
@@ -64,7 +64,7 @@ class _LyricHorizontalScrollAreaState
   late StreamSubscription lyricLineStreamSubscription;
   int _scrollToken = 0;
 
-  var currContent = "Enjoy Music";
+  var currContent = 'Enjoy Music';
 
   @override
   void initState() {
@@ -76,7 +76,7 @@ class _LyricHorizontalScrollAreaState
       } else if (first is SyncLyricLine) {
         currContent = first.translation == null
             ? first.content
-            : "${first.content}┃${first.translation}";
+            : '${first.content}┃${first.translation}';
       }
     }
 
@@ -92,7 +92,7 @@ class _LyricHorizontalScrollAreaState
         } else if (currLine is SyncLyricLine) {
           currContent = currLine.translation == null
               ? currLine.content
-              : "${currLine.content}┃${currLine.translation}";
+              : '${currLine.content}┃${currLine.translation}';
         }
       });
 
@@ -128,6 +128,27 @@ class _LyricHorizontalScrollAreaState
         }
       });
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant _LyricHorizontalScrollArea oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.lyric != widget.lyric) {
+      // 歌词切换时重置显示和滚动状态
+      _scrollToken = 0;
+      if (widget.lyric.lines.isNotEmpty) {
+        final first = widget.lyric.lines.first;
+        setState(() {
+          if (first is LrcLine) {
+            currContent = first.content;
+          } else if (first is SyncLyricLine) {
+            currContent = first.translation == null
+                ? first.content
+                : '${first.content}┃${first.translation}';
+          }
+        });
+      }
+    }
   }
 
   @override
