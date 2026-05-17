@@ -18,7 +18,6 @@ macro_rules! ne_log {
 const EAPI_KEY: &[u8; 16] = b"e82ckenh8dichen8";
 const CACHE_KEY_KEY: &[u8; 16] = b")(13daqP@ssw0rd~";
 const DEVICE_ID_XOR_KEY: &str = "3go8&$8*3*3h0k(2)2";
-const DIGEST_FORMAT: &str = "nobody%suse%smd5forencrypt";
 
 fn pkcs7_pad(data: &[u8], block_size: usize) -> Vec<u8> {
     let pad_len = block_size - (data.len() % block_size);
@@ -186,19 +185,6 @@ impl NetEaseCloud {
             user_id: Mutex::new(None),
             expire: Mutex::new(0),
         }
-    }
-
-    fn get_params_header(&self) -> String {
-        let cookies = self.cookies.lock().unwrap();
-        serde_json::json!({
-            "clientSign": cookies.get("clientSign").cloned().unwrap_or_default(),
-            "os": cookies.get("os").cloned().unwrap_or_else(|| "pc".to_string()),
-            "appver": cookies.get("appver").cloned().unwrap_or_else(|| "3.1.3.203419".to_string()),
-            "deviceId": cookies.get("deviceId").cloned().unwrap_or_default(),
-            "requestId": 0,
-            "osver": cookies.get("osver").cloned().unwrap_or_default(),
-        })
-        .to_string()
     }
 
     /// Headers exactly like Lyrico: User-Agent, Referer, Cookie (only 3)

@@ -8,9 +8,10 @@ use std::{
 };
 
 use image::imageops;
-use lofty::config::WriteOptions;
+use lofty::config::{ParseOptions, ParsingMode, WriteOptions};
 use lofty::prelude::{Accessor, AudioFile, ItemKey, TaggedFileExt};
-use lofty::tag::Tag;
+use lofty::probe::Probe;
+use lofty::tag::{Tag, TagItem};
 use windows::{
     core::Interface,
     core::HSTRING,
@@ -761,14 +762,44 @@ pub fn get_picture_from_path(path: String, width: u32, height: u32) -> Option<Ve
 }
 
 fn _get_lyric_from_lofty(path: &String) -> Option<String> {
-    if let Ok(tagged_file) = lofty::read_from_path(&path) {
-        let tag = tagged_file
-            .primary_tag()
-            .or_else(|| tagged_file.first_tag())?;
-        let lyric_tag = tag.get(&ItemKey::Lyrics)?;
-        let lyric = lyric_tag.value().text()?;
+    let path_ref = Path::new(&path);
+    let options = ParseOptions::new()
+        .parsing_mode(ParsingMode::Relaxed)
+        .read_cover_art(false)
+        .read_properties(false)
+        .read_tags(true);
 
-        return Some(lyric.to_string());
+    let tagged_file = match Probe::open(path_ref) {
+        Ok(v) => match v.options(options).read() {
+            Ok(f) => f,
+            Err(err) => {
+                log_to_dart(format!("Error reading lyric file {:?}: {:?}", path, err.kind()));
+                return None;
+            }
+        },
+        Err(err) => {
+            log_to_dart(format!("Error opening lyric file {:?}: {:?}", path, err.kind()));
+            return None;
+        }
+    };
+
+    if let Some(tag) = tagged_file
+        .primary_tag()
+        .or_else(|| tagged_file.first_tag())
+    {
+        // 优先检查 USLT (ID3v2 未同步歌词) — 这是 MP3 最常见的嵌入式歌词格式
+        let lyric_items = tag.get_items(&ItemKey::Lyrics).collect::<Vec<&TagItem>>();
+        for item in lyric_items {
+            if let Some(lyric) = item.value().text() {
+                let text = lyric.to_string();
+                if !text.trim().is_empty() {
+                    return Some(text);
+                }
+            }
+        }
+
+        // 再检查 Lyrics (VorbisComment/APE/MP4 等格式)
+        // 在 Lofty 0.21.x 中，ItemKey::Lyrics 已覆盖 USLT 和 Lyrics
     }
 
     None
@@ -817,8 +848,22 @@ pub fn get_lyric_from_path(path: String) -> Option<String> {
 
 /// for Flutter
 /// 写入歌词到音频文件标签（ID3/VorbisComment/MP4 等），使用 Lofty 的 `ItemKey::Lyrics` 映射
+/// 使用 ParsingMode::Relaxed 兼容更多有问题的标签文件
 pub fn write_lyric_to_path(path: String, lyric: String) -> Result<(), String> {
-    let mut tagged_file = lofty::read_from_path(&path).map_err(|e| e.to_string())?;
+    let path_ref = Path::new(&path);
+    let options = ParseOptions::new()
+        .parsing_mode(ParsingMode::Relaxed)
+        .read_cover_art(false)
+        .read_properties(false)
+        .read_tags(true);
+
+    let mut tagged_file = match Probe::open(path_ref) {
+        Ok(v) => match v.options(options).read() {
+            Ok(f) => f,
+            Err(err) => return Err(format!("Error reading file: {:?}", err.kind())),
+        },
+        Err(err) => return Err(format!("Error opening file: {:?}", err.kind())),
+    };
 
     let tag = if let Some(tag) = tagged_file.primary_tag_mut() {
         tag
@@ -839,7 +884,7 @@ pub fn write_lyric_to_path(path: String, lyric: String) -> Result<(), String> {
     tag.insert_text(ItemKey::Lyrics, lyric);
     tagged_file
         .save_to_path(&path, WriteOptions::default())
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("Error saving lyrics: {:?}", e.kind()))?;
     Ok(())
 }
 

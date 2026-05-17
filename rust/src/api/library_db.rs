@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Result};
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension, types::ToSql};
 
 #[derive(Clone)]
 pub struct IndexAudio {
@@ -99,19 +99,22 @@ pub(crate) fn write_index_value_to_sqlite(
 
     let tx = conn.transaction()?;
 
-    tx.execute("DELETE FROM audios", [])?;
-    tx.execute("DELETE FROM folders", [])?;
-    tx.execute("DELETE FROM meta WHERE key = 'version'", [])?;
     tx.execute(
-        "INSERT INTO meta(key, value) VALUES('version', ?1)",
+        "INSERT OR REPLACE INTO meta(key, value) VALUES('version', ?1)",
         params![version.to_string()],
     )?;
 
+    let current_folder_paths: Vec<String> = folders
+        .iter()
+        .filter_map(|f| f.get("path").and_then(|v| v.as_str()).map(String::from))
+        .collect();
+
     {
-        let mut folder_stmt =
-            tx.prepare("INSERT INTO folders(path, modified, latest) VALUES(?1, ?2, ?3)")?;
+        let mut folder_stmt = tx.prepare(
+            "INSERT OR REPLACE INTO folders(path, modified, latest) VALUES(?1, ?2, ?3)",
+        )?;
         let mut audio_stmt = tx.prepare(
-            "INSERT INTO audios(path, folder_path, title, artist, album, album_artist, track, duration, bitrate, sample_rate, modified, created, by)
+            "INSERT OR REPLACE INTO audios(path, folder_path, title, artist, album, album_artist, track, duration, bitrate, sample_rate, modified, created, by)
              VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
         )?;
 
@@ -171,7 +174,29 @@ pub(crate) fn write_index_value_to_sqlite(
         }
     }
 
+    if !current_folder_paths.is_empty() {
+        let placeholders: String = current_folder_paths
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("?{}", i + 1))
+            .collect::<Vec<_>>()
+            .join(",");
+        let delete_audios_sql =
+            format!("DELETE FROM audios WHERE folder_path NOT IN ({})", placeholders);
+        let delete_folders_sql =
+            format!("DELETE FROM folders WHERE path NOT IN ({})", placeholders);
+        let param_refs: Vec<&dyn ToSql> = current_folder_paths
+            .iter()
+            .map(|s| s as &dyn ToSql)
+            .collect();
+        tx.execute(&delete_audios_sql, param_refs.as_slice())?;
+        tx.execute(&delete_folders_sql, param_refs.as_slice())?;
+    }
+
     tx.commit()?;
+
+    conn.execute_batch("PRAGMA optimize;")?;
+
     Ok(())
 }
 
