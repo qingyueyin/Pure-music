@@ -1,7 +1,10 @@
+enum LyricFormat { local, web, netease, baidu, qqmusic, manual, lrc }
+
 class Lyric {
   final List<LyricLine> lines;
+  final LyricFormat source;
 
-  const Lyric(this.lines);
+  const Lyric(this.lines, [this.source = LyricFormat.local]);
 
   static const Lyric empty = Lyric([]);
 
@@ -22,7 +25,9 @@ class LyricLine {
 class SyncLyricLine extends LyricLine {
   final List<SyncLyricWord> words;
 
-  SyncLyricLine(super.start, super.length, this.words, [super.translation]);
+  SyncLyricLine(super.start, super.length, this.words, [super.translation, String? romanLyric]) {
+    this.romanLyric = romanLyric;
+  }
 
   String get content => words.map((w) => w.content).join();
 }
