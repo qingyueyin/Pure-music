@@ -31,7 +31,7 @@ class _ImmersivePortraitLayout extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(24.0, 32.0, 16.0, 16.0),
           child: Column(
             children: [
-              Row(
+              const Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   SizedBox(
@@ -39,7 +39,7 @@ class _ImmersivePortraitLayout extends StatelessWidget {
                     height: 80.0,
                     child: _ImmersiveCoverThumbnail(),
                   ),
-                  const SizedBox(width: 12.0),
+                  SizedBox(width: 12.0),
                   Expanded(
                     child: Align(
                       alignment: Alignment.bottomLeft,
@@ -48,7 +48,7 @@ class _ImmersivePortraitLayout extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           _ImmersiveTitleText(),
-                          const SizedBox(height: 2),
+                          SizedBox(height: 2),
                           _ImmersiveArtistText(),
                         ],
                       ),
@@ -73,7 +73,7 @@ class _ImmersivePortraitLayout extends StatelessWidget {
                     ).createShader(bounds);
                   },
                   blendMode: BlendMode.dstIn,
-                  child: VerticalLyricView(
+                  child: const VerticalLyricView(
                     showControls: false,
                     enableSeekOnTap: true,
                     centerVertically: false,
@@ -130,30 +130,30 @@ class _ImmersiveHelpOverlayState extends State<_ImmersiveHelpOverlay> {
         final scheme = Theme.of(context).colorScheme;
         final textStyle = TextStyle(color: scheme.onSurface);
         return AlertDialog(
-          title: const Text("快捷键"),
+          title: const Text('快捷键'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text("Space：播放/暂停", style: textStyle),
+              Text('Space：播放/暂停', style: textStyle),
               const SizedBox(height: 8),
-              Text("Ctrl + ←：上一曲", style: textStyle),
+              Text('Ctrl + ←：上一曲', style: textStyle),
               const SizedBox(height: 8),
-              Text("Ctrl + →：下一曲", style: textStyle),
+              Text('Ctrl + →：下一曲', style: textStyle),
               const SizedBox(height: 8),
-              Text("Ctrl + ↑：音量 +", style: textStyle),
+              Text('Ctrl + ↑：音量 +', style: textStyle),
               const SizedBox(height: 8),
-              Text("Ctrl + ↓：音量 -", style: textStyle),
+              Text('Ctrl + ↓：音量 -', style: textStyle),
               const SizedBox(height: 8),
-              Text("F1：进入/退出沉浸模式", style: textStyle),
+              Text('F1：进入/退出沉浸模式', style: textStyle),
               const SizedBox(height: 8),
-              Text("ESC：退出沉浸并回到主界面", style: textStyle),
+              Text('ESC：退出沉浸并回到主界面', style: textStyle),
             ],
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text("关闭"),
+              child: const Text('关闭'),
             ),
           ],
         );
@@ -197,7 +197,7 @@ class _ImmersiveHelpOverlayState extends State<_ImmersiveHelpOverlay> {
                           vertical: 10.0,
                         ),
                         child: Text(
-                          "快捷键说明",
+                          '快捷键说明',
                           style: TextStyle(
                             color: scheme.onSecondaryContainer,
                             fontWeight: FontWeight.w600,
@@ -241,6 +241,7 @@ class _ImmersiveCoverThumbnailState extends State<_ImmersiveCoverThumbnail> {
   ImageProvider<Object>? _cover;
   String? _coverPath;
   final playbackService = PlayService.instance.playbackService;
+  bool _exiting = false;
 
   @override
   void initState() {
@@ -253,6 +254,8 @@ class _ImmersiveCoverThumbnailState extends State<_ImmersiveCoverThumbnail> {
   }
 
   void _onPlaybackChange() {
+    if (_exiting) return;
+    
     final nextAudio = playbackService.nowPlaying;
     if (nextAudio == null) {
       if (_coverPath != null) {
@@ -267,14 +270,14 @@ class _ImmersiveCoverThumbnailState extends State<_ImmersiveCoverThumbnail> {
     if (nextAudio.path == _coverPath) return;
 
     nextAudio.mediumCover.then((image) {
-      if (!mounted) return;
+      if (!mounted || _exiting) return;
       if (playbackService.nowPlaying?.path != nextAudio.path) return;
 
       if (image != null) {
         precacheImage(image, context);
       }
 
-      if (!mounted) return;
+      if (!mounted || _exiting) return;
       setState(() {
         _cover = image;
         _coverPath = nextAudio.path;
@@ -284,6 +287,7 @@ class _ImmersiveCoverThumbnailState extends State<_ImmersiveCoverThumbnail> {
 
   @override
   void dispose() {
+    _exiting = true;
     playbackService.nowPlayingNotifier.removeListener(_onPlaybackChange);
     super.dispose();
   }
@@ -326,7 +330,7 @@ class _ImmersiveTitleText extends StatelessWidget {
       builder: (context, snapshot) {
         final nowPlaying = PlayService.instance.playbackService.nowPlaying;
         return Text(
-          nowPlaying == null ? "Pure Music" : nowPlaying.title,
+          nowPlaying == null ? 'Pure Music' : nowPlaying.title,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
@@ -352,7 +356,7 @@ class _ImmersiveArtistText extends StatelessWidget {
       builder: (context, snapshot) {
         final nowPlaying = PlayService.instance.playbackService.nowPlaying;
         return Text(
-          nowPlaying == null ? "Enjoy Music" : nowPlaying.artist,
+          nowPlaying == null ? 'Enjoy Music' : nowPlaying.artist,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
@@ -384,7 +388,7 @@ class _ImmersiveLandscapeLayout extends StatelessWidget {
                   alignment: Alignment.center,
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 452.0),
-                    child: Column(
+                    child: const Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         _NowPlayingInfo(),
@@ -412,7 +416,7 @@ class _ImmersiveLandscapeLayout extends StatelessWidget {
                     ).createShader(bounds);
                   },
                   blendMode: BlendMode.dstIn,
-                  child: VerticalLyricView(
+                  child: const VerticalLyricView(
                     showControls: false,
                     enableSeekOnTap: false,
                     centerVertically: false,
