@@ -11,4 +11,4 @@ pub mod system_theme;
 pub mod system_volume;
 pub mod tag_reader;
 pub mod utils;
-// pub mod consts;
+pub mod color_extraction;
