@@ -6,14 +6,14 @@ class Qrc extends Lyric {
 
   static Qrc fromQrcText(String qrc, [String? transRawStr]) {
     final List<QrcLine> lines = [];
-    final splited = qrc.split("\n");
+    final splited = qrc.split('\n');
 
     int? offsetInMilliseconds;
     final offsetPattern = RegExp(r'\[\s*offset\s*:\s*([+-]?\d+)\s*\]');
     for (final line in splited) {
       final matched = offsetPattern.firstMatch(line);
       if (matched == null) continue;
-      offsetInMilliseconds = int.tryParse(matched.group(1) ?? "");
+      offsetInMilliseconds = int.tryParse(matched.group(1) ?? '');
       break;
     }
     final offset = offsetInMilliseconds ?? 0;
@@ -28,21 +28,21 @@ class Qrc extends Lyric {
 
     if (transRawStr != null) {
       int lineIt = 0;
-      final splitedTrans = transRawStr.split("\n");
+      final splitedTrans = transRawStr.split('\n');
       for (var transLine in splitedTrans) {
         if (lineIt > lines.length - 1) {
           break;
         }
 
-        final bracketStart = transLine.indexOf("[");
-        final bracketEnd = transLine.indexOf("]");
+        final bracketStart = transLine.indexOf('[');
+        final bracketEnd = transLine.indexOf(']');
         if (bracketStart == -1 || bracketEnd == -1 || bracketEnd <= bracketStart) continue;
 
         final timeStr = transLine.substring(bracketStart + 1, bracketEnd);
         // 如果是翻译行就加到歌词去
-        if (int.tryParse(timeStr.split(":").first) != null) {
+        if (int.tryParse(timeStr.split(':').first) != null) {
           final t =
-              transLine.replaceAll(RegExp(r"\[\d{2}:\d{2}\.\d{2,}\]"), "");
+              transLine.replaceAll(RegExp(r'\[\d{2}:\d{2}\.\d{2,}\]'), '');
           if (t.isNotEmpty) {
             lines[lineIt].translation = t;
             lineIt += 1;
@@ -83,9 +83,9 @@ class QrcLine extends SyncLyricLine {
   QrcLine(super.start, super.length, super.words, [super.translation]);
 
   static QrcLine? fromLine(String line, [String? translation, int offset = 0]) {
-    final splitedLine = line.split("]");
-    final from = splitedLine[0].indexOf("[") + 1;
-    final splitedTime = splitedLine[0].substring(from).split(",");
+    final splitedLine = line.split(']');
+    final from = splitedLine[0].indexOf('[') + 1;
+    final splitedTime = splitedLine[0].substring(from).split(',');
 
     if (splitedTime.length != 2) return null;
 
@@ -97,7 +97,7 @@ class QrcLine extends SyncLyricLine {
     );
     final lineStartMs = start.inMilliseconds;
 
-    final splitedContent = splitedLine[1].split(")");
+    final splitedContent = splitedLine[1].split(')');
     final List<QrcWord> words = _parseWords(splitedContent, lineStartMs, start, length);
 
     return QrcLine(start, length, words, translation);
@@ -142,10 +142,10 @@ class QrcWord extends SyncLyricWord {
   QrcWord(super.start, super.length, super.content);
 
   static QrcWord? fromWord(String word, {required int lineStartMs}) {
-    final splitedWord = word.split("(");
+    final splitedWord = word.split('(');
     if (splitedWord.length != 2) return null;
 
-    final splitedTime = splitedWord[1].split(",");
+    final splitedTime = splitedWord[1].split(',');
 
     if (splitedTime.length != 2) return null;
 
