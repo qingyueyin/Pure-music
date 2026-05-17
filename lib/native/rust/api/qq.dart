@@ -4,7 +4,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:logger/logger.dart';
-import 'package:pure_music/lyric/qrc_decryptor.dart';
+import 'package:pure_music/services/online_lyric/api/qrc_decryptor.dart';
 
 final logger = Logger(
   filter: ProductionFilter(),
