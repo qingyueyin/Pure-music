@@ -37,15 +37,14 @@ enum NowPlayingViewMode {
 
 enum NowPlayingBackgroundMode {
   meshGradient,
-  blurCover,
-  hybrid;
+  blurCover;
 
   static NowPlayingBackgroundMode? fromString(String? backgroundMode) {
     if (backgroundMode == null) return null;
-    if (backgroundMode == "pureColor" || backgroundMode == "simpleFallback") {
+    if (backgroundMode == 'pureColor' || backgroundMode == 'simpleFallback') {
       return NowPlayingBackgroundMode.blurCover;
     }
-    if (backgroundMode == "fluidBlob") {
+    if (backgroundMode == 'fluidBlob' || backgroundMode == 'hybrid') {
       return NowPlayingBackgroundMode.blurCover;
     }
     for (var value in NowPlayingBackgroundMode.values) {
