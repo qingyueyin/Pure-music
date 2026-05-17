@@ -17,8 +17,8 @@ class ArtistsPage extends StatelessWidget {
     final multiSelectController = MultiSelectController<Artist>();
     return UniPage<Artist>(
       pref: AppPreference.instance.artistsPagePref,
-      title: "艺术家",
-      subtitle: "${contentList.length} 位艺术家",
+      title: '艺术家',
+      subtitle: '${contentList.length} 位艺术家',
       contentList: contentList,
       contentBuilder: (_, item, __, multiSelectController, view) => ArtistTile(
         artist: item,
@@ -56,7 +56,7 @@ class ArtistsPage extends StatelessWidget {
       sortMethods: [
         SortMethodDesc(
           icon: Symbols.title,
-          name: "名称",
+          name: '名称',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
@@ -70,7 +70,7 @@ class ArtistsPage extends StatelessWidget {
         ),
         SortMethodDesc(
           icon: Symbols.music_note,
-          name: "作品数量",
+          name: '作品数量',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
