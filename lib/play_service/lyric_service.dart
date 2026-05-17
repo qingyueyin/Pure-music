@@ -232,6 +232,9 @@ class LyricService extends ChangeNotifier {
   /// 供 widget 使用
   Future<Lyric?> currLyricFuture = Future.value(null);
 
+  /// 当前歌词是否已加载
+  bool get hasLyric => _currLyric != null;
+
   /// 下一行歌词
   int _nextLyricLine = 0;
   int _lastEmittedLineIndexForHint = -1;
@@ -373,10 +376,14 @@ class LyricService extends ChangeNotifier {
     }
 
     currLyricFuture.then((value) {
-      if (value == null) return;
-      _nextLyricLine = 0;
-      _setCurrLyric(value);
-      _lyricCache.put(audioPath, value);
+      if (value != null) {
+        _nextLyricLine = 0;
+        _setCurrLyric(value);
+        _lyricCache.put(audioPath, value);
+      } else {
+        _currLyric = null;
+      }
+      _notifyLyricChangeListeners();
       findCurrLyricLineAt(playService.playbackService.position);
     });
 
@@ -410,8 +417,12 @@ class LyricService extends ChangeNotifier {
 
     currLyricFuture = Lrc.fromAudioPath(nowPlaying);
     currLyricFuture.then((value) {
-      if (value == null) return;
-      _setCurrLyric(value);
+      if (value != null) {
+        _setCurrLyric(value);
+      } else {
+        _currLyric = null;
+      }
+      _notifyLyricChangeListeners();
       findCurrLyricLine();
     });
 
@@ -430,8 +441,12 @@ class LyricService extends ChangeNotifier {
 
     currLyricFuture = getMostMatchedLyric(nowPlaying);
     currLyricFuture.then((value) {
-      if (value == null) return;
-      _setCurrLyric(value);
+      if (value != null) {
+        _setCurrLyric(value);
+      } else {
+        _currLyric = null;
+      }
+      _notifyLyricChangeListeners();
       findCurrLyricLine();
     });
 
@@ -445,12 +460,31 @@ class LyricService extends ChangeNotifier {
 
     currLyricFuture = Future.value(lyric);
     currLyricFuture.then((value) {
-      if (value == null) return;
-      _setCurrLyric(value);
+      if (value != null) {
+        _setCurrLyric(value);
+      } else {
+        _currLyric = null;
+      }
+      _notifyLyricChangeListeners();
       findCurrLyricLine();
     });
 
     notifyListeners();
+  }
+
+  final _lyricChangeListeners = <VoidCallback>{};
+
+  @override
+  void addListener(VoidCallback listener) => _lyricChangeListeners.add(listener);
+
+  @override
+  void removeListener(VoidCallback listener) =>
+      _lyricChangeListeners.remove(listener);
+
+  void _notifyLyricChangeListeners() {
+    for (final listener in _lyricChangeListeners) {
+      listener();
+    }
   }
 
   @override
