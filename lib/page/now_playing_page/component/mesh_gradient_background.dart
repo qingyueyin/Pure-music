@@ -4,11 +4,10 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:mesh_gradient/mesh_gradient.dart';
 import 'package:pure_music/core/enums.dart';
-import 'package:pure_music/core/hsl_color_sampler.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
+import 'package:pure_music/native/rust/api/color_extraction.dart';
 import 'package:pure_music/page/now_playing_page/component/now_playing_background_inputs.dart';
 import 'package:pure_music/page/now_playing_page/component/blur_cover_background.dart';
-import 'package:pure_music/page/now_playing_page/component/hybrid_background.dart';
 
 class MeshGradientBackground extends StatelessWidget {
   final NowPlayingBackgroundMode mode;
@@ -30,10 +29,6 @@ class MeshGradientBackground extends StatelessWidget {
           fallbackColor: fallbackColor,
         ),
       NowPlayingBackgroundMode.blurCover => BlurCoverBackground(
-          inputs: inputs,
-          fallbackColor: fallbackColor,
-        ),
-      NowPlayingBackgroundMode.hybrid => HybridBackground(
           inputs: inputs,
           fallbackColor: fallbackColor,
         ),
@@ -62,6 +57,7 @@ class _MeshGradientBackgroundInternalState
   List<Color> _paletteColors = [];
   bool _isPlaying = false;
   double _breathScale = 1.0;
+  double _targetBreathScale = 1.0;
   StreamSubscription<Float32List>? _spectrumSubscription;
 
   late AnimationController _transitionController;
@@ -69,6 +65,35 @@ class _MeshGradientBackgroundInternalState
   List<Color> _targetPaletteColors = [];
   bool _isTransitioning = false;
   bool _disposed = false;
+
+  Timer? _decayTimer;
+
+  int? _lastCoverHash;
+  int _lastSpectrumUpdateMs = 0;
+
+
+
+
+
+
+        static final _playOptions = AnimatedMeshGradientOptions(
+    frequency: 8,
+    amplitude: 80,
+    speed: 2.5,
+    grain: 0,
+  );
+  static final _pauseOptions = AnimatedMeshGradientOptions(
+    frequency: 8,
+    amplitude: 80,
+    speed: 0.3,
+    grain: 0,
+  );
+
+
+
+
+
+
 
   @override
   void initState() {
@@ -103,93 +128,144 @@ class _MeshGradientBackgroundInternalState
       _coverBytesChanged(newBytes, oldBytes);
     }
 
+    final wasVisible = oldWidget.inputs.isVisible;
+    final isVisible = widget.inputs.isVisible;
+    if (!wasVisible && isVisible && widget.inputs.playerState == PlayerState.playing) {
+      _listenSpectrum();
+      if (newBytes != null && !identical(newBytes, oldBytes)) {
+        _extractPaletteWithTransition();
+      }
+    } else if (wasVisible && !isVisible) {
+      _spectrumSubscription?.cancel();
+      _spectrumSubscription = null;
+    }
+
     final nowPlaying = widget.inputs.playerState == PlayerState.playing;
     if (nowPlaying != _isPlaying) {
       setState(() => _isPlaying = nowPlaying);
-      if (nowPlaying) {
+      _targetBreathScale = nowPlaying ? 1.0 : 1.0;
+      _startDecayTimer();
+      // 先取消旧的 subscription，再决定是否重新订阅
+      _spectrumSubscription?.cancel();
+      _spectrumSubscription = null;
+      if (nowPlaying && widget.inputs.isVisible) {
         _listenSpectrum();
-      } else {
-        _spectrumSubscription?.cancel();
-        _spectrumSubscription = null;
-        _breathScale = 1.0;
       }
-    } else if (nowPlaying && _spectrumSubscription == null) {
+    } else if (nowPlaying && _spectrumSubscription == null && widget.inputs.isVisible) {
       _listenSpectrum();
+    } else if (!nowPlaying) {
+      // 非播放状态确保取消订阅
+      _spectrumSubscription?.cancel();
+      _spectrumSubscription = null;
     }
+  }
+
+  void _startDecayTimer() {
+    _decayTimer?.cancel();
+    const step = Duration(milliseconds: 100);
+    const totalSteps = 40;
+    var count = 0;
+
+    _decayTimer = Timer.periodic(step, (_) {
+      if (_disposed || !mounted || count >= totalSteps) {
+        _decayTimer?.cancel();
+        _decayTimer = null;
+        return;
+      }
+      count++;
+      if (_isPlaying) {
+        _decayTimer?.cancel();
+        _decayTimer = null;
+        return;
+      }
+      final decay = 1.0 - count / totalSteps;
+      final newScale = 1.0 + (_breathScale - 1.0) * decay;
+      if ((newScale - _breathScale).abs() > 0.005) {
+        setState(() => _breathScale = newScale);
+      }
+    });
   }
 
   void _coverBytesChanged(Uint8List? newBytes, Uint8List? oldBytes) {
     if (newBytes == null || newBytes.isEmpty) return;
-    if (oldBytes != null && _isSameCoverBytes(newBytes, oldBytes)) return;
+    final newHash = _computeHash(newBytes);
+    if (oldBytes != null && _lastCoverHash == newHash) return;
+    _lastCoverHash = newHash;
     _extractPaletteWithTransition();
   }
 
-  bool _isSameCoverBytes(Uint8List a, Uint8List b) {
-    if (identical(a, b)) return true;
-    if (a.length != b.length) return false;
-    if (a.length > 65536) return true;
-    for (int i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
+  int _computeHash(Uint8List bytes) {
+    int hash = 0;
+    final step = (bytes.length / 256).ceil();
+    for (int i = 0; i < bytes.length; i += step) {
+      hash = hash * 31 + bytes[i];
     }
-    return true;
+    return hash;
   }
 
   void _listenSpectrum() {
     _spectrumSubscription?.cancel();
     final stream = widget.inputs.spectrumStream;
-    if (stream == null || !widget.inputs.shouldAnimate) return;
+    if (stream == null || !widget.inputs.shouldAnimate || !widget.inputs.isVisible) return;
 
     _spectrumSubscription = stream.listen((spectrum) {
-      if (!mounted || !_isPlaying) return;
+      if (!mounted || !_isPlaying || !widget.inputs.isVisible) return;
+
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (now - _lastSpectrumUpdateMs < 400) return;
+      _lastSpectrumUpdateMs = now;
 
       final lowFreq = spectrum.isNotEmpty ? spectrum[0] : 0.0;
       final subBass = spectrum.length > 1 ? spectrum[1] : 0.0;
       final energy = (lowFreq * 0.7 + subBass * 0.3).clamp(0.0, 1.0);
 
-      final targetScale = 1.0 + energy * 0.06 * widget.inputs.intensity;
+      _targetBreathScale = 1.0 + energy * 0.03 * widget.inputs.intensity;
 
-      if ((targetScale - _breathScale).abs() > 0.001) {
-        setState(() => _breathScale = targetScale);
+      if ((_targetBreathScale - _breathScale).abs() > 0.005) {
+        setState(() => _breathScale = _targetBreathScale);
       }
     });
   }
 
   Future<void> _extractPalette() async {
+    if (!widget.inputs.isVisible) return;
     final bytes = widget.inputs.albumCoverBytes;
     if (bytes == null || bytes.isEmpty) return;
-
     if (_disposed) return;
 
     try {
-      final sampler = HslColorSampler();
-      final analysis = await sampler.analyzeCover(bytes);
-      final colors = sampler.generateHarmoniousPalette(analysis);
-
-      if (_disposed || !mounted) return;
-
+      final rustColors = await extractColorsFromImage(
+        imageBytes: bytes,
+        numColors: 4,
+      );
+      if (rustColors.isEmpty || _disposed || !mounted || !widget.inputs.isVisible) {
+        return;
+      }
+      final target = _padToFour(rustColors.map((argb) => Color(argb)).toList());
+      _lastCoverHash ??= _computeHash(bytes);
       setState(() {
-        _paletteColors = colors.length >= 4
-            ? colors.sublist(0, 4)
-            : _padToFour(colors);
+        _paletteColors = target;
       });
     } catch (_) {}
   }
 
   Future<void> _extractPaletteWithTransition() async {
+    if (!widget.inputs.isVisible) return;
     final bytes = widget.inputs.albumCoverBytes;
     if (bytes == null || bytes.isEmpty) return;
-
     if (_disposed) return;
 
     try {
-      final sampler = HslColorSampler();
-      final analysis = await sampler.analyzeCover(bytes);
-      final newColors = sampler.generateHarmoniousPalette(analysis);
-      final targetColors = newColors.length >= 4
-          ? newColors.sublist(0, 4)
-          : _padToFour(newColors);
+      final rustColors = await extractColorsFromImage(
+        imageBytes: bytes,
+        numColors: 4,
+      );
+      if (rustColors.isEmpty || _disposed || !mounted || !widget.inputs.isVisible) {
+        return;
+      }
 
-      if (_disposed || !mounted) return;
+      final target = _padToFour(rustColors.map((argb) => Color(argb)).toList());
+      _lastCoverHash ??= _computeHash(bytes);
 
       if (_isTransitioning) {
         _transitionController.stop();
@@ -200,7 +276,7 @@ class _MeshGradientBackgroundInternalState
         _prevPaletteColors = _paletteColors.isEmpty
             ? List.filled(4, widget.fallbackColor)
             : _padToFour(List.from(_paletteColors));
-        _targetPaletteColors = _padToFour(List.from(targetColors));
+        _targetPaletteColors = target;
         _isTransitioning = true;
       });
 
@@ -240,11 +316,16 @@ class _MeshGradientBackgroundInternalState
   @override
   void dispose() {
     _disposed = true;
+    _decayTimer?.cancel();
     _transitionController.removeStatusListener(_onTransitionStatusChanged);
     _transitionController.dispose();
     _spectrumSubscription?.cancel();
+    _paletteColors = const [];
+    _prevPaletteColors = const [];
+    _targetPaletteColors = const [];
     super.dispose();
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -260,18 +341,17 @@ class _MeshGradientBackgroundInternalState
           switchOutCurve: Curves.easeInOut,
           child: KeyedSubtree(
             key: ValueKey(_isPlaying),
-            child: AnimatedScale(
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeOutCubic,
-              scale: _breathScale,
-              child: AnimatedBuilder(
-                animation: _transitionController,
-                builder: (context, child) {
-                  return _buildMesh(
-                    _isPlaying ? 0.6 : 0.01,
-                    _interpolateColors(_transitionController.value),
-                  );
-                },
+            child: RepaintBoundary(
+              child: AnimatedScale(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOutCubic,
+                scale: _breathScale,
+                child: AnimatedBuilder(
+                  animation: _transitionController,
+                  builder: (context, child) {
+                    return _buildMesh(_interpolateColors(_transitionController.value));
+                  },
+                ),
               ),
             ),
           ),
@@ -283,16 +363,11 @@ class _MeshGradientBackgroundInternalState
     );
   }
 
-  Widget _buildMesh(double speed, List<Color> colors) {
+  Widget _buildMesh(List<Color> colors) {
     return RepaintBoundary(
       child: AnimatedMeshGradient(
         colors: colors,
-        options: AnimatedMeshGradientOptions(
-          frequency: 3,
-          amplitude: 45,
-          speed: speed,
-          grain: 0,
-        ),
+        options: _isPlaying ? _playOptions : _pauseOptions,
         child: Container(),
       ),
     );
