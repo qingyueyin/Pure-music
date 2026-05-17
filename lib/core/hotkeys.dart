@@ -27,13 +27,13 @@ class HotkeysHelper {
       final state = playbackService.playerState;
       if (state == PlayerState.playing) {
         playbackService.pause();
-        showHotkeyToast(text: "暂停", icon: Icons.pause);
+        showHotkeyToast(text: '暂停', icon: Icons.pause);
       } else if (state == PlayerState.completed) {
         playbackService.playAgain();
-        showHotkeyToast(text: "重播", icon: Icons.replay);
+        showHotkeyToast(text: '重播', icon: Icons.replay);
       } else {
         playbackService.start();
-        showHotkeyToast(text: "播放", icon: Icons.play_arrow);
+        showHotkeyToast(text: '播放', icon: Icons.play_arrow);
       }
     },
     HotKey(key: PhysicalKeyboardKey.escape, scope: HotKeyScope.inapp):
@@ -65,7 +65,7 @@ class HotkeysHelper {
     ): (_) {
       PlayService.instance.playbackService.lastAudio();
       hotkeyUiFeedback.emit(HotkeyUiAction.prev);
-      showHotkeyToast(text: "上一曲", icon: Icons.skip_previous);
+      showHotkeyToast(text: '上一曲', icon: Icons.skip_previous);
     },
     HotKey(
       key: PhysicalKeyboardKey.arrowRight,
@@ -74,7 +74,7 @@ class HotkeysHelper {
     ): (_) {
       PlayService.instance.playbackService.nextAudio();
       hotkeyUiFeedback.emit(HotkeyUiAction.next);
-      showHotkeyToast(text: "下一曲", icon: Icons.skip_next);
+      showHotkeyToast(text: '下一曲', icon: Icons.skip_next);
     },
     HotKey(
       key: PhysicalKeyboardKey.arrowUp,
@@ -86,7 +86,7 @@ class HotkeysHelper {
       playbackService.setVolumeDsp(next);
       hotkeyUiFeedback.emit(HotkeyUiAction.volumeStep);
       showHotkeyToast(
-        text: "应用音量：${(next * 100).round()}%",
+        text: '应用音量：${(next * 100).round()}%',
         icon: Icons.volume_up,
       );
     },
@@ -100,7 +100,7 @@ class HotkeysHelper {
       playbackService.setVolumeDsp(next);
       hotkeyUiFeedback.emit(HotkeyUiAction.volumeStep);
       showHotkeyToast(
-        text: "应用音量：${(next * 100).round()}%",
+        text: '应用音量：${(next * 100).round()}%',
         icon: Icons.volume_down,
       );
     },
