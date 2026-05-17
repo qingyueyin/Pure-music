@@ -6,12 +6,12 @@ import 'package:pure_music/core/database.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/utils.dart';
+import 'package:pure_music/lyric/lyric_source.dart';
 import 'package:pure_music/component/horizontal_lyric_view.dart';
 import 'package:pure_music/component/responsive_builder.dart';
 import 'package:pure_music/component/search_dialog.dart';
 import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/library/playlist.dart';
-import 'package:pure_music/lyric/lyric_source.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -65,14 +65,14 @@ class _TitleBar_Small extends StatelessWidget {
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8.0),
                       child: Text(
-                        "Pure Music",
+                        'Pure Music',
                         style: TextStyle(color: scheme.onSurface, fontSize: 16),
                       ),
                     ),
                   ),
                 ),
                 IconButton(
-                  tooltip: "搜索",
+                  tooltip: '搜索',
                   onPressed: () => SearchDialog.show(context),
                   icon: const Icon(Symbols.search),
                 ),
@@ -109,7 +109,7 @@ class _TitleBar_Medium extends StatelessWidget {
                   child: Row(
                     children: [
                       Text(
-                        "Pure Music",
+                        'Pure Music',
                         style: TextStyle(color: scheme.onSurface, fontSize: 16),
                       ),
                       const Expanded(
@@ -126,7 +126,7 @@ class _TitleBar_Medium extends StatelessWidget {
                 ),
               ),
               IconButton(
-                tooltip: "搜索",
+                tooltip: '搜索',
                 onPressed: () => SearchDialog.show(context),
                 icon: const Icon(Symbols.search),
               ),
@@ -166,10 +166,10 @@ class _TitleBar_Large extends StatelessWidget {
                           width: 248,
                           child: Row(
                             children: [
-                              Image.asset("app_icon.ico", width: 24, height: 24),
+                              Image.asset('app_icon.ico', width: 24, height: 24),
                               const SizedBox(width: 8.0),
                               Text(
-                                "Pure Music",
+                                'Pure Music',
                                 style: TextStyle(
                                   color: scheme.onSurface,
                                   fontSize: 16,
@@ -189,7 +189,7 @@ class _TitleBar_Large extends StatelessWidget {
                   ),
                 ),
                 IconButton(
-                  tooltip: "搜索",
+                  tooltip: '搜索',
                   onPressed: () => SearchDialog.show(context),
                   icon: const Icon(Symbols.search),
                 ),
@@ -209,7 +209,7 @@ class _OpenDrawerBtn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return IconButton(
-      tooltip: "打开导航栏",
+      tooltip: '打开导航栏',
       onPressed: Scaffold.of(context).openDrawer,
       icon: const Icon(Symbols.side_navigation),
     );
@@ -222,7 +222,7 @@ class NavBackBtn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return IconButton(
-      tooltip: "返回",
+      tooltip: '返回',
       onPressed: () {
         if (context.canPop()) {
           context.pop();
@@ -249,7 +249,7 @@ class _WindowControllsState extends State<WindowControlls> with WindowListener {
     try {
       await future.timeout(duration);
     } catch (e) {
-      logger.w("$name timeout or error: $e");
+      logger.w('$name timeout or error: $e');
     }
   }
 
@@ -316,46 +316,46 @@ class _WindowControllsState extends State<WindowControlls> with WindowListener {
       // 3. 并行执行独立的保存操作（带超时保护）
       final saveFutures = <Future<void>>[
         // 播放列表保存到数据库
-        _withTimeout(savePlaylists(), const Duration(seconds: 2), "savePlaylists"),
+        _withTimeout(savePlaylists(), const Duration(seconds: 2), 'savePlaylists'),
         // 歌词源保存到数据库
-        _withTimeout(saveLyricSources(), const Duration(seconds: 2), "saveLyricSources"),
+        _withTimeout(saveLyricSources(), const Duration(seconds: 2), 'saveLyricSources'),
         // 保存应用设置
-        _withTimeout(AppSettings.instance.saveSettings(), const Duration(seconds: 1), "saveSettings"),
+        _withTimeout(AppSettings.instance.saveSettings(), const Duration(seconds: 1), 'saveSettings'),
         // 保存偏好设置
-        _withTimeout(AppPreference.instance.save(), const Duration(seconds: 1), "savePreference"),
+        _withTimeout(AppPreference.instance.save(), const Duration(seconds: 1), 'savePreference'),
       ];
 
       // 4. 先关闭播放服务（可能包含音频资源释放，耗时较长）
       try {
-        await _withTimeout(PlayService.instance.close(), const Duration(seconds: 3), "PlayService.close");
+        await _withTimeout(PlayService.instance.close(), const Duration(seconds: 3), 'PlayService.close');
       } catch (e) {
-        logger.w("PlayService.close error: $e");
+        logger.w('PlayService.close error: $e');
       }
 
       // 5. 等待所有保存操作完成（整体超时 5 秒）
       try {
-        await _withTimeout(Future.wait(saveFutures, eagerError: false), const Duration(seconds: 5), "All save operations");
+        await _withTimeout(Future.wait(saveFutures, eagerError: false), const Duration(seconds: 5), 'All save operations');
       } catch (e) {
-        logger.w("Save operations error: $e");
+        logger.w('Save operations error: $e');
       }
 
       // 6. 关闭数据库连接（释放 SQLite 资源）
       try {
         AppDb.instance.dispose();
       } catch (e) {
-        logger.w("AppDb.dispose error: $e");
+        logger.w('AppDb.dispose error: $e');
       }
 
       // 7. 最终销毁窗口
       try {
-        await _withTimeout(windowManager.destroy(), const Duration(seconds: 2), "windowManager.destroy");
+        await _withTimeout(windowManager.destroy(), const Duration(seconds: 2), 'windowManager.destroy');
       } catch (_) {
         // 如果 destroy 超时，强制退出
-        logger.w("windowManager.destroy timeout, force exit");
+        logger.w('windowManager.destroy timeout, force exit');
       }
     } catch (e, trace) {
       // 最后的兜底：确保能退出
-      logger.e("_shutdownAndExit error: $e\n$trace");
+      logger.e('_shutdownAndExit error: $e\n$trace');
       try {
         await windowManager.destroy();
       } catch (_) {}
@@ -390,7 +390,7 @@ class _WindowControllsState extends State<WindowControlls> with WindowListener {
     super.onWindowResized();
     if (_isMaximized) return;
     try {
-      final minimumSize = const Size(507, 507);
+      const minimumSize = Size(507, 507);
       final view = WidgetsBinding.instance.platformDispatcher.views.first;
       final display = view.display;
       final displayW = display.size.width / display.devicePixelRatio;
@@ -419,13 +419,13 @@ class _WindowControllsState extends State<WindowControlls> with WindowListener {
       mainAxisSize: MainAxisSize.min,
       children: [
         IconButton(
-          tooltip: "最小化",
+          tooltip: '最小化',
           onPressed: windowManager.minimize,
           icon: const Icon(Symbols.remove),
         ),
         const SizedBox(width: 8.0),
         IconButton(
-          tooltip: _isMaximized ? "还原" : "最大化",
+          tooltip: _isMaximized ? '还原' : '最大化',
           onPressed: _isProcessing ? null : _toggleMaximized,
           icon: Icon(
             _isMaximized ? Symbols.fullscreen_exit : Symbols.fullscreen,
@@ -433,7 +433,7 @@ class _WindowControllsState extends State<WindowControlls> with WindowListener {
         ),
         const SizedBox(width: 8.0),
         IconButton(
-          tooltip: "关闭",
+          tooltip: '关闭',
           onPressed: _shutdownAndExit,
           icon: const Icon(Symbols.close),
         ),
