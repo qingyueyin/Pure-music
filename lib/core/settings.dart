@@ -64,7 +64,7 @@ enum LyricDisplayMode {
 class AppSettings {
   static const String version = String.fromEnvironment(
     'APP_VERSION',
-    defaultValue: '1.0.0',
+    defaultValue: '2.0.0-preview',
   );
 
   static final github = GitHub();
