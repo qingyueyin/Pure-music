@@ -194,7 +194,7 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
                       children: [
                         if (!dense)
                           IconButton(
-                            tooltip: "上一曲",
+                            tooltip: '上一曲',
                             onPressed: playbackService.lastAudio,
                             icon: const Icon(
                               Symbols.skip_previous,
@@ -209,7 +209,7 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
                         ),
                         if (!dense)
                           IconButton(
-                            tooltip: "下一曲",
+                            tooltip: '下一曲',
                             onPressed: playbackService.nextAudio,
                             icon: const Icon(
                               Symbols.skip_next,
@@ -285,7 +285,7 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
                               Text(
                                 nowPlaying != null
                                     ? nowPlaying.title
-                                    : "Pure Music",
+                                    : 'Pure Music',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
@@ -293,8 +293,8 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
                               ),
                               Text(
                                 nowPlaying != null
-                                    ? "${nowPlaying.artist} - ${nowPlaying.album}"
-                                    : "享受音乐",
+                                    ? '${nowPlaying.artist} - ${nowPlaying.album}'
+                                    : '享受音乐',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
@@ -439,7 +439,7 @@ class _AnimatedPlayPauseIconButtonState
         );
 
         return IconButton(
-          tooltip: isPlaying ? "暂停" : "播放",
+          tooltip: isPlaying ? '暂停' : '播放',
           onPressed: onPressed,
           icon: icon,
           color: widget.color,
@@ -470,7 +470,7 @@ class _MiniTimeText extends StatelessWidget {
             .toStringHMMSS()
             .replaceFirst(RegExp(r'^0:'), '');
         return Text(
-          "$posText / $lenText",
+          '$posText / $lenText',
           style: TextStyle(
             color: color,
             fontFeatures: const [FontFeature.tabularFigures()],
