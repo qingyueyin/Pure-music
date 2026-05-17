@@ -5,6 +5,8 @@ import 'package:pure_music/core/lyric_render_config.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/zh_converter.dart';
+import 'package:pure_music/lyric/lyric.dart';
+import 'package:pure_music/play_service/play_service.dart';
 import 'package:provider/provider.dart';
 
 class LyricViewController extends ChangeNotifier {
@@ -14,6 +16,11 @@ class LyricViewController extends ChangeNotifier {
     _instance ??= LyricViewController._internal();
     return _instance!;
   }
+
+  bool _disposed = false;
+  bool _isListening = false;
+  bool hasRomanLyric = false;
+  LyricFormat lyricSource = LyricFormat.local;
 
   LyricViewController._internal() {
     lyricTextAlign = nowPlayingPagePref.lyricTextAlign;
@@ -26,10 +33,57 @@ class LyricViewController extends ChangeNotifier {
     enableLyricScale = nowPlayingPagePref.enableLyricScale;
     enableLyricSpring = nowPlayingPagePref.enableLyricSpring;
 
-    final settings = AppSettings.instance;
-    lyricDisplayMode = settings.lyricDisplayMode;
-    zhConversionMode = settings.zhConversionMode;
-    removeEmptyLines = settings.removeEmptyLines;
+    _listenToLyricChanges();
+  }
+
+  void _listenToLyricChanges() {
+    if (_isListening) return;
+    _isListening = true;
+    PlayService.instance.lyricService.addListener(_checkRomanLyric);
+    _checkRomanLyric();
+  }
+
+  Future<void> _checkRomanLyric() async {
+    if (_disposed) return;
+
+    try {
+      final lyric = await PlayService.instance.lyricService.currLyricFuture;
+      if (_disposed) return;
+
+      bool needsNotify = false;
+
+      final found = lyric?.lines.any(
+            (line) => line.romanLyric != null && line.romanLyric!.isNotEmpty,
+          ) ?? false;
+
+      if (found != hasRomanLyric) {
+        hasRomanLyric = found;
+        needsNotify = true;
+      }
+
+      if (lyric != null) {
+        final newSource = lyric.source;
+        if (newSource != lyricSource) {
+          lyricSource = newSource;
+          needsNotify = true;
+        }
+      }
+
+      // 统一通知，避免多次独立通知导致状态时序不一致
+      if (needsNotify && !_disposed) {
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('Failed to switch lyric source: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _isListening = false;
+    PlayService.instance.lyricService.removeListener(_checkRomanLyric);
+    super.dispose();
   }
 
   final nowPlayingPagePref = AppPreference.instance.nowPlayingPagePref;
@@ -43,10 +97,6 @@ class LyricViewController extends ChangeNotifier {
   late bool enableLyricScale;
   late bool enableLyricSpring;
 
-  late LyricDisplayMode lyricDisplayMode;
-  late ZhConversionMode zhConversionMode;
-  late bool removeEmptyLines;
-
   LyricRenderConfig get renderConfig =>
       nowPlayingPagePref.lyricRenderConfig.copyWith(
         textAlign: lyricTextAlign,
@@ -59,6 +109,20 @@ class LyricViewController extends ChangeNotifier {
         enableLineScale: enableLyricScale,
         enableLineSpring: enableLyricSpring,
       );
+
+  LyricDisplayMode get lyricDisplayMode =>
+      lyricSource == LyricFormat.web
+          ? AppSettings.instance.lyricDisplayMode
+          : LyricDisplayMode.enhanced;
+
+  ZhConversionMode get zhConversionMode =>
+      lyricSource == LyricFormat.web
+          ? AppSettings.instance.zhConversionMode
+          : ZhConversionMode.none;
+
+  bool get removeEmptyLines => lyricSource == LyricFormat.web
+      ? AppSettings.instance.removeEmptyLines
+      : false;
 
   void switchLyricTextAlign() {
     lyricTextAlign = switch (lyricTextAlign) {
@@ -143,38 +207,6 @@ class LyricViewController extends ChangeNotifier {
     int newWeight = lyricFontWeight - step;
     setFontWeight(newWeight);
   }
-
-  void cycleLyricDisplayMode() {
-    lyricDisplayMode = switch (lyricDisplayMode) {
-      LyricDisplayMode.plain => LyricDisplayMode.verbatim,
-      LyricDisplayMode.verbatim => LyricDisplayMode.enhanced,
-      LyricDisplayMode.enhanced => LyricDisplayMode.plain,
-    };
-    final settings = AppSettings.instance;
-    settings.lyricDisplayMode = lyricDisplayMode;
-    settings.saveSettings();
-    notifyListeners();
-  }
-
-  void cycleZhConversionMode() {
-    zhConversionMode = switch (zhConversionMode) {
-      ZhConversionMode.none => ZhConversionMode.traditionalToSimplified,
-      ZhConversionMode.traditionalToSimplified => ZhConversionMode.simplifiedToTraditional,
-      ZhConversionMode.simplifiedToTraditional => ZhConversionMode.none,
-    };
-    final settings = AppSettings.instance;
-    settings.zhConversionMode = zhConversionMode;
-    settings.saveSettings();
-    notifyListeners();
-  }
-
-  void toggleRemoveEmptyLines() {
-    removeEmptyLines = !removeEmptyLines;
-    final settings = AppSettings.instance;
-    settings.removeEmptyLines = removeEmptyLines;
-    settings.saveSettings();
-    notifyListeners();
-  }
 }
 
 class LyricViewControls extends StatelessWidget {
@@ -186,111 +218,23 @@ class LyricViewControls extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        const _LyricDisplayModeBtn(),
-        SizedBox(height: 8.0),
-        const _ZhConversionBtn(),
-        SizedBox(height: 8.0),
-        const _RemoveEmptyLinesBtn(),
-        SizedBox(height: 8.0),
         const _LyricTranslationSwitchBtn(),
-        SizedBox(height: 8.0),
-        const _LyricRomanSwitchBtn(),
-        SizedBox(height: 8.0),
+        const SizedBox(height: 8.0),
+        Consumer<LyricViewController>(
+          builder: (context, c, _) => Visibility(
+            visible: c.hasRomanLyric,
+            child: const _LyricRomanSwitchBtn(),
+          ),
+        ),
+        const SizedBox(height: 8.0),
         const _LyricBlurSwitchBtn(),
-        SizedBox(height: 8.0),
+        const SizedBox(height: 8.0),
         const _LyricAlignSwitchBtn(),
-        SizedBox(height: 8.0),
+        const SizedBox(height: 8.0),
         const _FontSizeBtn(),
-        SizedBox(height: 8.0),
+        const SizedBox(height: 8.0),
         const _FontWeightBtn(),
       ],
-    );
-  }
-}
-
-class _LyricDisplayModeBtn extends StatelessWidget {
-  const _LyricDisplayModeBtn();
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final lyricViewController = context.watch<LyricViewController>();
-    final mode = lyricViewController.lyricDisplayMode;
-
-    final modeLabel = switch (mode) {
-      LyricDisplayMode.plain => '纯原文',
-      LyricDisplayMode.verbatim => '原文+音',
-      LyricDisplayMode.enhanced => '完整',
-    };
-
-    return IconButton(
-      onPressed: lyricViewController.cycleLyricDisplayMode,
-      tooltip: '歌词模式：$modeLabel（左键切换）',
-      color: scheme.onSecondaryContainer,
-      icon: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Symbols.article, size: 20),
-          Text(
-            modeLabel,
-            style: TextStyle(fontSize: 8, fontWeight: FontWeight.w600),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ZhConversionBtn extends StatelessWidget {
-  const _ZhConversionBtn();
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final lyricViewController = context.watch<LyricViewController>();
-    final mode = lyricViewController.zhConversionMode;
-
-    final modeLabel = switch (mode) {
-      ZhConversionMode.none => '不转换',
-      ZhConversionMode.traditionalToSimplified => '繁转简',
-      ZhConversionMode.simplifiedToTraditional => '简转繁',
-    };
-
-    return IconButton(
-      onPressed: lyricViewController.cycleZhConversionMode,
-      tooltip: '简繁转换：$modeLabel（左键切换）',
-      color: scheme.onSecondaryContainer,
-      icon: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Symbols.translate, size: 20),
-          Text(
-            modeLabel == '不转换' ? '简繁' : modeLabel,
-            style: TextStyle(fontSize: 8, fontWeight: FontWeight.w600),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _RemoveEmptyLinesBtn extends StatelessWidget {
-  const _RemoveEmptyLinesBtn();
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final lyricViewController = context.watch<LyricViewController>();
-    final enabled = lyricViewController.removeEmptyLines;
-
-    return IconButton(
-      onPressed: lyricViewController.toggleRemoveEmptyLines,
-      tooltip: enabled ? '空行过滤：开启' : '空行过滤：关闭',
-      color: scheme.onSecondaryContainer,
-      icon: Icon(
-        Symbols.format_line_spacing,
-        fill: enabled ? 1 : 0,
-      ),
     );
   }
 }
@@ -305,7 +249,7 @@ class _LyricAlignSwitchBtn extends StatelessWidget {
 
     return IconButton(
       onPressed: lyricViewController.switchLyricTextAlign,
-      tooltip: "切换歌词对齐方向",
+      tooltip: '切换歌词对齐方向',
       color: scheme.onSecondaryContainer,
       icon: Icon(switch (lyricViewController.lyricTextAlign) {
         LyricTextAlign.left => Symbols.format_align_left,
@@ -329,10 +273,10 @@ class _FontSizeBtn extends StatelessWidget {
       child: IconButton(
         onPressed: lyricViewController.increaseFontSize,
         tooltip:
-            "字号：左键放大 / 右键缩小 (${lyricViewController.lyricFontSize.toStringAsFixed(0)})",
+            '字号：左键放大 / 右键缩小 (${lyricViewController.lyricFontSize.toStringAsFixed(0)})',
         color: scheme.onSecondaryContainer,
         icon: Text(
-          "A",
+          'A',
           style: TextStyle(
             fontWeight: FontWeight.bold,
             color: scheme.onSecondaryContainer,
@@ -355,7 +299,7 @@ class _LyricTranslationSwitchBtn extends StatelessWidget {
 
     return IconButton(
       onPressed: lyricViewController.toggleLyricTranslation,
-      tooltip: enabled ? "歌词翻译：显示" : "歌词翻译：隐藏",
+      tooltip: enabled ? '歌词翻译：显示' : '歌词翻译：隐藏',
       color: scheme.onSecondaryContainer,
       icon: Icon(
         Symbols.translate,
@@ -376,7 +320,7 @@ class _LyricRomanSwitchBtn extends StatelessWidget {
 
     return IconButton(
       onPressed: lyricViewController.toggleLyricRoman,
-      tooltip: enabled ? "歌词罗马音：显示" : "歌词罗马音：隐藏",
+      tooltip: enabled ? '歌词罗马音：显示' : '歌词罗马音：隐藏',
       color: scheme.onSecondaryContainer,
       icon: Icon(
         Symbols.language,
@@ -397,7 +341,7 @@ class _LyricBlurSwitchBtn extends StatelessWidget {
 
     return IconButton(
       onPressed: lyricViewController.toggleLyricBlur,
-      tooltip: enabled ? "歌词模糊：开启" : "歌词模糊：关闭",
+      tooltip: enabled ? '歌词模糊：开启' : '歌词模糊：关闭',
       color: scheme.onSecondaryContainer,
       icon: Icon(
         Symbols.blur_on,
@@ -424,9 +368,9 @@ class _FontWeightBtn extends StatelessWidget {
         onLongPress: () =>
             lyricViewController.increaseFontWeight(smallStep: true),
         tooltip:
-            "粗细：左键加粗 / 右键减粗 (${lyricViewController.lyricFontWeight}, 生效: $effective)",
+            '粗细：左键加粗 / 右键减粗 (${lyricViewController.lyricFontWeight}, 生效: $effective)',
         icon: Text(
-          "B",
+          'B',
           style: TextStyle(
             fontWeight: FontWeight.bold,
             color: scheme.onSecondaryContainer,
