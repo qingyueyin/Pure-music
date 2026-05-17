@@ -18,8 +18,8 @@ class AudiosPage extends StatelessWidget {
     final multiSelectController = MultiSelectController<Audio>();
     return UniPage<Audio>(
       pref: AppPreference.instance.audiosPagePref,
-      title: "音乐",
-      subtitle: "${contentList.length} 首乐曲",
+      title: '音乐',
+      subtitle: '${contentList.length} 首乐曲',
       contentList: contentList,
       contentBuilder: (context, item, i, multiSelectController, _) => AudioTile(
         audioIndex: i,
@@ -44,7 +44,7 @@ class AudiosPage extends StatelessWidget {
       sortMethods: [
         SortMethodDesc(
           icon: Symbols.title,
-          name: "标题",
+          name: '标题',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
@@ -58,7 +58,7 @@ class AudiosPage extends StatelessWidget {
         ),
         SortMethodDesc(
           icon: Symbols.artist,
-          name: "艺术家",
+          name: '艺术家',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
@@ -72,7 +72,7 @@ class AudiosPage extends StatelessWidget {
         ),
         SortMethodDesc(
           icon: Symbols.album,
-          name: "专辑",
+          name: '专辑',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
@@ -86,7 +86,7 @@ class AudiosPage extends StatelessWidget {
         ),
         SortMethodDesc(
           icon: Symbols.add,
-          name: "创建时间",
+          name: '创建时间',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
@@ -100,7 +100,7 @@ class AudiosPage extends StatelessWidget {
         ),
         SortMethodDesc(
           icon: Symbols.edit,
-          name: "修改时间",
+          name: '修改时间',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
