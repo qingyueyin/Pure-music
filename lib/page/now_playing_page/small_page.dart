@@ -99,7 +99,7 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
                                 ).createShader(bounds);
                               },
                               blendMode: BlendMode.dstIn,
-                              child: VerticalLyricView(
+                              child: const VerticalLyricView(
                                 showControls: true,
                                 centerVertically: false,
                                 enableEdgeSpacer: true,
@@ -137,7 +137,7 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
               const _NowPlayingVolDspSlider(),
               const _ExclusiveModeSwitch(),
               IconButton(
-                tooltip: "均衡器",
+                tooltip: '均衡器',
                 onPressed: () {
                   showDialog(
                     context: context,
