@@ -10,7 +10,7 @@ extension StringHMMSS on Duration {
   /// Returns a string with hours, minutes, seconds,
   /// in the following format: H:MM:SS
   String toStringHMMSS() {
-    return toString().split(".").first;
+    return toString().split('.').first;
   }
 
   String toStringMSS() {
@@ -26,7 +26,7 @@ String _toHexString(int dec) {
   assert(dec >= 0 && dec <= 0xff);
 
   var hex = dec.toRadixString(16);
-  if (hex.length == 1) hex = "0$hex";
+  if (hex.length == 1) hex = '0$hex';
   return hex;
 }
 
@@ -37,13 +37,13 @@ extension RGBHexString on Color {
     final greenHex = _toHexString((argb >> 8) & 0xff);
     final blueHex = _toHexString(argb & 0xff);
 
-    return "#$redHex$greenHex$blueHex";
+    return '#$redHex$greenHex$blueHex';
   }
 }
 
 /// [rgbHexStr] 必须是 #RRGGBB
 Color? fromRGBHexString(String rgbHexStr) {
-  if (rgbHexStr.startsWith("#") && rgbHexStr.length == 7) {
+  if (rgbHexStr.startsWith('#') && rgbHexStr.length == 7) {
     return Color(0xff000000 + int.parse(rgbHexStr.substring(1), radix: 16));
   }
 
@@ -51,14 +51,24 @@ Color? fromRGBHexString(String rgbHexStr) {
 }
 
 Map<String, String> _pinyinCache = {};
+int _pinyinCacheLastEvictMs = 0;
 
 extension PinyinCompare on String {
   /// convert str to pinyin, cache it when it hasn't been converted;
   String _getPinyin() {
+    // 每 30 分钟清理一次拼音缓存，防止无限膨胀
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _pinyinCacheLastEvictMs > 30 * 60 * 1000) {
+      _pinyinCacheLastEvictMs = now;
+      if (_pinyinCache.length > 5000) {
+        _pinyinCache.clear();
+      }
+    }
+
     final cachedPinyin = _pinyinCache[this];
     if (cachedPinyin != null) return cachedPinyin;
 
-    final splited = this.split("");
+    final splited = this.split('');
     final pinyinBuilder = StringBuffer();
 
     for (var c in splited) {
@@ -267,7 +277,31 @@ void showHotkeyToast({
   });
 }
 
-final loggerMemoryOutput = MemoryOutput(
+/// 自定义 MemoryOutput：限制最大条目数，防止无限膨胀
+class _BoundedMemoryOutput extends LogOutput {
+  _BoundedMemoryOutput({this.secondOutput});
+
+  final LogOutput? secondOutput;
+
+  static const _maxEvents = 2000;
+  final _buffer = <OutputEvent>[];
+
+  @override
+  List<OutputEvent> get buffer => List.unmodifiable(_buffer);
+
+  @override
+  void output(OutputEvent event) {
+    _buffer.add(event);
+    while (_buffer.length > _maxEvents) {
+      _buffer.removeAt(0);
+    }
+    secondOutput?.output(event);
+  }
+
+  void clear() => _buffer.clear();
+}
+
+final loggerMemoryOutput = _BoundedMemoryOutput(
   secondOutput: kDebugMode ? ConsoleOutput() : null,
 );
 final logger = Logger(

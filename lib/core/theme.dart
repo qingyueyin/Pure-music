@@ -106,7 +106,7 @@ class ThemeProvider extends ChangeNotifier {
       ThemeMode.dark => Brightness.dark,
     };
 
-    final key = cacheKey == null ? null : "$cacheKey|${brightness.name}";
+    final key = cacheKey == null ? null : '$cacheKey|${brightness.name}';
     final cached = key == null ? null : _schemeCache[key];
     if (cached != null) {
       if (key != null) _touchCacheEntry(key);
@@ -349,6 +349,7 @@ class ThemeProvider extends ChangeNotifier {
         focusColor: currScheme.primary,
       );
 
+  @override
   void dispose() {
     _themeDebounceTimer?.cancel();
     _schemeCache.clear();
