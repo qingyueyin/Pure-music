@@ -23,7 +23,7 @@ class AlbumColorCache {
   static final instance = AlbumColorCache._();
   AlbumColorCache._();
 
-  static const _cacheFileName = "album_colors.json";
+  static const _cacheFileName = 'album_colors.json';
   static const _cacheVersion = 1;
 
   bool _initialized = false;
@@ -36,7 +36,7 @@ class AlbumColorCache {
     _initialized = true;
     try {
       final dir = await getCacheDir();
-      final jsonFile = File("${dir.path}\\$_cacheFileName");
+      final jsonFile = File('${dir.path}\\$_cacheFileName');
 
       try {
         final db = await AppDb.instance.db();
@@ -60,9 +60,9 @@ class AlbumColorCache {
     final signature = keySig.$2;
     if (!forceRecompute) {
       final cached = _entries[key];
-      if (cached != null && cached["sig"] == signature) {
-        final p = cached["p"];
-        final on = cached["on"];
+      if (cached != null && cached['sig'] == signature) {
+        final p = cached['p'];
+        final on = cached['on'];
         if (p is int && on is int) {
           return AlbumColor(primary: Color(p), onPrimary: Color(on));
         }
@@ -147,9 +147,9 @@ class AlbumColorCache {
           : const Color(0xff000000);
 
       _entries[key] = {
-        "sig": signature,
-        "p": primary.toARGB32(),
-        "on": onPrimary.toARGB32(),
+        'sig': signature,
+        'p': primary.toARGB32(),
+        'on': onPrimary.toARGB32(),
       };
       _scheduleFlush();
       return AlbumColor(primary: primary, onPrimary: onPrimary);
@@ -174,8 +174,8 @@ class AlbumColorCache {
       } catch (_) {}
 
       final dir = await getCacheDir();
-      final file = File("${dir.path}\\$_cacheFileName");
-      final jsonStr = json.encode({"version": _cacheVersion, "data": _entries});
+      final file = File('${dir.path}\\$_cacheFileName');
+      final jsonStr = json.encode({'version': _cacheVersion, 'data': _entries});
       final out = await file.create(recursive: true);
       await out.writeAsString(jsonStr);
     } catch (_) {}
@@ -183,19 +183,17 @@ class AlbumColorCache {
 
   void dispose() {
     _flushTimer?.cancel();
-    _flushTimer = null;
-    _inFlight.clear();
     _entries.clear();
-    _initialized = false;
+    _inFlight.clear();
   }
 
   void _loadFromDb(Database db) {
     final verRows = db.select(
       "SELECT value FROM meta WHERE key = 'album_colors_version' LIMIT 1",
     );
-    final ver = verRows.isEmpty ? null : verRows.first["value"] as String?;
+    final ver = verRows.isEmpty ? null : verRows.first['value'] as String?;
     if (ver != _cacheVersion.toString()) {
-      db.execute("DELETE FROM album_colors");
+      db.execute('DELETE FROM album_colors');
       db.execute(
         "INSERT OR REPLACE INTO meta(key, value) VALUES('album_colors_version', ?)",
         [_cacheVersion.toString()],
@@ -203,38 +201,38 @@ class AlbumColorCache {
       return;
     }
 
-    final rows = db.select("SELECT key, sig, p, on_p FROM album_colors");
+    final rows = db.select('SELECT key, sig, p, on_p FROM album_colors');
     for (final row in rows) {
-      final key = row["key"] as String;
-      final sig = row["sig"] as String;
-      final p = row["p"] as int;
-      final on = row["on_p"] as int;
-      _entries[key] = {"sig": sig, "p": p, "on": on};
+      final key = row['key'] as String;
+      final sig = row['sig'] as String;
+      final p = row['p'] as int;
+      final on = row['on_p'] as int;
+      _entries[key] = {'sig': sig, 'p': p, 'on': on};
     }
   }
 
   void _persistToDb(Database db) {
-    db.execute("BEGIN");
+    db.execute('BEGIN');
     try {
-      db.execute("DELETE FROM album_colors");
+      db.execute('DELETE FROM album_colors');
       db.execute(
         "INSERT OR REPLACE INTO meta(key, value) VALUES('album_colors_version', ?)",
         [_cacheVersion.toString()],
       );
       for (final e in _entries.entries) {
         final m = e.value;
-        final sig = m["sig"];
-        final p = m["p"];
-        final on = m["on"];
+        final sig = m['sig'];
+        final p = m['p'];
+        final on = m['on'];
         if (sig is! String || p is! int || on is! int) continue;
         db.execute(
-          "INSERT INTO album_colors(key, sig, p, on_p) VALUES(?, ?, ?, ?)",
+          'INSERT INTO album_colors(key, sig, p, on_p) VALUES(?, ?, ?, ?)',
           [e.key, sig, p, on],
         );
       }
-      db.execute("COMMIT");
+      db.execute('COMMIT');
     } catch (_) {
-      db.execute("ROLLBACK");
+      db.execute('ROLLBACK');
       rethrow;
     }
   }
@@ -243,8 +241,8 @@ class AlbumColorCache {
     final str = file.readAsStringSync();
     final decoded = json.decode(str);
     if (decoded is! Map) return;
-    if (decoded["version"] != _cacheVersion) return;
-    final data = decoded["data"];
+    if (decoded['version'] != _cacheVersion) return;
+    final data = decoded['data'];
     if (data is! Map) return;
     for (final e in data.entries) {
       if (e.key is! String || e.value is! Map) continue;
@@ -256,20 +254,20 @@ class AlbumColorCache {
     final audio = album.works.first;
     final parent = Directory(File(audio.path).parent.path);
     final candidates = [
-      File("${parent.path}\\cover.jpg"),
-      File("${parent.path}\\cover.png"),
+      File('${parent.path}\\cover.jpg'),
+      File('${parent.path}\\cover.png'),
     ];
     for (final f in candidates) {
       if (f.existsSync()) {
         final stat = f.statSync();
         final mod = stat.modified.millisecondsSinceEpoch;
-        final key = "file:${f.path}";
-        final sig = "$key|$mod";
+        final key = 'file:${f.path}';
+        final sig = '$key|$mod';
         return (key, sig);
       }
     }
-    final key = "audio:${audio.path}";
-    final sig = "$key|${audio.modified}";
+    final key = 'audio:${audio.path}';
+    final sig = '$key|${audio.modified}';
     return (key, sig);
   }
 
@@ -277,8 +275,8 @@ class AlbumColorCache {
     final audio = album.works.first;
     final parent = Directory(File(audio.path).parent.path);
     final candidates = [
-      File("${parent.path}\\cover.jpg"),
-      File("${parent.path}\\cover.png"),
+      File('${parent.path}\\cover.jpg'),
+      File('${parent.path}\\cover.png'),
     ];
     for (final f in candidates) {
       if (f.existsSync()) {
@@ -358,16 +356,14 @@ class _AsyncSemaphore {
   }
 }
 
-/// 简单的 LRU 缓存实现
-class _SimpleLRUCache<K, V extends Object> {
+/// 通用 LRU 映射表
+class _LruMap<K, V> {
   final int maxSize;
   final _map = <K, V>{};
 
-  _SimpleLRUCache(this.maxSize);
+  _LruMap(this.maxSize);
 
   V? get(K key) {
-    if (!_map.containsKey(key)) return null;
-    // 移动到末尾（最近使用）
     final value = _map.remove(key);
     if (value == null) return null;
     _map[key] = value;
@@ -375,44 +371,122 @@ class _SimpleLRUCache<K, V extends Object> {
   }
 
   void set(K key, V value) {
-    if (_map.containsKey(key)) {
-      _map.remove(key);
-    } else if (_map.length >= maxSize) {
+    _map.remove(key);
+    if (_map.length >= maxSize) {
       _map.remove(_map.keys.first);
     }
     _map[key] = value;
   }
 
+  void remove(K key) => _map.remove(key);
   void clear() => _map.clear();
+  int get length => _map.length;
 }
 
-/// 共享封面缓存 - SMTC/Theme/Audio 共用
-/// 避免重复调用 Rust FFI getPictureFromPath
+/// 统一封面 ImageProvider 缓存
+/// 按尺寸分层：小(48x48)、中(200x200)、大(400x400)
+/// 缓存 ImageProvider 而非 bytes，避免重复解码
+class CoverImageCache {
+  static final instance = CoverImageCache._();
+  CoverImageCache._();
+
+  final _small = _LruMap<String, ImageProvider>(30);
+  final _medium = _LruMap<String, ImageProvider>(8);
+  final _large = _LruMap<String, ImageProvider>(2);
+  final _pending = <String, Future<ImageProvider?>>{};
+
+  _LruMap<String, ImageProvider> _tierFor(int width, int height) {
+    final max = width > height ? width : height;
+    if (max <= 48) return _small;
+    if (max <= 200) return _medium;
+    return _large;
+  }
+
+  Future<ImageProvider?> get({
+    required String path,
+    required int width,
+    required int height,
+  }) async {
+    final key = '$path|${width}x$height';
+    final tier = _tierFor(width, height);
+
+    final cached = tier.get(key);
+    if (cached != null) return cached;
+
+    final pending = _pending[key];
+    if (pending != null) return pending;
+
+    final future = _fetch(path, width, height);
+    _pending[key] = future;
+    try {
+      final result = await future;
+      if (result != null) {
+        tier.set(key, result);
+      }
+      return result;
+    } finally {
+      _pending.remove(key);
+    }
+  }
+
+  Future<ImageProvider?> _fetch(String path, int width, int height) async {
+    final ratio = ui.PlatformDispatcher.instance.views.first.devicePixelRatio;
+    final bytes = await getPictureFromPath(
+      path: path,
+      width: (width * ratio).round(),
+      height: (height * ratio).round(),
+    );
+    if (bytes == null) return null;
+    return MemoryImage(bytes);
+  }
+
+  void preload(String? path, {int width = 48, int height = 48}) {
+    if (path == null) return;
+    get(path: path, width: width, height: height).ignore();
+  }
+
+  void clear() {
+    _small.clear();
+    _medium.clear();
+    _large.clear();
+    _pending.clear();
+  }
+
+  /// 释放不常用的缓存层，保留小图缓存以维持列表流畅滚动
+  void trimMemory() {
+    _medium.clear();
+    _large.clear();
+    _pending.clear();
+  }
+
+  /// 完全释放并清理所有缓存
+  void dispose() {
+    _small.clear();
+    _medium.clear();
+    _large.clear();
+    _pending.clear();
+  }
+}
+
+/// 旧的 CoverCache，保留以便 close 时清理残余
+@Deprecated('use CoverImageCache instead')
 class CoverCache {
   static final instance = CoverCache._();
   CoverCache._();
 
   static const _maxSize = 8;
-  final _cache = _SimpleLRUCache<String, Uint8List>(_maxSize);
+  final _cache = _LruMap<String, Uint8List>(_maxSize);
   final _pending = <String, Future<Uint8List?>>{};
 
-  /// 获取封面，返回 MemoryImage
-  /// [path] 音频文件路径
-  /// [width] [height] 请求的图片尺寸
   Future<ImageProvider?> getCover({
     required String path,
     required int width,
     required int height,
   }) async {
     final key = '$path|${width}x$height';
-
-    // 命中缓存
     final cached = _cache.get(key);
-    if (cached != null) {
-      return MemoryImage(cached);
-    }
+    if (cached != null) return MemoryImage(cached);
 
-    // 已有pending的请求
     final pending = _pending[key];
     if (pending != null) {
       final result = await pending;
@@ -420,14 +494,8 @@ class CoverCache {
       return null;
     }
 
-    // 发起新请求
-    final future = getPictureFromPath(
-      path: path,
-      width: width,
-      height: height,
-    );
+    final future = getPictureFromPath(path: path, width: width, height: height);
     _pending[key] = future;
-
     try {
       final result = await future;
       if (result != null) {
@@ -440,14 +508,11 @@ class CoverCache {
     }
   }
 
-  /// 预加载下一首的封面（仅加载小尺寸）
   void preloadNext(String? nextPath) {
     if (nextPath == null) return;
-    // 仅预加载一个小尺寸，避免内存飙升
     getCover(path: nextPath, width: 48, height: 48).ignore();
   }
 
-  /// 清除所有缓存
   void clear() {
     _cache.clear();
     _pending.clear();
