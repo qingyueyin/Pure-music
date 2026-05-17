@@ -11,10 +11,10 @@ class ArtistSeparatorEditor extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      description: "自定义艺术家分隔符",
+      description: '自定义艺术家分隔符',
       action: FilledButton.icon(
         icon: const Icon(Symbols.edit),
-        label: const Text("管理艺术家分隔符"),
+        label: const Text('管理艺术家分隔符'),
         onPressed: () {
           showDialog(
             context: context,
@@ -46,7 +46,7 @@ class __ArtistSeparatorEditDialogState
     if (currEditController.text.isEmpty) return;
     setState(
       () {
-        children.remove("");
+        children.remove('');
         children[currEditController.text] = ListTile(
           title: Text(currEditController.text),
           trailing: IconButton(
@@ -101,7 +101,7 @@ class __ArtistSeparatorEditDialogState
               Padding(
                 padding: const EdgeInsets.only(bottom: 16.0),
                 child: Text(
-                  "管理艺术家分隔符",
+                  '管理艺术家分隔符',
                   style: TextStyle(
                     color: scheme.onSurface,
                     fontSize: 18.0,
@@ -120,7 +120,7 @@ class __ArtistSeparatorEditDialogState
                     onPressed: () {
                       setState(() {
                         editing = true;
-                        children[""] = ListTile(
+                        children[''] = ListTile(
                           title: Focus(
                             onFocusChange: HotkeysHelper.onFocusChanges,
                             child: TextField(
@@ -140,12 +140,12 @@ class __ArtistSeparatorEditDialogState
                         );
                       });
                     },
-                    child: const Text("新增"),
+                    child: const Text('新增'),
                   ),
                   const SizedBox(width: 8.0),
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text("取消"),
+                    child: const Text('取消'),
                   ),
                   const SizedBox(width: 8.0),
                   TextButton(
@@ -155,14 +155,14 @@ class __ArtistSeparatorEditDialogState
                             appSettings.artistSeparator =
                                 children.keys.toList();
                             appSettings.artistSplitPattern =
-                                appSettings.artistSeparator.join("|");
+                                appSettings.artistSeparator.join('|');
                             await appSettings.saveSettings();
                             await AudioLibrary.initFromIndex();
                             if (context.mounted) {
                               Navigator.pop(context);
                             }
                           },
-                    child: const Text("确定"),
+                    child: const Text('确定'),
                   ),
                 ],
               ),

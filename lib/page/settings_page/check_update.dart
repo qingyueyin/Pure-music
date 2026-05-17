@@ -16,12 +16,37 @@ class CheckForUpdate extends StatefulWidget {
 
 class _CheckForUpdateState extends State<CheckForUpdate> {
   bool isChecking = false;
+
+  /// 比较两个语义化版本号
+  /// 返回：>0 表示 a > b，<0 表示 a < b，=0 表示相等
+  static int compareSemVer(String a, String b) {
+    // 移除非数字和非点号字符
+    final cleanA = a.replaceAll(RegExp(r'[^0-9.]'), '');
+    final cleanB = b.replaceAll(RegExp(r'[^0-9.]'), '');
+
+    final partsA = cleanA.split('.').where((s) => s.isNotEmpty).toList();
+    final partsB = cleanB.split('.').where((s) => s.isNotEmpty).toList();
+
+    final maxLen = partsA.length > partsB.length ? partsA.length : partsB.length;
+
+    for (int i = 0; i < maxLen; i++) {
+      final numA = i < partsA.length ? int.tryParse(partsA[i]) ?? 0 : 0;
+      final numB = i < partsB.length ? int.tryParse(partsB[i]) ?? 0 : 0;
+
+      if (numA != numB) {
+        return numA.compareTo(numB);
+      }
+    }
+
+    return 0;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Row(children: [
       FilledButton.icon(
         icon: const Icon(Symbols.update),
-        label: const Text("检查更新"),
+        label: const Text('检查更新'),
         onPressed: isChecking
             ? null
             : () async {
@@ -35,28 +60,22 @@ class _CheckForUpdateState extends State<CheckForUpdate> {
                         RepositorySlug.full(AppPreference.instance.updateRepoSlug),
                       )
                       .first;
-                  final newestVer = int.tryParse(
-                        (newest.tagName ?? "").replaceAll(RegExp(r"[^0-9]"), ""),
-                      ) ??
-                      0;
-                  final currVer = int.tryParse(
-                        AppSettings.version.replaceAll(RegExp(r"[^0-9]"), ""),
-                      ) ??
-                      0;
+                  final newestTag = newest.tagName ?? '';
+                  const currVer = AppSettings.version;
 
                   if (!context.mounted) return;
-                  if (newestVer > currVer) {
+                  if (compareSemVer(newestTag, currVer) > 0) {
                     showDialog(
                       context: context,
                       builder: (context) => NewestUpdateView(release: newest),
                     );
                   } else {
-                    showTextOnSnackBar("无新版本");
+                    showTextOnSnackBar('无新版本');
                   }
                 } catch (err, trace) {
                   logger.e(err, stackTrace: trace);
                   if (context.mounted) {
-                    showTextOnSnackBar("网络异常");
+                    showTextOnSnackBar('网络异常');
                   }
                   setState(() {
                     isChecking = false;
@@ -70,7 +89,7 @@ class _CheckForUpdateState extends State<CheckForUpdate> {
       ),
       const Padding(
         padding: EdgeInsets.symmetric(horizontal: 8.0),
-        child: Text("当前版本：${AppSettings.version}"),
+        child: Text('当前版本：${AppSettings.version}'),
       ),
       if (isChecking)
         const Padding(
@@ -110,7 +129,7 @@ class NewestUpdateView extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    release.name ?? "新版本",
+                    release.name ?? '新版本',
                     style: TextStyle(
                       color: scheme.onSurface,
                       fontSize: 18.0,
@@ -119,7 +138,7 @@ class NewestUpdateView extends StatelessWidget {
                   ),
                   const SizedBox(width: 16.0),
                   Text(
-                    "${release.tagName}\n${release.publishedAt}",
+                    '${release.tagName}\n${release.publishedAt}',
                     style: TextStyle(color: scheme.onSurface),
                   ),
                 ],
@@ -127,7 +146,7 @@ class NewestUpdateView extends StatelessWidget {
             ),
             Expanded(
               child: Markdown(
-                data: release.body ?? "",
+                data: release.body ?? '',
                 onTapLink: (text, href, title) {
                   if (href != null) {
                     rust_utils.launchInBrowser(uri: href);
@@ -146,7 +165,7 @@ class NewestUpdateView extends StatelessWidget {
                     onPressed: () {
                       Navigator.pop(context);
                     },
-                    child: const Text("取消"),
+                    child: const Text('取消'),
                   ),
                   const SizedBox(width: 16.0),
                   TextButton.icon(
@@ -157,7 +176,7 @@ class NewestUpdateView extends StatelessWidget {
                       Navigator.pop(context);
                     },
                     icon: const Icon(Symbols.arrow_outward),
-                    label: const Text("获取更新"),
+                    label: const Text('获取更新'),
                   ),
                 ],
               ),
