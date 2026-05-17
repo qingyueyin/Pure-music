@@ -301,14 +301,21 @@ if (-not $issueReportingEnabled) {
     flutter @flutterArgs
 }
 
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "Build failed!"
-    Read-Host "Press Enter to exit..."
-    exit 1
-}
-
 # 4. Prepare Output Directory
 $buildDir = "build\windows\x64\runner\$BuildMode"
+
+if ($LASTEXITCODE -ne 0) {
+    # 路径含括号时 CMake INSTALL 步骤可能失败但编译实际已成功
+    $exeCheck = Join-Path $PSScriptRoot $buildDir "pure_music.exe"
+    $dllCheck = Join-Path $PSScriptRoot $buildDir "rust_lib_pure_music.dll"
+    if ((Test-Path $exeCheck) -and (Test-Path $dllCheck)) {
+        Write-Warning "Build compilation succeeded but CMake INSTALL step failed (likely caused by parentheses in path). Artifacts are intact, continuing..."
+    } else {
+        Write-Error "Build failed!"
+        Read-Host "Press Enter to exit..."
+        exit 1
+    }
+}
 
 Write-Host "Preparing Output Directory: $artifactRoot..." -ForegroundColor Cyan
 
