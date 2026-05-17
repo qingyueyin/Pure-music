@@ -91,7 +91,7 @@ class _SearchDialogState extends State<SearchDialog> {
       mainAxisSize: MainAxisSize.min,
       children: [
         IconButton(
-          tooltip: "下一首播放",
+          tooltip: '下一首播放',
           onPressed: () {
             PlayService.instance.playbackService.addToNext(audio);
           },
@@ -103,14 +103,14 @@ class _SearchDialogState extends State<SearchDialog> {
             final playlist = PLAYLISTS[playlistIndex];
             return MenuItemButton(
               onPressed: () {
-                final added = playlist.audios.containsKey(audio.path);
+                final added = playlist.containsPath(audio.path);
                 if (added) {
-                  showTextOnSnackBar("歌曲“${audio.title}”已存在");
+                  showTextOnSnackBar('歌曲${audio.title}已存在');
                   return;
                 }
-                playlist.audios[audio.path] = audio;
+                playlist.addPath(audio.path);
                 showTextOnSnackBar(
-                  "成功将“${audio.title}”添加到歌单“${playlist.name}”",
+                  '成功将${audio.title}添加到歌单${playlist.name}',
                 );
               },
               leadingIcon: const Icon(Symbols.queue_music),
@@ -119,10 +119,10 @@ class _SearchDialogState extends State<SearchDialog> {
           }),
           builder: (context, controller, _) {
             return IconButton(
-              tooltip: "添加到歌单",
+              tooltip: '添加到歌单',
               onPressed: () {
                 if (PLAYLISTS.isEmpty) {
-                  showTextOnSnackBar("还未创建任何歌单");
+                  showTextOnSnackBar('还未创建任何歌单');
                   return;
                 }
                 if (controller.isOpen) {
@@ -147,7 +147,7 @@ class _SearchDialogState extends State<SearchDialog> {
     final height = (size.height * 0.65).clamp(420.0, 720.0);
 
     return AlertDialog(
-      title: const Text("搜索"),
+      title: const Text('搜索'),
       content: SizedBox(
         width: width,
         height: height,
@@ -160,7 +160,7 @@ class _SearchDialogState extends State<SearchDialog> {
                 autofocus: true,
                 decoration: InputDecoration(
                   prefixIcon: const Icon(Symbols.search),
-                  hintText: "搜索歌曲、艺术家、专辑",
+                  hintText: '搜索歌曲、艺术家、专辑',
                   border: const OutlineInputBorder(),
                   suffixIcon: ValueListenableBuilder<TextEditingValue>(
                     valueListenable: _searchController,
@@ -168,7 +168,7 @@ class _SearchDialogState extends State<SearchDialog> {
                       final hasText = value.text.trim().isNotEmpty;
                       if (!hasText) return const SizedBox.shrink();
                       return IconButton(
-                        tooltip: "清除",
+                        tooltip: '清除',
                         onPressed: () {
                           _debounce?.cancel();
                           _searchController.clear();
@@ -211,7 +211,7 @@ class _SearchDialogState extends State<SearchDialog> {
                             Icon(Symbols.search, size: 48, color: scheme.outline),
                             const SizedBox(height: 12),
                             Text(
-                              "输入关键词开始搜索",
+                              '输入关键词开始搜索',
                               style: TextStyle(
                                 color: scheme.onSurface,
                                 fontSize: 18,
@@ -220,7 +220,7 @@ class _SearchDialogState extends State<SearchDialog> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              "支持搜索歌曲、艺术家、专辑。",
+                              '支持搜索歌曲、艺术家、专辑。',
                               style: TextStyle(color: scheme.onSurfaceVariant),
                             ),
                           ],
@@ -235,8 +235,8 @@ class _SearchDialogState extends State<SearchDialog> {
                       SliverToBoxAdapter(
                         child: _sectionHeader(
                           scheme,
-                          "音乐",
-                          subtitle: "${value.audios.length} 首",
+                          '音乐',
+                          subtitle: '${value.audios.length} 首',
                         ),
                       ),
                     );
@@ -257,8 +257,8 @@ class _SearchDialogState extends State<SearchDialog> {
                       SliverToBoxAdapter(
                         child: _sectionHeader(
                           scheme,
-                          "艺术家",
-                          subtitle: "${value.artists.length} 位",
+                          '艺术家',
+                          subtitle: '${value.artists.length} 位',
                         ),
                       ),
                     );
@@ -277,8 +277,8 @@ class _SearchDialogState extends State<SearchDialog> {
                       SliverToBoxAdapter(
                         child: _sectionHeader(
                           scheme,
-                          "专辑",
-                          subtitle: "${value.album.length} 张",
+                          '专辑',
+                          subtitle: '${value.album.length} 张',
                         ),
                       ),
                     );
@@ -295,7 +295,7 @@ class _SearchDialogState extends State<SearchDialog> {
                   if (slivers.isEmpty) {
                     return Center(
                       child: Text(
-                        "没有找到相关结果",
+                        '没有找到相关结果',
                         style: TextStyle(color: scheme.onSurfaceVariant),
                       ),
                     );
