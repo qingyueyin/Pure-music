@@ -34,34 +34,36 @@ class SettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return PageScaffold(
-      title: "设置",
+      title: '设置',
       actions: const [],
       body: Row(
         children: [
           Expanded(
             child: ListView(
               padding: const EdgeInsets.only(bottom: 96.0),
-              children: [
-                const _SettingsSectionHeader("库与扫描"),
-                const SizedBox(height: 16.0),
+              children: const [
+                _SettingsSectionHeader('库与扫描'),
+                SizedBox(height: 16.0),
                 DefaultLyricSourceControl(),
-                const SizedBox(height: 24.0),
-                const _SettingsSectionHeader("播放"),
-                const SizedBox(height: 24.0),
-                const _SettingsSectionHeader("外观"),
+                SizedBox(height: 16.0),
+                OnlineLyricSettings(),
+                SizedBox(height: 24.0),
+                _SettingsSectionHeader('播放'),
+                SizedBox(height: 24.0),
+                _SettingsSectionHeader('外观'),
                 DynamicThemeSwitch(),
-                const SizedBox(height: 16.0),
+                SizedBox(height: 16.0),
                 ThemeModeControl(),
-                const SizedBox(height: 16.0),
-                const AppearanceAdvancedSettingsTile(),
-                const SizedBox(height: 16.0),
-                const NowPlayingBackgroundModeToggle(),
-                const SizedBox(height: 24.0),
-                const _SettingsSectionHeader("高级与关于"),
+                SizedBox(height: 16.0),
+                AppearanceAdvancedSettingsTile(),
+                SizedBox(height: 16.0),
+                NowPlayingBackgroundModeToggle(),
+                SizedBox(height: 24.0),
+                _SettingsSectionHeader('高级与关于'),
                 ArtistSeparatorEditor(),
-                const SizedBox(height: 16.0),
+                SizedBox(height: 16.0),
                 CreateIssueTile(),
-                const SizedBox(height: 16.0),
+                SizedBox(height: 16.0),
                 CheckForUpdate(),
               ],
             ),
