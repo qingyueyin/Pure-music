@@ -15,15 +15,15 @@ class PagePreference {
   PagePreference(this.sortMethod, this.sortOrder, this.contentView);
 
   Map toMap() => {
-        "sortMethod": sortMethod,
-        "sortOrder": sortOrder.name,
-        "contentView": contentView.name,
+        'sortMethod': sortMethod,
+        'sortOrder': sortOrder.name,
+        'contentView': contentView.name,
       };
 
   factory PagePreference.fromMap(Map map) => PagePreference(
-        map["sortMethod"] ?? 0,
-        SortOrder.fromString(map["sortOrder"]) ?? SortOrder.ascending,
-        ContentView.fromString(map["contentView"]) ?? ContentView.list,
+        map['sortMethod'] ?? 0,
+        SortOrder.fromString(map['sortOrder']) ?? SortOrder.ascending,
+        ContentView.fromString(map['contentView']) ?? ContentView.list,
       );
 }
 
@@ -51,7 +51,7 @@ class NowPlayingPagePreference {
     this.showLyricRoman = false,
     this.enableLyricScale = true,
     this.enableLyricSpring = true,
-    this.backgroundMode = NowPlayingBackgroundMode.hybrid,
+    this.backgroundMode = NowPlayingBackgroundMode.meshGradient,
   });
 
   LyricRenderConfig get lyricRenderConfig => LyricRenderConfig(
@@ -67,35 +67,35 @@ class NowPlayingPagePreference {
       );
 
   Map toMap() => {
-        "nowPlayingViewMode": nowPlayingViewMode.name,
-        "lyricTextAlign": lyricTextAlign.name,
-        "lyricFontSize": lyricFontSize,
-        "translationFontSize": translationFontSize,
-        "showLyricTranslation": showLyricTranslation,
-        "showLyricRoman": showLyricRoman,
-        "lyricFontWeight": lyricFontWeight,
-        "enableLyricBlur": enableLyricBlur,
-        "enableLyricScale": enableLyricScale,
-        "enableLyricSpring": enableLyricSpring,
-        "backgroundMode": backgroundMode.name,
+        'nowPlayingViewMode': nowPlayingViewMode.name,
+        'lyricTextAlign': lyricTextAlign.name,
+        'lyricFontSize': lyricFontSize,
+        'translationFontSize': translationFontSize,
+        'showLyricTranslation': showLyricTranslation,
+        'showLyricRoman': showLyricRoman,
+        'lyricFontWeight': lyricFontWeight,
+        'enableLyricBlur': enableLyricBlur,
+        'enableLyricScale': enableLyricScale,
+        'enableLyricSpring': enableLyricSpring,
+        'backgroundMode': backgroundMode.name,
       };
 
   factory NowPlayingPagePreference.fromMap(Map map) {
     final backgroundMode =
-        NowPlayingBackgroundMode.fromString(map["backgroundMode"]) ??
+        NowPlayingBackgroundMode.fromString(map['backgroundMode']) ??
             NowPlayingBackgroundMode.meshGradient;
     return NowPlayingPagePreference(
-      NowPlayingViewMode.fromString(map["nowPlayingViewMode"]) ??
+      NowPlayingViewMode.fromString(map['nowPlayingViewMode']) ??
           NowPlayingViewMode.withLyric,
-      LyricTextAlign.fromString(map["lyricTextAlign"]) ?? LyricTextAlign.left,
-      map["lyricFontSize"] ?? 22.0,
-      map["translationFontSize"] ?? 18.0,
-      map["showLyricTranslation"] ?? true,
-      map["lyricFontWeight"] ?? 400,
-      map["enableLyricBlur"] ?? true,
-      showLyricRoman: map["showLyricRoman"] ?? false,
-      enableLyricScale: map["enableLyricScale"] ?? true,
-      enableLyricSpring: map["enableLyricSpring"] ?? true,
+      LyricTextAlign.fromString(map['lyricTextAlign']) ?? LyricTextAlign.left,
+      map['lyricFontSize'] ?? 22.0,
+      map['translationFontSize'] ?? 18.0,
+      map['showLyricTranslation'] ?? true,
+      map['lyricFontWeight'] ?? 400,
+      map['enableLyricBlur'] ?? true,
+      showLyricRoman: map['showLyricRoman'] ?? false,
+      enableLyricScale: map['enableLyricScale'] ?? true,
+      enableLyricSpring: map['enableLyricSpring'] ?? true,
       backgroundMode: backgroundMode,
     );
   }
@@ -108,13 +108,13 @@ class EqPreset {
   EqPreset(this.name, this.gains);
 
   Map toMap() => {
-        "name": name,
-        "gains": gains,
+        'name': name,
+        'gains': gains,
       };
 
   factory EqPreset.fromMap(Map map) => EqPreset(
-        map["name"] ?? '',
-        map["gains"] != null ? List<double>.from(map["gains"]) : <double>[],
+        map['name'] ?? '',
+        map['gains'] != null ? List<double>.from(map['gains']) : <double>[],
       );
 }
 
@@ -168,49 +168,49 @@ class PlaybackPreference {
   });
 
   Map toMap() => {
-        "playMode": playMode.name,
-        "volumeDsp": volumeDsp,
-        "eqGains": eqGains,
-        "eqPreampDb": eqPreampDb,
-        "eqAutoGainEnabled": eqAutoGainEnabled,
-        "eqAutoHeadroomDb": eqAutoHeadroomDb,
-        "eqPresets": eqPresets.map((e) => e.toMap()).toList(),
-        "lastAudioPath": lastAudioPath,
-        "lastPlaylistPaths": lastPlaylistPaths,
-        "lastPlaylistIndex": lastPlaylistIndex,
-        "wasapiBufferSec": wasapiBufferSec,
-        "wasapiEventDriven": wasapiEventDriven,
-        "reinitOnSetSource": reinitOnSetSource,
-        "outputBackend": outputBackend.name,
-        "asioDeviceIndex": asioDeviceIndex,
+        'playMode': playMode.name,
+        'volumeDsp': volumeDsp,
+        'eqGains': eqGains,
+        'eqPreampDb': eqPreampDb,
+        'eqAutoGainEnabled': eqAutoGainEnabled,
+        'eqAutoHeadroomDb': eqAutoHeadroomDb,
+        'eqPresets': eqPresets.map((e) => e.toMap()).toList(),
+        'lastAudioPath': lastAudioPath,
+        'lastPlaylistPaths': lastPlaylistPaths,
+        'lastPlaylistIndex': lastPlaylistIndex,
+        'wasapiBufferSec': wasapiBufferSec,
+        'wasapiEventDriven': wasapiEventDriven,
+        'reinitOnSetSource': reinitOnSetSource,
+        'outputBackend': outputBackend.name,
+        'asioDeviceIndex': asioDeviceIndex,
       };
 
   factory PlaybackPreference.fromMap(Map map) => PlaybackPreference(
-        PlayMode.fromString(map["playMode"]) ?? PlayMode.forward,
-        map["volumeDsp"] ?? 1.0,
-        map["eqGains"] != null
-            ? List<double>.from(map["eqGains"])
+        PlayMode.fromString(map['playMode']) ?? PlayMode.forward,
+        map['volumeDsp'] ?? 1.0,
+        map['eqGains'] != null
+            ? List<double>.from(map['eqGains'])
             : List.filled(10, 0.0),
-        map["eqPresets"] != null
-            ? (map["eqPresets"] as List)
+        map['eqPresets'] != null
+            ? (map['eqPresets'] as List)
                 .map((e) => EqPreset.fromMap(e))
                 .toList()
             : [],
-        eqPreampDb: (map["eqPreampDb"] ?? 0.0).toDouble(),
-        eqAutoGainEnabled: map["eqAutoGainEnabled"] ?? true,
-        eqAutoHeadroomDb: (map["eqAutoHeadroomDb"] ?? 1.0).toDouble(),
-        lastAudioPath: map["lastAudioPath"] ?? '',
-        lastPlaylistPaths: map["lastPlaylistPaths"] != null
-            ? List<String>.from(map["lastPlaylistPaths"])
+        eqPreampDb: (map['eqPreampDb'] ?? 0.0).toDouble(),
+        eqAutoGainEnabled: map['eqAutoGainEnabled'] ?? true,
+        eqAutoHeadroomDb: (map['eqAutoHeadroomDb'] ?? 1.0).toDouble(),
+        lastAudioPath: map['lastAudioPath'] ?? '',
+        lastPlaylistPaths: map['lastPlaylistPaths'] != null
+            ? List<String>.from(map['lastPlaylistPaths'])
             : const [],
-        lastPlaylistIndex: map["lastPlaylistIndex"] ?? 0,
-        wasapiBufferSec: (map["wasapiBufferSec"] ?? 0.10).toDouble(),
-        wasapiEventDriven: map["wasapiEventDriven"] ?? false,
-        reinitOnSetSource: map["reinitOnSetSource"] ?? false,
+        lastPlaylistIndex: map['lastPlaylistIndex'] ?? 0,
+        wasapiBufferSec: (map['wasapiBufferSec'] ?? 0.10).toDouble(),
+        wasapiEventDriven: map['wasapiEventDriven'] ?? false,
+        reinitOnSetSource: map['reinitOnSetSource'] ?? false,
         outputBackend:
-            PlaybackOutputBackend.fromStoredValue(map["outputBackend"]),
-        asioDeviceIndex: (map["asioDeviceIndex"] ?? 0) is int
-            ? map["asioDeviceIndex"] ?? 0
+            PlaybackOutputBackend.fromStoredValue(map['outputBackend']),
+        asioDeviceIndex: (map['asioDeviceIndex'] ?? 0) is int
+            ? map['asioDeviceIndex'] ?? 0
             : int.tryParse("${map["asioDeviceIndex"]}") ?? 0,
       );
 }
@@ -256,11 +256,10 @@ class AppPreference {
       18.0,
       true,
       400,
-      false,
-      backgroundMode: NowPlayingBackgroundMode.hybrid);
+      false);
 
-  String customCpFeedbackKey = "";
-  String updateRepoSlug = "qingyueyin/Pure-music";
+  String customCpFeedbackKey = '';
+  String updateRepoSlug = 'qingyueyin/Pure-music';
 
   /// 用户手动添加的文件夹路径列表（不包括自动发现的子文件夹）
   List<String> userFolders = [];
@@ -268,25 +267,25 @@ class AppPreference {
   Future<void> save() async {
     try {
       final settingsDir = await getSettingsDir();
-      final appPreferencePath = "${settingsDir.path}\\app_preference.json";
+      final appPreferencePath = '${settingsDir.path}\\app_preference.json';
 
       Map prefMap = {
-        "audiosPagePref": audiosPagePref.toMap(),
-        "artistsPagePref": artistsPagePref.toMap(),
-        "artistDetailPagePref": artistDetailPagePref.toMap(),
-        "albumsPagePref": albumsPagePref.toMap(),
-        "albumDetailPagePref": albumDetailPagePref.toMap(),
-        "foldersPagePref": foldersPagePref.toMap(),
-        "folderDetailPagePref": folderDetailPagePref.toMap(),
-        "playlistsPagePref": playlistsPagePref.toMap(),
-        "playlistDetailPagePref": playlistDetailPagePref.toMap(),
-        "startPage": startPage,
-        "sidebarExpanded": sidebarExpanded,
-        "playbackPref": playbackPref.toMap(),
-        "nowPlayingPagePref": nowPlayingPagePref.toMap(),
-        "customCpFeedbackKey": customCpFeedbackKey,
-        "updateRepoSlug": updateRepoSlug,
-        "userFolders": userFolders,
+        'audiosPagePref': audiosPagePref.toMap(),
+        'artistsPagePref': artistsPagePref.toMap(),
+        'artistDetailPagePref': artistDetailPagePref.toMap(),
+        'albumsPagePref': albumsPagePref.toMap(),
+        'albumDetailPagePref': albumDetailPagePref.toMap(),
+        'foldersPagePref': foldersPagePref.toMap(),
+        'folderDetailPagePref': folderDetailPagePref.toMap(),
+        'playlistsPagePref': playlistsPagePref.toMap(),
+        'playlistDetailPagePref': playlistDetailPagePref.toMap(),
+        'startPage': startPage,
+        'sidebarExpanded': sidebarExpanded,
+        'playbackPref': playbackPref.toMap(),
+        'nowPlayingPagePref': nowPlayingPagePref.toMap(),
+        'customCpFeedbackKey': customCpFeedbackKey,
+        'updateRepoSlug': updateRepoSlug,
+        'userFolders': userFolders,
       };
 
       final prefJson = json.encode(prefMap);
@@ -300,7 +299,7 @@ class AppPreference {
   Future<void> savePlaybackOnly() async {
     try {
       final settingsDir = await getSettingsDir();
-      final playbackPrefPath = "${settingsDir.path}\\playback_pref.json";
+      final playbackPrefPath = '${settingsDir.path}\\playback_pref.json';
 
       final prefJson = json.encode(playbackPref.toMap());
       final output = await File(playbackPrefPath).create(recursive: true);
@@ -313,7 +312,7 @@ class AppPreference {
   Future<void> loadPlaybackOnly() async {
     try {
       final settingsDir = await getSettingsDir();
-      final playbackPrefPath = "${settingsDir.path}\\playback_pref.json";
+      final playbackPrefPath = '${settingsDir.path}\\playback_pref.json';
 
       if (File(playbackPrefPath).existsSync()) {
         final prefJson = await File(playbackPrefPath).readAsString();
@@ -328,51 +327,51 @@ class AppPreference {
   static Future<void> read() async {
     try {
       final settingsDir = await getSettingsDir();
-      final appPreferencePath = "${settingsDir.path}\\app_preference.json";
+      final appPreferencePath = '${settingsDir.path}\\app_preference.json';
 
       final prefJson = await File(appPreferencePath).readAsString();
       final Map prefMap = json.decode(prefJson);
 
       instance.audiosPagePref =
-          PagePreference.fromMap(prefMap["audiosPagePref"]);
+          PagePreference.fromMap(prefMap['audiosPagePref']);
       instance.artistsPagePref =
-          PagePreference.fromMap(prefMap["artistsPagePref"]);
+          PagePreference.fromMap(prefMap['artistsPagePref']);
       instance.artistDetailPagePref = PagePreference.fromMap(
-        prefMap["artistDetailPagePref"],
+        prefMap['artistDetailPagePref'],
       );
       instance.albumsPagePref =
-          PagePreference.fromMap(prefMap["albumsPagePref"]);
+          PagePreference.fromMap(prefMap['albumsPagePref']);
       instance.albumDetailPagePref = PagePreference.fromMap(
-        prefMap["albumDetailPagePref"],
+        prefMap['albumDetailPagePref'],
       );
       instance.foldersPagePref =
-          PagePreference.fromMap(prefMap["foldersPagePref"]);
+          PagePreference.fromMap(prefMap['foldersPagePref']);
       instance.folderDetailPagePref = PagePreference.fromMap(
-        prefMap["folderDetailPagePref"],
+        prefMap['folderDetailPagePref'],
       );
       instance.playlistsPagePref = PagePreference.fromMap(
-        prefMap["playlistsPagePref"],
+        prefMap['playlistsPagePref'],
       );
       instance.playlistDetailPagePref = PagePreference.fromMap(
-        prefMap["playlistDetailPagePref"],
+        prefMap['playlistDetailPagePref'],
       );
-      instance.startPage = prefMap["startPage"];
-      instance.sidebarExpanded = prefMap["sidebarExpanded"] ?? true;
+      instance.startPage = prefMap['startPage'];
+      instance.sidebarExpanded = prefMap['sidebarExpanded'] ?? true;
       instance.playbackPref =
-          PlaybackPreference.fromMap(prefMap["playbackPref"]);
+          PlaybackPreference.fromMap(prefMap['playbackPref']);
       instance.nowPlayingPagePref =
-          NowPlayingPagePreference.fromMap(prefMap["nowPlayingPagePref"]);
+          NowPlayingPagePreference.fromMap(prefMap['nowPlayingPagePref']);
       _nowPlayingBackgroundModeNotifier?.value =
           instance.nowPlayingPagePref.backgroundMode;
-      instance.customCpFeedbackKey = prefMap["customCpFeedbackKey"] ?? "";
+      instance.customCpFeedbackKey = prefMap['customCpFeedbackKey'] ?? '';
       instance.updateRepoSlug =
-          prefMap["updateRepoSlug"] ?? "qingyueyin/Pure-music";
-      instance.userFolders = prefMap["userFolders"] != null
-          ? List<String>.from(prefMap["userFolders"])
+          prefMap['updateRepoSlug'] ?? 'qingyueyin/Pure-music';
+      instance.userFolders = prefMap['userFolders'] != null
+          ? List<String>.from(prefMap['userFolders'])
           : [];
 
       if (instance.userFolders.isEmpty) {
-        logger.i("userFolders is empty, will be set after first folder scan");
+        logger.i('userFolders is empty, will be set after first folder scan');
       }
     } catch (err, trace) {
       logger.e(err, stackTrace: trace);
