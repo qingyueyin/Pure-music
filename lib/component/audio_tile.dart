@@ -90,8 +90,12 @@ class _AudioTileState extends State<AudioTile> {
               MenuItemButton(
                 style: menuItemStyle,
                 onPressed: () {
-                  final Album album =
-                      AudioLibrary.instance.albumCollection[audio.album]!;
+                  final album =
+                      AudioLibrary.instance.albumCollection[audio.album];
+                  if (album == null) {
+                    showTextOnSnackBar('未找到专辑"${audio.album}"');
+                    return;
+                  }
                   context.push(app_paths.ALBUM_DETAIL_PAGE, extra: album);
                 },
                 leadingIcon: const Icon(Symbols.album),
@@ -105,7 +109,7 @@ class _AudioTileState extends State<AudioTile> {
                   PlayService.instance.playbackService.addToNext(audio);
                 },
                 leadingIcon: const Icon(Symbols.plus_one),
-                child: const Text("下一首播放"),
+                child: const Text('下一首播放'),
               ),
 
               /// 多选
@@ -117,7 +121,7 @@ class _AudioTileState extends State<AudioTile> {
                     widget.multiSelectController!.select(audio);
                   },
                   leadingIcon: const Icon(Symbols.select),
-                  child: const Text("多选"),
+                  child: const Text('多选'),
                 ),
 
               /// add to playlist
@@ -128,22 +132,22 @@ class _AudioTileState extends State<AudioTile> {
                   (i) => MenuItemButton(
                     style: menuItemStyle,
                     onPressed: () {
-                      final added = PLAYLISTS[i].audios.containsKey(audio.path);
+                      final added = PLAYLISTS[i].containsPath(audio.path);
                       if (added) {
-                        showTextOnSnackBar("歌曲“${audio.title}”已存在");
+                        showTextOnSnackBar('歌曲${audio.title}已存在');
                         return;
                       }
 
-                      PLAYLISTS[i].audios[audio.path] = audio;
+                      PLAYLISTS[i].addPath(audio.path);
                       showTextOnSnackBar(
-                        "成功将“${audio.title}”添加到歌单“${PLAYLISTS[i].name}”",
+                        '成功将${audio.title}添加到歌单${PLAYLISTS[i].name}',
                       );
                     },
                     leadingIcon: const Icon(Symbols.queue_music),
                     child: Text(PLAYLISTS[i].name),
                   ),
                 ),
-                child: const Text("添加到歌单"),
+                child: const Text('添加到歌单'),
               ),
 
               /// to detail page
@@ -153,7 +157,7 @@ class _AudioTileState extends State<AudioTile> {
                   context.push(app_paths.AUDIO_DETAIL_PAGE, extra: audio);
                 },
                 leadingIcon: const Icon(Symbols.info),
-                child: const Text("详细信息"),
+                child: const Text('详细信息'),
               ),
             ],
             builder: (context, controller, _) {
@@ -238,6 +242,7 @@ class _AudioTileState extends State<AudioTile> {
                         /// cover
                         ScrollAwareFutureBuilder(
                           future: () => audio.cover,
+                          identity: audio.path,
                           builder: (context, snapshot) {
                             if (snapshot.data == null) {
                               return placeholder;
@@ -271,7 +276,7 @@ class _AudioTileState extends State<AudioTile> {
                               ),
                               const SizedBox(width: 4.0),
                               Text(
-                                "${audio.artist} - ${audio.album}",
+                                '${audio.artist} - ${audio.album}',
                                 style: TextStyle(color: textColor),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
