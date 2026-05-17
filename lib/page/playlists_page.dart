@@ -27,7 +27,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
     );
     if (name == null) return;
     setState(() {
-      PLAYLISTS.add(Playlist(name, {}));
+      PLAYLISTS.add(Playlist(name, []));
     });
     await savePlaylists();
   }
@@ -63,8 +63,8 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
 
     return UniPage<Playlist>(
       pref: AppPreference.instance.playlistsPagePref,
-      title: "歌单",
-      subtitle: "${PLAYLISTS.length} 个歌单",
+      title: '歌单',
+      subtitle: '${PLAYLISTS.length} 个歌单',
       contentList: PLAYLISTS,
       contentBuilder: (context, item, i, multiSelectController, _) {
         final playlist = PLAYLISTS[i];
@@ -85,13 +85,13 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                   extra: playlist,
                 ),
                 leadingIcon: const Icon(Symbols.open_in_new),
-                child: const Text("打开"),
+                child: const Text('打开'),
               ),
               MenuItemButton(
                 style: menuItemStyle,
                 onPressed: () => editPlaylist(context, playlist),
                 leadingIcon: const Icon(Symbols.edit),
-                child: const Text("编辑"),
+                child: const Text('编辑'),
               ),
               MenuItemButton(
                 style: menuItemStyle,
@@ -102,7 +102,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                   await savePlaylists();
                 },
                 leadingIcon: Icon(Symbols.delete, color: scheme.error),
-                child: const Text("删除"),
+                child: const Text('删除'),
               ),
               if (multiSelectController != null)
                 MenuItemButton(
@@ -112,7 +112,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                     multiSelectController.select(playlist);
                   },
                   leadingIcon: const Icon(Symbols.select),
-                  child: const Text("多选"),
+                  child: const Text('多选'),
                 ),
             ],
             builder: (context, controller, _) => AnimatedContainer(
@@ -129,7 +129,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                   maxLines: 1,
                 ),
                 subtitle: Text(
-                  "${playlist.audios.length}首乐曲",
+                  '${playlist.paths.length}首乐曲',
                   softWrap: false,
                   maxLines: 1,
                 ),
@@ -139,13 +139,13 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           IconButton(
-                            tooltip: "编辑",
+                            tooltip: '编辑',
                             onPressed: () => editPlaylist(context, playlist),
                             icon: const Icon(Symbols.edit),
                           ),
                           const SizedBox(width: 8.0),
                           IconButton(
-                            tooltip: "删除",
+                            tooltip: '删除',
                             onPressed: () async {
                               setState(() {
                                 PLAYLISTS.remove(playlist);
@@ -192,7 +192,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
       primaryAction: FilledButton.icon(
         onPressed: () => newPlaylist(context),
         icon: const Icon(Symbols.add),
-        label: const Text("新建歌单"),
+        label: const Text('新建歌单'),
         style: const ButtonStyle(
           fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
         ),
@@ -206,7 +206,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
         ListenableBuilder(
           listenable: multiSelectController,
           builder: (context, _) => IconButton.filled(
-            tooltip: "删除选中歌单",
+            tooltip: '删除选中歌单',
             onPressed: multiSelectController.selected.isEmpty
                 ? null
                 : () async {
@@ -235,7 +235,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
       sortMethods: [
         SortMethodDesc(
           icon: Symbols.title,
-          name: "名称",
+          name: '名称',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
@@ -249,7 +249,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
         ),
         SortMethodDesc(
           icon: Symbols.music_note,
-          name: "歌曲数量",
+          name: '歌曲数量',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
@@ -290,7 +290,7 @@ class _NewPlaylistDialog extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(bottom: 16.0),
                 child: Text(
-                  "新建歌单",
+                  '新建歌单',
                   style: TextStyle(
                     color: scheme.onSurface,
                     fontSize: 18.0,
@@ -307,7 +307,7 @@ class _NewPlaylistDialog extends StatelessWidget {
                     Navigator.pop(context, value);
                   },
                   decoration: const InputDecoration(
-                    labelText: "歌单名称",
+                    labelText: '歌单名称',
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -318,14 +318,14 @@ class _NewPlaylistDialog extends StatelessWidget {
                 children: [
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text("取消"),
+                    child: const Text('取消'),
                   ),
                   const SizedBox(width: 8.0),
                   TextButton(
                     onPressed: () {
                       Navigator.pop(context, editingController.text);
                     },
-                    child: const Text("创建"),
+                    child: const Text('创建'),
                   ),
                 ],
               )
@@ -361,7 +361,7 @@ class _EditPlaylistDialog extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(bottom: 16.0),
                 child: Text(
-                  "修改歌单",
+                  '修改歌单',
                   style: TextStyle(
                     color: scheme.onSurface,
                     fontSize: 18.0,
@@ -378,7 +378,7 @@ class _EditPlaylistDialog extends StatelessWidget {
                     Navigator.pop(context, value);
                   },
                   decoration: const InputDecoration(
-                    labelText: "新歌单名称",
+                    labelText: '新歌单名称',
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -389,14 +389,14 @@ class _EditPlaylistDialog extends StatelessWidget {
                 children: [
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text("取消"),
+                    child: const Text('取消'),
                   ),
                   const SizedBox(width: 8.0),
                   TextButton(
                     onPressed: () {
                       Navigator.pop(context, editingController.text);
                     },
-                    child: const Text("创建"),
+                    child: const Text('创建'),
                   ),
                 ],
               )
