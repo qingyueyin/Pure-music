@@ -19,6 +19,7 @@ class PlaybackService extends ChangeNotifier {
 
   late StreamSubscription _playerStateStreamSub;
   late StreamSubscription _smtcEventStreamSub;
+  late StreamSubscription _smtcPositionStreamSub;
   int _lastNowPlayingChangedMs = 0;
 
   PlaybackService(this.playService) {
@@ -47,11 +48,14 @@ class PlaybackService extends ChangeNotifier {
         case SMTCControlEvent.next:
           nextAudio();
           break;
+        case SMTCControlEvent.stop:
+          pause();
+          break;
         case SMTCControlEvent.unknown:
       }
     });
 
-    positionStream.listen((progress) {
+    _smtcPositionStreamSub = positionStream.listen((progress) {
       _smtc.updateTimeProperties(progress: (progress * 1000).floor());
     });
 
@@ -119,7 +123,7 @@ class PlaybackService extends ChangeNotifier {
   }
 
   void setEQ(int band, double gain) {
-    logger.i("[action] setEQ band=$band gain=$gain");
+    logger.i('[action] setEQ band=$band gain=$gain');
     AudioEchoLogRecorder.instance
         .mark('setEQ', extra: {'band': band, 'gain': gain});
     _player.setEQ(band, gain);
@@ -180,7 +184,7 @@ class PlaybackService extends ChangeNotifier {
 
   /// 独占模式
   void useExclusiveMode(bool exclusive) {
-    logger.i("[action] useExclusiveMode=$exclusive");
+    logger.i('[action] useExclusiveMode=$exclusive');
     AudioEchoLogRecorder.instance
         .mark('useExclusiveMode', extra: {'exclusive': exclusive});
     if (_player.useExclusiveMode(exclusive)) {
@@ -212,7 +216,7 @@ class PlaybackService extends ChangeNotifier {
   ValueNotifier<double> get pitch => _pitch;
 
   void setPitch(double value) {
-    logger.i("[action] setPitch=$value");
+    logger.i('[action] setPitch=$value');
     AudioEchoLogRecorder.instance.mark('setPitch', extra: {'value': value});
     _pitch.value = value;
     _player.setPitch(value);
@@ -222,7 +226,7 @@ class PlaybackService extends ChangeNotifier {
   ValueNotifier<double> get rate => _rate;
 
   void setRate(double value) {
-    logger.i("[action] setRate=$value");
+    logger.i('[action] setRate=$value');
     AudioEchoLogRecorder.instance.mark('setRate', extra: {'value': value});
     _rate.value = value;
     _player.setRate(value);
@@ -233,10 +237,6 @@ class PlaybackService extends ChangeNotifier {
 
   /// 替换 nowPlaying
   void setNowPlaying([Audio? newNowPlaying]) {
-    final old = nowPlaying;
-    if (old != null) {
-      old.evictCoverCache();
-    }
     _nowPlaying.value = newNowPlaying;
   }
 
@@ -252,7 +252,7 @@ class PlaybackService extends ChangeNotifier {
 
   /// 修改解码时的音量（不影响 Windows 系统音量）
   void setVolumeDsp(double volume) {
-    logger.i("[action] setVolumeDsp=$volume");
+    logger.i('[action] setVolumeDsp=$volume');
     AudioEchoLogRecorder.instance
         .mark('setVolumeDsp', extra: {'value': volume});
     _pref.volumeDsp = volume;
@@ -291,12 +291,6 @@ class PlaybackService extends ChangeNotifier {
   /// 6. 通知并更新主题色
   void _loadAndPlay(int audioIndex, List<Audio> playlist) {
     try {
-      // 释放旧歌曲的封面缓存
-      final oldAudio = nowPlaying;
-      if (oldAudio != null && oldAudio.path != playlist[audioIndex].path) {
-        oldAudio.evictCoverCache();
-      }
-
       _playlistIndex = audioIndex;
       _nowPlaying.value = playlist[audioIndex];
       _lastNowPlayingChangedMs = DateTime.now().millisecondsSinceEpoch;
@@ -310,7 +304,7 @@ class PlaybackService extends ChangeNotifier {
       ThemeProvider.instance.applyThemeFromAudio(nowPlaying!);
 
       if (audioIndex < playlist.length - 1) {
-        CoverCache.instance.preloadNext(playlist[audioIndex + 1].path);
+        CoverImageCache.instance.preload(playlist[audioIndex + 1].path);
         playService.lyricService.prefetchLyric(playlist[audioIndex + 1]);
         if (audioIndex < playlist.length - 2) {
           playService.lyricService.prefetchLyric(playlist[audioIndex + 2]);
@@ -341,14 +335,14 @@ class PlaybackService extends ChangeNotifier {
         playService.desktopLyricService.sendNowPlayingMessage(nowPlaying!);
       });
     } catch (err) {
-      logger.e("[load and play] $err");
+      logger.e('[load and play] $err');
       showTextOnSnackBar(err.toString());
     }
   }
 
   /// 播放当前播放列表的第几项，只能用在播放列表界面
   void playIndexOfPlaylist(int audioIndex) {
-    logger.i("[action] playIndexOfPlaylist=$audioIndex");
+    logger.i('[action] playIndexOfPlaylist=$audioIndex');
     AudioEchoLogRecorder.instance
         .mark('playIndexOfPlaylist', extra: {'index': audioIndex});
     _loadAndPlay(audioIndex, playlist.value);
@@ -356,7 +350,7 @@ class PlaybackService extends ChangeNotifier {
 
   /// 播放 playlist[audioIndex] 并设置播放列表为 playlist
   void play(int audioIndex, List<Audio> playlist) {
-    logger.i("[action] play index=$audioIndex playlistLen=${playlist.length}");
+    logger.i('[action] play index=$audioIndex playlistLen=${playlist.length}');
     AudioEchoLogRecorder.instance.mark('play',
         extra: {'index': audioIndex, 'playlistLen': playlist.length});
     if (shuffle.value) {
@@ -375,7 +369,7 @@ class PlaybackService extends ChangeNotifier {
   }
 
   void shuffleAndPlay(List<Audio> audios) {
-    logger.i("[action] shuffleAndPlay len=${audios.length}");
+    logger.i('[action] shuffleAndPlay len=${audios.length}');
     AudioEchoLogRecorder.instance
         .mark('shuffleAndPlay', extra: {'len': audios.length});
     final shuffled = List<Audio>.from(audios);
@@ -390,7 +384,7 @@ class PlaybackService extends ChangeNotifier {
 
   /// 下一首播放
   void addToNext(Audio audio) {
-    logger.i("[action] addToNext path=${audio.path}");
+    logger.i('[action] addToNext path=${audio.path}');
     AudioEchoLogRecorder.instance
         .mark('addToNext', extra: {'path': audio.path});
     if (_playlistIndex != null) {
@@ -409,7 +403,7 @@ class PlaybackService extends ChangeNotifier {
   void useShuffle(bool flag) {
     if (nowPlaying == null) return;
     if (flag == shuffle.value) return;
-    logger.i("[action] useShuffle=$flag");
+    logger.i('[action] useShuffle=$flag');
     AudioEchoLogRecorder.instance.mark('useShuffle', extra: {'flag': flag});
 
     if (flag) {
@@ -503,7 +497,7 @@ class PlaybackService extends ChangeNotifier {
         path: nowPlaying!.path,
       );
     } catch (err) {
-      logger.e("[restore last session] $err");
+      logger.e('[restore last session] $err');
     }
   }
 
@@ -548,14 +542,14 @@ class PlaybackService extends ChangeNotifier {
 
   /// 手动下一曲时默认循环播放列表
   void nextAudio() {
-    logger.i("[action] nextAudio");
+    logger.i('[action] nextAudio');
     AudioEchoLogRecorder.instance.mark('nextAudio');
     _nextAudioLoop();
   }
 
   /// 手动上一曲时默认循环播放列表
   void lastAudio() {
-    logger.i("[action] lastAudio");
+    logger.i('[action] lastAudio');
     AudioEchoLogRecorder.instance.mark('lastAudio');
     if (_playlistIndex == null) return;
 
@@ -570,7 +564,7 @@ class PlaybackService extends ChangeNotifier {
   /// 暂停
   void pause() {
     try {
-      logger.i("[action] pause");
+      logger.i('[action] pause');
       AudioEchoLogRecorder.instance.mark('pause');
       _player.pause();
       _smtc.updateState(state: SMTCState.paused);
@@ -580,7 +574,7 @@ class PlaybackService extends ChangeNotifier {
         playService.desktopLyricService.sendPlayerStateMessage(false);
       });
     } catch (err) {
-      logger.e("[pause] $err");
+      logger.e('[pause] $err');
       showTextOnSnackBar(err.toString());
     }
   }
@@ -588,7 +582,7 @@ class PlaybackService extends ChangeNotifier {
   /// 恢复播放
   void start() {
     try {
-      logger.i("[action] start");
+      logger.i('[action] start');
       AudioEchoLogRecorder.instance.mark('start');
       _player.start();
       _smtc.updateState(state: SMTCState.playing);
@@ -598,7 +592,7 @@ class PlaybackService extends ChangeNotifier {
         playService.desktopLyricService.sendPlayerStateMessage(true);
       });
     } catch (err) {
-      logger.e("[start]: $err");
+      logger.e('[start]: $err');
       showTextOnSnackBar(err.toString());
     }
   }
@@ -608,7 +602,7 @@ class PlaybackService extends ChangeNotifier {
   void playAgain() => _nextAudioSingleLoop();
 
   void seek(double position) {
-    logger.i("[action] seek=$position");
+    logger.i('[action] seek=$position');
     AudioEchoLogRecorder.instance.mark('seek', extra: {'pos': position});
     _player.seek(position);
     playService.lyricService.findCurrLyricLineAt(position);
@@ -621,12 +615,15 @@ class PlaybackService extends ChangeNotifier {
     try {
       _smtcEventStreamSub.cancel();
     } catch (_) {}
+    try {
+      _smtcPositionStreamSub.cancel();
+    } catch (_) {}
     
     // 释放播放器资源（可能耗时）
     try {
       _player.free();
     } catch (e) {
-      logger.w("_player.free error: $e");
+      logger.w('_player.free error: $e');
     }
     
     // 关闭 SMTC
