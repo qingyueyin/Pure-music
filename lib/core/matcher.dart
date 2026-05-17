@@ -3,14 +3,12 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:pure_music/library/audio_library.dart';
-import 'package:pure_music/core/lyric/parsers/lrc_tool.dart';
-import 'package:pure_music/core/lyric/models/lyric_entry.dart';
+import 'package:pure_music/services/online_lyric/models/lyric_entry.dart' hide LyricFormat;
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/lyric/krc.dart';
 import 'package:pure_music/lyric/qrc.dart';
-import 'package:pure_music/core/net_lyrics/net_lyric_api.dart' as net_api;
-import 'package:pure_music/core/net_lyrics/krc_extract_decode.dart';
+import 'package:pure_music/services/online_lyric/api/net_lyric_api.dart' as net_api;
 import 'package:pure_music/core/utils.dart' as utils;
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 
@@ -21,7 +19,6 @@ enum ResultSource { qq, kugou, ne }
 
 const int _durationFilterThreshold = 10;
 
-// ========== 歌词缓存 ==========
 final Map<String, Future<Lyric?>> _lyricFetchCache = {};
 final Map<String, Lyric> _lyricResultCache = {};
 
@@ -49,13 +46,11 @@ Lyric? getCachedLyric(
   return key.isNotEmpty ? _lyricResultCache[key] : null;
 }
 
-// 防抖去重：相同ID的请求只发一次
 Future<Lyric?> getOnlineLyric({
   String? qqSongId,
   String? kugouSongHash,
   int? neSongId,
 }) {
-  // 先查结果缓存
   final cached = getCachedLyric(
     qqSongId: qqSongId,
     kugouSongHash: kugouSongHash,
@@ -68,13 +63,11 @@ Future<Lyric?> getOnlineLyric({
 
   final key = _cacheKey(qqSongId: qqSongId, kugouSongHash: kugouSongHash, neSongId: neSongId);
   
-  // 查请求缓存（正在进行的请求）
   if (key.isNotEmpty && _lyricFetchCache.containsKey(key)) {
     logger.d('[getOnlineLyric] request dedup: $key');
     return _lyricFetchCache[key]!;
   }
 
-  // 发起新请求并缓存
   final future = _fetchLyricInternal(
     qqSongId: qqSongId,
     kugouSongHash: kugouSongHash,
@@ -84,7 +77,6 @@ Future<Lyric?> getOnlineLyric({
   if (key.isNotEmpty) {
     _lyricFetchCache[key] = future;
     future.then((lyric) {
-      // 请求完成后移除请求缓存，保留结果缓存
       _lyricFetchCache.remove(key);
       if (lyric != null) {
         cacheLyric(
@@ -140,20 +132,17 @@ Future<Lyric?> _fetchLyricInternal({
   return lyric;
 }
 
-// ========== 搜索去重 ==========
 final Set<String> _searchDedupCache = {};
-int _searchQueryCounter = 0; // 用于防止快速重复搜索
+int _searchQueryCounter = 0;
 
 void clearSearchDedupCache() {
   _searchDedupCache.clear();
 }
 
-/// 防抖：短时间内相同查询只搜索一次
 bool shouldPerformSearch(String query) {
   _searchQueryCounter++;
   final key = '${_searchQueryCounter}_$query';
   
-  // 简单的时间窗口去重（10秒内相同查询只搜一次）
   for (final k in _searchDedupCache) {
     if (k.endsWith('_$query')) {
       return false;
@@ -162,7 +151,6 @@ bool shouldPerformSearch(String query) {
   
   _searchDedupCache.add(key);
   
-  // 保持缓存不过大
   if (_searchDedupCache.length > 100) {
     _searchDedupCache.clear();
   }
@@ -263,11 +251,11 @@ class SongSearchResult {
   @override
   String toString() {
     return json.encode({
-      "source": source.toString(),
-      "title": title,
-      "artists": artists,
-      "album": album,
-      "score": score,
+      'source': source.toString(),
+      'title': title,
+      'artists': artists,
+      'album': album,
+      'score': score,
     });
   }
 
@@ -317,7 +305,7 @@ class SongSearchResult {
 Future<List<SongSearchResult>> uniSearch(Audio audio) async {
   String searchQuery = audio.title;
   if (audio.artist.isNotEmpty) {
-    searchQuery = "${audio.title} ${audio.artist}";
+    searchQuery = '${audio.title} ${audio.artist}';
   }
 
   final List<SongSearchResult> result = [];
@@ -330,50 +318,53 @@ Future<List<SongSearchResult>> uniSearch(Audio audio) async {
   List<String> searchQueries = [searchQuery];
   if (fileName.isNotEmpty &&
       fileName != audio.title &&
-      fileName != "${audio.title} ${audio.artist}") {
-    searchQueries.insert(0, fileName);
+      fileName != '${audio.title} ${audio.artist}') {
+    searchQueries.add(fileName);
   }
 
-  // 聚合搜索：每源最多 1 条，总共最多 3 条
   const int perSourceLimit = 1;
 
   for (final query in searchQueries) {
     logger.d('=== uniSearch query: "$query" ===');
-    final futures = <Future<List<SongSearchResult>>>[];
 
-    futures.add(_searchKugouWithTimeout(query, audio, 6, perSourceLimit));
-    futures.add(_searchQQWithTimeout(query, audio, 6, perSourceLimit));
-    futures.add(_searchNEWithTimeout(query, audio, 6, perSourceLimit));
+    final kgFuture = _searchKugouWithTimeout(query, audio, 6, perSourceLimit);
+    final qqFuture = _searchQQWithTimeout(query, audio, 6, perSourceLimit);
+    final neFuture = _searchNEWithTimeout(query, audio, 6, perSourceLimit);
 
-    final allResults = await Future.wait(futures, eagerError: false);
+    final results = await Future.wait([kgFuture, qqFuture, neFuture], eagerError: false)
+        .timeout(const Duration(seconds: 18), onTimeout: () {
+      logger.w('uniSearch timeout for query: $query');
+      return <List<SongSearchResult>>[[], [], []];
+    });
 
-    // 按源分组，每个源只取最高分 1 条
+    final kgResults = results[0];
+    final qqResults = results[1];
+    final neResults = results[2];
+
     SongSearchResult? qqBest;
     SongSearchResult? kgBest;
     SongSearchResult? neBest;
 
-    for (final r in allResults) {
-      for (final item in r) {
-        switch (item.source) {
-          case ResultSource.qq:
-            if (qqBest == null || item.score > qqBest.score) qqBest = item;
-          case ResultSource.kugou:
-            if (kgBest == null || item.score > kgBest.score) kgBest = item;
-          case ResultSource.ne:
-            if (neBest == null || item.score > neBest.score) neBest = item;
-        }
-      }
+    for (final item in qqResults) {
+      if (qqBest == null || item.score > qqBest.score) qqBest = item;
+    }
+    for (final item in kgResults) {
+      if (kgBest == null || item.score > kgBest.score) kgBest = item;
+    }
+    for (final item in neResults) {
+      if (neBest == null || item.score > neBest.score) neBest = item;
     }
 
-    // 合并：每个源最多 1 条，总共 3 条
     final merged = <SongSearchResult>[];
     if (qqBest != null) merged.add(qqBest);
     if (kgBest != null) merged.add(kgBest);
     if (neBest != null) merged.add(neBest);
     merged.sort((a, b) => b.score.compareTo(a.score));
 
-    if (merged.isNotEmpty) {
-      result.addAll(merged);
+    for (final item in merged) {
+      if (!_containsResult(result, item)) {
+        result.add(item);
+      }
     }
 
     if (result.isNotEmpty) {
@@ -395,7 +386,7 @@ Future<List<SongSearchResult>> _searchKugouWithTimeout(
       keyword: query,
       pageSize: limit,
     ).timeout(Duration(seconds: seconds),
-        onTimeout: () => throw TimeoutException("KG search timeout"));
+        onTimeout: () => throw TimeoutException('KG search timeout'));
     logger.d('[KG] got ${kugouResults.length} raw results');
     final List<SongSearchResult> results = [];
     for (final item in kugouResults.take(limit)) {
@@ -407,7 +398,7 @@ Future<List<SongSearchResult>> _searchKugouWithTimeout(
     logger.d('[KG] accepted ${results.length}');
     return results;
   } catch (err, trace) {
-    logger.w("KuGou search failed: $err", stackTrace: trace);
+    logger.w('KuGou search failed: $err', stackTrace: trace);
     return [];
   }
 }
@@ -420,19 +411,19 @@ Future<List<SongSearchResult>> _searchQQWithTimeout(
       keyword: query,
       pageSize: limit,
     ).timeout(Duration(seconds: seconds),
-        onTimeout: () => throw TimeoutException("QQ search timeout"));
+        onTimeout: () => throw TimeoutException('QQ search timeout'));
     logger.d('[QQ] got ${qqResults.length} raw results');
     final List<SongSearchResult> results = [];
-    for (final item in qqResults) {
+    for (final item in qqResults.take(limit)) {
       final searchResult = SongSearchResult.fromQQSearchItem(item, audio);
-      if (searchResult != null && searchResult.score > 10) {
+      if (searchResult != null && searchResult.score >= 0) {
         results.add(searchResult);
       }
     }
     logger.d('[QQ] accepted ${results.length}');
     return results;
   } catch (err, trace) {
-    logger.w("QQ search failed: $err", stackTrace: trace);
+    logger.w('QQ search failed: $err', stackTrace: trace);
     return [];
   }
 }
@@ -445,7 +436,7 @@ Future<List<SongSearchResult>> _searchNEWithTimeout(
       keyword: query,
       pageSize: limit,
     ).timeout(Duration(seconds: seconds),
-        onTimeout: () => throw TimeoutException("NE search timeout"));
+        onTimeout: () => throw TimeoutException('NE search timeout'));
     logger.d('[NE] got ${neResults.length} raw results');
     final List<SongSearchResult> results = [];
     for (final item in neResults) {
@@ -457,7 +448,7 @@ Future<List<SongSearchResult>> _searchNEWithTimeout(
     logger.d('[NE] accepted ${results.length}');
     return results;
   } catch (err, trace) {
-    logger.w("NetEase search failed: $err", stackTrace: trace);
+    logger.w('NetEase search failed: $err', stackTrace: trace);
     return [];
   }
 }
@@ -467,10 +458,9 @@ Future<List<SongSearchResult>> manualSearch(Audio audio, String query,
   logger.d('=== manualSearch START: query="$query", limit=$limit ===');
   final List<SongSearchResult> result = [];
 
-  const int perSourceLimit = 10; // 单独查看时每源最多 10 条
-  final int pageSize = perSourceLimit;
+  const int perSourceLimit = 10;
+  const int pageSize = perSourceLimit;
 
-  // 网易云
   try {
     logger.d('[MS][NE] searching: "$query"');
     final neResults = await net_api.neSearchLyric(
@@ -479,16 +469,15 @@ Future<List<SongSearchResult>> manualSearch(Audio audio, String query,
     logger.d('[MS][NE] got ${neResults.length} raw results');
     for (final item in neResults.take(perSourceLimit)) {
       final searchResult = SongSearchResult.fromNeSearchItem(item, audio);
-      if (searchResult != null && !_containsResult(result, searchResult)) {
+      if (searchResult != null && searchResult.score >= 0) {
         result.add(searchResult);
       }
     }
     logger.d('[MS][NE] accepted ${result.where((r) => r.source == ResultSource.ne).length}');
   } catch (err, trace) {
-    logger.e("[MS] NE ERROR: $err", stackTrace: trace);
+    logger.e('[MS] NE ERROR: $err', stackTrace: trace);
   }
 
-  // 酷狗
   try {
     logger.d('[MS][KG] searching: "$query"');
     final kugouResults = await net_api.kgSearchLyric(
@@ -497,16 +486,15 @@ Future<List<SongSearchResult>> manualSearch(Audio audio, String query,
     logger.d('[MS][KG] got ${kugouResults.length} raw results');
     for (final item in kugouResults.take(perSourceLimit)) {
       final searchResult = SongSearchResult.fromKugouSearchItem(item, audio);
-      if (searchResult != null && !_containsResult(result, searchResult)) {
+      if (searchResult != null && searchResult.score >= 0) {
         result.add(searchResult);
       }
     }
     logger.d('[MS][KG] accepted ${result.where((r) => r.source == ResultSource.kugou).length}');
   } catch (err, trace) {
-    logger.e("[MS] KG ERROR: $err", stackTrace: trace);
+    logger.e('[MS] KG ERROR: $err', stackTrace: trace);
   }
 
-  // QQ
   try {
     logger.d('[MS][QQ] searching: "$query"');
     final qqResults = await net_api.qqSearchLyric(
@@ -515,13 +503,13 @@ Future<List<SongSearchResult>> manualSearch(Audio audio, String query,
     logger.d('[MS][QQ] got ${qqResults.length} raw results');
     for (final item in qqResults.take(perSourceLimit)) {
       final searchResult = SongSearchResult.fromQQSearchItem(item, audio);
-      if (searchResult != null && !_containsResult(result, searchResult)) {
+      if (searchResult != null && searchResult.score >= 0) {
         result.add(searchResult);
       }
     }
     logger.d('[MS][QQ] accepted ${result.where((r) => r.source == ResultSource.qq).length}');
   } catch (err, trace) {
-    logger.e("[MS] QQ ERROR: $err", stackTrace: trace);
+    logger.e('[MS] QQ ERROR: $err', stackTrace: trace);
   }
 
   result.sort((a, b) => b.score.compareTo(a.score));
@@ -556,7 +544,7 @@ Future<Lyric?> _getQQSyncLyric(String qqSongId) async {
     }
     logger.d('[QQ lyric] toParsedLyric returned null or empty');
   } catch (err, trace) {
-    logger.e("Failed to get QQ lyric: $err", stackTrace: trace);
+    logger.e('Failed to get QQ lyric: $err', stackTrace: trace);
   }
   return null;
 }
@@ -597,7 +585,7 @@ Future<Krc?> _getKugouSyncLyric(String kugouSongHash) async {
     }
     logger.d('[KG lyric] toParsedLyric returned null or empty');
   } catch (err, trace) {
-    logger.e("Failed to get Kugou lyric: $err", stackTrace: trace);
+    logger.e('Failed to get Kugou lyric: $err', stackTrace: trace);
   }
   return null;
 }
@@ -661,11 +649,15 @@ Lyric? _parsedToLyric(ParsedLyricResult parsed) {
       translation: entry.translation,
     ));
   }
-  return Lrc(unsyncLines, LrcSource.web);
+  return Lrc(unsyncLines, LyricFormat.web);
 }
 
 Future<Lyric?> getMostMatchedLyric(Audio audio) async {
-  final unisearchResult = await uniSearch(audio);
+  final unisearchResult = await uniSearch(audio)
+      .timeout(const Duration(seconds: 22), onTimeout: () {
+    logger.w('getMostMatchedLyric uniSearch timeout');
+    return [];
+  });
 
   if (unisearchResult.isEmpty) {
     logger.w("No search result for '${audio.title}' by ${audio.artist}");
@@ -677,7 +669,10 @@ Future<Lyric?> getMostMatchedLyric(Audio audio) async {
     qqSongId: bestMatch.qqSongId,
     kugouSongHash: bestMatch.kugouSongHash,
     neSongId: bestMatch.neSongId,
-  );
+  ).timeout(const Duration(seconds: 15), onTimeout: () {
+    logger.w('getMostMatchedLyric getOnlineLyric timeout');
+    return null;
+  });
 
   if (lyric != null && lyric.lines.isNotEmpty) {
     logger.i(
