@@ -45,7 +45,7 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: Text(
-              "播放列表",
+              '播放列表',
               style: TextStyle(
                 color: scheme.onSecondaryContainer,
                 fontSize: 22,
@@ -80,10 +80,10 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
 
   @override
   void dispose() {
-    super.dispose();
     playbackService.nowPlayingNotifier.removeListener(_toNowPlaying);
     playbackService.playlistNotifier.removeListener(_toNowPlaying);
     scrollController.dispose();
+    super.dispose();
   }
 }
 
@@ -113,7 +113,7 @@ class _PlaylistViewItem extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(item.title),
-              Text("${item.artist} - ${item.album}"),
+              Text('${item.artist} - ${item.album}'),
             ],
           ),
         ),

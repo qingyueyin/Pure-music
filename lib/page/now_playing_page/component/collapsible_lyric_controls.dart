@@ -89,14 +89,14 @@ class _CollapsibleLyricControlsState extends State<CollapsibleLyricControls>
                   ),
                 ],
                 IconButton(
-                  tooltip: _isExpanded ? "收起设置" : "歌词设置",
+                  tooltip: _isExpanded ? '收起设置' : '歌词设置',
                   onPressed: _toggleExpanded,
                   color: scheme.onSecondaryContainer,
                   icon: AnimatedRotation(
                     turns: _isExpanded ? 0.5 : 0,
                     duration: const Duration(milliseconds: 250),
                     curve: Curves.easeInOut,
-                    child: Icon(
+                    child: const Icon(
                       Symbols.expand_more,
                       size: 22,
                     ),
