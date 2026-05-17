@@ -12,21 +12,21 @@ import 'package:go_router/go_router.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 
 String _formatBytes(int bytes) {
-  if (bytes < 1024) return "$bytes B";
-  const units = ["KB", "MB", "GB", "TB"];
+  if (bytes < 1024) return '$bytes B';
+  const units = ['KB', 'MB', 'GB', 'TB'];
   double size = bytes.toDouble();
   int unitIndex = -1;
   while (size >= 1024 && unitIndex < units.length - 1) {
     size /= 1024;
     unitIndex += 1;
   }
-  return "${size.toStringAsFixed(size >= 10 ? 1 : 2)} ${units[unitIndex]}";
+  return '${size.toStringAsFixed(size >= 10 ? 1 : 2)} ${units[unitIndex]}';
 }
 
 final Map<String, Future<Map<String, Object?>>> _audioExtraCache = {};
 
 Future<Map<String, Object?>> _getAudioExtra(Audio audio) {
-  final key = "${audio.path}|${audio.modified}";
+  final key = '${audio.path}|${audio.modified}';
   final existing = _audioExtraCache[key];
   if (existing != null) return existing;
   final future = rust_tag_reader.readAudioExtraMetadata(path: audio.path).then((jsonStr) {
@@ -48,7 +48,7 @@ class AudioDetailPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final album = AudioLibrary.instance.albumCollection[audio.album]!;
+    final album = AudioLibrary.instance.albumCollection[audio.album];
     const space = SizedBox(height: 16.0);
 
     final styleTitle = TextStyle(
@@ -63,8 +63,8 @@ class AudioDetailPage extends StatelessWidget {
       size: 200,
     );
 
-    return Material(
-      color: scheme.surface,
+    return ColoredBox(
+      color: scheme.surfaceContainer,
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 96.0),
         child: Column(
@@ -108,7 +108,7 @@ class AudioDetailPage extends StatelessWidget {
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           Text(
-                            "歌名：",
+                            '歌名：',
                             style: TextStyle(
                               fontSize: 13,
                               color: scheme.onSurface.withValues(alpha: 0.70),
@@ -126,7 +126,7 @@ class AudioDetailPage extends StatelessWidget {
                               await Clipboard.setData(
                                 ClipboardData(text: audio.title),
                               );
-                              showTextOnSnackBar("已复制歌名");
+                              showTextOnSnackBar('已复制歌名');
                             },
                           ),
                         ],
@@ -138,7 +138,7 @@ class AudioDetailPage extends StatelessWidget {
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           Text(
-                            "歌手：",
+                            '歌手：',
                             style: TextStyle(
                               fontSize: 13,
                               color: scheme.onSurface.withValues(alpha: 0.70),
@@ -170,7 +170,7 @@ class AudioDetailPage extends StatelessWidget {
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           Text(
-                            "专辑：",
+                            '专辑：',
                             style: TextStyle(
                               fontSize: 13,
                               color: scheme.onSurface.withValues(alpha: 0.70),
@@ -183,10 +183,12 @@ class AudioDetailPage extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                               softWrap: false,
                             ),
-                            onPressed: () => context.push(
-                              app_paths.ALBUM_DETAIL_PAGE,
-                              extra: album,
-                            ),
+                            onPressed: album == null
+                                ? null
+                                : () => context.push(
+                                    app_paths.ALBUM_DETAIL_PAGE,
+                                    extra: album,
+                                  ),
                           ),
                         ],
                       ),
@@ -197,20 +199,20 @@ class AudioDetailPage extends StatelessWidget {
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           IconButton(
-                            tooltip: "在文件资源管理器中显示",
+                            tooltip: '在文件资源管理器中显示',
                             onPressed: () async {
                               final result = await showInExplorer(path: audio.path);
                               if (!result && context.mounted) {
-                                showTextOnSnackBar("打开失败");
+                                showTextOnSnackBar('打开失败');
                               }
                             },
                             icon: const Icon(Symbols.folder_open),
                           ),
                           IconButton(
-                            tooltip: "复制路径",
+                            tooltip: '复制路径',
                             onPressed: () async {
                               await Clipboard.setData(ClipboardData(text: audio.path));
-                              showTextOnSnackBar("已复制");
+                              showTextOnSnackBar('已复制');
                             },
                             icon: const Icon(Symbols.content_copy),
                           ),
@@ -240,14 +242,14 @@ class AudioDetailPage extends StatelessWidget {
                           SizedBox(
                             width: colWidth,
                             child: _InfoTile(
-                              label: "音轨",
+                              label: '音轨',
                               child: Text(audio.track.toString(), style: styleContent),
                             ),
                           ),
                           SizedBox(
                             width: colWidth,
                             child: _InfoTile(
-                              label: "时长",
+                              label: '时长',
                               child: Text(
                                 Duration(
                                   milliseconds: (audio.duration * 1000).toInt(),
@@ -259,7 +261,7 @@ class AudioDetailPage extends StatelessWidget {
                           SizedBox(
                             width: colWidth,
                             child: _InfoTile(
-                              label: "码率",
+                              label: '码率',
                               child:
                                   Text("${audio.bitrate ?? "-"} kbps", style: styleContent),
                             ),
@@ -267,17 +269,17 @@ class AudioDetailPage extends StatelessWidget {
                           SizedBox(
                             width: colWidth,
                             child: _InfoTile(
-                              label: "采样率",
+                              label: '采样率',
                               child: Text("${audio.sampleRate ?? "-"} hz", style: styleContent),
                             ),
                           ),
                           SizedBox(
                             width: colWidth,
                             child: _InfoTile(
-                              label: "格式",
+                              label: '格式',
                               child: Text(
                                 p.extension(audio.path)
-                                    .replaceFirst(".", "")
+                                    .replaceFirst('.', '')
                                     .toUpperCase(),
                                 style: styleContent,
                               ),
@@ -286,10 +288,10 @@ class AudioDetailPage extends StatelessWidget {
                           SizedBox(
                             width: colWidth,
                             child: _InfoTile(
-                              label: "文件大小",
+                              label: '文件大小',
                               child: Builder(
                                 builder: (context) {
-                                  final fileSize = data["file_size"];
+                                  final fileSize = data['file_size'];
                                   if (fileSize is num && fileSize.toInt() > 0) {
                                     return Text(
                                       _formatBytes(fileSize.toInt()),
@@ -301,7 +303,7 @@ class AudioDetailPage extends StatelessWidget {
                                     builder: (context, snapshot) {
                                       final size = snapshot.data?.size;
                                       return Text(
-                                        size == null ? "-" : _formatBytes(size),
+                                        size == null ? '-' : _formatBytes(size),
                                         style: styleContent,
                                       );
                                     },
@@ -312,14 +314,14 @@ class AudioDetailPage extends StatelessWidget {
                           ),
                         ];
 
-                        final bd = data["bit_depth"];
-                        final ch = data["channels"];
+                        final bd = data['bit_depth'];
+                        final ch = data['channels'];
                         if (bd != null) {
                           children.add(
                             SizedBox(
                               width: colWidth,
                               child: _InfoTile(
-                                label: "位深",
+                                label: '位深',
                                 child: Text(bd.toString(), style: styleContent),
                               ),
                             ),
@@ -330,21 +332,21 @@ class AudioDetailPage extends StatelessWidget {
                             SizedBox(
                               width: colWidth,
                               child: _InfoTile(
-                                label: "声道",
+                                label: '声道',
                                 child: Text(ch.toString(), style: styleContent),
                               ),
                             ),
                           );
                         }
 
-                        final List items = (data["items"] as List?) ?? const [];
+                        final List items = (data['items'] as List?) ?? const [];
                         for (final item in items) {
                           if (item is! Map) continue;
-                          final k = item["key"];
-                          final v = item["value"];
+                          final k = item['key'];
+                          final v = item['value'];
                           if (k is! String || v is! String) continue;
                           final lk = k.trim().toLowerCase();
-                          if (lk == "artist" || lk == "encoder") continue;
+                          if (lk == 'artist' || lk == 'encoder') continue;
                           children.add(
                             SizedBox(
                               width: colWidth,
@@ -364,14 +366,14 @@ class AudioDetailPage extends StatelessWidget {
                           SizedBox(
                             width: maxWidth,
                             child: _InfoTile(
-                              label: "路径",
+                              label: '路径',
                               child: Text(audio.path, style: styleContent),
                             ),
                           ),
                           SizedBox(
                             width: colWidth,
                             child: _InfoTile(
-                              label: "修改时间",
+                              label: '修改时间',
                               child: Text(
                                 DateTime.fromMillisecondsSinceEpoch(audio.modified * 1000)
                                     .toString()
@@ -383,7 +385,7 @@ class AudioDetailPage extends StatelessWidget {
                           SizedBox(
                             width: colWidth,
                             child: _InfoTile(
-                              label: "创建时间",
+                              label: '创建时间',
                               child: Text(
                                 DateTime.fromMillisecondsSinceEpoch(audio.created * 1000)
                                     .toString()
