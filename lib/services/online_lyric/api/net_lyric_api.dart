@@ -40,6 +40,9 @@ final _qmDio = Dio(
       'Connection': 'keep-alive',
       'Content-Type': 'text/plain; charset=utf-8',
     },
+    connectTimeout: const Duration(seconds: 10),
+    receiveTimeout: const Duration(seconds: 10),
+    sendTimeout: const Duration(seconds: 10),
   ),
 );
 

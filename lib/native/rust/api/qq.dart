@@ -131,7 +131,8 @@ Future<String> _doRequest(QmRequestBody body) async {
   await _ensureInit();
 
   try {
-    final client = HttpClient();
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 10);
     final uri = Uri.parse('https://u.y.qq.com/cgi-bin/musicu.fcg');
     final request = await client.postUrl(uri);
 

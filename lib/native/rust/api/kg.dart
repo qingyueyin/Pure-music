@@ -117,7 +117,8 @@ Future<void> _ensureInit() async {
       final uri = Uri.parse(
           'https://userservice.kugou.com/risk/v1/r_register_dev?$queryStr');
 
-      final client = HttpClient();
+      final client = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 10);
       final request = await client.postUrl(uri);
 
       request.headers.set('Content-Type', 'text/plain');
@@ -211,7 +212,8 @@ Future<List<Map<String, dynamic>>> kgSearch(String keyword,
         Uri.parse('http://complexsearch.kugou.com/v2/search/song?$queryStr');
     logger.d('[KG] uri: $uri');
 
-    final client = HttpClient();
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 10);
     final request = await client.getUrl(uri);
     request.headers.set('User-Agent',
         'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.101 Safari/537.36');
@@ -289,7 +291,8 @@ Future<Map<String, dynamic>?> kgLyric(String hash) async {
     final searchUri = Uri.parse('https://lyrics.kugou.com/v1/search?$queryStr');
     logger.d('[KG] lyric: search uri=$searchUri');
 
-    var client = HttpClient();
+    var client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 10);
     var request = await client.getUrl(searchUri);
     request.headers.set('User-Agent',
         'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.101 Safari/537.36');
@@ -334,7 +337,8 @@ Future<Map<String, dynamic>?> kgLyric(String hash) async {
         Uri.parse('http://lyrics.kugou.com/download?$downloadQueryStr');
     logger.d('[KG] lyric: download uri=$downloadUri');
 
-    client = HttpClient();
+    client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 10);
     request = await client.getUrl(downloadUri);
     request.headers.set('User-Agent',
         'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.101 Safari/537.36');
