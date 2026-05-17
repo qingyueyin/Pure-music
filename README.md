@@ -131,7 +131,7 @@
 - **窗口动画** — 窗口大小/位置变化平滑过渡
 - **用户播放列表** — 自定义歌单系统
 - **歌词防抖** — 手动滚动后自动恢复跟随
-- **内存优化** — 降低整体内存占用
+- **内存优化** — 降低整体内存占用以及内存泄漏
 
 ---
 
@@ -141,8 +141,8 @@
 pure-music/
 ├── lib/                          # Flutter 主代码
 │   ├── core/                     # 核心基础设施
-│   │   ├── lyric/                # 歌词核心 (models, parsers, sources)
-│   │   ├── net_lyrics/           # 网络歌词 (krc, qrc 解密)
+│   │   ├── lyric/                # 歌词核心
+│   │   ├── net_lyrics/           # 网络歌词
 │   │   ├── settings.dart         # 应用设置
 │   │   ├── theme.dart            # Material You 主题
 │   │   ├── hotkeys.dart          # 快捷键管理
