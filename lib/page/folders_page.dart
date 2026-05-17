@@ -18,13 +18,13 @@ class FoldersPage extends StatelessWidget {
     final contentList = List<AudioFolder>.from(AudioLibrary.instance.folders);
     return UniPage<AudioFolder>(
       pref: AppPreference.instance.foldersPagePref,
-      title: "文件夹",
-      subtitle: "${contentList.length} 个文件夹",
+      title: '文件夹',
+      subtitle: '${contentList.length} 个文件夹',
       contentList: contentList,
       primaryAction: FilledButton.icon(
         onPressed: () => showFolderManagerDialog(context),
         icon: const Icon(Symbols.folder),
-        label: const Text("文件夹管理"),
+        label: const Text('文件夹管理'),
         style: const ButtonStyle(
           fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
         ),
@@ -38,7 +38,7 @@ class FoldersPage extends StatelessWidget {
       sortMethods: [
         SortMethodDesc<AudioFolder>(
           icon: Symbols.title,
-          name: "路径",
+          name: '路径',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
@@ -52,7 +52,7 @@ class FoldersPage extends StatelessWidget {
         ),
         SortMethodDesc<AudioFolder>(
           icon: Symbols.edit,
-          name: "修改日期",
+          name: '修改日期',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
@@ -66,7 +66,7 @@ class FoldersPage extends StatelessWidget {
         ),
         SortMethodDesc<AudioFolder>(
           icon: Symbols.music_note,
-          name: "歌曲数量",
+          name: '歌曲数量',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
@@ -101,7 +101,7 @@ class AudioFolderTile extends StatelessWidget {
           maxLines: 1,
         ),
         subtitle: Text(
-          "修改日期：${DateTime.fromMillisecondsSinceEpoch(audioFolder.modified * 1000).toString().substring(0, 19)}",
+          '修改日期：${DateTime.fromMillisecondsSinceEpoch(audioFolder.modified * 1000).toString().substring(0, 19)}',
           softWrap: false,
           maxLines: 1,
         ),
