@@ -2,7 +2,7 @@ import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/core/utils.dart';
 import 'dart:io';
-import 'package:filepicker_windows/filepicker_windows.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
@@ -18,16 +18,16 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
   late double _preampDb;
   bool _isImportingFolder = false;
   static const _eqCenters = [
-    "80",
-    "100",
-    "125",
-    "250",
-    "500",
-    "1k",
-    "2k",
-    "4k",
-    "8k",
-    "16k"
+    '80',
+    '100',
+    '125',
+    '250',
+    '500',
+    '1k',
+    '2k',
+    '4k',
+    '8k',
+    '16k'
   ];
   static const _eqFreqs = [
     80.0,
@@ -51,24 +51,21 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
   }
 
   Future<void> _importWaveletEq() async {
-    final file = OpenFilePicker()
-      ..filterSpecification = {
-        'Wavelet AutoEq Files (*.txt)': '*.txt',
-        'All Files (*.*)': '*.*'
-      }
-      ..defaultFilterIndex = 0
-      ..defaultExtension = 'txt'
-      ..title = 'Select Wavelet GraphicEQ.txt';
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['txt'],
+      dialogTitle: 'Select Wavelet GraphicEQ.txt',
+    );
 
-    final result = file.getFile();
-    if (result != null) {
+    if (result != null && result.files.single.path != null) {
       try {
-        final content = await result.readAsString();
-        final fileName = result.path.split('\\').last.replaceAll('.txt', '');
+        final content = await File(result.files.single.path!).readAsString();
+        final fileName =
+            result.files.single.name.split('.').first.replaceAll('.txt', '');
         _applyWaveletEqFromContent(content, presetName: fileName);
       } catch (e) {
         if (mounted) {
-          showTextOnSnackBar("Import failed: $e");
+          showTextOnSnackBar('Import failed: $e');
         }
       }
     }
@@ -169,9 +166,9 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
       _isImportingFolder = true;
     });
 
-    final dirPicker = DirectoryPicker();
-    dirPicker.title = "选择 EQ 文件夹（批量导入 .txt）";
-    final selected = dirPicker.getDirectory();
+    final selected = await FilePicker.platform.getDirectoryPath(
+      dialogTitle: '选择 EQ 文件夹（批量导入 .txt）',
+    );
     if (selected == null) {
       if (mounted) {
         setState(() {
@@ -181,10 +178,10 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
       return;
     }
 
-    final folderPath = selected.path;
+    final folderPath = selected;
     final dir = Directory(folderPath);
     if (!dir.existsSync()) {
-      if (mounted) showTextOnSnackBar("未找到文件夹：$folderPath");
+      if (mounted) showTextOnSnackBar('未找到文件夹：$folderPath');
       setState(() {
         _isImportingFolder = false;
       });
@@ -200,7 +197,7 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
 
     if (files.isEmpty) {
       if (mounted) {
-        showTextOnSnackBar("该文件夹没有可导入的 .txt：$folderPath");
+        showTextOnSnackBar('该文件夹没有可导入的 .txt：$folderPath');
         setState(() {
           _isImportingFolder = false;
         });
@@ -227,7 +224,7 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
     }
 
     if (mounted) {
-      showTextOnSnackBar("已从文件夹导入 $ok 个，失败 $failed 个");
+      showTextOnSnackBar('已从文件夹导入 $ok 个，失败 $failed 个');
     }
 
     if (lastImportedName != null && lastImportedContent != null) {
@@ -269,16 +266,16 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text("保存预设"),
+        title: const Text('保存预设'),
         content: TextField(
           controller: controller,
-          decoration: const InputDecoration(labelText: "预设名称"),
+          decoration: const InputDecoration(labelText: '预设名称'),
           autofocus: true,
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text("取消"),
+            child: const Text('取消'),
           ),
           TextButton(
             onPressed: () {
@@ -289,7 +286,7 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
                 setState(() {}); // Refresh UI
               }
             },
-            child: const Text("保存"),
+            child: const Text('保存'),
           ),
         ],
       ),
@@ -319,7 +316,7 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
         children: [
           const Icon(Symbols.graphic_eq),
           const SizedBox(width: 12),
-          const Text("均衡器"),
+          const Text('均衡器'),
           const Spacer(),
           // Presets Menu
           MenuAnchor(
@@ -332,7 +329,7 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
                     controller.open();
                   }
                 },
-                tooltip: "预设",
+                tooltip: '预设',
                 icon: const Icon(Symbols.queue_music),
               );
             },
@@ -340,7 +337,7 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
               if (presets.isEmpty)
                 const MenuItemButton(
                   onPressed: null,
-                  child: Text("无预设"),
+                  child: Text('无预设'),
                 ),
               ...presets.map(
                 (preset) => MenuItemButton(
@@ -348,7 +345,7 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
                   trailingIcon: IconButton(
                     onPressed: () => _deletePreset(preset),
                     icon: const Icon(Symbols.close, size: 16),
-                    tooltip: "删除",
+                    tooltip: '删除',
                   ),
                   child: Text(preset.name),
                 ),
@@ -357,18 +354,18 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
               MenuItemButton(
                 onPressed: _savePreset,
                 leadingIcon: const Icon(Symbols.save),
-                child: const Text("保存当前为预设..."),
+                child: const Text('保存当前为预设...'),
               ),
             ],
           ),
           IconButton(
             onPressed: _importWaveletEq,
-            tooltip: "导入 Wavelet AutoEq",
+            tooltip: '导入 Wavelet AutoEq',
             icon: const Icon(Symbols.file_upload),
           ),
           IconButton(
             onPressed: _isImportingFolder ? null : _importEqFolder,
-            tooltip: "从文件夹批量导入",
+            tooltip: '从文件夹批量导入',
             icon: _isImportingFolder
                 ? const SizedBox(
                     width: 20,
@@ -379,7 +376,7 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
           ),
           if (!playbackService.isBassFxLoaded)
             Tooltip(
-              message: "BASS_FX not loaded",
+              message: 'BASS_FX not loaded',
               child: Icon(Symbols.error, color: scheme.error),
             ),
         ],
@@ -391,7 +388,7 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
           children: [
             Row(
               children: [
-                const Text("Preamp"),
+                const Text('Preamp'),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Slider(
@@ -410,7 +407,7 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
                 SizedBox(
                   width: 72,
                   child: Text(
-                    "${_preampDb.toStringAsFixed(1)}dB",
+                    '${_preampDb.toStringAsFixed(1)}dB',
                     textAlign: TextAlign.end,
                     style: TextStyle(color: scheme.onSurfaceVariant),
                   ),
@@ -426,7 +423,7 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
                   return Column(
                     children: [
                       Text(
-                        "${_gains[index].toInt()}",
+                        '${_gains[index].toInt()}',
                         style: TextStyle(
                           fontSize: 10,
                           color: scheme.onSurfaceVariant,
@@ -488,11 +485,11 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
             playbackService.setEqPreampDb(0.0);
             playbackService.savePreference();
           },
-          child: const Text("重置"),
+          child: const Text('重置'),
         ),
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text("关闭"),
+          child: const Text('关闭'),
         ),
       ],
     );
