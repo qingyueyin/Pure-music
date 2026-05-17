@@ -21,14 +21,13 @@ class DesktopLyricService extends ChangeNotifier {
   PlaybackService get _playbackService => playService.playbackService;
 
   Process? _process;
-  Completer<Process>? _processCompleter;
   StreamSubscription? _desktopLyricSubscription;
   StreamSubscription? _stderrSubscription;
   String _stdoutBuffer = '';
   Future<void> _sendQueue = Future.value();
 
   LyricLine? _currentLyricLine;
-  StreamSubscription? _positionStreamSub;
+  Timer? _positionTimer;
 
   bool isLocked = false;
   bool _isKilling = false;
@@ -42,29 +41,28 @@ class DesktopLyricService extends ChangeNotifier {
 
   void _monitorProcessExit(Process process) {
     process.exitCode.then((code) {
-      logger.i("[desktop lyric] process exited with code: $code");
+      logger.i('[desktop lyric] process exited with code: $code');
       if (_isRunning) {
         _cleanupAfterExit();
       }
     }).catchError((e) {
-      logger.w("[desktop lyric] process exit monitoring error: $e");
+      logger.w('[desktop lyric] process exit monitoring error: $e');
     });
   }
 
   void _cleanupAfterExit() {
     _desktopLyricSubscription?.cancel().catchError((_) {});
     _stderrSubscription?.cancel().catchError((_) {});
-    _positionStreamSub?.cancel().catchError((_) {});
     _desktopLyricSubscription = null;
     _stderrSubscription = null;
-    _positionStreamSub = null;
     _process = null;
-    _processCompleter = null;
     _sendQueue = Future.value();
     _stdoutBuffer = '';
     _isRunning = false;
     _isKilling = false;
     isLocked = false;
+    _positionTimer?.cancel();
+    _positionTimer = null;
     notifyListeners();
   }
 
@@ -79,11 +77,11 @@ class DesktopLyricService extends ChangeNotifier {
 
     final desktopLyricPath = path.join(
       path.dirname(Platform.resolvedExecutable),
-      "desktop_lyric",
+      'desktop_lyric',
       'desktop_lyric.exe',
     );
     if (!File(desktopLyricPath).existsSync()) {
-      logger.e("[desktop lyric] desktop_lyric.exe not found: $desktopLyricPath");
+      logger.e('[desktop lyric] desktop_lyric.exe not found: $desktopLyricPath');
       return;
     }
 
@@ -96,9 +94,9 @@ class DesktopLyricService extends ChangeNotifier {
       process = await Process.start(desktopLyricPath, [
         json.encode(msg.InitArgsMessage(
           _playbackService.playerState == PlayerState.playing,
-          nowPlaying?.title ?? "无",
-          nowPlaying?.artist ?? "无",
-          nowPlaying?.album ?? "无",
+          nowPlaying?.title ?? '无',
+          nowPlaying?.artist ?? '无',
+          nowPlaying?.album ?? '无',
           isDarkMode,
           currScheme.primary.toARGB32(),
           currScheme.surfaceContainer.toARGB32(),
@@ -106,17 +104,16 @@ class DesktopLyricService extends ChangeNotifier {
         ).toJson())
       ]);
     } catch (e) {
-      logger.e("[desktop lyric] failed to start process: $e");
+      logger.e('[desktop lyric] failed to start process: $e');
       return;
     }
 
     _process = process;
-    _processCompleter = Completer<Process>()..complete(process);
     _isRunning = true;
     _sendQueue = Future.value();
 
     _stderrSubscription = process.stderr.transform(utf8.decoder).listen(
-      (event) => logger.e("[desktop lyric] $event"),
+      (event) => logger.e('[desktop lyric] $event'),
     );
 
     _desktopLyricSubscription = process.stdout.transform(utf8.decoder).listen(
@@ -161,12 +158,12 @@ class DesktopLyricService extends ChangeNotifier {
         proc.stdin.writeln(message.buildMessageJson());
         await proc.stdin.flush();
       } catch (err, trace) {
-        logger.e("[desktop lyric] send message error: $err", stackTrace: trace);
+        logger.e('[desktop lyric] send message error: $err', stackTrace: trace);
         _process = null;
         _isRunning = false;
       }
     }).catchError((e) {
-      logger.w("[desktop lyric] send queue error: $e");
+      logger.w('[desktop lyric] send queue error: $e');
     });
   }
 
@@ -176,8 +173,8 @@ class DesktopLyricService extends ChangeNotifier {
     _isKilling = true;
     notifyListeners();
 
-    _positionStreamSub?.cancel();
-    _positionStreamSub = null;
+    _positionTimer?.cancel();
+    _positionTimer = null;
 
     final process = _process;
     if (process != null) {
@@ -194,7 +191,7 @@ class DesktopLyricService extends ChangeNotifier {
           }
         }
       } catch (e) {
-        logger.w("[desktop lyric] killDesktopLyric error: $e");
+        logger.w('[desktop lyric] killDesktopLyric error: $e');
       }
     }
 
@@ -202,7 +199,7 @@ class DesktopLyricService extends ChangeNotifier {
   }
 
   void sendUnlockMessage() {
-    sendMessage(msg.UnlockMessage());
+    sendMessage(const msg.UnlockMessage());
     isLocked = false;
     notifyListeners();
   }
@@ -224,14 +221,21 @@ class DesktopLyricService extends ChangeNotifier {
   void sendPlayerStateMessage(bool isPlaying) {
     sendMessage(msg.PlayerStateChangedMessage(isPlaying));
     
-    _positionStreamSub?.cancel();
-    _positionStreamSub = null;
+    if (_positionTimer != null) {
+      _positionTimer?.cancel();
+      _positionTimer = null;
+    }
     
     if (isPlaying) {
-      _positionStreamSub = _playbackService.positionStream.listen((_) {
-        _sendPositionMessage();
-      });
+      _startPositionTimer();
     }
+  }
+
+  void _startPositionTimer() {
+    _positionTimer?.cancel();
+    _positionTimer = Timer.periodic(const Duration(milliseconds: 20), (_) {
+      _sendPositionMessage();
+    });
   }
 
   void _sendPositionMessage() {
@@ -299,12 +303,12 @@ class DesktopLyricService extends ChangeNotifier {
                 w.content,
               ))
           .toList();
-      logger.i("[desktop lyric] sendLyricLineMessage: line is SyncLyricLine, words count = ${words.length}, progressMs=$progressMs");
+      logger.i('[desktop lyric] sendLyricLineMessage: line is SyncLyricLine, words count = ${words.length}, progressMs=$progressMs');
       if (words.isNotEmpty) {
-        logger.i("[desktop lyric] first word: ${words[0].content}, startMs=${words[0].startMs}, lengthMs=${words[0].lengthMs}");
+        logger.i('[desktop lyric] first word: ${words[0].content}, startMs=${words[0].startMs}, lengthMs=${words[0].lengthMs}');
       }
     } else {
-      logger.i("[desktop lyric] sendLyricLineMessage: line is ${line.runtimeType}, words = null");
+      logger.i('[desktop lyric] sendLyricLineMessage: line is ${line.runtimeType}, words = null');
     }
 
     String? nextContent;
@@ -342,7 +346,7 @@ class DesktopLyricService extends ChangeNotifier {
         nextWords,
       ));
     } else if (line is LrcLine) {
-      final splitted = line.content.split("┃");
+      final splitted = line.content.split('┃');
       final content = splitted.first;
       final translation = splitted.length > 1 ? splitted[1] : null;
       final progressMs = ((_playbackService.position * 1000).round() -
@@ -364,8 +368,8 @@ class DesktopLyricService extends ChangeNotifier {
   void _handleDesktopLyricMessage(String raw) {
     try {
       final Map messageMap = json.decode(raw);
-      final String messageType = messageMap["type"];
-      final messageContent = messageMap["message"] as Map<String, dynamic>;
+      final String messageType = messageMap['type'];
+      final messageContent = messageMap['message'] as Map<String, dynamic>;
       if (messageType == msg.getMessageTypeName<msg.ControlEventMessage>()) {
         final controlEvent = msg.ControlEventMessage.fromJson(messageContent);
         switch (controlEvent.event) {
@@ -391,7 +395,7 @@ class DesktopLyricService extends ChangeNotifier {
         }
       }
     } catch (err) {
-      logger.e("[desktop lyric] $err");
+      logger.e('[desktop lyric] $err');
     }
   }
 
