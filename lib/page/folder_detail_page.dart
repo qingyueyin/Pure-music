@@ -19,7 +19,7 @@ class FolderDetailPage extends StatelessWidget {
     return UniPage<Audio>(
       pref: AppPreference.instance.folderDetailPagePref,
       title: folder.path,
-      subtitle: "${contentList.length} 首乐曲",
+      subtitle: '${contentList.length} 首乐曲',
       contentList: contentList,
       contentBuilder: (context, item, i, multiSelectController, _) => AudioTile(
         audioIndex: i,
@@ -42,7 +42,7 @@ class FolderDetailPage extends StatelessWidget {
       sortMethods: [
         SortMethodDesc(
           icon: Symbols.title,
-          name: "标题",
+          name: '标题',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
@@ -56,7 +56,7 @@ class FolderDetailPage extends StatelessWidget {
         ),
         SortMethodDesc(
           icon: Symbols.artist,
-          name: "艺术家",
+          name: '艺术家',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
@@ -70,7 +70,7 @@ class FolderDetailPage extends StatelessWidget {
         ),
         SortMethodDesc(
           icon: Symbols.album,
-          name: "专辑",
+          name: '专辑',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
@@ -84,7 +84,7 @@ class FolderDetailPage extends StatelessWidget {
         ),
         SortMethodDesc(
           icon: Symbols.add,
-          name: "创建时间",
+          name: '创建时间',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
@@ -98,7 +98,7 @@ class FolderDetailPage extends StatelessWidget {
         ),
         SortMethodDesc(
           icon: Symbols.edit,
-          name: "修改时间",
+          name: '修改时间',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:

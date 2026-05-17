@@ -5,7 +5,7 @@ import 'package:pure_music/component/build_index_state_view.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/lyric/lyric_source.dart';
-import 'package:filepicker_windows/filepicker_windows.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
@@ -51,7 +51,7 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
               Padding(
                 padding: const EdgeInsets.only(bottom: 16.0),
                 child: Text(
-                  "管理文件夹",
+                  '管理文件夹',
                   style: TextStyle(
                     color: scheme.onSurface,
                     fontSize: 18.0,
@@ -68,7 +68,7 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
                           itemBuilder: (context, i) => ListTile(
                             title: Text(folders[i], maxLines: 1),
                             trailing: IconButton(
-                              tooltip: "移除",
+                              tooltip: '移除',
                               color: scheme.error,
                               onPressed: () {
                                 setState(() {
@@ -84,7 +84,7 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
                           builder: (context, snapshot) {
                             if (snapshot.data == null) {
                               return const Center(
-                                child: Text("Fail to get app data dir."),
+                                child: Text('Fail to get app data dir.'),
                               );
                             }
 
@@ -120,22 +120,21 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
                 children: [
                   TextButton(
                     onPressed: () async {
-                      final dirPicker = DirectoryPicker();
-                      dirPicker.title = "选择文件夹";
-
-                      final dir = dirPicker.getDirectory();
-                      if (dir == null) return;
+                      final path = await FilePicker.platform.getDirectoryPath(
+                        dialogTitle: '选择文件夹',
+                      );
+                      if (path == null) return;
 
                       setState(() {
-                        folders.add(dir.path);
+                        folders.add(path);
                       });
                     },
-                    child: const Text("添加"),
+                    child: const Text('添加'),
                   ),
                   const SizedBox(width: 8.0),
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text("取消"),
+                    child: const Text('取消'),
                   ),
                   const SizedBox(width: 8.0),
                   TextButton(
@@ -163,7 +162,7 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
                         editing = false;
                       });
                     },
-                    child: const Text("确定"),
+                    child: const Text('确定'),
                   ),
                 ],
               )
