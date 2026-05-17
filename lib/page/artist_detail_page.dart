@@ -28,7 +28,7 @@ class ArtistDetailPage extends StatelessWidget {
       backgroundPic: artist.works.first.cover,
       picShape: PicShape.oval,
       title: artist.name,
-      subtitle: "${artist.works.length} 首作品",
+      subtitle: '${artist.works.length} 首作品',
       secondaryContent: secondaryContent,
       secondaryContentBuilder: (context, audio, i, multiSelectController, _) =>
           AudioTile(
@@ -36,7 +36,7 @@ class ArtistDetailPage extends StatelessWidget {
         playlist: secondaryContent,
         multiSelectController: multiSelectController,
       ),
-      tertiaryContentTitle: "专辑",
+      tertiaryContentTitle: '专辑',
       tertiaryContent: artist.albumsMap.values.toList(),
       tertiaryContentBuilder: (context, album, i, multiSelectController, _) =>
           ListTile(
@@ -60,7 +60,7 @@ class ArtistDetailPage extends StatelessWidget {
       sortMethods: [
         SortMethodDesc(
           icon: Symbols.title,
-          name: "标题",
+          name: '标题',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
@@ -74,7 +74,7 @@ class ArtistDetailPage extends StatelessWidget {
         ),
         SortMethodDesc(
           icon: Symbols.album,
-          name: "专辑",
+          name: '专辑',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
@@ -88,7 +88,7 @@ class ArtistDetailPage extends StatelessWidget {
         ),
         SortMethodDesc(
           icon: Symbols.add,
-          name: "创建时间",
+          name: '创建时间',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
@@ -102,7 +102,7 @@ class ArtistDetailPage extends StatelessWidget {
         ),
         SortMethodDesc(
           icon: Symbols.edit,
-          name: "修改时间",
+          name: '修改时间',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
