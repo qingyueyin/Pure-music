@@ -80,7 +80,7 @@ class _AlbumTileState extends State<AlbumTile> {
               extra: widget.album,
             ),
             leadingIcon: const Icon(Symbols.open_in_new),
-            child: const Text("打开"),
+            child: const Text('打开'),
           ),
           if (widget.multiSelectController != null)
             MenuItemButton(
@@ -90,7 +90,7 @@ class _AlbumTileState extends State<AlbumTile> {
                 widget.multiSelectController!.select(widget.album);
               },
               leadingIcon: const Icon(Symbols.select),
-              child: const Text("多选"),
+              child: const Text('多选'),
             ),
         ],
         builder: (context, controller, _) => AnimatedContainer(
