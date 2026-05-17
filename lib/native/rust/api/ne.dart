@@ -6,16 +6,16 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `aes_decrypt`, `aes_encrypt`, `eapi_params_encrypt`, `eapi_response_decrypt`, `generate_device_id`, `get_anonimous_username`, `get_cache_key`, `get_current_timestamp`, `get_params_header`, `get_request_header`, `pkcs7_pad`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `CloudMusicResult`
+// These functions are ignored because they are not marked as `pub`: `aes_decrypt`, `aes_encrypt`, `eapi_md5`, `eapi_params_encrypt`, `eapi_response_decrypt`, `generate_device_id`, `get_anonimous_username`, `get_cache_key`, `get_current_timestamp`, `get_params_header`, `get_request_header`, `get`, `hex_preview`, `lyric_cache`, `new`, `now_ms`, `pkcs7_pad`, `put`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `CloudMusicResult`, `LyricCache`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`
+
+Future<String> neLyric({required PlatformInt64 songId}) =>
+    RustLib.instance.api.crateApiNeNeLyric(songId: songId);
 
 List<Map<String, String>> neSearch(
         {required String keyword, required int limit}) =>
     RustLib.instance.api.crateApiNeNeSearch(keyword: keyword, limit: limit);
-
-String neLyric({required PlatformInt64 songId}) =>
-    RustLib.instance.api.crateApiNeNeLyric(songId: songId);
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<NetEaseCloud>>
 abstract class NetEaseCloud implements RustOpaqueInterface {
@@ -30,6 +30,7 @@ abstract class NetEaseCloud implements RustOpaqueInterface {
   static Future<NetEaseCloud> newInstance() =>
       RustLib.instance.api.crateApiNeNetEaseCloudNew();
 
+  /// Search exactly like Lyrico's NeSource.search
   Future<List<Map<String, String>>> search(
       {required String keyword, required int limit});
 }
