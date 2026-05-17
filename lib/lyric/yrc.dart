@@ -6,14 +6,14 @@ class Yrc extends Lyric {
 
   static Yrc fromYrcText(String yrc, [String? transRawStr]) {
     final List<YrcLine> lines = [];
-    final splited = yrc.split("\n");
+    final splited = yrc.split('\n');
 
     int? offsetInMilliseconds;
     final offsetPattern = RegExp(r'\[\s*offset\s*:\s*([+-]?\d+)\s*\]');
     for (final line in splited) {
       final matched = offsetPattern.firstMatch(line);
       if (matched == null) continue;
-      offsetInMilliseconds = int.tryParse(matched.group(1) ?? "");
+      offsetInMilliseconds = int.tryParse(matched.group(1) ?? '');
       break;
     }
     final offset = offsetInMilliseconds ?? 0;
@@ -26,17 +26,17 @@ class Yrc extends Lyric {
 
     if (transRawStr != null) {
       int lineIt = 0;
-      final splitedTrans = transRawStr.split("\n");
+      final splitedTrans = transRawStr.split('\n');
       for (var transLine in splitedTrans) {
         if (lineIt > lines.length - 1) break;
 
-        final bracketStart = transLine.indexOf("[");
-        final bracketEnd = transLine.indexOf("]");
+        final bracketStart = transLine.indexOf('[');
+        final bracketEnd = transLine.indexOf(']');
         if (bracketStart == -1 || bracketEnd == -1 || bracketEnd <= bracketStart) continue;
 
         final timeStr = transLine.substring(bracketStart + 1, bracketEnd);
-        if (int.tryParse(timeStr.split(":").first) != null) {
-          final t = transLine.replaceAll(RegExp(r"\[\d{2}:\d{2}\.\d{2,}\]"), "");
+        if (int.tryParse(timeStr.split(':').first) != null) {
+          final t = transLine.replaceAll(RegExp(r'\[\d{2}:\d{2}\.\d{2,}\]'), '');
           if (t.isNotEmpty) {
             lines[lineIt].translation = t;
             lineIt += 1;
@@ -80,11 +80,11 @@ class YrcLine extends SyncLyricLine {
   }
 
   static YrcLine? fromLine(String line, [String? translation, int offset = 0]) {
-    final splitedLine = line.split("]");
+    final splitedLine = line.split(']');
     if (splitedLine.isEmpty) return null;
 
-    final from = splitedLine[0].indexOf("[") + 1;
-    final splitedTime = splitedLine[0].substring(from).split(",");
+    final from = splitedLine[0].indexOf('[') + 1;
+    final splitedTime = splitedLine[0].substring(from).split(',');
 
     if (splitedTime.length != 2) return null;
 

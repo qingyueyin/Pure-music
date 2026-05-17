@@ -3,6 +3,5 @@ export 'lrc.dart';
 export 'lyric.dart';
 export 'lyric_source.dart';
 export 'qrc.dart';
-export 'qrc_decryptor.dart';
 export 'ttml.dart';
 export 'yrc.dart';
