@@ -15,10 +15,11 @@ Future<void> readPlaylists() async {
   PLAYLISTS = [];
   try {
     final dir = await getAppDataDir();
-    final jsonFile = File("${dir.path}\\playlists.json");
+    final jsonFile = File('${dir.path}\\playlists.json');
 
     final db = await AppDb.instance.db();
-    final playlistCount = db.select("SELECT COUNT(1) AS c FROM playlists").first["c"] as int;
+    final playlistCount =
+        db.select('SELECT COUNT(1) AS c FROM playlists').first['c'] as int;
     if (playlistCount == 0 && jsonFile.existsSync()) {
       final fromJson = _readPlaylistsFromJson(jsonFile);
       _writePlaylistsToDb(db, fromJson);
@@ -27,25 +28,19 @@ Future<void> readPlaylists() async {
     }
 
     final playlists = <Playlist>[];
-    final rows = db.select("SELECT id, name FROM playlists ORDER BY name");
+    final rows = db.select('SELECT id, name FROM playlists ORDER BY name');
     for (final row in rows) {
-      final id = row["id"] as int;
-      final name = row["name"] as String;
-      final audios = <String, Audio>{};
+      final id = row['id'] as int;
+      final name = row['name'] as String;
+      final paths = <String>[];
       final items = db.select(
-        "SELECT path, audio_json FROM playlist_items WHERE playlist_id = ? ORDER BY path",
+        'SELECT path FROM playlist_items WHERE playlist_id = ? ORDER BY path',
         [id],
       );
       for (final item in items) {
-        final p = item["path"] as String;
-        final raw = item["audio_json"] as String;
-        final decoded = json.decode(raw);
-        if (decoded is Map) {
-          final audio = Audio.fromMap(decoded);
-          audios[p] = audio;
-        }
+        paths.add(item['path'] as String);
       }
-      playlists.add(Playlist(name, audios));
+      playlists.add(Playlist(name, paths));
     }
     PLAYLISTS = playlists;
   } catch (err, trace) {
@@ -76,23 +71,23 @@ List<Playlist> _readPlaylistsFromJson(File jsonFile) {
 }
 
 void _writePlaylistsToDb(Database db, List<Playlist> playlists) {
-  db.execute("BEGIN");
+  db.execute('BEGIN');
   try {
-    db.execute("DELETE FROM playlist_items");
-    db.execute("DELETE FROM playlists");
+    db.execute('DELETE FROM playlist_items');
+    db.execute('DELETE FROM playlists');
     for (final pl in playlists) {
-      db.execute("INSERT INTO playlists(name) VALUES(?)", [pl.name]);
+      db.execute('INSERT INTO playlists(name) VALUES(?)', [pl.name]);
       final playlistId = db.lastInsertRowId;
-      for (final e in pl.audios.entries) {
+      for (final p in pl.paths) {
         db.execute(
-          "INSERT INTO playlist_items(playlist_id, path, audio_json) VALUES(?, ?, ?)",
-          [playlistId, e.key, json.encode(e.value.toMap())],
+          'INSERT INTO playlist_items(playlist_id, path) VALUES(?, ?)',
+          [playlistId, p],
         );
       }
     }
-    db.execute("COMMIT");
+    db.execute('COMMIT');
   } catch (_) {
-    db.execute("ROLLBACK");
+    db.execute('ROLLBACK');
     rethrow;
   }
 }
@@ -100,30 +95,43 @@ void _writePlaylistsToDb(Database db, List<Playlist> playlists) {
 class Playlist {
   String name;
 
-  /// path, audio
-  Map<String, Audio> audios;
+  List<String> paths;
 
-  Playlist(this.name, this.audios);
+  Playlist(this.name, this.paths);
 
-  Map toMap() {
-    final List<Map> audioMaps = [];
-    for (var item in audios.values) {
-      audioMaps.add(item.toMap());
+  List<Audio> get audios => paths
+      .map((p) => AudioLibrary.instance.audioCollection
+          .firstWhere((a) => a.path == p))
+      .whereType<Audio>()
+      .toList();
+
+  bool containsPath(String path) => paths.contains(path);
+
+  void addPath(String path) {
+    if (!paths.contains(path)) {
+      paths.add(path);
     }
-    return {"name": name, "audios": audioMaps};
   }
 
+  void removeByPath(String path) {
+    paths.remove(path);
+  }
+
+  Map toMap() => {'name': name, 'audios': paths};
+
   factory Playlist.fromMap(Map map) {
-    final Map<String, Audio> audios = {};
-    final rawAudios = map["audios"];
+    final paths = <String>[];
+    final rawAudios = map['audios'];
     if (rawAudios is List) {
       for (var item in rawAudios) {
         if (item is Map) {
-          final audio = Audio.fromMap(item);
-          audios[audio.path] = audio;
+          final p = item['path'];
+          if (p is String) paths.add(p);
+        } else if (item is String) {
+          paths.add(item);
         }
       }
     }
-    return Playlist(map["name"] ?? '', audios);
+    return Playlist(map['name'] ?? '', paths);
   }
 }
