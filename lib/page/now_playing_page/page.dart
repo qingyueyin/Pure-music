@@ -96,6 +96,8 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
       if (_nowPlayingCoverPath != null || nowPlayingCover != null) {
         _coverDebounceTimer?.cancel();
         _coverRequestToken++;
+        // 切到无歌曲时，清理 Flutter ImageCache 中旧封面的缓存
+        PaintingBinding.instance.imageCache.clear();
         setState(() {
           _nowPlayingCoverPath = null;
           nowPlayingCover = null;
@@ -107,6 +109,12 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     }
 
     if (path == _nowPlayingCoverPath) return;
+    // 切歌时：主动 evict 旧 Audio 的 cover ImageProvider，释放 ImageCache 中的旧条目
+    final oldPath = _nowPlayingCoverPath;
+    if (oldPath != null) {
+      final oldAudio = AudioLibrary.instance.audioCollection.where((a) => a.path == oldPath).firstOrNull;
+      oldAudio?.evictCoverCache();
+    }
     _nowPlayingCoverPath = path;
 
     _coverDebounceTimer?.cancel();
@@ -207,192 +215,164 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
         if (immersive != _lastImmersive) {
           _lastImmersive = immersive;
         }
-        return AnimatedSwitcher(
-          duration: const Duration(milliseconds: 520),
-          switchInCurve: Curves.easeInOutCubic,
-          switchOutCurve: Curves.easeInOutCubic,
-          layoutBuilder: (currentChild, previousChildren) {
-            return Stack(
+        return Scaffold(
+          appBar: null,
+          backgroundColor: Colors.transparent,
+          drawer: SizedBox(width: drawerWidth, child: const SideNav()),
+          drawerEnableOpenDragGesture: !immersive,
+          body: Listener(
+            onPointerDown: (_) {
+              _bumpCursor();
+            },
+            onPointerMove: (_) {
+              _bumpCursor();
+            },
+            onPointerHover: (_) {
+              _bumpCursor();
+            },
+            child: Stack(
               fit: StackFit.expand,
+              alignment: AlignmentDirectional.center,
               children: [
-                ...previousChildren,
-                if (currentChild != null) currentChild,
-              ],
-            );
-          },
-          transitionBuilder: (child, animation) {
-            final fade = CurvedAnimation(
-              parent: animation,
-              curve: Curves.easeInOutCubic,
-            );
-            final scale = Tween<double>(begin: 0.985, end: 1.0).animate(fade);
-            return FadeTransition(
-              opacity: fade,
-              child: ScaleTransition(scale: scale, child: child),
-            );
-          },
-          child: KeyedSubtree(
-            key: ValueKey(immersive),
-            child: Scaffold(
-              appBar: null,
-              backgroundColor: Colors.transparent,
-              drawer: SizedBox(width: drawerWidth, child: const SideNav()),
-              drawerEnableOpenDragGesture: !immersive,
-              body: Listener(
-                onPointerDown: (_) {
-                  _bumpCursor();
-                },
-                onPointerMove: (_) {
-                  _bumpCursor();
-                },
-                onPointerHover: (_) {
-                  _bumpCursor();
-                },
-                child: Stack(
-                  fit: StackFit.expand,
-                  alignment: AlignmentDirectional.center,
-                  children: [
-                    RepaintBoundary(
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          ColoredBox(color: scheme.surface),
-                          ValueListenableBuilder<NowPlayingBackgroundMode>(
-                            valueListenable: nowPlayingBackgroundModeNotifier,
-                            builder: (context, backgroundMode, _) {
-                              return StreamBuilder<PlayerState>(
-                                stream: playbackService.playerStateStream,
-                                initialData: playbackService.playerState,
-                                builder: (context, snapshot) {
-                                  final playerState =
-                                      snapshot.data ?? playbackService.playerState;
-                                  final backgroundInputs =
-                                      NowPlayingBackgroundInputs(
-                                    albumCoverBytes: _nowPlayingCoverBytes,
-                                    dominantColor: _dominantColor,
-                                    spectrumStream: playbackService.spectrumStream,
-                                    enableAnimation: true,
-                                    isVisible:
-                                        ModalRoute.of(context)?.isCurrent ?? true,
-                                    playerState: playerState,
-                                    flowSpeed: 1.0,
-                                    intensity:
-                                        brightness == Brightness.dark ? 1.0 : 0.9,
-                                  );
-                                  final softBg = _dominantColor != null
-                                      ? _softenColor(_dominantColor!, isDark: brightness == Brightness.dark)
-                                      : _softenColor(scheme.primary, isDark: brightness == Brightness.dark);
-                                  return NowPlayingBackground(
-                                    mode: backgroundMode,
-                                    inputs: backgroundInputs,
-                                    fallbackColor: softBg,
-                                  );
-                                },
+                RepaintBoundary(
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      ColoredBox(color: scheme.surface),
+                      ValueListenableBuilder<NowPlayingBackgroundMode>(
+                        valueListenable: nowPlayingBackgroundModeNotifier,
+                        builder: (context, backgroundMode, _) {
+                          return StreamBuilder<PlayerState>(
+                            stream: playbackService.playerStateStream,
+                            initialData: playbackService.playerState,
+                            builder: (context, snapshot) {
+                              final playerState =
+                                  snapshot.data ?? playbackService.playerState;
+                              final backgroundInputs =
+                                  NowPlayingBackgroundInputs(
+                                albumCoverBytes: _nowPlayingCoverBytes,
+                                dominantColor: _dominantColor,
+                                spectrumStream: playbackService.spectrumStream,
+                                enableAnimation: true,
+                                isVisible:
+                                    ModalRoute.of(context)?.isCurrent ?? true,
+                                playerState: playerState,
+                                flowSpeed: 1.0,
+                                intensity:
+                                    brightness == Brightness.dark ? 1.0 : 0.9,
+                              );
+                              final softBg = _dominantColor != null
+                                  ? _softenColor(_dominantColor!, isDark: brightness == Brightness.dark)
+                                  : _softenColor(scheme.primary, isDark: brightness == Brightness.dark);
+                              return NowPlayingBackground(
+                                mode: backgroundMode,
+                                inputs: backgroundInputs,
+                                fallbackColor: softBg,
                               );
                             },
-                          ),
-                        ],
+                          );
+                        },
                       ),
+                    ],
+                  ),
+                ),
+                IconButtonTheme(
+                  data: IconButtonThemeData(
+                    style: ButtonStyle(
+                      backgroundColor: const WidgetStatePropertyAll(
+                        Colors.transparent,
+                      ),
+                      overlayColor:
+                          WidgetStateProperty.resolveWith((states) {
+                        if (states.contains(WidgetState.pressed)) {
+                          return scheme.onSecondaryContainer.withValues(
+                            alpha: 0.04,
+                          );
+                        }
+                        if (states.contains(WidgetState.hovered) ||
+                            states.contains(WidgetState.focused)) {
+                          return scheme.onSecondaryContainer.withValues(
+                            alpha: 0.02,
+                          );
+                        }
+                        return Colors.transparent;
+                      }),
                     ),
-                    IconButtonTheme(
-                      data: IconButtonThemeData(
-                        style: ButtonStyle(
-                          backgroundColor: const WidgetStatePropertyAll(
-                            Colors.transparent,
+                  ),
+                  child: ChangeNotifierProvider.value(
+                    value: PlayService.instance.playbackService,
+                    builder: (context, _) => immersive
+                        ? const _NowPlayingImmersivePage()
+                        : ResponsiveBuilder2(
+                            builder: (context, screenType) {
+                              switch (screenType) {
+                                case ScreenType.small:
+                                  return const _NowPlayingSmallPage();
+                                case ScreenType.medium:
+                                case ScreenType.large:
+                                  return const _NowPlayingLargePage();
+                              }
+                            },
                           ),
-                          overlayColor:
-                              WidgetStateProperty.resolveWith((states) {
-                            if (states.contains(WidgetState.pressed)) {
-                              return scheme.onSecondaryContainer.withValues(
-                                alpha: 0.04,
-                              );
-                            }
-                            if (states.contains(WidgetState.hovered) ||
-                                states.contains(WidgetState.focused)) {
-                              return scheme.onSecondaryContainer.withValues(
-                                alpha: 0.02,
-                              );
-                            }
-                            return Colors.transparent;
-                          }),
-                        ),
-                      ),
-                      child: ChangeNotifierProvider.value(
-                        value: PlayService.instance.playbackService,
-                        builder: (context, _) => immersive
-                            ? const _NowPlayingImmersivePage()
-                            : ResponsiveBuilder2(
-                                builder: (context, screenType) {
-                                  switch (screenType) {
-                                    case ScreenType.small:
-                                      return const _NowPlayingSmallPage();
-                                    case ScreenType.medium:
-                                    case ScreenType.large:
-                                      return const _NowPlayingLargePage();
-                                  }
-                                },
-                              ),
-                      ),
-                    ),
-                    if (immersive) const _ImmersiveHelpOverlay(),
-                    if (!immersive)
-                      Positioned(
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        height: 56.0,
-                        child: SafeArea(
-                          bottom: false,
-                          child: Padding(
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 12.0),
-                            child: AnimatedOpacity(
-                              duration: const Duration(milliseconds: 150),
-                              opacity: _cursorHidden ? 0.0 : 1.0,
-                              child: IgnorePointer(
-                                ignoring: _cursorHidden,
-                                child: Row(
-                                  children: [
-                                    ResponsiveBuilder2(
-                                      builder: (context, screenType) {
-                                        if (screenType != ScreenType.small) {
-                                          return const SizedBox.shrink();
-                                        }
-                                        return Builder(
-                                          builder: (context) => IconButton(
-                                            tooltip: "侧边栏",
-                                            onPressed: () {
-                                              Scaffold.of(context).openDrawer();
-                                            },
-                                            icon: const Icon(Symbols.menu),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                    const NavBackBtn(),
-                                    const Expanded(
-                                      child: DragToMoveArea(
-                                        child: SizedBox.expand(),
+                  ),
+                ),
+                if (immersive) const _ImmersiveHelpOverlay(),
+                if (!immersive)
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    height: 56.0,
+                    child: SafeArea(
+                      bottom: false,
+                      child: Padding(
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 12.0),
+                        child: AnimatedOpacity(
+                          duration: const Duration(milliseconds: 150),
+                          opacity: _cursorHidden ? 0.0 : 1.0,
+                          child: IgnorePointer(
+                            ignoring: _cursorHidden,
+                            child: Row(
+                              children: [
+                                ResponsiveBuilder2(
+                                  builder: (context, screenType) {
+                                    if (screenType != ScreenType.small) {
+                                      return const SizedBox.shrink();
+                                    }
+                                    return Builder(
+                                      builder: (context) => IconButton(
+                                        tooltip: '侧边栏',
+                                        onPressed: () {
+                                          Scaffold.of(context).openDrawer();
+                                        },
+                                        icon: const Icon(Symbols.menu),
                                       ),
-                                    ),
-                                    const WindowControlls(),
-                                  ],
+                                    );
+                                  },
                                 ),
-                              ),
+                                const NavBackBtn(),
+                                const Expanded(
+                                  child: DragToMoveArea(
+                                    child: SizedBox.expand(),
+                                  ),
+                                ),
+                                const WindowControlls(),
+                              ],
                             ),
                           ),
                         ),
                       ),
-                    if (_cursorHidden)
-                      const Positioned.fill(
-                        child: MouseRegion(
-                          cursor: SystemMouseCursors.none,
-                          child: SizedBox.expand(),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
+                    ),
+                  ),
+                if (_cursorHidden)
+                  const Positioned.fill(
+                    child: MouseRegion(
+                      cursor: SystemMouseCursors.none,
+                      child: SizedBox.expand(),
+                    ),
+                  ),
+              ],
             ),
           ),
         );
@@ -410,13 +390,13 @@ class _ExclusiveModeSwitch extends StatelessWidget {
     return ValueListenableBuilder(
       valueListenable: PlayService.instance.playbackService.wasapiExclusive,
       builder: (context, exclusive, _) => IconButton(
-        tooltip: exclusive ? "关闭独占" : "打开独占",
+        tooltip: exclusive ? '关闭独占' : '打开独占',
         onPressed: () {
           PlayService.instance.playbackService.useExclusiveMode(!exclusive);
         },
         icon: Center(
           child: Text(
-            exclusive ? "Excl" : "Shrd",
+            exclusive ? 'Excl' : 'Shrd',
             style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
           ),
         ),
@@ -447,7 +427,7 @@ class _NowPlayingMoreAction extends StatelessWidget {
 
     if (nowPlaying == null) {
       return IconButton(
-        tooltip: "更多",
+        tooltip: '更多',
         onPressed: null,
         icon: const Icon(Symbols.more_vert),
         color: scheme.onSurface,
@@ -494,21 +474,21 @@ class _NowPlayingMoreAction extends StatelessWidget {
                 style: menuItemStyle,
                 onPressed: () {
                   final added =
-                      PLAYLISTS[i].audios.containsKey(nowPlaying.path);
+                      PLAYLISTS[i].audios.any((a) => a.path == nowPlaying.path);
                   if (added) {
-                    showTextOnSnackBar("歌曲“${nowPlaying.title}”已存在");
+                    showTextOnSnackBar('歌曲"${nowPlaying.title}"已存在');
                     return;
                   }
-                  PLAYLISTS[i].audios[nowPlaying.path] = nowPlaying;
+                  PLAYLISTS[i].audios.add(nowPlaying);
                   showTextOnSnackBar(
-                    "成功将“${nowPlaying.title}”添加到歌单“${PLAYLISTS[i].name}”",
+                    '成功将“${nowPlaying.title}”添加到歌单“${PLAYLISTS[i].name}”',
                   );
                 },
                 leadingIcon: const Icon(Symbols.queue_music),
                 child: Text(PLAYLISTS[i].name),
               ),
             ),
-            child: const Text("添加到歌单"),
+            child: const Text('添加到歌单'),
           ),
           MenuItemButton(
             style: menuItemStyle,
@@ -519,7 +499,7 @@ class _NowPlayingMoreAction extends StatelessWidget {
               );
             },
             leadingIcon: const Icon(Symbols.lyrics),
-            child: const Text("歌词来源"),
+            child: const Text('歌词来源'),
           ),
           MenuItemButton(
             style: menuItemStyle,
@@ -528,11 +508,11 @@ class _NowPlayingMoreAction extends StatelessWidget {
                   extra: nowPlaying);
             },
             leadingIcon: const Icon(Symbols.info),
-            child: const Text("详细信息"),
+            child: const Text('详细信息'),
           ),
         ],
         builder: (context, controller, _) => IconButton(
-          tooltip: "更多",
+          tooltip: '更多',
           onPressed: () {
             if (controller.isOpen) {
               controller.close();
@@ -564,7 +544,7 @@ class _DesktopLyricSwitch extends StatelessWidget {
         // 关闭过程中显示 loading 并禁用按钮
         if (isKilling) {
           return IconButton(
-            tooltip: "正在关闭桌面歌词...",
+            tooltip: '正在关闭桌面歌词...',
             onPressed: null,
             icon: const SizedBox(
               width: 20,
@@ -577,10 +557,10 @@ class _DesktopLyricSwitch extends StatelessWidget {
         
         return IconButton(
           tooltip: !isRunning
-              ? "打开桌面歌词"
+              ? '打开桌面歌词'
               : desktopLyricService.isLocked
-                  ? "解锁桌面歌词"
-                  : "关闭桌面歌词",
+                  ? '解锁桌面歌词'
+                  : '关闭桌面歌词',
           onPressed: !isRunning
               ? desktopLyricService.startDesktopLyric
               : desktopLyricService.isLocked
@@ -616,6 +596,7 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
   bool isDragging = false;
   bool isSystemDragging = false;
   bool _isMenuOpen = false;
+  bool _disposed = false;
   double _lastVolumeDsp = -1;
   Timer? _systemVolBoostTimer;
   late final VoidCallback _systemVolValueListener;
@@ -629,11 +610,12 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
   Timer? _autoCloseTimer;
   int _lastVolumeHotkeySerial = 0;
   late final VoidCallback _hotkeyListener;
+  late final VoidCallback _nowPlayingListener;
 
   void _scheduleAutoClose() {
     _autoCloseTimer?.cancel();
     _autoCloseTimer = Timer(const Duration(milliseconds: 950), () {
-      if (!mounted) return;
+      if (_disposed || !mounted) return;
       if (isDragging || isSystemDragging || _isHovering || _isSystemHovering) {
         _scheduleAutoClose();
         return;
@@ -643,14 +625,14 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
   }
 
   Future<double?> _readSystemVol({required Duration timeout}) async {
-    return await systemVolumeService.read(timeout: timeout);
+    return systemVolumeService.read(timeout: timeout);
   }
 
   @override
   void initState() {
     super.initState();
     _hotkeyListener = () {
-      if (!mounted) return;
+      if (_disposed || !mounted) return;
       final event = hotkeyUiFeedback.lastEvent;
       if (event == null) return;
       if (event.action != HotkeyUiAction.volumeStep) return;
@@ -668,15 +650,16 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
     };
     hotkeyUiFeedback.addListener(_hotkeyListener);
     _lastVolumeDsp = playbackService.volumeDsp;
-    playbackService.nowPlayingNotifier.addListener(() {
-      if (!mounted) return;
+    _nowPlayingListener = () {
+      if (_disposed || !mounted) return;
       final v = playbackService.volumeDsp;
       if ((v - _lastVolumeDsp).abs() <= 0.0001) return;
       _lastVolumeDsp = v;
       if (_isMenuOpen && !isDragging) {
         _triggerIndicator();
       }
-    });
+    };
+    playbackService.nowPlayingNotifier.addListener(_nowPlayingListener);
     systemVolumeService.ensureBound();
     dragSystemVol.value = systemVolumeService.volume.value;
     _systemVolValueListener = () {
@@ -708,10 +691,12 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
 
   @override
   void dispose() {
+    _disposed = true;
     _systemVolBoostTimer?.cancel();
     _indicatorTimer?.cancel();
     _systemIndicatorTimer?.cancel();
     _autoCloseTimer?.cancel();
+    playbackService.nowPlayingNotifier.removeListener(_nowPlayingListener);
     systemVolumeService.volume.removeListener(_systemVolValueListener);
     hotkeyUiFeedback.removeListener(_hotkeyListener);
     super.dispose();
@@ -764,7 +749,7 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16.0, 4.0, 16.0, 8.0),
                   child: Text(
-                    "系统音量",
+                    '系统音量',
                     style: TextStyle(
                       color: scheme.onSurface,
                       fontSize: 12,
@@ -833,7 +818,7 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
                                     child: IgnorePointer(
                                       child: _CustomValueIndicator(
                                         value: systemVolValue * 100,
-                                        suffix: "%",
+                                        suffix: '%',
                                         color: scheme.secondary,
                                         textColor: scheme.onSecondary,
                                       ),
@@ -854,7 +839,7 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16.0, 4.0, 16.0, 8.0),
                   child: Text(
-                    "应用音量",
+                    '应用音量',
                     style: TextStyle(
                       color: scheme.onSurface,
                       fontSize: 12,
@@ -925,7 +910,7 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
                                     child: IgnorePointer(
                                       child: _CustomValueIndicator(
                                         value: currentValue * 100,
-                                        suffix: "%",
+                                        suffix: '%',
                                         color: scheme.primary,
                                         textColor: scheme.onPrimary,
                                       ),
@@ -947,7 +932,7 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
       builder: (context, controller, _) {
         _menuController = controller;
         return IconButton(
-          tooltip: "音量",
+          tooltip: '音量',
           onPressed: () {
             if (controller.isOpen) {
               controller.close();
@@ -971,7 +956,7 @@ class _CustomValueIndicator extends StatelessWidget {
 
   const _CustomValueIndicator({
     required this.value,
-    this.suffix = "",
+    this.suffix = '',
     required this.color,
     required this.textColor,
   });
@@ -990,7 +975,7 @@ class _CustomValueIndicator extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
           ),
           child: Text(
-            "${value.toInt()}$suffix",
+            '${value.toInt()}$suffix',
             style: TextStyle(
               color: textColor,
               fontWeight: FontWeight.bold,
@@ -1047,9 +1032,9 @@ class _NowPlayingPlaybackModeSwitch extends StatelessWidget {
         final playMode = playbackService.playMode.value;
 
         final modeText = switch (true) {
-          _ when shuffle => "随机播放",
-          _ when playMode == PlayMode.singleLoop => "单曲循环",
-          _ => "顺序播放",
+          _ when shuffle => '随机播放',
+          _ when playMode == PlayMode.singleLoop => '单曲循环',
+          _ => '顺序播放',
         };
 
         final icon = switch (true) {
@@ -1096,7 +1081,7 @@ class _NowPlayingMainControls extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         IconButton(
-          tooltip: "上一曲",
+          tooltip: '上一曲',
           onPressed: playbackService.lastAudio,
           icon: const Icon(
             Symbols.skip_previous,
@@ -1115,7 +1100,7 @@ class _NowPlayingMainControls extends StatelessWidget {
             final isCompleted = playerState == PlayerState.completed;
             
             return IconButton(
-              tooltip: isPlaying ? "暂停" : "播放",
+              tooltip: isPlaying ? '暂停' : '播放',
               onPressed: () {
                 if (isPlaying) {
                   playbackService.pause();
@@ -1136,7 +1121,7 @@ class _NowPlayingMainControls extends StatelessWidget {
         ),
         const SizedBox(width: 32),
         IconButton(
-          tooltip: "下一曲",
+          tooltip: '下一曲',
           onPressed: playbackService.nextAudio,
           icon: const Icon(
             Symbols.skip_next,
@@ -1372,7 +1357,7 @@ class _MorphPlayPauseButtonState extends State<_MorphPlayPauseButton>
                     curve: const Cubic(0.4, 0, 0.2, 1),
                     scale: _isPressed ? 0.9 : 1.0,
                     child: IconButton(
-                      tooltip: isPlaying ? "暂停" : "播放",
+                      tooltip: isPlaying ? '暂停' : '播放',
                       onPressed: onPressed,
                       icon: AnimatedIcon(
                         icon: AnimatedIcons.play_pause,
@@ -1380,11 +1365,11 @@ class _MorphPlayPauseButtonState extends State<_MorphPlayPauseButton>
                         color: widget.color,
                         size: widget.size,
                       ),
-                      style: ButtonStyle(
+                      style: const ButtonStyle(
                         backgroundColor:
-                            const WidgetStatePropertyAll(Colors.transparent),
+                            WidgetStatePropertyAll(Colors.transparent),
                         overlayColor:
-                            const WidgetStatePropertyAll(Colors.transparent),
+                            WidgetStatePropertyAll(Colors.transparent),
                       ),
                     ),
                   ),
@@ -1476,9 +1461,32 @@ class _NowPlayingSlider extends StatefulWidget {
 class _NowPlayingSliderState extends State<_NowPlayingSlider> {
   final dragPosition = ValueNotifier(0.0);
   bool isDragging = false;
+  double _livePosition = 0.0;
+  StreamSubscription<double>? _positionSub;
+  int _lastPositionMs = -1;
+
+  @override
+  void initState() {
+    super.initState();
+    _bindPositionStream();
+  }
+
+  void _bindPositionStream() {
+    _positionSub?.cancel();
+    _positionSub = context.read<PlaybackService>().positionStream.listen((pos) {
+      final nowMs = (pos * 1000).round();
+      if (nowMs != _lastPositionMs && mounted) {
+        _lastPositionMs = nowMs;
+        setState(() {
+          _livePosition = pos;
+        });
+      }
+    });
+  }
 
   @override
   void dispose() {
+    _positionSub?.cancel();
     dragPosition.dispose();
     super.dispose();
   }
@@ -1493,7 +1501,6 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Time labels on top
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0),
           child: Row(
@@ -1519,22 +1526,18 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider> {
             ],
           ),
         ),
-        // Slider (align with controls below)
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0),
           child: SizedBox(
             height: 24,
             child: ListenableBuilder(
               listenable: dragPosition,
-              builder: (context, _) => StreamBuilder(
-              stream: playbackService.positionStream,
-              initialData: playbackService.position,
-              builder: (context, positionSnapshot) {
+              builder: (context, _) {
                 final position = isDragging
                     ? dragPosition.value
-                    : positionSnapshot.data! > nowPlayingLength
+                    : _livePosition > nowPlayingLength
                         ? nowPlayingLength
-                        : positionSnapshot.data!;
+                        : _livePosition;
                 final max = nowPlayingLength > 0 ? nowPlayingLength : 1.0;
                 final fraction = (position / max).clamp(0.0, 1.0);
 
@@ -1582,7 +1585,6 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider> {
                 );
               },
             ),
-            ),
           ),
         ),
       ],
@@ -1616,17 +1618,6 @@ class _PlaybackPositionTextState extends State<_PlaybackPositionText> {
     super.initState();
     _displaySeconds = widget.initialPosition.floor();
     _bindStream();
-  }
-
-  @override
-  void didUpdateWidget(covariant _PlaybackPositionText oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.positionStream != widget.positionStream) {
-      _bindStream();
-    }
-    if (oldWidget.trackKey != widget.trackKey) {
-      _displaySeconds = widget.initialPosition.floor();
-    }
   }
 
   void _bindStream() {
@@ -1680,7 +1671,7 @@ class _GlowSliderPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.fill;
 
-    final double height = 4.0;
+    const double height = 4.0;
     final double centerY = size.height / 2;
     final double activeWidth = size.width * fraction;
 
@@ -1689,7 +1680,7 @@ class _GlowSliderPainter extends CustomPainter {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(0, centerY - height / 2, size.width, height),
-        Radius.circular(height / 2),
+        const Radius.circular(height / 2),
       ),
       paint,
     );
@@ -1701,7 +1692,7 @@ class _GlowSliderPainter extends CustomPainter {
       paint.color = color;
       paint.shader = null;
       canvas.drawRRect(
-        RRect.fromRectAndRadius(activeRect, Radius.circular(height / 2)),
+        RRect.fromRectAndRadius(activeRect, const Radius.circular(height / 2)),
         paint,
       );
     }
@@ -1747,7 +1738,13 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
   Timer? _hiResDebounceTimer;
   int _coverRequestToken = 0;
 
+  bool get _isPageVisible {
+    return ModalRoute.of(context)?.isCurrent ?? true;
+  }
+
   void _onPlaybackChange() {
+    if (!_isPageVisible) return;
+
     _coverRequestToken += 1;
     final token = _coverRequestToken;
     final nextAudio = playbackService.nowPlaying;
@@ -1772,7 +1769,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
     nextAudio.cover.then((image) async {
       if (!mounted) return;
       if (token != _coverRequestToken) return;
-      // Double check if the audio is still the same
+      if (!_isPageVisible) return;
       if (playbackService.nowPlaying?.path != nextAudio.path) return;
 
       if (image != null) {
@@ -1782,6 +1779,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
 
       if (!mounted) return;
       if (token != _coverRequestToken) return;
+      if (!_isPageVisible) return;
       setState(() {
         _loResCover = image;
         _loResCoverPath = nextAudio.path;
@@ -1790,9 +1788,14 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
 
     _hiResDebounceTimer?.cancel();
     _hiResDebounceTimer = Timer(const Duration(milliseconds: 260), () {
+      if (!mounted) return;
+      if (token != _coverRequestToken) return;
+      if (!_isPageVisible) return;
+
       nextAudio.largeCover.then((image) async {
         if (!mounted) return;
         if (token != _coverRequestToken) return;
+        if (!_isPageVisible) return;
         if (playbackService.nowPlaying?.path != nextAudio.path) return;
 
         if (image != null) {
@@ -1802,6 +1805,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
 
         if (!mounted) return;
         if (token != _coverRequestToken) return;
+        if (!_isPageVisible) return;
         setState(() {
           _hiResCover = image;
           _hiResCoverPath = nextAudio.path;
@@ -1959,7 +1963,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
                 ),
                 const SizedBox(height: 24.0),
                 Text(
-                  nowPlaying == null ? "Pure Music" : nowPlaying.title,
+                  nowPlaying == null ? 'Pure Music' : nowPlaying.title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -1971,7 +1975,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  nowPlaying == null ? "Enjoy Music" : nowPlaying.artist,
+                  nowPlaying == null ? 'Enjoy Music' : nowPlaying.artist,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
