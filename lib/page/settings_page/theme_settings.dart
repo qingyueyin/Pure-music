@@ -16,7 +16,7 @@ class ThemeSelector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      description: "修改主题",
+      description: '修改主题',
       action: FilledButton.icon(
         onPressed: () async {
           final seedColor = await showDialog<Color>(
@@ -29,7 +29,7 @@ class ThemeSelector extends StatelessWidget {
           AppSettings.instance.defaultTheme = seedColor.toARGB32();
           await AppSettings.instance.saveSettings();
         },
-        label: const Text("主题选择器"),
+        label: const Text('主题选择器'),
         icon: const Icon(Symbols.palette),
       ),
     );
@@ -49,7 +49,7 @@ class _ThemeModeControlState extends State<ThemeModeControl> {
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      description: "主题模式",
+      description: '主题模式',
       action: SegmentedButton<ThemeMode>(
         showSelectedIcon: false,
         segments: const [
@@ -90,7 +90,7 @@ class _DynamicThemeSwitchState extends State<DynamicThemeSwitch> {
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      description: "动态主题",
+      description: '动态主题',
       action: Switch(
         value: settings.dynamicTheme,
         onChanged: (_) async {
@@ -117,7 +117,7 @@ class _UseSystemThemeSwitchState extends State<UseSystemThemeSwitch> {
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      description: "启动时使用系统主题",
+      description: '启动时使用系统主题',
       action: Switch(
         value: settings.useSystemTheme,
         onChanged: (_) async {
@@ -145,7 +145,7 @@ class _UseSystemThemeModeSwitchState extends State<UseSystemThemeModeSwitch> {
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      description: "启动时使用系统主题模式",
+      description: '启动时使用系统主题模式',
       action: Switch(
         value: settings.useSystemThemeMode,
         onChanged: (_) async {
@@ -165,7 +165,7 @@ class AppearanceAdvancedSettingsTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      description: "外观高级设置",
+      description: '外观高级设置',
       action: FilledButton.icon(
         onPressed: () {
           showDialog(
@@ -174,7 +174,7 @@ class AppearanceAdvancedSettingsTile extends StatelessWidget {
           );
         },
         icon: const Icon(Symbols.tune),
-        label: const Text("打开"),
+        label: const Text('打开'),
       ),
     );
   }
@@ -202,7 +202,7 @@ class _AppearanceAdvancedSettingsDialog extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(bottom: 16.0),
                 child: Text(
-                  "外观高级设置",
+                  '外观高级设置',
                   style: TextStyle(
                     color: scheme.onSurface,
                     fontSize: 18.0,
@@ -231,7 +231,7 @@ class _AppearanceAdvancedSettingsDialog extends StatelessWidget {
                 children: [
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text("关闭"),
+                    child: const Text('关闭'),
                   ),
                 ],
               ),
@@ -249,12 +249,12 @@ class SelectFontCombobox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      description: "自定义字体",
+      description: '自定义字体',
       action: FilledButton.icon(
         onPressed: () async {
           final installedFont = await getInstalledFonts();
           if (installedFont == null || installedFont.isEmpty) {
-            showTextOnSnackBar("无法获取字体");
+            showTextOnSnackBar('无法获取字体');
             return;
           }
 
@@ -281,14 +281,14 @@ class SelectFontCombobox extends StatelessWidget {
               await settings.saveSettings();
             } catch (err) {
               ThemeProvider.instance.changeFontFamily(null);
-              logger.e("[select font] $err");
+              logger.e('[select font] $err');
               if (context.mounted) {
                 showTextOnSnackBar(err.toString());
               }
             }
           }
         },
-        label: const Text("选择字体"),
+        label: const Text('选择字体'),
         icon: const Icon(Symbols.text_fields),
       ),
     );
@@ -320,7 +320,7 @@ class _FontSelector extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(bottom: 16.0),
                 child: Text(
-                  "选择字体",
+                  '选择字体',
                   style: TextStyle(
                     color: scheme.onSurface,
                     fontSize: 18.0,
@@ -352,7 +352,7 @@ class _FontSelector extends StatelessWidget {
                 children: [
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text("取消"),
+                    child: const Text('取消'),
                   ),
                 ],
               ),
