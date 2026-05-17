@@ -3,10 +3,128 @@ import 'dart:io';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/preference.dart';
+import 'package:pure_music/core/zh_converter.dart';
 import 'package:pure_music/component/settings_tile.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+
+class OnlineLyricSettings extends StatefulWidget {
+  const OnlineLyricSettings({super.key});
+
+  @override
+  State<OnlineLyricSettings> createState() => _OnlineLyricSettingsState();
+}
+
+class _OnlineLyricSettingsState extends State<OnlineLyricSettings> {
+  final settings = AppSettings.instance;
+
+  void _onChanged(String key) {
+    settings.saveSettings();
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SettingsTile(
+      description: '在线歌词设置',
+      action: MenuAnchor(
+        builder: (context, controller, _) {
+          return FilledButton.icon(
+            onPressed: controller.isOpen ? controller.close : controller.open,
+            icon: const Icon(Symbols.tune),
+            label: const Text('打开'),
+          );
+        },
+        menuChildren: [
+          Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '歌词模式',
+                  style: TextStyle(color: scheme.onSurface),
+                ),
+                const SizedBox(height: 8.0),
+                SegmentedButton<LyricDisplayMode>(
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment<LyricDisplayMode>(
+                      value: LyricDisplayMode.plain,
+                      label: Text('纯原文'),
+                    ),
+                    ButtonSegment<LyricDisplayMode>(
+                      value: LyricDisplayMode.verbatim,
+                      label: Text('原文+音'),
+                    ),
+                    ButtonSegment<LyricDisplayMode>(
+                      value: LyricDisplayMode.enhanced,
+                      label: Text('完整'),
+                    ),
+                  ],
+                  selected: {settings.lyricDisplayMode},
+                  onSelectionChanged: (newSelection) {
+                    settings.lyricDisplayMode = newSelection.first;
+                    _onChanged('lyricDisplayMode');
+                  },
+                ),
+                const SizedBox(height: 16.0),
+                Text(
+                  '简繁转换',
+                  style: TextStyle(color: scheme.onSurface),
+                ),
+                const SizedBox(height: 8.0),
+                SegmentedButton<ZhConversionMode>(
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment<ZhConversionMode>(
+                      value: ZhConversionMode.none,
+                      label: Text('不转换'),
+                    ),
+                    ButtonSegment<ZhConversionMode>(
+                      value: ZhConversionMode.traditionalToSimplified,
+                      label: Text('繁转简'),
+                    ),
+                    ButtonSegment<ZhConversionMode>(
+                      value: ZhConversionMode.simplifiedToTraditional,
+                      label: Text('简转繁'),
+                    ),
+                  ],
+                  selected: {settings.zhConversionMode},
+                  onSelectionChanged: (newSelection) {
+                    settings.zhConversionMode = newSelection.first;
+                    _onChanged('zhConversionMode');
+                  },
+                ),
+                const SizedBox(height: 16.0),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '空行过滤',
+                        style: TextStyle(color: scheme.onSurface),
+                      ),
+                    ),
+                    Switch(
+                      value: settings.removeEmptyLines,
+                      onChanged: (v) {
+                        settings.removeEmptyLines = v;
+                        _onChanged('removeEmptyLines');
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class DefaultLyricSourceControl extends StatefulWidget {
   const DefaultLyricSourceControl({super.key});
@@ -22,19 +140,19 @@ class _DefaultLyricSourceControlState extends State<DefaultLyricSourceControl> {
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      description: "首选歌词来源",
+      description: '首选歌词来源',
       action: SegmentedButton<bool>(
         showSelectedIcon: false,
         segments: const [
           ButtonSegment<bool>(
             value: true,
             icon: Icon(Symbols.cloud_off),
-            label: Text("本地"),
+            label: Text('本地'),
           ),
           ButtonSegment<bool>(
             value: false,
             icon: Icon(Symbols.cloud),
-            label: Text("在线"),
+            label: Text('在线'),
           ),
         ],
         selected: {settings.localLyricFirst},
@@ -59,13 +177,13 @@ class AdvancedPlaybackSettingsTile extends StatelessWidget {
     final pref = AppPreference.instance.playbackPref;
     final scheme = Theme.of(context).colorScheme;
     return SettingsTile(
-      description: "播放高级设置",
+      description: '播放高级设置',
       action: MenuAnchor(
         builder: (context, controller, child) {
           return FilledButton.icon(
             onPressed: controller.isOpen ? controller.close : controller.open,
             icon: const Icon(Symbols.tune),
-            label: const Text("打开"),
+            label: const Text('打开'),
           );
         },
         menuChildren: [
@@ -76,7 +194,7 @@ class AdvancedPlaybackSettingsTile extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  "WASAPI 缓冲时长",
+                  'WASAPI 缓冲时长',
                   style: TextStyle(color: scheme.onSurface),
                 ),
                 const SizedBox(height: 8.0),
@@ -97,7 +215,7 @@ class AdvancedPlaybackSettingsTile extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 8.0),
-                      Text("${pref.wasapiBufferSec.toStringAsFixed(2)}s"),
+                      Text('${pref.wasapiBufferSec.toStringAsFixed(2)}s'),
                     ],
                   ),
                 ),
@@ -106,7 +224,7 @@ class AdvancedPlaybackSettingsTile extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        "WASAPI 事件驱动缓冲",
+                        'WASAPI 事件驱动缓冲',
                         style: TextStyle(color: scheme.onSurface),
                       ),
                     ),
@@ -124,12 +242,12 @@ class AdvancedPlaybackSettingsTile extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        "回声排查日志录制",
+                        '回声排查日志录制',
                         style: TextStyle(color: scheme.onSurface),
                       ),
                     ),
                     IconButton(
-                      tooltip: "写入快照",
+                      tooltip: '写入快照',
                       onPressed: AudioEchoLogRecorder.instance.isRecording
                           ? () => AudioEchoLogRecorder.instance
                               .snapshot(tag: 'manual')
@@ -137,7 +255,7 @@ class AdvancedPlaybackSettingsTile extends StatelessWidget {
                       icon: const Icon(Symbols.bookmark),
                     ),
                     IconButton(
-                      tooltip: "打开日志目录",
+                      tooltip: '打开日志目录',
                       onPressed: AudioEchoLogRecorder.instance.openLogDir,
                       icon: const Icon(Symbols.folder),
                     ),
@@ -183,19 +301,19 @@ class _AudioEchoLogRecordControlState extends State<AudioEchoLogRecordControl> {
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      description: "回声排查日志录制",
+      description: '回声排查日志录制',
       action: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
-            tooltip: "写入快照",
+            tooltip: '写入快照',
             onPressed: recorder.isRecording
                 ? () => recorder.snapshot(tag: 'manual')
                 : null,
             icon: const Icon(Symbols.bookmark),
           ),
           IconButton(
-            tooltip: "打开日志目录",
+            tooltip: '打开日志目录',
             onPressed: recorder.openLogDir,
             icon: const Icon(Symbols.folder),
           ),
@@ -224,7 +342,7 @@ class _WasapiBufferControlState extends State<WasapiBufferControl> {
     final scheme = Theme.of(context).colorScheme;
     final v = pref.wasapiBufferSec.clamp(0.05, 0.30).toDouble();
     return SettingsTile(
-      description: "WASAPI 缓冲时长",
+      description: 'WASAPI 缓冲时长',
       action: SizedBox(
         width: 260,
         child: Row(
@@ -248,7 +366,7 @@ class _WasapiBufferControlState extends State<WasapiBufferControl> {
             ),
             const SizedBox(width: 8),
             Text(
-              "${v.toStringAsFixed(2)}s",
+              '${v.toStringAsFixed(2)}s',
               style: TextStyle(color: scheme.onSurfaceVariant),
             ),
           ],
@@ -279,21 +397,17 @@ class _NowPlayingBackgroundModeToggleState
     }
 
     return SettingsTile(
-      description: "播放页背景模式",
+      description: '播放页背景模式',
       action: SegmentedButton<NowPlayingBackgroundMode>(
         showSelectedIcon: false,
         segments: const [
           ButtonSegment<NowPlayingBackgroundMode>(
             value: NowPlayingBackgroundMode.meshGradient,
-            label: Text("网格"),
+            label: Text('动态'),
           ),
           ButtonSegment<NowPlayingBackgroundMode>(
             value: NowPlayingBackgroundMode.blurCover,
-            label: Text("封面模糊"),
-          ),
-          ButtonSegment<NowPlayingBackgroundMode>(
-            value: NowPlayingBackgroundMode.hybrid,
-            label: Text("混合"),
+            label: Text('封面模糊'),
           ),
         ],
         selected: {pref.backgroundMode},
