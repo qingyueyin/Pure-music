@@ -125,9 +125,9 @@ class BassPlayer {
     final eqCount =
         (_bfxEqHandle != 0 ? 1 : 0) + _eqHandles.where((e) => e != 0).length;
     logger.i(
-      "[bass] $tag | exclusive=$wasapiExclusive streamExclusive=$_streamWasapiExclusive "
-      "wasapiStarted=$wasapiStarted handle=$_fstream eq=$eqCount eqFlat=${_isEqFlat ? 1 : 0} "
-      "rate=$_rate pitch=$_pitch",
+      '[bass] $tag | exclusive=$wasapiExclusive streamExclusive=$_streamWasapiExclusive '
+      'wasapiStarted=$wasapiStarted handle=$_fstream eq=$eqCount eqFlat=${_isEqFlat ? 1 : 0} '
+      'rate=$_rate pitch=$_pitch',
     );
   }
 
@@ -135,9 +135,9 @@ class BassPlayer {
     final wasapiStarted = _bassWasapi.BASS_WASAPI_IsStarted() == bass.TRUE;
     final eqCount =
         (_bfxEqHandle != 0 ? 1 : 0) + _eqHandles.where((e) => e != 0).length;
-    return "exclusive=$wasapiExclusive streamExclusive=$_streamWasapiExclusive "
-        "wasapiStarted=$wasapiStarted handle=$_fstream eq=$eqCount eqFlat=${_isEqFlat ? 1 : 0} "
-        "rate=$_rate pitch=$_pitch";
+    return 'exclusive=$wasapiExclusive streamExclusive=$_streamWasapiExclusive '
+        'wasapiStarted=$wasapiStarted handle=$_fstream eq=$eqCount eqFlat=${_isEqFlat ? 1 : 0} '
+        'rate=$_rate pitch=$_pitch';
   }
 
   /// audio's length in seconds
@@ -267,17 +267,31 @@ class BassPlayer {
 
   Timer _getPositionUpdater(Duration period) {
     final myVersion = _positionUpdaterVersion;
+    PlayerState? lastNotifiedState;
     return Timer.periodic(period, (timer) {
       // 如果版本号已变更（切歌了），立即停止此 Timer
       if (myVersion != _positionUpdaterVersion) {
         timer.cancel();
+        // 如果当前 Timer 是 _positionUpdater，清除引用以便 GC
+        if (_positionUpdater == timer) {
+          _positionUpdater = null;
+        }
         return;
       }
       _emitPositionSnapshot();
 
       /// check if the channel has completed
-      if (playerState == PlayerState.stopped) {
-        _playerStateStreamController.add(PlayerState.completed);
+      final currentState = playerState;
+      if (currentState == PlayerState.stopped) {
+        if (lastNotifiedState != PlayerState.completed) {
+          lastNotifiedState = PlayerState.completed;
+          _playerStateStreamController.add(PlayerState.completed);
+        }
+      } else {
+        if (lastNotifiedState != currentState) {
+          lastNotifiedState = currentState;
+          _playerStateStreamController.add(currentState);
+        }
       }
 
       _maybeUpdateSpectrum();
@@ -471,7 +485,7 @@ class BassPlayer {
 
     if (wasapiExclusive) {
       if (!_isEqFlat) {
-        logger.w("[bass] EQ enabled in exclusive mode, keep shared mode");
+        logger.w('[bass] EQ enabled in exclusive mode, keep shared mode');
         useExclusiveMode(false);
       }
       return;
@@ -519,7 +533,7 @@ class BassPlayer {
         return;
       }
       logger.w(
-        "Failed to set BFX EQ: BASS Error ${_bass.BASS_ErrorGetCode()}",
+        'Failed to set BFX EQ: BASS Error ${_bass.BASS_ErrorGetCode()}',
       );
       _bfxEqHandle = 0;
       return;
@@ -536,7 +550,7 @@ class BassPlayer {
 
         if (fx == 0) {
           final err = _bass.BASS_ErrorGetCode();
-          logger.w("Failed to set EQ band $i: BASS Error $err");
+          logger.w('Failed to set EQ band $i: BASS Error $err');
           continue;
         }
 
@@ -544,7 +558,7 @@ class BassPlayer {
         _updateEQ(i);
       }
     } catch (e) {
-      logger.e("Error initializing EQ: $e");
+      logger.e('Error initializing EQ: $e');
     }
   }
 
@@ -568,18 +582,18 @@ class BassPlayer {
         final result = _bass.BASS_FXSetParameters(_bfxEqHandle, params.cast());
 
         logger.i(
-          "EQ Update (BFX) - Band: $band, Freq: $center Hz, Gain: $gain dB, Bandwidth: $bandwidth, Result: $result",
+          'EQ Update (BFX) - Band: $band, Freq: $center Hz, Gain: $gain dB, Bandwidth: $bandwidth, Result: $result',
         );
 
         if (result == 0) {
           final err = _bass.BASS_ErrorGetCode();
           logger
-              .w("Failed to set BFX EQ parameters for band $band: Error $err");
+              .w('Failed to set BFX EQ parameters for band $band: Error $err');
         }
 
         calloc.free(params);
       } catch (e) {
-        logger.e("Error updating BFX EQ band $band: $e");
+        logger.e('Error updating BFX EQ band $band: $e');
       }
       return;
     }
@@ -602,16 +616,16 @@ class BassPlayer {
       final result = _bass.BASS_FXSetParameters(fx, params.cast());
 
       logger.i(
-        "EQ Update (DX8) - Band: $band, Freq: $center Hz, Gain: $gain dB, Bandwidth: $bandwidth, Result: $result",
+        'EQ Update (DX8) - Band: $band, Freq: $center Hz, Gain: $gain dB, Bandwidth: $bandwidth, Result: $result',
       );
 
       if (result == 0) {
         final err = _bass.BASS_ErrorGetCode();
-        logger.w("Failed to set EQ parameters for band $band: Error $err");
+        logger.w('Failed to set EQ parameters for band $band: Error $err');
       }
       calloc.free(params);
     } catch (e) {
-      logger.e("Error updating EQ band $band: $e");
+      logger.e('Error updating EQ band $band: $e');
     }
   }
 
@@ -642,32 +656,32 @@ class BassPlayer {
         0) {
       switch (_bass.BASS_ErrorGetCode()) {
         case bass.BASS_ERROR_DEVICE:
-          throw const FormatException("device is invalid.");
+          throw const FormatException('device is invalid.');
         case bass.BASS_ERROR_NOTAVAIL:
           throw const FormatException(
-            "The BASS_DEVICE_REINIT flag cannot be used when device is -1. Use the real device number instead.",
+            'The BASS_DEVICE_REINIT flag cannot be used when device is -1. Use the real device number instead.',
           );
         case bass.BASS_ERROR_ALREADY:
           throw const FormatException(
-            "The device has already been initialized. The BASS_DEVICE_REINIT flag can be used to request reinitialization.",
+            'The device has already been initialized. The BASS_DEVICE_REINIT flag can be used to request reinitialization.',
           );
         case bass.BASS_ERROR_ILLPARAM:
-          throw const FormatException("win is not a valid window handle.");
+          throw const FormatException('win is not a valid window handle.');
         case bass.BASS_ERROR_DRIVER:
-          throw const FormatException("There is no available device driver.");
+          throw const FormatException('There is no available device driver.');
         case bass.BASS_ERROR_BUSY:
           throw const FormatException(
-            "Something else has exclusive use of the device.",
+            'Something else has exclusive use of the device.',
           );
         case bass.BASS_ERROR_FORMAT:
           throw const FormatException(
-            "The specified format is not supported by the device. Try changing the freq parameter.",
+            'The specified format is not supported by the device. Try changing the freq parameter.',
           );
         case bass.BASS_ERROR_MEM:
-          throw const FormatException("There is insufficient memory.");
+          throw const FormatException('There is insufficient memory.');
         case bass.BASS_ERROR_UNKNOWN:
           throw const FormatException(
-            "Some other mystery problem! Maybe Something else has exclusive use of the device.",
+            'Some other mystery problem! Maybe Something else has exclusive use of the device.',
           );
       }
     }
@@ -686,11 +700,11 @@ class BassPlayer {
           );
         case bass.BASS_ERROR_REINIT:
           throw const FormatException(
-            "The device is currently being reinitialized or needs to be.",
+            'The device is currently being reinitialized or needs to be.',
           );
         case bass.BASS_ERROR_UNKNOWN:
           throw const FormatException(
-            "Some other mystery problem! Maybe Something else has exclusive use of the device.",
+            'Some other mystery problem! Maybe Something else has exclusive use of the device.',
           );
       }
     }
@@ -701,10 +715,10 @@ class BassPlayer {
   /// leave the device's output freq as it is
   BassPlayer() {
     final exeBassDir =
-        path.join(path.dirname(Platform.resolvedExecutable), "dll", "BASS");
-    final cwdBassDir = path.join(Directory.current.path, "dll", "BASS");
-    final exeBassDll = File(path.join(exeBassDir, "bass.dll"));
-    final cwdBassDll = File(path.join(cwdBassDir, "bass.dll"));
+        path.join(path.dirname(Platform.resolvedExecutable), 'dll', 'BASS');
+    final cwdBassDir = path.join(Directory.current.path, 'dll', 'BASS');
+    final exeBassDll = File(path.join(exeBassDir, 'bass.dll'));
+    final cwdBassDll = File(path.join(cwdBassDir, 'bass.dll'));
     _bassDir = exeBassDll.existsSync()
         ? exeBassDir
         : (cwdBassDll.existsSync() ? cwdBassDir : exeBassDir);
@@ -722,11 +736,11 @@ class BassPlayer {
         setDllDirectory(bassDir);
         malloc.free(bassDir);
       } catch (e) {
-        logger.e("Failed to SetDllDirectory: $e");
+        logger.e('Failed to SetDllDirectory: $e');
       }
     }
 
-    final bassLibPath = path.join(_bassDir, "bass.dll");
+    final bassLibPath = path.join(_bassDir, 'bass.dll');
     _bassLib = ffi.DynamicLibrary.open(bassLibPath);
     _bass = bass.Bass(_bassLib);
     try {
@@ -741,21 +755,21 @@ class BassPlayer {
       _bassChannelGetData = null;
     }
 
-    final bassWasapiLibPath = path.join(_bassDir, "basswasapi.dll");
+    final bassWasapiLibPath = path.join(_bassDir, 'basswasapi.dll');
     _bassWasapiLib = ffi.DynamicLibrary.open(bassWasapiLibPath);
     _bassWasapi = bass_wasapi.BassWasapi(_bassWasapiLib);
 
     final coreDlls = {
-      "bass.dll",
-      "basswasapi.dll",
-      "bass_fx.dll",
+      'bass.dll',
+      'basswasapi.dll',
+      'bass_fx.dll',
     };
     final entries = Directory(_bassDir).listSync(followLinks: false);
     for (final e in entries) {
       if (e is! File) continue;
       final name = path.basename(e.path).toLowerCase();
-      if (!name.endsWith(".dll")) continue;
-      if (!name.startsWith("bass")) continue;
+      if (!name.endsWith('.dll')) continue;
+      if (!name.startsWith('bass')) continue;
       if (coreDlls.contains(name)) continue;
 
       final pluginFullPath = e.path;
@@ -763,7 +777,7 @@ class BassPlayer {
       final hplugin = _bass.BASS_PluginLoad(pluginPathP, bass.BASS_UNICODE);
       if (hplugin == 0) {
         final errCode = _bass.BASS_ErrorGetCode();
-        logger.w("Failed to load plugin $pluginFullPath: Error $errCode");
+        logger.w('Failed to load plugin $pluginFullPath: Error $errCode');
       }
       malloc.free(pluginPathP);
     }
@@ -771,7 +785,7 @@ class BassPlayer {
     try {
       _bassInit();
     } catch (err) {
-      logger.e("[bass init] $err");
+      logger.e('[bass init] $err');
     }
 
     // BASS_FX - 加载bass_fx必须在bass初始化之后
@@ -780,71 +794,71 @@ class BassPlayer {
 
   void _loadBassFx() {
     try {
-      final bassFxLibPath = path.join(_bassDir, "bass_fx.dll");
+      final bassFxLibPath = path.join(_bassDir, 'bass_fx.dll');
       final bassFxFile = File(bassFxLibPath);
       if (!bassFxFile.existsSync()) {
-        logger.w("bass_fx.dll file not found at: $bassFxLibPath");
+        logger.w('bass_fx.dll file not found at: $bassFxLibPath');
         return;
       }
 
-      logger.i("Attempting to load bass_fx.dll from: $bassFxLibPath");
+      logger.i('Attempting to load bass_fx.dll from: $bassFxLibPath');
 
       // 方法1: 使用DynamicLibrary.process() - 利用已加载的库符号
       try {
-        logger.d("Method 1: Loading with DynamicLibrary.process()");
+        logger.d('Method 1: Loading with DynamicLibrary.process()');
         final processSym = ffi.DynamicLibrary.process();
         final tempBassFx = BassFx(processSym);
         final version = tempBassFx.BASS_FX_GetVersion();
         _bassFx = tempBassFx;
         logger.i(
-            "✓ BASS_FX loaded via process symbols! Version: ${version.toRadixString(16)}");
+            '✓ BASS_FX loaded via process symbols! Version: ${version.toRadixString(16)}');
         return;
       } catch (e) {
-        logger.w("Method 1 failed: $e");
+        logger.w('Method 1 failed: $e');
       }
 
       // 方法2: 直接用绝对路径加载
       try {
-        logger.d("Method 2: Loading with absolute path");
+        logger.d('Method 2: Loading with absolute path');
         final bassFxLib = ffi.DynamicLibrary.open(bassFxLibPath);
         final tempBassFx = BassFx(bassFxLib);
         final version = tempBassFx.BASS_FX_GetVersion();
         _bassFx = tempBassFx;
         logger.i(
-            "✓ BASS_FX loaded successfully! Version: ${version.toRadixString(16)}");
+            '✓ BASS_FX loaded successfully! Version: ${version.toRadixString(16)}');
         return;
       } catch (e) {
-        logger.w("Method 2 failed: $e");
+        logger.w('Method 2 failed: $e');
       }
 
       // 方法3: 用相对路径加载
       try {
-        logger.d("Method 3: Loading with relative path");
-        final bassFxLib = ffi.DynamicLibrary.open("bass_fx.dll");
+        logger.d('Method 3: Loading with relative path');
+        final bassFxLib = ffi.DynamicLibrary.open('bass_fx.dll');
         final tempBassFx = BassFx(bassFxLib);
         final version = tempBassFx.BASS_FX_GetVersion();
         _bassFx = tempBassFx;
         logger.i(
-            "✓ BASS_FX loaded successfully! Version: ${version.toRadixString(16)}");
+            '✓ BASS_FX loaded successfully! Version: ${version.toRadixString(16)}');
         return;
       } catch (e) {
-        logger.w("Method 3 failed: $e");
+        logger.w('Method 3 failed: $e');
       }
 
       // 方法4: 尝试只加载dll而不立即验证函数
       try {
-        logger.d("Method 4: Loading without immediate version check");
+        logger.d('Method 4: Loading without immediate version check');
         final bassFxLib = ffi.DynamicLibrary.open(bassFxLibPath);
         _bassFx = BassFx(bassFxLib);
-        logger.i("✓ BASS_FX library loaded (version check deferred)");
+        logger.i('✓ BASS_FX library loaded (version check deferred)');
         return;
       } catch (e) {
-        logger.w("Method 4 failed: $e");
+        logger.w('Method 4 failed: $e');
       }
 
-      logger.e("❌ All methods to load bass_fx.dll have failed");
+      logger.e('❌ All methods to load bass_fx.dll have failed');
     } catch (e) {
-      logger.e("Unexpected error during bass_fx loading: $e");
+      logger.e('Unexpected error during bass_fx loading: $e');
     }
   }
 
@@ -853,8 +867,8 @@ class BassPlayer {
     final prevState = wasapiExclusive;
     try {
       if (exclusive && !_isEqFlat) {
-        logger.w("[bass] Cannot enable exclusive mode while EQ is enabled");
-        showTextOnSnackBar("独占模式与均衡器冲突，请先关闭均衡器（全部归零）");
+        logger.w('[bass] Cannot enable exclusive mode while EQ is enabled');
+        showTextOnSnackBar('独占模式与均衡器冲突，请先关闭均衡器（全部归零）');
         return false;
       }
       final lastPos = position;
@@ -872,7 +886,7 @@ class BassPlayer {
       onExclusiveModeChanged?.call(exclusive);
       return true;
     } catch (err) {
-      logger.e("[use exclusive mode] $err");
+      logger.e('[use exclusive mode] $err');
       showTextOnSnackBar(err.toString());
       _playerStateStreamController.add(playerState);
     }
@@ -882,7 +896,7 @@ class BassPlayer {
 
   /// 重建音频流（用于模式切换时避免调用完整的 setSource）
   void _rebuildStream(String path, double seekTo) {
-    _logAudioState("_rebuildStream(begin)");
+    _logAudioState('_rebuildStream(begin)');
     _positionUpdaterVersion++;
     _positionUpdater?.cancel();
     _positionUpdater = null;
@@ -896,7 +910,7 @@ class BassPlayer {
     wasapiExclusive
         ? _createWasapiStream(path, seekTo)
         : _createSharedStream(path, seekTo);
-    _logAudioState("_rebuildStream(done)");
+    _logAudioState('_rebuildStream(done)');
   }
 
   /// 创建独占模式流
@@ -912,9 +926,10 @@ class BassPlayer {
       0,
       flags,
     );
+    malloc.free(pathPointer);
 
     if (handle == 0) {
-      throw Exception("Failed to create WASAPI exclusive stream");
+      throw Exception('Failed to create WASAPI exclusive stream');
     }
 
     _fstream = handle;
@@ -940,9 +955,10 @@ class BassPlayer {
       0,
       flags,
     );
+    malloc.free(pathPointer);
 
     if (handle == 0) {
-      throw Exception("Failed to create shared stream");
+      throw Exception('Failed to create shared stream');
     }
 
     // 创建 Tempo 流以支持变速/变调
@@ -984,7 +1000,7 @@ class BassPlayer {
     }
 
     if (handle == 0) {
-      throw Exception("Failed to create shared stream with fallback");
+      throw Exception('Failed to create shared stream with fallback');
     }
 
     _fstream = handle;
@@ -1025,7 +1041,7 @@ class BassPlayer {
   /// if setSource has been called once,
   /// it will pause current channel and free current stream.
   void setSource(String path) {
-    _logAudioState("setSource(begin)");
+    _logAudioState('setSource(begin)');
     if (_fstream != null) {
       _positionUpdaterVersion++;
       _positionUpdater?.cancel();
@@ -1041,13 +1057,13 @@ class BassPlayer {
       final stopped = _bass.BASS_ChannelStop(oldHandle);
       if (stopped == 0) {
         logger.w(
-          "[bass] cleanup stop failed: err=${_bass.BASS_ErrorGetCode()} handle=$oldHandle",
+          '[bass] cleanup stop failed: err=${_bass.BASS_ErrorGetCode()} handle=$oldHandle',
         );
       }
       final freed = _bass.BASS_StreamFree(oldHandle);
       if (freed == 0) {
         logger.w(
-          "[bass] cleanup free failed: err=${_bass.BASS_ErrorGetCode()} handle=$oldHandle",
+          '[bass] cleanup free failed: err=${_bass.BASS_ErrorGetCode()} handle=$oldHandle',
         );
       }
       _fstream = null;
@@ -1121,6 +1137,9 @@ class BassPlayer {
       }
     }
 
+    // BASS_StreamCreateFile 已复制路径字符串，释放 Dart 侧的 native 内存
+    malloc.free(pathPointer);
+
     if (handle != 0) {
       _fstream = handle;
       _fPath = path;
@@ -1130,7 +1149,7 @@ class BassPlayer {
       try {
         refreshEQ();
       } catch (e) {
-        logger.e("SetSource refreshEQ failed: $e");
+        logger.e('SetSource refreshEQ failed: $e');
       }
 
       if (_rate != 1.0 && !wasapiExclusive) {
@@ -1139,7 +1158,7 @@ class BassPlayer {
       if (_pitch != 0.0 && !wasapiExclusive) {
         setPitch(_pitch);
       }
-      _logAudioState("setSource(ok)");
+      _logAudioState('setSource(ok)');
     } else {
       _fstream = null;
       _fPath = null;
@@ -1151,38 +1170,38 @@ class BassPlayer {
           break;
         case bass.BASS_ERROR_NOTAVAIL:
           throw const FormatException(
-            "The BASS_STREAM_AUTOFREE flag cannot be combined with the BASS_STREAM_DECODE flag.",
+            'The BASS_STREAM_AUTOFREE flag cannot be combined with the BASS_STREAM_DECODE flag.',
           );
         case bass.BASS_ERROR_ILLPARAM:
           throw const FormatException(
-            "The length must be specified when streaming from memory.",
+            'The length must be specified when streaming from memory.',
           );
         case bass.BASS_ERROR_FILEOPEN:
-          throw const FormatException("The file could not be opened.");
+          throw const FormatException('The file could not be opened.');
         case bass.BASS_ERROR_FILEFORM:
           throw const FormatException(
             "The file's format is not recognised/supported.",
           );
         case bass.BASS_ERROR_NOTAUDIO:
           throw const FormatException(
-            "The file does not contain audio, or it also contains video and videos are disabled.",
+            'The file does not contain audio, or it also contains video and videos are disabled.',
           );
         case bass.BASS_ERROR_CODEC:
           throw const FormatException(
-            "The file uses a codec that is not available/supported. This can apply to WAV and AIFF files.",
+            'The file uses a codec that is not available/supported. This can apply to WAV and AIFF files.',
           );
         case bass.BASS_ERROR_FORMAT:
-          throw const FormatException("The sample format is not supported.");
+          throw const FormatException('The sample format is not supported.');
         case bass.BASS_ERROR_SPEAKER:
           throw const FormatException(
-            "The specified SPEAKER flags are invalid.",
+            'The specified SPEAKER flags are invalid.',
           );
         case bass.BASS_ERROR_MEM:
-          throw const FormatException("There is insufficient memory.");
+          throw const FormatException('There is insufficient memory.');
         case bass.BASS_ERROR_NO3D:
-          throw const FormatException("Could not initialize 3D support.");
+          throw const FormatException('Could not initialize 3D support.');
         case bass.BASS_ERROR_UNKNOWN:
-          throw const FormatException("Some other mystery problem!");
+          throw const FormatException('Some other mystery problem!');
       }
     }
   }
@@ -1199,11 +1218,11 @@ class BassPlayer {
         0) {
       switch (_bass.BASS_ErrorGetCode()) {
         case bass.BASS_ERROR_HANDLE:
-          throw const FormatException("handle is not a valid channel.");
+          throw const FormatException('handle is not a valid channel.');
         case bass.BASS_ERROR_ILLTYPE:
-          throw const FormatException("attrib is not valid.");
+          throw const FormatException('attrib is not valid.');
         case bass.BASS_ERROR_ILLPARAM:
-          throw const FormatException("value is not valid.");
+          throw const FormatException('value is not valid.');
       }
     }
   }
@@ -1213,7 +1232,7 @@ class BassPlayer {
     if (_fstream == null) return;
 
     if (wasapiExclusive && _rate != 1.0) {
-      logger.w("[bass] rate change in exclusive mode, fallback to shared mode");
+      logger.w('[bass] rate change in exclusive mode, fallback to shared mode');
       useExclusiveMode(false);
       return;
     }
@@ -1229,27 +1248,15 @@ class BassPlayer {
           tempo,
         ) ==
         0) {
-      // 如果失败（例如不是 Tempo 流），回退到原来的采样率改变方式 (变速变调)
-      // 获取当前流的原始采样率
       final freqPtr = malloc.allocate<ffi.Float>(ffi.sizeOf<ffi.Float>());
-      // 注意：这里我们无法轻易获取"原始"采样率，如果已经改变过。
-      // 但通常 BASS_ATTRIB_FREQ 读出来的是当前的。
-      // 简便起见，如果不支持 Tempo，我们暂时不做处理，或者需要在创建流时记录原始采样率。
-      // 考虑到兼容性，如果 bass_fx 不存在，_fstream 就是普通流，
-      // 这时我们应该读取当前 freq 然后根据 _rate 调整。
-      // 但由于 _baseFreq 在重构中移除了，这里为了稳健，先尝试获取当前频率
-
-      if (_bass.BASS_ChannelGetAttribute(
-              _fstream!, bass.BASS_ATTRIB_FREQ, freqPtr) !=
-          0) {
-        // 这里有个问题：如果多次调用 setRate，基于当前 freq 修改会导致累积误差。
-        // 理想情况是我们在 setSource 时保存了 _baseFreq。
-        // 但由于我们现在主推 bass_fx，这里作为 fallback 可以暂不实现复杂逻辑，
-        // 或者仅仅在控制台输出警告。
-        malloc.free(freqPtr);
-        logger.w(
-            "BASS_ATTRIB_TEMPO failed, and fallback implementation is skipped.");
-      } else {
+      try {
+        if (_bass.BASS_ChannelGetAttribute(
+                _fstream!, bass.BASS_ATTRIB_FREQ, freqPtr) !=
+            0) {
+          logger.w(
+              'BASS_ATTRIB_TEMPO failed, and fallback implementation is skipped.');
+        }
+      } finally {
         malloc.free(freqPtr);
       }
     }
@@ -1261,7 +1268,7 @@ class BassPlayer {
 
     if (wasapiExclusive && _pitch != 0.0) {
       logger
-          .w("[bass] pitch change in exclusive mode, fallback to shared mode");
+          .w('[bass] pitch change in exclusive mode, fallback to shared mode');
       useExclusiveMode(false);
       return;
     }
@@ -1315,9 +1322,9 @@ class BassPlayer {
     if (result == bass.FALSE) {
       switch (_bass.BASS_ErrorGetCode()) {
         case bass_wasapi.BASS_ERROR_WASAPI:
-          throw const FormatException("WASAPI is not available.");
+          throw const FormatException('WASAPI is not available.');
         case bass.BASS_ERROR_DEVICE:
-          throw const FormatException("device is invalid.");
+          throw const FormatException('device is invalid.');
         case bass.BASS_ERROR_ALREADY:
           _bassWasapi.BASS_WASAPI_Stop(bass.TRUE);
           _bassWasapi.BASS_WASAPI_Free();
@@ -1325,21 +1332,21 @@ class BassPlayer {
           break;
         case bass.BASS_ERROR_NOTAVAIL:
           throw const FormatException(
-            "Exclusive mode and/or event-driven buffering is unavailable on the device, or WASAPIPROC_PUSH is unavailable on input devices and when using event-driven buffering.",
+            'Exclusive mode and/or event-driven buffering is unavailable on the device, or WASAPIPROC_PUSH is unavailable on input devices and when using event-driven buffering.',
           );
         case bass.BASS_ERROR_DRIVER:
-          throw const FormatException("The driver could not be initialized.");
+          throw const FormatException('The driver could not be initialized.');
         case bass.BASS_ERROR_HANDLE:
           throw const FormatException(
-            "The BASS channel handle in user is invalid, or not of the required type.",
+            'The BASS channel handle in user is invalid, or not of the required type.',
           );
         case bass.BASS_ERROR_FORMAT:
           throw const FormatException(
-            "The specified format (or that of the BASS channel) is not supported by the device. If the BASS_WASAPI_AUTOFORMAT flag was specified, no other format could be found either.",
+            'The specified format (or that of the BASS channel) is not supported by the device. If the BASS_WASAPI_AUTOFORMAT flag was specified, no other format could be found either.',
           );
         case bass.BASS_ERROR_BUSY:
           throw const FormatException(
-            "The device is already in use, eg. another process may have initialized it in exclusive mode.",
+            'The device is already in use, eg. another process may have initialized it in exclusive mode.',
           );
         case bass.BASS_ERROR_INIT:
           _bassInit();
@@ -1347,18 +1354,18 @@ class BassPlayer {
           break;
         case bass_wasapi.BASS_ERROR_WASAPI_BUFFER:
           throw const FormatException(
-            "buffer is too large or small (exclusive mode only).",
+            'buffer is too large or small (exclusive mode only).',
           );
         case bass_wasapi.BASS_ERROR_WASAPI_CATEGORY:
           throw const FormatException(
-            "The category/raw mode could not be set.",
+            'The category/raw mode could not be set.',
           );
         case bass_wasapi.BASS_ERROR_WASAPI_DENIED:
           throw const FormatException(
-            "Access to the device is denied. This could be due to privacy settings.",
+            'Access to the device is denied. This could be due to privacy settings.',
           );
         case bass.BASS_ERROR_UNKNOWN:
-          throw const FormatException("Some other mystery problem!");
+          throw const FormatException('Some other mystery problem!');
       }
     }
   }
@@ -1367,8 +1374,8 @@ class BassPlayer {
     try {
       _bassWasapiInit();
     } catch (err) {
-      logger.w("[bass] wasapi exclusive init failed, fallback to shared: $err");
-      showTextOnSnackBar("独占模式初始化失败，已切回共享模式");
+      logger.w('[bass] wasapi exclusive init failed, fallback to shared: $err');
+      showTextOnSnackBar('独占模式初始化失败，已切回共享模式');
       useExclusiveMode(false);
       return;
     }
@@ -1380,7 +1387,7 @@ class BassPlayer {
           _startWasapiExclusive();
           break;
         case bass.BASS_ERROR_UNKNOWN:
-          throw const FormatException("Some other mystery problem!");
+          throw const FormatException('Some other mystery problem!');
       }
     }
     _playerStateStreamController.add(playerState);
@@ -1398,17 +1405,17 @@ class BassPlayer {
     if (_fstream == null) return;
 
     if (wasapiExclusive) {
-      _logAudioState("start(wasapi)");
+      _logAudioState('start(wasapi)');
       return _startWasapiExclusive();
     }
-    _logAudioState("start(normal)");
+    _logAudioState('start(normal)');
     if (_bass.BASS_ChannelStart(_fstream!) == 0) {
       switch (_bass.BASS_ErrorGetCode()) {
         case bass.BASS_ERROR_HANDLE:
-          throw const FormatException("handle is not a valid channel.");
+          throw const FormatException('handle is not a valid channel.');
         case bass.BASS_ERROR_DECODE:
           throw const FormatException(
-            "handle is a decoding channel, so cannot be played.",
+            'handle is a decoding channel, so cannot be played.',
           );
         case bass.BASS_ERROR_START:
           _startDevice();
@@ -1426,7 +1433,7 @@ class BassPlayer {
     _spectrumTickPeriod = _computeSpectrumTickPeriod();
     _lastSpectrumUpdateUs = 0;
     _positionUpdater = _getPositionUpdater(_computePlayingTickPeriod());
-    _logAudioState("start(done)");
+    _logAudioState('start(done)');
   }
 
   void _pauseWasapiExclusive() {
@@ -1444,28 +1451,28 @@ class BassPlayer {
     if (_fstream == null) return;
 
     if (wasapiExclusive) {
-      _logAudioState("pause(wasapi)");
+      _logAudioState('pause(wasapi)');
       return _pauseWasapiExclusive();
     }
-    _logAudioState("pause(normal)");
+    _logAudioState('pause(normal)');
 
     if (_bass.BASS_ChannelPause(_fstream!) == 0) {
       switch (_bass.BASS_ErrorGetCode()) {
         case bass.BASS_ERROR_HANDLE:
-          throw const FormatException("handle is not a valid channel.");
+          throw const FormatException('handle is not a valid channel.');
         case bass.BASS_ERROR_DECODE:
           throw const FormatException(
-            "handle is a decoding channel, so cannot be played or paused.",
+            'handle is a decoding channel, so cannot be played or paused.',
           );
         case bass.BASS_ERROR_NOPLAY:
-          throw const FormatException("The channel is not playing.");
+          throw const FormatException('The channel is not playing.');
       }
     }
 
     _playerStateStreamController.add(playerState);
     _positionUpdater?.cancel();
     _emitPositionSnapshot();
-    _logAudioState("pause(done)");
+    _logAudioState('pause(done)');
   }
 
   /// set channel's position to given [position]
@@ -1474,7 +1481,7 @@ class BassPlayer {
   /// do nothing if [setSource] hasn't been called
   void seek(double position) {
     if (_fstream == null) return;
-    _logAudioState("seek(begin,$position)");
+    _logAudioState('seek(begin,$position)');
 
     if (_bass.BASS_ChannelSetPosition(
           _fstream!,
@@ -1484,23 +1491,23 @@ class BassPlayer {
         0) {
       switch (_bass.BASS_ErrorGetCode()) {
         case bass.BASS_ERROR_HANDLE:
-          throw const FormatException("handle is not a valid channel.");
+          throw const FormatException('handle is not a valid channel.');
         case bass.BASS_ERROR_NOTFILE:
-          throw const FormatException("The stream is not a file stream.");
+          throw const FormatException('The stream is not a file stream.');
         case bass.BASS_ERROR_POSITION:
           throw const FormatException(
-            "The requested position is invalid, eg. it is beyond the end or the download has not yet reached it.",
+            'The requested position is invalid, eg. it is beyond the end or the download has not yet reached it.',
           );
         case bass.BASS_ERROR_NOTAVAIL:
           throw const FormatException(
-            "The requested mode is not available. Invalid flags are ignored and do not result in this error.",
+            'The requested mode is not available. Invalid flags are ignored and do not result in this error.',
           );
         case bass.BASS_ERROR_UNKNOWN:
-          throw const FormatException("Some other mystery problem!");
+          throw const FormatException('Some other mystery problem!');
       }
     }
     _emitPositionSnapshot();
-    _logAudioState("seek(end,$position)");
+    _logAudioState('seek(end,$position)');
   }
 
   /// It is not necessary to individually free the samples/streams/musics
@@ -1513,11 +1520,11 @@ class BassPlayer {
     if (_bass.BASS_StreamFree(_fstream!) == 0) {
       switch (_bass.BASS_ErrorGetCode()) {
         case bass.BASS_ERROR_HANDLE:
-          logger.w("StreamFree is called on a invalid handle.");
+          logger.w('StreamFree is called on a invalid handle.');
           break;
         case bass.BASS_ERROR_NOTAVAIL:
           throw const FormatException(
-            "Device streams (STREAMPROC_DEVICE) cannot be freed.",
+            'Device streams (STREAMPROC_DEVICE) cannot be freed.',
           );
       }
     }
@@ -1545,11 +1552,11 @@ class BassPlayer {
     if (_bass.BASS_Free() == 0) {
       switch (_bass.BASS_ErrorGetCode()) {
         case bass.BASS_ERROR_INIT:
-          logger.w("BASS_Free is called before BASS_Init complete normally.");
+          logger.w('BASS_Free is called before BASS_Init complete normally.');
           break;
         case bass.BASS_ERROR_BUSY:
           throw const FormatException(
-            "The device is currently being reinitialized.",
+            'The device is currently being reinitialized.',
           );
       }
     }
