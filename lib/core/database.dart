@@ -16,7 +16,7 @@ class AppDb {
     if (existing != null) return existing;
 
     final dir = await getDbDir();
-    final dbFile = File(path.join(dir.path, "app.sqlite"));
+    final dbFile = File(path.join(dir.path, 'app.sqlite'));
     dbFile.parent.createSync(recursive: true);
 
     final opened = sqlite3.open(dbFile.path);
@@ -26,7 +26,7 @@ class AppDb {
   }
 
   void _initSchema(Database db) {
-    db.execute("""
+    db.execute('''
 PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
 PRAGMA temp_store = MEMORY;
@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS album_colors (
   p INTEGER NOT NULL,
   on_p INTEGER NOT NULL
 );
-""");
+''');
   }
 
   void dispose() {
