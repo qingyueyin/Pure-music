@@ -4,8 +4,8 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:mesh_gradient/mesh_gradient.dart';
-import 'package:pure_music/core/hsl_color_sampler.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
+import 'package:pure_music/native/rust/api/color_extraction.dart';
 import 'package:pure_music/page/now_playing_page/component/now_playing_background_inputs.dart';
 
 const int _coverRenderSize = 400;
@@ -33,6 +33,8 @@ class _HybridBackgroundState extends State<HybridBackground>
   double _breathScale = 1.0;
   double _meshOpacity = 0.55;
   StreamSubscription<Float32List>? _spectrumSubscription;
+  int _lastSpectrumUpdateMs = 0;
+  static const _spectrumThrottleMs = 250;
 
   late AnimationController _transitionController;
   List<Color> _prevPaletteColors = [];
@@ -120,6 +122,10 @@ class _HybridBackgroundState extends State<HybridBackground>
     _spectrumSubscription = stream.listen((spectrum) {
       if (!mounted || !_isPlaying) return;
 
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (now - _lastSpectrumUpdateMs < _spectrumThrottleMs) return;
+      _lastSpectrumUpdateMs = now;
+
       final lowFreq = spectrum.isNotEmpty ? spectrum[0] : 0.0;
       final subBass = spectrum.length > 1 ? spectrum[1] : 0.0;
       final energy = (lowFreq * 0.7 + subBass * 0.3).clamp(0.0, 1.0);
@@ -190,14 +196,14 @@ class _HybridBackgroundState extends State<HybridBackground>
     if (_disposed) return;
 
     try {
-      final sampler = HslColorSampler();
-      final analysis = await sampler.analyzeCover(bytes);
-      final newColors = sampler.generateHarmoniousPalette(analysis);
-      final targetColors = newColors.length >= 4
-          ? newColors.sublist(0, 4)
-          : _padToFour(newColors);
+      final rustColors = await extractColorsFromImage(
+        imageBytes: bytes,
+        numColors: 4,
+      );
 
-      if (_disposed || !mounted) return;
+      if (rustColors.isEmpty || _disposed || !mounted) return;
+
+      final targetColors = _padToFour(rustColors.map((argb) => Color(argb)).toList());
 
       if (_isTransitioning) {
         _transitionController.stop();
@@ -208,7 +214,7 @@ class _HybridBackgroundState extends State<HybridBackground>
         _prevPaletteColors = _paletteColors.isEmpty
             ? List.filled(4, widget.fallbackColor)
             : _padToFour(List.from(_paletteColors));
-        _targetPaletteColors = _padToFour(List.from(targetColors));
+        _targetPaletteColors = targetColors;
         _isTransitioning = true;
       });
 
@@ -290,9 +296,12 @@ class _HybridBackgroundState extends State<HybridBackground>
                   child: AnimatedMeshGradient(
                     colors: colors,
                     options: AnimatedMeshGradientOptions(
-                      frequency: 3,
-                      amplitude: 50,
-                      speed: _isPlaying ? 0.6 : 0.01,
+
+
+
+                      frequency: 7,
+                      amplitude: 80,
+                      speed: _isPlaying ? 2.5 : 0.01,
                       grain: 0,
                     ),
                     child: Container(),
