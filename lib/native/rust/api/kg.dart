@@ -284,7 +284,8 @@ Future<Map<String, dynamic>?> kgLyric(String hash) async {
       'man': 'no',
     }, module: 'Lyric');
 
-    final queryStr = searchParams.entries.map((e) => '${e.key}=${e.value}').join('&');
+    final queryStr =
+        searchParams.entries.map((e) => '${e.key}=${e.value}').join('&');
     final searchUri = Uri.parse('https://lyrics.kugou.com/v1/search?$queryStr');
     logger.d('[KG] lyric: search uri=$searchUri');
 
@@ -327,8 +328,10 @@ Future<Map<String, dynamic>?> kgLyric(String hash) async {
       'ver': '1',
     }, module: 'Lyric');
 
-    final downloadQueryStr = downloadParams.entries.map((e) => '${e.key}=${e.value}').join('&');
-    final downloadUri = Uri.parse('http://lyrics.kugou.com/download?$downloadQueryStr');
+    final downloadQueryStr =
+        downloadParams.entries.map((e) => '${e.key}=${e.value}').join('&');
+    final downloadUri =
+        Uri.parse('http://lyrics.kugou.com/download?$downloadQueryStr');
     logger.d('[KG] lyric: download uri=$downloadUri');
 
     client = HttpClient();
@@ -348,13 +351,16 @@ Future<Map<String, dynamic>?> kgLyric(String hash) async {
     }
 
     final downloadResp = jsonDecode(utf8.decode(responseBodyBytes));
-    logger.d('[KG] lyric: resp keys=${downloadResp.keys.toList()}, code=${downloadResp['code']}');
+    logger.d(
+        '[KG] lyric: resp keys=${downloadResp.keys.toList()}, code=${downloadResp['code']}');
     final content = downloadResp['content'];
     final contentType = downloadResp['contenttype'];
-    logger.d('[KG] lyric: content length=${content?.toString().length}, contentType=$contentType');
+    logger.d(
+        '[KG] lyric: content length=${content?.toString().length}, contentType=$contentType');
 
     if (content == null || content.isEmpty) {
-      logger.d('[KG] lyric: content null or empty, resp=${jsonEncode(downloadResp)}');
+      logger.d(
+          '[KG] lyric: content null or empty, resp=${jsonEncode(downloadResp)}');
       return null;
     }
 
