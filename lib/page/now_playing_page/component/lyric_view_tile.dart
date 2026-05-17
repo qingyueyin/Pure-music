@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/lyric_render_config.dart';
+import 'package:pure_music/core/position_provider.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/zh_converter.dart';
 import 'package:pure_music/lyric/lrc.dart';
@@ -231,63 +232,54 @@ class _SyncLineContent extends StatelessWidget {
       final isDarkMode = scheme.brightness == Brightness.dark;
       final highlightColor = isDarkMode ? Colors.white : Colors.black;
 
-      final wordsWidget = StreamBuilder<double>(
-        stream: PlayService.instance.playbackService.positionStream,
-        builder: (context, snapshot) {
-          final posMs = (snapshot.data ?? 0.0) * 1000;
-          
-          final List<Widget> wordWidgets = [];
-          for (var word in syncLine.words) {
-            final chars = word.content.characters.toList();
-            final wordStart = word.start.inMilliseconds.toDouble();
-            final wordEnd = wordStart + max(word.length.inMilliseconds.toDouble(), 1.0);
-            
-            final List<Widget> charItems = [];
-            for (var i = 0; i < chars.length; i++) {
-              final char = ZhConverter.convert(chars[i], zhMode);
-              charItems.add(
-                _ReferenceCharItem(
-                  char: char,
-                  charIndex: i,
-                  totalChars: chars.length,
-                  wordStart: wordStart,
-                  wordEnd: wordEnd,
-                  positionMs: posMs,
-                  fontSize: primarySize,
-                  config: config,
-                  highlightColor: highlightColor,
-                ),
-              );
-            }
-            
-            wordWidgets.add(
-              _SyncWordWrap(
-                word: word,
-                positionMs: posMs,
-                fontSize: primarySize,
-                config: config,
-                highlightColor: highlightColor,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
-                  children: charItems,
-                ),
-              ),
-            );
-            wordWidgets.add(SizedBox(width: primarySize * 0.12));
-          }
-
-          return Wrap(
-            alignment: _getWrapAlignment(config.textAlign),
-            crossAxisAlignment: WrapCrossAlignment.end,
-            children: wordWidgets,
+      final List<Widget> wordWidgets = [];
+      for (var word in syncLine.words) {
+        final chars = word.content.characters.toList();
+        final wordStart = word.start.inMilliseconds.toDouble();
+        final wordEnd = wordStart + max(word.length.inMilliseconds.toDouble(), 1.0);
+        
+        final List<Widget> charItems = [];
+        for (var i = 0; i < chars.length; i++) {
+          final char = ZhConverter.convert(chars[i], zhMode);
+          charItems.add(
+            _ReferenceCharItem(
+              char: char,
+              charIndex: i,
+              totalChars: chars.length,
+              wordStart: wordStart,
+              wordEnd: wordEnd,
+              positionMs: null,
+              fontSize: primarySize,
+              config: config,
+              highlightColor: highlightColor,
+            ),
           );
-        },
-      );
+        }
+        
+        wordWidgets.add(
+          _SyncWordWrap(
+            word: word,
+            positionMs: null,
+            fontSize: primarySize,
+            config: config,
+            highlightColor: highlightColor,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: charItems,
+            ),
+          ),
+        );
+        wordWidgets.add(SizedBox(width: primarySize * 0.12));
+      }
 
       final List<Widget> contents = [
-        wordsWidget,
+        Wrap(
+          alignment: _getWrapAlignment(config.textAlign),
+          crossAxisAlignment: WrapCrossAlignment.end,
+          children: wordWidgets,
+        ),
       ];
       if (showTranslation && syncLine.translation != null) {
         final translatedText = ZhConverter.convert(syncLine.translation!, zhMode);
@@ -336,10 +328,10 @@ class _SyncLineContent extends StatelessWidget {
     final isDarkMode = scheme.brightness == Brightness.dark;
     final highlightColor = isDarkMode ? Colors.white : Colors.black;
 
-    final wordsWidget = StreamBuilder<double>(
-      stream: PlayService.instance.playbackService.positionStream,
-      builder: (context, snapshot) {
-        final posMs = (snapshot.data ?? 0.0) * 1000;
+    final wordsWidget = ListenableBuilder(
+      listenable: ThrottledPositionProvider.instance,
+      builder: (context, _) {
+        final posMs = ThrottledPositionProvider.instance.position * 1000;
         
         final List<Widget> wordWidgets = [];
         for (var word in syncLine.words) {
@@ -943,6 +935,65 @@ class LyricTransitionPainter extends CustomPainter {
   bool shouldRebuildSemantics(LyricTransitionPainter oldDelegate) => false;
 }
 
+/// 全局共享的间奏动画控制器管理器
+/// 避免每个 LyricTransitionTile 都独立订阅 positionStream
+class _TransitionControllerManager {
+  static final _TransitionControllerManager _instance =
+      _TransitionControllerManager._();
+  static _TransitionControllerManager get instance => _instance;
+
+  _TransitionControllerManager._();
+
+  StreamSubscription<double>? _sharedPositionSub;
+  final Set<LyricTransitionTileController> _controllers = {};
+  int _lastUpdateMs = 0;
+  static const int _throttleMs = 50;
+
+  void register(LyricTransitionTileController controller) {
+    _controllers.add(controller);
+    _ensureSubscribed();
+  }
+
+  void unregister(LyricTransitionTileController controller) {
+    _controllers.remove(controller);
+    if (_controllers.isEmpty) {
+      _sharedPositionSub?.cancel();
+      _sharedPositionSub = null;
+    }
+  }
+
+  void _ensureSubscribed() {
+    if (_sharedPositionSub != null) return;
+    _sharedPositionSub =
+        PlayService.instance.playbackService.positionStream.listen(
+      (position) {
+        final now = DateTime.now().millisecondsSinceEpoch;
+        if (now - _lastUpdateMs < _throttleMs) return;
+        _lastUpdateMs = now;
+
+        // 遍历快照，避免并发修改
+        final controllers = List<LyricTransitionTileController>.from(
+          _controllers,
+        );
+        for (final c in controllers) {
+          if (c._disposed) {
+            _controllers.remove(c);
+          } else {
+            c._updateProgress(position);
+          }
+        }
+
+        // 如果全部已 dispose，取消订阅
+        if (_controllers.isEmpty) {
+          _sharedPositionSub?.cancel();
+          _sharedPositionSub = null;
+        }
+      },
+      onError: (_) {},
+    );
+  }
+}
+
 class LyricTransitionTileController extends ChangeNotifier {
   final LrcLine? lrcLine;
   final SyncLyricLine? syncLine;
@@ -950,27 +1001,14 @@ class LyricTransitionTileController extends ChangeNotifier {
   final playbackService = PlayService.instance.playbackService;
 
   double progress = 0;
-  late final StreamSubscription positionStreamSub;
 
   double sizeFactor = 0;
   double k = 1;
   late final Ticker factorTicker;
   bool _disposed = false;
-  int _lastUpdateMs = 0;
-  static const int _throttleMs = 50;
 
   LyricTransitionTileController([this.lrcLine, this.syncLine]) {
-    positionStreamSub = playbackService.positionStream.listen(
-      (position) {
-        final now = DateTime.now().millisecondsSinceEpoch;
-        if (now - _lastUpdateMs >= _throttleMs) {
-          _lastUpdateMs = now;
-          _updateProgress(position);
-        }
-      },
-      onError: (_) {},
-      cancelOnError: true,
-    );
+    _TransitionControllerManager.instance.register(this);
     factorTicker = Ticker((elapsed) {
       if (_disposed) return;
       sizeFactor += k * 1 / 180;
@@ -999,7 +1037,7 @@ class LyricTransitionTileController extends ChangeNotifier {
       lengthInMs = syncLine!.length.inMilliseconds;
     }
     final sinceStart = position * 1000 - startInMs;
-    progress = lengthInMs > 0 ? max(sinceStart, 0) / lengthInMs : 1.0;
+    progress = max(sinceStart, 0) / lengthInMs;
     notifyListeners();
 
     if (progress >= 1) {
@@ -1012,9 +1050,7 @@ class LyricTransitionTileController extends ChangeNotifier {
     if (_disposed) return;
     _disposed = true;
 
-    try {
-      positionStreamSub.cancel();
-    } catch (_) {}
+    _TransitionControllerManager.instance.unregister(this);
 
     try {
       factorTicker.stop();
