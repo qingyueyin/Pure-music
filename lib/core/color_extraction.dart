@@ -8,9 +8,11 @@ class ColorExtractionService {
   factory ColorExtractionService() => _instance;
   ColorExtractionService._internal();
 
+  static const int _maxCacheSize = 50;
+  static const Duration _cacheDuration = Duration(minutes: 10);
   final Map<String, Color> _colorCache = {};
-  final Duration _cacheDuration = const Duration(minutes: 10);
   final Map<String, DateTime> _cacheTime = {};
+  final List<String> _accessOrder = [];
 
   Future<Color?> extractDominantColor(Uint8List? imageBytes) async {
     if (imageBytes == null || imageBytes.isEmpty) return null;
@@ -20,7 +22,10 @@ class ColorExtractionService {
     if (_colorCache.containsKey(cacheKey)) {
       final cacheAge = DateTime.now().difference(_cacheTime[cacheKey]!);
       if (cacheAge < _cacheDuration) {
+        _touchCacheEntry(cacheKey);
         return _colorCache[cacheKey];
+      } else {
+        _removeCacheEntry(cacheKey);
       }
     }
 
@@ -36,8 +41,7 @@ class ColorExtractionService {
       final dominantColor = palette.dominantColor?.color;
       if (dominantColor == null) return null;
 
-      _colorCache[cacheKey] = dominantColor;
-      _cacheTime[cacheKey] = DateTime.now();
+      _putCacheEntry(cacheKey, dominantColor);
 
       return dominantColor;
     } catch (e) {
@@ -46,15 +50,43 @@ class ColorExtractionService {
     }
   }
 
-  void clearExpiredCache() {
+  void _touchCacheEntry(String key) {
+    _accessOrder.remove(key);
+    _accessOrder.add(key);
+  }
+
+  void _removeCacheEntry(String key) {
+    _colorCache.remove(key);
+    _cacheTime.remove(key);
+    _accessOrder.remove(key);
+  }
+
+  void _putCacheEntry(String key, Color color) {
+    _evictExpiredEntries();
+    while (_colorCache.length >= _maxCacheSize && _accessOrder.isNotEmpty) {
+      final oldest = _accessOrder.removeAt(0);
+      _removeCacheEntry(oldest);
+    }
+    _colorCache[key] = color;
+    _cacheTime[key] = DateTime.now();
+    _accessOrder.add(key);
+  }
+
+  void _evictExpiredEntries() {
     final now = DateTime.now();
-    _cacheTime.removeWhere((key, time) {
-      if (now.difference(time) > _cacheDuration) {
-        _colorCache.remove(key);
-        return true;
+    final expired = <String>[];
+    for (final entry in _cacheTime.entries) {
+      if (now.difference(entry.value) > _cacheDuration) {
+        expired.add(entry.key);
       }
-      return false;
-    });
+    }
+    for (final key in expired) {
+      _removeCacheEntry(key);
+    }
+  }
+
+  void clearExpiredCache() {
+    _evictExpiredEntries();
   }
 
   Color getComplementaryColor(Color color, {double offset = 0.2}) {
