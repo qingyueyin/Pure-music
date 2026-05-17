@@ -36,7 +36,7 @@ class _ThemePickerDialogState extends State<ThemePickerDialog> {
               Padding(
                 padding: const EdgeInsets.only(bottom: 16.0),
                 child: Text(
-                  "主题选择器",
+                  '主题选择器',
                   style: TextStyle(
                     color: scheme.onSurface,
                     fontSize: 18.0,
@@ -58,7 +58,7 @@ class _ThemePickerDialogState extends State<ThemePickerDialog> {
                     }
                   },
                   decoration: const InputDecoration(
-                    labelText: "Hex RGB",
+                    labelText: 'Hex RGB',
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -83,14 +83,14 @@ class _ThemePickerDialogState extends State<ThemePickerDialog> {
                 children: [
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text("取消"),
+                    child: const Text('取消'),
                   ),
                   const SizedBox(width: 8.0),
                   TextButton(
                     onPressed: () {
                       Navigator.pop(context, selectedColor);
                     },
-                    child: const Text("确定"),
+                    child: const Text('确定'),
                   ),
                 ],
               ),
