@@ -23,7 +23,7 @@ class BuildCMake {
       throw Exception("Unknown target platform: $targetPlatform");
     }
 
-    final environment = BuildEnvironment.fromEnvironment(isAndroid: false);
+    final environment = BuildEnvironment.fromEnvironment();
     final provider =
         ArtifactProvider(environment: environment, userOptions: userOptions);
     final artifacts = await provider.getArtifacts([target]);

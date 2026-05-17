@@ -15,18 +15,19 @@ SET DART=%FLUTTER_ROOT%\bin\cache\dart-sdk\bin\dart
 
 set BUILD_TOOL_PKG_DIR_POSIX=%BUILD_TOOL_PKG_DIR:\=/%
 
-(
-    echo name: build_tool_runner
-    echo version: 1.0.0
-    echo publish_to: none
-    echo.
-    echo environment:
-    echo   sdk: '^>=3.0.0 ^<4.0.0'
-    echo.
-    echo dependencies:
-    echo   build_tool:
-    echo     path: %BUILD_TOOL_PKG_DIR_POSIX%
+setlocal enabledelayedexpansion
+(echo name: build_tool_runner
+echo version: 1.0.0
+echo publish_to: none
+echo.
+echo environment:
+echo   sdk: '^>=3.0.0 ^<4.0.0'
+echo.
+echo dependencies:
+echo   build_tool:
+echo     path: "!BUILD_TOOL_PKG_DIR_POSIX!"
 ) >pubspec.yaml
+endlocal
 
 if not exist bin (
     mkdir bin
@@ -45,7 +46,7 @@ REM To detect changes in package we compare output of DIR /s (recursive)
 set PREV_PACKAGE_INFO=.dart_tool\package_info.prev
 set CUR_PACKAGE_INFO=.dart_tool\package_info.cur
 
-DIR "%BUILD_TOOL_PKG_DIR%" /s > "%CUR_PACKAGE_INFO%_orig"
+DIR "%BUILD_TOOL_PKG_DIR%" /s > "%CUR_PACKAGE_INFO%_orig" 2>nul
 
 REM Last line in dir output is free space on harddrive. That is bound to
 REM change between invocation so we need to remove it

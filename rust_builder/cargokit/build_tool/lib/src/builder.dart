@@ -5,7 +5,6 @@ import 'package:collection/collection.dart';
 import 'package:logging/logging.dart';
 import 'package:path/path.dart' as path;
 
-import 'android_environment.dart';
 import 'cargo.dart';
 import 'environment.dart';
 import 'options.dart';
@@ -48,23 +47,12 @@ class BuildEnvironment {
   final String manifestDir;
   final CrateInfo crateInfo;
 
-  final bool isAndroid;
-  final String? androidSdkPath;
-  final String? androidNdkVersion;
-  final int? androidMinSdkVersion;
-  final String? javaHome;
-
   BuildEnvironment({
     required this.configuration,
     required this.crateOptions,
     required this.targetTempDir,
     required this.manifestDir,
     required this.crateInfo,
-    required this.isAndroid,
-    this.androidSdkPath,
-    this.androidNdkVersion,
-    this.androidMinSdkVersion,
-    this.javaHome,
   });
 
   static BuildConfiguration parseBuildConfiguration(String value) {
@@ -80,9 +68,7 @@ class BuildEnvironment {
     return buildConfiguration;
   }
 
-  static BuildEnvironment fromEnvironment({
-    required bool isAndroid,
-  }) {
+  static BuildEnvironment fromEnvironment() {
     final buildConfiguration =
         parseBuildConfiguration(Environment.configuration);
     final manifestDir = Environment.manifestDir;
@@ -96,12 +82,6 @@ class BuildEnvironment {
       targetTempDir: Environment.targetTempDir,
       manifestDir: manifestDir,
       crateInfo: crateInfo,
-      isAndroid: isAndroid,
-      androidSdkPath: isAndroid ? Environment.sdkPath : null,
-      androidNdkVersion: isAndroid ? Environment.ndkVersion : null,
-      androidMinSdkVersion:
-          isAndroid ? int.parse(Environment.minSdkVersion) : null,
-      javaHome: isAndroid ? Environment.javaHome : null,
     );
   }
 }
@@ -167,32 +147,6 @@ class RustBuilder {
   }
 
   Future<Map<String, String>> _buildEnvironment() async {
-    if (target.android == null) {
-      return {};
-    } else {
-      final sdkPath = environment.androidSdkPath;
-      final ndkVersion = environment.androidNdkVersion;
-      final minSdkVersion = environment.androidMinSdkVersion;
-      if (sdkPath == null) {
-        throw BuildException('androidSdkPath is not set');
-      }
-      if (ndkVersion == null) {
-        throw BuildException('androidNdkVersion is not set');
-      }
-      if (minSdkVersion == null) {
-        throw BuildException('androidMinSdkVersion is not set');
-      }
-      final env = AndroidEnvironment(
-        sdkPath: sdkPath,
-        ndkVersion: ndkVersion,
-        minSdkVersion: minSdkVersion,
-        targetTempDir: environment.targetTempDir,
-        target: target,
-      );
-      if (!env.ndkIsInstalled() && environment.javaHome != null) {
-        env.installNdk(javaHome: environment.javaHome!);
-      }
-      return env.buildEnvironment();
-    }
+    return {};
   }
 }

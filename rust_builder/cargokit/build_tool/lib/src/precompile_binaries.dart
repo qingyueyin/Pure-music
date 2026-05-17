@@ -25,9 +25,6 @@ class PrecompileBinaries {
     required this.repositorySlug,
     required this.manifestDir,
     required this.targets,
-    this.androidSdkLocation,
-    this.androidNdkVersion,
-    this.androidMinSdkVersion,
     this.tempDir,
   });
 
@@ -36,9 +33,6 @@ class PrecompileBinaries {
   final RepositorySlug repositorySlug;
   final String manifestDir;
   final List<Target> targets;
-  final String? androidSdkLocation;
-  final String? androidNdkVersion;
-  final int? androidMinSdkVersion;
   final String? tempDir;
 
   static String fileName(Target target, String name) {
@@ -54,10 +48,7 @@ class PrecompileBinaries {
 
     final targets = List.of(this.targets);
     if (targets.isEmpty) {
-      targets.addAll([
-        ...Target.buildableTargets(),
-        if (androidSdkLocation != null) ...Target.androidTargets(),
-      ]);
+      targets.addAll([...Target.buildableTargets()]);
     }
 
     _log.info('Precompiling binaries for $targets');
@@ -92,10 +83,6 @@ class PrecompileBinaries {
       targetTempDir: tempDir.path,
       manifestDir: manifestDir,
       crateInfo: crateInfo,
-      isAndroid: androidSdkLocation != null,
-      androidSdkPath: androidSdkLocation,
-      androidNdkVersion: androidNdkVersion,
-      androidMinSdkVersion: androidMinSdkVersion,
     );
 
     final rustup = Rustup();

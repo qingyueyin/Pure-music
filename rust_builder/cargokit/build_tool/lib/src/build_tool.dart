@@ -9,10 +9,7 @@ import 'package:github/github.dart';
 import 'package:hex/hex.dart';
 import 'package:logging/logging.dart';
 
-import 'android_environment.dart';
 import 'build_cmake.dart';
-import 'build_gradle.dart';
-import 'build_pod.dart';
 import 'logging.dart';
 import 'options.dart';
 import 'precompile_binaries.dart';
@@ -35,34 +32,6 @@ abstract class BuildCommand extends Command {
     }
 
     await runBuildCommand(options);
-  }
-}
-
-class BuildPodCommand extends BuildCommand {
-  @override
-  final name = 'build-pod';
-
-  @override
-  final description = 'Build cocoa pod library';
-
-  @override
-  Future<void> runBuildCommand(CargokitUserOptions options) async {
-    final build = BuildPod(userOptions: options);
-    await build.build();
-  }
-}
-
-class BuildGradleCommand extends BuildCommand {
-  @override
-  final name = 'build-gradle';
-
-  @override
-  final description = 'Build android library';
-
-  @override
-  Future<void> runBuildCommand(CargokitUserOptions options) async {
-    final build = BuildGradle(userOptions: options);
-    await build.build();
   }
 }
 
@@ -115,18 +84,6 @@ class PrecompileBinariesCommand extends Command {
               'Can be specified multiple times or omitted in which case\n'
               'all targets for current platform will be built.')
       ..addOption(
-        'android-sdk-location',
-        help: 'Location of Android SDK (if available)',
-      )
-      ..addOption(
-        'android-ndk-version',
-        help: 'Android NDK version (if available)',
-      )
-      ..addOption(
-        'android-min-sdk-version',
-        help: 'Android minimum rquired version (if available)',
-      )
-      ..addOption(
         'temp-dir',
         help: 'Directory to store temporary build artifacts',
       )
@@ -170,16 +127,6 @@ class PrecompileBinariesCommand extends Command {
     if (!Directory(manifestDir).existsSync()) {
       throw ArgumentError('Manifest directory does not exist: $manifestDir');
     }
-    String? androidMinSdkVersionString =
-        argResults!['android-min-sdk-version'] as String?;
-    int? androidMinSdkVersion;
-    if (androidMinSdkVersionString != null) {
-      androidMinSdkVersion = int.tryParse(androidMinSdkVersionString);
-      if (androidMinSdkVersion == null) {
-        throw ArgumentError(
-            'Invalid android-min-sdk-version: $androidMinSdkVersionString');
-      }
-    }
     final targetStrigns = argResults!['target'] as List<String>;
     final targets = targetStrigns.map((target) {
       final res = Target.forRustTriple(target);
@@ -194,9 +141,6 @@ class PrecompileBinariesCommand extends Command {
       manifestDir: manifestDir,
       repositorySlug: RepositorySlug.full(argResults!['repository'] as String),
       targets: targets,
-      androidSdkLocation: argResults!['android-sdk-location'] as String?,
-      androidNdkVersion: argResults!['android-ndk-version'] as String?,
-      androidMinSdkVersion: androidMinSdkVersion,
       tempDir: argResults!['temp-dir'] as String?,
     );
 
@@ -236,13 +180,7 @@ Future<void> runMain(List<String> args) async {
     // Init logging before options are loaded
     initLogging();
 
-    if (Platform.environment['_CARGOKIT_NDK_LINK_TARGET'] != null) {
-      return AndroidEnvironment.clangLinkerWrapper(args);
-    }
-
     final runner = CommandRunner('build_tool', 'Cargokit built_tool')
-      ..addCommand(BuildPodCommand())
-      ..addCommand(BuildGradleCommand())
       ..addCommand(BuildCMakeCommand())
       ..addCommand(GenKeyCommand())
       ..addCommand(PrecompileBinariesCommand())
