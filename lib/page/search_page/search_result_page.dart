@@ -55,7 +55,7 @@ class _SearchResultPageState extends State<SearchResultPage> {
                         padding: EdgeInsets.only(right: 12.0),
                         child: Icon(Symbols.search),
                       ),
-                      hintText: "搜索歌曲、艺术家、专辑",
+                      hintText: '搜索歌曲、艺术家、专辑',
                       border: OutlineInputBorder(),
                     ),
 
@@ -95,10 +95,10 @@ class _SearchResultPageState extends State<SearchResultPage> {
 }
 
 enum _SearchResultFilter {
-  all("所有"),
-  music("音乐"),
-  artist("艺术家"),
-  album("专辑");
+  all('所有'),
+  music('音乐'),
+  artist('艺术家'),
+  album('专辑');
 
   const _SearchResultFilter(this.name);
   final String name;

@@ -24,7 +24,7 @@ class SearchPage extends StatelessWidget {
                 Icon(Symbols.search, size: 48, color: scheme.outline),
                 const SizedBox(height: 12),
                 Text(
-                  "请使用顶栏搜索",
+                  '请使用顶栏搜索',
                   style: TextStyle(
                     color: scheme.onSurface,
                     fontSize: 18,
@@ -33,7 +33,7 @@ class SearchPage extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  "右上角放大镜已经替代了旧搜索页面。",
+                  '右上角放大镜已经替代了旧搜索页面。',
                   style: TextStyle(color: scheme.onSurfaceVariant),
                   textAlign: TextAlign.center,
                 ),
@@ -41,7 +41,7 @@ class SearchPage extends StatelessWidget {
                 FilledButton.icon(
                   onPressed: () => SearchDialog.show(context),
                   icon: const Icon(Symbols.search),
-                  label: const Text("打开搜索"),
+                  label: const Text('打开搜索'),
                 ),
               ],
             ),
