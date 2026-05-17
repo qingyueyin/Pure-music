@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -6,11 +7,13 @@ import 'package:flutter/scheduler.dart';
 class ScrollAwareFutureBuilder<T> extends StatefulWidget {
   final Future<T> Function() future;
   final AsyncWidgetBuilder builder;
+  final String? identity;
 
   const ScrollAwareFutureBuilder({
     super.key,
     required this.future,
     required this.builder,
+    this.identity,
   });
 
   @override
@@ -21,36 +24,53 @@ class ScrollAwareFutureBuilder<T> extends StatefulWidget {
 class _ScrollAwareFutureBuilderState<T>
     extends State<ScrollAwareFutureBuilder<T>> {
   Future<T>? _future;
+  Timer? _loadTimer;
 
-  void _createDeferredFuture() {
+  void _scheduleLoad() {
+    _loadTimer?.cancel();
+    _future = null;
+
     if (!context.mounted) {
-      // Polling: Wait until scrolling is done or context no longer recommends deferring loading
       SchedulerBinding.instance.scheduleFrameCallback((_) {
-        scheduleMicrotask(_createDeferredFuture);
+        scheduleMicrotask(_scheduleLoad);
       });
       return;
     }
-    // Check if loading should be deferred
+
     if (Scrollable.recommendDeferredLoadingForContext(context)) {
-      setState(() {
-        _future = null;
-      });
-
-      // Polling: Wait until scrolling is done or context no longer recommends deferring loading
       SchedulerBinding.instance.scheduleFrameCallback((_) {
-        scheduleMicrotask(_createDeferredFuture);
+        if (mounted) {
+          _scheduleLoad();
+        }
       });
       return;
     }
 
-    setState(() {
-      _future = widget.future();
-    });
+    _loadTimer = Timer(
+      Duration(milliseconds: 80 + (Random().nextInt(80))),
+      () {
+        if (!context.mounted) return;
+        setState(() => _future = widget.future());
+      },
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleLoad();
+  }
+
+  @override
+  void didUpdateWidget(ScrollAwareFutureBuilder<T> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.identity != oldWidget.identity) {
+      _scheduleLoad();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    _createDeferredFuture();
     if (_future == null) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -59,5 +79,11 @@ class _ScrollAwareFutureBuilderState<T>
       future: _future,
       builder: widget.builder,
     );
+  }
+
+  @override
+  void dispose() {
+    _loadTimer?.cancel();
+    super.dispose();
   }
 }

@@ -34,7 +34,7 @@ class _BuildIndexStateViewState extends State<BuildIndexStateView> {
 
     _subscription = buildIndexStream.listen(
       (action) {
-        logger.i("[build index] ${action.progress}: ${action.message}");
+        logger.i('[build index] ${action.progress}: ${action.message}');
       },
       onDone: () {
         widget.whenIndexBuilt();
@@ -60,7 +60,7 @@ class _BuildIndexStateViewState extends State<BuildIndexStateView> {
             ),
             const SizedBox(height: 8.0),
             Text(
-              "${snapshot.data?.message}",
+              '${snapshot.data?.message}',
               style: TextStyle(color: scheme.onSurface),
             ),
           ],
