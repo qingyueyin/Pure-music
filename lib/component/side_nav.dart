@@ -19,12 +19,12 @@ class DestinationDesc {
 }
 
 final destinations = <DestinationDesc>[
-  DestinationDesc(Symbols.library_music, "音乐", app_paths.AUDIOS_PAGE),
-  DestinationDesc(Symbols.artist, "艺术家", app_paths.ARTISTS_PAGE),
-  DestinationDesc(Symbols.album, "专辑", app_paths.ALBUMS_PAGE),
-  DestinationDesc(Symbols.folder, "文件夹", app_paths.FOLDERS_PAGE),
-  DestinationDesc(Symbols.list, "歌单", app_paths.PLAYLISTS_PAGE),
-  DestinationDesc(Symbols.settings, "设置", app_paths.SETTINGS_PAGE),
+  DestinationDesc(Symbols.library_music, '音乐', app_paths.AUDIOS_PAGE),
+  DestinationDesc(Symbols.artist, '艺术家', app_paths.ARTISTS_PAGE),
+  DestinationDesc(Symbols.album, '专辑', app_paths.ALBUMS_PAGE),
+  DestinationDesc(Symbols.folder, '文件夹', app_paths.FOLDERS_PAGE),
+  DestinationDesc(Symbols.list, '歌单', app_paths.PLAYLISTS_PAGE),
+  DestinationDesc(Symbols.settings, '设置', app_paths.SETTINGS_PAGE),
 ];
 
 class SideNav extends StatefulWidget {
@@ -163,7 +163,7 @@ class _SmoothLargeSideNav extends StatelessWidget {
                             : expanded
                                 ? Symbols.menu_open
                                 : Symbols.menu,
-                        label: isDrawer ? "关闭" : "侧边栏",
+                        label: isDrawer ? '关闭' : '侧边栏',
                         expandedT: t,
                         selected: false,
                         onTap: onToggle,
