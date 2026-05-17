@@ -1,12 +1,11 @@
 import 'package:pure_music/lyric/lyric.dart';
-import 'package:pure_music/lyric/lrc.dart';
+import 'package:pure_music/lyric/lyric_source.dart';
 import 'package:xml/xml.dart';
 
 class Ttml extends Lyric {
-  final LrcSource source;
-  Ttml(super.lines, this.source);
+  Ttml(super.lines, [super.source = LyricFormat.local]);
 
-  static Ttml? fromTtmlText(String ttml, LrcSource source, {String? separator}) {
+  static Ttml? fromTtmlText(String ttml, {String? separator}) {
     try {
       final document = XmlDocument.parse(ttml);
       final body = document.findElements('body').firstOrNull;
@@ -55,7 +54,7 @@ class Ttml extends Lyric {
         }
       }
 
-      return Ttml(lines, source);
+      return Ttml(lines);
     } catch (e) {
       return null;
     }
