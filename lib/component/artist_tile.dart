@@ -76,7 +76,7 @@ class _ArtistTileState extends State<ArtistTile> {
               extra: widget.artist,
             ),
             leadingIcon: const Icon(Symbols.open_in_new),
-            child: const Text("打开"),
+            child: const Text('打开'),
           ),
           if (widget.multiSelectController != null)
             MenuItemButton(
@@ -86,7 +86,7 @@ class _ArtistTileState extends State<ArtistTile> {
                 widget.multiSelectController!.select(widget.artist);
               },
               leadingIcon: const Icon(Symbols.select),
-              child: const Text("多选"),
+              child: const Text('多选'),
             ),
         ],
         builder: (context, controller, _) => AnimatedContainer(
