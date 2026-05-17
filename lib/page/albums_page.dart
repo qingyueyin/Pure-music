@@ -18,8 +18,8 @@ class AlbumsPage extends StatelessWidget {
     final multiSelectController = MultiSelectController<Album>();
     return UniPage<Album>(
       pref: AppPreference.instance.albumsPagePref,
-      title: "专辑",
-      subtitle: "${contentList.length} 张专辑",
+      title: '专辑',
+      subtitle: '${contentList.length} 张专辑',
       primaryAction: FilledButton.icon(
         onPressed: () async {
           int done = 0;
@@ -54,7 +54,7 @@ class AlbumsPage extends StatelessWidget {
                 }
 
                 return AlertDialog(
-                  title: const Text("优化专辑页"),
+                  title: const Text('优化专辑页'),
                   content: SizedBox(
                     width: 360,
                     child: Column(
@@ -63,14 +63,14 @@ class AlbumsPage extends StatelessWidget {
                       children: [
                         LinearProgressIndicator(value: done / total),
                         const SizedBox(height: 12),
-                        Text("$done / $total"),
+                        Text('$done / $total'),
                       ],
                     ),
                   ),
                   actions: [
                     TextButton(
                       onPressed: running ? null : () => Navigator.pop(context),
-                      child: const Text("关闭"),
+                      child: const Text('关闭'),
                     ),
                   ],
                 );
@@ -79,7 +79,7 @@ class AlbumsPage extends StatelessWidget {
           );
         },
         icon: const Icon(Symbols.palette),
-        label: const Text("优化专辑页"),
+        label: const Text('优化专辑页'),
         style: const ButtonStyle(
           fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
         ),
@@ -121,7 +121,7 @@ class AlbumsPage extends StatelessWidget {
       sortMethods: [
         SortMethodDesc(
           icon: Symbols.title,
-          name: "标题",
+          name: '标题',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
@@ -135,7 +135,7 @@ class AlbumsPage extends StatelessWidget {
         ),
         SortMethodDesc(
           icon: Symbols.music_note,
-          name: "作品数量",
+          name: '作品数量',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
