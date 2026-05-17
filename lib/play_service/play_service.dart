@@ -2,6 +2,7 @@ import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/system_volume_service.dart';
 import 'package:pure_music/core/utils.dart';
+import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
 import 'package:pure_music/play_service/desktop_lyric_service.dart';
 import 'package:pure_music/play_service/lyric_service.dart';
@@ -26,18 +27,18 @@ class PlayService {
       await desktopLyricService.killDesktopLyric().timeout(
         const Duration(seconds: 1),
         onTimeout: () {
-          logger.w("desktopLyricService.close timeout");
+          logger.w('desktopLyricService.close timeout');
         },
       );
     } catch (e) {
-      logger.w("desktopLyricService.close error: $e");
+      logger.w('desktopLyricService.close error: $e');
     }
     
     // 释放歌词服务资源
     try {
       lyricService.dispose();
     } catch (e) {
-      logger.w("lyricService.dispose error: $e");
+      logger.w('lyricService.dispose error: $e');
     }
     
     // 关闭播放服务
@@ -45,11 +46,11 @@ class PlayService {
       playbackService.close().timeout(
         const Duration(seconds: 2),
         onTimeout: () {
-          logger.w("playbackService.close timeout");
+          logger.w('playbackService.close timeout');
         },
       );
     } catch (e) {
-      logger.w("playbackService.close error: $e");
+      logger.w('playbackService.close error: $e');
     }
     
     // 停止音频回波日志记录
@@ -57,15 +58,18 @@ class PlayService {
       await AudioEchoLogRecorder.instance.stop().timeout(
         const Duration(seconds: 1),
         onTimeout: () {
-          logger.w("AudioEchoLogRecorder.stop timeout");
+          logger.w('AudioEchoLogRecorder.stop timeout');
         },
       );
     } catch (e) {
-      logger.w("AudioEchoLogRecorder.stop error: $e");
+      logger.w('AudioEchoLogRecorder.stop error: $e');
     }
 
     ThemeProvider.instance.dispose();
     SystemVolumeService.instance.dispose();
     AlbumColorCache.instance.dispose();
+    CoverImageCache.instance.dispose();
+    CoverCache.instance.clear();
+    AudioLibrary.instance.dispose();
   }
 }
