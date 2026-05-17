@@ -169,7 +169,7 @@ pure-music/
 ├── BASS/                        # BASS 音频库插件 (C)
 ├── assets/                      # 资源文件
 ├── screenshot/                  # 截图预览
-├── desktop_lyric/               # 桌面歌词二进制
+├── desktop_lyric/               # 桌面歌词
 └── rust_builder/                # Rust 编译工具 (cargokit)
 ```
 
