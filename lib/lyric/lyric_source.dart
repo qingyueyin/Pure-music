@@ -7,10 +7,10 @@ import 'package:pure_music/core/utils.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 enum LyricSourceType {
-  qq("qq"),
-  kugou("kugou"),
-  ne("ne"),
-  local("local");
+  qq('qq'),
+  kugou('kugou'),
+  ne('ne'),
+  local('local');
 
   final String name;
   const LyricSourceType(this.name);
@@ -27,13 +27,13 @@ class LyricSource {
 
   static LyricSource? fromMap(Map? map) {
     if (map == null) return null;
-    final source = map["source"]?.toString();
-    if (source == "qq") {
-      return LyricSource(LyricSourceType.qq, qqSongId: map["id"]?.toString());
-    } else if (source == "kugou") {
-      return LyricSource(LyricSourceType.kugou, kugouSongHash: map["id"]?.toString());
-    } else if (source == "ne") {
-      final rawId = map["id"];
+    final source = map['source']?.toString();
+    if (source == 'qq') {
+      return LyricSource(LyricSourceType.qq, qqSongId: map['id']?.toString());
+    } else if (source == 'kugou') {
+      return LyricSource(LyricSourceType.kugou, kugouSongHash: map['id']?.toString());
+    } else if (source == 'ne') {
+      final rawId = map['id'];
       int? neSongId;
       if (rawId is int) {
         neSongId = rawId;
@@ -49,13 +49,13 @@ class LyricSource {
   Map toMap() {
     switch (source) {
       case LyricSourceType.qq:
-        return {"source": source.name, "id": qqSongId};
+        return {'source': source.name, 'id': qqSongId};
       case LyricSourceType.kugou:
-        return {"source": source.name, "id": kugouSongHash};
+        return {'source': source.name, 'id': kugouSongHash};
       case LyricSourceType.ne:
-        return {"source": source.name, "id": neSongId};
+        return {'source': source.name, 'id': neSongId};
       case LyricSourceType.local:
-        return {"source": source.name, "id": null};
+        return {'source': source.name, 'id': null};
     }
   }
 }
@@ -71,7 +71,7 @@ Future<void> readLyricSources() async {
 
     final db = await AppDb.instance.db();
     final count =
-        db.select("SELECT COUNT(1) AS c FROM lyric_sources").first["c"] as int;
+        db.select('SELECT COUNT(1) AS c FROM lyric_sources').first['c'] as int;
     if (count == 0 && jsonFile.existsSync()) {
       final fromJson = _readLyricSourcesFromJson(jsonFile);
       _writeLyricSourcesToDb(db, fromJson);
@@ -80,12 +80,12 @@ Future<void> readLyricSources() async {
     }
 
     final result = <String, LyricSource>{};
-    final rows = db.select("SELECT path, source, id FROM lyric_sources");
+    final rows = db.select('SELECT path, source, id FROM lyric_sources');
     for (final row in rows) {
-      final p = row["path"] as String;
+      final p = row['path'] as String;
       if (!File(p).existsSync()) continue;
-      final source = row["source"] as String;
-      final id = row["id"] as String?;
+      final source = row['source'] as String;
+      final id = row['id'] as String?;
       final ls = _lyricSourceFromDb(source, id);
       if (ls != null) {
         result[p] = ls;
@@ -125,21 +125,21 @@ Map<String, LyricSource> _readLyricSourcesFromJson(File jsonFile) {
 }
 
 void _writeLyricSourcesToDb(Database db, Map<String, LyricSource> sources) {
-  db.execute("BEGIN");
+  db.execute('BEGIN');
   try {
-    db.execute("DELETE FROM lyric_sources");
+    db.execute('DELETE FROM lyric_sources');
     for (final e in sources.entries) {
       final p = e.key;
       final s = e.value.source.name;
       final id = _lyricSourceId(e.value);
       db.execute(
-        "INSERT INTO lyric_sources(path, source, id) VALUES(?, ?, ?)",
+        'INSERT INTO lyric_sources(path, source, id) VALUES(?, ?, ?)',
         [p, s, id],
       );
     }
-    db.execute("COMMIT");
+    db.execute('COMMIT');
   } catch (_) {
-    db.execute("ROLLBACK");
+    db.execute('ROLLBACK');
     rethrow;
   }
 }
