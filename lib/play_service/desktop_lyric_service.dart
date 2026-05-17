@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
+import 'package:ffi/ffi.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
@@ -13,6 +15,99 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
 
 import 'package:desktop_lyric/message.dart' as msg;
+
+/// Windows Job Object 辅助——确保主进程意外终止时子进程被自动关闭
+class _WinJobObject {
+  static final DynamicLibrary _kernel32 = DynamicLibrary.open('kernel32.dll');
+
+  static final Pointer<Void> Function(Pointer<Void>, Pointer<Utf16>)
+      _createJobObject = _kernel32
+          .lookupFunction<
+              Pointer<Void> Function(Pointer<Void>, Pointer<Utf16>),
+              Pointer<Void> Function(Pointer<Void>, Pointer<Utf16>)>(
+          'CreateJobObjectW');
+
+  static final int Function(Pointer<Void>, int, Pointer<Void>, int)
+      _setInformationJobObject = _kernel32
+          .lookupFunction<
+              Int32 Function(Pointer<Void>, Uint32, Pointer<Void>, Uint32),
+              int Function(Pointer<Void>, int, Pointer<Void>, int)>(
+          'SetInformationJobObject');
+
+  static final int Function(Pointer<Void>, int) _assignProcessToJobObject =
+      _kernel32
+          .lookupFunction<
+              Int32 Function(Pointer<Void>, IntPtr),
+              int Function(Pointer<Void>, int)>('AssignProcessToJobObject');
+
+  static final int Function(Pointer<Void>) _closeHandle = _kernel32
+      .lookupFunction<Int32 Function(Pointer<Void>), int Function(Pointer<Void>)>('CloseHandle');
+
+  static const int _jobObjectExtendedLimitInformation = 9;
+  static const int _jobObjectLimitKillOnJobClose = 0x2000;
+
+  /// 创建 Job Object 并将子进程加入。
+  /// 当主进程终止（包括崩溃），Windows 会自动终止该 Job 内的所有进程。
+  /// 返回 job handle，调用方需持有引用直至不再需要。
+  static Pointer<Void>? createAndAssign(int childPid) {
+    try {
+      // 1) 创建 Job Object
+      final job = _createJobObject(ffi.nullptr, ffi.nullptr);
+      if (job == ffi.nullptr) {
+        logger.w('[desktop lyric] CreateJobObjectW failed');
+        return null;
+      }
+
+      // 2) 设置 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+      // JOBOBJECT_EXTENDED_LIMIT_INFORMATION 布局 (x64):
+      //   +0x00: BasicLimitInformation.PerProcessUserTimeLimit (LARGE_INTEGER, 8B)
+      //   +0x08: BasicLimitInformation.PerJobUserTimeLimit   (LARGE_INTEGER, 8B)
+      //   +0x10: BasicLimitInformation.LimitFlags            (DWORD, 4B)
+      //   ... 其余字段不需要设置，calloc 已清零
+      // 总结构体大小估算为 144B (x64)
+      const infoSize = 144;
+      final infoPtr = calloc<Uint8>(infoSize);
+      // LimitFlags @ offset 0x10
+      infoPtr.elementAt(0x10).cast<Uint32>().value =
+          _jobObjectLimitKillOnJobClose;
+
+      final ret = _setInformationJobObject(
+        job,
+        _jobObjectExtendedLimitInformation,
+        infoPtr.cast(),
+        infoSize,
+      );
+      calloc.free(infoPtr);
+
+      if (ret == 0) {
+        logger.w('[desktop lyric] SetInformationJobObject failed, closing job');
+        _closeHandle(job);
+        return null;
+      }
+
+      // 3) 将子进程加入 Job
+      final assignRet = _assignProcessToJobObject(job, childPid);
+      if (assignRet == 0) {
+        logger.w('[desktop lyric] AssignProcessToJobObject failed '
+            '(进程可能已属于其他 Job)，退化至仅靠心跳超时');
+        _closeHandle(job);
+        return null;
+      }
+
+      logger.i('[desktop lyric] Job Object created, child PID=$childPid secured');
+      return job;
+    } catch (e) {
+      logger.w('[desktop lyric] WinJobObject init error: $e');
+      return null;
+    }
+  }
+
+  static void close(Pointer<Void>? job) {
+    if (job != null && job != ffi.nullptr) {
+      _closeHandle(job);
+    }
+  }
+}
 
 class DesktopLyricService extends ChangeNotifier {
   final PlayService playService;
@@ -32,6 +127,10 @@ class DesktopLyricService extends ChangeNotifier {
   bool isLocked = false;
   bool _isKilling = false;
   bool _isRunning = false;
+
+  // ── 心跳 / Job Object ─────────────────────────────────────
+  Timer? _heartbeatTimer;
+  Pointer<Void>? _jobHandle;
 
   /// 桌面歌词是否正在运行
   bool get isRunning => _isRunning;
@@ -63,6 +162,10 @@ class DesktopLyricService extends ChangeNotifier {
     isLocked = false;
     _positionTimer?.cancel();
     _positionTimer = null;
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+    _WinJobObject.close(_jobHandle);
+    _jobHandle = null;
     notifyListeners();
   }
 
@@ -143,6 +246,19 @@ class DesktopLyricService extends ChangeNotifier {
     _stdoutBuffer = '';
     _monitorProcessExit(process);
     _sendInitialState();
+
+    // ── 创建 Windows Job Object（崩溃保护） ──
+    if (Platform.isWindows) {
+      _jobHandle = _WinJobObject.createAndAssign(process.pid);
+    }
+
+    // ── 启动心跳定时器（每 5 秒发送一次） ──
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = Timer.periodic(
+      const Duration(seconds: 5),
+      (_) => sendMessage(const msg.HeartbeatMessage()),
+    );
+
     notifyListeners();
   }
 

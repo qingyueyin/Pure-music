@@ -277,3 +277,15 @@ class UnlockMessage extends Message {
   @override
   Map<String, dynamic> toMessageJson() => {};
 }
+
+/// 心跳消息——主程序定期发送给桌面歌词
+class HeartbeatMessage extends Message {
+  const HeartbeatMessage();
+
+  factory HeartbeatMessage.fromJson(Map<String, dynamic> json) {
+    return const HeartbeatMessage();
+  }
+
+  @override
+  Map<String, dynamic> toMessageJson() => {};
+}
