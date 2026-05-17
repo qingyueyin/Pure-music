@@ -15,7 +15,7 @@ class _NowPlayingLargePage extends StatelessWidget {
               return Row(
                 children: [
                   // 左侧：封面 + 歌曲信息 (50%) - 垂直居中
-                  Expanded(
+                  const Expanded(
                     child: Center(child: _NowPlayingInfo()),
                   ),
                   // 右侧：歌词区域 (50%)
@@ -29,9 +29,9 @@ class _NowPlayingLargePage extends StatelessWidget {
                         child: switch (value) {
                           NowPlayingViewMode.withPlaylist =>
                             const CurrentPlaylistView(),
-                          _ => Center(
+                          _ => const Center(
                               child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                padding: EdgeInsets.symmetric(horizontal: 8.0),
                                 child: VerticalLyricView(
                                   enableEdgeSpacer: true,
                                   currentLineAlignment: 0.45,
@@ -52,7 +52,7 @@ class _NowPlayingLargePage extends StatelessWidget {
           children: [
             const _NowPlayingSlider(),
             Padding(
-              padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
               child: Stack(
                 alignment: Alignment.center,
                 children: [
@@ -61,12 +61,12 @@ class _NowPlayingLargePage extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        _DesktopLyricSwitch(),
+                        const _DesktopLyricSwitch(),
                         spacer,
-                        _ExclusiveModeSwitch(),
+                        const _ExclusiveModeSwitch(),
                         spacer,
                         IconButton(
-                          tooltip: "均衡器",
+                          tooltip: '均衡器',
                           onPressed: () {
                             showDialog(
                               context: context,
@@ -86,7 +86,7 @@ class _NowPlayingLargePage extends StatelessWidget {
                         const _NowPlayingPlaybackModeSwitch(),
                         spacer,
                         IconButton(
-                          tooltip: "上一曲",
+                          tooltip: '上一曲',
                           onPressed: PlayService.instance.playbackService.lastAudio,
                           icon: const Icon(
                             Symbols.skip_previous,
@@ -107,7 +107,7 @@ class _NowPlayingLargePage extends StatelessWidget {
                             final isCompleted = state == PlayerState.completed;
                             
                             return IconButton(
-                              tooltip: isPlaying ? "暂停" : "播放",
+                              tooltip: isPlaying ? '暂停' : '播放',
                               onPressed: () {
                                 final service = PlayService.instance.playbackService;
                                 if (isPlaying) {
@@ -129,7 +129,7 @@ class _NowPlayingLargePage extends StatelessWidget {
                         ),
                         spacer,
                         IconButton(
-                          tooltip: "下一曲",
+                          tooltip: '下一曲',
                           onPressed: PlayService.instance.playbackService.nextAudio,
                           icon: const Icon(
                             Symbols.skip_next,
@@ -143,14 +143,14 @@ class _NowPlayingLargePage extends StatelessWidget {
                       ],
                     ),
                   ),
-                  Align(
+                  const Align(
                     alignment: Alignment.centerRight,
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const _NowPlayingVolDspSlider(),
+                        _NowPlayingVolDspSlider(),
                         spacer,
-                        const NowPlayingPitchControl(),
+                        NowPlayingPitchControl(),
                         spacer,
                         _NowPlayingMoreAction(),
                       ],
@@ -212,8 +212,8 @@ class _NowPlayingLargeViewSwitch extends StatelessWidget {
       valueListenable: nowPlayingViewMode,
       builder: (context, value, _) => IconButton(
         tooltip: switch (value) {
-          NowPlayingViewMode.withPlaylist => "歌词",
-          _ => "播放列表",
+          NowPlayingViewMode.withPlaylist => '歌词',
+          _ => '播放列表',
         },
         onPressed: () {
           if (value == NowPlayingViewMode.onlyMain ||
