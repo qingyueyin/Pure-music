@@ -721,7 +721,9 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView> {
               color: Colors.transparent,
               child: NotificationListener<ScrollNotification>(
                 onNotification: (notification) {
-                  if (notification is ScrollStartNotification &&
+                  if (notification is UserScrollNotification) {
+                    _markUserScrolling();
+                  } else if (notification is ScrollStartNotification &&
                       notification.dragDetails != null) {
                     _markUserScrolling();
                   } else if (notification is ScrollUpdateNotification &&
