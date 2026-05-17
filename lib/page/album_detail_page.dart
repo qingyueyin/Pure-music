@@ -28,16 +28,16 @@ class AlbumDetailPage extends StatelessWidget {
       backgroundPic: album.works.first.cover,
       picShape: PicShape.rrect,
       title: album.name,
-      subtitle: "${album.works.length} 首作品",
+      subtitle: '${album.works.length} 首作品',
       secondaryContent: secondaryContent,
       secondaryContentBuilder: (context, audio, i, multiSelectController, _) =>
           AudioTile(
-        leading: Text(audio.track < 10 ? "0${audio.track}" : "${audio.track}"),
+        leading: Text(audio.track < 10 ? '0${audio.track}' : '${audio.track}'),
         audioIndex: i,
         playlist: secondaryContent,
         multiSelectController: multiSelectController,
       ),
-      tertiaryContentTitle: "艺术家",
+      tertiaryContentTitle: '艺术家',
       tertiaryContent: album.artistsMap.values.toList(),
       tertiaryContentBuilder: (context, artist, i, multiSelectController, _) =>
           ListTile(
@@ -61,7 +61,7 @@ class AlbumDetailPage extends StatelessWidget {
       sortMethods: [
         SortMethodDesc(
           icon: Symbols.title,
-          name: "标题",
+          name: '标题',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
@@ -75,7 +75,7 @@ class AlbumDetailPage extends StatelessWidget {
         ),
         SortMethodDesc(
           icon: Symbols.artist,
-          name: "艺术家",
+          name: '艺术家',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
@@ -89,7 +89,7 @@ class AlbumDetailPage extends StatelessWidget {
         ),
         SortMethodDesc(
           icon: Symbols.art_track,
-          name: "音轨",
+          name: '音轨',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
@@ -103,7 +103,7 @@ class AlbumDetailPage extends StatelessWidget {
         ),
         SortMethodDesc(
           icon: Symbols.add,
-          name: "创建时间",
+          name: '创建时间',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
@@ -117,7 +117,7 @@ class AlbumDetailPage extends StatelessWidget {
         ),
         SortMethodDesc(
           icon: Symbols.edit,
-          name: "修改时间",
+          name: '修改时间',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
