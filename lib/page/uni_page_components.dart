@@ -19,7 +19,7 @@ class ShufflePlay<T> extends StatelessWidget {
         contentList as List<Audio>,
       ),
       icon: const Icon(Symbols.shuffle),
-      label: const Text("随机播放"),
+      label: const Text('随机播放'),
       style: const ButtonStyle(
         fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
       ),
@@ -201,12 +201,12 @@ class AddAllToPlaylist extends StatelessWidget {
           ),
           onPressed: () {
             for (var item in multiSelectController.selected) {
-              if (!PLAYLISTS[i].audios.containsKey(item.path)) {
-                PLAYLISTS[i].audios[item.path] = item;
+              if (!PLAYLISTS[i].containsPath(item.path)) {
+                PLAYLISTS[i].addPath(item.path);
               }
             }
             showTextOnSnackBar(
-              "成功将${multiSelectController.selected.length}首添加到歌单“${PLAYLISTS[i].name}”",
+              '成功将${multiSelectController.selected.length}首添加到歌单${PLAYLISTS[i].name}',
             );
           },
           child: Text(PLAYLISTS[i].name),
@@ -221,7 +221,7 @@ class AddAllToPlaylist extends StatelessWidget {
           }
         },
         icon: const Icon(Symbols.add),
-        label: const Text("添加到歌单"),
+        label: const Text('添加到歌单'),
         style: const ButtonStyle(
           fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
         ),
@@ -258,17 +258,13 @@ class AddSelectedAudiosToPlaylist<T> extends StatelessWidget {
           ),
           onPressed: () {
             final selectedAudios = toAudios(multiSelectController.selected);
-            final map = <String, Audio>{};
             for (final audio in selectedAudios) {
-              map[audio.path] = audio;
-            }
-            for (final audio in map.values) {
-              if (!PLAYLISTS[i].audios.containsKey(audio.path)) {
-                PLAYLISTS[i].audios[audio.path] = audio;
+              if (!PLAYLISTS[i].containsPath(audio.path)) {
+                PLAYLISTS[i].addPath(audio.path);
               }
             }
             showTextOnSnackBar(
-              "成功将${map.length}首添加到歌单“${PLAYLISTS[i].name}”",
+              '成功将${selectedAudios.length}首添加到歌单“${PLAYLISTS[i].name}”',
             );
           },
           child: Text(PLAYLISTS[i].name),
@@ -285,7 +281,7 @@ class AddSelectedAudiosToPlaylist<T> extends StatelessWidget {
                 }
               },
         icon: const Icon(Symbols.add),
-        label: const Text("添加到歌单"),
+        label: const Text('添加到歌单'),
         style: const ButtonStyle(
           fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
         ),
@@ -332,7 +328,7 @@ class MultiSelectPlaySelectedAudios<T> extends StatelessWidget {
                 multiSelectController.clear();
               },
         icon: Icon(shuffle ? Symbols.shuffle : Symbols.play_arrow),
-        label: Text(shuffle ? "随机播放" : "播放"),
+        label: Text(shuffle ? '随机播放' : '播放'),
         style: const ButtonStyle(
           fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
         ),
@@ -358,7 +354,7 @@ class MultiSelectSelectOrClearAll<T> extends StatelessWidget {
         final allSelected = contentList.isNotEmpty &&
             multiSelectController.selected.length >= contentList.length;
         return IconButton.filledTonal(
-          tooltip: allSelected ? "取消全选" : "全选",
+          tooltip: allSelected ? '取消全选' : '全选',
           onPressed: contentList.isEmpty
               ? null
               : () {
@@ -385,7 +381,7 @@ class MultiSelectExit<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return IconButton.filledTonal(
-      tooltip: "退出多选视图",
+      tooltip: '退出多选视图',
       onPressed: () {
         multiSelectController.useMultiSelectView(false);
         multiSelectController.clear();
