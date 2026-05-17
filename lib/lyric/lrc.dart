@@ -4,10 +4,11 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/lyric/lyric.dart';
+import 'package:pure_music/lyric/lyric_source.dart';
 import 'package:pure_music/lyric/ttml.dart';
 import 'package:pure_music/lyric/krc.dart';
 import 'package:pure_music/lyric/qrc.dart';
-import 'package:pure_music/lyric/qrc_decryptor.dart';
+import 'package:pure_music/services/online_lyric/api/qrc_decryptor.dart';
 import 'package:pure_music/lyric/yrc.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart';
 
@@ -50,17 +51,16 @@ String _lineContent(LyricLine line) {
 }
 
 class EnhancedLrc extends Lyric {
-  final LrcSource source;
-  EnhancedLrc(super.lines, this.source);
+  EnhancedLrc(super.lines, super.source);
 
   @override
   String toString() {
-    return {"type": source, "lyric": lines}.toString();
+    return {'type': source, 'lyric': lines}.toString();
   }
 }
 
 class EnhancedLrcLine extends SyncLyricLine {
-  EnhancedLrcLine(super.start, super.length, super.words, [super.translation]);
+  EnhancedLrcLine(super.start, super.length, super.words, [super.translation, super.romanLyric]);
 }
 
 class _EnhancedLrcRawLine {
@@ -74,17 +74,16 @@ class EnhancedLrcWord extends SyncLyricWord {
 }
 
 class Crc extends Lyric {
-  final LrcSource source;
-  Crc(super.lines, this.source);
+  Crc(super.lines, super.source);
 
   @override
   String toString() {
-    return {"type": source, "lyric": lines}.toString();
+    return {'type': source, 'lyric': lines}.toString();
   }
 }
 
 class CrcLine extends SyncLyricLine {
-  CrcLine(super.start, super.length, super.words, [super.translation]);
+  CrcLine(super.start, super.length, super.words, [super.translation, super.romanLyric]);
 }
 
 class CrcWord extends SyncLyricWord {
@@ -107,13 +106,13 @@ class LrcLine extends UnsyncLyricLine {
 
   static LrcLine defaultLine = LrcLine(
     Duration.zero,
-    "无歌词",
+    '无歌词',
     requiredIsBlank: false,
   );
 
   @override
   String toString() {
-    return {"time": start.toString(), "content": content}.toString();
+    return {'time': start.toString(), 'content': content}.toString();
   }
 
   static final _metadataPattern = RegExp(
@@ -127,8 +126,8 @@ class LrcLine extends UnsyncLyricLine {
       return null;
     }
 
-    final left = line.indexOf("[");
-    final right = line.indexOf("]");
+    final left = line.indexOf('[');
+    final right = line.indexOf(']');
 
     if (left == -1 || right == -1) {
       return null;
@@ -140,9 +139,9 @@ class LrcLine extends UnsyncLyricLine {
     var content = line
         .substring(right + 1)
         .trim()
-        .replaceAll(RegExp(r"\[\d{2}:\d{2}\.\d{2,}\]"), "");
+        .replaceAll(RegExp(r'\[\d{2}:\d{2}\.\d{2,}\]'), '');
 
-    var timeList = lrcTimeString.split(":");
+    var timeList = lrcTimeString.split(':');
     int? minute;
     double? second;
     if (timeList.length >= 2) {
@@ -175,25 +174,12 @@ class LrcLine extends UnsyncLyricLine {
   }
 }
 
-enum LrcSource {
-  /// mp3: USLT frame
-  /// flac: LYRICS comment
-  local("本地"),
-  web("网络");
-
-  final String name;
-
-  const LrcSource(this.name);
-}
-
 class Lrc extends Lyric {
-  LrcSource source;
-
-  Lrc(super.lines, this.source);
+  Lrc(super.lines, super.source);
 
   @override
   String toString() {
-    return {"type": source, "lyric": lines}.toString();
+    return {'type': source, 'lyric': lines}.toString();
   }
 
   /// 歌词一般是有序的
@@ -320,15 +306,15 @@ class Lrc extends Lyric {
   }
 
   /// 如果separator为null，不合并歌词；否则，合并相同时间戳的歌词
-  static Lrc? fromLrcText(String lrc, LrcSource source, {String? separator}) {
-    var lrcLines = lrc.split("\n");
+  static Lrc? fromLrcText(String lrc, LyricFormat source, {String? separator}) {
+    var lrcLines = lrc.split('\n');
 
     int? offsetInMilliseconds;
     final offsetPattern = RegExp(r'\[\s*offset\s*:\s*([+-]?\d+)\s*\]');
     for (var line in lrcLines) {
       final matched = offsetPattern.firstMatch(line);
       if (matched == null) continue;
-      offsetInMilliseconds = int.tryParse(matched.group(1) ?? "");
+      offsetInMilliseconds = int.tryParse(matched.group(1) ?? '');
       break;
     }
 
@@ -419,11 +405,11 @@ class Lrc extends Lyric {
 
   static Lyric? fromLrcTextAuto(
     String lrc,
-    LrcSource source, {
+    LyricFormat source, {
     String? separator,
   }) {
     if (_isTtml(lrc)) {
-      return Ttml.fromTtmlText(lrc, source, separator: separator);
+      return Ttml.fromTtmlText(lrc, separator: separator);
     }
     final hasWordTags = RegExp(r'<(\d+:\d+\.\d+|\d+)>').hasMatch(lrc);
     if (!hasWordTags) {
@@ -448,7 +434,7 @@ class Lrc extends Lyric {
 
   static Lyric? _parseEnhancedLrcText(
     String lrc,
-    LrcSource source, {
+    LyricFormat source, {
     String? separator,
   }) {
     final lrcLines = lrc.split('\n');
@@ -684,7 +670,7 @@ class Lrc extends Lyric {
 
   static Lyric? _parseCrcText(
     String lrc,
-    LrcSource source, {
+    LyricFormat source, {
     String? separator,
   }) {
     final lrcLines = lrc.split('\n');
@@ -891,11 +877,11 @@ class Lrc extends Lyric {
       final gapLen = nextStart - gapStart;
       if (gapLen >= gapThreshold) {
         finalLines.add(
-          LrcLine(
+          CrcLine(
             gapStart,
-            '',
-            requiredIsBlank: true,
-          )..length = gapLen,
+            gapLen,
+            [],
+          ),
         );
       }
     }
@@ -905,11 +891,11 @@ class Lrc extends Lyric {
       final firstLineStart = finalLines.first.start;
       finalLines.insert(
         0,
-        LrcLine(
+        CrcLine(
           Duration.zero,
-          '',
-          requiredIsBlank: true,
-        )..length = firstLineStart,
+          firstLineStart,
+          [],
+        ),
       );
     }
 
@@ -930,7 +916,7 @@ class Lrc extends Lyric {
   /// 优先级：内嵌歌词 > YRC > QRC > KRC > LRC
   static Future<Lyric?> fromAudioPath(
     Audio belongTo, {
-    String? separator = "┃",
+    String? separator = '┃',
   }) async {
     final audioPath = belongTo.path;
     final dir = p.dirname(audioPath);
@@ -938,7 +924,7 @@ class Lrc extends Lyric {
 
     final embeddedLyric = await getLyricFromPath(path: audioPath);
     if (embeddedLyric != null && embeddedLyric.isNotEmpty) {
-      final lyric = Lrc.fromLrcTextAuto(embeddedLyric, LrcSource.local, separator: separator);
+      final lyric = Lrc.fromLrcTextAuto(embeddedLyric, LyricFormat.local, separator: separator);
       if (lyric != null && lyric.lines.isNotEmpty) {
         return lyric;
       }
@@ -989,7 +975,7 @@ class Lrc extends Lyric {
             final lyric = Krc.fromKrcText(content);
             if (lyric.lines.isNotEmpty) return lyric;
           } else if (ext == '.lrc') {
-            final lyric = Lrc.fromLrcTextAuto(content, LrcSource.local, separator: separator);
+            final lyric = Lrc.fromLrcTextAuto(content, LyricFormat.local, separator: separator);
             if (lyric != null && lyric.lines.isNotEmpty) return lyric;
           }
         } catch (e) {
