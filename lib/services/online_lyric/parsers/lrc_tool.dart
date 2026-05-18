@@ -145,7 +145,7 @@ class LrcTool {
           .replaceAll(reg1, '')
           .replaceAll(reg2, '')
           .trim();
-      if (lyric.isEmpty) continue;
+      if (lyric.isEmpty || lyric == '//') continue;
       entries.add(LyricEntry(
         start: Duration(milliseconds: (startSec * 1000).round()),
         content: lyric,
@@ -318,35 +318,38 @@ class LrcTool {
       return main;
     }
 
-    // Lyrico 的时间窗口匹配算法
-    final tolerance =
-        (main.format == LyricFormat.qrc || main.format == LyricFormat.lrc)
-            ? 100
-            : 800;
+    // 时间窗口匹配算法
+    // tolerance 只用于补偿微小的时间偏差，不允许跨行匹配
+    const tolerance = 100;
 
     int transIdx = 0;
 
     for (var i = 0; i < main.lines.length; i++) {
       final curr = main.lines[i];
-      final currEnd = curr.nextTime.inMilliseconds;
+      final currStartMs = curr.start.inMilliseconds;
+      final nextStartMs = curr.nextTime.inMilliseconds;
 
       // 跳过空行（保持翻译对齐）
       if (curr.content.trim().isEmpty) {
         continue;
       }
 
+      // 取当前行和下一行的中点作为右边界，防止跨行匹配
+      final rightBoundary =
+          currStartMs + (nextStartMs - currStartMs) ~/ 2 + tolerance;
+
       while (transIdx < transLines.length) {
         final te = transLines[transIdx];
         final transStart = te.start.inMilliseconds;
 
         // 翻译行太早，跳过
-        if (transStart < curr.start.inMilliseconds - tolerance) {
+        if (transStart < currStartMs - tolerance) {
           transIdx++;
           continue;
         }
 
-        // 翻译行已经进入下一行范围，停止匹配
-        if (transStart > currEnd + tolerance) {
+        // 翻译行已经过中点，属于下一行的候选
+        if (transStart > rightBoundary) {
           break;
         }
 
@@ -385,18 +388,31 @@ class LrcTool {
     int romaIdx = 0;
     for (var i = 0; i < main.lines.length; i++) {
       final curr = main.lines[i];
+      final currStartMs = curr.start.inMilliseconds;
+      final nextStartMs = curr.nextTime.inMilliseconds;
+      final rightBoundary =
+          currStartMs + (nextStartMs - currStartMs) ~/ 2 + tolerance;
+
       while (romaIdx < romaLines.length) {
         final re = romaLines[romaIdx];
-        if (curr.start.inMilliseconds >= re.start.inMilliseconds - tolerance) {
-          if (curr.start.inMilliseconds <= re.start.inMilliseconds + tolerance) {
-            if (re.content.trim().isNotEmpty) {
-              curr.romanization = re.content;
-            }
-          }
-        } else {
+        final romaStartMs = re.start.inMilliseconds;
+
+        // 罗马音行太早，跳过
+        if (romaStartMs < currStartMs - tolerance) {
+          romaIdx++;
+          continue;
+        }
+
+        // 罗马音行已过半程，属于下一行
+        if (romaStartMs > rightBoundary) {
           break;
         }
+
+        if (re.content.trim().isNotEmpty) {
+          curr.romanization = re.content;
+        }
         romaIdx++;
+        break;
       }
     }
     return main;
