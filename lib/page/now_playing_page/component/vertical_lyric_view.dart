@@ -787,30 +787,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView> {
             ),
           ),
           ),
-          if (userIsDragging)
-            Positioned(
-              key: const ValueKey('user_dragging_hint'),
-              top: 16,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: scheme.secondaryContainer.withValues(alpha: 0.85),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    '拖动歌词查看，松开后自动回到当前行',
-                    style: TextStyle(
-                      color: scheme.onSecondaryContainer,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-              ),
-            ),
         ],
       );
     });
