@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'dart:ui' show PlatformDispatcher;
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/native/rust/api/library_db.dart' as library_db;
+import 'package:pure_music/native/rust/api/tag_reader.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:flutter/painting.dart';
@@ -206,28 +208,43 @@ class AudioLibrary {
 
   void _startCoverBytesEviction() {
     _coverBytesEvictionTimer?.cancel();
-    // 每 5 分钟清理一次非当前播放的 audio 的 raw bytes
+    // 每 2 分钟清理非活跃 Audio 的封面缓存，防止浏览大量歌曲后
+    // MemoryImage / Uint8List 在 Dart 堆上堆积。
     _coverBytesEvictionTimer = Timer.periodic(
       const Duration(minutes: 2),
       (_) => evictStaleCoverBytes(),
     );
   }
 
-  /// 只清理 60 秒内未被访问过的"冷"封面，保护当前播放歌曲
+  /// 只清理一段时间内未被访问过的"冷"封面，保护当前播放歌曲
   void evictStaleCoverBytes() {
     final now = DateTime.now().millisecondsSinceEpoch;
-    const coldMs = 30 * 1000; // 30 秒冷阈值
+    const coldMs = 2 * 60 * 1000;
     final playingPath = PlayService.instance.playbackService.nowPlaying?.path;
     int evicted = 0;
     for (final audio in audioCollection) {
-      if (audio._coverImage == null && audio._mediumCoverImage == null && audio._largeCoverImage == null) continue;
-      if (audio.path == playingPath) continue; // 保护当前播放
-      if (now - audio._coverLastAccessMs < coldMs) continue; // 热数据
+      if (audio._coverImage == null && audio._mediumCoverImage == null && audio._largeCoverImage == null && audio._smallCoverBytes == null) continue;
+      if (audio.path == playingPath) continue;
+      if (now - audio._coverLastAccessMs < coldMs) continue;
       audio.evictCoverCache();
       evicted++;
     }
     if (evicted > 0) {
       logger.i('[mem] evicted $evicted cold cover caches');
+    }
+  }
+
+  /// 切歌时调用：除当前播放外，全部 Audio 封面缓存立即释放
+  void evictAllCoversExcept(String? playingPath) {
+    int evicted = 0;
+    for (final audio in audioCollection) {
+      if (audio._coverImage == null && audio._mediumCoverImage == null && audio._largeCoverImage == null && audio._smallCoverBytes == null) continue;
+      if (audio.path == playingPath) continue;
+      audio.evictCoverCache();
+      evicted++;
+    }
+    if (evicted > 0) {
+      logger.i('[mem] evicted $evicted covers on song change');
     }
   }
 
@@ -312,6 +329,11 @@ class Audio {
   ImageProvider? _coverImage;
   ImageProvider? _mediumCoverImage;
   ImageProvider? _largeCoverImage;
+
+  /// 小封面原始字节（48×48 PNG），ZeroBit pattern：
+  /// 列表 tile 同步检查此字段，已缓存则直接用 Image.memory 渲染，
+  /// 不走 FutureBuilder，彻底避免闪烁。
+  Uint8List? _smallCoverBytes;
 
   /// 上一次封面被访问的时间戳，用于冷数据回收
   int _coverLastAccessMs = 0;
@@ -400,7 +422,7 @@ class Audio {
   /// 缓存bytes时，每次加载图片都要重新解码，内存占用很大。快速滚动时能到700mb
   /// 缓存ImageProvider不用重新解码。快速滚动时最多250mb
   /// 
-  /// ZeroBit pattern: 先检查_coverImage，命中直接返回同一实例；再检查_coverBytes，创建并缓存新实例；永不走FFI
+  /// ZeroBit pattern: 先检查_coverImage，命中直接返回同一实例；永不走FFI
   Future<ImageProvider?> get cover async {
     _touchCoverAccess();
     if (_coverImage != null) return _coverImage;
@@ -416,18 +438,39 @@ class Audio {
     }
   }
 
+  /// 同步取已缓存的小封面字节（48×48 PNG）
+  /// 用于列表 tile 同步渲染，零闪烁。
+  Uint8List? get smallCoverBytes => _smallCoverBytes;
+
+  /// 异步加载小封面字节并缓存在 [_smallCoverBytes] 中
+  Future<Uint8List?> loadSmallCoverBytes() async {
+    if (_smallCoverBytes != null) return _smallCoverBytes;
+    try {
+      final ratio = PlatformDispatcher.instance.views.first.devicePixelRatio;
+      final bytes = await getPictureFromPath(
+        path: path,
+        width: (48 * ratio).round(),
+        height: (48 * ratio).round(),
+      );
+      if (bytes != null) {
+        _smallCoverBytes = bytes;
+      }
+      return bytes;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// 同步获取已缓存的封面（不触发异步加载）
   /// 用于需要立即显示封面的场景，避免异步等待导致的闪烁
   ImageProvider? get cachedMediumCover => _mediumCoverImage;
 
   /// 释放封面缓存（用于长时间不用时释放内存）
   void evictCoverCache() {
-    _coverImage?.evict();
     _coverImage = null;
-    _mediumCoverImage?.evict();
     _mediumCoverImage = null;
-    _largeCoverImage?.evict();
     _largeCoverImage = null;
+    _smallCoverBytes = null;
   }
 
   /// audio detail page

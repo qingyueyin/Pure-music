@@ -294,6 +294,9 @@ class PlaybackService extends ChangeNotifier {
       _playlistIndex = audioIndex;
       _nowPlaying.value = playlist[audioIndex];
       _lastNowPlayingChangedMs = DateTime.now().millisecondsSinceEpoch;
+      // 切歌时立即回收其他 Audio 的封面缓存
+      AudioLibrary.instance.evictAllCoversExcept(nowPlaying!.path);
+
       _player.setSource(nowPlaying!.path);
       setVolumeDsp(AppPreference.instance.playbackPref.volumeDsp);
 

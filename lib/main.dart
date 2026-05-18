@@ -12,6 +12,7 @@ import 'package:pure_music/native/rust/api/logger.dart';
 import 'package:pure_music/native/rust/frb_generated.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/utils.dart';
+import 'package:pure_music/play_service/play_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
@@ -111,8 +112,6 @@ Future<void> main() async {
 
   // 内存监控：每 30s 记录 RSS，超过 250MB 触发紧急清理
   _startMemoryMonitor();
-  // 低频保底：每 30 分钟清一次 Flutter ImageCache（防止碎片化堆积）
-  _startGentlePeriodicCleanup();
 
   runApp(Entry(welcome: welcome));
 }
@@ -122,21 +121,16 @@ void _startMemoryMonitor() {
   Timer.periodic(const Duration(seconds: 30), (_) {
     try {
       final rssMB = (ProcessInfo.currentRss / (1024 * 1024)).round();
-      if (rssMB > 250) {
-        logger.w('[mem] RSS ${rssMB}MB > 250, emergency cleanup');
+      if (rssMB > 150) {
+        logger.w('[mem] RSS ${rssMB}MB > 150, emergency cleanup');
         PaintingBinding.instance.imageCache.clear();
         CoverImageCache.instance.clear();
-        AudioLibrary.instance.evictStaleCoverBytes();
+        AudioLibrary.instance.evictAllCoversExcept(
+          PlayService.instance.playbackService.nowPlaying?.path,
+        );
       }
     } catch (_) {}
   });
 }
 
-/// 低频被动清理：仅清 Flutter ImageCache（碎片整理），不动 LRU 缓存
-void _startGentlePeriodicCleanup() {
-  Timer.periodic(const Duration(minutes: 15), (_) {
-    try {
-      PaintingBinding.instance.imageCache.clear();
-    } catch (_) {}
-  });
-}
+
