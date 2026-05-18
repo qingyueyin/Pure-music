@@ -1,6 +1,8 @@
+export 'karaok_parser.dart';
 export 'krc.dart';
 export 'lrc.dart';
 export 'lyric.dart';
+export 'lyric_loader.dart';
 export 'lyric_source.dart';
 export 'qrc.dart';
 export 'ttml.dart';

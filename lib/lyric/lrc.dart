@@ -1,16 +1,9 @@
 import 'dart:math';
-import 'dart:io';
 
-import 'package:path/path.dart' as p;
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/lyric/lyric.dart';
-import 'package:pure_music/lyric/lyric_source.dart';
 import 'package:pure_music/lyric/ttml.dart';
-import 'package:pure_music/lyric/krc.dart';
-import 'package:pure_music/lyric/qrc.dart';
-import 'package:pure_music/services/online_lyric/api/qrc_decryptor.dart';
-import 'package:pure_music/lyric/yrc.dart';
-import 'package:pure_music/native/rust/api/tag_reader.dart';
+import 'package:pure_music/lyric/lyric_loader.dart';
 
 /// 智能清理空白行：
 /// 1. 移除连续的空白行（只保留第一个）
@@ -71,23 +64,6 @@ class _EnhancedLrcRawLine {
 
 class EnhancedLrcWord extends SyncLyricWord {
   EnhancedLrcWord(super.start, super.length, super.content);
-}
-
-class Crc extends Lyric {
-  Crc(super.lines, super.source);
-
-  @override
-  String toString() {
-    return {'type': source, 'lyric': lines}.toString();
-  }
-}
-
-class CrcLine extends SyncLyricLine {
-  CrcLine(super.start, super.length, super.words, [super.translation, super.romanLyric]);
-}
-
-class CrcWord extends SyncLyricWord {
-  CrcWord(super.start, super.length, super.content);
 }
 
 class LrcLine extends UnsyncLyricLine {
@@ -415,11 +391,6 @@ class Lrc extends Lyric {
     if (!hasWordTags) {
       return fromLrcText(lrc, source, separator: separator);
     }
-    final hasEndMarkers =
-        RegExp(r'<(\d+:\d+\.\d+|\d+)>\s*$', multiLine: true).hasMatch(lrc);
-    if (hasEndMarkers) {
-      return _parseCrcText(lrc, source, separator: separator);
-    }
     return _parseEnhancedLrcText(lrc, source, separator: separator);
   }
 
@@ -668,241 +639,6 @@ class Lrc extends Lyric {
     return EnhancedLrc(finalLines.cast<EnhancedLrcLine>(), source);
   }
 
-  static Lyric? _parseCrcText(
-    String lrc,
-    LyricFormat source, {
-    String? separator,
-  }) {
-    final lrcLines = lrc.split('\n');
-
-    int? offsetInMilliseconds;
-    final offsetPattern = RegExp(r'\[\s*offset\s*:\s*([+-]?\d+)\s*\]');
-    for (final line in lrcLines) {
-      final matched = offsetPattern.firstMatch(line);
-      if (matched == null) continue;
-      offsetInMilliseconds = int.tryParse(matched.group(1) ?? '');
-      break;
-    }
-    final offsetMs = offsetInMilliseconds ?? 0;
-
-    final timeTagRe = RegExp(r'\[(\d{1,2}):(\d{2}(?:\.\d{1,3})?)\]');
-    final wordTagRe = RegExp(r'<(\d+:\d+\.\d+|\d+)>([^<]*)');
-    final timeOnlyTagRe = RegExp(r'<(\d+:\d+\.\d+|\d+)>');
-
-    int? parseTimeTagToMs(String timeStr) {
-      if (timeStr.contains(':')) {
-        final p = timeStr.split(':');
-        if (p.length != 2) return null;
-        final wm = int.tryParse(p[0]);
-        final ws = double.tryParse(p[1]);
-        if (wm == null || ws == null) return null;
-        return max(((wm * 60 + ws) * 1000).round() - offsetMs, 0);
-      }
-      final rawMs = int.tryParse(timeStr);
-      if (rawMs == null) return null;
-      return max(rawMs - offsetMs, 0);
-    }
-
-    final rawLines = <_EnhancedLrcRawLine>[];
-    for (final raw in lrcLines) {
-      final line = raw.trimRight();
-      if (line.trim().isEmpty) continue;
-
-      final timeMatches = timeTagRe.allMatches(line).toList(growable: false);
-      if (timeMatches.isEmpty) continue;
-
-      final contentRaw = line.replaceAll(timeTagRe, '').trim();
-
-      for (final m in timeMatches) {
-        final minute = int.tryParse(m.group(1) ?? '');
-        final sec = double.tryParse(m.group(2) ?? '');
-        if (minute == null || sec == null) continue;
-        final lineStartMs =
-            max(((minute * 60 + sec) * 1000).round() - offsetMs, 0);
-        rawLines.add(_EnhancedLrcRawLine(
-          Duration(milliseconds: lineStartMs),
-          contentRaw,
-        ));
-      }
-    }
-    if (rawLines.isEmpty) return null;
-
-    final grouped = <Duration, List<String>>{};
-    for (final rl in rawLines) {
-      grouped.putIfAbsent(rl.start, () => []).add(rl.content);
-    }
-
-    final parsedLines = <CrcLine>[];
-
-    for (final entry in grouped.entries) {
-      final start = entry.key;
-      final contents = entry.value;
-
-      int extractTagCount(String raw) {
-        final part = separator == null ? raw : raw.split(separator).first;
-        return wordTagRe.allMatches(part).length;
-      }
-
-      int primaryIndex = 0;
-      int maxTags = -1;
-      for (int i = 0; i < contents.length; i++) {
-        final tagCount = extractTagCount(contents[i]);
-        if (tagCount > maxTags) {
-          maxTags = tagCount;
-          primaryIndex = i;
-        }
-      }
-
-      final translations = <String>[];
-      final primaryParts = separator == null
-          ? <String>[contents[primaryIndex]]
-          : contents[primaryIndex].split(separator);
-      final primaryText = primaryParts.first;
-      if (primaryParts.length > 1) {
-        translations.add(
-          primaryParts.sublist(1).join(separator ?? '┃').trim(),
-        );
-      }
-
-      for (int i = 0; i < contents.length; i++) {
-        if (i == primaryIndex) continue;
-        final parts = separator == null
-            ? <String>[contents[i]]
-            : contents[i].split(separator);
-        final inlinePrimary = parts.first;
-        final inlineTrans =
-            parts.length > 1 ? parts.sublist(1).join(separator ?? '┃') : null;
-        if (inlineTrans != null && inlineTrans.trim().isNotEmpty) {
-          translations.add(inlineTrans.trim());
-        } else {
-          final cleaned =
-              inlinePrimary.replaceAll(RegExp(r'<[^>]*>'), '').trim();
-          if (cleaned.isNotEmpty) translations.add(cleaned);
-        }
-      }
-
-      final translationText = translations.isEmpty
-          ? null
-          : translations
-              .where((e) => e.trim().isNotEmpty)
-              .join(separator ?? '┃');
-
-      final words = <CrcWord>[];
-      bool hasWordTimestamps = false;
-      for (final w in wordTagRe.allMatches(primaryText)) {
-        final timeStr = w.group(1);
-        final text = w.group(2) ?? '';
-        if (timeStr == null || text.isEmpty) continue;
-        final wordStartMs = parseTimeTagToMs(timeStr);
-        if (wordStartMs == null) continue;
-        words.add(CrcWord(
-          Duration(milliseconds: wordStartMs),
-          Duration.zero,
-          text,
-        ));
-        hasWordTimestamps = true;
-      }
-
-      Duration lineLength = Duration.zero;
-      final trimmedPrimary = primaryText.trimRight();
-      final allEndMatches =
-          timeOnlyTagRe.allMatches(trimmedPrimary).toList(growable: false);
-      if (allEndMatches.isNotEmpty) {
-        final last = allEndMatches.last;
-        if (last.end == trimmedPrimary.length) {
-          final endMs = parseTimeTagToMs(last.group(1) ?? '');
-          if (endMs != null) {
-            final end = Duration(milliseconds: endMs);
-            final d = end - start;
-            if (!d.isNegative) lineLength = d;
-          }
-        }
-      }
-
-      if (!hasWordTimestamps && primaryText.isNotEmpty) {
-        final cleanedText = primaryText.replaceAll(RegExp(r'<[^>]*>'), '').trim();
-        if (cleanedText.isNotEmpty) {
-          words.add(CrcWord(start, Duration.zero, cleanedText));
-        }
-      }
-
-      if (words.isEmpty) continue;
-
-      parsedLines.add(CrcLine(
-        start,
-        lineLength,
-        words,
-        translationText?.isEmpty == true ? null : translationText,
-      ));
-    }
-
-    if (parsedLines.isEmpty) return null;
-    parsedLines.sort((a, b) => a.start.compareTo(b.start));
-
-    for (int i = 0; i < parsedLines.length; i++) {
-      final line = parsedLines[i];
-      final nextStart =
-          i < parsedLines.length - 1 ? parsedLines[i + 1].start : null;
-      if (line.length == Duration.zero) {
-        final lineLen = nextStart == null
-            ? const Duration(seconds: 5)
-            : (nextStart - line.start);
-        line.length = lineLen.isNegative ? Duration.zero : lineLen;
-      }
-
-      if (line.words.isEmpty) continue;
-      final words = line.words.cast<CrcWord>();
-      for (int j = 0; j < words.length; j++) {
-        final curr = words[j];
-        final nextWordStart = j < words.length - 1 ? words[j + 1].start : null;
-        final end = nextWordStart ?? (line.start + line.length);
-        final d = end - curr.start;
-        curr.length = d.isNegative
-            ? Duration.zero
-            : (d < const Duration(milliseconds: 50)
-                ? const Duration(milliseconds: 50)
-                : d);
-      }
-    }
-
-    final finalLines = <LyricLine>[];
-    const gapThreshold = Duration(milliseconds: 5000);
-    for (int i = 0; i < parsedLines.length; i++) {
-      final line = parsedLines[i];
-      finalLines.add(line);
-
-      if (i >= parsedLines.length - 1) continue;
-      final nextStart = parsedLines[i + 1].start;
-      final gapStart = line.start + line.length;
-      final gapLen = nextStart - gapStart;
-      if (gapLen >= gapThreshold) {
-        finalLines.add(
-          CrcLine(
-            gapStart,
-            gapLen,
-            [],
-          ),
-        );
-      }
-    }
-
-    // 为前奏间隙创建空白行（第一行歌词开始前有时间间隙）
-    if (finalLines.isNotEmpty && finalLines.first.start > Duration.zero) {
-      final firstLineStart = finalLines.first.start;
-      finalLines.insert(
-        0,
-        CrcLine(
-          Duration.zero,
-          firstLineStart,
-          [],
-        ),
-      );
-    }
-
-    cleanLyricBlankLines(finalLines);
-    return Crc(finalLines, source);
-  }
-
   /// 智能清理空白行：
   /// 1. 移除连续的空白行（只保留第一个）
   /// 2. 移除时间间隔小于 800ms 的空白行（太短无意义）
@@ -911,79 +647,17 @@ class Lrc extends Lyric {
     cleanLyricBlankLines(lines);
   }
 
-  /// 只支持读取 ID3V2, VorbisComment, Mp4Ilst 存储的内嵌歌词
-  /// 以及相同目录相同文件名的 .lrc/.krc/.qrc/.yrc 外挂歌词
-  /// 优先级：内嵌歌词 > YRC > QRC > KRC > LRC
+  /// 加载歌词：外挂文件优先 → 内嵌标签回退。
+  ///
+  /// 外挂搜索顺序：.yrc > .qrc > .krc > .lrc（同目录同名）
+  /// 自动检测编码（GBK/Shift-JIS/UTF-8 等），自动解密加密的 KRC/QRC。
+  /// YRC/QRC 自动配对同目录 .lrc 作为翻译。
+  /// 内嵌歌词支持 ID3v2 USLT / VorbisComment / MP4 标签。
   static Future<Lyric?> fromAudioPath(
     Audio belongTo, {
     String? separator = '┃',
   }) async {
-    final audioPath = belongTo.path;
-    final dir = p.dirname(audioPath);
-    final baseName = p.basenameWithoutExtension(audioPath);
-
-    final embeddedLyric = await getLyricFromPath(path: audioPath);
-    if (embeddedLyric != null && embeddedLyric.isNotEmpty) {
-      final lyric = Lrc.fromLrcTextAuto(embeddedLyric, LyricFormat.local, separator: separator);
-      if (lyric != null && lyric.lines.isNotEmpty) {
-        return lyric;
-      }
-    }
-
-    final extensions = ['.yrc', '.qrc', '.krc', '.lrc'];
-
-    for (final ext in extensions) {
-      final lyricPath = p.join(dir, '$baseName$ext');
-      final lyricFile = File(lyricPath);
-
-      if (await lyricFile.exists()) {
-        try {
-          final content = await lyricFile.readAsString();
-
-          if (ext == '.yrc') {
-            final vtsPath = p.join(dir, '$baseName.lrc');
-            String? transContent;
-            if (await File(vtsPath).exists()) {
-              transContent = await File(vtsPath).readAsString();
-            }
-            final lyric = Yrc.fromYrcText(content, transContent);
-            if (lyric.lines.isNotEmpty) return lyric;
-          } else if (ext == '.qrc') {
-            String? contentToParse = content;
-
-            if (!content.trimLeft().startsWith('<?xml') &&
-                !content.trimLeft().startsWith('<Qrc')) {
-              final decrypted = await qrcDecrypt(
-                encryptedQrc: await lyricFile.readAsBytes(),
-                isLocal: true,
-              );
-              if (decrypted != null) {
-                contentToParse = decrypted;
-              } else {
-                continue;
-              }
-            }
-
-            final vtsPath = p.join(dir, '$baseName.lrc');
-            String? transContent;
-            if (await File(vtsPath).exists()) {
-              transContent = await File(vtsPath).readAsString();
-            }
-            final lyric = Qrc.fromQrcText(contentToParse, transContent);
-            if (lyric.lines.isNotEmpty) return lyric;
-          } else if (ext == '.krc') {
-            final lyric = Krc.fromKrcText(content);
-            if (lyric.lines.isNotEmpty) return lyric;
-          } else if (ext == '.lrc') {
-            final lyric = Lrc.fromLrcTextAuto(content, LyricFormat.local, separator: separator);
-            if (lyric != null && lyric.lines.isNotEmpty) return lyric;
-          }
-        } catch (e) {
-          continue;
-        }
-      }
-    }
-
-    return null;
+    // delegate 到统一的歌词加载器
+    return loadLyricFromAudio(belongTo.path, separator: separator);
   }
 }

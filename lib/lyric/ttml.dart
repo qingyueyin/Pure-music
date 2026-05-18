@@ -1,5 +1,4 @@
 import 'package:pure_music/lyric/lyric.dart';
-import 'package:pure_music/lyric/lyric_source.dart';
 import 'package:xml/xml.dart';
 
 class Ttml extends Lyric {

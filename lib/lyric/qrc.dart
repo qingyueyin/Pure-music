@@ -95,18 +95,17 @@ class QrcLine extends SyncLyricLine {
     final Duration length = Duration(
       milliseconds: int.tryParse(splitedTime[1]) ?? 0,
     );
-    final lineStartMs = start.inMilliseconds;
 
     final splitedContent = splitedLine[1].split(')');
-    final List<QrcWord> words = _parseWords(splitedContent, lineStartMs, start, length);
+    final List<QrcWord> words = _parseWords(splitedContent);
 
     return QrcLine(start, length, words, translation);
   }
 
-  static List<QrcWord> _parseWords(List<String> contentParts, int lineStartMs, Duration start, Duration length) {
+  static List<QrcWord> _parseWords(List<String> contentParts) {
     final List<QrcWord> words = [];
     for (final item in contentParts) {
-      final qrcWord = QrcWord.fromWord(item, lineStartMs: lineStartMs);
+      final qrcWord = QrcWord.fromWord(item);
       if (qrcWord == null) continue;
 
       if (words.isNotEmpty && _shouldMergeWords(qrcWord, words.last)) {
@@ -141,7 +140,7 @@ class QrcLine extends SyncLyricLine {
 class QrcWord extends SyncLyricWord {
   QrcWord(super.start, super.length, super.content);
 
-  static QrcWord? fromWord(String word, {required int lineStartMs}) {
+  static QrcWord? fromWord(String word) {
     final splitedWord = word.split('(');
     if (splitedWord.length != 2) return null;
 
@@ -149,8 +148,9 @@ class QrcWord extends SyncLyricWord {
 
     if (splitedTime.length != 2) return null;
 
+    // QRC 单词时间戳是绝对时间，不需要 +lineStartMs
     final Duration start = Duration(
-      milliseconds: lineStartMs + max(int.tryParse(splitedTime[0]) ?? 0, 0),
+      milliseconds: max(int.tryParse(splitedTime[0]) ?? 0, 0),
     );
     final Duration length = Duration(
       milliseconds: int.tryParse(splitedTime[1]) ?? 0,

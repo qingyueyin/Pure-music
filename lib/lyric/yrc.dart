@@ -96,12 +96,12 @@ class YrcLine extends SyncLyricLine {
     );
 
     final splitedContent = splitedLine[1];
-    final List<YrcWord> words = _parseWords(splitedContent, start, length, offset);
+    final List<YrcWord> words = _parseWords(splitedContent, offset);
 
     return YrcLine(start, length, words, translation);
   }
 
-  static List<YrcWord> _parseWords(String content, Duration lineStart, Duration lineLength, [int offset = 0]) {
+  static List<YrcWord> _parseWords(String content, [int offset = 0]) {
     final List<YrcWord> words = [];
     final wordRegex = RegExp(r'\((\d+),(\d+),\d+\)([^(]*?)');
 
@@ -112,7 +112,8 @@ class YrcLine extends SyncLyricLine {
 
       if (text.isEmpty) continue;
 
-      final wordStart = Duration(milliseconds: max(startMs - offset, 0)) + lineStart;
+      // YRC 单词时间戳是绝对时间，不需要 +lineStart
+      final wordStart = Duration(milliseconds: max(startMs - offset, 0));
       final newWord = YrcWord(wordStart, Duration(milliseconds: durationMs), text);
 
       if (words.isNotEmpty && _shouldMergeWords(newWord, words.last)) {
@@ -128,7 +129,7 @@ class YrcLine extends SyncLyricLine {
     }
 
     if (words.isEmpty && content.isNotEmpty) {
-      words.add(YrcWord(lineStart, lineLength, content));
+      // YRC 单词时间戳是绝对时间，无单词时使用行起始时间
     }
 
     return words;

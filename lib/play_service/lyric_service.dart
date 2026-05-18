@@ -142,39 +142,13 @@ class LyricService extends ChangeNotifier {
       return buffer.toString();
     }
 
-    List<String> buildCrcLines(SyncLyricLine line) {
-      final end = line.start + line.length;
-      final primary = StringBuffer();
-      primary.write(formatTimeTag(line.start));
-      for (final w in line.words) {
-        if (w.content.isEmpty) continue;
-        primary.write(formatWordTag(w.start));
-        primary.write(w.content);
-      }
-      primary.write(formatWordTag(end));
-
-      final out = <String>[primary.toString()];
-      final trans = line.translation;
-      if (trans != null && trans.trim().isNotEmpty) {
-        final t = StringBuffer();
-        t.write(formatTimeTag(line.start));
-        t.write(formatWordTag(line.start));
-        t.write(trans.trim());
-        t.write(formatWordTag(end));
-        out.add(t.toString());
-      }
-      return out;
-    }
-
     String buildUnsyncLine(LrcLine line) {
       return '${formatTimeTag(line.start)}${line.content}';
     }
 
     final lines = <String>[];
     for (final line in lyric.lines) {
-      if (enhancedIfPossible && lyric is Crc && line is SyncLyricLine) {
-        lines.addAll(buildCrcLines(line));
-      } else if (enhancedIfPossible && line is SyncLyricLine) {
+      if (enhancedIfPossible && line is SyncLyricLine) {
         lines.add(buildEnhancedLine(line));
       } else if (line is LrcLine) {
         lines.add(buildUnsyncLine(line));
