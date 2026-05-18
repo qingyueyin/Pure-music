@@ -5,8 +5,6 @@ import 'dart:ffi' as ffi;
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
-import 'dart:ui' as ui;
-
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/native/bass/bass.dart' as bass;
 import 'package:pure_music/native/bass/bass_fx.dart';
@@ -232,7 +230,7 @@ class BassPlayer {
   Stream<PlayerState> get playerStateStream =>
       _playerStateStreamController.stream;
 
-  static const int _bassDataFft2048 = 0x80000003;
+  static const int _bassDataFft512 = 0x80000001;
   int Function(int, ffi.Pointer<ffi.Void>, int)? _bassChannelGetData;
   ffi.Pointer<ffi.Float>? _fftBuffer;
   ffi.Pointer<ffi.Float>? _wasapiFftBuffer;
@@ -253,17 +251,7 @@ class BassPlayer {
     _lastSpectrumUpdateUs = 0;
   }
 
-  double _getDisplayRefreshRate() {
-    double refreshRate = 60.0;
-    try {
-      final views = ui.PlatformDispatcher.instance.views;
-      if (views.isNotEmpty) {
-        final r = views.first.display.refreshRate;
-        if (r.isFinite && r > 0) refreshRate = r;
-      }
-    } catch (_) {}
-    return refreshRate;
-  }
+
 
   Timer _getPositionUpdater(Duration period) {
     final myVersion = _positionUpdaterVersion;
@@ -305,22 +293,11 @@ class BassPlayer {
   }
 
   Duration _computePlayingTickPeriod() {
-    final refreshRate = _getDisplayRefreshRate();
-    final ms = (1000.0 / refreshRate).round().clamp(8, 33);
-    return Duration(milliseconds: ms);
+    return const Duration(milliseconds: 33);
   }
 
   Duration _computeSpectrumTickPeriod() {
-    final displayHz = _getDisplayRefreshRate();
-    final targetHz = switch (spectrumUpdateMode) {
-      SpectrumUpdateMode.hz60 => 60.0,
-      SpectrumUpdateMode.hz90 => 90.0,
-      SpectrumUpdateMode.hz120 => 120.0,
-      SpectrumUpdateMode.auto =>
-        displayHz >= 110.0 ? 120.0 : (displayHz >= 80.0 ? 90.0 : 60.0),
-    };
-    final ms = (1000.0 / targetHz).round().clamp(8, 33);
-    return Duration(milliseconds: ms);
+    return const Duration(milliseconds: 33);
   }
 
   void _refreshStreamSampleRate() {
@@ -380,12 +357,12 @@ class BassPlayer {
     final getData = _bassChannelGetData;
     if (getData == null) return;
 
-    _fftBuffer ??= malloc.allocate<ffi.Float>(1024 * ffi.sizeOf<ffi.Float>());
+    _fftBuffer ??= malloc.allocate<ffi.Float>(256 * ffi.sizeOf<ffi.Float>());
     final bytesRead =
-        getData(handle, _fftBuffer!.cast<ffi.Void>(), _bassDataFft2048);
+        getData(handle, _fftBuffer!.cast<ffi.Void>(), _bassDataFft512);
     if (bytesRead <= 0) return;
 
-    final fft = _fftBuffer!.asTypedList(1024);
+    final fft = _fftBuffer!.asTypedList(256);
     _computeSpectrum8Into(fft, _streamSampleRate, _spectrumBands);
     _emitSmoothedSpectrum();
   }
@@ -393,15 +370,15 @@ class BassPlayer {
   void _emitWasapiSpectrumFrame() {
     if (!_spectrumStreamController.hasListener) return;
 
-    _wasapiFftBuffer ??= malloc.allocate<ffi.Float>(1024 * ffi.sizeOf<ffi.Float>());
+    _wasapiFftBuffer ??= malloc.allocate<ffi.Float>(256 * ffi.sizeOf<ffi.Float>());
     final bytesRead = _bassWasapi.BASS_WASAPI_GetData(
       _wasapiFftBuffer!.cast<ffi.Void>(),
-      bass_wasapi.BASS_DATA_FFT2048,
+      bass_wasapi.BASS_DATA_FFT512,
     );
     // BASS_WASAPI_GetData returns the number of bytes written; negative means error
     if (bytesRead <= 0) return;
 
-    final fft = _wasapiFftBuffer!.asTypedList(1024);
+    final fft = _wasapiFftBuffer!.asTypedList(256);
     _computeSpectrum8Into(fft, _streamSampleRate, _spectrumBands);
     _emitSmoothedSpectrum();
   }
@@ -421,7 +398,7 @@ class BassPlayer {
   }
 
   void _ensureSpectrumBandBins(double sampleRate) {
-    const fftSize = 2048.0;
+    const fftSize = 512.0;
     const minF = 45.0;
     const maxF = 16000.0;
     if ((_spectrumBandsSampleRate - sampleRate).abs() < 1e-3 &&
@@ -447,9 +424,9 @@ class BassPlayer {
       final fa = minF * math.pow(ratio, a).toDouble();
       final fb = minF * math.pow(ratio, b).toDouble();
       final start =
-          ((fa / sampleRate) * fftSize).floor().clamp(1, 1023).toInt();
+          ((fa / sampleRate) * fftSize).floor().clamp(1, 255).toInt();
       final end =
-          ((fb / sampleRate) * fftSize).ceil().clamp(start + 1, 1023).toInt();
+          ((fb / sampleRate) * fftSize).ceil().clamp(start + 1, 255).toInt();
       _spectrumBandStarts[i] = start;
       _spectrumBandEnds[i] = end;
     }
@@ -793,72 +770,14 @@ class BassPlayer {
   }
 
   void _loadBassFx() {
+    final bassFxLibPath = path.join(_bassDir, 'bass_fx.dll');
     try {
-      final bassFxLibPath = path.join(_bassDir, 'bass_fx.dll');
-      final bassFxFile = File(bassFxLibPath);
-      if (!bassFxFile.existsSync()) {
-        logger.w('bass_fx.dll file not found at: $bassFxLibPath');
-        return;
-      }
-
-      logger.i('Attempting to load bass_fx.dll from: $bassFxLibPath');
-
-      // 方法1: 使用DynamicLibrary.process() - 利用已加载的库符号
-      try {
-        logger.d('Method 1: Loading with DynamicLibrary.process()');
-        final processSym = ffi.DynamicLibrary.process();
-        final tempBassFx = BassFx(processSym);
-        final version = tempBassFx.BASS_FX_GetVersion();
-        _bassFx = tempBassFx;
-        logger.i(
-            '✓ BASS_FX loaded via process symbols! Version: ${version.toRadixString(16)}');
-        return;
-      } catch (e) {
-        logger.w('Method 1 failed: $e');
-      }
-
-      // 方法2: 直接用绝对路径加载
-      try {
-        logger.d('Method 2: Loading with absolute path');
-        final bassFxLib = ffi.DynamicLibrary.open(bassFxLibPath);
-        final tempBassFx = BassFx(bassFxLib);
-        final version = tempBassFx.BASS_FX_GetVersion();
-        _bassFx = tempBassFx;
-        logger.i(
-            '✓ BASS_FX loaded successfully! Version: ${version.toRadixString(16)}');
-        return;
-      } catch (e) {
-        logger.w('Method 2 failed: $e');
-      }
-
-      // 方法3: 用相对路径加载
-      try {
-        logger.d('Method 3: Loading with relative path');
-        final bassFxLib = ffi.DynamicLibrary.open('bass_fx.dll');
-        final tempBassFx = BassFx(bassFxLib);
-        final version = tempBassFx.BASS_FX_GetVersion();
-        _bassFx = tempBassFx;
-        logger.i(
-            '✓ BASS_FX loaded successfully! Version: ${version.toRadixString(16)}');
-        return;
-      } catch (e) {
-        logger.w('Method 3 failed: $e');
-      }
-
-      // 方法4: 尝试只加载dll而不立即验证函数
-      try {
-        logger.d('Method 4: Loading without immediate version check');
-        final bassFxLib = ffi.DynamicLibrary.open(bassFxLibPath);
-        _bassFx = BassFx(bassFxLib);
-        logger.i('✓ BASS_FX library loaded (version check deferred)');
-        return;
-      } catch (e) {
-        logger.w('Method 4 failed: $e');
-      }
-
-      logger.e('❌ All methods to load bass_fx.dll have failed');
+      final bassFxLib = ffi.DynamicLibrary.open(bassFxLibPath);
+      _bassFx = BassFx(bassFxLib);
+      final version = _bassFx!.BASS_FX_GetVersion();
+      logger.i('BASS_FX loaded (version: ${version.toRadixString(16)})');
     } catch (e) {
-      logger.e('Unexpected error during bass_fx loading: $e');
+      logger.w('BASS_FX not available: $e; tempo/pitch control disabled');
     }
   }
 
@@ -1070,13 +989,6 @@ class BassPlayer {
       _streamWasapiExclusive = false; // 重置流的状态标志
     }
     final pathPointer = path.toNativeUtf16() as ffi.Pointer<ffi.Void>;
-
-    if (!wasapiExclusive &&
-        AppPreference.instance.playbackPref.reinitOnSetSource) {
-      try {
-        _bassInit();
-      } catch (_) {}
-    }
 
     /// 设置 flags 为 BASS_UNICODE 才可以找到文件。
     const flags =
