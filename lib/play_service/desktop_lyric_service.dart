@@ -52,8 +52,8 @@ class _WinJobObject {
   static Pointer<Void>? createAndAssign(int childPid) {
     try {
       // 1) 创建 Job Object
-      final job = _createJobObject(ffi.nullptr, ffi.nullptr);
-      if (job == ffi.nullptr) {
+      final job = _createJobObject(nullptr, nullptr);
+      if (job == nullptr) {
         logger.w('[desktop lyric] CreateJobObjectW failed');
         return null;
       }
@@ -103,7 +103,7 @@ class _WinJobObject {
   }
 
   static void close(Pointer<Void>? job) {
-    if (job != null && job != ffi.nullptr) {
+    if (job != null && job != nullptr) {
       _closeHandle(job);
     }
   }
@@ -122,7 +122,7 @@ class DesktopLyricService extends ChangeNotifier {
   Future<void> _sendQueue = Future.value();
 
   LyricLine? _currentLyricLine;
-  Timer? _positionTimer;
+  StreamSubscription<double>? _positionSub;
 
   bool isLocked = false;
   bool _isKilling = false;
@@ -160,8 +160,8 @@ class DesktopLyricService extends ChangeNotifier {
     _isRunning = false;
     _isKilling = false;
     isLocked = false;
-    _positionTimer?.cancel();
-    _positionTimer = null;
+    _positionSub?.cancel();
+    _positionSub = null;
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
     _WinJobObject.close(_jobHandle);
@@ -289,8 +289,8 @@ class DesktopLyricService extends ChangeNotifier {
     _isKilling = true;
     notifyListeners();
 
-    _positionTimer?.cancel();
-    _positionTimer = null;
+    _positionSub?.cancel();
+    _positionSub = null;
 
     final process = _process;
     if (process != null) {
@@ -337,28 +337,28 @@ class DesktopLyricService extends ChangeNotifier {
   void sendPlayerStateMessage(bool isPlaying) {
     sendMessage(msg.PlayerStateChangedMessage(isPlaying));
     
-    if (_positionTimer != null) {
-      _positionTimer?.cancel();
-      _positionTimer = null;
+    if (_positionSub != null) {
+      _positionSub?.cancel();
+      _positionSub = null;
     }
     
     if (isPlaying) {
-      _startPositionTimer();
+      _startPositionListening();
     }
   }
 
-  void _startPositionTimer() {
-    _positionTimer?.cancel();
-    _positionTimer = Timer.periodic(const Duration(milliseconds: 20), (_) {
-      _sendPositionMessage();
+  void _startPositionListening() {
+    _positionSub?.cancel();
+    _positionSub = _playbackService.positionStream.listen((pos) {
+      _onPositionUpdate(pos);
     });
   }
 
-  void _sendPositionMessage() {
+  void _onPositionUpdate(double position) {
     if (_currentLyricLine is! SyncLyricLine) return;
     
     final line = _currentLyricLine as SyncLyricLine;
-    final currentMs = (_playbackService.position * 1000).round();
+    final currentMs = (position * 1000).round();
     final lineStartMs = line.start.inMilliseconds;
     
     if (currentMs < lineStartMs) return;
