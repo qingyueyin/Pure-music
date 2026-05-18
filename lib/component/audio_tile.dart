@@ -1,4 +1,5 @@
-import 'package:pure_music/component/scroll_aware_future_builder.dart';
+import 'dart:typed_data';
+
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/library/audio_library.dart';
@@ -163,11 +164,6 @@ class _AudioTileState extends State<AudioTile> {
             builder: (context, controller, _) {
               final textColor =
                   effectiveFocus ? scheme.primary : scheme.onSurface;
-              final placeholder = Icon(
-                Symbols.broken_image,
-                size: 48.0,
-                color: scheme.onSurface,
-              );
               final backgroundColor = isSelected
                   ? scheme.secondaryContainer
                   : effectiveFocus
@@ -239,26 +235,8 @@ class _AudioTileState extends State<AudioTile> {
                             child: widget.leading!,
                           ),
 
-                        /// cover
-                        ScrollAwareFutureBuilder(
-                          future: () => audio.cover,
-                          identity: audio.path,
-                          builder: (context, snapshot) {
-                            if (snapshot.data == null) {
-                              return placeholder;
-                            }
-
-                            return ClipRRect(
-                              borderRadius: BorderRadius.circular(8.0),
-                              child: Image(
-                                image: snapshot.data!,
-                                width: 48.0,
-                                height: 48.0,
-                                errorBuilder: (_, __, ___) => placeholder,
-                              ),
-                            );
-                          },
-                        ),
+                        /// cover (ZeroBit pattern: 同步渲染已缓存字节，不走 FutureBuilder)
+                        _SmallCoverWidget(audio: audio),
                         const SizedBox(width: 16.0),
 
                         /// title, artist and album
@@ -322,6 +300,84 @@ class _AudioTileState extends State<AudioTile> {
           ),
         );
       },
+    );
+  }
+}
+/// ZeroBit-pattern 小封面组件：
+/// 同步检查 Audio._smallCoverBytes，已缓存则用 Image.memory 直接渲染；
+/// 未缓存则显示纯色占位 + 异步加载后写回 Audio 并 setState。
+/// 不使用 FutureBuilder，避免任何闪烁。
+class _SmallCoverWidget extends StatefulWidget {
+  final Audio audio;
+  const _SmallCoverWidget({required this.audio});
+
+  @override
+  State<_SmallCoverWidget> createState() => _SmallCoverWidgetState();
+}
+
+class _SmallCoverWidgetState extends State<_SmallCoverWidget> {
+  Uint8List? _cached;
+
+  @override
+  void initState() {
+    super.initState();
+    _cached = widget.audio.smallCoverBytes;
+    if (_cached == null) {
+      _load();
+    }
+  }
+
+  @override
+  void didUpdateWidget(_SmallCoverWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.audio != widget.audio ||
+        widget.audio.smallCoverBytes != _cached) {
+      final bytes = widget.audio.smallCoverBytes;
+      if (bytes != null && !identical(bytes, _cached)) {
+        setState(() => _cached = bytes);
+      } else if (bytes == null && _cached != null) {
+        setState(() => _cached = null);
+        _load();
+      }
+    }
+  }
+
+  Future<void> _load() async {
+    final bytes = await widget.audio.loadSmallCoverBytes();
+    if (mounted && bytes != null) {
+      setState(() => _cached = bytes);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_cached != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8.0),
+        child: Image.memory(
+          _cached!,
+          width: 48.0,
+          height: 48.0,
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+          errorBuilder: (_, __, ___) => _placeholder(context),
+        ),
+      );
+    }
+    return _placeholder(context);
+  }
+
+  Widget _placeholder(BuildContext context) {
+    return Container(
+      width: 48.0,
+      height: 48.0,
+      decoration: BoxDecoration(
+        color: Theme.of(context)
+            .colorScheme
+            .surfaceContainerHighest
+            .withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(8.0),
+      ),
     );
   }
 }
