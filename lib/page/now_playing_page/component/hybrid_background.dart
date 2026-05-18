@@ -42,6 +42,9 @@ class _HybridBackgroundState extends State<HybridBackground>
   bool _isTransitioning = false;
   bool _disposed = false;
 
+  final AnimatedMeshGradientController _meshController =
+      AnimatedMeshGradientController();
+
   @override
   void initState() {
     super.initState();
@@ -52,6 +55,7 @@ class _HybridBackgroundState extends State<HybridBackground>
     _loadCover();
     _isPlaying = widget.inputs.playerState == PlayerState.playing;
     _listenSpectrum();
+    _syncMeshController();
   }
 
   void _onTransitionStatusChanged(AnimationStatus status) {
@@ -78,6 +82,7 @@ class _HybridBackgroundState extends State<HybridBackground>
     final nowPlaying = widget.inputs.playerState == PlayerState.playing;
     if (nowPlaying != _isPlaying) {
       setState(() => _isPlaying = nowPlaying);
+      _syncMeshController();
       if (nowPlaying) {
         _listenSpectrum();
       } else {
@@ -250,9 +255,21 @@ class _HybridBackgroundState extends State<HybridBackground>
     });
   }
 
+  void _syncMeshController() {
+    final shouldRun =
+        widget.inputs.playerState == PlayerState.playing &&
+        widget.inputs.isVisible;
+    if (shouldRun) {
+      _meshController.start();
+    } else {
+      _meshController.stop();
+    }
+  }
+
   @override
   void dispose() {
     _disposed = true;
+    _meshController.dispose();
     _transitionController.removeStatusListener(_onTransitionStatusChanged);
     _transitionController.dispose();
     _spectrumSubscription?.cancel();
@@ -296,14 +313,12 @@ class _HybridBackgroundState extends State<HybridBackground>
                   child: AnimatedMeshGradient(
                     colors: colors,
                     options: AnimatedMeshGradientOptions(
-
-
-
                       frequency: 7,
                       amplitude: 80,
                       speed: _isPlaying ? 2.5 : 0.01,
                       grain: 0,
                     ),
+                    controller: _meshController,
                     child: Container(),
                   ),
                 ),

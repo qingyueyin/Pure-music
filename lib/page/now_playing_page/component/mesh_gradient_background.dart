@@ -68,6 +68,11 @@ class _MeshGradientBackgroundInternalState
 
   Timer? _decayTimer;
 
+  /// Controls the mesh gradient's internal Ticker.
+  /// Stopped when paused or not visible to eliminate 60fps CPU/GPU overhead.
+  final AnimatedMeshGradientController _meshController =
+      AnimatedMeshGradientController();
+
   int? _lastCoverHash;
   int _lastSpectrumUpdateMs = 0;
 
@@ -105,6 +110,7 @@ class _MeshGradientBackgroundInternalState
     _extractPalette();
     _isPlaying = widget.inputs.playerState == PlayerState.playing;
     _listenSpectrum();
+    _syncMeshController();
   }
 
   void _onTransitionStatusChanged(AnimationStatus status) {
@@ -145,6 +151,7 @@ class _MeshGradientBackgroundInternalState
       setState(() => _isPlaying = nowPlaying);
       _targetBreathScale = nowPlaying ? 1.0 : 1.0;
       _startDecayTimer();
+      _syncMeshController();
       // 先取消旧的 subscription，再决定是否重新订阅
       _spectrumSubscription?.cancel();
       _spectrumSubscription = null;
@@ -157,6 +164,11 @@ class _MeshGradientBackgroundInternalState
       // 非播放状态确保取消订阅
       _spectrumSubscription?.cancel();
       _spectrumSubscription = null;
+    }
+
+    // Sync mesh controller when visibility changes
+    if (wasVisible != isVisible) {
+      _syncMeshController();
     }
   }
 
@@ -313,9 +325,23 @@ class _MeshGradientBackgroundInternalState
     });
   }
 
+  /// Sync the mesh gradient controller based on current play/visibility state.
+  /// When stopped, the mesh gradient's internal Ticker is fully halted —
+  /// no 60fps setState, no CustomPaint repaint, no shader compute.
+  void _syncMeshController() {
+    final shouldRun =
+        _isPlaying && widget.inputs.isVisible;
+    if (shouldRun) {
+      _meshController.start();
+    } else {
+      _meshController.stop();
+    }
+  }
+
   @override
   void dispose() {
     _disposed = true;
+    _meshController.dispose();
     _decayTimer?.cancel();
     _transitionController.removeStatusListener(_onTransitionStatusChanged);
     _transitionController.dispose();
@@ -335,24 +361,20 @@ class _MeshGradientBackgroundInternalState
       fit: StackFit.expand,
       children: [
         Container(color: scheme.surface),
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 800),
-          switchInCurve: Curves.easeInOut,
-          switchOutCurve: Curves.easeInOut,
-          child: KeyedSubtree(
-            key: ValueKey(_isPlaying),
-            child: RepaintBoundary(
-              child: AnimatedScale(
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOutCubic,
-                scale: _breathScale,
-                child: AnimatedBuilder(
-                  animation: _transitionController,
-                  builder: (context, child) {
-                    return _buildMesh(_interpolateColors(_transitionController.value));
-                  },
-                ),
-              ),
+        // Note: no AnimatedSwitcher wrapping the mesh — removing it avoids
+        // double-rendering two mesh gradients during play/pause transitions.
+        // The mesh controller stops the internal Ticker when paused.
+        RepaintBoundary(
+          child: AnimatedScale(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOutCubic,
+            scale: _breathScale,
+            child: AnimatedBuilder(
+              animation: _transitionController,
+              builder: (context, child) {
+                return _buildMesh(
+                    _interpolateColors(_transitionController.value));
+              },
             ),
           ),
         ),
@@ -368,6 +390,7 @@ class _MeshGradientBackgroundInternalState
       child: AnimatedMeshGradient(
         colors: colors,
         options: _isPlaying ? _playOptions : _pauseOptions,
+        controller: _meshController,
         child: Container(),
       ),
     );
