@@ -10,6 +10,7 @@ import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/side_nav.dart';
 import 'package:pure_music/component/title_bar.dart';
 import 'package:pure_music/core/color_extraction.dart';
+import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/immersive.dart';
 import 'package:pure_music/core/system_volume_service.dart';
@@ -197,6 +198,8 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     playbackService.playerStateNotifier.removeListener(_updatePlayPauseState);
     _coverDebounceTimer?.cancel();
     _cursorHideTimer?.cancel();
+    // 离开播放页时释放中/大图封面缓存，这些在列表页不需要
+    CoverImageCache.instance.trimMemory();
     super.dispose();
   }
 
@@ -1751,6 +1754,10 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
     if (nextAudio == null) {
       if (_loResCoverPath != null || _hiResCoverPath != null) {
         _hiResDebounceTimer?.cancel();
+        unawaited(Future.wait<void>([
+          if (_loResCover != null) _loResCover!.evict(),
+          if (_hiResCover != null) _hiResCover!.evict(),
+        ]));
         setState(() {
           _loResCover = null;
           _loResCoverPath = null;
@@ -1764,6 +1771,17 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
     if (nextAudio.path == _loResCoverPath &&
         nextAudio.path == _hiResCoverPath) {
       return;
+    }
+
+    // Evict old covers from ImageCache before loading new ones.
+    // Otherwise each song switch accumulates ~3MB decoded bitmaps
+    // in Flutter's global ImageCache (max 100MB default).
+    if (_loResCover != null || _hiResCover != null) {
+      // Fire-and-forget: eviction is non-critical, don't block cover loading.
+      unawaited(Future.wait<void>([
+        if (_loResCover != null) _loResCover!.evict(),
+        if (_hiResCover != null) _hiResCover!.evict(),
+      ]));
     }
 
     nextAudio.cover.then((image) async {
