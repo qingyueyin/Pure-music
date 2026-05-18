@@ -6,8 +6,8 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `_get_lyric_from_lofty`, `_get_lyric_from_lrc_file`, `_get_picture_by_lofty`, `_get_picture_by_windows`, `_raw_cache_key`, `_resized_cache_key`, `_update_index_below_1_1_0`, `get`, `get`, `new_with_path`, `new`, `new`, `put`, `put`, `raw_cache`, `read_by_lofty`, `read_by_win_music_properties`, `read_from_folder_recursively`, `read_from_folder`, `read_from_path`, `resized_cache`, `to_json_value`, `to_json_value`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `AudioFolder`, `Audio`, `RawPictureCache`, `ResizedCache`
+// These functions are ignored because they are not marked as `pub`: `_get_lyric_from_lofty`, `_get_lyric_from_lrc_file`, `_get_picture_by_lofty`, `_get_picture_by_windows`, `_picture_cache_key`, `_update_index_below_1_1_0`, `new_with_path`, `read_by_lofty`, `read_by_win_music_properties`, `read_from_folder_recursively`, `read_from_folder`, `read_from_path`, `to_json_value`, `to_json_value`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `AudioFolder`, `Audio`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `fmt`, `fmt`
 
 /// for Flutter
@@ -16,9 +16,6 @@ Future<String> readAudioExtraMetadata({required String path}) =>
 
 /// for Flutter
 /// 如果无法通过 Lofty 获取则通过 Windows 获取
-/// 两级缓存：
-///   1. RAW 缓存 (512 条): 按文件路径缓存原始封面数据，不同尺寸请求共享
-///   2. RESIZED 缓存 (256 条): 按路径+尺寸缓存已缩放的输出，精确命中
 Future<Uint8List?> getPictureFromPath(
         {required String path, required int width, required int height}) =>
     RustLib.instance.api.crateApiTagReaderGetPictureFromPath(
@@ -32,6 +29,7 @@ Future<String?> getLyricFromPath({required String path}) =>
 
 /// for Flutter
 /// 写入歌词到音频文件标签（ID3/VorbisComment/MP4 等），使用 Lofty 的 `ItemKey::Lyrics` 映射
+/// 使用 ParsingMode::Relaxed 兼容更多有问题的标签文件
 Future<void> writeLyricToPath({required String path, required String lyric}) =>
     RustLib.instance.api
         .crateApiTagReaderWriteLyricToPath(path: path, lyric: lyric);

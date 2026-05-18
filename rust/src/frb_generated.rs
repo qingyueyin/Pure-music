@@ -893,15 +893,16 @@ fn wire__crate__api__ne__ne_lyric_impl(
     )
 }
 fn wire__crate__api__ne__ne_search_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
     data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
             debug_name: "ne_search",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
         },
         move || {
             let message = unsafe {
@@ -916,10 +917,12 @@ fn wire__crate__api__ne__ne_search_impl(
             let api_keyword = <String>::sse_decode(&mut deserializer);
             let api_limit = <i32>::sse_decode(&mut deserializer);
             deserializer.end();
-            transform_result_sse::<_, String>((move || {
-                let output_ok = crate::api::ne::ne_search(api_keyword, api_limit)?;
-                Ok(output_ok)
-            })())
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::ne::ne_search(api_keyword, api_limit)?;
+                    Ok(output_ok)
+                })())
+            }
         },
     )
 }
@@ -1904,6 +1907,7 @@ fn pde_ffi_dispatcher_primary_impl(
             data_len,
         ),
         20 => wire__crate__api__ne__ne_lyric_impl(port, ptr, rust_vec_len, data_len),
+        21 => wire__crate__api__ne__ne_search_impl(port, ptr, rust_vec_len, data_len),
         22 => wire__crate__api__utils__pick_single_folder_impl(port, ptr, rust_vec_len, data_len),
         23 => wire__crate__api__tag_reader__read_audio_extra_metadata_impl(
             port,
@@ -1938,7 +1942,6 @@ fn pde_ffi_dispatcher_sync_impl(
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
         7 => wire__crate__api__smtc_flutter__SmtcFlutter_new_impl(ptr, rust_vec_len, data_len),
-        21 => wire__crate__api__ne__ne_search_impl(ptr, rust_vec_len, data_len),
         26 => wire__crate__api__system_theme__system_theme_get_system_theme_impl(
             ptr,
             rust_vec_len,

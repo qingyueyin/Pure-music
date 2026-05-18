@@ -291,8 +291,7 @@ Future<Map<String, dynamic>?> kgLyric(String hash) async {
     final searchUri = Uri.parse('https://lyrics.kugou.com/v1/search?$queryStr');
     logger.d('[KG] lyric: search uri=$searchUri');
 
-    var client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 10);
+    var client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
     var request = await client.getUrl(searchUri);
     request.headers.set('User-Agent',
         'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.101 Safari/537.36');
@@ -337,8 +336,7 @@ Future<Map<String, dynamic>?> kgLyric(String hash) async {
         Uri.parse('http://lyrics.kugou.com/download?$downloadQueryStr');
     logger.d('[KG] lyric: download uri=$downloadUri');
 
-    client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 10);
+    client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
     request = await client.getUrl(downloadUri);
     request.headers.set('User-Agent',
         'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.101 Safari/537.36');

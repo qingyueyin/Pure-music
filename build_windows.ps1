@@ -298,6 +298,8 @@ if ($issueReportingEnabled) {
 if (-not $issueReportingEnabled) {
         Write-Host "Issue reporting disabled (default)." -ForegroundColor Gray
     }
+    $env:RUSTUP_HOME = "D:\Env\Rust\rustup"
+    $env:CARGO_HOME = "D:\Env\Rust\cargo"
     flutter @flutterArgs
 }
 

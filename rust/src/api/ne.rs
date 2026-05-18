@@ -535,7 +535,7 @@ pub fn ne_lyric(song_id: i64) -> Result<String, String> {
     serde_json::to_string(&result).map_err(|e| e.to_string())
 }
 
-#[flutter_rust_bridge::frb(sync)]
+#[flutter_rust_bridge::frb]
 pub fn ne_search(keyword: String, limit: i32) -> Result<Vec<HashMap<String, String>>, String> {
     NETEASE_CLOUD.search(keyword, limit)
 }

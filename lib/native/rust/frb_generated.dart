@@ -15,7 +15,9 @@ import 'api/tag_reader.dart';
 import 'api/utils.dart';
 import 'dart:async';
 import 'dart:convert';
-import 'frb_generated.io.dart';
+import 'frb_generated.dart';
+import 'frb_generated.io.dart'
+    if (dart.library.js_interop) 'frb_generated.web.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 /// Main entrypoint of the Rust API
@@ -145,7 +147,7 @@ abstract class RustLibApi extends BaseApi {
 
   Future<String> crateApiNeNeLyric({required PlatformInt64 songId});
 
-  List<Map<String, String>> crateApiNeNeSearch(
+  Future<List<Map<String, String>>> crateApiNeNeSearch(
       {required String keyword, required int limit});
 
   Future<String?> crateApiUtilsPickSingleFolder();
@@ -748,14 +750,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  List<Map<String, String>> crateApiNeNeSearch(
+  Future<List<Map<String, String>>> crateApiNeNeSearch(
       {required String keyword, required int limit}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(keyword, serializer);
         sse_encode_i_32(limit, serializer);
-        return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 21)!;
+        pdeCallFfi(generalizedFrbRustBinding, serializer,
+            funcId: 21, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_list_Map_String_String_None,

@@ -6,8 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `_create_silent_media_source`, `_init_controls`, `_new`, `_ras_ref_from_pic_data`, `_update_display`, `_update_state`, `_update_time_properties`, `ensure`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ThreadComGuard`
+// These functions are ignored because they are not marked as `pub`: `_create_silent_media_source`, `_init_controls`, `_new`, `_ras_ref_from_pic_data`, `_update_display`, `_update_state`, `_update_time_properties`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `fmt`
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SMTCFlutter>>
