@@ -421,23 +421,32 @@ class LrcTool {
   static ParsedLyricResult _insertBlankLines(ParsedLyricResult result) {
     if (result.lines.isEmpty) return result;
 
-    final newLines = <LyricEntry>[result.lines.first];
+    final newLines = <LyricEntry>[];
 
+    // ── 前奏空白行（第一句歌词开始前有时长）──
+    if (result.lines.first.start > const Duration(seconds: 3)) {
+      newLines.add(LyricEntry(
+        start: Duration.zero,
+        nextTime: result.lines.first.start,
+        content: '',
+      ));
+    }
+    newLines.add(result.lines.first);
+
+    // ── 间奏空白行（行与行之间的间隙）──
     for (int i = 1; i < result.lines.length; i++) {
       final prev = newLines.last;
       final curr = result.lines[i];
-      final gap = curr.start.inMilliseconds - prev.nextTime.inMilliseconds;
+
+      final prevEndMs = _actualLineEndMs(prev);
+      final gap = curr.start.inMilliseconds - prevEndMs;
 
       if (gap > 5000) {
-        final midStart = Duration(
-          milliseconds: prev.nextTime.inMilliseconds + (gap ~/ 3),
-        );
-        final midEnd = Duration(
-          milliseconds: curr.start.inMilliseconds - (gap ~/ 3),
-        );
+        final blankStart = Duration(milliseconds: prevEndMs);
+        final blankDuration = Duration(milliseconds: gap);
         newLines.add(LyricEntry(
-          start: midStart,
-          nextTime: midEnd,
+          start: blankStart,
+          nextTime: blankStart + blankDuration,
           content: '',
         ));
       }
@@ -450,5 +459,15 @@ class LrcTool {
       offset: result.offset,
       tags: Map.from(result.tags),
     );
+  }
+
+  /// 计算一行歌词的实际结束时间（基于逐字时间戳）
+  static int _actualLineEndMs(LyricEntry entry) {
+    if (entry.words != null && entry.words!.isNotEmpty) {
+      final last = entry.words!.last;
+      return last.start.inMilliseconds + last.length.inMilliseconds;
+    }
+    // 无逐字数据：用 start + 估计时长 3500ms
+    return entry.start.inMilliseconds + 3500;
   }
 }
