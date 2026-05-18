@@ -94,6 +94,7 @@ class _LyricLineSpringMotionState extends State<LyricLineSpringMotion>
   late LyricLineVisualStateTween _stateTween;
   Timer? _staggerTimer;
 
+  static const int _blurFilterCacheMaxSize = 20;
   static final Map<double, ImageFilter> _blurFilterCache = {};
 
   static double _roundSigma(double sigma) {
@@ -102,6 +103,10 @@ class _LyricLineSpringMotionState extends State<LyricLineSpringMotion>
 
   static ImageFilter _getBlurFilter(double sigma) {
     final key = _roundSigma(sigma);
+    if (_blurFilterCache.length >= _blurFilterCacheMaxSize &&
+        !_blurFilterCache.containsKey(key)) {
+      _blurFilterCache.remove(_blurFilterCache.keys.first);
+    }
     return _blurFilterCache.putIfAbsent(
       key,
       () => ImageFilter.blur(sigmaX: key, sigmaY: key),
