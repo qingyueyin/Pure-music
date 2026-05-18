@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
+import 'dart:isolate';
 import 'package:convert/convert.dart';
 import 'package:flutter/foundation.dart';
 
@@ -7,6 +8,8 @@ const int _encrypt = 1;
 const int _decrypt = 0;
 
 final Uint8List _qrcKey = Uint8List.fromList(utf8.encode(r'!@#)(*$%123ZXC!@!@#)(NHL'));
+
+
 
 final Uint8List _privKey = Uint8List.fromList([
   0xc3, 0x4a, 0xd6, 0xca, 0x90, 0x67, 0xf7, 0x52,
@@ -436,6 +439,29 @@ Future<String?> qrcDecrypt({required dynamic encryptedQrc, required bool isLocal
     return null;
   }
 }
+
+Future<String?> qrcDecryptSingle(String encryptedHex) async {
+  return Isolate.run(() => _qrcDecryptSync(encryptedHex))
+      .timeout(const Duration(seconds: 5), onTimeout: () => null);
+}
+
+String? _qrcDecryptSync(String encryptedHex) {
+  try {
+    const keyStr = r'!@#)(*$%123ZXC!@!@#)(NHL';
+    final encryptedBytes = Uint8List.fromList(hex.decode(encryptedHex));
+    final qrcKey = Uint8List.fromList(keyStr.codeUnits);
+    final schedule = _tripleDesKeySetup(qrcKey, _decrypt);
+    final data = <int>[];
+    for (int i = 0; i < encryptedBytes.length; i += 8) {
+      data.addAll([..._tripleDesCrypt(encryptedBytes.sublist(i), schedule)]);
+    }
+    return utf8.decode(zlib.decode(Uint8List.fromList(data)));
+  } catch (_) {
+    return null;
+  }
+}
+
+
 
 class TripleDesDecryptor {
   static const List<int> _qrcKey = [

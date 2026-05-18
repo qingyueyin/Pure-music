@@ -21,6 +21,7 @@ const int _durationFilterThreshold = 10;
 
 final Map<String, Future<Lyric?>> _lyricFetchCache = {};
 final Map<String, Lyric> _lyricResultCache = {};
+int _manualSearchSeq = 0;
 
 String _cacheKey({String? qqSongId, String? kugouSongHash, int? neSongId}) {
   return qqSongId != null
@@ -97,39 +98,40 @@ Future<Lyric?> _fetchLyricInternal({
   String? kugouSongHash,
   int? neSongId,
 }) async {
-  Lyric? lyric;
+  final futures = <Future<Lyric?>>[];
 
   if (qqSongId != null) {
-    logger.d('[getOnlineLyric] trying QQ: $qqSongId');
-    lyric = await _getQQSyncLyric(qqSongId);
-    if (lyric != null && lyric.lines.isNotEmpty) {
-      logger.d('[getOnlineLyric] QQ success: ${lyric.lines.length} lines');
-      return lyric;
-    }
-    logger.d('[getOnlineLyric] QQ returned null or empty');
+    futures.add(_getQQSyncLyric(qqSongId));
   }
 
   if (neSongId != null) {
-    logger.d('[getOnlineLyric] trying NE: $neSongId');
-    lyric = await _getNeSyncLyric(neSongId);
-    if (lyric != null && lyric.lines.isNotEmpty) {
-      logger.d('[getOnlineLyric] NE success: ${lyric.lines.length} lines');
-      return lyric;
-    }
-    logger.d('[getOnlineLyric] NE returned null or empty');
+    futures.add(_getNeSyncLyric(neSongId));
   }
 
   if (kugouSongHash != null) {
-    logger.d('[getOnlineLyric] trying KG: $kugouSongHash');
-    lyric = await _getKugouSyncLyric(kugouSongHash);
-    if (lyric != null && lyric.lines.isNotEmpty) {
-      logger.d('[getOnlineLyric] KG success: ${lyric.lines.length} lines');
-      return lyric;
-    }
-    logger.d('[getOnlineLyric] KG returned null or empty');
+    futures.add(_getKugouSyncLyric(kugouSongHash));
   }
 
-  return lyric;
+  if (futures.isEmpty) return null;
+
+  // Run all sources in parallel, each with error isolation
+  final wrapped = futures.map((f) => f.catchError((e) {
+    logger.e('Source failed: $e');
+    return null;
+  }));
+
+  final results = await Future.wait(wrapped);
+
+  // First non-empty lyric wins
+  for (final lyric in results) {
+    if (lyric != null && lyric.lines.isNotEmpty) {
+      logger.d('[getOnlineLyric] success: ${lyric.lines.length} lines');
+      return lyric;
+    }
+  }
+
+  logger.d('[getOnlineLyric] all sources returned null or empty');
+  return null;
 }
 
 final Set<String> _searchDedupCache = {};
@@ -456,65 +458,83 @@ Future<List<SongSearchResult>> _searchNEWithTimeout(
 Future<List<SongSearchResult>> manualSearch(Audio audio, String query,
     {int limit = 10}) async {
   logger.d('=== manualSearch START: query="$query", limit=$limit ===');
-  final List<SongSearchResult> result = [];
-
+  
+  final currentSeq = ++_manualSearchSeq;
+  
   const int perSourceLimit = 10;
   const int pageSize = perSourceLimit;
 
-  try {
-    logger.d('[MS][NE] searching: "$query"');
-    final neResults = await net_api.neSearchLyric(
-            keyword: query, pageSize: pageSize)
-        .timeout(const Duration(seconds: 8));
-    logger.d('[MS][NE] got ${neResults.length} raw results');
-    for (final item in neResults.take(perSourceLimit)) {
-      final searchResult = SongSearchResult.fromNeSearchItem(item, audio);
-      if (searchResult != null && searchResult.score >= 0) {
-        result.add(searchResult);
-      }
-    }
-    logger.d('[MS][NE] accepted ${result.where((r) => r.source == ResultSource.ne).length}');
-  } catch (err, trace) {
-    logger.e('[MS] NE ERROR: $err', stackTrace: trace);
+  final neFuture = _neSearchSafe(keyword: query, pageSize: pageSize);
+  final kgFuture = _kgSearchSafe(keyword: query, pageSize: pageSize);
+  final qqFuture = _qqSearchSafe(keyword: query, pageSize: pageSize);
+
+  final results = await Future.wait([neFuture, kgFuture, qqFuture]);
+  
+  if (currentSeq != _manualSearchSeq) {
+    logger.d('[MS] cancelled: new request started (seq=$currentSeq, current=${_manualSearchSeq})');
+    return [];
   }
 
-  try {
-    logger.d('[MS][KG] searching: "$query"');
-    final kugouResults = await net_api.kgSearchLyric(
-            keyword: query, pageSize: pageSize)
-        .timeout(const Duration(seconds: 8));
-    logger.d('[MS][KG] got ${kugouResults.length} raw results');
-    for (final item in kugouResults.take(perSourceLimit)) {
-      final searchResult = SongSearchResult.fromKugouSearchItem(item, audio);
-      if (searchResult != null && searchResult.score >= 0) {
-        result.add(searchResult);
-      }
+  final neResults = results[0];
+  final kugouResults = results[1];
+  final qqResults = results[2];
+
+  final List<SongSearchResult> result = [];
+
+  for (final item in neResults.take(perSourceLimit)) {
+    final searchResult = SongSearchResult.fromNeSearchItem(item, audio);
+    if (searchResult != null && searchResult.score > 0 && !_containsResult(result, searchResult)) {
+      result.add(searchResult);
     }
-    logger.d('[MS][KG] accepted ${result.where((r) => r.source == ResultSource.kugou).length}');
-  } catch (err, trace) {
-    logger.e('[MS] KG ERROR: $err', stackTrace: trace);
   }
 
-  try {
-    logger.d('[MS][QQ] searching: "$query"');
-    final qqResults = await net_api.qqSearchLyric(
-            keyword: query, pageSize: pageSize)
-        .timeout(const Duration(seconds: 8));
-    logger.d('[MS][QQ] got ${qqResults.length} raw results');
-    for (final item in qqResults.take(perSourceLimit)) {
-      final searchResult = SongSearchResult.fromQQSearchItem(item, audio);
-      if (searchResult != null && searchResult.score >= 0) {
-        result.add(searchResult);
-      }
+  for (final item in kugouResults.take(perSourceLimit)) {
+    final searchResult = SongSearchResult.fromKugouSearchItem(item, audio);
+    if (searchResult != null && searchResult.score > 0 && !_containsResult(result, searchResult)) {
+      result.add(searchResult);
     }
-    logger.d('[MS][QQ] accepted ${result.where((r) => r.source == ResultSource.qq).length}');
-  } catch (err, trace) {
-    logger.e('[MS] QQ ERROR: $err', stackTrace: trace);
+  }
+
+  for (final item in qqResults.take(perSourceLimit)) {
+    final searchResult = SongSearchResult.fromQQSearchItem(item, audio);
+    if (searchResult != null && searchResult.score > 0 && !_containsResult(result, searchResult)) {
+      result.add(searchResult);
+    }
   }
 
   result.sort((a, b) => b.score.compareTo(a.score));
   logger.d('=== manualSearch done: ${result.length} results ===');
   return result.sublist(0, min(limit, result.length));
+}
+
+Future<List<dynamic>> _neSearchSafe({required String keyword, required int pageSize}) async {
+  try {
+    return await net_api.neSearchLyric(keyword: keyword, pageSize: pageSize)
+        .timeout(const Duration(seconds: 8));
+  } catch (err, trace) {
+    logger.e('[MS] NE ERROR: $err', stackTrace: trace);
+    return [];
+  }
+}
+
+Future<List<dynamic>> _kgSearchSafe({required String keyword, required int pageSize}) async {
+  try {
+    return await net_api.kgSearchLyric(keyword: keyword, pageSize: pageSize)
+        .timeout(const Duration(seconds: 8));
+  } catch (err, trace) {
+    logger.e('[MS] KG ERROR: $err', stackTrace: trace);
+    return [];
+  }
+}
+
+Future<List<dynamic>> _qqSearchSafe({required String keyword, required int pageSize}) async {
+  try {
+    return await net_api.qqSearchLyric(keyword: keyword, pageSize: pageSize)
+        .timeout(const Duration(seconds: 8));
+  } catch (err, trace) {
+    logger.e('[MS] QQ ERROR: $err', stackTrace: trace);
+    return [];
+  }
 }
 
 bool _containsResult(List<SongSearchResult> list, SongSearchResult item) {
@@ -629,12 +649,17 @@ Lyric? _parsedToLyric(ParsedLyricResult parsed) {
         )..romanLyric = entry.romanization);
       } else {
         final length = entry.nextTime - entry.start;
-        syncLines.add(SyncLyricLine(
-          entry.start,
-          length,
-          [SyncLyricWord(entry.start, length, entry.content)],
-          entry.translation,
-        )..romanLyric = entry.romanization);
+        if (entry.content.isEmpty) {
+          // 间奏空白行：保持 words 为空，让 UI 识别为 LyricTransitionTile
+          syncLines.add(SyncLyricLine(entry.start, length, []));
+        } else {
+          syncLines.add(SyncLyricLine(
+            entry.start,
+            length,
+            [SyncLyricWord(entry.start, length, entry.content)],
+            entry.translation,
+          )..romanLyric = entry.romanization);
+        }
       }
     }
     return Qrc(syncLines);
