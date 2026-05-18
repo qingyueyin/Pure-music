@@ -27,6 +27,7 @@ class AlbumColorCache {
   static const _cacheVersion = 1;
 
   bool _initialized = false;
+  static const int _maxEntries = 500;
   final Map<String, Map<String, Object?>> _entries = {};
   final Map<String, Future<AlbumColor?>> _inFlight = {};
   Timer? _flushTimer;
@@ -64,6 +65,9 @@ class AlbumColorCache {
         final p = cached['p'];
         final on = cached['on'];
         if (p is int && on is int) {
+          // LRU: 移到末尾（最近使用）
+          _entries.remove(key);
+          _entries[key] = cached;
           return AlbumColor(primary: Color(p), onPrimary: Color(on));
         }
       }
@@ -151,6 +155,10 @@ class AlbumColorCache {
         'p': primary.toARGB32(),
         'on': onPrimary.toARGB32(),
       };
+      // LRU 淘汰：超出上限时移除最旧条目
+      while (_entries.length > _maxEntries) {
+        _entries.remove(_entries.keys.first);
+      }
       _scheduleFlush();
       return AlbumColor(primary: primary, onPrimary: onPrimary);
     } catch (_) {
