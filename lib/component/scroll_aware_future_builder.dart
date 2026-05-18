@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -28,7 +27,6 @@ class _ScrollAwareFutureBuilderState<T>
 
   void _scheduleLoad() {
     _loadTimer?.cancel();
-    _future = null;
 
     if (!context.mounted) {
       SchedulerBinding.instance.scheduleFrameCallback((_) {
@@ -38,6 +36,7 @@ class _ScrollAwareFutureBuilderState<T>
     }
 
     if (Scrollable.recommendDeferredLoadingForContext(context)) {
+      // 仍在快速滚动，推迟到下一帧再尝试
       SchedulerBinding.instance.scheduleFrameCallback((_) {
         if (mounted) {
           _scheduleLoad();
@@ -46,13 +45,10 @@ class _ScrollAwareFutureBuilderState<T>
       return;
     }
 
-    _loadTimer = Timer(
-      Duration(milliseconds: 80 + (Random().nextInt(80))),
-      () {
-        if (!context.mounted) return;
-        setState(() => _future = widget.future());
-      },
-    );
+    // 不设 _future = null — 避免每次重载都闪一下转圈。
+    // 直接取 future，如果 Audio._coverImage 已缓存则返回已完成的 Future，
+    // FutureBuilder 会立即用 snapshot.data 渲染图片，无闪烁。
+    setState(() => _future = widget.future());
   }
 
   @override
