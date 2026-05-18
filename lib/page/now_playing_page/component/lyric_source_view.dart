@@ -1,13 +1,8 @@
-import 'dart:math';
-
 import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/lyric/lyric_source.dart';
-import 'package:pure_music/lyric/qrc.dart';
-import 'package:pure_music/lyric/yrc.dart';
-import 'package:pure_music/lyric/krc.dart';
 import 'package:pure_music/core/matcher.dart';
 import 'package:pure_music/page/now_playing_page/component/vertical_lyric_view.dart';
 import 'package:pure_music/play_service/play_service.dart';
@@ -359,10 +354,15 @@ class _SetLyricSourceBtn extends StatelessWidget {
         MenuItemButton(
           onPressed: () {
             final nowPlaying = PlayService.instance.playbackService.nowPlaying;
-            showDialog<String>(
-              context: context,
-              builder: (context) => SetLyricSourceDialog(audio: nowPlaying!),
-            );
+            // 延迟到下一帧，确保菜单关闭动画完成后再弹 dialog
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (nowPlaying != null) {
+                showDialog<String>(
+                  context: context,
+                  builder: (context) => SetLyricSourceDialog(audio: nowPlaying),
+                );
+              }
+            });
           },
           child: const Text('指定默认歌词'),
         ),
@@ -404,11 +404,17 @@ class SetLyricSourceDialog extends StatefulWidget {
 }
 
 class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
-  late final Future<List<SongSearchResult>> _searchFuture = uniSearch(widget.audio)
-      .timeout(const Duration(seconds: 20), onTimeout: () {
-    logger.w('SetLyricSourceDialog uniSearch timeout');
-    return [];
-  });
+  late final Future<List<SongSearchResult>> _searchFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchFuture = uniSearch(widget.audio)
+        .timeout(const Duration(seconds: 20), onTimeout: () {
+      logger.w('SetLyricSourceDialog uniSearch timeout');
+      return [];
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -483,7 +489,7 @@ class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
                     return ListView.builder(
                       shrinkWrap: true,
                       itemCount: snapshot.data!.length,
-                      itemBuilder: (context, i) => _LyricSourceTile(
+                      itemBuilder: (context, i) => _SearchResultItem(
                         audio: widget.audio,
                         searchResult: snapshot.data![i],
                       ),
@@ -553,137 +559,26 @@ class _ManualSearchTile extends StatelessWidget {
   }
 }
 
-class _LyricSourceTile extends StatefulWidget {
-  const _LyricSourceTile({
-    required this.searchResult,
+class _SearchResultItem extends StatelessWidget {
+  const _SearchResultItem({
     required this.audio,
+    required this.searchResult,
   });
 
   final Audio audio;
   final SongSearchResult searchResult;
 
   @override
-  State<_LyricSourceTile> createState() => _LyricSourceTileState();
-}
-
-class _LyricSourceTileState extends State<_LyricSourceTile> {
-  late final lyric = getOnlineLyric(
-    qqSongId: widget.searchResult.qqSongId,
-    kugouSongHash: widget.searchResult.kugouSongHash,
-    neSongId: widget.searchResult.neSongId,
-  ).timeout(const Duration(seconds: 15), onTimeout: () {
-    logger.w('_LyricSourceTile getOnlineLyric timeout');
-    return null;
-  });
-
-  @override
   Widget build(BuildContext context) {
-    const loadingWidget = Padding(
-      padding: EdgeInsets.symmetric(vertical: 8.0),
-      child: Center(
-        child: SizedBox(
-          width: 24,
-          height: 24,
-          child: CircularProgressIndicator(),
-        ),
-      ),
-    );
-    return FutureBuilder<Lyric?>(
-      future: lyric,
-      builder: (context, lyricSnapshot) =>
-          switch (lyricSnapshot.connectionState) {
-        ConnectionState.none => loadingWidget,
-        ConnectionState.waiting => loadingWidget,
-        ConnectionState.active => loadingWidget,
-        ConnectionState.done =>
-          lyricSnapshot.data == null || lyricSnapshot.data!.lines.isEmpty
-              ? _buildNoLyricTile(context)
-              : buildTile(
-                  context,
-                  widget.audio,
-                  widget.searchResult,
-                  lyricSnapshot.data!,
-                ),
-      },
-    );
-  }
-
-  Widget _buildNoLyricTile(BuildContext context) {
-    final sourceText = switch (widget.searchResult.source) {
-      ResultSource.qq => 'QQ音乐',
-      ResultSource.kugou => '酷狗',
-      ResultSource.ne => '网易云',
-    };
-    return ListTile(
-      leading: _buildSourceLabel(context, sourceText),
-      title: Text(widget.searchResult.title),
-      subtitle: Text('${widget.searchResult.artists} - ${widget.searchResult.album}'),
-    );
-  }
-
-  Widget _buildSourceLabel(BuildContext context, String sourceText) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primaryContainer,
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        sourceText,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          color: Theme.of(context).colorScheme.onPrimaryContainer,
-        ),
-      ),
-    );
-  }
-
-  Widget buildTile(
-    BuildContext context,
-    Audio audio,
-    SongSearchResult searchResult,
-    Lyric lyric,
-  ) {
     final sourceText = switch (searchResult.source) {
       ResultSource.qq => 'QQ音乐',
       ResultSource.kugou => '酷狗',
       ResultSource.ne => '网易云',
     };
 
-    final lyricTypeText = switch (lyric.runtimeType) {
-      _ when lyric is Qrc || lyric is Yrc || lyric is Krc => '逐字',
-      _ when lyric is Lrc => '逐行',
-      _ => '',
-    };
-
-    final hasTranslation = lyric.lines.any((line) {
-      if (line is LrcLine) return line.translation?.isNotEmpty == true;
-      if (line is SyncLyricLine) return line.translation?.isNotEmpty == true;
-      return false;
-    });
-
-    final isJapaneseSong = lyric.lines.any((line) {
-      final text = line is SyncLyricLine
-          ? line.content
-          : line is LrcLine
-              ? line.content
-              : '';
-      return text.contains(RegExp(r'[\u3040-\u309F\u30A0-\u30FF]'));
-    });
-
-    final hasRomanization = isJapaneseSong &&
-        lyric.lines.any((line) {
-          if (line is SyncLyricLine) {
-            if (line.romanLyric?.isNotEmpty == true) return true;
-            if (line.words.any((w) => w.content.isNotEmpty) == true) return true;
-          }
-          return false;
-        });
-
     return ListTile(
       onTap: () {
-        LyricSourceType source = switch (searchResult.source) {
+        final source = switch (searchResult.source) {
           ResultSource.qq => LyricSourceType.qq,
           ResultSource.kugou => LyricSourceType.kugou,
           ResultSource.ne => LyricSourceType.ne,
@@ -694,120 +589,29 @@ class _LyricSourceTileState extends State<_LyricSourceTile> {
           kugouSongHash: searchResult.kugouSongHash,
           neSongId: searchResult.neSongId,
         );
-        PlayService.instance.lyricService.useSpecificLyric(lyric);
-
         Navigator.pop(context);
+        PlayService.instance.lyricService.useOnlineLyric();
       },
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8.0),
-      ),
-      leading: _buildSourceLabel(context, sourceText),
-      title: Row(
-        children: [
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  searchResult.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  '${searchResult.artists} - ${searchResult.album}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
+      leading: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.primaryContainer,
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          sourceText,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: Theme.of(context).colorScheme.onPrimaryContainer,
           ),
-          if (lyricTypeText.isNotEmpty) ...[
-            const SizedBox(width: 4),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.tertiaryContainer,
-                borderRadius: BorderRadius.circular(3),
-              ),
-              child: Text(
-                lyricTypeText,
-                style: TextStyle(
-                  fontSize: 9,
-                  color: Theme.of(context).colorScheme.onTertiaryContainer,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-          if (hasTranslation) ...[
-            const SizedBox(width: 4),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.secondaryContainer,
-                borderRadius: BorderRadius.circular(3),
-              ),
-              child: Text(
-                '译',
-                style: TextStyle(
-                  fontSize: 9,
-                  color: Theme.of(context).colorScheme.onSecondaryContainer,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-          if (hasRomanization) ...[
-            const SizedBox(width: 4),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHigh,
-                borderRadius: BorderRadius.circular(3),
-              ),
-              child: Text(
-                '罗马音',
-                style: TextStyle(
-                  fontSize: 9,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ],
+        ),
       ),
-      subtitle: StreamBuilder<double>(
-        stream: PlayService.instance.playbackService.positionStream,
-        builder: (context, positionSnapshot) {
-          final positionMs = (positionSnapshot.data ?? 0) * 1000;
-          final currLineIndex = max(lyric.lines.lastIndexWhere(
-            (element) => element.start.inMilliseconds <= positionMs,
-          ), 0);
-
-          final currLine = lyric.lines[currLineIndex];
-          final content = currLine is SyncLyricLine
-              ? currLine.content
-              : currLine is LrcLine
-                  ? currLine.content
-                  : '';
-          final translation = currLine.translation;
-
-          if (translation != null && translation.isNotEmpty) {
-            return Text(
-              '当前：$content ┃ $translation',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            );
-          }
-
-          return Text(
-            '当前：${content.isEmpty ? '暂无歌词' : content}',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          );
-        },
+      title: Text(searchResult.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Text(
+        '${searchResult.artists} - ${searchResult.album}',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
       ),
     );
   }

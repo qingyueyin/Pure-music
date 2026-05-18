@@ -48,7 +48,7 @@ class NowPlayingPagePreference {
     this.showLyricTranslation,
     this.lyricFontWeight,
     this.enableLyricBlur, {
-    this.showLyricRoman = false,
+    this.showLyricRoman = true,
     this.enableLyricScale = true,
     this.enableLyricSpring = true,
     this.backgroundMode = NowPlayingBackgroundMode.meshGradient,
@@ -93,7 +93,7 @@ class NowPlayingPagePreference {
       map['showLyricTranslation'] ?? true,
       map['lyricFontWeight'] ?? 400,
       map['enableLyricBlur'] ?? true,
-      showLyricRoman: map['showLyricRoman'] ?? false,
+      showLyricRoman: map['showLyricRoman'] ?? true,
       enableLyricScale: map['enableLyricScale'] ?? true,
       enableLyricSpring: map['enableLyricSpring'] ?? true,
       backgroundMode: backgroundMode,

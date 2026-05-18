@@ -496,10 +496,13 @@ class _NowPlayingMoreAction extends StatelessWidget {
           MenuItemButton(
             style: menuItemStyle,
             onPressed: () {
-              showDialog<void>(
-                context: context,
-                builder: (context) => SetLyricSourceDialog(audio: nowPlaying),
-              );
+              // 延迟到下一帧，确保菜单关闭动画完成后再弹 dialog
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                showDialog<void>(
+                  context: context,
+                  builder: (context) => SetLyricSourceDialog(audio: nowPlaying),
+                );
+              });
             },
             leadingIcon: const Icon(Symbols.lyrics),
             child: const Text('歌词来源'),
