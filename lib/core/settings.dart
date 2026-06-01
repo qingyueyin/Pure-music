@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:pure_music/native/rust/api/system_theme.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/core/zh_converter.dart';
+import 'package:pure_music/lyric/lyric_source.dart';
 import 'package:flutter/material.dart';
 import 'package:github/github.dart';
 import 'package:path/path.dart' as path;
@@ -54,12 +55,15 @@ Future<Directory> getDbDir() async {
 }
 
 
-/// 歌词显示模式（控制显示哪些内容）
+/// 歌词显示模式（控制是否使用逐字歌词）
 enum LyricDisplayMode {
-  plain,       // 纯原文（不显示翻译/罗马音/空行）
-  verbatim,    // 原文+罗马音（逐字歌词适用）
-  enhanced,    // 原文+翻译+罗马音（完整）
+  lineByLine,    // 逐行歌词（标准LRC格式）
+  wordByWord,    // 逐字歌词（带逐字时间戳）
+  plain,         // 旧名兼容
+  enhanced,      // 旧名兼容
 }
+
+enum ThemeOption { system, light, dark }
 
 class AppSettings {
   static const String version = String.fromEnvironment(
@@ -67,26 +71,34 @@ class AppSettings {
     defaultValue: '2.0.0-preview',
   );
 
-  static final github = GitHub();
+  static GitHub? _github;
+  static GitHub get github {
+    _github ??= GitHub();
+    return _github!;
+  }
+  static void closeGithub() {
+    _github?.dispose();
+    _github = null;
+  }
 
-  ThemeMode themeMode = getWindowsThemeMode();
-
-  int defaultTheme = getWindowsTheme();
-
-  bool dynamicTheme = true;
-
-  bool useSystemTheme = true;
-
-  bool useSystemThemeMode = true;
+  ThemeOption themeOption = ThemeOption.system;
 
   List artistSeparator = ['/', '、'];
 
   bool localLyricFirst = true;
+  LyricSourceType preferredOnlineSource = LyricSourceType.qq;
   bool showTranslation = true;
   bool showRomanization = true;
-  LyricDisplayMode lyricDisplayMode = LyricDisplayMode.enhanced;
+  LyricDisplayMode lyricDisplayMode = LyricDisplayMode.wordByWord;
   ZhConversionMode zhConversionMode = ZhConversionMode.none;
   bool removeEmptyLines = true;
+  bool promptWriteLyricToTag = true;
+  int promptWriteLyricToTagDelay = 15;
+  bool autoWriteLyricToTag = false;
+  int autoWriteLyricToTagDelay = 30;
+  bool useMaterialYouForLyrics = false;
+  bool useMaterialYouForProgressBar = true;
+  bool useMaterialYouForTransition = true;
   Size windowSize = const Size(1280, 756);
   bool isWindowMaximized = false;
 
@@ -94,6 +106,11 @@ class AppSettings {
   String? fontPath;
 
   late String artistSplitPattern = artistSeparator.join('|');
+  RegExp? _cachedArtistSplitRegex;
+
+  /// 缓存的正则，避免每个 Audio 构造时重新编译
+  RegExp get artistSplitRegex =>
+      _cachedArtistSplitRegex ??= RegExp(artistSplitPattern);
 
   static final AppSettings _instance = AppSettings._();
 
@@ -122,25 +139,10 @@ class AppSettings {
   AppSettings._();
 
   static Future<void> _readFromJsonOld(Map settingsMap) async {
-    final ust = settingsMap['UseSystemTheme'];
-    if (ust != null) {
-      _instance.useSystemTheme = ust == 1 ? true : false;
+    final to = settingsMap['ThemeOption'];
+    if (to != null) {
+      _instance.themeOption = ThemeOption.values[to];
     }
-
-    final ustm = settingsMap['UseSystemThemeMode'];
-    if (ustm != null) {
-      _instance.useSystemThemeMode = ustm == 1 ? true : false;
-    }
-
-    if (!_instance.useSystemTheme) {
-      _instance.defaultTheme = settingsMap['DefaultTheme'];
-    }
-    if (!_instance.useSystemThemeMode) {
-      _instance.themeMode =
-          settingsMap['ThemeMode'] == 0 ? ThemeMode.light : ThemeMode.dark;
-    }
-
-    _instance.dynamicTheme = settingsMap['DynamicTheme'] == 1 ? true : false;
     _instance.artistSeparator = settingsMap['ArtistSeparator'];
     _instance.artistSplitPattern = _instance.artistSeparator.join('|');
 
@@ -183,29 +185,9 @@ class AppSettings {
         return _readFromJsonOld(settingsMap);
       }
 
-      final ust = settingsMap['UseSystemTheme'];
-      if (ust != null) {
-        _instance.useSystemTheme = ust;
-      }
-
-      final ustm = settingsMap['UseSystemThemeMode'];
-      if (ustm != null) {
-        _instance.useSystemThemeMode = ustm;
-      }
-
-      if (!_instance.useSystemTheme) {
-        _instance.defaultTheme = settingsMap['DefaultTheme'];
-      }
-      final dt = settingsMap['DynamicTheme'];
-      if (dt != null) {
-        _instance.dynamicTheme = dt is bool ? dt : dt == 1;
-      }
-
-      final themeModeValue = settingsMap['ThemeMode'];
-      if (!_instance.useSystemThemeMode && themeModeValue != null) {
-        _instance.themeMode = themeModeValue is bool
-            ? (themeModeValue ? ThemeMode.dark : ThemeMode.light)
-            : (themeModeValue == 1 ? ThemeMode.dark : ThemeMode.light);
+      final to = settingsMap['ThemeOption'];
+      if (to != null) {
+        _instance.themeOption = ThemeOption.values[to as int];
       }
 
       final as = settingsMap['ArtistSeparator'];
@@ -217,6 +199,16 @@ class AppSettings {
       final llf = settingsMap['LocalLyricFirst'];
       if (llf != null) {
         _instance.localLyricFirst = llf;
+      }
+
+      final pos = settingsMap['PreferredOnlineSource'];
+      if (pos != null) {
+        _instance.preferredOnlineSource = switch (pos) {
+          'qq' => LyricSourceType.qq,
+          'kugou' => LyricSourceType.kugou,
+          'ne' => LyricSourceType.ne,
+          _ => LyricSourceType.qq,
+        };
       }
 
       final st = settingsMap['ShowTranslation'];
@@ -231,10 +223,12 @@ class AppSettings {
       final ldm = settingsMap['LyricDisplayMode'];
       if (ldm != null) {
         _instance.lyricDisplayMode = switch (ldm) {
-          'plain' => LyricDisplayMode.plain,
-          'verbatim' => LyricDisplayMode.verbatim,
-          'enhanced' => LyricDisplayMode.enhanced,
-          _ => LyricDisplayMode.enhanced,
+          'lineByLine' => LyricDisplayMode.lineByLine,
+          'wordByWord' => LyricDisplayMode.wordByWord,
+          'plain' => LyricDisplayMode.lineByLine,
+          'verbatim' => LyricDisplayMode.wordByWord,
+          'enhanced' => LyricDisplayMode.wordByWord,
+          _ => LyricDisplayMode.wordByWord,
         };
       }
 
@@ -251,6 +245,41 @@ class AppSettings {
       final rel = settingsMap['RemoveEmptyLines'];
       if (rel != null) {
         _instance.removeEmptyLines = rel;
+      }
+
+      final pwt = settingsMap['PromptWriteLyricToTag'];
+      if (pwt != null) {
+        _instance.promptWriteLyricToTag = pwt;
+      }
+
+      final pwd = settingsMap['PromptWriteLyricToTagDelay'];
+      if (pwd != null) {
+        _instance.promptWriteLyricToTagDelay = pwd;
+      }
+
+      final awt = settingsMap['AutoWriteLyricToTag'];
+      if (awt != null) {
+        _instance.autoWriteLyricToTag = awt;
+      }
+
+      final awd = settingsMap['AutoWriteLyricToTagDelay'];
+      if (awd != null) {
+        _instance.autoWriteLyricToTagDelay = awd;
+      }
+
+      final umyl = settingsMap['UseMaterialYouForLyrics'];
+      if (umyl != null) {
+        _instance.useMaterialYouForLyrics = umyl;
+      }
+
+      final umypb = settingsMap['UseMaterialYouForProgressBar'];
+      if (umypb != null) {
+        _instance.useMaterialYouForProgressBar = umypb;
+      }
+
+      final umyt = settingsMap['UseMaterialYouForTransition'];
+      if (umyt != null) {
+        _instance.useMaterialYouForTransition = umyt;
       }
 
       final sizeStr = settingsMap['WindowSize'];
@@ -281,18 +310,22 @@ class AppSettings {
       final isMaximized = await windowManager.isMaximized();
       final settingsMap = {
         'Version': version,
-        'ThemeMode': themeMode == ThemeMode.dark,
-        'DynamicTheme': dynamicTheme,
-        'UseSystemTheme': useSystemTheme,
-        'UseSystemThemeMode': useSystemThemeMode,
-        'DefaultTheme': defaultTheme,
+        'ThemeOption': themeOption.index,
         'ArtistSeparator': artistSeparator,
         'LocalLyricFirst': localLyricFirst,
+        'PreferredOnlineSource': preferredOnlineSource.name,
         'ShowTranslation': showTranslation,
         'ShowRomanization': showRomanization,
         'LyricDisplayMode': lyricDisplayMode.name,
         'ZhConversionMode': zhConversionMode.name,
         'RemoveEmptyLines': removeEmptyLines,
+        'PromptWriteLyricToTag': promptWriteLyricToTag,
+        'PromptWriteLyricToTagDelay': promptWriteLyricToTagDelay,
+        'AutoWriteLyricToTag': autoWriteLyricToTag,
+        'AutoWriteLyricToTagDelay': autoWriteLyricToTagDelay,
+        'UseMaterialYouForLyrics': useMaterialYouForLyrics,
+        'UseMaterialYouForProgressBar': useMaterialYouForProgressBar,
+        'UseMaterialYouForTransition': useMaterialYouForTransition,
         'IsWindowMaximized': isMaximized,
         'FontFamily': fontFamily,
         'FontPath': fontPath,
