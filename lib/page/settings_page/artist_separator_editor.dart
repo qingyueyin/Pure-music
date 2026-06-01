@@ -65,6 +65,12 @@ class __ArtistSeparatorEditDialogState
   }
 
   @override
+  void dispose() {
+    currEditController.dispose();
+    super.dispose();
+  }
+
+  @override
   void initState() {
     super.initState();
     for (var item in separators) {
