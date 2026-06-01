@@ -34,7 +34,7 @@ Future<void> readPlaylists() async {
       final name = row['name'] as String;
       final paths = <String>[];
       final items = db.select(
-        'SELECT path FROM playlist_items WHERE playlist_id = ? ORDER BY path',
+        'SELECT path FROM playlist_items WHERE playlist_id = ? ORDER BY sort_order, path',
         [id],
       );
       for (final item in items) {
@@ -78,10 +78,10 @@ void _writePlaylistsToDb(Database db, List<Playlist> playlists) {
     for (final pl in playlists) {
       db.execute('INSERT INTO playlists(name) VALUES(?)', [pl.name]);
       final playlistId = db.lastInsertRowId;
-      for (final p in pl.paths) {
+      for (int i = 0; i < pl.paths.length; i++) {
         db.execute(
-          'INSERT INTO playlist_items(playlist_id, path) VALUES(?, ?)',
-          [playlistId, p],
+          'INSERT INTO playlist_items(playlist_id, path, sort_order) VALUES(?, ?, ?)',
+          [playlistId, pl.paths[i], i],
         );
       }
     }
