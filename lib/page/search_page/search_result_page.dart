@@ -24,6 +24,13 @@ class _SearchResultPageState extends State<SearchResultPage> {
     text: widget.searchResult.query,
   );
 
+  @override
+  void dispose() {
+    searchBarController.dispose();
+    searchResult.dispose();
+    super.dispose();
+  }
+
   List<_SearchResultPageBody> buildContent(UnionSearchResult result) {
     return [
       _SearchResultPageBody(result: result, filter: _SearchResultFilter.all),
