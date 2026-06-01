@@ -59,7 +59,7 @@ class _AlbumTileState extends State<AlbumTile> {
       ),
     );
     final placeholder = Icon(
-      Symbols.broken_image,
+      Symbols.queue_music,
       size: 48,
       color: scheme.onSurface,
     );
