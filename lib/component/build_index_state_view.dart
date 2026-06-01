@@ -44,6 +44,12 @@ class _BuildIndexStateViewState extends State<BuildIndexStateView> {
   }
 
   @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
