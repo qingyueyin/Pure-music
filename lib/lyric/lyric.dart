@@ -3,8 +3,9 @@ enum LyricFormat { local, web, netease, baidu, qqmusic, manual, lrc }
 class Lyric {
   final List<LyricLine> lines;
   final LyricFormat source;
+  final String? rawText;
 
-  const Lyric(this.lines, [this.source = LyricFormat.local]);
+  const Lyric(this.lines, [this.source = LyricFormat.local, this.rawText]);
 
   static const Lyric empty = Lyric([]);
 
@@ -24,6 +25,12 @@ class LyricLine {
 
 class SyncLyricLine extends LyricLine {
   final List<SyncLyricWord> words;
+  String? agent;
+  String? bgText;
+  List<SyncLyricWord> bgWords = [];
+  String? bgTranslation;
+  Duration? bgStart;
+  Duration? bgEnd;
 
   SyncLyricLine(super.start, super.length, this.words, [super.translation, String? romanLyric]) {
     this.romanLyric = romanLyric;
@@ -35,7 +42,7 @@ class SyncLyricLine extends LyricLine {
 class SyncLyricWord {
   final Duration start;
   Duration length;
-  final String content;
+  String content;
   bool obscene;
 
   SyncLyricWord(this.start, this.length, this.content)
@@ -43,7 +50,7 @@ class SyncLyricWord {
 }
 
 class UnsyncLyricLine extends LyricLine {
-  final String content;
+  String content;
 
   UnsyncLyricLine(
     Duration start,
