@@ -81,18 +81,40 @@ class _HybridBackgroundState extends State<HybridBackground>
 
     final nowPlaying = widget.inputs.playerState == PlayerState.playing;
     if (nowPlaying != _isPlaying) {
-      setState(() => _isPlaying = nowPlaying);
+      setState(() {
+        _isPlaying = nowPlaying;
+        if (!nowPlaying) {
+          _breathScale = 1.0;
+          _meshOpacity = 0.55;
+        }
+      });
       _syncMeshController();
-      if (nowPlaying) {
-        _listenSpectrum();
-      } else {
+      _syncSpectrumSubscription();
+    }
+
+    final wasVisible = oldWidget.inputs.isVisible;
+    final isVisible = widget.inputs.isVisible;
+    if (wasVisible != isVisible) {
+      if (!wasVisible && isVisible && nowPlaying) {
+        _syncSpectrumSubscription();
+      } else if (wasVisible && !isVisible) {
         _spectrumSubscription?.cancel();
         _spectrumSubscription = null;
-        _breathScale = 1.0;
-        _meshOpacity = 0.55;
       }
-    } else if (nowPlaying && _spectrumSubscription == null) {
+      _syncMeshController();
+    }
+  }
+
+  /// Sync spectrum subscription based on playing and visibility state.
+  /// Ensures only one active subscription at any time.
+  void _syncSpectrumSubscription() {
+    final shouldListen = _isPlaying && widget.inputs.isVisible && widget.inputs.shouldAnimate;
+
+    if (shouldListen && _spectrumSubscription == null) {
       _listenSpectrum();
+    } else if (!shouldListen) {
+      _spectrumSubscription?.cancel();
+      _spectrumSubscription = null;
     }
   }
 
@@ -191,6 +213,7 @@ class _HybridBackgroundState extends State<HybridBackground>
         targetHeight: _coverRenderSize,
       );
       final frame = await codec.getNextFrame();
+      codec.dispose();
       return frame.image;
     } catch (_) {
       return null;
@@ -238,6 +261,12 @@ class _HybridBackgroundState extends State<HybridBackground>
     return padded;
   }
 
+  /// Smoothstep interpolation for smoother color transitions.
+  /// Smoothstep: t²(3-2t)
+  static double _smoothstep(double t) {
+    return t * t * (3.0 - 2.0 * t);
+  }
+
   List<Color> _interpolateColors(double t) {
     if (_prevPaletteColors.isEmpty || _targetPaletteColors.isEmpty) {
       return _paletteColors.isEmpty
@@ -248,10 +277,11 @@ class _HybridBackgroundState extends State<HybridBackground>
     if (count <= 0) {
       return _targetPaletteColors;
     }
+    final smoothedT = _smoothstep(t);
     return List.generate(count, (i) {
       final prev = _prevPaletteColors[i];
       final target = _targetPaletteColors[i];
-      return Color.lerp(prev, target, t)!;
+      return Color.lerp(prev, target, smoothedT)!;
     });
   }
 
