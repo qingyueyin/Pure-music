@@ -68,7 +68,7 @@ class _WinJobObject {
       const infoSize = 144;
       final infoPtr = calloc<Uint8>(infoSize);
       // LimitFlags @ offset 0x10
-      infoPtr.elementAt(0x10).cast<Uint32>().value =
+      (infoPtr + 0x10).cast<Uint32>().value =
           _jobObjectLimitKillOnJobClose;
 
       final ret = _setInformationJobObject(
@@ -118,7 +118,10 @@ class DesktopLyricService extends ChangeNotifier {
   Process? _process;
   StreamSubscription? _desktopLyricSubscription;
   StreamSubscription? _stderrSubscription;
+  static const int _maxStdoutBufferSize = 65536;
   String _stdoutBuffer = '';
+  static const int _maxSendQueueSize = 128;
+  int _sendQueueSize = 0;
   Future<void> _sendQueue = Future.value();
 
   LyricLine? _currentLyricLine;
@@ -156,6 +159,7 @@ class DesktopLyricService extends ChangeNotifier {
     _stderrSubscription = null;
     _process = null;
     _sendQueue = Future.value();
+    _sendQueueSize = 0;
     _stdoutBuffer = '';
     _isRunning = false;
     _isKilling = false;
@@ -214,6 +218,7 @@ class DesktopLyricService extends ChangeNotifier {
     _process = process;
     _isRunning = true;
     _sendQueue = Future.value();
+    _sendQueueSize = 0;
 
     _stderrSubscription = process.stderr.transform(utf8.decoder).listen(
       (event) => logger.e('[desktop lyric] $event'),
@@ -221,6 +226,10 @@ class DesktopLyricService extends ChangeNotifier {
 
     _desktopLyricSubscription = process.stdout.transform(utf8.decoder).listen(
       (event) {
+        if (_stdoutBuffer.length > _maxStdoutBufferSize) {
+          _stdoutBuffer = _stdoutBuffer.substring(_stdoutBuffer.length ~/ 2);
+          logger.w('[desktop lyric] stdout buffer truncated');
+        }
         _stdoutBuffer += event;
         while (true) {
           final idx = _stdoutBuffer.indexOf('\n');
@@ -266,8 +275,11 @@ class DesktopLyricService extends ChangeNotifier {
 
   void sendMessage(msg.Message message) {
     if (_process == null || !_isRunning) return;
+    if (_sendQueueSize > _maxSendQueueSize) return;
 
+    _sendQueueSize++;
     _sendQueue = _sendQueue.then((_) async {
+      _sendQueueSize--;
       final proc = _process;
       if (proc == null || !_isRunning) return;
       try {
@@ -279,6 +291,7 @@ class DesktopLyricService extends ChangeNotifier {
         _isRunning = false;
       }
     }).catchError((e) {
+      _sendQueueSize--;
       logger.w('[desktop lyric] send queue error: $e');
     });
   }
