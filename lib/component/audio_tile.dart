@@ -23,6 +23,7 @@ class AudioTile extends StatefulWidget {
     this.leading,
     this.action,
     this.multiSelectController,
+    this.onRemoveFromPlaylist,
   });
 
   final int audioIndex;
@@ -31,6 +32,7 @@ class AudioTile extends StatefulWidget {
   final Widget? leading;
   final Widget? action;
   final MultiSelectController? multiSelectController;
+  final void Function(Audio audio)? onRemoveFromPlaylist;
 
   @override
   State<AudioTile> createState() => _AudioTileState();
@@ -38,6 +40,11 @@ class AudioTile extends StatefulWidget {
 
 class _AudioTileState extends State<AudioTile> {
   bool _hovered = false;
+  int? _dragStartIndex;
+  int? _lastDragTargetIndex;
+  bool _isDragUnselecting = false;
+  final Set<Audio> _dragRange = {};
+  final Set<Audio> _preDragSelection = {};
 
   @override
   Widget build(BuildContext context) {
@@ -140,6 +147,7 @@ class _AudioTileState extends State<AudioTile> {
                       }
 
                       PLAYLISTS[i].addPath(audio.path);
+                      savePlaylists();
                       showTextOnSnackBar(
                         '成功将${audio.title}添加到歌单${PLAYLISTS[i].name}',
                       );
@@ -150,6 +158,15 @@ class _AudioTileState extends State<AudioTile> {
                 ),
                 child: const Text('添加到歌单'),
               ),
+
+              /// remove from playlist
+              if (widget.onRemoveFromPlaylist != null)
+                MenuItemButton(
+                  style: menuItemStyle,
+                  onPressed: () => widget.onRemoveFromPlaylist!(audio),
+                  leadingIcon: Icon(Symbols.remove_circle, color: scheme.error),
+                  child: const Text('从歌单移除'),
+                ),
 
               /// to detail page
               MenuItemButton(
@@ -185,37 +202,102 @@ class _AudioTileState extends State<AudioTile> {
                 ),
                 child: Material(
                   type: MaterialType.transparency,
-                  child: InkWell(
-                    focusColor: Colors.transparent,
-                    borderRadius: BorderRadius.circular(8.0),
-                    onHover: (v) => setState(() => _hovered = v),
-                    onTap: () {
-                      if (controller.isOpen) {
-                        controller.close();
+                  child: GestureDetector(
+                    onLongPressStart: (details) {
+                      if (widget.multiSelectController == null) return;
+
+                      if (!widget.multiSelectController!.enableMultiSelectView) {
+                        widget.multiSelectController!.useMultiSelectView(true);
+                      }
+
+                      final isSelected = widget.multiSelectController!.selected
+                          .contains(audio);
+                      _isDragUnselecting = isSelected;
+                      _dragStartIndex = widget.audioIndex;
+                      _lastDragTargetIndex = widget.audioIndex;
+                      _preDragSelection
+                        ..clear()
+                        ..addAll(
+                          widget.multiSelectController!.selected.cast<Audio>(),
+                        );
+                      _dragRange.clear();
+                      _dragRange.add(audio);
+                      if (_isDragUnselecting) {
+                        widget.multiSelectController!.unselect(audio);
+                      } else {
+                        widget.multiSelectController!.select(audio);
+                      }
+                    },
+                    onLongPressMoveUpdate: (details) {
+                      if (_dragStartIndex == null ||
+                          widget.multiSelectController == null) {
                         return;
                       }
 
-                      if (widget.multiSelectController == null ||
-                          !widget
-                              .multiSelectController!.enableMultiSelectView) {
-                        PlayService.instance.playbackService
-                            .play(widget.audioIndex, widget.playlist);
-                      } else {
-                        if (widget.multiSelectController!.selected
-                            .contains(audio)) {
-                          widget.multiSelectController!.unselect(audio);
-                        } else {
-                          widget.multiSelectController!.select(audio);
+                      final dy = details.localOffsetFromOrigin.dy;
+                      final delta = (dy / 64).round();
+                      final targetIndex = (_dragStartIndex! + delta)
+                          .clamp(0, widget.playlist.length - 1);
+
+                      if (targetIndex == _lastDragTargetIndex) return;
+
+                      final oldMin = _dragStartIndex! < _lastDragTargetIndex!
+                          ? _dragStartIndex!
+                          : _lastDragTargetIndex!;
+                      final oldMax = _dragStartIndex! > _lastDragTargetIndex!
+                          ? _dragStartIndex!
+                          : _lastDragTargetIndex!;
+                      final newMin = _dragStartIndex! < targetIndex
+                          ? _dragStartIndex!
+                          : targetIndex;
+                      final newMax = _dragStartIndex! > targetIndex
+                          ? _dragStartIndex!
+                          : targetIndex;
+
+                      _lastDragTargetIndex = targetIndex;
+
+                      for (int i = oldMin; i <= oldMax; i++) {
+                        final item = widget.playlist[i];
+                        final inNewRange = i >= newMin && i <= newMax;
+                        if (!inNewRange && _dragRange.contains(item)) {
+                          if (_isDragUnselecting) {
+                            if (_preDragSelection.contains(item)) {
+                              widget.multiSelectController!.select(item);
+                            }
+                          } else if (!_preDragSelection.contains(item)) {
+                            widget.multiSelectController!.unselect(item);
+                          }
+                          _dragRange.remove(item);
+                        }
+                      }
+
+                      for (int i = newMin; i <= newMax; i++) {
+                        if (i < oldMin || i > oldMax) {
+                          final item = widget.playlist[i];
+                          if (!_dragRange.contains(item)) {
+                            if (_isDragUnselecting) {
+                              widget.multiSelectController!.unselect(item);
+                            } else {
+                              widget.multiSelectController!.select(item);
+                            }
+                            _dragRange.add(item);
+                          }
                         }
                       }
                     },
-                    onLongPress: () {
-                      if (widget.multiSelectController == null) return;
-                      if (widget.multiSelectController!.enableMultiSelectView) {
-                        return;
-                      }
-                      widget.multiSelectController!.useMultiSelectView(true);
-                      widget.multiSelectController!.select(audio);
+                    onLongPressEnd: (details) {
+                      _dragStartIndex = null;
+                      _lastDragTargetIndex = null;
+                      _isDragUnselecting = false;
+                      _dragRange.clear();
+                      _preDragSelection.clear();
+                    },
+                    onLongPressCancel: () {
+                      _dragStartIndex = null;
+                      _lastDragTargetIndex = null;
+                      _isDragUnselecting = false;
+                      _dragRange.clear();
+                      _preDragSelection.clear();
                     },
                     onSecondaryTapDown: (details) {
                       if (widget.multiSelectController?.enableMultiSelectView ==
@@ -226,7 +308,31 @@ class _AudioTileState extends State<AudioTile> {
                       controller.open(
                           position: details.localPosition.translate(0, -240));
                     },
-                    child: Padding(
+                    child: InkWell(
+                      focusColor: Colors.transparent,
+                      borderRadius: BorderRadius.circular(8.0),
+                      onHover: (v) => setState(() => _hovered = v),
+                      onTap: () {
+                        if (controller.isOpen) {
+                          controller.close();
+                          return;
+                        }
+
+                        if (widget.multiSelectController == null ||
+                            !widget
+                                .multiSelectController!.enableMultiSelectView) {
+                          PlayService.instance.playbackService
+                              .play(widget.audioIndex, widget.playlist);
+                        } else {
+                          if (widget.multiSelectController!.selected
+                              .contains(audio)) {
+                            widget.multiSelectController!.unselect(audio);
+                          } else {
+                            widget.multiSelectController!.select(audio);
+                          }
+                        }
+                      },
+                      child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8.0),
                       child: Row(children: [
                         if (widget.leading != null)
@@ -235,7 +341,7 @@ class _AudioTileState extends State<AudioTile> {
                             child: widget.leading!,
                           ),
 
-                        /// cover (ZeroBit pattern: 同步渲染已缓存字节，不走 FutureBuilder)
+                        /// cover: 同步渲染已缓存字节，不走 FutureBuilder
                         _SmallCoverWidget(audio: audio),
                         const SizedBox(width: 16.0),
 
@@ -295,7 +401,8 @@ class _AudioTileState extends State<AudioTile> {
                     ),
                   ),
                 ),
-              );
+              ),
+            );
             },
           ),
         );
@@ -303,7 +410,7 @@ class _AudioTileState extends State<AudioTile> {
     );
   }
 }
-/// ZeroBit-pattern 小封面组件：
+/// 小封面组件：
 /// 同步检查 Audio._smallCoverBytes，已缓存则用 Image.memory 直接渲染；
 /// 未缓存则显示纯色占位 + 异步加载后写回 Audio 并 setState。
 /// 不使用 FutureBuilder，避免任何闪烁。
