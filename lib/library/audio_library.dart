@@ -330,7 +330,7 @@ class Audio {
   ImageProvider? _mediumCoverImage;
   ImageProvider? _largeCoverImage;
 
-  /// 小封面原始字节（48×48 PNG），ZeroBit pattern：
+  /// 小封面原始字节（48×48 PNG）：
   /// 列表 tile 同步检查此字段，已缓存则直接用 Image.memory 渲染，
   /// 不走 FutureBuilder，彻底避免闪烁。
   Uint8List? _smallCoverBytes;
@@ -356,12 +356,12 @@ class Audio {
     this.created,
     this.by,
   )   : splitedArtists = artist.split(
-          RegExp(AppSettings.instance.artistSplitPattern),
+          AppSettings.instance.artistSplitRegex,
         ),
         splitedAlbumArtists = (albumArtist ?? '').isEmpty
             ? const []
             : albumArtist!
-                .split(RegExp(AppSettings.instance.artistSplitPattern));
+                .split(AppSettings.instance.artistSplitRegex);
 
   factory Audio.fromMap(Map map) => Audio(
         map['title'] ?? '',
@@ -422,7 +422,7 @@ class Audio {
   /// 缓存bytes时，每次加载图片都要重新解码，内存占用很大。快速滚动时能到700mb
   /// 缓存ImageProvider不用重新解码。快速滚动时最多250mb
   /// 
-  /// ZeroBit pattern: 先检查_coverImage，命中直接返回同一实例；永不走FFI
+  /// 先检查 _coverImage，命中直接返回同一实例；永不走 FFI
   Future<ImageProvider?> get cover async {
     _touchCoverAccess();
     if (_coverImage != null) return _coverImage;
