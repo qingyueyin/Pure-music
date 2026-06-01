@@ -13,6 +13,7 @@ import 'package:pure_music/core/color_extraction.dart';
 import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/immersive.dart';
+import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/system_volume_service.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/library/audio_library.dart';
@@ -63,19 +64,6 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   Color? _dominantColor;
   final ColorExtractionService _colorService = ColorExtractionService();
 
-  static Color _softenColor(Color color, {required bool isDark}) {
-    final hsl = HSLColor.fromColor(color);
-    if (isDark) {
-      // Keep saturation intact, only darken slightly for readability
-      final softLightness = (hsl.lightness * 0.55).clamp(0.10, 0.40);
-      return hsl.withLightness(softLightness).toColor();
-    } else {
-      // Keep saturation intact, only lighten slightly for readability
-      final softLightness = (hsl.lightness * 0.50 + 0.38).clamp(0.50, 0.80);
-      return hsl.withLightness(softLightness).toColor();
-    }
-  }
-
   void _bumpCursor() {
     _cursorHideTimer?.cancel();
     if (_cursorHidden) {
@@ -91,13 +79,29 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     });
   }
 
+  /// Guard against race conditions in async cover loading.
+  /// Returns true if the request is stale and should be aborted.
+  bool _isCoverRequestStale(int token, String expectedPath) {
+    return token != _coverRequestToken ||
+           playbackService.nowPlaying?.path != expectedPath ||
+           !mounted;
+  }
+
+  Future<void> _extractDominantColor(
+    Uint8List? bytes, int token, String path) async {
+    if (bytes == null) return;
+    final color = await _colorService.extractDominantColor(bytes);
+    if (!_isCoverRequestStale(token, path) && color != null) {
+      setState(() => _dominantColor = color);
+    }
+  }
+
   void updateCover() {
     final path = playbackService.nowPlaying?.path;
     if (path == null) {
       if (_nowPlayingCoverPath != null || nowPlayingCover != null) {
         _coverDebounceTimer?.cancel();
         _coverRequestToken++;
-        // 切到无歌曲时，清理 Flutter ImageCache 中旧封面的缓存
         PaintingBinding.instance.imageCache.clear();
         setState(() {
           _nowPlayingCoverPath = null;
@@ -113,7 +117,9 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     // 切歌时：主动 evict 旧 Audio 的 cover ImageProvider，释放 ImageCache 中的旧条目
     final oldPath = _nowPlayingCoverPath;
     if (oldPath != null) {
-      final oldAudio = AudioLibrary.instance.audioCollection.where((a) => a.path == oldPath).firstOrNull;
+      final oldAudio = AudioLibrary.instance.audioCollection
+          .where((a) => a.path == oldPath)
+          .firstOrNull;
       oldAudio?.evictCoverCache();
     }
     _nowPlayingCoverPath = path;
@@ -122,36 +128,44 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     _coverRequestToken++;
     final token = _coverRequestToken;
 
+    // 首帧即用：从同步缓存读主色，用小封面当背景，零等待零跳变
+    final aud = playbackService.nowPlaying;
+    if (aud != null) {
+      final cached = _colorService.getCachedColorForPath(path);
+      if (cached != null) {
+        _dominantColor = cached;
+      } else {
+        _extractDominantColor(aud.smallCoverBytes, token, path);
+      }
+      // 只在首进时用小封面喂背景；切歌时留给 debounce 统一更新
+      if (_nowPlayingCoverBytes == null && aud.smallCoverBytes != null) {
+        _nowPlayingCoverBytes = aud.smallCoverBytes;
+      }
+    }
+
     _coverDebounceTimer = Timer(MotionDuration.base, () async {
       final audio = playbackService.nowPlaying;
-      if (audio == null || audio.path != path) return;
-      if (token != _coverRequestToken) return;
+      if (audio == null || _isCoverRequestStale(token, path)) return;
 
       final cover = await audio.cover;
-      if (!mounted) return;
-      if (token != _coverRequestToken) return;
-      if (playbackService.nowPlaying?.path != path) return;
+      if (_isCoverRequestStale(token, path)) return;
 
       if (cover != null) {
-        precacheImage(cover, context);
+        if (mounted) precacheImage(cover, context);
         final bytes = await getPictureFromPath(
           path: path,
           width: 160,
           height: 160,
         );
-        if (!mounted) return;
-        if (token != _coverRequestToken) return;
-        if (playbackService.nowPlaying?.path != path) return;
-        if (bytes != null && mounted) {
-          final color = await _colorService.extractDominantColor(bytes);
-          if (!mounted) return;
-          if (token != _coverRequestToken) return;
-          if (playbackService.nowPlaying?.path != path) return;
-          setState(() {
-            _nowPlayingCoverBytes = bytes;
-            _dominantColor = color;
-          });
-        } else if (mounted) {
+        if (_isCoverRequestStale(token, path)) return;
+
+        if (bytes != null) {
+          if (_dominantColor == null) {
+            await _extractDominantColor(bytes, token, path);
+          }
+          _nowPlayingCoverBytes = bytes;
+          if (mounted) setState(() {});
+        } else {
           setState(() {
             _nowPlayingCoverBytes = null;
             _dominantColor = null;
@@ -203,6 +217,17 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     super.dispose();
   }
 
+  static Color _softenColor(Color color, {required bool isDark}) {
+    final hsl = HSLColor.fromColor(color);
+    if (isDark) {
+      final softLightness = (hsl.lightness * 0.55).clamp(0.10, 0.40);
+      return hsl.withLightness(softLightness).toColor();
+    } else {
+      final softLightness = (hsl.lightness * 0.50 + 0.38).clamp(0.50, 0.80);
+      return hsl.withLightness(softLightness).toColor();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -251,14 +276,18 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                             builder: (context, snapshot) {
                               final playerState =
                                   snapshot.data ?? playbackService.playerState;
+                              final route = ModalRoute.of(context);
+                              final isVisible = route == null ||
+                                  route.isCurrent ||
+                                  route.animation?.status ==
+                                      AnimationStatus.reverse;
                               final backgroundInputs =
                                   NowPlayingBackgroundInputs(
                                 albumCoverBytes: _nowPlayingCoverBytes,
                                 dominantColor: _dominantColor,
                                 spectrumStream: playbackService.spectrumStream,
                                 enableAnimation: true,
-                                isVisible:
-                                    ModalRoute.of(context)?.isCurrent ?? true,
+                                isVisible: isVisible,
                                 playerState: playerState,
                                 flowSpeed: 1.0,
                                 intensity:
@@ -384,31 +413,6 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   }
 }
 
-class _ExclusiveModeSwitch extends StatelessWidget {
-  const _ExclusiveModeSwitch();
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return ValueListenableBuilder(
-      valueListenable: PlayService.instance.playbackService.wasapiExclusive,
-      builder: (context, exclusive, _) => IconButton(
-        tooltip: exclusive ? '关闭独占' : '打开独占',
-        onPressed: () {
-          PlayService.instance.playbackService.useExclusiveMode(!exclusive);
-        },
-        icon: Center(
-          child: Text(
-            exclusive ? 'Excl' : 'Shrd',
-            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
-          ),
-        ),
-        color: scheme.onSurface,
-      ),
-    );
-  }
-}
-
 class _NowPlayingMoreAction extends StatelessWidget {
   const _NowPlayingMoreAction();
 
@@ -476,13 +480,12 @@ class _NowPlayingMoreAction extends StatelessWidget {
               (i) => MenuItemButton(
                 style: menuItemStyle,
                 onPressed: () {
-                  final added =
-                      PLAYLISTS[i].audios.any((a) => a.path == nowPlaying.path);
-                  if (added) {
-                    showTextOnSnackBar('歌曲"${nowPlaying.title}"已存在');
+                  if (PLAYLISTS[i].containsPath(nowPlaying.path)) {
+                    showTextOnSnackBar('歌曲"${nowPlaying.title}已存在');
                     return;
                   }
-                  PLAYLISTS[i].audios.add(nowPlaying);
+                  PLAYLISTS[i].addPath(nowPlaying.path);
+                  savePlaylists();
                   showTextOnSnackBar(
                     '成功将“${nowPlaying.title}”添加到歌单“${PLAYLISTS[i].name}”',
                   );
@@ -534,12 +537,92 @@ class _NowPlayingMoreAction extends StatelessWidget {
   }
 }
 
+class _NowPlayingPlaybackModeSwitch extends StatelessWidget {
+  const _NowPlayingPlaybackModeSwitch();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final playbackService = PlayService.instance.playbackService;
+    //
+
+    return ListenableBuilder(
+      listenable:
+          Listenable.merge([playbackService.shuffle, playbackService.playMode]),
+      builder: (context, _) {
+        final shuffle = playbackService.shuffle.value;
+        final playMode = playbackService.playMode.value;
+
+        final modeText = switch (true) {
+          _ when shuffle => '随机播放',
+          _ when playMode == PlayMode.singleLoop => '单曲循环',
+          _ => '顺序播放',
+        };
+
+        final icon = switch (true) {
+          _ when shuffle => Symbols.shuffle,
+          _ when playMode == PlayMode.singleLoop => Symbols.repeat_one,
+          _ => Symbols.repeat,
+        };
+
+        return IconButton(
+          tooltip: modeText,
+          onPressed: () {
+            if (!shuffle && playMode != PlayMode.singleLoop) {
+              playbackService.useShuffle(false);
+              playbackService.setPlayMode(PlayMode.singleLoop);
+              return;
+            }
+            if (!shuffle && playMode == PlayMode.singleLoop) {
+              playbackService.setPlayMode(PlayMode.forward);
+              playbackService.useShuffle(true);
+              return;
+            }
+
+            playbackService.useShuffle(false);
+            playbackService.setPlayMode(PlayMode.forward);
+          },
+          icon: Icon(icon, fill: 0.0, weight: 400.0),
+          color: scheme.onSurface,
+        );
+      },
+    );
+  }
+}
+
+class _ExclusiveModeSwitch extends StatelessWidget {
+  const _ExclusiveModeSwitch();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    //
+    return ValueListenableBuilder(
+      valueListenable: PlayService.instance.playbackService.wasapiExclusive,
+      builder: (context, exclusive, _) => IconButton(
+        tooltip: exclusive ? '关闭独占' : '打开独占',
+        onPressed: () {
+          PlayService.instance.playbackService.useExclusiveMode(!exclusive);
+        },
+        icon: Center(
+          child: Text(
+            exclusive ? 'Excl' : 'Shrd',
+            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+          ),
+        ),
+        color: scheme.onSurface,
+      ),
+    );
+  }
+}
+
 class _DesktopLyricSwitch extends StatelessWidget {
   const _DesktopLyricSwitch();
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    //
     return ListenableBuilder(
       listenable: PlayService.instance.desktopLyricService,
       builder: (context, _) {
@@ -711,6 +794,7 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    //
 
     return MenuAnchor(
       style: MenuStyle(
@@ -1022,59 +1106,6 @@ class _TrianglePainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-class _NowPlayingPlaybackModeSwitch extends StatelessWidget {
-  const _NowPlayingPlaybackModeSwitch();
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final playbackService = PlayService.instance.playbackService;
-
-    return ListenableBuilder(
-      listenable:
-          Listenable.merge([playbackService.shuffle, playbackService.playMode]),
-      builder: (context, _) {
-        final shuffle = playbackService.shuffle.value;
-        final playMode = playbackService.playMode.value;
-
-        final modeText = switch (true) {
-          _ when shuffle => '随机播放',
-          _ when playMode == PlayMode.singleLoop => '单曲循环',
-          _ => '顺序播放',
-        };
-
-        final icon = switch (true) {
-          _ when shuffle => Symbols.shuffle,
-          _ when playMode == PlayMode.singleLoop => Symbols.repeat_one,
-          _ => Symbols.repeat,
-        };
-
-        return IconButton(
-          tooltip: modeText,
-          onPressed: () {
-            if (!shuffle && playMode != PlayMode.singleLoop) {
-              playbackService.useShuffle(false);
-              playbackService.setPlayMode(PlayMode.singleLoop);
-              return;
-            }
-            if (!shuffle && playMode == PlayMode.singleLoop) {
-              playbackService.setPlayMode(PlayMode.forward);
-              playbackService.useShuffle(true);
-              return;
-            }
-
-            playbackService.useShuffle(false);
-            playbackService.setPlayMode(PlayMode.forward);
-          },
-          icon: Icon(icon, fill: 0.0, weight: 400.0),
-          color: scheme.onSurface,
-        );
-      },
-    );
-  }
-}
-
-/// previous audio, pause/resume, next audio
 class _NowPlayingMainControls extends StatelessWidget {
   const _NowPlayingMainControls();
 
@@ -1082,6 +1113,7 @@ class _NowPlayingMainControls extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final playbackService = PlayService.instance.playbackService;
+    //
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -1474,6 +1506,7 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider> {
   @override
   void initState() {
     super.initState();
+    _livePosition = context.read<PlaybackService>().position;
     _bindPositionStream();
   }
 
@@ -1503,6 +1536,9 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider> {
     final playbackService = context.read<PlaybackService>();
     final nowPlayingLength = playbackService.length;
     final nowPlayingPath = playbackService.nowPlaying?.path;
+    final useMonetBar = AppSettings.instance.useMaterialYouForProgressBar;
+    final barColor = useMonetBar ? scheme.primary : scheme.onSurface;
+    final barGlow = useMonetBar ? scheme.primaryContainer : scheme.onSurface.withValues(alpha: 0.3);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -1578,8 +1614,8 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider> {
                       child: CustomPaint(
                         painter: _GlowSliderPainter(
                           fraction: fraction,
-                          color: scheme.primary,
-                          glowColor: scheme.primaryContainer,
+                          color: barColor,
+                          glowColor: barGlow,
                           inactiveColor: scheme.brightness == Brightness.dark
                               ? scheme.surfaceContainerHighest
                               : const Color(0x33FFFFFF),
@@ -1706,13 +1742,13 @@ class _GlowSliderPainter extends CustomPainter {
     // Thumb
     paint.shader = null;
     paint.color = color;
-    // Draw thumb shadow/glow (Strong glow for the current progress)
+    // Draw thumb shadow (very subtle, avoid visual distraction)
     canvas.drawCircle(
       Offset(activeWidth, centerY),
-      10, // glow radius
+      5,
       Paint()
-        ..color = glowColor.withValues(alpha: 0.6)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+        ..color = glowColor.withValues(alpha: 0.15)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
     );
     // Draw thumb
     canvas.drawCircle(Offset(activeWidth, centerY), 6, paint);
@@ -1743,19 +1779,15 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
   String? _hiResCoverPath;
   Timer? _hiResDebounceTimer;
   int _coverRequestToken = 0;
-
-  bool get _isPageVisible {
-    return ModalRoute.of(context)?.isCurrent ?? true;
-  }
+  Uint8List? _immediateCover;
+  String? _immediateCoverPath;
 
   void _onPlaybackChange() {
-    if (!_isPageVisible) return;
-
     _coverRequestToken += 1;
     final token = _coverRequestToken;
     final nextAudio = playbackService.nowPlaying;
     if (nextAudio == null) {
-      if (_loResCoverPath != null || _hiResCoverPath != null) {
+      if (_loResCoverPath != null || _hiResCoverPath != null || _immediateCoverPath != null) {
         _hiResDebounceTimer?.cancel();
         unawaited(Future.wait<void>([
           if (_loResCover != null) _loResCover!.evict(),
@@ -1766,6 +1798,8 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
           _loResCoverPath = null;
           _hiResCover = null;
           _hiResCoverPath = null;
+          _immediateCover = null;
+          _immediateCoverPath = null;
         });
       }
       return;
@@ -1777,20 +1811,40 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
     }
 
     // Evict old covers from ImageCache before loading new ones.
-    // Otherwise each song switch accumulates ~3MB decoded bitmaps
-    // in Flutter's global ImageCache (max 100MB default).
     if (_loResCover != null || _hiResCover != null) {
-      // Fire-and-forget: eviction is non-critical, don't block cover loading.
       unawaited(Future.wait<void>([
         if (_loResCover != null) _loResCover!.evict(),
         if (_hiResCover != null) _hiResCover!.evict(),
       ]));
     }
 
+    // Try to use parent's preloaded cover first to avoid placeholder flash
+    final parentState = context.findAncestorStateOfType<_NowPlayingPageState>();
+    final preloadedCover = parentState?.nowPlayingCover;
+    if (preloadedCover != null && nextAudio.path == parentState?._nowPlayingCoverPath) {
+      setState(() {
+        _loResCover = preloadedCover;
+        _loResCoverPath = nextAudio.path;
+      });
+    }
+
+    if (nextAudio.path != _immediateCoverPath) {
+      _immediateCover = nextAudio.smallCoverBytes;
+      _immediateCoverPath = nextAudio.path;
+      if (_immediateCover == null) {
+        nextAudio.loadSmallCoverBytes().then((bytes) {
+          if (!mounted) return;
+          if (playbackService.nowPlaying?.path != nextAudio.path) return;
+          setState(() {
+            _immediateCover = bytes;
+          });
+        });
+      }
+    }
+
     nextAudio.cover.then((image) async {
       if (!mounted) return;
       if (token != _coverRequestToken) return;
-      if (!_isPageVisible) return;
       if (playbackService.nowPlaying?.path != nextAudio.path) return;
 
       if (image != null) {
@@ -1800,7 +1854,6 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
 
       if (!mounted) return;
       if (token != _coverRequestToken) return;
-      if (!_isPageVisible) return;
       setState(() {
         _loResCover = image;
         _loResCoverPath = nextAudio.path;
@@ -1811,12 +1864,10 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
     _hiResDebounceTimer = Timer(const Duration(milliseconds: 260), () {
       if (!mounted) return;
       if (token != _coverRequestToken) return;
-      if (!_isPageVisible) return;
 
       nextAudio.largeCover.then((image) async {
         if (!mounted) return;
         if (token != _coverRequestToken) return;
-        if (!_isPageVisible) return;
         if (playbackService.nowPlaying?.path != nextAudio.path) return;
 
         if (image != null) {
@@ -1826,7 +1877,6 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
 
         if (!mounted) return;
         if (token != _coverRequestToken) return;
-        if (!_isPageVisible) return;
         setState(() {
           _hiResCover = image;
           _hiResCoverPath = nextAudio.path;
@@ -1839,7 +1889,35 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
   void initState() {
     super.initState();
     playbackService.nowPlayingNotifier.addListener(_onPlaybackChange);
-    // Initial load
+
+    // Try to grab parent's already-loaded cover synchronously
+    // to avoid placeholder flash on page transition / immersive mode toggle.
+    final parentState = context.findAncestorStateOfType<_NowPlayingPageState>();
+    final preloadedCover = parentState?.nowPlayingCover;
+    final currentPath = playbackService.nowPlaying?.path;
+    if (preloadedCover != null && currentPath != null &&
+        currentPath == parentState?._nowPlayingCoverPath) {
+      _loResCover = preloadedCover;
+      _loResCoverPath = currentPath;
+    }
+
+    // grab synchronous small cover bytes immediately
+    if (currentPath != null) {
+      final audio = playbackService.nowPlaying;
+      if (audio != null) {
+        _immediateCover = audio.smallCoverBytes;
+        _immediateCoverPath = currentPath;
+        if (_immediateCover == null) {
+          audio.loadSmallCoverBytes().then((bytes) {
+            if (!mounted) return;
+            if (playbackService.nowPlaying?.path != currentPath) return;
+            setState(() => _immediateCover = bytes);
+          });
+        }
+      }
+    }
+
+    // Initial load (still needed for hi-res + fallback)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final delay = playbackService.nowPlayingChangedRecently
@@ -1864,16 +1942,10 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
     final nowPlayingPath = nowPlaying?.path;
     final heroEnabled = !playbackService.nowPlayingChangedRecently;
 
-    final placeholder = Image.asset(
-      'app_icon.ico',
-      width: 400.0,
-      height: 400.0,
-      fit: BoxFit.contain,
-      errorBuilder: (_, __, ___) => Icon(
-        Symbols.broken_image,
-        size: 400.0,
-        color: scheme.onSurface,
-      ),
+    final placeholder = Icon(
+      Symbols.queue_music,
+      size: 400.0,
+      color: scheme.onSurface.withAlpha(60),
     );
 
     return ConstrainedBox(
@@ -1900,7 +1972,11 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
             (_hiResCoverPath == nowPlayingPath && _hiResCover != null)
                 ? _hiResCover
                 : (_loResCoverPath == nowPlayingPath ? _loResCover : null);
-        final coverWidget = currentCover == null
+        final fallbackCover = currentCover == null && nowPlaying != null &&
+                _immediateCoverPath == nowPlayingPath && _immediateCover != null
+            ? MemoryImage(_immediateCover!)
+            : null;
+        final coverWidget = currentCover == null && fallbackCover == null
             ? Center(child: placeholder)
             : Container(
                 decoration: BoxDecoration(
@@ -1917,7 +1993,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(12.0),
                   child: Image(
-                    image: currentCover,
+                    image: currentCover ?? fallbackCover!,
                     fit: BoxFit.cover,
                     gaplessPlayback: true,
                     filterQuality: FilterQuality.high,
@@ -1969,15 +2045,6 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
                   child: heroEnabled && nowPlayingPath != null
                       ? Hero(
                           tag: nowPlayingPath,
-                          createRectTween: (begin, end) => MaterialRectArcTween(
-                            begin: begin,
-                            end: end,
-                          ),
-                          flightShuttleBuilder: (flightContext, animation,
-                              direction, fromHeroContext, toHeroContext) {
-                            final fromHero = fromHeroContext.widget as Hero;
-                            return fromHero.child;
-                          },
                           child: RepaintBoundary(child: coverWidget),
                         )
                       : RepaintBoundary(child: coverWidget),
