@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:logger/logger.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/component/settings_tile.dart';
@@ -48,6 +49,7 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
   final titleEditingController = TextEditingController();
   final descEditingController = TextEditingController();
   final logEditingController = TextEditingController();
+  bool _logExpanded = true;
 
   String _sanitizePaths(String text) {
     var t = text;
@@ -173,6 +175,12 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
   String _buildLogSnapshot() {
     final logStrBuf = StringBuffer();
     for (final event in loggerMemoryOutput.buffer) {
+      if (event.level.index < Level.info.index) continue;
+      final firstLine = event.lines.isNotEmpty ? event.lines.first : '';
+      if (firstLine.contains('[desktop lyric] sendLyricLineMessage') ||
+          firstLine.contains('[desktop lyric] first word:')) {
+        continue;
+      }
       for (var line in event.lines) {
         logStrBuf.writeln(line);
       }
@@ -207,10 +215,6 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
   void _ensureFieldsPrepared() {
     if (descEditingController.text.trim().isEmpty) {
       descEditingController.text = _buildDescTemplate();
-    }
-    if (titleEditingController.text.trim().isEmpty) {
-      final now = PlayService.instance.playbackService.nowPlaying;
-      titleEditingController.text = now == null ? 'Bug: ' : 'Bug: ${now.title}';
     }
   }
 
@@ -265,93 +269,170 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
   }
 
   @override
+  void dispose() {
+    titleEditingController.dispose();
+    descEditingController.dispose();
+    logEditingController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return ColoredBox(
       color: scheme.surface,
       child: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Focus(
-                    onFocusChange: HotkeysHelper.onFocusChanges,
-                    child: TextField(
-                      controller: titleEditingController,
-                      autofocus: true,
-                      decoration: const InputDecoration(
-                        hintText: '标题',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(left: 8.0),
-                  child: FilledButton(
-                    onPressed: _openIssueLink,
-                    child: const Text('提交问题'),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '日志（可选）',
-                    style: TextStyle(color: scheme.onSurface.withAlpha(191)),
-                  ),
-                ),
-                TextButton(
-                  onPressed: _fillAndCopyLogSnapshot,
-                  child: const Text('获取日志'),
-                ),
-                TextButton(
-                  onPressed: () => logEditingController.clear(),
-                  child: const Text('清空'),
-                ),
-              ],
-            ),
-            Expanded(
-              child: Focus(
-                onFocusChange: HotkeysHelper.onFocusChanges,
-                child: TextField(
-                  controller: descEditingController,
-                  textAlignVertical: const TextAlignVertical(y: -1),
-                  expands: true,
-                  maxLines: null,
-                  decoration: const InputDecoration(
-                    hintText: '描述',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Expanded(
-              child: Focus(
-                onFocusChange: HotkeysHelper.onFocusChanges,
-                child: TextField(
-                  controller: logEditingController,
-                  textAlignVertical: const TextAlignVertical(y: -1),
-                  expands: true,
-                  maxLines: null,
-                  decoration: const InputDecoration(
-                    hintText: '日志',
-                    helperText: '你可以随意修改日志内容。',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ),
-            ),
-            const Padding(padding: EdgeInsets.only(bottom: 96.0))
-          ],
+        child: OrientationBuilder(
+          builder: (context, orientation) {
+            if (orientation == Orientation.landscape) {
+              return _buildLandscape(scheme);
+            }
+            return _buildPortrait(scheme);
+          },
         ),
       ),
+    );
+  }
+
+  Widget _buildTitleRow() {
+    return Row(
+      children: [
+        Expanded(
+          child: Focus(
+            onFocusChange: HotkeysHelper.onFocusChanges,
+            child: TextField(
+              controller: titleEditingController,
+              autofocus: true,
+              decoration: const InputDecoration(
+                hintText: '标题',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(left: 8.0),
+          child: FilledButton(
+            onPressed: _openIssueLink,
+            child: const Text('提交问题'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDescriptionField() {
+    return Focus(
+      onFocusChange: HotkeysHelper.onFocusChanges,
+      child: TextField(
+        controller: descEditingController,
+        textAlignVertical: const TextAlignVertical(y: -1),
+        expands: true,
+        maxLines: null,
+        decoration: const InputDecoration(
+          hintText: '描述',
+          border: OutlineInputBorder(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLogField() {
+    return Focus(
+      onFocusChange: HotkeysHelper.onFocusChanges,
+      child: TextField(
+        controller: logEditingController,
+        textAlignVertical: const TextAlignVertical(y: -1),
+        expands: true,
+        maxLines: null,
+        decoration: const InputDecoration(
+          hintText: '日志',
+          border: OutlineInputBorder(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLogHeader(ColorScheme scheme) {
+    return Row(
+      children: [
+        IconButton(
+          icon: Icon(
+            _logExpanded ? Symbols.expand_less : Symbols.expand_more,
+          ),
+          onPressed: () => setState(() => _logExpanded = !_logExpanded),
+          visualDensity: VisualDensity.compact,
+        ),
+        Text(
+          '日志（可选）',
+          style: TextStyle(color: scheme.onSurface.withAlpha(191)),
+        ),
+        const Spacer(),
+        TextButton(
+          onPressed: _fillAndCopyLogSnapshot,
+          child: const Text('获取日志'),
+        ),
+        TextButton(
+          onPressed: () => logEditingController.clear(),
+          child: const Text('清空'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPortrait(ColorScheme scheme) {
+    if (_logExpanded) {
+      return Column(
+        children: [
+          _buildTitleRow(),
+          const SizedBox(height: 8),
+          Expanded(flex: 3, child: _buildDescriptionField()),
+          const SizedBox(height: 8),
+          _buildLogHeader(scheme),
+          const SizedBox(height: 4),
+          Expanded(flex: 2, child: _buildLogField()),
+          const Padding(padding: EdgeInsets.only(bottom: 96.0)),
+        ],
+      );
+    }
+    return Column(
+      children: [
+        _buildTitleRow(),
+        const SizedBox(height: 8),
+        Expanded(child: _buildDescriptionField()),
+        const SizedBox(height: 8),
+        _buildLogHeader(scheme),
+        const Padding(padding: EdgeInsets.only(bottom: 96.0)),
+      ],
+    );
+  }
+
+  Widget _buildLandscape(ColorScheme scheme) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: Column(
+            children: [
+              _buildTitleRow(),
+              const SizedBox(height: 8),
+              Expanded(child: _buildDescriptionField()),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildLogHeader(scheme),
+              const SizedBox(height: 4),
+              Expanded(child: _buildLogField()),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
