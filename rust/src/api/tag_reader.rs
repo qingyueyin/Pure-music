@@ -11,7 +11,7 @@ use image::imageops;
 use lofty::config::{ParseOptions, ParsingMode, WriteOptions};
 use lofty::prelude::{Accessor, AudioFile, ItemKey, TaggedFileExt};
 use lofty::probe::Probe;
-use lofty::tag::{Tag, TagItem};
+use lofty::tag::Tag;
 use windows::{
     core::Interface,
     core::HSTRING,
@@ -291,13 +291,17 @@ impl Audio {
     }
 
     /// 不支持：None  
-    /// Lofty 能获取到信息：read_by_lofty  
-    /// 不能的话：read_by_win_music_properties  
+    /// WAV/AIFF 等 RIFF 格式优先走 Windows API（处理系统编码 locale 问题）  
+    /// 其他格式：Lofty 优先 → Windows API 回退  
     /// 再不能的话：title: filename 代替
     fn read_from_path(path: impl AsRef<Path>) -> Option<Self> {
         let path = path.as_ref();
-        let lofty_support: bool =
-            *SUPPORT_FORMAT.get(&path.extension()?.to_ascii_lowercase().to_string_lossy())?;
+        let ext_lower = path
+            .extension()?
+            .to_ascii_lowercase()
+            .to_string_lossy()
+            .to_string();
+        let lofty_support: bool = *SUPPORT_FORMAT.get(&ext_lower)?;
 
         let file_metadata = match fs::metadata(path) {
             Ok(val) => val,
@@ -318,6 +322,27 @@ impl Audio {
             .duration_since(UNIX_EPOCH)
             .unwrap_or(Duration::ZERO)
             .as_secs();
+
+        // WAV/AIFF 等 RIFF 格式：RIFF INFO 块编码依赖系统 locale，
+        // Windows API 能正确处理，Lofty 会乱码 CJK 文本。
+        // 因此 WAV/AIFF 优先走 Windows → Lofty 回退。
+        let is_riff_format = matches!(
+            ext_lower.as_str(),
+            "wav" | "wave" | "aif" | "aiff" | "aifc"
+        );
+
+        if is_riff_format {
+            match Self::read_by_win_music_properties(path, modified, created) {
+                Ok(value) => return Some(value),
+                Err(_) => {
+                    // Windows API 失败，回退到 Lofty
+                    if let Some(value) = Self::read_by_lofty(path, modified, created) {
+                        return Some(value);
+                    }
+                    return Self::new_with_path(path, None);
+                }
+            }
+        }
 
         if lofty_support {
             if let Some(value) = Self::read_by_lofty(path, modified, created) {
@@ -765,43 +790,71 @@ fn _get_lyric_from_lofty(path: &String) -> Option<String> {
     let path_ref = Path::new(&path);
     let options = ParseOptions::new()
         .parsing_mode(ParsingMode::Relaxed)
-        .read_cover_art(false)
-        .read_properties(false)
         .read_tags(true);
-
-    let tagged_file = match Probe::open(path_ref) {
-        Ok(v) => match v.options(options).read() {
-            Ok(f) => f,
-            Err(err) => {
-                log_to_dart(format!("Error reading lyric file {:?}: {:?}", path, err.kind()));
-                return None;
-            }
-        },
+    let probe = match Probe::open(path_ref) {
+        Ok(v) => v,
         Err(err) => {
-            log_to_dart(format!("Error opening lyric file {:?}: {:?}", path, err.kind()));
+            log_to_dart(format!("lofty probe open error: {:?}", err.kind()));
             return None;
         }
     };
-
-    if let Some(tag) = tagged_file
-        .primary_tag()
-        .or_else(|| tagged_file.first_tag())
-    {
-        // 优先检查 USLT (ID3v2 未同步歌词) — 这是 MP3 最常见的嵌入式歌词格式
-        let lyric_items = tag.get_items(&ItemKey::Lyrics).collect::<Vec<&TagItem>>();
-        for item in lyric_items {
-            if let Some(lyric) = item.value().text() {
-                let text = lyric.to_string();
-                if !text.trim().is_empty() {
-                    return Some(text);
-                }
-            }
+    let tagged_file = match probe.options(options).read() {
+        Ok(f) => f,
+        Err(err) => {
+            log_to_dart(format!("lofty probe read error: {:?}", err.kind()));
+            return None;
         }
-
-        // 再检查 Lyrics (VorbisComment/APE/MP4 等格式)
-        // 在 Lofty 0.21.x 中，ItemKey::Lyrics 已覆盖 USLT 和 Lyrics
+    };
+    let tag = match tagged_file.primary_tag().or_else(|| tagged_file.first_tag()) {
+        Some(t) => t,
+        None => {
+            log_to_dart("lofty: no primary/first tag found".to_string());
+            return None;
+        }
+    };
+    // 遍历所有 ItemKey::Lyrics（可能有多个 USLT/LYRICS 帧）
+    for item in tag.get_items(&ItemKey::Lyrics) {
+        if let Some(lyric) = item.value().text() {
+            let text = lyric.to_string();
+            if !text.trim().is_empty() {
+                return Some(text);
+            }
+            log_to_dart("lofty: lyric text is empty".to_string());
+        } else {
+            log_to_dart("lofty: lyric value text() returned None".to_string());
+        }
     }
 
+    log_to_dart("lofty: no ItemKey::Lyrics found, scanning all items".to_string());
+
+    // fallback: 遍历所有 tag item，寻找可能包含歌词的字段
+    for item in tag.items() {
+        let key_str = format!("{:?}", item.key());
+        // 跳过常见的非歌词字段
+        if key_str.to_lowercase().contains("picture")
+            || key_str.to_lowercase().contains("cover")
+        {
+            continue;
+        }
+        if let Some(val) = item.value().text() {
+            let text = val.to_string().trim().to_string();
+            if text.is_empty() {
+                continue;
+            }
+            // 判断是否像歌词：包含时间戳标记 [mm:ss 或包含换行符
+            let has_timestamp = text.contains('[') && (text.contains(":") || text.contains('.'));
+            let has_newlines = text.contains('\n');
+            if has_timestamp || has_newlines {
+                log_to_dart(format!(
+                    "lofty: found lyric-like content in key={:?}, len={}",
+                    item.key(),
+                    text.len()
+                ));
+                return Some(text);
+            }
+        }
+    }
+    log_to_dart("lofty: no lyric-like content found in any tag item".to_string());
     None
 }
 
@@ -853,7 +906,7 @@ pub fn write_lyric_to_path(path: String, lyric: String) -> Result<(), String> {
     let path_ref = Path::new(&path);
     let options = ParseOptions::new()
         .parsing_mode(ParsingMode::Relaxed)
-        .read_cover_art(false)
+        .read_cover_art(true)
         .read_properties(false)
         .read_tags(true);
 
