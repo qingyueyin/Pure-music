@@ -43,13 +43,20 @@ class ThrottledPositionProvider extends ChangeNotifier {
 
   void _subscribe() {
     if (_sub != null) return;
-    _sub = PlayService.instance.playbackService.positionStream.listen((pos) {
-      final now = DateTime.now().millisecondsSinceEpoch;
-      if (now - _lastUpdateMs < 8) return;
-      _lastUpdateMs = now;
-      _position = pos;
-      notifyListeners();
-    });
+    // 退出时 PlayService 可能已被销毁，防御性检查
+    try {
+      final service = PlayService.instance;
+      _sub = service.playbackService.positionStream.listen((pos) {
+        final now = DateTime.now().millisecondsSinceEpoch;
+        if (now - _lastUpdateMs < 16) return;
+        _lastUpdateMs = now;
+        _position = pos;
+        notifyListeners();
+      });
+    } catch (_) {
+      // PlayService 已关闭，不再订阅
+      _sub = null;
+    }
   }
 
   void _unsubscribe() {
