@@ -2,13 +2,12 @@ import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/library/audio_library.dart';
+import 'package:pure_music/component/album_tile.dart';
 import 'package:pure_music/component/audio_tile.dart';
-import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/page/uni_detail_page.dart';
 import 'package:pure_music/page/uni_page.dart';
 import 'package:pure_music/page/uni_page_components.dart';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 class ArtistDetailPage extends StatelessWidget {
@@ -38,16 +37,18 @@ class ArtistDetailPage extends StatelessWidget {
       ),
       tertiaryContentTitle: '专辑',
       tertiaryContent: artist.albumsMap.values.toList(),
-      tertiaryContentBuilder: (context, album, i, multiSelectController, _) =>
-          ListTile(
-        onTap: () => context.push(app_paths.ALBUM_DETAIL_PAGE, extra: album),
-        title: Text(album.name),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.0)),
+      tertiaryContentBuilder: (context, album, i, multiSelectController, view) =>
+          AlbumTile(
+        album: album,
+        view: view,
       ),
       enableShufflePlay: true,
       enableSortMethod: true,
       enableSortOrder: true,
       enableSecondaryContentViewSwitch: true,
+      enableTabs: true,
+      secondaryContentTitle: '歌曲',
+      tertiaryTabIcon: Symbols.album,
       multiSelectController: multiSelectController,
       multiSelectViewActions: [
         AddAllToPlaylist(multiSelectController: multiSelectController),

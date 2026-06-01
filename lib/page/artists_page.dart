@@ -34,7 +34,7 @@ class ArtistsPage extends StatelessWidget {
       enableShufflePlay: false,
       enableSortMethod: true,
       enableSortOrder: true,
-      enableContentViewSwitch: true,
+      enableContentViewSwitch: false,
       multiSelectController: multiSelectController,
       multiSelectViewActions: [
         MultiSelectPlaySelectedAudios(
