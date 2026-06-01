@@ -2,12 +2,15 @@ import 'dart:async';
 
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
+import 'package:pure_music/page/now_playing_page/component/lyric_view_tile.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:flutter/material.dart';
 
 class HorizontalLyricView extends StatelessWidget {
+  final bool compact;
   const HorizontalLyricView({
     super.key,
+    this.compact = false,
   });
 
   @override
@@ -37,7 +40,7 @@ class HorizontalLyricView extends StatelessWidget {
               );
             }
 
-            return _LyricHorizontalScrollArea(snapshot.data!);
+            return _LyricHorizontalScrollArea(snapshot.data!, compact);
           },
         ),
       ),
@@ -46,9 +49,10 @@ class HorizontalLyricView extends StatelessWidget {
 }
 
 class _LyricHorizontalScrollArea extends StatefulWidget {
-  const _LyricHorizontalScrollArea(this.lyric);
+  const _LyricHorizontalScrollArea(this.lyric, [this.compact = false]);
 
   final Lyric lyric;
+  final bool compact;
 
   @override
   State<_LyricHorizontalScrollArea> createState() =>
@@ -65,19 +69,47 @@ class _LyricHorizontalScrollAreaState
   int _scrollToken = 0;
 
   var currContent = 'Enjoy Music';
+  bool _isTransition = false;
+  LrcLine? _transitionLrcLine;
+  SyncLyricLine? _transitionSyncLine;
+
+  static bool _isTransitionLine(LyricLine line) {
+    if (line is LrcLine) {
+      return line.isBlank && line.length > const Duration(seconds: 3);
+    }
+    if (line is SyncLyricLine) {
+      return line.words.isEmpty && line.length > const Duration(seconds: 3);
+    }
+    return false;
+  }
+
+  void _setContent(LyricLine line) {
+    if (_isTransitionLine(line)) {
+      _isTransition = true;
+      _transitionLrcLine = line is LrcLine ? line : null;
+      _transitionSyncLine = line is SyncLyricLine ? line : null;
+      currContent = '';
+    } else {
+      _isTransition = false;
+      _transitionLrcLine = null;
+      _transitionSyncLine = null;
+      if (line is LrcLine) {
+        currContent = line.translation == null
+            ? line.content
+            : '${line.content}┃${line.translation}';
+      } else if (line is SyncLyricLine) {
+        currContent = line.translation == null
+            ? line.content
+            : '${line.content}┃${line.translation}';
+      }
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     if (widget.lyric.lines.isNotEmpty) {
-      final first = widget.lyric.lines.first;
-      if (first is LrcLine) {
-        currContent = first.content;
-      } else if (first is SyncLyricLine) {
-        currContent = first.translation == null
-            ? first.content
-            : '${first.content}┃${first.translation}';
-      }
+      _setContent(widget.lyric.lines.first);
     }
 
     lyricLineStreamSubscription = lyricService.lyricLineStream.listen((line) {
@@ -87,13 +119,7 @@ class _LyricHorizontalScrollAreaState
       final currLine = widget.lyric.lines[line];
 
       setState(() {
-        if (currLine is LrcLine) {
-          currContent = currLine.content;
-        } else if (currLine is SyncLyricLine) {
-          currContent = currLine.translation == null
-              ? currLine.content
-              : '${currLine.content}┃${currLine.translation}';
-        }
+        _setContent(currLine);
       });
 
       /// 减去启动延时和滚动结束停留时间
@@ -116,6 +142,7 @@ class _LyricHorizontalScrollAreaState
           if (lastTime.isNegative) return;
 
           Future.delayed(waitFor, () {
+            if (!mounted) return;
             if (!scrollController.hasClients) return;
             if (token != _scrollToken) return;
 
@@ -137,15 +164,8 @@ class _LyricHorizontalScrollAreaState
       // 歌词切换时重置显示和滚动状态
       _scrollToken = 0;
       if (widget.lyric.lines.isNotEmpty) {
-        final first = widget.lyric.lines.first;
         setState(() {
-          if (first is LrcLine) {
-            currContent = first.content;
-          } else if (first is SyncLyricLine) {
-            currContent = first.translation == null
-                ? first.content
-                : '${first.content}┃${first.translation}';
-          }
+          _setContent(widget.lyric.lines.first);
         });
       }
     }
@@ -154,6 +174,18 @@ class _LyricHorizontalScrollAreaState
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+
+    if (_isTransition) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8.0),
+        child: LyricTransitionTile(
+          lrcLine: _transitionLrcLine,
+          syncLine: _transitionSyncLine,
+          enableBreathing: false,
+          compact: widget.compact,
+        ),
+      );
+    }
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8.0),
