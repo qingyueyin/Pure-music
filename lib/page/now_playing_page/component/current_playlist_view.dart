@@ -379,20 +379,6 @@ class _ReorderItem extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              // 移除按钮（排序模式中也有）
-              IconButton(
-                tooltip: '从队列移除',
-                icon: Icon(
-                  Symbols.remove_circle_outline,
-                  size: 20,
-                  color: scheme.onSurfaceVariant,
-                ),
-                visualDensity: VisualDensity.compact,
-                onPressed: () {
-                  PlayService.instance.playbackService.removeFromQueue(index);
-                },
-              ),
             ],
           ),
         ),
