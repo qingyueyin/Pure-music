@@ -6,6 +6,7 @@ import 'package:pure_music/lyric/lyric_source.dart';
 import 'package:pure_music/core/matcher.dart';
 import 'package:pure_music/page/now_playing_page/component/vertical_lyric_view.dart';
 import 'package:pure_music/play_service/play_service.dart';
+import 'package:pure_music/services/online_lyric/api/net_lyric_api.dart' as net_api;
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
@@ -33,22 +34,28 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
     ResultSource.kugou: 0,
   };
 
+  // API 级别分页：记录每个源已经请求到第几页
+  final Map<ResultSource, int> _apiPageMap = {
+    ResultSource.qq: 1,
+    ResultSource.ne: 1,
+    ResultSource.kugou: 1,
+  };
+
   ResultSource _activeSource = ResultSource.qq;
   bool _isSearching = false;
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
   static const int _pageSize = 5;
+  static const int _apiPageSize = 30;
 
   @override
   void initState() {
     super.initState();
-    uniSearch(widget.audio).then((results) {
-      if (mounted) {
-        setState(() {
-          _resultsMap[ResultSource.qq] = results.where((r) => r.source == ResultSource.qq).toList();
-          _resultsMap[ResultSource.ne] = results.where((r) => r.source == ResultSource.ne).toList();
-          _resultsMap[ResultSource.kugou] = results.where((r) => r.source == ResultSource.kugou).toList();
-        });
-      }
-    });
+    final searchQuery = widget.audio.artist.isNotEmpty
+        ? '${widget.audio.title} ${widget.audio.artist}'
+        : widget.audio.title;
+    _searchController.text = searchQuery;
+    _searchActiveSource();
   }
 
   @override
@@ -58,45 +65,117 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
   }
 
   void _performSearch() {
-    final query = _searchController.text.trim();
-    if (query.isEmpty) return;
+    _searchActiveSource();
+  }
 
-    final prevSource = _activeSource;
+  Future<void> _searchActiveSource({String? query}) async {
+    final searchQuery = query ?? _searchController.text.trim();
+    if (searchQuery.isEmpty) return;
 
+    final source = _activeSource;
     setState(() {
       _isSearching = true;
-      _resultsMap.forEach((k, v) {
-        v.clear();
-        _pageMap[k] = 0;
-      });
+      _resultsMap[source]!.clear();
+      _pageMap[source] = 0;
+      _apiPageMap[source] = 1;
+      _hasMore = true;
     });
 
-    manualSearch(widget.audio, query, limit: 15).then((results) {
+    try {
+      final results = await _searchSingleSource(searchQuery, source, page: 1);
       if (mounted) {
         setState(() {
-          _resultsMap[ResultSource.qq] = results.where((r) => r.source == ResultSource.qq).toList();
-          _resultsMap[ResultSource.ne] = results.where((r) => r.source == ResultSource.ne).toList();
-          _resultsMap[ResultSource.kugou] = results.where((r) => r.source == ResultSource.kugou).toList();
+          _resultsMap[source] = results;
+          _hasMore = results.length >= _apiPageSize;
           _isSearching = false;
-          if (_resultsMap[prevSource]!.isEmpty) {
-            if (_resultsMap[ResultSource.qq]!.isNotEmpty) {
-              _activeSource = ResultSource.qq;
-            } else if (_resultsMap[ResultSource.ne]!.isNotEmpty) {
-              _activeSource = ResultSource.ne;
-            } else if (_resultsMap[ResultSource.kugou]!.isNotEmpty) {
-              _activeSource = ResultSource.kugou;
-            }
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isSearching = false);
+    }
+  }
+
+  /// 加载下一页（API 级别翻页）
+  Future<void> _loadMore() async {
+    if (_isLoadingMore || !_hasMore) return;
+    final source = _activeSource;
+    final searchQuery = _searchController.text.trim();
+    if (searchQuery.isEmpty) return;
+
+    final nextApiPage = _apiPageMap[source]! + 1;
+    setState(() => _isLoadingMore = true);
+
+    try {
+      final newResults = await _searchSingleSource(searchQuery, source, page: nextApiPage);
+      if (mounted) {
+        final existing = _resultsMap[source]!;
+        int addedCount = 0;
+        for (final r in newResults) {
+          if (!_containsManualResult(existing, r)) {
+            existing.add(r);
+            addedCount++;
           }
-        });
+        }
+        _apiPageMap[source] = nextApiPage;
+        _hasMore = newResults.isNotEmpty && addedCount > 0;
+        // 加载完成后自动翻到下一页显示
+        if (addedCount > 0) {
+          final newMaxPage = (existing.length / _pageSize).ceil() - 1;
+          if (_pageMap[source]! < newMaxPage) {
+            _pageMap[source] = _pageMap[source]! + 1;
+          }
+        }
+        setState(() => _isLoadingMore = false);
       }
-    }).catchError((e, stack) {
-      logger.w('Manual search error: $e', stackTrace: stack);
-      if (mounted) {
-        setState(() {
-          _isSearching = false;
-        });
+    } catch (e) {
+      if (mounted) setState(() => _isLoadingMore = false);
+    }
+  }
+
+  bool _containsManualResult(List<SongSearchResult> list, SongSearchResult item) {
+    for (final r in list) {
+      if (r.source == item.source &&
+          r.qqSongId == item.qqSongId &&
+          r.kugouSongHash == item.kugouSongHash &&
+          r.neSongId == item.neSongId) {
+        return true;
       }
-    });
+    }
+    return false;
+  }
+
+  Future<List<SongSearchResult>> _searchSingleSource(
+      String query, ResultSource source, {int page = 1}) async {
+    switch (source) {
+      case ResultSource.qq:
+        final raw = await net_api.qqSearchLyric(keyword: query, page: page, pageSize: _apiPageSize);
+        return raw
+            .map((item) => SongSearchResult.fromQQSearchItem(item, widget.audio))
+            .where((r) => r != null && r.score >= 0)
+            .cast<SongSearchResult>()
+            .toList();
+      case ResultSource.ne:
+        final raw = await net_api.neSearchLyric(keyword: query, page: page, pageSize: _apiPageSize);
+        return raw
+            .map((item) => SongSearchResult.fromNeSearchItem(item, widget.audio))
+            .where((r) => r != null && r.score >= 0)
+            .cast<SongSearchResult>()
+            .toList();
+      case ResultSource.kugou:
+        final raw = await net_api.kgSearchLyric(keyword: query, page: page, pageSize: _apiPageSize);
+        return raw
+            .map((item) => SongSearchResult.fromKugouSearchItem(item, widget.audio))
+            .where((r) => r != null && r.score >= 0)
+            .cast<SongSearchResult>()
+            .toList();
+    }
+  }
+
+  void _switchSource(ResultSource source) {
+    setState(() => _activeSource = source);
+    if (_resultsMap[source]!.isEmpty) {
+      _searchActiveSource();
+    }
   }
 
   void _changePage(int delta) {
@@ -104,12 +183,16 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
     final newList = _resultsMap[source]!;
     final currentPage = _pageMap[source]!;
     final nextPage = currentPage + delta;
-    final maxPage = (newList.length / _pageSize).ceil() - 1;
 
-    if (nextPage >= 0 && nextPage <= maxPage) {
+    final maxDisplayPage = (newList.length / _pageSize).ceil() - 1;
+
+    if (nextPage >= 0 && nextPage <= maxDisplayPage) {
       setState(() {
         _pageMap[source] = nextPage;
       });
+    } else if (nextPage > maxDisplayPage && _hasMore) {
+      // 需要加载更多数据
+      _loadMore();
     }
   }
 
@@ -119,7 +202,7 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
     final count = _resultsMap[source]!.length;
 
     return GestureDetector(
-      onTap: () => setState(() => _activeSource = source),
+      onTap: () => _switchSource(source),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -188,7 +271,7 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
             ),
           ),
         ),
-        if (fullList.length > _pageSize)
+        if (fullList.length > _pageSize || _hasMore)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8.0),
             child: Row(
@@ -199,11 +282,19 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
                   onPressed: start > 0 ? () => _changePage(-1) : null,
                   tooltip: '上一页',
                 ),
-                Text('第 ${currentPage + 1}/${(fullList.length / _pageSize).ceil()} 页'),
+                Text('第 ${currentPage + 1} 页${_hasMore ? '' : '（共 ${(fullList.length / _pageSize).ceil()} 页）'}'),
                 IconButton(
-                  icon: const Icon(Icons.chevron_right),
-                  onPressed: end < fullList.length ? () => _changePage(1) : null,
-                  tooltip: '下一页',
+                  icon: _isLoadingMore
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.chevron_right),
+                  onPressed: (end < fullList.length || _hasMore) && !_isLoadingMore
+                      ? () => _changePage(1)
+                      : null,
+                  tooltip: _hasMore ? '加载更多' : '下一页',
                 ),
               ],
             ),
@@ -460,6 +551,7 @@ class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
                 ),
                 onTap: () {
                   lyricSources[widget.audio.path] = LyricSource(LyricSourceType.local);
+                  saveLyricSources();
                   PlayService.instance.lyricService.useLocalLyric();
                   Navigator.pop(context);
                 },
@@ -480,19 +572,54 @@ class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
                     }
                     if (snapshot.hasError || snapshot.data == null || snapshot.data!.isEmpty) {
                       return Center(
-                        child: Text(
-                          snapshot.hasError ? '搜索失败' : '未找到在线歌词',
-                          style: TextStyle(color: scheme.onSurfaceVariant),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                snapshot.hasError ? '搜索失败' : '未找到在线歌词',
+                                style: TextStyle(color: scheme.onSurfaceVariant),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                '试试点击右上角 🔍 手动搜索',
+                                style: TextStyle(
+                                  color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       );
                     }
+                    final results = snapshot.data!;
+                    // 搜索结果较少（少于 3 条）时提示手动搜索
+                    final showManualHint = results.length < 3;
                     return ListView.builder(
                       shrinkWrap: true,
-                      itemCount: snapshot.data!.length,
-                      itemBuilder: (context, i) => _SearchResultItem(
-                        audio: widget.audio,
-                        searchResult: snapshot.data![i],
-                      ),
+                      itemCount: results.length + (showManualHint ? 1 : 0),
+                      itemBuilder: (context, i) {
+                        if (showManualHint && i == results.length) {
+                          return Center(
+                            child: Padding(
+                              padding: const EdgeInsets.only(top: 12),
+                              child: Text(
+                                '试试手动搜索',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+                        return _SearchResultItem(
+                          audio: widget.audio,
+                          searchResult: results[i],
+                        );
+                      },
                     );
                   },
                 ),
@@ -551,9 +678,12 @@ class _ManualSearchTile extends StatelessWidget {
           kugouSongHash: searchResult.kugouSongHash,
           neSongId: searchResult.neSongId,
         );
+        saveLyricSources();
         Navigator.pop(context);
 
-        PlayService.instance.lyricService.useOnlineLyric();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          PlayService.instance.lyricService.useOnlineLyric();
+        });
       },
     );
   }
@@ -589,8 +719,11 @@ class _SearchResultItem extends StatelessWidget {
           kugouSongHash: searchResult.kugouSongHash,
           neSongId: searchResult.neSongId,
         );
+        saveLyricSources();
         Navigator.pop(context);
-        PlayService.instance.lyricService.useOnlineLyric();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          PlayService.instance.lyricService.useOnlineLyric();
+        });
       },
       leading: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
