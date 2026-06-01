@@ -796,7 +796,6 @@ class BassPlayer {
       }
       if (prevState) {
         _bassWasapi.BASS_WASAPI_Free();
-        _bassInit();
       }
       wasapiExclusive = exclusive;
       if (_fstream != null && _fPath != null) {
@@ -821,8 +820,6 @@ class BassPlayer {
     _positionUpdater = null;
 
     final oldHandle = _fstream!;
-    _fadeOutOldStream(oldHandle);
-    _bass.BASS_ChannelStop(oldHandle);
     _bass.BASS_StreamFree(oldHandle);
     _fstream = null;
 
@@ -864,7 +861,7 @@ class BassPlayer {
   /// 创建共享模式流
   void _createSharedStream(String path, double seekTo) {
     const flags =
-        bass.BASS_UNICODE | bass.BASS_SAMPLE_FLOAT | bass.BASS_ASYNCFILE;
+        bass.BASS_UNICODE | bass.BASS_SAMPLE_FLOAT | bass.BASS_ASYNCFILE | bass.BASS_STREAM_DECODE;
 
     final pathPointer = path.toNativeUtf16() as ffi.Pointer<ffi.Void>;
     var handle = _bass.BASS_StreamCreateFile(
@@ -1227,8 +1224,7 @@ class BassPlayer {
       final errCode = _bass.BASS_ErrorGetCode();
       if (errCode != bass.BASS_ERROR_BUSY) break; // 非 BUSY 错误，不重试
 
-      // 等待 50ms 让流完全释放后再重试
-      _sleepSync(50);
+      _sleepSync(15);
     }
 
     if (result == bass.FALSE) {
