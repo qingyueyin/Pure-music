@@ -300,6 +300,7 @@ class AlbumColorCache {
     final codec = await ui.instantiateImageCodec(bytes, targetWidth: 40, targetHeight: 40);
     final frame = await codec.getNextFrame();
     final img = frame.image;
+    codec.dispose();
     final data = await img.toByteData(format: ui.ImageByteFormat.rawRgba);
     img.dispose();
     if (data == null) return null;
