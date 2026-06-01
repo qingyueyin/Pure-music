@@ -30,7 +30,7 @@ abstract class NetEaseCloud implements RustOpaqueInterface {
   static Future<NetEaseCloud> newInstance() =>
       RustLib.instance.api.crateApiNeNetEaseCloudNew();
 
-  /// Search exactly like Lyrico's NeSource.search
+  /// Search NeSource
   Future<List<Map<String, String>>> search(
       {required String keyword, required int limit});
 }

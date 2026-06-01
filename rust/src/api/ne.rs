@@ -63,7 +63,7 @@ fn aes_decrypt(data: &[u8], key: &[u8; 16]) -> Result<Vec<u8>, String> {
     Ok(result)
 }
 
-/// MD5 digest in the same format as Lyrico: "nobody{url}use{params}md5forencrypt"
+/// MD5 digest format: "nobody{url}use{params}md5forencrypt"
 fn eapi_md5(url: &str, params: &str) -> String {
     let message = format!("nobody{}use{}md5forencrypt", url, params);
     let mut hasher = Md5::new();
@@ -71,7 +71,7 @@ fn eapi_md5(url: &str, params: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-/// Encrypt params exactly like Lyrico's NeCryptoUtils.encryptParams
+/// Encrypt params
 /// Returns "params=UPPERCASE_HEX_STRING" format
 fn eapi_params_encrypt(encrypt_path: &str, params: &str) -> String {
     let digest = eapi_md5(encrypt_path, params);
@@ -187,7 +187,7 @@ impl NetEaseCloud {
         }
     }
 
-    /// Headers exactly like Lyrico: User-Agent, Referer, Cookie (only 3)
+    /// Headers: User-Agent, Referer, Cookie (only 3)
     fn get_request_header(&self) -> Vec<(String, String)> {
         let cookies = self.cookies.lock().unwrap();
         let mut headers = vec![
@@ -246,7 +246,7 @@ impl NetEaseCloud {
         });
 
         let params_str = params.to_string();
-        // Lyrico: path.replace("/eapi/", "/api/") => /eapi/register/anonimous -> /api/register/anonimous
+        // path.replace("/eapi/", "/api/") => /eapi/register/anonimous -> /api/register/anonimous
         let encrypt_path = "/api/register/anonimous";
         // body is "params=HEXSTRING" with Content-Type already set by eapi_params_encrypt
         let body = eapi_params_encrypt(encrypt_path, &params_str);
@@ -351,7 +351,7 @@ impl NetEaseCloud {
         });
 
         let params_str = params.to_string();
-        // Lyrico: /eapi/song/lyric/v1 -> /api/song/lyric/v1
+        // /eapi/song/lyric/v1 -> /api/song/lyric/v1
         let encrypt_path = "/api/song/lyric/v1";
         let body = eapi_params_encrypt(encrypt_path, &params_str);
 
@@ -415,7 +415,7 @@ impl NetEaseCloud {
         Ok(result)
     }
 
-    /// Search exactly like Lyrico's NeSource.search
+    /// Search NeSource
     pub fn search(&self, keyword: String, limit: i32) -> Result<Vec<HashMap<String, String>>, String> {
         self.init()?;
         ne_log!("I", "search: keyword='{}', limit={}", keyword, limit);
@@ -429,7 +429,7 @@ impl NetEaseCloud {
         });
 
         let params_str = params.to_string();
-        // Lyrico: /eapi/search/song/list/page -> /api/search/song/list/page
+        // /eapi/search/song/list/page -> /api/search/song/list/page
         let encrypt_path = "/api/search/song/list/page";
         let body = eapi_params_encrypt(encrypt_path, &params_str);
 
