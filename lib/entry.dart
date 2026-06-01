@@ -28,7 +28,6 @@ import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/painting.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -43,6 +42,7 @@ class SlideTransitionPage<T> extends CustomTransitionPage<T> {
     super.restorationId,
     super.key,
   }) : super(
+          maintainState: false,
           transitionsBuilder: _transitionsBuilder,
           transitionDuration: MotionDuration.fast,
           reverseTransitionDuration: MotionDuration.fast,
@@ -82,6 +82,7 @@ class DetailTransitionPage<T> extends CustomTransitionPage<T> {
     super.restorationId,
     super.key,
   }) : super(
+          maintainState: false,
           transitionsBuilder: _transitionsBuilder,
           transitionDuration: const Duration(milliseconds: 420),
           reverseTransitionDuration: const Duration(milliseconds: 420),
@@ -140,11 +141,9 @@ class _EntryState extends State<Entry> with WindowListener, WidgetsBindingObserv
   }
 
   @override
-  void onWindowMinimized() {
-    // 窗口最小化：用户看不见任何内容，释放 GPU 图片缓存
-    // 保留小图（CoverImageCache small tier）以便恢复时快速显示
+  void onWindowMinimize() {
     PaintingBinding.instance.imageCache.clear();
-    CoverImageCache.instance.trimMemory(); // 清中/大图，保留小图
+    CoverImageCache.instance.trimMemory();
     logger.i('[mem] window minimized - cleared invisible caches');
   }
 
@@ -370,15 +369,17 @@ class _EntryState extends State<Entry> with WindowListener, WidgetsBindingObserv
         pageBuilder: (context, state) => CustomTransitionPage(
           key: state.pageKey,
           maintainState: false,
-          transitionDuration: const Duration(milliseconds: 360),
-          reverseTransitionDuration: const Duration(milliseconds: 360),
+          transitionDuration: const Duration(milliseconds: 400),
+          reverseTransitionDuration: const Duration(milliseconds: 400),
           transitionsBuilder: (context, animation, _, child) {
-            final fade = CurvedAnimation(
-              parent: animation,
-              curve: Curves.easeInOutCubic,
-              reverseCurve: Curves.easeInOutCubic,
+            return FadeTransition(
+              opacity: CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeInOutCubic,
+                reverseCurve: Curves.easeInOutCubic,
+              ),
+              child: child,
             );
-            return FadeTransition(opacity: fade, child: child);
           },
           child: const NowPlayingPage(),
         ),
@@ -387,15 +388,19 @@ class _EntryState extends State<Entry> with WindowListener, WidgetsBindingObserv
       /// welcoming page
       GoRoute(
         path: app_paths.WELCOMING_PAGE,
-        pageBuilder: (context, state) =>
-            SlideTransitionPage(key: state.pageKey, child: const WelcomingPage()),
+        pageBuilder: (context, state) => SlideTransitionPage(
+          key: state.pageKey,
+          child: const WelcomingPage(),
+        ),
       ),
 
       /// updating dialog
       GoRoute(
         path: app_paths.UPDATING_DIALOG,
-        pageBuilder: (context, state) =>
-            SlideTransitionPage(key: state.pageKey, child: const UpdatingPage()),
+        pageBuilder: (context, state) => SlideTransitionPage(
+          key: state.pageKey,
+          child: const UpdatingPage(),
+        ),
       ),
     ],
   );
