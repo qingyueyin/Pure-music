@@ -4,6 +4,7 @@ import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:flutter/material.dart';
+import 'package:palette_generator/palette_generator.dart';
 
 ColorScheme _applyLightSurfacePalette(ColorScheme scheme) {
   return scheme.copyWith(
@@ -28,14 +29,14 @@ ColorScheme _applyDarkSurfacePalette(ColorScheme scheme) {
 class ThemeProvider extends ChangeNotifier {
   ColorScheme lightScheme = _applyLightSurfacePalette(
     ColorScheme.fromSeed(
-      seedColor: Color(AppSettings.instance.defaultTheme),
+      seedColor: Color(AppSettings.getWindowsTheme()),
       brightness: Brightness.light,
     ),
   );
 
   ColorScheme darkScheme = _applyDarkSurfacePalette(
     ColorScheme.fromSeed(
-      seedColor: Color(AppSettings.instance.defaultTheme),
+      seedColor: Color(AppSettings.getWindowsTheme()),
       brightness: Brightness.dark,
     ),
   );
@@ -45,26 +46,11 @@ class ThemeProvider extends ChangeNotifier {
   ColorScheme get currScheme =>
       themeMode == ThemeMode.dark ? darkScheme : lightScheme;
 
-  ThemeMode themeMode = AppSettings.instance.themeMode;
-  static const int _maxCacheSize = 50;
-  final Map<String, ColorScheme> _schemeCache = {};
-  final Map<String, Future<ColorScheme>> _schemeFutureCache = {};
-  final List<String> _cacheAccessOrder = [];
-  int _themeRequestToken = 0;
-  Timer? _themeDebounceTimer;
-
-  void _evictCacheIfNeeded() {
-    while (_cacheAccessOrder.length >= _maxCacheSize) {
-      final oldestKey = _cacheAccessOrder.removeAt(0);
-      _schemeCache.remove(oldestKey);
-      _schemeFutureCache.remove(oldestKey);
-    }
-  }
-
-  void _touchCacheEntry(String key) {
-    _cacheAccessOrder.remove(key);
-    _cacheAccessOrder.add(key);
-  }
+  ThemeMode themeMode = switch (AppSettings.instance.themeOption) {
+    ThemeOption.system => ThemeMode.system,
+    ThemeOption.light => ThemeMode.light,
+    ThemeOption.dark => ThemeMode.dark,
+  };
 
   static ThemeProvider? _instance;
 
@@ -75,156 +61,144 @@ class ThemeProvider extends ChangeNotifier {
     return _instance!;
   }
 
-  void applyTheme({required Color seedColor}) {
+  void applyThemeOption(ThemeOption option) {
+    final seed = Color(AppSettings.getWindowsTheme());
     lightScheme = _applyLightSurfacePalette(ColorScheme.fromSeed(
-      seedColor: seedColor,
+      seedColor: seed,
       brightness: Brightness.light,
     ));
-
     darkScheme = _applyDarkSurfacePalette(ColorScheme.fromSeed(
-      seedColor: seedColor,
+      seedColor: seed,
       brightness: Brightness.dark,
     ));
+    themeMode = switch (option) {
+      ThemeOption.system => ThemeMode.system,
+      ThemeOption.light => ThemeMode.light,
+      ThemeOption.dark => ThemeMode.dark,
+    };
     notifyListeners();
 
     PlayService.instance.desktopLyricService.canSendMessage.then((canSend) {
       if (!canSend) return;
-
       PlayService.instance.desktopLyricService.sendThemeMessage(darkScheme);
+      PlayService.instance.desktopLyricService.sendThemeModeMessage(true);
     });
   }
 
-  void applyThemeFromImage(
-    ImageProvider image,
-    ThemeMode themeMode, {
-    String? cacheKey,
-    int? requestToken,
-  }) {
-    final brightness = switch (themeMode) {
-      ThemeMode.system => Brightness.light,
-      ThemeMode.light => Brightness.light,
-      ThemeMode.dark => Brightness.dark,
-    };
+  int _themeRequestToken = 0;
+  Timer? _themeDebounceTimer;
 
-    final key = cacheKey == null ? null : '$cacheKey|${brightness.name}';
-    final cached = key == null ? null : _schemeCache[key];
+  /// 缓存封面到种子色的映射，避免重复 palette_generator 计算
+  static const int _seedCacheSize = 50;
+  final Map<String, Color> _seedCache = {};
+  final List<String> _seedAccessOrder = [];
+
+  void _touchSeedCache(String key) {
+    _seedAccessOrder.remove(key);
+    _seedAccessOrder.add(key);
+  }
+
+  void _evictSeedCache() {
+    while (_seedAccessOrder.length >= _seedCacheSize) {
+      final oldest = _seedAccessOrder.removeAt(0);
+      _seedCache.remove(oldest);
+    }
+  }
+
+  void applyThemeMode(ThemeMode mode) {
+    themeMode = mode;
+    notifyListeners();
+
+    PlayService.instance.desktopLyricService.canSendMessage.then((canSend) {
+      if (!canSend) return;
+      PlayService.instance.desktopLyricService.sendThemeMessage(darkScheme);
+      PlayService.instance.desktopLyricService.sendThemeModeMessage(true);
+    });
+  }
+
+  /// 用 palette_generator 从封面提取最佳种子色。
+  /// 优先级：vibrantColor > mutedColor > dominantColor > fallback
+  /// 种子色只提取一次，light/dark 两套方案共用同一个种子。
+  Future<Color> _extractSeedColor(ImageProvider image, String cacheKey) async {
+    // 查缓存
+    final cached = _seedCache[cacheKey];
     if (cached != null) {
-      if (key != null) _touchCacheEntry(key);
-      switch (brightness) {
-        case Brightness.light:
-          lightScheme = _applyLightSurfacePalette(cached);
-          break;
-        case Brightness.dark:
-          darkScheme = _applyDarkSurfacePalette(cached);
-          break;
-      }
-
-      if ((requestToken == null || requestToken == _themeRequestToken) &&
-          brightness == Brightness.dark) {
-        PlayService.instance.desktopLyricService.canSendMessage.then((canSend) {
-          if (!canSend) return;
-          PlayService.instance.desktopLyricService.sendThemeMessage(darkScheme);
-          PlayService.instance.desktopLyricService.sendThemeModeMessage(true);
-        });
-      }
-
-      if (themeMode == this.themeMode &&
-          (requestToken == null || requestToken == _themeRequestToken)) {
-        notifyListeners();
-      }
-      return;
+      _touchSeedCache(cacheKey);
+      return cached;
     }
 
-    final future = key == null
-        ? ColorScheme.fromImageProvider(provider: image, brightness: brightness)
-        : _schemeFutureCache.putIfAbsent(
-            key,
-            () => ColorScheme.fromImageProvider(
-              provider: image,
-              brightness: brightness,
-            ),
-          );
+    try {
+      final palette = await PaletteGenerator.fromImageProvider(
+        image,
+        size: const Size(120, 120),
+        maximumColorCount: 8,
+      );
 
-    future.then((value) {
-      if (key != null) {
-        _evictCacheIfNeeded();
-        _schemeFutureCache.remove(key);
-        _schemeCache[key] = value;
-        _touchCacheEntry(key);
+      Color seedColor;
+      if (palette.vibrantColor != null) {
+        seedColor = palette.vibrantColor!.color;
+      } else if (palette.mutedColor != null) {
+        seedColor = palette.mutedColor!.color;
+      } else if (palette.dominantColor != null) {
+        seedColor = palette.dominantColor!.color;
+      } else {
+        seedColor = const Color(0xff27272a);
       }
 
-      if (requestToken != null && requestToken != _themeRequestToken) return;
+      // 写缓存
+      _evictSeedCache();
+      _seedCache[cacheKey] = seedColor;
+      _seedAccessOrder.add(cacheKey);
 
-      switch (brightness) {
-        case Brightness.light:
-          lightScheme = _applyLightSurfacePalette(value);
-          break;
-        case Brightness.dark:
-          darkScheme = _applyDarkSurfacePalette(value);
-          break;
-      }
-
-      if (brightness == Brightness.dark) {
-        PlayService.instance.desktopLyricService.canSendMessage.then((canSend) {
-          if (!canSend) return;
-          PlayService.instance.desktopLyricService.sendThemeMessage(darkScheme);
-          PlayService.instance.desktopLyricService.sendThemeModeMessage(true);
-        });
-      }
-
-      if (themeMode == this.themeMode) {
-        notifyListeners();
-      }
-    });
+      return seedColor;
+    } catch (e) {
+      debugPrint('Seed color extraction failed: $e');
+      return const Color(0xff27272a);
+    }
   }
 
-  void applyThemeMode(ThemeMode themeMode) {
-    this.themeMode = themeMode;
-    notifyListeners();
+  /// 用种子色同时生成 light/dark 两套 ColorScheme。
+  /// ColorScheme.fromSeed 是同步的，不需要 Future。
+  void _applySeedColor(Color seedColor, {bool notify = true}) {
+    lightScheme = _applyLightSurfacePalette(
+      ColorScheme.fromSeed(
+        seedColor: seedColor,
+        brightness: Brightness.light,
+      ),
+    );
+    darkScheme = _applyDarkSurfacePalette(
+      ColorScheme.fromSeed(
+        seedColor: seedColor,
+        brightness: Brightness.dark,
+      ),
+    );
+
     PlayService.instance.desktopLyricService.canSendMessage.then((canSend) {
       if (!canSend) return;
-
       PlayService.instance.desktopLyricService.sendThemeMessage(darkScheme);
-      PlayService.instance.desktopLyricService.sendThemeModeMessage(
-        true,
-      );
+      PlayService.instance.desktopLyricService.sendThemeModeMessage(true);
     });
+
+    if (notify) notifyListeners();
   }
 
   void applyThemeFromAudio(Audio audio) {
-    if (!AppSettings.instance.dynamicTheme) return;
     _themeRequestToken += 1;
     final token = _themeRequestToken;
 
     _themeDebounceTimer?.cancel();
-    _themeDebounceTimer = Timer(const Duration(milliseconds: 200), () {
+    _themeDebounceTimer = Timer(const Duration(milliseconds: 200), () async {
       if (token != _themeRequestToken) return;
-      audio.cover.then((image) {
-        if (image == null) return;
-        if (token != _themeRequestToken) return;
 
-        applyThemeFromImage(
-          image,
-          themeMode,
-          cacheKey: audio.path,
-          requestToken: token,
-        );
+      final image = await audio.mediumCover;
+      if (image == null || token != _themeRequestToken) return;
 
-        final second = switch (themeMode) {
-          ThemeMode.system => ThemeMode.dark,
-          ThemeMode.light => ThemeMode.dark,
-          ThemeMode.dark => ThemeMode.light,
-        };
-        Timer(const Duration(milliseconds: 420), () {
-          if (token != _themeRequestToken) return;
-          applyThemeFromImage(
-            image,
-            second,
-            cacheKey: audio.path,
-            requestToken: token,
-          );
-        });
-      });
+      // 1. 提取种子色（只用一次，light/dark 共用）
+      final seedColor = await _extractSeedColor(image, audio.path);
+      if (token != _themeRequestToken) return;
+
+      // 2. 同时生成 light/dark 两套方案
+      _applySeedColor(seedColor);
     });
   }
 
@@ -352,9 +326,8 @@ class ThemeProvider extends ChangeNotifier {
   @override
   void dispose() {
     _themeDebounceTimer?.cancel();
-    _schemeCache.clear();
-    _schemeFutureCache.clear();
-    _cacheAccessOrder.clear();
+    _seedCache.clear();
+    _seedAccessOrder.clear();
     super.dispose();
   }
 }
