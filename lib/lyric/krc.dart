@@ -4,7 +4,61 @@ import 'package:pure_music/lyric/lyric.dart';
 import 'dart:math';
 
 class Krc extends Lyric {
-  Krc(super.lines);
+  Krc(super.lines, [super.source = LyricFormat.local, super.rawText]);
+
+  /// 判断是否为元数据行（作曲、作词、编曲、和声、混音等）
+  /// 支持中文、英文、日文、韩文等多种语言的元数据标签
+  static bool _isMetadataLine(String text) {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return true;
+    
+    // 多语言元数据标签
+    final metadataPatterns = [
+      // 中文
+      '作曲', '作词', '编曲', '和声', '混音', '母带',
+      '演唱', '歌手', '原唱', '翻唱', '录音', '监制',
+      '制作', '统筹', '企划', '宣发', '吉他', '贝斯',
+      '鼓', '键盘', '弦乐', '管乐', '打击乐',
+      // 英文
+      'Composer', 'Lyricist', 'Arranger', 'Producer',
+      'Vocal', 'Singer', 'Mixing', 'Mastering',
+      'Recorded', 'Written', 'Composed', 'Arranged',
+      'Guitar', 'Bass', 'Drums', 'Keyboard', 'Strings',
+      'Horn', 'Percussion', 'Background', 'Backing',
+      'feat.', 'ft.', 'featuring',
+      // 日文
+      '作曲', '作詞', '編曲', '歌', 'コーラス',
+      'ギター', 'ベース', 'ドラム', 'ピアノ',
+      'ミックス', 'マスタリング', 'プロデュース',
+      // 韩文
+      '작곡', '작사', '편곡', '노래', '코러스',
+      '믹싱', '마스터링', '프로듀스',
+      // 法文
+      'Compositeur', 'Parolier', 'Arrangeur',
+      'Chant', 'Mixage', 'Mastering',
+      // 德文
+      'Komponist', 'Texter', 'Arrangeur',
+      'Gesang', 'Mischung', 'Mastering',
+      // 西班牙文
+      'Compositor', 'Letrista', 'Arreglista',
+      'Voz', 'Mezcla', 'Masterización',
+      // 通用缩写和符号
+      'by', 'prod.', 'arr.', 'mix.', 'mast.',
+    ];
+    
+    for (final pattern in metadataPatterns) {
+      if (trimmed.startsWith(pattern)) return true;
+    }
+    
+    // 匹配常见的元数据格式： "角色: 名字" 或 "角色 - 名字"
+    final metadataRegex = RegExp(
+      r'^(作曲|作词|编曲|Composer|Lyricist|Arranger|Producer|作曲|作詞|編曲|작곡|작사|편곡)\s*[:：\-–—]',
+      caseSensitive: false,
+    );
+    if (metadataRegex.hasMatch(trimmed)) return true;
+    
+    return false;
+  }
 
   static Krc fromKrcText(String krc) {
     final List<KrcLine> lines = [];
@@ -41,26 +95,57 @@ class Krc extends Lyric {
 
       if (krcLine == null) continue;
 
+      // 过滤主歌词中的元数据行（作曲、作词等）
+      final lineContent = krcLine.words.map((w) => w.content).join();
+      if (lineContent.isNotEmpty && _isMetadataLine(lineContent)) {
+        continue;
+      }
+
       lines.add(krcLine);
     }
 
     if (languageFrame != null) {
       final Map languageMap =
           json.decode(utf8.decode(base64.decode(languageFrame)));
-      List trans = [];
+      List<String> trans = [];
+      List<String> romas = [];
       for (var item in languageMap['content']) {
         if (item['type'] == 1) {
           final List transContent = item['lyricContent'];
           for (List transLine in transContent) {
-            trans.add(transLine.first);
+            final text = transLine.first;
+            // 过滤元数据行（作曲、作词、编曲等）
+            if (!_isMetadataLine(text)) {
+              trans.add(text);
+            }
+          }
+        } else if (item['type'] == 0) {
+          // type=0 是注音（罗马音），使用 join 合并数组中的单个字符
+          final List romaContent = item['lyricContent'];
+          for (List romaLine in romaContent) {
+            romas.add(romaLine.join());
           }
         }
       }
-      int linesIt = 0, transIt = 0;
-      while (linesIt < lines.length && transIt < trans.length) {
-        lines[linesIt].translation = trans[transIt];
-        linesIt += 1;
-        transIt += 1;
+
+      // 关联翻译到歌词行，跳过空歌词行
+      int transIt = 0;
+      for (int i = 0; i < lines.length; i++) {
+        if (lines[i].words.isEmpty) continue;
+        if (transIt < trans.length) {
+          lines[i].translation = trans[transIt];
+          transIt++;
+        }
+      }
+
+      // 关联罗马音到歌词行，跳过空歌词行
+      int romaIt = 0;
+      for (int i = 0; i < lines.length; i++) {
+        if (lines[i].words.isEmpty) continue;
+        if (romaIt < romas.length) {
+          lines[i].romanLyric = romas[romaIt];
+          romaIt++;
+        }
       }
     }
 
