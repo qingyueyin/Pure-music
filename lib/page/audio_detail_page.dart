@@ -58,7 +58,7 @@ class AudioDetailPage extends StatelessWidget {
     );
     final styleContent = TextStyle(fontSize: 14, color: scheme.onSurface);
     final placeholder = Icon(
-      Symbols.broken_image,
+      Symbols.queue_music,
       color: scheme.onSurface,
       size: 200,
     );
