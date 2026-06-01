@@ -44,7 +44,10 @@ class LyricViewTile extends StatefulWidget {
     this.distance,
     this.lineOffsetY = 0.0,
     this.staggerDelay = Duration.zero,
+    this.transitionDuration,
     this.isUserScrolling = false,
+    this.isHovered = false,
+    this.onHoverChanged,
     this.onTap,
   });
 
@@ -53,7 +56,13 @@ class LyricViewTile extends StatefulWidget {
   final int? distance;
   final double lineOffsetY;
   final Duration staggerDelay;
+
+  /// Override default transition duration for scroll animation sync
+  final Duration? transitionDuration;
+
   final bool isUserScrolling;
+  final bool isHovered;
+  final void Function(bool)? onHoverChanged;
   final void Function()? onTap;
 
   @override
@@ -221,7 +230,7 @@ class _SyncLineContent extends StatelessWidget {
     final alignment = config.textAlign;
     final displayMode = lyricViewController.lyricDisplayMode;
     final zhMode = lyricViewController.zhConversionMode;
-    final showTranslation = config.showTranslation && displayMode == LyricDisplayMode.enhanced;
+    final showTranslation = config.showTranslation;
     final showRoman = config.showRoman && displayMode != LyricDisplayMode.plain;
     final fontWeight = config.fontWeight;
     final primarySize = config.primaryFontSize(isMainLine: isMainLine);
@@ -398,6 +407,19 @@ class _SyncLineContent extends StatelessWidget {
         translationSize,
         fontWeight,
         config: config,
+      ));
+    }
+    if (showRoman && syncLine.romanLyric != null && syncLine.romanLyric!.isNotEmpty) {
+      final romanText = ZhConverter.convert(syncLine.romanLyric!, zhMode);
+      contents.add(const SizedBox(height: 4.0));
+      contents.add(buildSecondaryText(
+        romanText,
+        scheme,
+        alignment,
+        translationSize * 0.85,
+        fontWeight - 100,
+        config: config,
+        opacity: 0.35,
       ));
     }
     return Padding(
@@ -719,7 +741,7 @@ class _LrcLineContent extends StatelessWidget {
     final alignment = config.textAlign;
     final displayMode = lyricViewController.lyricDisplayMode;
     final zhMode = lyricViewController.zhConversionMode;
-    final showTranslation = config.showTranslation && displayMode == LyricDisplayMode.enhanced;
+    final showTranslation = config.showTranslation;
     final showRoman = config.showRoman && displayMode != LyricDisplayMode.plain;
     final fontWeight = config.fontWeight;
     final primarySize = config.primaryFontSize(isMainLine: isMainLine);
@@ -738,20 +760,31 @@ class _LrcLineContent extends StatelessWidget {
       )
     ];
     if (showTranslation) {
+      final transTexts = <String>[];
+      if (lrcLine.translation != null && lrcLine.translation!.trim().isNotEmpty) {
+        transTexts.add(lrcLine.translation!);
+      }
       for (var i = 1; i < splited.length; i++) {
+        final part = splited[i].trim();
+        if (part.isNotEmpty && !transTexts.contains(part)) {
+          transTexts.add(part);
+        }
+      }
+      for (final trans in transTexts) {
         contents.add(SizedBox(
           height: config.lrcTranslationGap(
             isMainLine: isMainLine,
-            translationIndex: i - 1,
+            translationIndex: 0,
           ),
         ));
         contents.add(buildSecondaryText(
-          ZhConverter.convert(splited[i], zhMode),
+          ZhConverter.convert(trans, zhMode),
           scheme,
           alignment,
           translationSize,
           fontWeight,
           config: config,
+          opacity: isMainLine ? 0.7 : 0.5,
         ));
       }
     }
@@ -785,7 +818,7 @@ class _LrcLineContent extends StatelessWidget {
 
   Text buildPrimaryText(String text, ColorScheme scheme, LyricTextAlign align,
       double fontSize, int fontWeight,
-      {required LyricRenderConfig config, double opacity = 1.0}) {
+      {required LyricRenderConfig config, double opacity = 1.0, Color? colorOverride}) {
     return Text(
       text,
       softWrap: true,
@@ -797,7 +830,7 @@ class _LrcLineContent extends StatelessWidget {
       },
       style: _lyricTextStyle(
         config: config,
-        color: scheme.onSurface.withValues(alpha: opacity),
+        color: colorOverride ?? scheme.onSurface.withValues(alpha: opacity),
         fontSize: fontSize,
         weight: fontWeight,
         scheme: scheme,
@@ -836,19 +869,29 @@ class _LrcLineContent extends StatelessWidget {
 class LyricTransitionTile extends StatefulWidget {
   final LrcLine? lrcLine;
   final SyncLyricLine? syncLine;
-  const LyricTransitionTile({super.key, this.lrcLine, this.syncLine});
+  final LyricTextAlign? alignment;
+  final bool enableBreathing;
+  final bool compact;
+  const LyricTransitionTile({
+    super.key,
+    this.lrcLine,
+    this.syncLine,
+    this.alignment,
+    this.enableBreathing = true,
+    this.compact = false,
+  });
 
   @override
   State<LyricTransitionTile> createState() => _LyricTransitionTileState();
 }
 
 class _LyricTransitionTileState extends State<LyricTransitionTile> {
-  late final LyricTransitionTileController controller;
+  late LyricTransitionTileController controller;
 
   @override
   void initState() {
     super.initState();
-    controller = LyricTransitionTileController(widget.lrcLine, widget.syncLine);
+    controller = LyricTransitionTileController(widget.lrcLine, widget.syncLine, widget.enableBreathing);
   }
 
   @override
@@ -858,7 +901,7 @@ class _LyricTransitionTileState extends State<LyricTransitionTile> {
         oldWidget.syncLine != widget.syncLine) {
       controller.dispose();
       controller =
-          LyricTransitionTileController(widget.lrcLine, widget.syncLine);
+          LyricTransitionTileController(widget.lrcLine, widget.syncLine, widget.enableBreathing);
     }
   }
 
@@ -873,10 +916,12 @@ class _LyricTransitionTileState extends State<LyricTransitionTile> {
     final scheme = Theme.of(context).colorScheme;
 
     return SizedBox(
-      height: 40.0,
-      width: 120.0,
+      height: widget.compact ? 24.0 : 40.0,
+      width: widget.compact ? 80.0 : 120.0,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 18, 12, 6),
+        padding: widget.compact
+            ? const EdgeInsets.symmetric(vertical: 0, horizontal: 10)
+            : const EdgeInsets.fromLTRB(12, 18, 12, 6),
         child: CustomPaint(
           painter: LyricTransitionPainter(
             scheme,
@@ -998,6 +1043,12 @@ class LyricTransitionTileController extends ChangeNotifier {
   final LrcLine? lrcLine;
   final SyncLyricLine? syncLine;
 
+  @override
+  void addListener(VoidCallback listener) {
+    if (_disposed) return;
+    super.addListener(listener);
+  }
+
   final playbackService = PlayService.instance.playbackService;
 
   double progress = 0;
@@ -1007,21 +1058,25 @@ class LyricTransitionTileController extends ChangeNotifier {
   late final Ticker factorTicker;
   bool _disposed = false;
 
-  LyricTransitionTileController([this.lrcLine, this.syncLine]) {
+  LyricTransitionTileController([this.lrcLine, this.syncLine, bool enableBreathing = true]) {
     _TransitionControllerManager.instance.register(this);
-    factorTicker = Ticker((elapsed) {
-      if (_disposed) return;
-      sizeFactor += k * 1 / 180;
-      if (sizeFactor > 1) {
-        k = -1;
-        sizeFactor = 1;
-      } else if (sizeFactor < 0) {
-        k = 1;
-        sizeFactor = 0;
-      }
-      notifyListeners();
-    });
-    factorTicker.start();
+    if (enableBreathing) {
+      factorTicker = Ticker((elapsed) {
+        if (_disposed) return;
+        sizeFactor += k * 1 / 180;
+        if (sizeFactor > 1) {
+          k = -1;
+          sizeFactor = 1;
+        } else if (sizeFactor < 0) {
+          k = 1;
+          sizeFactor = 0;
+        }
+        notifyListeners();
+      });
+      factorTicker.start();
+    } else {
+      factorTicker = Ticker((_) {});
+    }
   }
 
   void _updateProgress(double position) {
