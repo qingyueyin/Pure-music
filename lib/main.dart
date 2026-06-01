@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/cache.dart';
+import 'package:pure_music/core/matcher.dart' hide logger;
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/entry.dart';
 import 'package:pure_music/core/hotkeys.dart';
@@ -116,21 +117,49 @@ Future<void> main() async {
   runApp(Entry(welcome: welcome));
 }
 
-/// 定时记录进程物理内存，超阈值时紧急清理
+Timer? _memoryMonitorTimer;
+
 void _startMemoryMonitor() {
-  Timer.periodic(const Duration(seconds: 30), (_) {
+  _memoryMonitorTimer?.cancel();
+  _memoryMonitorTimer = Timer.periodic(const Duration(seconds: 30), (_) {
     try {
       final rssMB = (ProcessInfo.currentRss / (1024 * 1024)).round();
-      if (rssMB > 150) {
-        logger.w('[mem] RSS ${rssMB}MB > 150, emergency cleanup');
+      if (rssMB > 250) {
+        logger.w('[mem] RSS ${rssMB}MB > 250, tier-3 emergency cleanup');
+        PaintingBinding.instance.imageCache.clear();
+        PaintingBinding.instance.imageCache.clearLiveImages();
+        CoverImageCache.instance.clear();
+        AudioLibrary.instance.evictAllCoversExcept(
+          PlayService.instance.playbackService.nowPlaying?.path,
+        );
+        clearLyricCaches();
+      } else if (rssMB > 180) {
+        logger.w('[mem] RSS ${rssMB}MB > 180, tier-2 cleanup');
         PaintingBinding.instance.imageCache.clear();
         CoverImageCache.instance.clear();
         AudioLibrary.instance.evictAllCoversExcept(
           PlayService.instance.playbackService.nowPlaying?.path,
         );
+      } else if (rssMB > 120) {
+        PaintingBinding.instance.imageCache.clear();
       }
     } catch (_) {}
   });
+}
+
+void disposeMemoryMonitor() {
+  _memoryMonitorTimer?.cancel();
+  _memoryMonitorTimer = null;
+}
+
+/// 强制释放可回收内存，用于窗口最小化/低内存通知等场景
+void trimAllMemory() {
+  PaintingBinding.instance.imageCache.clear();
+  PaintingBinding.instance.imageCache.clearLiveImages();
+  CoverImageCache.instance.trimMemory();
+  AudioLibrary.instance.evictAllCoversExcept(
+    PlayService.instance.playbackService.nowPlaying?.path,
+  );
 }
 
 
