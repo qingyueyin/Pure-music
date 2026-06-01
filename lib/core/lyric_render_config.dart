@@ -79,8 +79,8 @@ class LyricRenderConfig {
     this.subTranslationScale = 0.70,
     this.activeLineScaleMultiplier = 1.0,
     this.inactiveLineScaleMultiplier = 0.90,
-    this.blurSigmaStep = 1.0,
-    this.blurSigmaMax = 4.0,
+    this.blurSigmaStep = 0.6,
+    this.blurSigmaMax = 2.5,
     this.implicitAnimationDuration = const Duration(milliseconds: 300),
     this.lineSpring = const LyricSpringDescription(
       stiffness: 90.0,
