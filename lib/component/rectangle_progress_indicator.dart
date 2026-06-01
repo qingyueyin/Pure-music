@@ -28,9 +28,14 @@ class _RectangleProgressIndicatorState
   @override
   void initState() {
     super.initState();
-    subscription =
-        PlayService.instance.playbackService.positionStream.listen((event) {
-      final len = PlayService.instance.playbackService.length;
+    final playbackService = PlayService.instance.playbackService;
+    final len = playbackService.length;
+    final pos = playbackService.position;
+    if (len > 0) {
+      progress.value = (pos / len).clamp(0.0, 1.0);
+    }
+    subscription = playbackService.positionStream.listen((event) {
+      final len = playbackService.length;
       if (len > 0) {
         progress.value = (event / len).clamp(0.0, 1.0);
       } else {
