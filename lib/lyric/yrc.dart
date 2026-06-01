@@ -2,7 +2,61 @@ import 'package:pure_music/lyric/lyric.dart';
 import 'dart:math';
 
 class Yrc extends Lyric {
-  Yrc(super.lines);
+  Yrc(super.lines, [super.source = LyricFormat.local, super.rawText]);
+
+  /// 判断是否为元数据行（作曲、作词、编曲、和声、混音等）
+  /// 支持中文、英文、日文、韩文等多种语言的元数据标签
+  static bool _isMetadataLine(String text) {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return true;
+    
+    // 多语言元数据标签
+    final metadataPatterns = [
+      // 中文
+      '作曲', '作词', '编曲', '和声', '混音', '母带',
+      '演唱', '歌手', '原唱', '翻唱', '录音', '监制',
+      '制作', '统筹', '企划', '宣发', '吉他', '贝斯',
+      '鼓', '键盘', '弦乐', '管乐', '打击乐',
+      // 英文
+      'Composer', 'Lyricist', 'Arranger', 'Producer',
+      'Vocal', 'Singer', 'Mixing', 'Mastering',
+      'Recorded', 'Written', 'Composed', 'Arranged',
+      'Guitar', 'Bass', 'Drums', 'Keyboard', 'Strings',
+      'Horn', 'Percussion', 'Background', 'Backing',
+      'feat.', 'ft.', 'featuring',
+      // 日文
+      '作曲', '作詞', '編曲', '歌', 'コーラス',
+      'ギター', 'ベース', 'ドラム', 'ピアノ',
+      'ミックス', 'マスタリング', 'プロデュース',
+      // 韩文
+      '작곡', '작사', '편곡', '노래', '코러스',
+      '믹싱', '마스터링', '프로듀스',
+      // 法文
+      'Compositeur', 'Parolier', 'Arrangeur',
+      'Chant', 'Mixage', 'Mastering',
+      // 德文
+      'Komponist', 'Texter', 'Arrangeur',
+      'Gesang', 'Mischung', 'Mastering',
+      // 西班牙文
+      'Compositor', 'Letrista', 'Arreglista',
+      'Voz', 'Mezcla', 'Masterización',
+      // 通用缩写和符号
+      'by', 'prod.', 'arr.', 'mix.', 'mast.',
+    ];
+    
+    for (final pattern in metadataPatterns) {
+      if (trimmed.startsWith(pattern)) return true;
+    }
+    
+    // 匹配常见的元数据格式： "角色: 名字" 或 "角色 - 名字"
+    final metadataRegex = RegExp(
+      r'^(作曲|作词|编曲|Composer|Lyricist|Arranger|Producer|作曲|作詞|編曲|작곡|작사|편곡)\s*[:：\-–—]',
+      caseSensitive: false,
+    );
+    if (metadataRegex.hasMatch(trimmed)) return true;
+    
+    return false;
+  }
 
   static Yrc fromYrcText(String yrc, [String? transRawStr]) {
     final List<YrcLine> lines = [];
@@ -21,26 +75,62 @@ class Yrc extends Lyric {
     for (final item in splited) {
       final yrcLine = YrcLine.fromLine(item, null, offset);
       if (yrcLine == null) continue;
+      
+      // 过滤主歌词中的元数据行（作曲、作词等）
+      final lineContent = yrcLine.words.map((w) => w.content).join();
+      if (lineContent.isNotEmpty && _isMetadataLine(lineContent)) {
+        continue;
+      }
+      
       lines.add(yrcLine);
     }
 
     if (transRawStr != null) {
-      int lineIt = 0;
       final splitedTrans = transRawStr.split('\n');
-      for (var transLine in splitedTrans) {
-        if (lineIt > lines.length - 1) break;
+      final List<_TransLine> transEntries = [];
 
+      // 先解析所有翻译行，提取时间戳
+      for (var transLine in splitedTrans) {
         final bracketStart = transLine.indexOf('[');
         final bracketEnd = transLine.indexOf(']');
         if (bracketStart == -1 || bracketEnd == -1 || bracketEnd <= bracketStart) continue;
 
         final timeStr = transLine.substring(bracketStart + 1, bracketEnd);
-        if (int.tryParse(timeStr.split(':').first) != null) {
-          final t = transLine.replaceAll(RegExp(r'\[\d{2}:\d{2}\.\d{2,}\]'), '');
-          if (t.isNotEmpty) {
-            lines[lineIt].translation = t;
-            lineIt += 1;
+        final parts = timeStr.split(':');
+        if (parts.length >= 2) {
+          final mins = int.tryParse(parts[0]) ?? 0;
+          final secs = double.tryParse(parts[1]) ?? 0.0;
+          final transTimeMs = (mins * 60000 + (secs * 1000).round());
+          final t = transLine.replaceAll(RegExp(r'\[\d{2}:\d{2}\.\d{2,}\]'), '').trim();
+          if (t.isNotEmpty && !_isMetadataLine(t)) {
+            transEntries.add(_TransLine(Duration(milliseconds: transTimeMs), t));
           }
+        }
+      }
+
+      // 贪心最近匹配：每个翻译行找最近的原文行（误差 ≤ 5s）
+      const maxDriftMs = 5000;
+      int lastMatchedIdx = -1;
+
+      for (final te in transEntries) {
+        int bestIdx = -1;
+        int bestDiff = maxDriftMs + 1;
+
+        for (int i = lastMatchedIdx + 1; i < lines.length; i++) {
+          if (lines[i].words.isEmpty) continue;
+          final diff = (lines[i].start.inMilliseconds - te.start.inMilliseconds).abs();
+
+          if (diff < bestDiff) {
+            bestDiff = diff;
+            bestIdx = i;
+          } else if (diff > bestDiff) {
+            break; // 时间戳递增，越过最优解后停止
+          }
+        }
+
+        if (bestIdx != -1 && bestDiff <= maxDriftMs) {
+          lines[bestIdx].translation = te.text;
+          lastMatchedIdx = bestIdx;
         }
       }
     }
@@ -152,4 +242,10 @@ class YrcLine extends SyncLyricLine {
 
 class YrcWord extends SyncLyricWord {
   YrcWord(super.start, super.length, super.content);
+}
+
+class _TransLine {
+  final Duration start;
+  final String text;
+  _TransLine(this.start, this.text);
 }

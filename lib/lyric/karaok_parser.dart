@@ -1,8 +1,8 @@
 import 'package:pure_music/lyric/lyric.dart';
 
 // ──────────────────────────────────────────────
-// 从 ZeroBit-Player 移植的 KaraOK 格式（YRC/QRC/KRC）解析器
-// 使用正则逐字解析，比 Pure Music 原有 split 方式更健壮
+// KaraOK 格式（YRC/QRC/KRC）解析器
+// 使用正则逐字解析，比原有 split 方式更健壮
 // ──────────────────────────────────────────────
 
 /// KaraOK 行正则：[start_ms,duration_ms]content
@@ -18,7 +18,7 @@ final _qrcWordRe = RegExp(r'[^(]*?((?:.(?!\(\d+,))*.)\((\d+),(\d+)\)');
 final _krcWordRe = RegExp(r'<(\d+),(\d+),\d+>[^<]*?((?:.(?!<\d+,))*.)');
 
 // ──────────────────────────────────────────────
-// 内部模型（类似 ZeroBit 的 WordEntry）
+// 内部模型
 // ──────────────────────────────────────────────
 class _Word {
   final int startMs;
@@ -43,7 +43,6 @@ _WordConfig? _configFor(String ext) => switch (ext) {
       _ => null,
     };
 
-// ──────────────────────────────────────────────
 // 合并小单词
 // ──────────────────────────────────────────────
 bool _shouldMerge(_Word curr, _Word last) =>
@@ -105,22 +104,6 @@ SyncLyricLine _buildLine(
           ))
       .toList();
 
-  // 设置 nextTime（通过 duration 表达行内间距）
-  for (int i = 0; i < syncWords.length - 1; i++) {
-    final nextStart = syncWords[i + 1].start;
-    final curr = syncWords[i];
-    final d = nextStart - curr.start;
-    if (!d.isNegative) curr.length = d;
-  }
-
-  // 最后一个单词的 duration 延伸到行尾
-  if (syncWords.isNotEmpty && lineLength > Duration.zero) {
-    final last = syncWords.last;
-    final lineEnd = lineStart + lineLength;
-    final d = lineEnd - last.start;
-    if (!d.isNegative) last.length = d;
-  }
-
   return SyncLyricLine(lineStart, lineLength, syncWords, translation);
 }
 
@@ -173,46 +156,32 @@ Lyric? parseKaraokToPureLyric(
     }
   }
 
-  // 构建最终的 SyncLyricLine 列表
+  // 构建最终的 SyncLyricLine 列表（两指针法匹配翻译）
   final resultLines = <SyncLyricLine>[];
-  const toleranceMs = 100;
+  const toleranceMs = 300;
   int transIdx = 0;
 
   for (int i = 0; i < lines.length; i++) {
     final l = lines[i];
-    final nextStartMs = i + 1 < lines.length
-        ? lines[i + 1].start.inMilliseconds
-        : l.start.inMilliseconds + 10000;
-    final currStartMs = l.start.inMilliseconds;
-
-    // 取当前行和下一行的中点作为右边界，防止跨行匹配
-    final rightBoundary =
-        currStartMs + (nextStartMs - currStartMs) ~/ 2 + toleranceMs;
 
     String? translation;
 
-    // 时间匹配翻译
     while (transIdx < transLines.length) {
       final t = transLines[transIdx];
-      final transStartMs = t.start.inMilliseconds;
+      final diff = l.start.inMilliseconds - t.start.inMilliseconds;
 
-      // 翻译行太早，跳过
-      if (transStartMs < currStartMs - toleranceMs) {
+      if (diff.abs() <= toleranceMs) {
+        translation = t.rawText?.trim();
+        if (translation == '//') translation = null;
         transIdx++;
-        continue;
-      }
-
-      // 翻译行已过半程，属于下一行
-      if (transStartMs > rightBoundary) {
         break;
+      } else if (diff < 0) {
+        break;
+      } else {
+        transIdx++;
       }
-
-      translation = t.rawText != null && t.rawText!.trim() != '//' ? t.rawText : null;
-      transIdx++;
-      break;
     }
 
-    // 构建行
     final line = _buildLine(l.start, l.length, l.words, translation);
     resultLines.add(line);
   }
