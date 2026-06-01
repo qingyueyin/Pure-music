@@ -27,9 +27,9 @@ class UniDetailPage<P, S, T> extends StatefulWidget {
     required this.subtitle,
     required this.secondaryContent,
     required this.secondaryContentBuilder,
-    required this.tertiaryContentTitle,
-    required this.tertiaryContent,
-    required this.tertiaryContentBuilder,
+    this.tertiaryContentTitle,
+    this.tertiaryContent,
+    this.tertiaryContentBuilder,
     required this.enableShufflePlay,
     required this.enableSortMethod,
     required this.enableSortOrder,
@@ -37,6 +37,12 @@ class UniDetailPage<P, S, T> extends StatefulWidget {
     this.sortMethods,
     this.multiSelectController,
     this.multiSelectViewActions,
+    this.enableTabs = false,
+    this.secondaryContentTitle = '歌曲',
+    this.tertiaryTabIcon = Symbols.list,
+    this.onSortMethodChanged,
+    this.extraActions,
+    this.bodyOverride,
   });
 
   final PagePreference pref;
@@ -57,9 +63,9 @@ class UniDetailPage<P, S, T> extends StatefulWidget {
   final List<S> secondaryContent;
   final ContentBuilder<S> secondaryContentBuilder;
 
-  final String tertiaryContentTitle;
-  final List<T> tertiaryContent;
-  final ContentBuilder<T> tertiaryContentBuilder;
+  final String? tertiaryContentTitle;
+  final List<T>? tertiaryContent;
+  final ContentBuilder<T>? tertiaryContentBuilder;
 
   final bool enableShufflePlay;
   final bool enableSortMethod;
@@ -71,6 +77,13 @@ class UniDetailPage<P, S, T> extends StatefulWidget {
   final MultiSelectController<S>? multiSelectController;
   final List<Widget>? multiSelectViewActions;
 
+  final bool enableTabs;
+  final String secondaryContentTitle;
+  final IconData tertiaryTabIcon;
+  final VoidCallback? onSortMethodChanged;
+  final List<Widget>? extraActions;
+  final Widget? bodyOverride;
+
   @override
   State<UniDetailPage<P, S, T>> createState() => _UniDetailPageState<P, S, T>();
 }
@@ -80,6 +93,7 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
       widget.sortMethods?[widget.pref.sortMethod];
   late SortOrder currSortOrder = widget.pref.sortOrder;
   late ContentView currContentView = widget.pref.contentView;
+  int _currentTabIndex = 0;
 
   @override
   void initState() {
@@ -99,6 +113,7 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
       widget.pref.sortMethod = widget.sortMethods?.indexOf(sortMethod) ?? 0;
       currSortMethod?.method(widget.secondaryContent, currSortOrder);
     });
+    widget.onSortMethodChanged?.call();
   }
 
   void setSortOrder(SortOrder sortOrder) {
@@ -144,6 +159,9 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
         setContentView: setContentView,
       ));
     }
+    if (widget.extraActions != null) {
+      actions.addAll(widget.extraActions!);
+    }
 
     return widget.multiSelectController == null
         ? result(null, actions, scheme)
@@ -165,7 +183,6 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            // head
             _UniDetailPageHeader(
               pic: widget.primaryPic,
               backgroundPic: widget.backgroundPic,
@@ -176,73 +193,204 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
               multiSelectController: multiSelectController,
               multiSelectViewActions: widget.multiSelectViewActions,
             ),
+            if (widget.enableTabs && widget.tertiaryContent != null) ...[
+              const SizedBox(height: 16.0),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: _buildTabBar(scheme),
+              ),
+            ],
             const SizedBox(height: 16.0),
             Expanded(
-              child: Material(
-                borderRadius: BorderRadius.circular(8.0),
-                type: MaterialType.transparency,
-                child: CustomScrollView(
-                  slivers: [
-                    // secondary content
-                    switch (currContentView) {
-                      ContentView.list => SliverFixedExtentList.builder(
-                          itemExtent: 64,
-                          itemCount: widget.secondaryContent.length,
-                          itemBuilder: (context, i) =>
-                              widget.secondaryContentBuilder(
-                            context,
-                            widget.secondaryContent[i],
-                            i,
-                            multiSelectController,
-                            ContentView.list,
-                          ),
-                        ),
-                      ContentView.table => SliverGrid.builder(
-                          gridDelegate: gridDelegate,
-                          itemCount: widget.secondaryContent.length,
-                          itemBuilder: (context, i) =>
-                              widget.secondaryContentBuilder(
-                            context,
-                            widget.secondaryContent[i],
-                            i,
-                            multiSelectController,
-                            ContentView.table,
-                          ),
-                        ),
-                    },
-
-                    // tertiary content
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: Text(
-                          widget.tertiaryContentTitle,
-                          style: TextStyle(
-                            color: scheme.onSurface,
-                            fontSize: 18.0,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                    SliverList.builder(
-                      itemCount: widget.tertiaryContent.length,
-                      itemBuilder: (context, i) =>
-                          widget.tertiaryContentBuilder(
-                        context,
-                        widget.tertiaryContent[i],
-                        i,
-                        null,
-                        ContentView.list,
-                      ),
-                    ),
-                    const SliverPadding(padding: EdgeInsets.only(bottom: 96.0)),
-                  ],
-                ),
-              ),
+              child: widget.bodyOverride ?? (widget.enableTabs
+                  ? IndexedStack(
+                      index: _currentTabIndex,
+                      children: [
+                        _buildSecondaryContent(multiSelectController, scheme),
+                        if (widget.tertiaryContent != null)
+                          _buildTertiaryContent(scheme),
+                      ],
+                    )
+                  : _buildCombinedContent(multiSelectController, scheme)),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildTabBar(ColorScheme scheme) {
+    final hasTertiary = widget.tertiaryContent != null;
+    final tabs = <(String, IconData)>[
+      (widget.secondaryContentTitle, Symbols.music_note),
+      if (hasTertiary)
+        (widget.tertiaryContentTitle ?? '', widget.tertiaryTabIcon),
+    ];
+    return Wrap(
+      spacing: 8.0,
+      runSpacing: 8.0,
+      children: List.generate(tabs.length, (i) {
+        final selected = _currentTabIndex == i;
+        return OutlinedButton.icon(
+          onPressed: () => setState(() => _currentTabIndex = i),
+          icon: Icon(tabs[i].$2,
+              size: 18,
+              color: selected ? scheme.onPrimary : scheme.onSurface),
+          label: Text(
+            tabs[i].$1,
+            style: TextStyle(
+              color: selected ? scheme.onPrimary : scheme.onSurface,
+            ),
+          ),
+          style: OutlinedButton.styleFrom(
+            backgroundColor: selected ? scheme.primary : Colors.transparent,
+            side: BorderSide(color: selected ? scheme.primary : scheme.outline),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          ),
+        );
+      }),
+    );
+  }
+
+  Widget _buildSecondaryContent(
+      MultiSelectController<S>? multiSelectController, ColorScheme scheme) {
+    return Material(
+      borderRadius: BorderRadius.circular(8.0),
+      type: MaterialType.transparency,
+      child: CustomScrollView(
+        slivers: [
+          switch (currContentView) {
+            ContentView.list => SliverFixedExtentList.builder(
+                itemExtent: 64,
+                itemCount: widget.secondaryContent.length,
+                itemBuilder: (context, i) =>
+                    widget.secondaryContentBuilder(
+                  context,
+                  widget.secondaryContent[i],
+                  i,
+                  multiSelectController,
+                  ContentView.list,
+                ),
+              ),
+            ContentView.table => SliverGrid.builder(
+                gridDelegate: gridDelegate,
+                itemCount: widget.secondaryContent.length,
+                itemBuilder: (context, i) =>
+                    widget.secondaryContentBuilder(
+                  context,
+                  widget.secondaryContent[i],
+                  i,
+                  multiSelectController,
+                  ContentView.table,
+                ),
+              ),
+          },
+          const SliverPadding(padding: EdgeInsets.only(bottom: 96.0)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTertiaryContent(ColorScheme scheme) {
+    if (widget.tertiaryContent == null || widget.tertiaryContentBuilder == null) {
+      return const SizedBox.shrink();
+    }
+    return Material(
+      borderRadius: BorderRadius.circular(8.0),
+      type: MaterialType.transparency,
+      child: CustomScrollView(
+        slivers: [
+          SliverGrid.builder(
+            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: 300,
+              mainAxisExtent: 72,
+              mainAxisSpacing: 8.0,
+              crossAxisSpacing: 8.0,
+            ),
+            itemCount: widget.tertiaryContent!.length,
+            itemBuilder: (context, i) =>
+                widget.tertiaryContentBuilder!(
+              context,
+              widget.tertiaryContent![i],
+              i,
+              null,
+              ContentView.list,
+            ),
+          ),
+          const SliverPadding(padding: EdgeInsets.only(bottom: 96.0)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCombinedContent(
+      MultiSelectController<S>? multiSelectController, ColorScheme scheme) {
+    return Material(
+      borderRadius: BorderRadius.circular(8.0),
+      type: MaterialType.transparency,
+      child: CustomScrollView(
+        slivers: [
+          switch (currContentView) {
+            ContentView.list => SliverFixedExtentList.builder(
+                itemExtent: 64,
+                itemCount: widget.secondaryContent.length,
+                itemBuilder: (context, i) =>
+                    widget.secondaryContentBuilder(
+                  context,
+                  widget.secondaryContent[i],
+                  i,
+                  multiSelectController,
+                  ContentView.list,
+                ),
+              ),
+            ContentView.table => SliverGrid.builder(
+                gridDelegate: gridDelegate,
+                itemCount: widget.secondaryContent.length,
+                itemBuilder: (context, i) =>
+                    widget.secondaryContentBuilder(
+                  context,
+                  widget.secondaryContent[i],
+                  i,
+                  multiSelectController,
+                  ContentView.table,
+                ),
+              ),
+          },
+          if (widget.tertiaryContent != null &&
+              widget.tertiaryContentTitle != null) ...[
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Text(
+                  widget.tertiaryContentTitle!,
+                  style: TextStyle(
+                    color: scheme.onSurface,
+                    fontSize: 18.0,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+            SliverGrid.builder(
+              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: 300,
+                mainAxisExtent: 72,
+                mainAxisSpacing: 8.0,
+                crossAxisSpacing: 8.0,
+              ),
+              itemCount: widget.tertiaryContent!.length,
+              itemBuilder: (context, i) =>
+                  widget.tertiaryContentBuilder!(
+                context,
+                widget.tertiaryContent![i],
+                i,
+                null,
+                ContentView.list,
+              ),
+            ),
+          ],
+          const SliverPadding(padding: EdgeInsets.only(bottom: 96.0)),
+        ],
       ),
     );
   }
@@ -314,7 +462,7 @@ class _UniDetailPageHeader extends StatelessWidget {
                 future: pic,
                 builder: (context, snapshot) {
                   final placeholder = Icon(
-                    Symbols.broken_image,
+                    Symbols.queue_music,
                     size: 200.0,
                     color: scheme.onSurface,
                   );

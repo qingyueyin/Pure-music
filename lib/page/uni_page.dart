@@ -131,9 +131,12 @@ class _UniPageState<T> extends State<UniPage<T>> {
   late SortMethodDesc<T>? currSortMethod =
       widget.sortMethods?[widget.pref.sortMethod];
   late SortOrder currSortOrder = widget.pref.sortOrder;
-  late ContentView currContentView = widget.pref.contentView;
+  late ContentView currContentView = widget.enableContentViewSwitch
+      ? widget.pref.contentView
+      : ContentView.table;
   late ScrollController scrollController = ScrollController();
   bool _showScrollToTop = false;
+
   void _scrollToIndex(int targetAt) {
     if (targetAt < 0 || targetAt >= widget.contentList.length) return;
 
@@ -193,6 +196,7 @@ class _UniPageState<T> extends State<UniPage<T>> {
                   opacity: t,
                   child: Transform.translate(
                     offset: Offset(0.0, (1 - t) * 10.0),
+                    filterQuality: FilterQuality.low,
                     child: child,
                   ),
                 ),
@@ -227,6 +231,7 @@ class _UniPageState<T> extends State<UniPage<T>> {
                 opacity: t,
                 child: Transform.translate(
                   offset: Offset(0.0, (1 - t) * 10.0),
+                  filterQuality: FilterQuality.low,
                   child: child,
                 ),
               ),
@@ -249,18 +254,20 @@ class _UniPageState<T> extends State<UniPage<T>> {
     );
   }
 
+  void _onScrollUpdate() {
+    if (!mounted) return;
+    final shouldShow = scrollController.hasClients &&
+        scrollController.position.pixels > 320.0;
+    if (shouldShow != _showScrollToTop) {
+      setState(() => _showScrollToTop = shouldShow);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     currSortMethod?.method(widget.contentList, currSortOrder);
-    scrollController.addListener(() {
-      if (!mounted) return;
-      final shouldShow = scrollController.hasClients &&
-          scrollController.position.pixels > 320.0;
-      if (shouldShow != _showScrollToTop) {
-        setState(() => _showScrollToTop = shouldShow);
-      }
-    });
+    scrollController.addListener(_onScrollUpdate);
     if (widget.locateTo == null) return;
 
     int targetAt = widget.contentList.indexOf(widget.locateTo as T);
@@ -378,7 +385,10 @@ class _UniPageState<T> extends State<UniPage<T>> {
                   child: switch (currContentView) {
                     ContentView.list => ListView.builder(
                         controller: scrollController,
-                        padding: const EdgeInsets.only(bottom: 96.0),
+                        padding: const EdgeInsets.only(
+                          bottom: 96.0,
+                          right: 20,
+                        ),
                         itemCount: widget.contentList.length,
                         itemExtent: 64,
                         itemBuilder: (context, i) => widget.contentBuilder(
@@ -391,7 +401,10 @@ class _UniPageState<T> extends State<UniPage<T>> {
                       ),
                     ContentView.table => GridView.builder(
                         controller: scrollController,
-                        padding: const EdgeInsets.only(bottom: 96.0),
+                        padding: const EdgeInsets.only(
+                          bottom: 96.0,
+                          right: 20,
+                        ),
                         gridDelegate: widget.gridDelegate ?? gridDelegate,
                         itemCount: widget.contentList.length,
                         itemBuilder: (context, i) => widget.contentBuilder(
@@ -404,7 +417,6 @@ class _UniPageState<T> extends State<UniPage<T>> {
                       ),
                   },
                 ),
-                const SizedBox(width: 20),
               ],
             ),
             Positioned(

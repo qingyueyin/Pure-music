@@ -205,6 +205,7 @@ class AddAllToPlaylist extends StatelessWidget {
                 PLAYLISTS[i].addPath(item.path);
               }
             }
+            savePlaylists();
             showTextOnSnackBar(
               '成功将${multiSelectController.selected.length}首添加到歌单${PLAYLISTS[i].name}',
             );
@@ -263,6 +264,7 @@ class AddSelectedAudiosToPlaylist<T> extends StatelessWidget {
                 PLAYLISTS[i].addPath(audio.path);
               }
             }
+            savePlaylists();
             showTextOnSnackBar(
               '成功将${selectedAudios.length}首添加到歌单“${PLAYLISTS[i].name}”',
             );
