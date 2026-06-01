@@ -163,7 +163,7 @@ class _TitleBar_Large extends StatelessWidget {
                     child: Row(
                       children: [
                         SizedBox(
-                          width: 248,
+                          width: 200,
                           child: Row(
                             children: [
                               Image.asset('app_icon.ico', width: 24, height: 24),
@@ -180,8 +180,8 @@ class _TitleBar_Large extends StatelessWidget {
                         ),
                         const Expanded(
                           child: Padding(
-                            padding: EdgeInsets.fromLTRB(0, 8.0, 16.0, 8.0),
-                            child: HorizontalLyricView(),
+                            padding: EdgeInsets.fromLTRB(16, 8.0, 16.0, 8.0),
+                            child: HorizontalLyricView(compact: true),
                           ),
                         ),
                       ],
@@ -313,40 +313,48 @@ class _WindowControllsState extends State<WindowControlls> with WindowListener {
         await HotkeysHelper.unregisterAll().timeout(const Duration(milliseconds: 300));
       } catch (_) {}
 
-      // 3. 并行执行独立的保存操作（带超时保护）
-      final saveFutures = <Future<void>>[
-        // 播放列表保存到数据库
-        _withTimeout(savePlaylists(), const Duration(seconds: 2), 'savePlaylists'),
-        // 歌词源保存到数据库
-        _withTimeout(saveLyricSources(), const Duration(seconds: 2), 'saveLyricSources'),
-        // 保存应用设置
-        _withTimeout(AppSettings.instance.saveSettings(), const Duration(seconds: 1), 'saveSettings'),
-        // 保存偏好设置
-        _withTimeout(AppPreference.instance.save(), const Duration(seconds: 1), 'savePreference'),
-      ];
-
-      // 4. 先关闭播放服务（可能包含音频资源释放，耗时较长）
+      // 3. 先关闭播放服务（释放音频资源、销毁 AudioLibrary、清除缓存等）
+      // 必须在保存操作之前完成，避免保存时访问已释放的资源导致内存访问错误
       try {
         await _withTimeout(PlayService.instance.close(), const Duration(seconds: 3), 'PlayService.close');
       } catch (e) {
         logger.w('PlayService.close error: $e');
       }
 
-      // 5. 等待所有保存操作完成（整体超时 5 秒）
+      // 4. 执行保存操作（此时 PlayService 已关闭，不会访问已释放的服务）
+      // 串行执行确保每个保存操作完成后再执行下一个
       try {
-        await _withTimeout(Future.wait(saveFutures, eagerError: false), const Duration(seconds: 5), 'All save operations');
+        await _withTimeout(savePlaylists(), const Duration(seconds: 2), 'savePlaylists');
       } catch (e) {
-        logger.w('Save operations error: $e');
+        logger.w('savePlaylists error: $e');
       }
 
-      // 6. 关闭数据库连接（释放 SQLite 资源）
+      try {
+        await _withTimeout(saveLyricSources(), const Duration(seconds: 2), 'saveLyricSources');
+      } catch (e) {
+        logger.w('saveLyricSources error: $e');
+      }
+
+      try {
+        await _withTimeout(AppSettings.instance.saveSettings(), const Duration(seconds: 1), 'saveSettings');
+      } catch (e) {
+        logger.w('saveSettings error: $e');
+      }
+
+      try {
+        await _withTimeout(AppPreference.instance.save(), const Duration(seconds: 1), 'savePreference');
+      } catch (e) {
+        logger.w('savePreference error: $e');
+      }
+
+      // 5. 关闭数据库连接（释放 SQLite 资源）
       try {
         AppDb.instance.dispose();
       } catch (e) {
         logger.w('AppDb.dispose error: $e');
       }
 
-      // 7. 最终销毁窗口
+      // 6. 最终销毁窗口
       try {
         await _withTimeout(windowManager.destroy(), const Duration(seconds: 2), 'windowManager.destroy');
       } catch (_) {
