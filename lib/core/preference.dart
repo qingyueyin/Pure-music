@@ -51,7 +51,7 @@ class NowPlayingPagePreference {
     this.showLyricRoman = true,
     this.enableLyricScale = true,
     this.enableLyricSpring = true,
-    this.backgroundMode = NowPlayingBackgroundMode.meshGradient,
+    this.backgroundMode = NowPlayingBackgroundMode.blurCover,
   });
 
   LyricRenderConfig get lyricRenderConfig => LyricRenderConfig(
@@ -83,7 +83,7 @@ class NowPlayingPagePreference {
   factory NowPlayingPagePreference.fromMap(Map map) {
     final backgroundMode =
         NowPlayingBackgroundMode.fromString(map['backgroundMode']) ??
-            NowPlayingBackgroundMode.meshGradient;
+            NowPlayingBackgroundMode.blurCover;
     return NowPlayingPagePreference(
       NowPlayingViewMode.fromString(map['nowPlayingViewMode']) ??
           NowPlayingViewMode.withLyric,
@@ -359,6 +359,9 @@ class AppPreference {
       instance.sidebarExpanded = prefMap['sidebarExpanded'] ?? true;
       instance.playbackPref =
           PlaybackPreference.fromMap(prefMap['playbackPref']);
+      // 用独立保存的 playback_pref.json 覆盖最新播放状态
+      // （_persistLastSession 写入的是 playback_pref.json 而非 app_preference.json）
+      await instance.loadPlaybackOnly();
       instance.nowPlayingPagePref =
           NowPlayingPagePreference.fromMap(prefMap['nowPlayingPagePref']);
       _nowPlayingBackgroundModeNotifier?.value =
