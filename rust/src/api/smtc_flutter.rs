@@ -1,3 +1,4 @@
+use std::sync::Mutex;
 use std::time::Duration;
 
 use flutter_rust_bridge::frb;
@@ -6,7 +7,8 @@ use windows::{
     Foundation::{TimeSpan, TypedEventHandler},
     Media::{
         Core::MediaSource,
-        MediaPlaybackStatus, MediaPlaybackType, Playback::MediaPlayer,
+        MediaPlaybackStatus, MediaPlaybackType,
+        Playback::MediaPlayer,
         SystemMediaTransportControls, SystemMediaTransportControlsButton,
         SystemMediaTransportControlsButtonPressedEventArgs,
         SystemMediaTransportControlsTimelineProperties,
@@ -43,6 +45,7 @@ const SILENT_WAV: &[u8] = &[
 pub struct SMTCFlutter {
     _smtc: SystemMediaTransportControls,
     _player: MediaPlayer,
+    duration_ms: Mutex<u32>,
 }
 
 #[derive(Debug)]
@@ -69,18 +72,18 @@ impl SMTCFlutter {
 
     pub fn subscribe_to_control_events(&self, sink: StreamSink<SMTCControlEvent>) {
         log_to_dart("SMTC: Subscribing to control events...".to_string());
-        
+
         let smtc_clone = self._smtc.clone();
         let is_enabled = smtc_clone.IsEnabled().unwrap_or(false);
         log_to_dart(format!("SMTC: IsEnabled={}", is_enabled));
-        
+
         let is_playing_enabled = smtc_clone.IsPlayEnabled().unwrap_or(false);
         let is_pause_enabled = smtc_clone.IsPauseEnabled().unwrap_or(false);
         let is_next_enabled = smtc_clone.IsNextEnabled().unwrap_or(false);
         let is_previous_enabled = smtc_clone.IsPreviousEnabled().unwrap_or(false);
-        log_to_dart(format!("SMTC: Play={}, Pause={}, Next={}, Previous={}", 
+        log_to_dart(format!("SMTC: Play={}, Pause={}, Next={}, Previous={}",
             is_playing_enabled, is_pause_enabled, is_next_enabled, is_previous_enabled));
-        
+
         self._smtc
             .ButtonPressed(&TypedEventHandler::<
                 SystemMediaTransportControls,
@@ -95,25 +98,14 @@ impl SMTCFlutter {
                             SystemMediaTransportControlsButton::Previous => SMTCControlEvent::Previous,
                             _ => SMTCControlEvent::Unknown,
                         };
-                        
                         log_to_dart(format!("SMTC: Button pressed - {:?}", event));
-                        
-                        if let Err(e) = sink.add(event) {
-                            log_to_dart(format!("SMTC: Failed to send event: {}", e));
-                        } else {
-                            log_to_dart("SMTC: Event sent successfully".to_string());
-                        }
-                    } else {
-                        log_to_dart("SMTC: Failed to get button from event".to_string());
+                        let _ = sink.add(event);
                     }
-                } else {
-                    log_to_dart("SMTC: Event is None".to_string());
                 }
-
                 Ok(())
             }))
             .unwrap();
-        
+
         log_to_dart("SMTC: Subscription complete".to_string());
     }
 
@@ -150,20 +142,11 @@ impl SMTCFlutter {
     }
 
     pub fn close(self) {
-        self._player.Close().unwrap();
+        let _ = self._player.Close();
     }
 }
 
 impl SMTCFlutter {
-    fn _init_controls(smtc: &SystemMediaTransportControls) -> Result<(), windows::core::Error> {
-        smtc.SetIsEnabled(true)?;
-        smtc.SetIsNextEnabled(true)?;
-        smtc.SetIsPauseEnabled(true)?;
-        smtc.SetIsPlayEnabled(true)?;
-        smtc.SetIsPreviousEnabled(true)?;
-        Ok(())
-    }
-
     fn _create_silent_media_source() -> Result<MediaSource, windows::core::Error> {
         use windows::core::Interface;
         
@@ -177,6 +160,15 @@ impl SMTCFlutter {
         // Use cast to convert InMemoryRandomAccessStream to IRandomAccessStream
         let ras = stream.cast::<windows::Storage::Streams::IRandomAccessStream>()?;
         MediaSource::CreateFromStream(&ras, &HSTRING::from("audio/wav"))
+    }
+
+    fn _init_controls(smtc: &SystemMediaTransportControls) -> Result<(), windows::core::Error> {
+        smtc.SetIsEnabled(true)?;
+        smtc.SetIsNextEnabled(true)?;
+        smtc.SetIsPauseEnabled(true)?;
+        smtc.SetIsPlayEnabled(true)?;
+        smtc.SetIsPreviousEnabled(true)?;
+        Ok(())
     }
 
     fn _new() -> Result<Self, windows::core::Error> {
@@ -200,7 +192,7 @@ impl SMTCFlutter {
         updater.Update()?;
         log_to_dart("SMTC: DisplayUpdater.Update() called during init".to_string());
 
-        Ok(Self { _smtc, _player })
+        Ok(Self { _smtc, _player, duration_ms: Mutex::new(0) })
     }
 
     fn _update_state(&self, state: SMTCState) -> Result<(), windows::core::Error> {
@@ -215,8 +207,12 @@ impl SMTCFlutter {
 
     /// progress, duration: ms
     fn _update_time_properties(&self, progress: u32) -> Result<(), windows::core::Error> {
+        let dur = *self.duration_ms.lock().unwrap();
         let time_properties = SystemMediaTransportControlsTimelineProperties::new()?;
         time_properties.SetPosition(TimeSpan::from(Duration::from_millis(progress.into())))?;
+        time_properties.SetEndTime(TimeSpan::from(Duration::from_millis(dur.into())))?;
+        time_properties.SetMinSeekTime(TimeSpan { Duration: 0 })?;
+        time_properties.SetMaxSeekTime(TimeSpan::from(Duration::from_millis(dur.into())))?;
         self._smtc.UpdateTimelineProperties(&time_properties)?;
 
         Ok(())
@@ -231,7 +227,7 @@ impl SMTCFlutter {
         writer.WriteBytes(picture_data)?;
         writer.StoreAsync()?.get()?;
 
-        // 调用 DetachStream() 的意义在于“把流从 DataWriter 脱附”，
+        // 调用 DetachStream() 的意义在于"把流从 DataWriter 脱附"，
         // 这样可以安全地释放/关闭 DataWriter 而不影响流的生命周期。
         // stream 不会因为 writer drop 而被销毁
         writer.DetachStream()?;
@@ -252,6 +248,59 @@ impl SMTCFlutter {
         let updater = self._smtc.DisplayUpdater()?;
         updater.SetType(MediaPlaybackType::Music)?;
 
+        // 优先使用 CopyFromFileAsync（微软推荐方式，自动提取标题/艺术家/专辑/缩略图）
+        let copy_ok = match StorageFile::GetFileFromPathAsync(&path) {
+            Ok(op) => match op.get() {
+                Ok(file) => match updater.CopyFromFileAsync(MediaPlaybackType::Music, &file) {
+                    Ok(async_op) => match async_op.get() {
+                        Ok(_) => {
+                            log_to_dart("SMTC: CopyFromFileAsync succeeded".to_string());
+                            true
+                        }
+                        Err(e) => {
+                            log_to_dart(format!("SMTC: CopyFromFileAsync get err: {}", e));
+                            false
+                        }
+                    },
+                    Err(e) => {
+                        log_to_dart(format!("SMTC: CopyFromFileAsync call err: {}", e));
+                        false
+                    }
+                },
+                Err(e) => {
+                    log_to_dart(format!("SMTC: GetFileFromPathAsync get err: {}", e));
+                    false
+                }
+            },
+            Err(e) => {
+                log_to_dart(format!("SMTC: GetFileFromPathAsync err: {}", e));
+                false
+            }
+        };
+
+        if !copy_ok {
+            // 回退：手动设置 MusicProperties
+            log_to_dart("SMTC: falling back to manual MusicProperties".to_string());
+            if let Ok(music_properties) = updater.MusicProperties() {
+                let _ = music_properties.SetTitle(&title);
+                let _ = music_properties.SetArtist(&artist);
+                let _ = music_properties.SetAlbumTitle(&album);
+            }
+
+            // 缩略图：失败不阻塞，仅打日志
+            match Self::_try_get_thumbnail(&path) {
+                Ok(Some(pic_ref)) => {
+                    let _ = updater.SetThumbnail(&pic_ref);
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    log_to_dart(format!("SMTC: thumbnail err: {}", e));
+                }
+            }
+        }
+
+        // 更新时间线
+        *self.duration_ms.lock().unwrap() = duration;
         let time_properties = SystemMediaTransportControlsTimelineProperties::new()?;
         time_properties.SetStartTime(TimeSpan { Duration: 0 })?;
         time_properties.SetEndTime(TimeSpan::from(Duration::from_millis(duration.into())))?;
@@ -259,34 +308,33 @@ impl SMTCFlutter {
         time_properties.SetMaxSeekTime(TimeSpan::from(Duration::from_millis(duration.into())))?;
         self._smtc.UpdateTimelineProperties(&time_properties)?;
 
-        let music_properties = updater.MusicProperties()?;
-        music_properties.SetTitle(&title)?;
-        music_properties.SetArtist(&artist)?;
-        music_properties.SetAlbumTitle(&album)?;
-
-        let pic_stream_ref =
-            if let Some(pic_data) = tag_reader::get_picture_from_path(path.to_string(), 256, 256) {
-                Self::_ras_ref_from_pic_data(&pic_data)?
-            } else {
-                log_to_dart(format!(
-                    "no embedded picture found for file: {}",
-                    path.to_string()
-                ));
-                let file = StorageFile::GetFileFromPathAsync(&path)?.get()?;
-                let thumbnail = file
-                    .GetThumbnailAsyncOverloadDefaultSizeDefaultOptions(ThumbnailMode::MusicView)?
-                    .get()?;
-                RandomAccessStreamReference::CreateFromStream(&thumbnail)?
-            };
-
-        updater.SetThumbnail(&pic_stream_ref)?;
-
+        // 关键：无论如何都要调用 Update() 提交更改
         updater.Update()?;
 
         if !(self._smtc.IsEnabled()?) {
             self._smtc.SetIsEnabled(true)?;
         }
 
+        log_to_dart(format!("SMTC: Display updated - {}", title));
+
         Ok(())
+    }
+
+    /// 尝试获取缩略图引用，返回 None 表示无缩略图（非错误）
+    fn _try_get_thumbnail(
+        path: &HSTRING,
+    ) -> Result<Option<RandomAccessStreamReference>, windows::core::Error> {
+        if let Some(pic_data) = tag_reader::get_picture_from_path(path.to_string(), 256, 256) {
+            return Ok(Some(Self::_ras_ref_from_pic_data(&pic_data)?));
+        }
+        log_to_dart(format!(
+            "SMTC: no embedded picture for {}",
+            path.to_string()
+        ));
+        let file = StorageFile::GetFileFromPathAsync(path)?.get()?;
+        let thumbnail = file
+            .GetThumbnailAsyncOverloadDefaultSizeDefaultOptions(ThumbnailMode::MusicView)?
+            .get()?;
+        Ok(Some(RandomAccessStreamReference::CreateFromStream(&thumbnail)?))
     }
 }
