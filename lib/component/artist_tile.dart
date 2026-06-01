@@ -55,7 +55,7 @@ class _ArtistTileState extends State<ArtistTile> {
       ),
     );
     final placeholder = Icon(
-      Symbols.broken_image,
+      Symbols.queue_music,
       color: scheme.onSurface,
       size: 48,
     );
@@ -163,8 +163,8 @@ class _ArtistTileState extends State<ArtistTile> {
                         padding: const EdgeInsets.only(left: 12.0),
                         child: Text(
                           widget.artist.name,
-                          softWrap: false,
-                          maxLines: 1,
+                          softWrap: widget.view == ContentView.table,
+                          maxLines: widget.view == ContentView.table ? 2 : 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(color: scheme.onSurface),
                         ),
