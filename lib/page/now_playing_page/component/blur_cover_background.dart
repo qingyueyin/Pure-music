@@ -5,7 +5,26 @@ import 'package:flutter/material.dart';
 
 import 'package:pure_music/page/now_playing_page/component/now_playing_background_inputs.dart';
 
-const int _coverBigRenderSize = 400;
+/// Decode size for the source cover before blurring.
+const int _kDecodeSize = 256;
+
+/// Output size of the blurred snapshot.  The Gaussian blur destroys all
+/// high‑frequency detail, so a modest output resolution looks identical to
+/// a full‑res blur while using a fraction of the GPU texture memory.
+const int _kBlurOutputSize = 200;
+
+/// Blur sigma for the one‑time pre‑render, chosen per brightness.
+/// Dark themes benefit from a stronger blur (depth / atmosphere); light
+/// themes look muddy with too much blur.
+double _blurSigmaFor(Brightness brightness) =>
+    brightness == Brightness.dark ? 55.0 : 30.0;
+
+const _kFadeStops = <double>[0.0, 0.5, 1.0];
+const _kFadeColors = <Color>[
+  Colors.white,
+  Colors.white,
+  Colors.transparent,
+];
 
 class BlurCoverBackground extends StatefulWidget {
   final NowPlayingBackgroundInputs inputs;
@@ -22,14 +41,32 @@ class BlurCoverBackground extends StatefulWidget {
 }
 
 class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
-  Uint8List? _currentCoverBytes;
+  /// Pre‑rendered blurred snapshot — computed ONCE per cover / theme change,
+  /// then drawn as a static texture with zero per‑frame GPU compositor work.
+  ui.Image? _blurredImage;
   bool _isLoading = false;
   bool _disposed = false;
+  Brightness? _lastBrightness;
 
   @override
   void initState() {
     super.initState();
-    _loadCover();
+    // _decodeAndBlur 内部用 Theme.of(context)，不能在 initState 里直接调
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _decodeAndBlur();
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final brightness = Theme.of(context).colorScheme.brightness;
+    if (_lastBrightness != null && _lastBrightness != brightness) {
+      _lastBrightness = brightness;
+      _decodeAndBlur();
+    } else {
+      _lastBrightness = brightness;
+    }
   }
 
   @override
@@ -44,13 +81,11 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
 
   void _coverBytesChanged(Uint8List? newBytes, Uint8List? oldBytes) {
     if (newBytes == null || newBytes.isEmpty) {
-      if (_currentCoverBytes != null && !_disposed) {
-        setState(() => _currentCoverBytes = null);
-      }
+      _clearImage();
       return;
     }
     if (oldBytes != null && _isSameCoverBytes(newBytes, oldBytes)) return;
-    _loadCover();
+    _decodeAndBlur();
   }
 
   bool _isSameCoverBytes(Uint8List a, Uint8List b) {
@@ -63,26 +98,95 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
     return true;
   }
 
-  Future<void> _loadCover() async {
+  void _clearImage() {
+    final old = _blurredImage;
+    _blurredImage = null;
+    old?.dispose();
+    if (!_disposed) setState(() {});
+  }
+
+  /// Decode the cover → apply Gaussian blur ONCE via an off‑screen
+  /// PictureRecorder → store the result as a static GPU texture.
+  ///
+  /// The blur runs once per cover / theme change, NOT every frame.
+  Future<void> _decodeAndBlur() async {
     final bytes = widget.inputs.albumCoverBytes;
     if (bytes == null || bytes.isEmpty) {
-      if (_currentCoverBytes != null) {
-        setState(() => _currentCoverBytes = null);
-      }
+      _clearImage();
       return;
     }
-
     if (_disposed) return;
 
-    setState(() {
-      _currentCoverBytes = bytes;
-      _isLoading = false;
-    });
+    final brightness = Theme.of(context).colorScheme.brightness;
+    final sigma = _blurSigmaFor(brightness);
+
+    setState(() => _isLoading = true);
+
+    try {
+      // 1. Decode at a moderate size.
+      final codec = await ui.instantiateImageCodec(
+        bytes,
+        targetWidth: _kDecodeSize,
+        targetHeight: _kDecodeSize,
+      );
+      final frame = await codec.getNextFrame();
+      codec.dispose();
+
+      if (_disposed || !mounted) {
+        frame.image.dispose();
+        return;
+      }
+
+      // 2. Apply Gaussian blur once via an off‑screen recording canvas.
+      final recorder = ui.PictureRecorder();
+      final canvas = ui.Canvas(recorder);
+      final blurPaint = ui.Paint()
+        ..imageFilter = ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma);
+      final srcRect = ui.Rect.fromLTWH(
+        0,
+        0,
+        frame.image.width.toDouble(),
+        frame.image.height.toDouble(),
+      );
+      canvas.saveLayer(srcRect, blurPaint);
+      canvas.drawImageRect(
+        frame.image,
+        srcRect,
+        ui.Rect.fromLTWH(
+          0,
+          0,
+          _kBlurOutputSize.toDouble(),
+          _kBlurOutputSize.toDouble(),
+        ),
+        ui.Paint()..filterQuality = FilterQuality.medium,
+      );
+      canvas.restore();
+      final picture = recorder.endRecording();
+      frame.image.dispose();
+
+      final blurred = await picture.toImage(_kBlurOutputSize, _kBlurOutputSize);
+      picture.dispose();
+
+      if (_disposed || !mounted) {
+        blurred.dispose();
+        return;
+      }
+
+      final old = _blurredImage;
+      _blurredImage = blurred;
+      old?.dispose();
+
+      setState(() => _isLoading = false);
+    } catch (_) {
+      if (!_disposed && mounted) setState(() => _isLoading = false);
+    }
   }
 
   @override
   void dispose() {
     _disposed = true;
+    _blurredImage?.dispose();
+    _blurredImage = null;
     super.dispose();
   }
 
@@ -90,26 +194,27 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final brightness = scheme.brightness;
-    final coverBytes = _currentCoverBytes;
+    final blurredImage = _blurredImage;
 
     return Stack(
       fit: StackFit.expand,
       children: [
         ColoredBox(color: scheme.surface),
 
-        RepaintBoundary(
-          child: AnimatedOpacity(
-            opacity: _isLoading ? 0.0 : 1.0,
-            duration: const Duration(milliseconds: 600),
-            curve: Curves.easeInOut,
-            child: coverBytes != null
-                ? _BlurredCover(
-                    coverBytes: coverBytes,
-                    brightness: brightness,
-                  )
-                : ColoredBox(color: widget.fallbackColor),
-          ),
-        ),
+        if (blurredImage != null)
+          RepaintBoundary(
+            child: AnimatedOpacity(
+              opacity: _isLoading ? 0.0 : 1.0,
+              duration: const Duration(milliseconds: 600),
+              curve: Curves.easeInOut,
+              child: _BlurredCover(
+                image: blurredImage,
+                brightness: brightness,
+              ),
+            ),
+          )
+        else
+          ColoredBox(color: widget.fallbackColor),
 
         Container(
           color: widget.fallbackColor.withValues(
@@ -121,51 +226,38 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
   }
 }
 
+/// Displays the pre‑blurred static texture.  No ImageFilter, no per‑frame
+/// compositor work — just a single texture sample per output pixel.
 class _BlurredCover extends StatelessWidget {
-  final Uint8List coverBytes;
+  final ui.Image image;
   final Brightness brightness;
 
   const _BlurredCover({
-    required this.coverBytes,
+    required this.image,
     required this.brightness,
   });
-
-  Widget get _cover => SizedBox.expand(
-        child: Image.memory(
-          coverBytes,
-          cacheWidth: _coverBigRenderSize,
-          cacheHeight: _coverBigRenderSize,
-          fit: BoxFit.cover,
-          gaplessPlayback: true,
-        ),
-      );
 
   @override
   Widget build(BuildContext context) {
     return Opacity(
       opacity: brightness == Brightness.dark ? 0.9 : 0.6,
       child: ClipRRect(
-        child: ImageFiltered(
-          imageFilter: ui.ImageFilter.blur(
-            sigmaX: 80,
-            sigmaY: 80,
-            tileMode: ui.TileMode.clamp,
-          ),
-          child: ShaderMask(
-            blendMode: BlendMode.modulate,
-            shaderCallback: (Rect bounds) {
-              return const LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: <Color>[
-                  Colors.white,
-                  Colors.white,
-                  Colors.transparent,
-                ],
-                stops: [0.0, 0.3, 1.0],
-              ).createShader(bounds);
-            },
-            child: _cover,
+        child: ShaderMask(
+          blendMode: BlendMode.modulate,
+          shaderCallback: (Rect bounds) {
+            return const LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: _kFadeColors,
+              stops: _kFadeStops,
+            ).createShader(bounds);
+          },
+          child: SizedBox.expand(
+            child: RawImage(
+              image: image,
+              fit: BoxFit.cover,
+              filterQuality: FilterQuality.low,
+            ),
           ),
         ),
       ),
