@@ -6,6 +6,8 @@ import 'package:pure_music/page/uni_page_components.dart';
 import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/core/enums.dart';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -122,68 +124,102 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                     isSelected ? scheme.secondaryContainer : Colors.transparent,
                 borderRadius: BorderRadius.circular(8.0),
               ),
-              child: ListTile(
-                title: Text(
-                  playlist.name,
-                  softWrap: false,
-                  maxLines: 1,
-                ),
-                subtitle: Text(
-                  '${playlist.paths.length}首乐曲',
-                  softWrap: false,
-                  maxLines: 1,
-                ),
-                trailing: isMultiSelectView
-                    ? null
-                    : Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            tooltip: '编辑',
-                            onPressed: () => editPlaylist(context, playlist),
-                            icon: const Icon(Symbols.edit),
-                          ),
-                          const SizedBox(width: 8.0),
-                          IconButton(
-                            tooltip: '删除',
-                            onPressed: () async {
-                              setState(() {
-                                PLAYLISTS.remove(playlist);
-                              });
-                              await savePlaylists();
-                            },
-                            color: scheme.error,
-                            icon: const Icon(Symbols.delete),
-                          ),
-                        ],
-                      ),
-                shape: RoundedRectangleBorder(
+              child: Material(
+                type: MaterialType.transparency,
+                child: InkWell(
                   borderRadius: BorderRadius.circular(8.0),
-                ),
-                onTap: () {
-                  if (controller.isOpen) {
-                    controller.close();
-                    return;
-                  }
-                  if (!isMultiSelectView) {
-                    context.push(
-                      app_paths.PLAYLIST_DETAIL_PAGE,
-                      extra: playlist,
+                  onTap: () {
+                    if (controller.isOpen) {
+                      controller.close();
+                      return;
+                    }
+                    if (!isMultiSelectView) {
+                      context.push(
+                        app_paths.PLAYLIST_DETAIL_PAGE,
+                        extra: playlist,
+                      );
+                      return;
+                    }
+                    if (isSelected) {
+                      multiSelectController?.unselect(playlist);
+                    } else {
+                      multiSelectController?.select(playlist);
+                    }
+                  },
+                  onLongPress: () {
+                    if (multiSelectController == null) return;
+                    if (isMultiSelectView) return;
+                    multiSelectController.useMultiSelectView(true);
+                    multiSelectController.select(playlist);
+                  },
+                  onSecondaryTapDown: (details) {
+                    if (isMultiSelectView) return;
+                    controller.open(
+                      position: details.localPosition.translate(0, -240),
                     );
-                    return;
-                  }
-                  if (isSelected) {
-                    multiSelectController?.unselect(playlist);
-                  } else {
-                    multiSelectController?.select(playlist);
-                  }
-                },
-                onLongPress: () {
-                  if (multiSelectController == null) return;
-                  if (isMultiSelectView) return;
-                  multiSelectController.useMultiSelectView(true);
-                  multiSelectController.select(playlist);
-                },
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                    child: Row(children: [
+                      _PlaylistCover(playlist: playlist),
+                      const SizedBox(width: 16.0),
+                      Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              playlist.name,
+                              softWrap: false,
+                              maxLines: 1,
+                              style: const TextStyle(fontSize: 16),
+                            ),
+                            const SizedBox(height: 4.0),
+                            Text(
+                              '${playlist.paths.length}首乐曲',
+                              softWrap: false,
+                              maxLines: 1,
+                              style: TextStyle(
+                                color: scheme.onSurface.withAlpha(153),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (isMultiSelectView)
+                        Checkbox(
+                          value: isSelected,
+                          onChanged: (v) {
+                            if (v == true) {
+                              multiSelectController?.select(playlist);
+                            } else {
+                              multiSelectController?.unselect(playlist);
+                            }
+                          },
+                        )
+                      else ...[
+                        IconButton(
+                          tooltip: '编辑',
+                          onPressed: () =>
+                              editPlaylist(context, playlist),
+                          icon: const Icon(Symbols.edit),
+                        ),
+                        const SizedBox(width: 8.0),
+                        IconButton(
+                          tooltip: '删除',
+                          onPressed: () async {
+                            setState(() {
+                              PLAYLISTS.remove(playlist);
+                            });
+                            await savePlaylists();
+                          },
+                          color: scheme.error,
+                          icon: const Icon(Symbols.delete),
+                        ),
+                      ],
+                    ]),
+                  ),
+                ),
               ),
             ),
           ),
@@ -266,13 +302,25 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
   }
 }
 
-class _NewPlaylistDialog extends StatelessWidget {
+class _NewPlaylistDialog extends StatefulWidget {
   const _NewPlaylistDialog();
+
+  @override
+  State<_NewPlaylistDialog> createState() => _NewPlaylistDialogState();
+}
+
+class _NewPlaylistDialogState extends State<_NewPlaylistDialog> {
+  late final _editingController = TextEditingController();
+
+  @override
+  void dispose() {
+    _editingController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final editingController = TextEditingController();
 
     return Dialog(
       insetPadding: EdgeInsets.zero,
@@ -302,7 +350,7 @@ class _NewPlaylistDialog extends StatelessWidget {
                 onFocusChange: HotkeysHelper.onFocusChanges,
                 child: TextField(
                   autofocus: true,
-                  controller: editingController,
+                  controller: _editingController,
                   onSubmitted: (value) {
                     Navigator.pop(context, value);
                   },
@@ -323,7 +371,7 @@ class _NewPlaylistDialog extends StatelessWidget {
                   const SizedBox(width: 8.0),
                   TextButton(
                     onPressed: () {
-                      Navigator.pop(context, editingController.text);
+                      Navigator.pop(context, _editingController.text);
                     },
                     child: const Text('创建'),
                   ),
@@ -337,13 +385,92 @@ class _NewPlaylistDialog extends StatelessWidget {
   }
 }
 
-class _EditPlaylistDialog extends StatelessWidget {
+class _PlaylistCover extends StatefulWidget {
+  final Playlist playlist;
+  const _PlaylistCover({required this.playlist});
+
+  @override
+  State<_PlaylistCover> createState() => _PlaylistCoverState();
+}
+
+class _PlaylistCoverState extends State<_PlaylistCover> {
+  Uint8List? _cached;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(_PlaylistCover oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.playlist != widget.playlist) {
+      _cached = null;
+      _load();
+    }
+  }
+
+  Future<void> _load() async {
+    final audios = widget.playlist.audios;
+    if (audios.isEmpty) return;
+    final bytes = await audios.first.loadSmallCoverBytes();
+    if (mounted && bytes != null) {
+      setState(() => _cached = bytes);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_cached != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8.0),
+        child: Image.memory(
+          _cached!,
+          width: 48.0,
+          height: 48.0,
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+          errorBuilder: (_, __, ___) => _placeholder(context),
+        ),
+      );
+    }
+    return _placeholder(context);
+  }
+
+  Widget _placeholder(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: 48.0,
+      height: 48.0,
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(8.0),
+      ),
+      child: Icon(Symbols.queue_music, color: scheme.onSurface.withAlpha(100)),
+    );
+  }
+}
+
+class _EditPlaylistDialog extends StatefulWidget {
   const _EditPlaylistDialog();
+
+  @override
+  State<_EditPlaylistDialog> createState() => _EditPlaylistDialogState();
+}
+
+class _EditPlaylistDialogState extends State<_EditPlaylistDialog> {
+  late final _editingController = TextEditingController();
+
+  @override
+  void dispose() {
+    _editingController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final editingController = TextEditingController();
 
     return Dialog(
       insetPadding: EdgeInsets.zero,
@@ -373,7 +500,7 @@ class _EditPlaylistDialog extends StatelessWidget {
                 onFocusChange: HotkeysHelper.onFocusChanges,
                 child: TextField(
                   autofocus: true,
-                  controller: editingController,
+                  controller: _editingController,
                   onSubmitted: (value) {
                     Navigator.pop(context, value);
                   },
@@ -394,7 +521,7 @@ class _EditPlaylistDialog extends StatelessWidget {
                   const SizedBox(width: 8.0),
                   TextButton(
                     onPressed: () {
-                      Navigator.pop(context, editingController.text);
+                      Navigator.pop(context, _editingController.text);
                     },
                     child: const Text('创建'),
                   ),

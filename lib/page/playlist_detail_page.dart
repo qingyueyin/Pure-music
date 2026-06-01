@@ -1,9 +1,10 @@
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/enums.dart';
-import 'package:pure_music/component/audio_tile.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/library/playlist.dart';
+import 'package:pure_music/component/audio_tile.dart';
+import 'package:pure_music/page/uni_detail_page.dart';
 import 'package:pure_music/page/uni_page.dart';
 import 'package:pure_music/page/uni_page_components.dart';
 import 'package:flutter/material.dart';
@@ -20,26 +21,135 @@ class PlaylistDetailPage extends StatefulWidget {
 
 class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
   final multiSelectController = MultiSelectController<Audio>();
+  bool _isReordering = false;
+
+  Future<ImageProvider?> get _primaryPic async {
+    if (widget.playlist.audios.isEmpty) return null;
+    return widget.playlist.audios.first.mediumCover;
+  }
+
+  Future<ImageProvider?> get _backgroundPic async {
+    if (widget.playlist.audios.isEmpty) return null;
+    return widget.playlist.audios.first.cover;
+  }
+
+  void _onSortChanged() {
+    setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
-    final contentList = widget.playlist.audios;
+    final contentList = List<Audio>.from(widget.playlist.audios);
     final scheme = Theme.of(context).colorScheme;
+    final pref = AppPreference.instance.playlistDetailPagePref;
 
-    return UniPage<Audio>(
-      pref: AppPreference.instance.playlistDetailPagePref,
+    final List<SortMethodDesc<Audio>> sortMethods = [
+      SortMethodDesc<Audio>(
+        icon: Symbols.title,
+        name: '标题',
+        method: (list, order) {
+          switch (order) {
+            case SortOrder.ascending:
+              list.sort((a, b) => a.title.naturalCompareTo(b.title));
+              break;
+            case SortOrder.decending:
+              list.sort((a, b) => b.title.naturalCompareTo(a.title));
+              break;
+          }
+        },
+      ),
+      SortMethodDesc<Audio>(
+        icon: Symbols.artist,
+        name: '艺术家',
+        method: (list, order) {
+          switch (order) {
+            case SortOrder.ascending:
+              list.sort((a, b) => a.artist.naturalCompareTo(b.artist));
+              break;
+            case SortOrder.decending:
+              list.sort((a, b) => b.artist.naturalCompareTo(a.artist));
+              break;
+          }
+        },
+      ),
+      SortMethodDesc<Audio>(
+        icon: Symbols.album,
+        name: '专辑',
+        method: (list, order) {
+          switch (order) {
+            case SortOrder.ascending:
+              list.sort((a, b) => a.album.naturalCompareTo(b.album));
+              break;
+            case SortOrder.decending:
+              list.sort((a, b) => b.album.naturalCompareTo(a.album));
+              break;
+          }
+        },
+      ),
+      SortMethodDesc<Audio>(
+        icon: Symbols.add,
+        name: '创建时间',
+        method: (list, order) {
+          switch (order) {
+            case SortOrder.ascending:
+              list.sort((a, b) => a.created.compareTo(b.created));
+              break;
+            case SortOrder.decending:
+              list.sort((a, b) => b.created.compareTo(a.created));
+              break;
+          }
+        },
+      ),
+      SortMethodDesc<Audio>(
+        icon: Symbols.edit,
+        name: '修改时间',
+        method: (list, order) {
+          switch (order) {
+            case SortOrder.ascending:
+              list.sort((a, b) => a.modified.compareTo(b.modified));
+              break;
+            case SortOrder.decending:
+              list.sort((a, b) => b.modified.compareTo(a.modified));
+              break;
+          }
+        },
+      ),
+      SortMethodDesc<Audio>(
+        icon: Symbols.drag_indicator,
+        name: '自定义',
+        method: (list, order) {},
+      ),
+    ];
+
+    final currMethodIndex = pref.sortMethod.clamp(0, sortMethods.length - 1);
+    final isCustomSort = currMethodIndex == sortMethods.length - 1;
+
+    return UniDetailPage<Playlist, Audio, Object>(
+      pref: pref,
+      primaryContent: widget.playlist,
+      primaryPic: _primaryPic,
+      backgroundPic: _backgroundPic,
+      picShape: PicShape.rrect,
       title: widget.playlist.name,
       subtitle: '${contentList.length} 首乐曲',
-      contentList: contentList,
-      contentBuilder: (context, item, i, multiSelectController, _) => AudioTile(
+      secondaryContent: contentList,
+      secondaryContentBuilder: (context, audio, i, msc, _) =>
+          AudioTile(
         audioIndex: i,
         playlist: contentList,
-        multiSelectController: multiSelectController,
+        multiSelectController: msc,
+        onRemoveFromPlaylist: (removedAudio) {
+          setState(() {
+            widget.playlist.removeByPath(removedAudio.path);
+          });
+          savePlaylists();
+          showTextOnSnackBar('已从歌单移除');
+        },
       ),
       enableShufflePlay: true,
       enableSortMethod: true,
       enableSortOrder: true,
-      enableContentViewSwitch: true,
+      enableSecondaryContentViewSwitch: true,
       multiSelectController: multiSelectController,
       multiSelectViewActions: [
         IconButton.filled(
@@ -66,78 +176,152 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
         ),
         MultiSelectExit(multiSelectController: multiSelectController),
       ],
-      sortMethods: [
-        SortMethodDesc(
-          icon: Symbols.title,
-          name: '标题',
-          method: (list, order) {
-            switch (order) {
-              case SortOrder.ascending:
-                list.sort((a, b) => a.title.naturalCompareTo(b.title));
-                break;
-              case SortOrder.decending:
-                list.sort((a, b) => b.title.naturalCompareTo(a.title));
-                break;
-            }
-          },
+      sortMethods: sortMethods,
+      onSortMethodChanged: _onSortChanged,
+      bodyOverride: _isReordering
+          ? _buildReorderBody(contentList, scheme)
+          : null,
+      extraActions: isCustomSort
+          ? [
+              SizedBox(
+                height: 40.0,
+                child: Material(
+                  borderRadius: BorderRadius.circular(20.0),
+                  color: _isReordering
+                      ? scheme.tertiaryContainer
+                      : scheme.primaryContainer,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(20.0),
+                    onTap: () => setState(() => _isReordering = !_isReordering),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _isReordering ? Symbols.check : Symbols.reorder,
+                            size: 24,
+                            color: _isReordering
+                                ? scheme.onTertiaryContainer
+                                : scheme.onPrimaryContainer,
+                          ),
+                          const SizedBox(width: 4.0),
+                          Text(
+                            _isReordering ? '完成' : '排序',
+                            style: TextStyle(
+                              color: _isReordering
+                                  ? scheme.onTertiaryContainer
+                                  : scheme.onPrimaryContainer,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ]
+          : null,
+    );
+  }
+
+  Widget _buildReorderBody(List<Audio> contentList, ColorScheme scheme) {
+    final paths = List<String>.from(widget.playlist.paths);
+
+    return ReorderableListView.builder(
+      padding: const EdgeInsets.only(bottom: 80.0),
+      itemCount: contentList.length,
+      onReorderItem: (oldIndex, newIndex) {
+        setState(() {
+          final item = paths.removeAt(oldIndex);
+          paths.insert(newIndex, item);
+          widget.playlist.paths
+            ..clear()
+            ..addAll(paths);
+        });
+        savePlaylists();
+      },
+      proxyDecorator: (child, index, animation) => Material(
+        elevation: 4,
+        borderRadius: BorderRadius.circular(8),
+        child: child,
+      ),
+      itemBuilder: (context, i) {
+        final audio = contentList[i];
+        return _ReorderItem(
+          key: ValueKey(audio.path),
+          audio: audio,
+          index: i,
+          colorScheme: scheme,
+        );
+      },
+    );
+  }
+}
+
+class _ReorderItem extends StatelessWidget {
+  const _ReorderItem({
+    super.key,
+    required this.audio,
+    required this.index,
+    required this.colorScheme,
+  });
+
+  final Audio audio;
+  final int index;
+  final ColorScheme colorScheme;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = colorScheme;
+    return SizedBox(
+      height: 64,
+      child: Material(
+        color: Colors.transparent,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8.0),
+          child: Row(
+            children: [
+              ReorderableDragStartListener(
+                index: index,
+                child: Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Icon(Symbols.drag_indicator, color: scheme.onSurfaceVariant),
+                ),
+              ),
+              const SizedBox(width: 8.0),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      audio.title,
+                      style: TextStyle(color: scheme.onSurface, fontSize: 16),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4.0),
+                    Text(
+                      '${audio.artist} - ${audio.album}',
+                      style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(right: 16.0),
+                child: Text(
+                  Duration(seconds: audio.duration).toStringHMMSS(),
+                  style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
+                ),
+              ),
+            ],
+          ),
         ),
-        SortMethodDesc(
-          icon: Symbols.artist,
-          name: '艺术家',
-          method: (list, order) {
-            switch (order) {
-              case SortOrder.ascending:
-                list.sort((a, b) => a.artist.naturalCompareTo(b.artist));
-                break;
-              case SortOrder.decending:
-                list.sort((a, b) => b.artist.naturalCompareTo(a.artist));
-                break;
-            }
-          },
-        ),
-        SortMethodDesc(
-          icon: Symbols.album,
-          name: '专辑',
-          method: (list, order) {
-            switch (order) {
-              case SortOrder.ascending:
-                list.sort((a, b) => a.album.naturalCompareTo(b.album));
-                break;
-              case SortOrder.decending:
-                list.sort((a, b) => b.album.naturalCompareTo(a.album));
-                break;
-            }
-          },
-        ),
-        SortMethodDesc(
-          icon: Symbols.add,
-          name: '创建时间',
-          method: (list, order) {
-            switch (order) {
-              case SortOrder.ascending:
-                list.sort((a, b) => a.created.compareTo(b.created));
-                break;
-              case SortOrder.decending:
-                list.sort((a, b) => b.created.compareTo(a.created));
-                break;
-            }
-          },
-        ),
-        SortMethodDesc(
-          icon: Symbols.edit,
-          name: '修改时间',
-          method: (list, order) {
-            switch (order) {
-              case SortOrder.ascending:
-                list.sort((a, b) => a.modified.compareTo(b.modified));
-                break;
-              case SortOrder.decending:
-                list.sort((a, b) => b.modified.compareTo(a.modified));
-                break;
-            }
-          },
-        ),
-      ],
+      ),
     );
   }
 }
