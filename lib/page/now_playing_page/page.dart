@@ -185,11 +185,28 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     });
   }
 
+  void _onViewModeChanged() {
+    if (!mounted) return;
+    if (nowPlayingViewMode.value != NowPlayingViewMode.withPlaylist) {
+      // 切换回歌词/仅封面时恢复显示标题栏
+      _bumpCursor();
+    } else {
+      // 进入播放列表：立即隐藏标题栏 + 光标
+      _cursorHideTimer?.cancel();
+      if (!_cursorHidden) {
+        setState(() {
+          _cursorHidden = true;
+        });
+      }
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     playbackService.nowPlayingNotifier.addListener(updateCover);
     playbackService.playerStateNotifier.addListener(_updatePlayPauseState);
+    nowPlayingViewMode.addListener(_onViewModeChanged);
     updateCover();
     _bumpCursor();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -210,6 +227,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   void dispose() {
     playbackService.nowPlayingNotifier.removeListener(updateCover);
     playbackService.playerStateNotifier.removeListener(_updatePlayPauseState);
+    nowPlayingViewMode.removeListener(_onViewModeChanged);
     _coverDebounceTimer?.cancel();
     _cursorHideTimer?.cancel();
     // 离开播放页时释放中/大图封面缓存，这些在列表页不需要
@@ -360,44 +378,55 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                       child: Padding(
                         padding:
                             const EdgeInsets.symmetric(horizontal: 12.0),
-                        child: AnimatedOpacity(
-                          duration: const Duration(milliseconds: 150),
-                          opacity: _cursorHidden ? 0.0 : 1.0,
-                          child: IgnorePointer(
-                            ignoring: _cursorHidden,
-                            child: Row(
-                              children: [
-                                ResponsiveBuilder2(
-                                  builder: (context, screenType) {
-                                    if (screenType != ScreenType.small) {
-                                      return const SizedBox.shrink();
-                                    }
-                                    return Builder(
-                                      builder: (context) => IconButton(
-                                        tooltip: '侧边栏',
-                                        onPressed: () {
-                                          Scaffold.of(context).openDrawer();
-                                        },
-                                        icon: const Icon(Symbols.menu),
+                        child: ValueListenableBuilder(
+                          valueListenable: nowPlayingViewMode,
+                          builder: (context, viewMode, _) {
+                            final inPlaylist =
+                                viewMode == NowPlayingViewMode.withPlaylist;
+                            final shouldHide = _cursorHidden || inPlaylist;
+                            return AnimatedOpacity(
+                              duration: const Duration(milliseconds: 150),
+                              opacity: shouldHide ? 0.0 : 1.0,
+                              child: IgnorePointer(
+                                ignoring: shouldHide,
+                                child: Row(
+                                  children: [
+                                    ResponsiveBuilder2(
+                                      builder: (context, screenType) {
+                                        if (screenType != ScreenType.small) {
+                                          return const SizedBox.shrink();
+                                        }
+                                        return Builder(
+                                          builder: (context) => IconButton(
+                                            tooltip: '侧边栏',
+                                            onPressed: () {
+                                              Scaffold.of(context)
+                                                  .openDrawer();
+                                            },
+                                            icon: const Icon(Symbols.menu),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                    const NavBackBtn(),
+                                    const Expanded(
+                                      child: DragToMoveArea(
+                                        child: SizedBox.expand(),
                                       ),
-                                    );
-                                  },
+                                    ),
+                                    const WindowControlls(),
+                                  ],
                                 ),
-                                const NavBackBtn(),
-                                const Expanded(
-                                  child: DragToMoveArea(
-                                    child: SizedBox.expand(),
-                                  ),
-                                ),
-                                const WindowControlls(),
-                              ],
-                            ),
-                          ),
+                              ),
+                            );
+                          },
                         ),
                       ),
                     ),
                   ),
-                if (_cursorHidden)
+                if (_cursorHidden ||
+                    nowPlayingViewMode.value ==
+                        NowPlayingViewMode.withPlaylist)
                   const Positioned.fill(
                     child: MouseRegion(
                       cursor: SystemMouseCursors.none,

@@ -44,7 +44,9 @@ lib/page/settings_page/cpfeedback_key.dart
 # Local Environment
 .tmp/
 .vscode/
-# .trae/
+.trae/
+.vs/
+
 
 # Trae specific - ignore rules and skills but keep other .trae files
 .trae/rules/
