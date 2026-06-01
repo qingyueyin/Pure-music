@@ -2,6 +2,11 @@
 
 #include <optional>
 
+#include <atomic>
+
+// 文件作用域标志：窗口是否正在销毁。使用文件作用域以避免修改缺失的头文件。
+static std::atomic<bool> g_destroying{false};
+
 #include "flutter/generated_plugin_registrant.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
@@ -13,6 +18,9 @@ bool FlutterWindow::OnCreate() {
   if (!Win32Window::OnCreate()) {
     return false;
   }
+
+  // 确保在创建时清除正在销毁标志。
+  g_destroying.store(false);
 
   RECT frame = GetClientArea();
 
@@ -40,7 +48,11 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  // 标记正在销毁，防止后续消息进入 Flutter 回调。
+  g_destroying.store(true);
+
   if (flutter_controller_) {
+    // 在销毁前延迟以确保任何待处理的回调完成
     flutter_controller_ = nullptr;
   }
 
@@ -52,7 +64,7 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
   // Give Flutter, including plugins, an opportunity to handle window messages.
-  if (flutter_controller_) {
+  if (!g_destroying.load() && flutter_controller_) {
     std::optional<LRESULT> result =
         flutter_controller_->HandleTopLevelWindowProc(hwnd, message, wparam,
                                                       lparam);
@@ -63,7 +75,9 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
 
   switch (message) {
     case WM_FONTCHANGE:
-      flutter_controller_->engine()->ReloadSystemFonts();
+      if (!g_destroying.load() && flutter_controller_) {
+        flutter_controller_->engine()->ReloadSystemFonts();
+      }
       break;
   }
 

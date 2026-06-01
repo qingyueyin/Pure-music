@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <string>
+#include <iostream>
 
 #include "flutter_window.h"
 #include "utils.h"
@@ -22,6 +23,36 @@ static std::wstring GetExecutableDirectory() {
   }
   return path;
 }
+
+#if defined(_MSC_VER)
+static int RunMessageLoop() {
+  int exit_code = EXIT_SUCCESS;
+  __try {
+    ::MSG msg;
+    while (::GetMessage(&msg, nullptr, 0, 0)) {
+      __try {
+        ::TranslateMessage(&msg);
+        ::DispatchMessage(&msg);
+      } __except (EXCEPTION_EXECUTE_HANDLER) {
+        std::cerr << "SEH exception during message dispatch, continuing..." << std::endl;
+      }
+    }
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    std::cerr << "SEH exception in message loop" << std::endl;
+    exit_code = EXIT_FAILURE;
+  }
+  return exit_code;
+}
+#else
+static int RunMessageLoop() {
+  ::MSG msg;
+  while (::GetMessage(&msg, nullptr, 0, 0)) {
+    ::TranslateMessage(&msg);
+    ::DispatchMessage(&msg);
+  }
+  return EXIT_SUCCESS;
+}
+#endif
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command) {
@@ -56,12 +87,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   }
   window.SetQuitOnClose(true);
 
-  ::MSG msg;
-  while (::GetMessage(&msg, nullptr, 0, 0)) {
-    ::TranslateMessage(&msg);
-    ::DispatchMessage(&msg);
-  }
+  int exit_code = RunMessageLoop();
 
   ::CoUninitialize();
-  return EXIT_SUCCESS;
+  return exit_code;
 }

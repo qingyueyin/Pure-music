@@ -2,6 +2,7 @@
 
 #include <dwmapi.h>
 #include <flutter_windows.h>
+#include <iostream>
 
 #include "resource.h"
 
@@ -176,7 +177,18 @@ LRESULT CALLBACK Win32Window::WndProc(HWND const window,
     EnableFullDpiSupportIfAvailable(window);
     that->window_handle_ = window;
   } else if (Win32Window* that = GetThisFromHandle(window)) {
+#if defined(_MSC_VER)
+    __try {
+      return that->MessageHandler(window, message, wparam, lparam);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+      // 捕获 MessageHandler 或其调用链中的异常，防止 WndProc 崩溃
+      std::cerr << "[Win32] SEH exception in WndProc: message=" << message 
+                << " wparam=" << wparam << std::endl;
+      return DefWindowProc(window, message, wparam, lparam);
+    }
+#else
     return that->MessageHandler(window, message, wparam, lparam);
+#endif
   }
 
   return DefWindowProc(window, message, wparam, lparam);
