@@ -14,6 +14,15 @@ class ColorExtractionService {
   final Map<String, DateTime> _cacheTime = {};
   final List<String> _accessOrder = [];
 
+  /// 按音频路径缓存的主色，供首帧同步读取
+  final Map<String, Color> _pathColorCache = {};
+
+  void cacheColorForPath(String path, Color color) {
+    _pathColorCache[path] = color;
+  }
+
+  Color? getCachedColorForPath(String path) => _pathColorCache[path];
+
   Future<Color?> extractDominantColor(Uint8List? imageBytes) async {
     if (imageBytes == null || imageBytes.isEmpty) return null;
 
