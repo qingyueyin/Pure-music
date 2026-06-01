@@ -268,7 +268,8 @@ Future<Map<String, dynamic>?> qqLyric(String songId) async {
       try {
         final qrcBytes = base64Decode(qrc);
         final decryptedBytes = TripleDesDecryptor.decrypt(qrcBytes);
-        decryptedLyric = utf8.decode(decryptedBytes);
+        final rawDecrypted = utf8.decode(decryptedBytes);
+        decryptedLyric = _stripLrcMetadata(rawDecrypted);
       } catch (e) {
         logger.e('QmSource: QRC解密失败: $e');
       }
@@ -281,14 +282,14 @@ Future<Map<String, dynamic>?> qqLyric(String songId) async {
           isLocal: false,
         );
         if (decryptedQrc != null) {
-          decryptedLyric = decryptedQrc;
+          decryptedLyric = _stripLrcMetadata(decryptedQrc);
         } else {
           final lyricBytes = base64Decode(lyric);
-          decryptedLyric = utf8.decode(lyricBytes);
+          decryptedLyric = _stripLrcMetadata(utf8.decode(lyricBytes));
         }
       } catch (e) {
         final lyricBytes = base64Decode(lyric);
-        decryptedLyric = utf8.decode(lyricBytes);
+        decryptedLyric = _stripLrcMetadata(utf8.decode(lyricBytes));
       }
     }
 
@@ -297,7 +298,7 @@ Future<Map<String, dynamic>?> qqLyric(String songId) async {
       try {
         final transBytes = base64Decode(trans);
         final decryptedBytes = TripleDesDecryptor.decrypt(transBytes);
-        decryptedTrans = utf8.decode(decryptedBytes);
+        decryptedTrans = _stripLrcMetadata(utf8.decode(decryptedBytes));
       } catch (e) {
         logger.e('QmSource: 翻译解密失败: $e');
       }
@@ -308,7 +309,7 @@ Future<Map<String, dynamic>?> qqLyric(String songId) async {
       try {
         final romaBytes = base64Decode(roma);
         final decryptedBytes = TripleDesDecryptor.decrypt(romaBytes);
-        decryptedRoma = utf8.decode(decryptedBytes);
+        decryptedRoma = _stripLrcMetadata(utf8.decode(decryptedBytes));
       } catch (e) {
         logger.e('QmSource: 罗马音解密失败: $e');
       }
@@ -343,4 +344,19 @@ Future<Map<String, dynamic>?> qqLyric(String songId) async {
     logger.e('QQ lyric failed: $e');
     return null;
   }
+}
+
+final _lrcMetadataRegex = RegExp(
+  r'^\s*\[(ar|ti|al|au|length|by|re|ve|offset|id|uid|arid|ty|lang|tlyric|language):[^\]]*\]\s*$',
+  multiLine: true,
+  caseSensitive: false,
+);
+
+String _stripLrcMetadata(String text) {
+  return text.split('\n').where((line) {
+    final trimmed = line.trim();
+    if (trimmed.isEmpty) return true;
+    if (_lrcMetadataRegex.hasMatch(trimmed)) return false;
+    return true;
+  }).join('\n');
 }
