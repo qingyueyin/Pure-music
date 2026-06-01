@@ -6,6 +6,7 @@ import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/zh_converter.dart';
 import 'package:pure_music/component/settings_tile.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
+import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
@@ -53,16 +54,12 @@ class _OnlineLyricSettingsState extends State<OnlineLyricSettings> {
                   showSelectedIcon: false,
                   segments: const [
                     ButtonSegment<LyricDisplayMode>(
-                      value: LyricDisplayMode.plain,
-                      label: Text('纯原文'),
+                      value: LyricDisplayMode.lineByLine,
+                      label: Text('逐行歌词'),
                     ),
                     ButtonSegment<LyricDisplayMode>(
-                      value: LyricDisplayMode.verbatim,
-                      label: Text('原文+音'),
-                    ),
-                    ButtonSegment<LyricDisplayMode>(
-                      value: LyricDisplayMode.enhanced,
-                      label: Text('完整'),
+                      value: LyricDisplayMode.wordByWord,
+                      label: Text('逐字歌词'),
                     ),
                   ],
                   selected: {settings.lyricDisplayMode},
@@ -109,10 +106,11 @@ class _OnlineLyricSettingsState extends State<OnlineLyricSettings> {
                       ),
                     ),
                     Switch(
-                      value: settings.removeEmptyLines,
+                      value: LyricViewController.instance.removeEmptyLines,
                       onChanged: (v) {
-                        settings.removeEmptyLines = v;
-                        _onChanged('removeEmptyLines');
+                        LyricViewController.instance.setRemoveEmptyLines(v);
+                        settings.saveSettings();
+                        setState(() {});
                       },
                     ),
                   ],
