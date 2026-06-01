@@ -206,8 +206,6 @@ class _NowPlayingLargeViewSwitch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
     return ValueListenableBuilder(
       valueListenable: nowPlayingViewMode,
       builder: (context, value, _) => IconButton(
@@ -237,7 +235,7 @@ class _NowPlayingLargeViewSwitch extends StatelessWidget {
             fill: 1.0,
           ),
         },
-        color: scheme.onSurface,
+        color: Theme.of(context).colorScheme.onSurface,
       ),
     );
   }
