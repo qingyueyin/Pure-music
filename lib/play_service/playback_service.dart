@@ -9,8 +9,9 @@ import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/native/rust/api/smtc_flutter.dart';
-import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/utils.dart';
+import 'package:pure_music/core/theme.dart';
+import 'package:pure_music/core/color_extraction.dart';
 import 'package:flutter/foundation.dart';
 
 /// 只通知 now playing 变更
@@ -21,6 +22,7 @@ class PlaybackService extends ChangeNotifier {
   late StreamSubscription _smtcEventStreamSub;
   late StreamSubscription _smtcPositionStreamSub;
   int _lastNowPlayingChangedMs = 0;
+  Timer? _timelineTimer;
 
   PlaybackService(this.playService) {
     _player.onExclusiveModeChanged = (exclusive) {
@@ -55,8 +57,12 @@ class PlaybackService extends ChangeNotifier {
       }
     });
 
-    _smtcPositionStreamSub = positionStream.listen((progress) {
-      _smtc.updateTimeProperties(progress: (progress * 1000).floor());
+    // SMTC timeline 进度更新（每 5 秒一次，遵循官方文档建议）
+    _smtcPositionStreamSub = positionStream.listen((position) {
+      _timelineTimer?.cancel();
+      _timelineTimer = Timer(const Duration(seconds: 5), () {
+        _smtc.updateTimeProperties(progress: (position * 1000).round());
+      });
     });
 
     final savedGains = _pref.eqGains;
@@ -189,6 +195,7 @@ class PlaybackService extends ChangeNotifier {
         .mark('useExclusiveMode', extra: {'exclusive': exclusive});
     if (_player.useExclusiveMode(exclusive)) {
       _wasapiExclusive.value = exclusive;
+      playService.lyricService.findCurrLyricLineAt(_player.position);
     }
   }
 
@@ -296,6 +303,17 @@ class PlaybackService extends ChangeNotifier {
       _lastNowPlayingChangedMs = DateTime.now().millisecondsSinceEpoch;
       // 切歌时立即回收其他 Audio 的封面缓存
       AudioLibrary.instance.evictAllCoversExcept(nowPlaying!.path);
+      // 预加载 smallCoverBytes，确保播放页过渡动画时立即有封面可用
+      nowPlaying!.loadSmallCoverBytes().then((_) {
+        final bytes = nowPlaying!.smallCoverBytes;
+        if (bytes != null) {
+          ColorExtractionService().extractDominantColor(bytes).then((color) {
+            if (color != null) {
+              ColorExtractionService().cacheColorForPath(nowPlaying!.path, color);
+            }
+          });
+        }
+      });
 
       _player.setSource(nowPlaying!.path);
       setVolumeDsp(AppPreference.instance.playbackPref.volumeDsp);
@@ -325,7 +343,7 @@ class PlaybackService extends ChangeNotifier {
         title: nowPlaying!.title,
         artist: nowPlaying!.artist,
         album: nowPlaying!.album,
-        duration: (length * 1000).floor(),
+        duration: nowPlaying!.duration * 1000,
         path: nowPlaying!.path,
       );
 
@@ -484,6 +502,7 @@ class PlaybackService extends ChangeNotifier {
     _playlistIndex = restoredIndex;
     _nowPlaying.value = restoredPlaylist[restoredIndex];
     _lastNowPlayingChangedMs = DateTime.now().millisecondsSinceEpoch;
+    nowPlaying!.loadSmallCoverBytes();
 
     try {
       _player.setSource(nowPlaying!.path);
@@ -496,7 +515,7 @@ class PlaybackService extends ChangeNotifier {
         title: nowPlaying!.title,
         artist: nowPlaying!.artist,
         album: nowPlaying!.album,
-        duration: (length * 1000).floor(),
+        duration: nowPlaying!.duration * 1000,
         path: nowPlaying!.path,
       );
     } catch (err) {
@@ -564,6 +583,75 @@ class PlaybackService extends ChangeNotifier {
     _loadAndPlay(newIndex, _playlist.value);
   }
 
+  /// 从播放队列中移除指定索引的歌曲
+  void removeFromQueue(int index) {
+    final currentList = List<Audio>.from(_playlist.value);
+    if (index < 0 || index >= currentList.length) return;
+
+    final removed = currentList.removeAt(index);
+    logger.i('[action] removeFromQueue index=$index path=${removed.path}');
+    AudioEchoLogRecorder.instance.mark('removeFromQueue',
+        extra: {'index': index, 'path': removed.path});
+
+    _playlist.value = currentList;
+    _playlistBackup = currentList;
+
+    if (_playlistIndex != null) {
+      if (index < _playlistIndex!) {
+        // 移除的歌曲在当前播放之前，索引前移
+        _playlistIndex = _playlistIndex! - 1;
+      } else if (index == _playlistIndex!) {
+        // 移除的正是当前播放的歌曲
+        if (_playlistIndex! >= currentList.length) {
+          _playlistIndex = currentList.length - 1;
+        }
+        if (_playlistIndex! >= 0 && _playlistIndex! < currentList.length) {
+          _loadAndPlay(_playlistIndex!, currentList);
+        } else {
+          // 队列已空
+          _player.pause();
+          _playerState.value = PlayerState.stopped;
+          _nowPlaying.value = null;
+          _playlistIndex = null;
+        }
+      }
+      // 移除的歌曲在当前播放之后，索引不变
+    }
+
+    if (_playlistIndex != null && _playlist.value.isNotEmpty) {
+      _persistLastSession(
+        playlist: _playlist.value,
+        playlistIndex: _playlistIndex!,
+        nowPlaying: nowPlaying!,
+      );
+    } else {
+      _pref.lastAudioPath = '';
+      _pref.lastPlaylistPaths = [];
+      _pref.lastPlaylistIndex = 0;
+      _savePlaybackOnly();
+    }
+  }
+
+  /// 清空播放队列
+  void clearQueue() {
+    logger.i('[action] clearQueue');
+    AudioEchoLogRecorder.instance.mark('clearQueue');
+    _player.pause();
+    _playerState.value = PlayerState.stopped;
+    _playlist.value = [];
+    _playlistBackup = [];
+    _playlistIndex = null;
+    _nowPlaying.value = null;
+
+    _pref.lastAudioPath = '';
+    _pref.lastPlaylistPaths = [];
+    _pref.lastPlaylistIndex = 0;
+    _savePlaybackOnly();
+
+    // 更新 SMTC
+    _smtc.updateState(state: SMTCState.paused);
+  }
+
   /// 暂停
   void pause() {
     try {
@@ -612,26 +700,68 @@ class PlaybackService extends ChangeNotifier {
   }
 
   Future<void> close() async {
+    // 1. 先停止音频播放（防止释放资源时仍有音频回调）
     try {
-      _playerStateStreamSub.cancel();
+      _player.pause();
+    } catch (_) {}
+
+    // 2. 取消可能仍在 pending 的 SMTC timeline 定时器
+    _timelineTimer?.cancel();
+    _timelineTimer = null;
+
+    // 3. 取消所有 Stream 订阅（在关闭 Controllers 之前）
+    try {
+      await _playerStateStreamSub.cancel();
     } catch (_) {}
     try {
-      _smtcEventStreamSub.cancel();
+      await _smtcEventStreamSub.cancel();
     } catch (_) {}
     try {
-      _smtcPositionStreamSub.cancel();
+      await _smtcPositionStreamSub.cancel();
     } catch (_) {}
-    
-    // 释放播放器资源（可能耗时）
+
+    // 4. 等待异步回调完全停止（避免 use-after-free）
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    // 5. 关闭 SMTC（系统媒体传输控制）
+    try {
+      _smtc.updateState(state: SMTCState.paused);
+      await Future.delayed(const Duration(milliseconds: 50));
+      await _smtc.close().timeout(const Duration(milliseconds: 500)).catchError((_) {});
+    } catch (_) {}
+
+    // 6. dispose ValueNotifiers（释放 _playlist 引用的 Audio 列表）
+    try {
+      _wasapiExclusive.dispose();
+    } catch (_) {}
+    try {
+      _nowPlaying.dispose();
+    } catch (_) {}
+    try {
+      _playlist.value = [];
+      _playlist.dispose();
+    } catch (_) {}
+    try {
+      _playMode.dispose();
+    } catch (_) {}
+    try {
+      _pitch.dispose();
+    } catch (_) {}
+    try {
+      _rate.dispose();
+    } catch (_) {}
+    try {
+      _shuffle.dispose();
+    } catch (_) {}
+    try {
+      _playerState.dispose();
+    } catch (_) {}
+
+    // 7. 最后释放 BASS 音频资源（此时所有回调和订阅已停止）
     try {
       _player.free();
     } catch (e) {
       logger.w('_player.free error: $e');
     }
-    
-    // 关闭 SMTC
-    try {
-      await _smtc.close().timeout(const Duration(milliseconds: 500)).catchError((_) {});
-    } catch (_) {}
   }
 }
