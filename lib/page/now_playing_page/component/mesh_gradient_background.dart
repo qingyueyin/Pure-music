@@ -39,11 +39,13 @@ class MeshGradientBackground extends StatelessWidget {
 class MeshGradientBackgroundInternal extends StatefulWidget {
   final NowPlayingBackgroundInputs inputs;
   final Color fallbackColor;
+  final void Function(String)? onError;
 
   const MeshGradientBackgroundInternal({
     super.key,
     required this.inputs,
     required this.fallbackColor,
+    this.onError,
   });
 
   @override
@@ -136,39 +138,39 @@ class _MeshGradientBackgroundInternalState
 
     final wasVisible = oldWidget.inputs.isVisible;
     final isVisible = widget.inputs.isVisible;
-    if (!wasVisible && isVisible && widget.inputs.playerState == PlayerState.playing) {
-      _listenSpectrum();
-      if (newBytes != null && !identical(newBytes, oldBytes)) {
-        _extractPaletteWithTransition();
-      }
-    } else if (wasVisible && !isVisible) {
-      _spectrumSubscription?.cancel();
-      _spectrumSubscription = null;
-    }
-
     final nowPlaying = widget.inputs.playerState == PlayerState.playing;
+
     if (nowPlaying != _isPlaying) {
       setState(() => _isPlaying = nowPlaying);
-      _targetBreathScale = nowPlaying ? 1.0 : 1.0;
+      _targetBreathScale = nowPlaying ? 1.0 : 0.98;
       _startDecayTimer();
-      _syncMeshController();
-      // 先取消旧的 subscription，再决定是否重新订阅
-      _spectrumSubscription?.cancel();
-      _spectrumSubscription = null;
-      if (nowPlaying && widget.inputs.isVisible) {
-        _listenSpectrum();
-      }
-    } else if (nowPlaying && _spectrumSubscription == null && widget.inputs.isVisible) {
-      _listenSpectrum();
-    } else if (!nowPlaying) {
-      // 非播放状态确保取消订阅
-      _spectrumSubscription?.cancel();
-      _spectrumSubscription = null;
     }
 
-    // Sync mesh controller when visibility changes
     if (wasVisible != isVisible) {
       _syncMeshController();
+      if (!wasVisible && isVisible && nowPlaying) {
+        _syncSpectrumSubscription();
+        _extractPaletteWithTransition();
+      } else if (wasVisible && !isVisible) {
+        _spectrumSubscription?.cancel();
+        _spectrumSubscription = null;
+      }
+    } else if (_isPlaying != (oldWidget.inputs.playerState == PlayerState.playing)) {
+      _syncMeshController();
+      _syncSpectrumSubscription();
+    }
+  }
+
+  /// Sync spectrum subscription based on playing and visibility state.
+  /// Ensures only one active subscription at any time.
+  void _syncSpectrumSubscription() {
+    final shouldListen = _isPlaying && widget.inputs.isVisible;
+
+    if (shouldListen && _spectrumSubscription == null) {
+      _listenSpectrum();
+    } else if (!shouldListen) {
+      _spectrumSubscription?.cancel();
+      _spectrumSubscription = null;
     }
   }
 
@@ -258,7 +260,9 @@ class _MeshGradientBackgroundInternalState
       setState(() {
         _paletteColors = target;
       });
-    } catch (_) {}
+    } catch (e) {
+      widget.onError?.call('Mesh gradient color extraction failed: $e');
+    }
   }
 
   Future<void> _extractPaletteWithTransition() async {
@@ -308,6 +312,12 @@ class _MeshGradientBackgroundInternalState
     return padded;
   }
 
+  /// Smoothstep interpolation for smoother color transitions.
+  /// Smoothstep: t²(3-2t)
+  static double _smoothstep(double t) {
+    return t * t * (3.0 - 2.0 * t);
+  }
+
   List<Color> _interpolateColors(double t) {
     if (_prevPaletteColors.isEmpty || _targetPaletteColors.isEmpty) {
       return _paletteColors.isEmpty
@@ -318,10 +328,11 @@ class _MeshGradientBackgroundInternalState
     if (count <= 0) {
       return _targetPaletteColors;
     }
+    final smoothedT = _smoothstep(t);
     return List.generate(count, (i) {
       final prev = _prevPaletteColors[i];
       final target = _targetPaletteColors[i];
-      return Color.lerp(prev, target, t)!;
+      return Color.lerp(prev, target, smoothedT)!;
     });
   }
 
