@@ -1,9 +1,11 @@
 import 'dart:math';
 
+import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/lyric/ttml.dart';
-import 'package:pure_music/lyric/lyric_loader.dart';
+import 'package:pure_music/lyric/lyric_format.dart';
+import 'package:pure_music/native/rust/api/tag_reader.dart';
 
 /// 智能清理空白行：
 /// 1. 移除连续的空白行（只保留第一个）
@@ -27,8 +29,12 @@ void cleanLyricBlankLines(List<LyricLine> lines) {
     cleaned.add(line);
   }
 
+  // 使用逐个 add 替代 addAll：addAll 在运行时检查整个 Iterable 的类型，
+  // 而 add 只检查单个元素，每个元素原就来自 lines，类型必然匹配
   lines.clear();
-  lines.addAll(cleaned);
+  for (final line in cleaned) {
+    lines.add(line);
+  }
 }
 
 bool _isBlankLine(LyricLine line) {
@@ -37,14 +43,8 @@ bool _isBlankLine(LyricLine line) {
   return false;
 }
 
-String _lineContent(LyricLine line) {
-  if (line is LrcLine) return line.content;
-  if (line is SyncLyricLine) return line.content;
-  return '';
-}
-
 class EnhancedLrc extends Lyric {
-  EnhancedLrc(super.lines, super.source);
+  EnhancedLrc(super.lines, super.source, [super.rawText]);
 
   @override
   String toString() {
@@ -76,9 +76,8 @@ class LrcLine extends UnsyncLyricLine {
     required bool requiredIsBlank,
     this.isMetadata = false,
     super.translation,
-  }) : isBlank = requiredIsBlank {
-    length = Duration.zero;
-  }
+    super.length,
+  }) : isBlank = requiredIsBlank;
 
   static LrcLine defaultLine = LrcLine(
     Duration.zero,
@@ -151,7 +150,7 @@ class LrcLine extends UnsyncLyricLine {
 }
 
 class Lrc extends Lyric {
-  Lrc(super.lines, super.source);
+  Lrc(super.lines, super.source, [super.rawText]);
 
   @override
   String toString() {
@@ -174,8 +173,13 @@ class Lrc extends Lyric {
 
   /// 智能合并相同时间戳的歌词行
   /// 支持：原文、翻译、注音（罗马音）的自动识别和分组
+  /// 
+  /// 判断优先级：
+  /// 1. 有逐词时间戳标签（<mm:ss.xx>）→ 原文
+  /// 2. 纯拉丁字母无 CJK → 罗马音
+  /// 3. 有 CJK/假名 → 原文或翻译
+  /// 4. 都不是罗马音：第一行原文，其余翻译
   Lrc _combineLrcLine(String separator) {
-    // 按时间戳分组
     final grouped = <Duration, List<LyricLine>>{};
     for (final line in lines) {
       grouped.putIfAbsent(line.start, () => []).add(line);
@@ -186,85 +190,317 @@ class Lrc extends Lyric {
     for (final entry in grouped.entries) {
       final group = entry.value;
       if (group.length == 1) {
-        // 只有一行，直接添加
         combinedLines.add(group[0] as LrcLine);
       } else if (group.length == 2) {
-        // 两行：原文 + 翻译 或 注音 + 原文
-        final primary = group[0] as LrcLine;
-        final secondary = group[1] as LrcLine;
-
-        if (_isRomanization(secondary.content)) {
-          // secondary 是注音，primary 是原文
-          primary.translation = _extractTranslation(primary.content, separator);
-          primary.romanLyric = _stripTags(secondary.content);
-          combinedLines.add(primary);
-        } else {
-          // 原文 + 翻译
-          primary.translation = _stripTags(secondary.content);
-          combinedLines.add(primary);
-        }
+        final a = group[0] as LrcLine;
+        final b = group[1] as LrcLine;
+        combinedLines.add(_combineTwoLines(a, b, separator));
       } else {
-        // 三行或更多：需要正确识别 注音、原文、翻译
-        // 使用 _isRomanization 判断哪行是注音，哪行是原文
-        int? romanIndex, primaryIndex, transIndex;
-
-        for (int i = 0; i < group.length; i++) {
-          final lineContent = _lineContent(group[i]);
-          if (primaryIndex == null &&
-              !_isRomanization(lineContent) &&
-              lineContent.isNotEmpty) {
-            primaryIndex = i;
-          } else if (romanIndex == null && _isRomanization(lineContent)) {
-            romanIndex = i;
-          } else {
-            transIndex = i;
-          }
-        }
-
-        // Fallback：如果没找到原文，取第一个非注音行
-        if (primaryIndex == null) {
-          for (int i = 0; i < group.length; i++) {
-            if (i != romanIndex) {
-              primaryIndex = i;
-              break;
-            }
-          }
-        }
-
-        // Fallback：如果没找到注音，假设第一个是注音
-        if (romanIndex == null && primaryIndex != null) {
-          for (int i = 0; i < group.length; i++) {
-            if (i != primaryIndex) {
-              romanIndex = i;
-              break;
-            }
-          }
-        }
-
-        final primary = primaryIndex != null ? group[primaryIndex] as LrcLine : group[0] as LrcLine;
-        primary.translation = _extractTranslation(primary.content, separator);
-
-        if (romanIndex != null && romanIndex != primaryIndex) {
-          primary.romanLyric = _stripTags(_lineContent(group[romanIndex]));
-        }
-        if (transIndex != null && transIndex != romanIndex) {
-          if (primary.translation == null || primary.translation!.isEmpty) {
-            primary.translation = _stripTags(_lineContent(group[transIndex]));
-          }
-        }
-        combinedLines.add(primary);
+        final result = _combineMultipleLines(group, separator);
+        combinedLines.add(result);
       }
     }
 
     return Lrc(combinedLines, source);
   }
 
-  /// 判断文本是否为注音（罗马音）
-  /// 注音通常不包含中文字符，且字符密度较低
+  /// 判断文本是否包含逐词时间戳标签
+  bool _hasWordTimestamps(String text) {
+    return RegExp(r'<\d+:\d{2}(?:\.\d+)>').hasMatch(text) ||
+           RegExp(r'<\d+>[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]').hasMatch(text);
+  }
+
+  /// 合并两行歌词（原文 + 翻译 或 罗马音 + 原文）
+  LrcLine _combineTwoLines(LrcLine a, LrcLine b, String separator) {
+    final aHasTags = _hasWordTimestamps(a.content);
+    final bHasTags = _hasWordTimestamps(b.content);
+
+    if (aHasTags && !bHasTags) {
+      // a 有逐词标签 → a 是原文，b 是翻译
+      a.translation = _extractTranslation(b.content, separator);
+      return a;
+    } else if (!aHasTags && bHasTags) {
+      // b 有逐词标签 → b 是原文，a 是翻译
+      b.translation = _extractTranslation(a.content, separator);
+      return b;
+    }
+
+    // 都没有逐词标签，用罗马音判断
+    final aIsRoman = _isRomanization(a.content);
+    final bIsRoman = _isRomanization(b.content);
+
+    if (aIsRoman && !bIsRoman) {
+      // a 是罗马音，b 是原文
+      b.translation = _extractTranslation(b.content, separator);
+      b.romanLyric = _stripTags(a.content);
+      return b;
+    } else if (!aIsRoman && bIsRoman) {
+      // a 是原文，b 是罗马音
+      a.translation = _extractTranslation(a.content, separator);
+      a.romanLyric = _stripTags(b.content);
+      return a;
+    } else if (aIsRoman && bIsRoman) {
+      // 两行都是罗马音（罕见）：第一行罗马音，第二行可能是翻译
+      a.romanLyric = _stripTags(a.content);
+      a.translation = _extractTranslation(b.content, separator);
+      return a;
+    } else {
+      // 都不是罗马音：第一行原文，第二行翻译
+      a.translation = _stripTags(b.content);
+      return a;
+    }
+  }
+
+  /// 合并三行或更多歌词
+  LrcLine _combineMultipleLines(List<LyricLine> group, String separator) {
+    // 分离：有逐词标签的行、罗马音行、普通行
+    final linesWithTags = <LrcLine>[];
+    final romans = <LrcLine>[];
+    final plainLines = <LrcLine>[];
+
+    for (final line in group) {
+      final l = line as LrcLine;
+      if (_hasWordTimestamps(l.content)) {
+        linesWithTags.add(l);
+      } else if (_isRomanization(l.content)) {
+        romans.add(l);
+      } else {
+        plainLines.add(l);
+      }
+    }
+
+    // 确定原文（primary）：
+    // 3+ 行: [0]=原文, [1]纯拉丁→罗马音否则翻译, [2+]=翻译
+    // 2 行: [0]=原文(有CJK) or [1]=原文(有CJK), 另一行为翻译/罗马音
+    // 1 行: 就是原文
+    LrcLine? primary;
+    if (linesWithTags.isNotEmpty) {
+      primary = linesWithTags.first;
+    } else if (group.length >= 3) {
+      // 3 行以上: 第 1 行是原文，第 2 行纯拉丁→罗马音，其余是翻译
+      primary = group[0] as LrcLine;
+    } else if (group.length == 2) {
+      // 2 行: 有 CJK 的优先做原文
+      final a = group[0] as LrcLine;
+      final b = group[1] as LrcLine;
+      if (_hasCjk(a.content) && !_hasCjk(b.content)) {
+        primary = a;
+      } else if (!_hasCjk(a.content) && _hasCjk(b.content)) {
+        primary = b;
+      } else {
+        primary = a;
+      }
+    } else {
+      primary = group[0] as LrcLine;
+    }
+
+    // 合并非原文行
+    final allNonPrimary = group.where((l) => l != primary).cast<LrcLine>();
+    final romanParts = <String>[];
+    final transParts = <String>[];
+
+    for (final line in allNonPrimary) {
+      final text = _stripTags(line.content).trim();
+      if (text.isEmpty) continue;
+      // 使用 _isRomanizationStatic 判断是否为罗马音
+      // 避免将英文原文误判为罗马音
+      if (_isRomanizationStatic(text)) {
+        romanParts.add(text);
+      } else {
+        transParts.add(text);
+      }
+    }
+
+    // 设置罗马音
+    if (romanParts.isNotEmpty) {
+      primary.romanLyric = romanParts.join(' ');
+    }
+
+    // 设置翻译
+    if (transParts.isNotEmpty) {
+      primary.translation = transParts.join(separator);
+    }
+
+    return primary;
+  }
+
+  /// 判断文本是否含 CJK 字符（中日韩统一表意文字）
+  static bool _hasCjk(String text) {
+    return RegExp(r'[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]').hasMatch(text);
+  }
+
+  /// 判断文本是否为罗马音（注音）
+  /// 
+  /// 判断逻辑：
+  /// 1. 纯拉丁字母（无 CJK、无假名）→ 罗马音
+  /// 2. 假名 + 少量拉丁字母 → 日文原文（非罗马音）
+  /// 3. 假名为主 → 日文原文（非罗马音）
+  /// 4. 混合文本：假名占比 > 拉丁字母 → 原文
   bool _isRomanization(String text) {
-    final cjkCount = RegExp(r'[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]').allMatches(text).length;
-    final alphaCount = RegExp(r'[a-zA-Z]').allMatches(text).length;
-    return cjkCount == 0 && alphaCount > text.length ~/ 3;
+    return _isRomanizationStatic(text);
+  }
+
+  /// 静态版本的罗马音判断（用于静态方法）
+  /// 
+  /// 判断逻辑：
+  /// 1. 纯拉丁字母（无 CJK、无假名）→ 可能是罗马音
+  /// 2. 有假名或汉字 → 不是罗马音
+  /// 3. 有英文语法词（介词、冠词等）→ 不是罗马音（是英文歌词）
+  /// 4. 有英文标点、缩写 → 不是罗马音
+  static bool _isRomanizationStatic(String text) {
+    final stripped = text.replaceAll(RegExp(r'<[^>]*>'), '').trim();
+    if (stripped.isEmpty) return false;
+
+    final cjkCount = RegExp(r'[\u4e00-\u9fff]').allMatches(stripped).length;
+    final hiraganaCount = RegExp(r'[\u3040-\u309f]').allMatches(stripped).length;
+    final katakanaCount = RegExp(r'[\u30a0-\u30ff]').allMatches(stripped).length;
+    final kanaCount = hiraganaCount + katakanaCount;
+    final alphaCount = RegExp(r'[a-zA-Z]').allMatches(stripped).length;
+
+    if (alphaCount == 0) return false;
+
+    // 有假名或汉字 → 不是罗马音
+    if (cjkCount > 0 || kanaCount > 0) return false;
+
+    // 纯英文文本的排除规则
+    
+    // 有 & 符号 → 不是罗马音（标题特征）
+    if (stripped.contains('&')) return false;
+    
+    // 有空格+横线组合 → 不是罗马音（标题连接符）
+    if (stripped.contains(' - ') || stripped.contains(' — ')) return false;
+    
+    // 有英文标点 → 不是罗马音
+    if (RegExp(r'[.,;!?]').hasMatch(stripped)) return false;
+    
+    // 有撇号 → 不是罗马音（英文缩写）
+    if (stripped.contains("'")) return false;
+    
+    // 计算元音比例
+    // 罗马音（日/韩/中拼音）元音比例通常 ≥ 0.5（CV 音节结构）
+    // 英文歌词元音比例通常 < 0.5（辅音更多）
+    // 例: "kimi no namae wa" → 7元音/13字母 = 0.54 → 罗马音 ✓
+    // 例: "hello world" → 3元音/11字母 = 0.27 → 英文 ✓
+    // 例: "no one knows" → 4元音/11字母 = 0.36 → 英文 ✓
+    final vowelCount = RegExp(r'[aeiou]').allMatches(stripped.toLowerCase()).length;
+    final consCount = RegExp(r'[bcdfghjklmnpqrstvwxyz]').allMatches(stripped.toLowerCase()).length;
+    final totalLetters = vowelCount + consCount;
+    if (totalLetters > 0) {
+      final vowelRatio = vowelCount / totalLetters;
+      if (vowelRatio < 0.5) return false;
+    }
+    
+    // 分析单词
+    final words = stripped.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+    if (words.isEmpty) return false;
+    
+    // 强英文指示词（罗马音不会用的词）
+    // 关键：只保留最明确的介词、冠词、代词、缩写，不要太多
+    final strongEnglishIndicators = {
+      // 冠词
+      'the', 'a', 'an',
+      // 代词（罗马音不会单独出现这些词）
+      'i', 'you', 'he', 'she', 'it', 'we', 'they',
+      'me', 'him', 'her', 'us', 'them',
+      'my', 'your', 'his', 'its', 'our', 'their',
+      'mine', 'yours', 'hers', 'ours', 'theirs',
+      'myself', 'yourself', 'himself', 'herself', 'itself',
+      'ourselves', 'yourselves', 'themselves',
+      'this', 'that', 'these', 'those',
+      // 系动词
+      'am', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+      // 助动词
+      'have', 'has', 'had', 'do', 'does', 'did', 'done',
+      'can', 'could', 'will', 'would', 'shall', 'should',
+      'may', 'might', 'must', 'need',
+      // 介词（罗马音绝对不用）
+      // 注意：不包含 'no' — 它是日语罗马音常用助词（の），用于元音比例判别即可
+      'of', 'in', 'on', 'at', 'to', 'for', 'with', 'by', 'from', 'into',
+      'about', 'above', 'across', 'after', 'against', 'along', 'among',
+      'around', 'before', 'behind', 'below', 'beneath', 'beside', 'between',
+      'beyond', 'down', 'during', 'except', 'inside', 'near', 'off',
+      'out', 'outside', 'over', 'through', 'throughout', 'toward', 'under',
+      'underneath', 'until', 'up', 'upon', 'within', 'without',
+      // 连词
+      'and', 'or', 'but', 'so', 'because', 'while', 'when', 'if',
+      'though', 'although', 'since', 'unless',
+      // 缩写
+      "don't", "doesn't", "didn't", "won't", "can't", "couldn't",
+      "shouldn't", "mustn't", "isn't", "aren't", "wasn't", "weren't",
+      "i'm", "you're", "he's", "she's", "it's", "we're", "they're",
+      "i've", "you've", "we've", "they've",
+      "i'll", "you'll", "he'll", "she'll", "we'll", "they'll",
+      "let's", "that's", "there's", "here's", "who's", "what's",
+      "how's", "where's", "why's",
+      "i'd", "you'd", "he'd", "she'd", "we'd", "they'd",
+      // 口语化
+      'gonna', 'gotta', 'wanna', "ain't", 'gimme', 'lemme',
+      'kinda', 'sorta', 'outta', 'lotsa',
+      // 常见英语疑问词
+      'who', 'what', 'where', 'why', 'how',
+      'which', 'whose', 'whom',
+      // 常见英语副词
+      'not', 'just', 'now', 'then', 'here', 'there',
+      'always', 'never', 'sometimes', 'often', 'usually',
+      'really', 'quite', 'already', 'still', 'yet',
+      'even', 'only', 'also', 'again', 'ever',
+    };
+    
+    final lowerWords = words.map((w) => w.toLowerCase()).toList();
+    int indicatorCount = 0;
+    for (final w in lowerWords) {
+      final clean = w.replaceAll(RegExp(r"[^a-z']"), '');
+      if (strongEnglishIndicators.contains(clean)) indicatorCount++;
+    }
+    
+    // 有强英文指示词 → 不是罗马音
+    if (indicatorCount >= 1) return false;
+    
+    // 5 个以上单词 → 不可能是罗马音（罗马音每行通常 1-4 个音节词）
+    // 日文歌词的罗马音: "kimi no namae wa" (4词)
+    // 韩文歌词的罗马音: "saranghaeyo" (1词)
+    // 中文歌词的罗马音: "ni hao" (2词)
+    if (words.length >= 5) return false;
+    
+    // 检测 3+ 连续辅音 → 不可能是罗马音
+    // 罗马音几乎没有连续 3 个辅音的情况
+    // 英文: "world"(rld), "night"(ght), "strong"(str)
+    if (RegExp(r'[bcdfghjklmnpqrstvwxyz]{3,}').hasMatch(stripped.toLowerCase())) {
+      return false;
+    }
+    
+    // 检测英文常见后缀 → 不可能是罗马音
+    if (RegExp(
+      r'\b[a-z]+(ing|ed|ly|tion|sion|ment|ness|ful|ous|able|ible|ture|ize|ise)\b',
+      caseSensitive: false,
+    ).hasMatch(stripped)) {
+      return false;
+    }
+    
+    // 检测全大写单词（标题/歌名特征）
+    final upperWords = words.where((w) {
+      final alpha = w.replaceAll(RegExp(r'[^a-zA-Z]'), '');
+      return alpha.length > 1 && alpha == alpha.toUpperCase();
+    }).toList();
+    
+    if (upperWords.length >= 2) return false;
+    
+    // 单词长度分析
+    int shortWordCount = 0;
+    int longWordCount = 0;
+    
+    for (final w in words) {
+      final cleanWord = w.replaceAll(RegExp(r'[^a-zA-Z]'), '');
+      if (cleanWord.length <= 5) shortWordCount++;
+      if (cleanWord.length > 7) longWordCount++;
+    }
+    
+    // 有长单词 → 不是罗马音（英文歌词）
+    // 罗马音中的单词几乎都是短音节（通常 ≤5 个字母）
+    if (longWordCount >= 1) return false;
+    
+    // 短词占多数 → 可能是罗马音
+    return shortWordCount >= longWordCount;
   }
 
   /// 从内容中提取翻译部分（如果包含 separator）
@@ -294,12 +530,24 @@ class Lrc extends Lyric {
       break;
     }
 
+    final metadataTagPattern = RegExp(r'^\[[a-zA-Z]+:');
+    
     var lines = <LrcLine>[];
     for (int i = 0; i < lrcLines.length; i++) {
-      var lyricLine = LrcLine.fromLine(lrcLines[i], offsetInMilliseconds);
+      var line = lrcLines[i].trim();
+      if (line.isEmpty || line == '//') continue;
+      
+      // 过滤 LRC 标准 metadata 标签：[ti:xxx]、[ar:xxx]、[al:xxx]、[by:xxx]、[au:xxx]、[length:xxx] 等
+      if (metadataTagPattern.hasMatch(line)) continue;
+      
+      // 过滤 XML/HTML 标签行
+      if (line.startsWith('<') && line.contains('>')) continue;
+      
+      var lyricLine = LrcLine.fromLine(line, offsetInMilliseconds);
       if (lyricLine == null) {
         continue;
       }
+
       lines.add(lyricLine);
     }
 
@@ -385,13 +633,373 @@ class Lrc extends Lyric {
     String? separator,
   }) {
     if (_isTtml(lrc)) {
+      logger.i('[lrc] fromLrcTextAuto: TTML detected');
       return Ttml.fromTtmlText(lrc, separator: separator);
     }
-    final hasWordTags = RegExp(r'<(\d+:\d+\.\d+|\d+)>').hasMatch(lrc);
-    if (!hasWordTags) {
-      return fromLrcText(lrc, source, separator: separator);
+
+    // 智能检测 LRC 子格式（逐字 / 增强 / 普通）
+    final lrcFormat = detectLrcFormat(lrc);
+    logger.i('[lrc] fromLrcTextAuto: format=${lrcFormat.name} sep=${separator ?? 'null'}');
+    if (lrcFormat == LrcFormatType.wordByWord) {
+      final rawLines = parseWordByWordLrc(lrc);
+      if (rawLines.isNotEmpty) {
+        // Group SyncLyricLine by start time and combine same-timestamp lines
+        // (original + translation + roman at same timestamp = separate lines from parser)
+        final grouped = <Duration, List<SyncLyricLine>>{};
+        for (final line in rawLines) {
+          grouped.putIfAbsent(line.start, () => []).add(line);
+        }
+        final combined = <SyncLyricLine>[];
+        for (final entry in grouped.entries) {
+          final group = entry.value;
+          if (group.length == 1) {
+            combined.add(group[0]);
+          } else {
+            // First line is primary (original), rest are translation/roman
+            final primary = group[0];
+            final romanParts = <String>[];
+            final transParts = <String>[];
+            for (int i = 1; i < group.length; i++) {
+              final text = group[i].words.map((w) => w.content).join().trim();
+              if (text.isEmpty) continue;
+              if (_isRomanizationStatic(text)) {
+                romanParts.add(text);
+              } else {
+                transParts.add(text);
+              }
+            }
+            if (romanParts.isNotEmpty) {
+              primary.romanLyric = romanParts.join(' ');
+            }
+            if (transParts.isNotEmpty) {
+              primary.translation = transParts.join(separator ?? '\u2503');
+            }
+            combined.add(primary);
+          }
+        }
+        final result = Lyric(combined, source);
+        logger.i('[lrc] fromLrcTextAuto: wordByWord combined -> ${combined.length} lines');
+        for (int i = 0; i < (combined.length > 3 ? 3 : combined.length); i++) {
+          logger.i('[lrc]   line[$i] start=${combined[i].start.inMilliseconds}ms trans=${combined[i].translation ?? 'null'} roman=${combined[i].romanLyric ?? 'null'}');
+        }
+        return result;
+      }
     }
-    return _parseEnhancedLrcText(lrc, source, separator: separator);
+
+    final hasWordTags = RegExp(r'<(\d+:\d+\.\d+|\d+)>').hasMatch(lrc);
+    logger.i('[lrc] fromLrcTextAuto: hasWordTags=$hasWordTags');
+    if (!hasWordTags) {
+      if (_isLyricifyFormat(lrc)) {
+        logger.i('[lrc] fromLrcTextAuto: Lyricify format');
+        return _parseLyricify(lrc, source, separator: separator);
+      }
+      logger.i('[lrc] fromLrcTextAuto: standard LRC -> fromLrcText');
+      final result = fromLrcText(lrc, source, separator: separator);
+      if (result != null) {
+        logger.i('[lrc] fromLrcText result: ${result.lines.length} lines');
+        for (int i = 0; i < (result.lines.length > 3 ? 3 : result.lines.length); i++) {
+          final l = result.lines[i];
+          logger.i('[lrc]   line[$i] start=${l.start.inMilliseconds}ms content="${l is LrcLine ? l.content : (l is SyncLyricLine ? l.words.map((w)=>w.content).join() : (l is UnsyncLyricLine ? l.content : ''))}" trans=${l.translation ?? 'null'} roman=${l.romanLyric ?? 'null'}');
+        }
+      }
+      return result;
+    }
+    logger.i('[lrc] fromLrcTextAuto: enhanced LRC -> _parseEnhancedLrcText');
+    final result = _parseEnhancedLrcText(lrc, source, separator: separator);
+    if (result != null) {
+      logger.i('[lrc] enhanced result: ${result.lines.length} lines');
+      for (int i = 0; i < (result.lines.length > 3 ? 3 : result.lines.length); i++) {
+        final l = result.lines[i];
+        logger.i('[lrc]   line[$i] start=${l.start.inMilliseconds}ms words=${l is SyncLyricLine ? l.words.length : 'N/A'} trans=${l.translation ?? 'null'} roman=${l.romanLyric ?? 'null'}');
+      }
+    }
+    return result;
+  }
+
+  /// Detect Lyricify format: lines containing word(start,duration) patterns
+  static bool _isLyricifyFormat(String text) {
+    return RegExp(r'\S.*?\(\d+,\d+\)').hasMatch(text);
+  }
+
+  /// Parse Lyricify format lyrics
+  /// Format: word(startMs,durationMs)word2(start,duration) ...
+  /// Lines starting with [n] where n > 5 are background vocals
+  static Lyric? _parseLyricify(
+    String lrc,
+    LyricFormat source, {
+    String? separator,
+  }) {
+    final lrcLines = lrc.split('\n');
+
+    int? offsetInMilliseconds;
+    final offsetPattern = RegExp(r'\[\s*offset\s*:\s*([+-]?\d+)\s*\]');
+    for (final line in lrcLines) {
+      final matched = offsetPattern.firstMatch(line);
+      if (matched == null) continue;
+      offsetInMilliseconds = int.tryParse(matched.group(1) ?? '');
+      break;
+    }
+    final offsetMs = offsetInMilliseconds ?? 0;
+
+    final timeTagRe = RegExp(r'\[(\d{1,2}):(\d{2}(?:\.\d{1,3})?)\]');
+    final syllablePattern = RegExp(r'([^\(]*?)\((\d+),(\d+)\)');
+    final attributePattern = RegExp(r'^\[(\d+)\]');
+
+    final rawLines = <_EnhancedLrcRawLine>[];
+
+    for (final raw in lrcLines) {
+      final line = raw.trimRight();
+      if (line.trim().isEmpty) continue;
+
+      final timeMatches = timeTagRe.allMatches(line).toList(growable: false);
+      if (timeMatches.isEmpty) continue;
+
+      final contentRaw = line.replaceAll(timeTagRe, '').trim();
+
+      for (final m in timeMatches) {
+        final minute = int.tryParse(m.group(1) ?? '');
+        final sec = double.tryParse(m.group(2) ?? '');
+        if (minute == null || sec == null) continue;
+        final lineStartMs =
+            max(((minute * 60 + sec) * 1000).round() - offsetMs, 0);
+
+        rawLines.add(_EnhancedLrcRawLine(
+          Duration(milliseconds: lineStartMs),
+          contentRaw,
+        ));
+      }
+    }
+
+    if (rawLines.isEmpty) return null;
+
+    // Group by timestamp with tolerance
+    final groupKeys = <List<String>>[];
+    final groupStartTimes = <Duration>[];
+
+    for (final rl in rawLines) {
+      final rlMs = rl.start.inMilliseconds;
+      int? foundIndex;
+      for (int i = 0; i < groupStartTimes.length; i++) {
+        if ((rlMs - groupStartTimes[i].inMilliseconds).abs() < 50) {
+          foundIndex = i;
+          break;
+        }
+      }
+      if (foundIndex != null) {
+        groupKeys[foundIndex].add(rl.content);
+      } else {
+        groupKeys.add([rl.content]);
+        groupStartTimes.add(rl.start);
+      }
+    }
+
+    final parsedLines = <EnhancedLrcLine>[];
+
+    for (int g = 0; g < groupKeys.length; g++) {
+      final start = groupStartTimes[g];
+      final contents = groupKeys[g];
+
+      // Detect background vocals: lines starting with [n] where n > 5
+      final mainLines = <String>[];
+      final bgLines = <String>[];
+
+      for (final c in contents) {
+        final attrMatch = attributePattern.firstMatch(c);
+        if (attrMatch != null) {
+          final attrNum = int.tryParse(attrMatch.group(1) ?? '');
+          if (attrNum != null && attrNum > 5) {
+            bgLines.add(c);
+          } else {
+            mainLines.add(c);
+          }
+        } else {
+          mainLines.add(c);
+        }
+      }
+
+      // First main line is the primary text
+      if (mainLines.isEmpty) continue;
+      final primaryContent = mainLines.first;
+      final primaryWords = <EnhancedLrcWord>[];
+
+      // Parse syllable timestamps from primary
+      for (final match in syllablePattern.allMatches(primaryContent)) {
+        final text = match.group(1) ?? '';
+        final startMsStr = match.group(2);
+        final durMsStr = match.group(3);
+        if (startMsStr == null || durMsStr == null || text.isEmpty) continue;
+
+        final startMs = int.tryParse(startMsStr);
+        final durMs = int.tryParse(durMsStr);
+        if (startMs == null || durMs == null) continue;
+
+        final wordStart = Duration(milliseconds: startMs - offsetMs);
+        final wordLength = Duration(milliseconds: durMs);
+
+        primaryWords.add(EnhancedLrcWord(wordStart, wordLength, text));
+      }
+
+      // Remaining main lines are translations
+      final translations = <String>[];
+      for (int i = 1; i < mainLines.length; i++) {
+        final stripped = mainLines[i].replaceAll(attributePattern, '').trim();
+        // Also strip syllable patterns for translations
+        final cleanTranslation = stripped
+            .replaceAll(RegExp(r'\(\d+,\d+\)'), '')
+            .replaceAll(RegExp(r'<[^>]*>'), '')
+            .trim();
+        if (cleanTranslation.isNotEmpty) {
+          translations.add(cleanTranslation);
+        }
+      }
+
+      // Parse background vocals
+      String? bgText;
+      final bgWords = <SyncLyricWord>[];
+      for (final bgLine in bgLines) {
+        final stripped = bgLine.replaceAll(attributePattern, '').trim();
+        final clean = stripped
+            .replaceAll(RegExp(r'\(\d+,\d+\)'), '')
+            .replaceAll(RegExp(r'<[^>]*>'), '')
+            .trim();
+        if (clean.isNotEmpty) {
+          bgText = bgText == null ? clean : '$bgText┃$clean';
+        }
+        // Parse background word timestamps too
+        for (final match in syllablePattern.allMatches(stripped)) {
+          final text = match.group(1) ?? '';
+          final startMsStr = match.group(2);
+          final durMsStr = match.group(3);
+          if (startMsStr == null || durMsStr == null || text.isEmpty) continue;
+
+          final startMs = int.tryParse(startMsStr);
+          final durMs = int.tryParse(durMsStr);
+          if (startMs == null || durMs == null) continue;
+
+          bgWords.add(SyncLyricWord(
+            Duration(milliseconds: startMs - offsetMs),
+            Duration(milliseconds: durMs),
+            text,
+          ));
+        }
+      }
+
+      if (primaryWords.isEmpty && primaryContent.trim().isEmpty) continue;
+
+      // If no syllable timestamps found, create a single word
+      if (primaryWords.isEmpty) {
+        final cleaned = primaryContent
+            .replaceAll(syllablePattern, '')
+            .replaceAll(RegExp(r'<[^>]*>'), '')
+            .replaceAll(attributePattern, '')
+            .trim();
+        if (cleaned.isNotEmpty) {
+          primaryWords.add(EnhancedLrcWord(start, Duration.zero, cleaned));
+        }
+      }
+
+      if (primaryWords.isEmpty) continue;
+
+      final line = EnhancedLrcLine(
+        start,
+        Duration.zero,
+        primaryWords,
+        translations.isEmpty ? null : translations.join(separator ?? '┃'),
+      );
+
+      if (bgText != null && bgText.isNotEmpty) {
+        line.bgText = bgText;
+        line.bgWords = bgWords;
+      }
+
+      parsedLines.add(line);
+    }
+
+    if (parsedLines.isEmpty) return null;
+
+    parsedLines.sort((a, b) => a.start.compareTo(b.start));
+
+    // Calculate line durations
+    for (int i = 0; i < parsedLines.length; i++) {
+      final line = parsedLines[i];
+      final nextStart =
+          i < parsedLines.length - 1 ? parsedLines[i + 1].start : null;
+      final lineLen = nextStart == null
+          ? const Duration(seconds: 5)
+          : (nextStart - line.start);
+      line.length = lineLen.isNegative ? Duration.zero : lineLen;
+
+      // Fill word durations
+      final words = line.words.cast<EnhancedLrcWord>();
+      for (int j = 0; j < words.length; j++) {
+        final curr = words[j];
+        if (curr.length.inMilliseconds <= 0) {
+          final nextWordStart = j < words.length - 1 ? words[j + 1].start : null;
+          final end = nextWordStart ?? (line.start + line.length);
+          final d = end - curr.start;
+          curr.length = d.isNegative
+              ? Duration.zero
+              : (d < const Duration(milliseconds: 50)
+                  ? const Duration(milliseconds: 50)
+                  : d);
+        }
+      }
+
+      // Fill background word durations
+      if (line.bgWords.isNotEmpty) {
+        final bgW = line.bgWords;
+        for (int j = 0; j < bgW.length; j++) {
+          final curr = bgW[j];
+          if (curr.length.inMilliseconds <= 0) {
+            final nextBgStart = j < bgW.length - 1 ? bgW[j + 1].start : null;
+            final bgEnd = nextBgStart ?? (line.start + line.length);
+            final d = bgEnd - curr.start;
+            curr.length = d.isNegative
+                ? Duration.zero
+                : (d < const Duration(milliseconds: 50)
+                    ? const Duration(milliseconds: 50)
+                    : d);
+          }
+        }
+      }
+    }
+
+    // Insert interlude gaps
+    final finalLines = <LyricLine>[];
+    const gapThreshold = Duration(milliseconds: 5000);
+    for (int i = 0; i < parsedLines.length; i++) {
+      final line = parsedLines[i];
+      finalLines.add(line);
+
+      if (i >= parsedLines.length - 1) continue;
+      final nextStart = parsedLines[i + 1].start;
+      final gapStart = line.start + line.length;
+      final gapLen = nextStart - gapStart;
+      if (gapLen >= gapThreshold) {
+        finalLines.add(
+          EnhancedLrcLine(
+            gapStart,
+            gapLen,
+            [],
+          ),
+        );
+      }
+    }
+
+    if (finalLines.isNotEmpty && finalLines.first.start > Duration.zero) {
+      final firstLineStart = finalLines.first.start;
+      finalLines.insert(
+        0,
+        EnhancedLrcLine(
+          Duration.zero,
+          firstLineStart,
+          [],
+        ),
+      );
+    }
+
+    cleanLyricBlankLines(finalLines);
+    return EnhancedLrc(finalLines.cast<EnhancedLrcLine>(), source);
   }
 
   static bool _isTtml(String text) {
@@ -464,52 +1072,152 @@ class Lrc extends Lyric {
 
     if (rawLines.isEmpty) return null;
 
-    // Group by timestamp
-    final grouped = <Duration, List<String>>{};
+    // Group by timestamp with tolerance (lines within 50ms are grouped together)
+    // This handles LRC files where original/translation lines have slightly different timestamps
+    final groupKeys = <List<String>>[];
+    final groupStartTimes = <Duration>[];
+
     for (final rl in rawLines) {
-      grouped.putIfAbsent(rl.start, () => []).add(rl.content);
+      final rlMs = rl.start.inMilliseconds;
+      int? foundIndex;
+      for (int i = 0; i < groupStartTimes.length; i++) {
+        if ((rlMs - groupStartTimes[i].inMilliseconds).abs() < 50) {
+          foundIndex = i;
+          break;
+        }
+      }
+      if (foundIndex != null) {
+        groupKeys[foundIndex].add(rl.content);
+      } else {
+        groupKeys.add([rl.content]);
+        groupStartTimes.add(rl.start);
+      }
+    }
+
+    // Build final grouped map
+    final groupedMap = <Duration, List<String>>{};
+    for (int i = 0; i < groupKeys.length; i++) {
+      groupedMap[groupStartTimes[i]] = groupKeys[i];
     }
 
     final parsedLines = <EnhancedLrcLine>[];
 
-    for (final entry in grouped.entries) {
+    for (final entry in groupedMap.entries) {
       final start = entry.key;
       final contents = entry.value;
 
       // Identify primary (one with most word tags, ignoring inline translations)
+      // Also separate romanization lines from translation lines
       String primaryText = contents.first;
       final translations = <String>[];
+      String? romanText;
 
       int extractTagCount(String raw) {
         final part = separator == null ? raw : raw.split(separator).first;
         return wordTagRe.allMatches(part).length;
       }
 
-      int primaryIndex = 0;
-      int maxTags = -1;
-      for (int i = 0; i < contents.length; i++) {
-        final tagCount = extractTagCount(contents[i]);
-        if (tagCount > maxTags) {
-          maxTags = tagCount;
-          primaryIndex = i;
+      // 判断哪行有逐词标签（有标签的 = 原文）
+      // 关键区分：<时间>后面有文字 = 逐词标签；文字后面<时间> = 行尾时间戳
+      // 例：<00:00.691>あ ← 逐词标签；那孩子真好啊<00:04.135> ← 行尾时间戳
+      bool hasWordTimeTags(String raw) {
+        final tagMatches = wordTagRe.allMatches(raw).toList();
+        for (final m in tagMatches) {
+          final endPos = m.end;
+          // 检查标签后面是否还有非空白文字
+          if (endPos < raw.length) {
+            final after = raw.substring(endPos);
+            if (RegExp(r'\S').hasMatch(after)) {
+              return true;
+            }
+          }
+        }
+        return false;
+      }
+
+      final contentsWithTags = <String>[];
+      final contentsWithoutTags = <String>[];
+      for (final c in contents) {
+        if (hasWordTimeTags(c)) {
+          contentsWithTags.add(c);
+        } else {
+          contentsWithoutTags.add(c);
         }
       }
 
+      // 判断罗马音（仅对没有逐词标签的行使用）
+      final romanContents = <String>[];
+      final otherContents = <String>[];
+      for (final c in contentsWithoutTags) {
+        if (_isRomanizationStatic(c)) {
+          romanContents.add(c);
+        } else {
+          otherContents.add(c);
+        }
+      }
+
+      // 原文 = 有逐词标签的行（最可靠）；如果没有，从 otherContents 里选标签最多的
+      String primaryRaw;
+      int? primaryIndex; // null = primary 不在 otherContents 中
+      
+      if (contentsWithTags.isNotEmpty) {
+        // 从有标签的行中选标签数最多的作为原文
+        int maxTags = -1;
+        int bestIdx = 0;
+        for (int i = 0; i < contentsWithTags.length; i++) {
+          final tagCount = extractTagCount(contentsWithTags[i]);
+          if (tagCount > maxTags) {
+            maxTags = tagCount;
+            bestIdx = i;
+          }
+        }
+        primaryRaw = contentsWithTags[bestIdx];
+        // primary 来自 contentsWithTags，不在 otherContents 中
+        primaryIndex = null;
+
+        // 将 contentsWithTags 中剩余的条目作为翻译/罗马音处理
+        for (int i = 0; i < contentsWithTags.length; i++) {
+          if (i == bestIdx) continue;
+          final r = contentsWithTags[i];
+          if (_isRomanizationStatic(r)) {
+            romanContents.add(r);
+          } else {
+            otherContents.add(r);
+          }
+        }
+      } else if (otherContents.isNotEmpty) {
+        int maxTags = -1;
+        int pi = 0;
+        for (int i = 0; i < otherContents.length; i++) {
+          final tagCount = extractTagCount(otherContents[i]);
+          if (tagCount > maxTags) {
+            maxTags = tagCount;
+            pi = i;
+          }
+        }
+        primaryRaw = otherContents[pi];
+        primaryIndex = pi;
+      } else {
+        // 全是罗马音（极端情况）
+        primaryRaw = contents[0];
+        primaryIndex = null;
+      }
       final primaryParts = separator == null
-          ? <String>[contents[primaryIndex]]
-          : contents[primaryIndex].split(separator);
+          ? <String>[primaryRaw]
+          : primaryRaw.split(separator);
       primaryText = primaryParts.first;
       if (primaryParts.length > 1) {
         translations.add(
-          primaryParts.sublist(1).join(separator ?? '┃').trim(),
+          primaryParts.sublist(1).join(separator ?? '').trim(),
         );
       }
 
-      for (int i = 0; i < contents.length; i++) {
+      // Process other non-primary lines
+      for (int i = 0; i < otherContents.length; i++) {
         if (i == primaryIndex) continue;
         final parts = separator == null
-            ? <String>[contents[i]]
-            : contents[i].split(separator);
+            ? <String>[otherContents[i]]
+            : otherContents[i].split(separator);
         final inlinePrimary = parts.first;
         final inlineTrans =
             parts.length > 1 ? parts.sublist(1).join(separator ?? '┃') : null;
@@ -519,6 +1227,29 @@ class Lrc extends Lyric {
           final cleaned =
               inlinePrimary.replaceAll(RegExp(r'<[^>]*>'), '').trim();
           if (cleaned.isNotEmpty) translations.add(cleaned);
+        }
+      }
+
+      // Extract romanization from identified roman lines
+      // Only extract if different from primary (skip pure English lines that get misclassified)
+      String? primaryCleaned = primaryText.replaceAll(RegExp(r'<[^>]*>'), '').trim();
+      
+      for (final r in romanContents) {
+        final parts = separator == null
+            ? <String>[r]
+            : r.split(separator);
+        final cleaned = parts.first.replaceAll(RegExp(r'<[^>]*>'), '').trim();
+        
+        // Skip if identical to primary - this happens when entire line is pure English
+        // and gets misclassified as Romanization
+        if (cleaned.isEmpty) continue;
+        if (cleaned == primaryCleaned) continue;
+        if (cleaned.toLowerCase() == primaryCleaned.toLowerCase()) continue;
+        
+        if (romanText == null || romanText.isEmpty) {
+          romanText = cleaned;
+        } else {
+          romanText = '$romanText $cleaned';
         }
       }
 
@@ -570,6 +1301,7 @@ class Lrc extends Lyric {
           Duration.zero,
           words,
           translationText?.isEmpty == true ? null : translationText,
+          romanText?.isEmpty == true ? null : romanText,
         ),
       );
     }
@@ -647,17 +1379,20 @@ class Lrc extends Lyric {
     cleanLyricBlankLines(lines);
   }
 
-  /// 加载歌词：外挂文件优先 → 内嵌标签回退。
-  ///
-  /// 外挂搜索顺序：.yrc > .qrc > .krc > .lrc（同目录同名）
-  /// 自动检测编码（GBK/Shift-JIS/UTF-8 等），自动解密加密的 KRC/QRC。
-  /// YRC/QRC 自动配对同目录 .lrc 作为翻译。
-  /// 内嵌歌词支持 ID3v2 USLT / VorbisComment / MP4 标签。
+  /// 从 Rust FFI 加载歌词：内嵌（ID3v2/VorbisComment/MP4）→ 外挂 .lrc（同目录同名）。
+  /// 返回原始文本后由 [fromLrcTextAuto] 自动检测格式（普通/增强/逐字/TTML）。
   static Future<Lyric?> fromAudioPath(
     Audio belongTo, {
     String? separator = '┃',
   }) async {
-    // delegate 到统一的歌词加载器
-    return loadLyricFromAudio(belongTo.path, separator: separator);
+    final raw = await getLyricFromPath(path: belongTo.path);
+    logger.i('lrc: fromAudioPath raw=${raw?.substring(0, raw.length > 80 ? 80 : raw.length)}');
+    if (raw == null || raw.isEmpty) {
+      logger.i('lrc: fromAudioPath -> null (no lyric)');
+      return null;
+    }
+    final parsed = Lrc.fromLrcTextAuto(raw, LyricFormat.local, separator: separator);
+    logger.i('lrc: fromAudioPath parsed=${parsed?.lines.length} lines');
+    return parsed;
   }
 }
