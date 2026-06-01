@@ -39,7 +39,7 @@ add_definitions(-DUNICODE -D_UNICODE)
 # of modifying this function.
 function(APPLY_STANDARD_SETTINGS TARGET)
   target_compile_features(${TARGET} PUBLIC cxx_std_17)
-  target_compile_options(${TARGET} PRIVATE /W4 /WX /wd"4100")
+  target_compile_options(${TARGET} PRIVATE /W4 /WX /wd"4100" /utf-8)
   target_compile_options(${TARGET} PRIVATE /EHsc)
   target_compile_definitions(${TARGET} PRIVATE "_HAS_EXCEPTIONS=0")
   target_compile_definitions(${TARGET} PRIVATE "$<$<CONFIG:Debug>:_DEBUG>")
@@ -109,3 +109,14 @@ install(DIRECTORY "${PROJECT_BUILD_DIR}/${FLUTTER_ASSET_DIR_NAME}"
 install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   CONFIGURATIONS Profile;Release
   COMPONENT Runtime)
+
+# Install BASS audio library & plugins (required at runtime)
+file(GLOB BASS_PLUGINS "${CMAKE_SOURCE_DIR}/../BASS/*.dll")
+install(FILES ${BASS_PLUGINS}
+    DESTINATION "${INSTALL_BUNDLE_LIB_DIR}/dll/BASS"
+    COMPONENT Runtime)
+
+# Install desktop_lyric (required at runtime)
+install(DIRECTORY "${CMAKE_SOURCE_DIR}/../desktop_lyric/"
+    DESTINATION "${INSTALL_BUNDLE_LIB_DIR}/desktop_lyric"
+    COMPONENT Runtime)

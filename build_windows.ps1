@@ -299,7 +299,12 @@ if (-not $issueReportingEnabled) {
         Write-Host "Issue reporting disabled (default)." -ForegroundColor Gray
     }
     $env:RUSTUP_HOME = "D:\Env\Rust\rustup"
-    $env:CARGO_HOME = "D:\Env\Rust\cargo"
+    $env:CARGO_HOME = "D:\Env\Cargo"
+    # Add cargo bin to PATH so cargokit can find rustup and cargo
+    $env:PATH = "$env:CARGO_HOME\bin;$env:PATH"
+    # check-cfg stabilized in Rust 1.80+, no longer needs -Z unstable-options
+    # $env:RUSTFLAGS = "-Z unstable-options"
+    Write-Host "PATH updated for Rust toolchain" -ForegroundColor Gray
     flutter @flutterArgs
 }
 
