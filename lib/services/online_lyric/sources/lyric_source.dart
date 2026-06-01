@@ -3,7 +3,6 @@ import 'package:pure_music/services/online_lyric/models/lyric_source_type.dart';
 import 'package:pure_music/services/online_lyric/models/song_search_result.dart';
 
 /// 歌词数据源接口
-/// 参考 Lyrico SearchSource 接口
 abstract class LyricSource {
   LyricSourceType get sourceType;
 

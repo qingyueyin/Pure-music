@@ -26,7 +26,6 @@ class WordEntry {
 }
 
 /// 逐行歌词条目
-/// 参考 ZeroBit-Player LyricEntry
 class LyricEntry {
   final Duration start;
   Duration nextTime;
@@ -70,6 +69,7 @@ class ParsedLyricResult {
   bool get isNotEmpty => lines.isNotEmpty;
   bool get hasWordByWord =>
       format == LyricFormat.wordByWord ||
+      format == LyricFormat.enhanced ||
       format == LyricFormat.yrc ||
       format == LyricFormat.qrc ||
       format == LyricFormat.krc;
