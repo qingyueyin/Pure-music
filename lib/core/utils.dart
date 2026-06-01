@@ -50,23 +50,19 @@ Color? fromRGBHexString(String rgbHexStr) {
   return null;
 }
 
+const int _pinyinCacheMaxSize = 2000;
 Map<String, String> _pinyinCache = {};
-int _pinyinCacheLastEvictMs = 0;
+List<String> _pinyinCacheAccessOrder = [];
 
 extension PinyinCompare on String {
   /// convert str to pinyin, cache it when it hasn't been converted;
   String _getPinyin() {
-    // 每 30 分钟清理一次拼音缓存，防止无限膨胀
-    final now = DateTime.now().millisecondsSinceEpoch;
-    if (now - _pinyinCacheLastEvictMs > 30 * 60 * 1000) {
-      _pinyinCacheLastEvictMs = now;
-      if (_pinyinCache.length > 5000) {
-        _pinyinCache.clear();
-      }
-    }
-
     final cachedPinyin = _pinyinCache[this];
-    if (cachedPinyin != null) return cachedPinyin;
+    if (cachedPinyin != null) {
+      _pinyinCacheAccessOrder.remove(this);
+      _pinyinCacheAccessOrder.add(this);
+      return cachedPinyin;
+    }
 
     final splited = this.split('');
     final pinyinBuilder = StringBuffer();
@@ -87,6 +83,12 @@ extension PinyinCompare on String {
     final pinyin = pinyinBuilder.toString();
 
     _pinyinCache[this] = pinyin;
+    _pinyinCacheAccessOrder.add(this);
+    
+    while (_pinyinCache.length > _pinyinCacheMaxSize) {
+      final oldestKey = _pinyinCacheAccessOrder.removeAt(0);
+      _pinyinCache.remove(oldestKey);
+    }
 
     return pinyin;
   }
@@ -277,6 +279,42 @@ void showHotkeyToast({
   });
 }
 
+/// 显示网络歌词写入标签的提示（轻量级 SnackBar）
+void showLyricWritePrompt({
+  required String title,
+  required VoidCallback onWrite,
+  required VoidCallback onDismiss,
+}) {
+  scaffoldMessengerKey.currentState?.hideCurrentSnackBar();
+
+  final ctx = scaffoldMessengerKey.currentContext;
+  final scheme = ctx != null ? Theme.of(ctx).colorScheme : null;
+
+  scaffoldMessengerKey.currentState?.showSnackBar(
+    SnackBar(
+      content: Text('写入标签？',
+          style: TextStyle(fontSize: 14, color: scheme?.onSecondaryContainer)),
+      backgroundColor: scheme?.secondaryContainer.withAlpha(240),
+      duration: const Duration(seconds: 30),
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      margin: const EdgeInsets.only(left: 16, right: 16, bottom: 96),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      action: SnackBarAction(
+        label: '写入',
+        textColor: scheme?.onSecondaryContainer,
+        onPressed: onWrite,
+      ),
+      onVisible: () {
+        // 3 秒后自动忽略（不写入标记，下次还可再提示）
+        Future.delayed(const Duration(seconds: 8), () {
+          scaffoldMessengerKey.currentState?.hideCurrentSnackBar();
+        });
+      },
+    ),
+  );
+}
+
 /// 自定义 MemoryOutput：限制最大条目数，防止无限膨胀
 class _BoundedMemoryOutput extends LogOutput {
   _BoundedMemoryOutput({this.secondOutput});
@@ -286,7 +324,6 @@ class _BoundedMemoryOutput extends LogOutput {
   static const _maxEvents = 2000;
   final _buffer = <OutputEvent>[];
 
-  @override
   List<OutputEvent> get buffer => List.unmodifiable(_buffer);
 
   @override
@@ -310,3 +347,20 @@ final logger = Logger(
   output: loggerMemoryOutput,
   level: Level.all,
 );
+
+/// Soften a color for background readability.
+/// 
+/// When [isDark] is true, darkens the color slightly for dark mode backgrounds.
+/// When [isDark] is false, lightens the color slightly for light mode backgrounds.
+Color softenColorForBackground(Color color, {required bool isDark}) {
+  final hsl = HSLColor.fromColor(color);
+  if (isDark) {
+    // Keep saturation intact, only darken slightly for readability
+    final softLightness = (hsl.lightness * 0.55).clamp(0.10, 0.40);
+    return hsl.withLightness(softLightness).toColor();
+  } else {
+    // Keep saturation intact, only lighten slightly for readability
+    final softLightness = (hsl.lightness * 0.50 + 0.38).clamp(0.50, 0.80);
+    return hsl.withLightness(softLightness).toColor();
+  }
+}
