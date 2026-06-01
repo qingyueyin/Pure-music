@@ -3,10 +3,13 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
+import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/lyric/ttml.dart';
 import 'package:pure_music/lyric/karaok_parser.dart';
+import 'package:pure_music/lyric/lyric_stripper.dart';
+import 'package:pure_music/lyric/exclude_data.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart';
 import 'package:pure_music/services/online_lyric/api/krc_decryptor.dart';
 import 'package:pure_music/services/online_lyric/api/qrc_decryptor.dart';
@@ -17,9 +20,10 @@ import 'package:fl_charset/fl_charset.dart';
 // ──────────────────────────────────────────────
 const _kLyricExts = ['.yrc', '.qrc', '.krc', '.lrc'];
 
-/// 编码检测优先级
-final _kEncodingOrders = <Encoding>[
-  ascii,
+/// 编码检测优先级（仅用于 UTF-8 解码失败后的 fallback）
+/// 不包含 ascii——utf8 完全覆盖 ascii，且 ascii 检测会误判中文文件。
+/// 不包含过多的 latin 变体——它们几乎不会用在 LRC 文件中，徒增误检概率。
+final _kFallbackEncodings = <Encoding>[
   utf8,
   gbk,
   shiftJis,
@@ -27,20 +31,6 @@ final _kEncodingOrders = <Encoding>[
   eucKr,
   windows874,
   latin1,
-  latin2,
-  latin3,
-  latin4,
-  latinCyrillic,
-  latinArabic,
-  latinGreek,
-  latinHebrew,
-  latin5,
-  latin6,
-  latinThai,
-  latin7,
-  latin8,
-  latin9,
-  latin10,
 ];
 
 // ──────────────────────────────────────────────
@@ -61,20 +51,26 @@ class _ExternalLyricResult {
 // QRC XML 包裹提取（LyricContent 属性）
 // ──────────────────────────────────────────────
 String? _extractQrcContent(String raw) {
-  // 匹配 <Lyric_1 ... LyricContent="..." ... />
+  // 不硬编码元素名，匹配任一元素上的 LyricContent 属性
   final match = RegExp(
-    r'<Lyric_1\s[^>]*LyricContent="([^"]*)"[^/]*/>',
+    r'LyricContent\s*=\s*"([\s\S]*?)"\s*/?\s*>',
     dotAll: true,
   ).firstMatch(raw);
   if (match == null) return null;
   // 对 HTML 实体解码（引号、尖括号等）
-  return match.group(1)!
+  return _decodeXmlEntities(match.group(1)!);
+}
+
+String _decodeXmlEntities(String text) {
+  return text
       .replaceAll('&quot;', '"')
       .replaceAll('&apos;', "'")
       .replaceAll('&lt;', '<')
       .replaceAll('&gt;', '>')
       .replaceAll('&amp;', '&')
-      .replaceAll('&#39;', "'");
+      .replaceAll('&#39;', "'")
+      .replaceAll('&#10;', '\n')
+      .replaceAll('&#13;', '\r');
 }
 
 // ──────────────────────────────────────────────
@@ -84,6 +80,68 @@ List<String> _candidatePaths(String filePath, List<String> exts) {
   final dir = p.dirname(filePath);
   final base = p.basenameWithoutExtension(filePath);
   return exts.map((e) => p.join(dir, '$base$e')).toList();
+}
+
+// ──────────────────────────────────────────────
+// 搜索同目录下包含歌曲名的 .lrc 文件（模糊匹配）
+// ──────────────────────────────────────────────
+Future<String?> _findLrcInDirectory(String songPath, String songName) async {
+  final dir = Directory(p.dirname(songPath));
+  if (!await dir.exists()) return null;
+
+  try {
+    final songNameLower = songName.toLowerCase();
+    await for (final entity in dir.list()) {
+      if (entity is File) {
+        final ext = p.extension(entity.path).toLowerCase();
+        if (ext == '.lrc') {
+          final lrcBase = p.basenameWithoutExtension(entity.path).toLowerCase();
+          logger.i('lyric_loader:   found .lrc: $lrcBase, checking contains...');
+          if (lrcBase.contains(songNameLower)) {
+            final content = await _safeReadFile(entity.path);
+            if (content != null && content.trim().isNotEmpty) {
+              logger.i('lyric_loader:   fuzzy match OK: $lrcBase');
+              return content;
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {
+    logger.e('lyric_loader: error scanning directory for lrc: $e');
+  }
+  logger.i('lyric_loader:   fuzzy match: no .lrc files found in ${dir.path}');
+  return null;
+}
+
+// ──────────────────────────────────────────────
+// 搜索父目录中的 .lrc 文件
+// ──────────────────────────────────────────────
+Future<String?> _findLrcInParentDirectory(String songPath, String songName) async {
+  final dir = Directory(p.dirname(songPath));
+  if (!await dir.exists()) return null;
+
+  try {
+    final parent = dir.parent;
+    if (parent.path == dir.path) return null;
+
+    final songNameLower = songName.toLowerCase();
+    await for (final entity in parent.list()) {
+      if (entity is File) {
+        final ext = p.extension(entity.path).toLowerCase();
+        if (ext == '.lrc' &&
+            p.basenameWithoutExtension(entity.path).toLowerCase().contains(songNameLower)) {
+          final content = await _safeReadFile(entity.path);
+          if (content != null && content.trim().isNotEmpty) {
+            return content;
+          }
+        }
+      }
+    }
+  } catch (e) {
+    logger.e('lyric_loader: error scanning parent directory for lrc: $e');
+  }
+  return null;
 }
 
 // ──────────────────────────────────────────────
@@ -123,15 +181,24 @@ Future<String?> _safeReadFile(String filePath) async {
       return asText;
     }
 
-    // ── LRC / YRC：编码检测 ──
-    final detected = Charset.detect(bytes, orders: _kEncodingOrders);
-    if (detected == null) {
-      // fallback：用 utf8 尝试解码
-      return utf8.decode(bytes, allowMalformed: true);
+    // ── LRC / YRC：优先 UTF-8 解码（覆盖 95%+ 文件） ──
+    try {
+      return utf8.decode(bytes);
+    } catch (_) {
+      // UTF-8 解码失败，走编码检测 fallback
     }
-    return detected.decode(bytes);
+
+    final detected = Charset.detect(bytes, orders: _kFallbackEncodings);
+    if (detected != null) {
+      try {
+        return detected.decode(bytes);
+      } catch (_) {}
+    }
+
+    // 终极 fallback：容忍乱码
+    return utf8.decode(bytes, allowMalformed: true);
   } catch (e) {
-    debugPrint('lyric_loader: error reading $filePath: $e');
+    logger.e('lyric_loader: error reading $filePath: $e');
     return null;
   }
 }
@@ -141,9 +208,12 @@ Future<String?> _safeReadFile(String filePath) async {
 // ──────────────────────────────────────────────
 Future<_ExternalLyricResult?> _loadExternalLyric(String audioPath) async {
   final paths = _candidatePaths(audioPath, _kLyricExts);
+  final songName = p.basenameWithoutExtension(audioPath);
 
+  logger.i('lyric_loader: checking paths: $paths');
   for (final path in paths) {
     final content = await _safeReadFile(path);
+    logger.i('lyric_loader:   $path -> ${content != null ? 'found(len=${content.length})' : 'null'}');
     if (content == null || content.trim().isEmpty) continue;
 
     final ext = p.extension(path).toLowerCase();
@@ -160,12 +230,34 @@ Future<_ExternalLyricResult?> _loadExternalLyric(String audioPath) async {
           break;
         }
       }
+      transContent ??= await _findLrcInDirectory(audioPath, songName);
     }
 
     return _ExternalLyricResult(
       content: content,
       ext: ext,
       transContent: transContent,
+    );
+  }
+
+  logger.i('lyric_loader: exact match failed, trying fuzzy match...');
+  // ── 精确同名文件未找到，尝试同目录模糊匹配 .lrc ──
+  final fuzzyLrc = await _findLrcInDirectory(audioPath, songName);
+  if (fuzzyLrc != null && fuzzyLrc.trim().isNotEmpty) {
+    return _ExternalLyricResult(
+      content: fuzzyLrc,
+      ext: '.lrc',
+      transContent: null,
+    );
+  }
+
+  // ── 同目录模糊匹配失败，尝试父目录模糊匹配 .lrc ──
+  final parentLrc = await _findLrcInParentDirectory(audioPath, songName);
+  if (parentLrc != null && parentLrc.trim().isNotEmpty) {
+    return _ExternalLyricResult(
+      content: parentLrc,
+      ext: '.lrc',
+      transContent: null,
     );
   }
 
@@ -183,7 +275,7 @@ Lyric? _parseExternalToPureLyric(
     case '.yrc':
     case '.qrc':
     case '.krc':
-      // YRC/QRC/KRC 使用 ZeroBit 移植的 KaraOK 解析器（正则健壮、时间戳正确）
+      // YRC/QRC/KRC 使用 KaraOK 解析器（正则健壮、时间戳正确）
       return parseKaraokToPureLyric(
         result.ext,
         result.content,
@@ -231,30 +323,86 @@ Future<Lyric?> loadLyricFromAudio(
   String audioPath, {
   String? separator = '┃',
 }) async {
+  logger.i('lyric_loader: loading for $audioPath');
+
   // ── 第 1 步：外挂歌词文件 ──
   final external = await _loadExternalLyric(audioPath);
+
+  // 如果有外部歌词，检查内嵌歌词是否有逐字标签（如用户手动写入的场景）
+  String? embeddedRaw;
+  bool? embeddedHasWordTags; // null = not fetched yet
+
   if (external != null) {
-    final lyric = _parseExternalToPureLyric(external, separator: separator);
-    if (lyric != null && lyric.lines.isNotEmpty) {
-      debugPrint(
-          'lyric_loader: loaded external ${external.ext} for $audioPath');
-      return lyric;
+    try {
+      embeddedRaw = await getLyricFromPath(path: audioPath);
+    } catch (_) {}
+    embeddedHasWordTags = embeddedRaw != null &&
+        RegExp(r'<(\d+:\d+\.\d+|\d+)>').hasMatch(embeddedRaw);
+
+    if (embeddedHasWordTags) {
+      logger.i(
+          'lyric_loader: embedded has word tags, preferring over external');
+    } else {
+      logger.i(
+          'lyric_loader: found external ${external.ext}, content len=${external.content.length}');
+      final lyric = _parseExternalToPureLyric(external, separator: separator);
+      if (lyric != null && lyric.lines.isNotEmpty) {
+        logger.i(
+            'lyric_loader: loaded external ${external.ext} for $audioPath');
+        final stripped = _stripMetadata(lyric);
+        logger.i('lyric_loader: external return lines=${stripped?.lines.length ?? "null"}');
+        return stripped;
+      } else {
+        logger.i('lyric_loader: external ${external.ext} parse FAILED');
+      }
     }
+  } else {
+    logger.i('lyric_loader: no external lyric found');
   }
 
   // ── 第 2 步：内嵌歌词 ──
   try {
-    final embedded = await getLyricFromPath(path: audioPath);
+    final embedded = embeddedHasWordTags == true
+        ? embeddedRaw
+        : await getLyricFromPath(path: audioPath);
     if (embedded != null && embedded.isNotEmpty) {
+      logger.i(
+          'lyric_loader: embedded lyric found, len=${embedded.length}, preview=${embedded.length > 80 ? embedded.substring(0, 80) : embedded}');
       final lyric = _parseEmbeddedToPureLyric(embedded, separator: separator);
       if (lyric != null && lyric.lines.isNotEmpty) {
-        debugPrint('lyric_loader: loaded embedded lyric for $audioPath');
-        return lyric;
+        logger.i(
+            'lyric_loader: loaded embedded lyric for $audioPath, lines=${lyric.lines.length}');
+        final stripped = _stripMetadata(lyric);
+        logger.i('lyric_loader: embedded return lines=${stripped?.lines.length ?? "null"}');
+        return stripped;
+      } else {
+        logger.i('lyric_loader: embedded lyric parse FAILED');
       }
+    } else {
+      logger.i('lyric_loader: no embedded lyric found');
     }
   } catch (e) {
-    debugPrint('lyric_loader: error reading embedded lyric: $e');
+    logger.i('lyric_loader: embedded catch: $e');
+    logger.e('lyric_loader: error reading embedded lyric: $e');
   }
 
+  logger.i('lyric_loader: returning null for $audioPath');
   return null;
+}
+
+Lyric? _stripMetadata(Lyric lyric) {
+  final regList = defaultExcludeRegexes
+      .map((p) => RegExp(p, caseSensitive: false))
+      .toList();
+  final options = StripOptions(
+    keywords: defaultExcludeKeywords,
+    regexes: regList,
+  );
+  final filtered = stripLyricMetadata(lyric.lines, options);
+  if (!identical(lyric.lines, filtered)) {
+    lyric.lines
+      ..clear()
+      ..addAll(filtered);
+  }
+  return lyric;
 }
