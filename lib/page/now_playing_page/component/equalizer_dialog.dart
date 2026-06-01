@@ -290,7 +290,7 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
           ),
         ],
       ),
-    );
+    ).whenComplete(controller.dispose);
   }
 
   void _applyPreset(EqPreset preset) {
