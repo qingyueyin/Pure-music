@@ -5,7 +5,7 @@ import 'package:pure_music/component/build_index_state_view.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/lyric/lyric_source.dart';
-import 'package:file_picker/file_picker.dart';
+import 'package:pure_music/native/folder_picker_windows.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
@@ -119,14 +119,14 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
-                    onPressed: () async {
-                      final path = await FilePicker.platform.getDirectoryPath(
-                        dialogTitle: '选择文件夹',
+                    onPressed: () {
+                      final paths = pickMultipleDirectories(
+                        title: '选择文件夹',
                       );
-                      if (path == null) return;
+                      if (paths.isEmpty) return;
 
                       setState(() {
-                        folders.add(path);
+                        folders.addAll(paths.where((p) => !folders.contains(p)));
                       });
                     },
                     child: const Text('添加'),
@@ -143,6 +143,7 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
                       final toSave = folders
                           .where((f) =>
                               !AppPreference.instance.userFolders.contains(f))
+                          .toSet()
                           .toList();
                       final toRemove = AppPreference.instance.userFolders
                           .where((f) => !folders.contains(f))
