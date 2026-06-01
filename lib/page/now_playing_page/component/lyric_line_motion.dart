@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/physics.dart';
 
 import 'package:pure_music/core/lyric_render_config.dart';
 
@@ -74,6 +73,8 @@ class LyricLineSpringMotion extends StatefulWidget {
     required this.alignment,
     this.enabled = true,
     this.staggerDelay = Duration.zero,
+    this.lineDuration,
+    this.transitionDuration,
     required this.child,
   });
 
@@ -82,6 +83,12 @@ class LyricLineSpringMotion extends StatefulWidget {
   final Alignment alignment;
   final bool enabled;
   final Duration staggerDelay;
+  final Duration? lineDuration;
+
+  /// 若设置，覆盖 [lineDuration] 和默认 380ms 的过渡动画时长。
+  /// 用于在程序化滚动时与滚动动画同步（例如同时 300ms 完成）。
+  final Duration? transitionDuration;
+
   final Widget child;
 
   @override
@@ -91,6 +98,7 @@ class LyricLineSpringMotion extends StatefulWidget {
 class _LyricLineSpringMotionState extends State<LyricLineSpringMotion>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
+  late CurvedAnimation _curvedAnimation;
   late LyricLineVisualStateTween _stateTween;
   Timer? _staggerTimer;
 
@@ -113,20 +121,48 @@ class _LyricLineSpringMotionState extends State<LyricLineSpringMotion>
     );
   }
 
-  SpringDescription get _spring => SpringDescription(
-        mass: widget.spring.mass,
-        stiffness: widget.spring.stiffness,
-        damping: widget.spring.damping,
-      );
+
+  Duration get _floatingDuration {
+    if (widget.transitionDuration != null) {
+      return widget.transitionDuration!;
+    }
+    if (widget.lineDuration != null && widget.lineDuration!.inMilliseconds > 0) {
+      final dura = widget.lineDuration!.inMilliseconds / 1000.0;
+      final ms = dura * 1000 * 1.8 + 50;
+      return Duration(milliseconds: ms.round().clamp(200, 5000));
+    }
+    return const Duration(milliseconds: 380);
+  }
+
+  Duration get _floatingDelay {
+    // transitionDuration 生效时取消 stagger 延迟，确保所有行同时开始过渡
+    if (widget.transitionDuration != null) {
+      return Duration.zero;
+    }
+    if (widget.lineDuration != null && widget.lineDuration!.inMilliseconds > 0) {
+      final dura = widget.lineDuration!.inMilliseconds / 1000.0;
+      final ms = dura * 1000 * 0.2;
+      return Duration(milliseconds: ms.round().clamp(0, 1000));
+    }
+    return widget.staggerDelay;
+  }
 
   LyricLineVisualState get _currentState {
-    return _stateTween.lerp(_controller.value.clamp(0.0, 1.0));
+    return _stateTween.lerp(_curvedAnimation.value.clamp(0.0, 1.0));
   }
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(vsync: this, value: 1.0);
+    _controller = AnimationController(
+      vsync: this,
+      duration: _floatingDuration,
+      value: 1.0,
+    );
+    _curvedAnimation = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+    );
     _stateTween = LyricLineVisualStateTween(
       begin: widget.targetState,
       end: widget.targetState,
@@ -137,11 +173,21 @@ class _LyricLineSpringMotionState extends State<LyricLineSpringMotion>
   void didUpdateWidget(covariant LyricLineSpringMotion oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    if (_currentState.isCloseTo(widget.targetState) &&
+    // 过渡动画时用 easeOutSine 匹配滚动动画的 sineOut 曲线
+    if (widget.transitionDuration != null) {
+      _curvedAnimation.curve = Curves.easeOutSine;
+    } else {
+      _curvedAnimation.curve = Curves.easeOutCubic;
+    }
+
+    final shouldSkip = _currentState.isCloseTo(widget.targetState) &&
         oldWidget.spring == widget.spring &&
         oldWidget.enabled == widget.enabled &&
         oldWidget.alignment == widget.alignment &&
-        oldWidget.staggerDelay == widget.staggerDelay) {
+        oldWidget.staggerDelay == widget.staggerDelay &&
+        oldWidget.lineDuration == widget.lineDuration;
+
+    if (shouldSkip) {
       _stateTween = LyricLineVisualStateTween(
         begin: widget.targetState,
         end: widget.targetState,
@@ -149,6 +195,8 @@ class _LyricLineSpringMotionState extends State<LyricLineSpringMotion>
       _controller.value = 1.0;
       return;
     }
+
+    _controller.duration = _floatingDuration;
 
     final beginState = _currentState;
     _stateTween = LyricLineVisualStateTween(
@@ -171,19 +219,16 @@ class _LyricLineSpringMotionState extends State<LyricLineSpringMotion>
 
     _staggerTimer?.cancel();
 
-    if (widget.staggerDelay.inMilliseconds > 0) {
-      _staggerTimer = Timer(widget.staggerDelay, () {
+    final delay = _floatingDelay;
+    if (delay.inMilliseconds > 0) {
+      _staggerTimer = Timer(delay, () {
         if (!mounted || !widget.enabled) return;
-        _controller
-          ..stop()
-          ..value = 0.0
-          ..animateWith(SpringSimulation(_spring, 0.0, 1.0, 0.0));
+        _controller.value = 0.0;
+        _controller.forward();
       });
     } else {
-      _controller
-        ..stop()
-        ..value = 0.0
-        ..animateWith(SpringSimulation(_spring, 0.0, 1.0, 0.0));
+      _controller.value = 0.0;
+      _controller.forward();
     }
   }
 
@@ -206,6 +251,7 @@ class _LyricLineSpringMotionState extends State<LyricLineSpringMotion>
         if (visualState.offsetY.abs() > 0.01) {
           current = Transform.translate(
             offset: Offset(0, visualState.offsetY),
+            filterQuality: FilterQuality.low,
             child: current,
           );
         }
@@ -214,6 +260,7 @@ class _LyricLineSpringMotionState extends State<LyricLineSpringMotion>
           current = Transform.scale(
             scale: visualState.scale,
             alignment: widget.alignment,
+            filterQuality: FilterQuality.low,
             child: current,
           );
         }
