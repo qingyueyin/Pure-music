@@ -3,15 +3,12 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
-import 'package:flutter/foundation.dart';
-
 const _kgSearchUrl = 'http://mobilecdn.kugou.com/api/v3/search/song';
 const _kgSearchLrcUrl = 'http://lyrics.kugou.com/search';
 const _kgDownloadLrcUrl = 'http://lyrics.kugou.com/download';
 const _neSearchUrl = 'https://music.163.com/api/cloudsearch/pc';
 const _neLrcUrl = 'https://music.163.com/api/song/lyric';
 const _qmSearchUrl = 'https://u.y.qq.com/cgi-bin/musicu.fcg';
-const _qmLyricUrl = 'https://c.y.qq.com/qqmusic/fcgi-bin/lyric_download.fcg';
 
 Future<String?> _httpPost(String urlStr, String body, Map<String, String> headers) async {
   try {
@@ -112,7 +109,7 @@ Future<List<dynamic>> kgSearchIsolate({
 }
 
 // ============================================================
-// Kugou lyric - 简单 API（ZeroBit-Player 已验证可工作的方案）
+// Kugou lyric
 // ============================================================
 
 Future<Map<String, String?>> _kgLyricInIsolate(Map<String, dynamic> params) async {
@@ -207,6 +204,7 @@ Future<Map<String, String?>> _neLyricInIsolate(Map<String, dynamic> params) asyn
     'lv': '-1',
     'yv': '-1',
     'tv': '-1',
+    'rv': '-1',
     'os': 'pc',
   }, null);
   if (body == null || body.isEmpty) {
@@ -309,7 +307,7 @@ Future<List<dynamic>> qqSearchIsolate({
 }
 
 // ============================================================
-// QQ lyric - 主方案：Lyrico GetPlayLyricInfo（需元数据）
+// QQ lyric - 主方案：GetPlayLyricInfo（需元数据）
 // 降级方案：lyric_download.fcg（仅 ID）
 // Isolate 只做 HTTP，返回加密内容；解密由调用方用
 // qrcDecryptSingle() 处理（它也在 Isolate 内解密）
@@ -322,15 +320,11 @@ Future<Map<String, String?>> _qqLyricInIsolate(Map<String, dynamic> params) asyn
   final String? artist = params['artist'] as String?;
   final int durationSec = params['durationSec'] as int? ?? 0;
 
-  // ── 方案 A：Lyrico GetPlayLyricInfo ──
+  // ── 方案 A：GetPlayLyricInfo ──
   if (title != null && title.isNotEmpty) {
     final titleB64 = base64Encode(utf8.encode(title));
     final albumB64 = base64Encode(utf8.encode(album ?? ''));
     final singerB64 = base64Encode(utf8.encode(artist ?? ''));
-    final now = DateTime.now().millisecondsSinceEpoch;
-    final random = (now * 123456789) % 1000000000000000;
-    final searchId = (10000000000000000 + random).toString();
-
     final body = await _httpPost(_qmSearchUrl, jsonEncode({
       'comm': {
         'ct': '11', 'cv': '1003006', 'v': '1003006',

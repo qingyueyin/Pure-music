@@ -3,7 +3,6 @@ import 'package:pure_music/services/online_lyric/models/lyric_source_type.dart';
 final _artistSplitRegex = RegExp(r'[、,，&\s]+');
 
 /// 统一搜索结果模型
-/// 参考 Lyrico SongSearchResult + 现有项目 SongSearchResult
 class SongSearchResult {
   final LyricSourceType source;
   final String id;

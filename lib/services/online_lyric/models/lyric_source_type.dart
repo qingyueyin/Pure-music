@@ -1,5 +1,4 @@
 /// 歌词来源类型枚举
-/// 参考 Lyrico SearchSource 的三种实现：QmSource / KgSource / NeSource
 enum LyricSourceType {
   qq('QQ音乐'),
   kugou('酷狗'),

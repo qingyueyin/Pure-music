@@ -1,4 +1,4 @@
-import 'dart:convert';
+import 'dart:isolate';
 
 import 'package:pure_music/services/online_lyric/models/lyric_entry.dart';
 import 'package:pure_music/services/online_lyric/parsers/lrc_tool.dart';
@@ -82,14 +82,33 @@ class NetLyricResult {
 
   bool get hasContent => mainLyric != null && mainLyric!.isNotEmpty;
 
-  ParsedLyricResult? toParsedLyric() {
+  Future<ParsedLyricResult?> toParsedLyric() async {
     if (!hasContent) return null;
-    return LrcTool.parse(
-      mainLyric!,
-      transText: transLyric,
-      romanizationText: romaLyric,
-    );
+    return Isolate.run(() {
+      return LrcTool.parse(
+        mainLyric!,
+        transText: transLyric,
+        romanizationText: romaLyric,
+      );
+    });
   }
+}
+
+// LRC metadata patterns to strip (e.g., [ar:Artist], [ti:Title], [by:Editor])
+final _lrcMetadataRegex = RegExp(
+  r'^\s*\[(ar|ti|al|au|length|by|re|ve|offset|id|uid|arid|ty|lang|tlyric|language):[^\]]*\]\s*$',
+  multiLine: true,
+  caseSensitive: false,
+);
+
+/// Strip LRC metadata tags (ar/ti/al/by/etc.) while preserving timestamp lines and lyric content.
+String _stripLrcMetadata(String text) {
+  return text.split('\n').where((line) {
+    final trimmed = line.trim();
+    if (trimmed.isEmpty) return true;
+    if (_lrcMetadataRegex.hasMatch(trimmed)) return false;
+    return true;
+  }).join('\n');
 }
 
 // ──────────────────────────────────────────────
@@ -137,13 +156,15 @@ Future<NetLyricResult?> qqGetLyric({
   Future<String?> decrypt(String? raw) async {
     if (raw == null || raw.isEmpty) return null;
     if (raw.contains('[00') || raw.startsWith('[')) return raw;
-    return qrcDecryptSingle(raw);
+    final decrypted = await qrcDecryptSingle(raw);
+    if (decrypted == null) return null;
+    return _stripLrcMetadata(decrypted);
   }
 
   return NetLyricResult(
-    mainLyric: await decrypt(lyricData['encryptedLyric'] as String?),
-    transLyric: await decrypt(lyricData['encryptedTrans'] as String?),
-    romaLyric: await decrypt(lyricData['roma'] as String?),
+    mainLyric: await decrypt(lyricData['encryptedLyric']),
+    transLyric: await decrypt(lyricData['encryptedTrans']),
+    romaLyric: await decrypt(lyricData['roma']),
     format: LyricFormat.qrc,
   );
 }
@@ -163,7 +184,7 @@ Future<List<NeSearchItem>> neSearchLyric({
 }) async {
   final rawResults = await iso.neSearchIsolate(
     text: keyword,
-    offset: page,
+    offset: (page - 1) * pageSize,
     limit: pageSize,
   );
   return rawResults.map((e) {
@@ -184,10 +205,15 @@ Future<NetLyricResult?> neGetLyric({required int id}) async {
   final main = result['main'];
   if (main == null || main.isEmpty) return null;
   final format = result['format'] == 'yrc' ? LyricFormat.yrc : LyricFormat.lrc;
+  final isLrcFormat = format == LyricFormat.lrc;
   return NetLyricResult(
-    mainLyric: main,
-    transLyric: result['trans'],
-    romaLyric: result['roma'],
+    mainLyric: isLrcFormat ? _stripLrcMetadata(main) : main,
+    transLyric: isLrcFormat && result['trans'] != null
+        ? _stripLrcMetadata(result['trans']!)
+        : result['trans'],
+    romaLyric: isLrcFormat && result['roma'] != null
+        ? _stripLrcMetadata(result['roma']!)
+        : result['roma'],
     format: format,
   );
 }
@@ -221,7 +247,7 @@ Future<List<KgSearchItem>> kgSearchLyric({
 
 Future<NetLyricResult?> kgGetLyric({required String hash}) async {
   final result = await iso.kgLyricIsolate(hash: hash);
-  final encrypted = result['encrypted'] as String?;
+  final encrypted = result['encrypted'];
   if (encrypted == null || encrypted.isEmpty) return null;
 
   final decrypted = await krcDecryptSingle(encrypted);
