@@ -82,6 +82,7 @@ class _CollapsibleLyricControlsState extends State<CollapsibleLyricControls>
                         opacity: _fadeAnimation.value,
                         child: Transform.translate(
                           offset: Offset(0, _slideAnimation.value),
+                          filterQuality: FilterQuality.low,
                           child: const LyricViewControls(),
                         ),
                       );
