@@ -1,7 +1,9 @@
+import 'dart:isolate';
+
 import 'package:pure_music/services/online_lyric/models/lyric_entry.dart';
 
 /// 统一歌词解析工具
-/// 参考 ZeroBit-Player parse_lyrics.dart + 当前项目 lrc/yrc/qrc/krc.dart
+/// 综合 lrc/yrc/qrc/krc 解析器
 class LrcTool {
   static final _lrcLineRegex = RegExp(r'\[(\d{2}):(\d{2}\.\d{2,3})](.*?)(\r?\n|$)');
   static final _karaOkLineRegex = RegExp(r'\[(\d+),(\d+)](.*?)(\r?\n|$)');
@@ -15,11 +17,6 @@ class LrcTool {
     final minutes = int.tryParse(m) ?? 0;
     final seconds = double.tryParse(s) ?? 0.0;
     return minutes * 60 + seconds;
-  }
-
-  static double _msToSec(String msStr) {
-    final ms = int.tryParse(msStr) ?? 0;
-    return ms / 1000.0;
   }
 
   static bool _shouldMergeWords(WordEntry curr, WordEntry last) {
@@ -91,23 +88,34 @@ class LrcTool {
     return tags;
   }
 
+  // 预编译格式检测正则（enhanced: <mm:ss.xxx> 逐字时间戳）
+  static final _hasEnhancedTags = RegExp(r'<\d{2}:\d{2}\.\d{2,3}>');
+
   static LyricFormat _detectFormat(String lrcContent) {
     final lines = lrcContent.trim();
-    if (RegExp(r'(<\d{2}:\d{2}\.\d{2,3}>[^\n\r]*){3}').hasMatch(lines)) {
+    // enhanced 检测：统计 <> 时间戳数量，>=5 个即视为逐字（enhanced）格式
+    // 避免用 {3} 贪婪回溯——简单计数比复杂正则可靠
+    if (_hasEnhancedTags.allMatches(lines).length >= 5) {
       return LyricFormat.enhanced;
     }
     if (RegExp(r'\[\d{2}:\d{2}\.\d{2,3}\].*\[\d{2}:\d{2}\.\d{2,3}\]').hasMatch(lines)) {
       return LyricFormat.wordByWord;
     }
 
-    for (final m in _yrcWordRegex.allMatches(lines)) {
-      if (m.group(0)!.isNotEmpty) return LyricFormat.yrc;
-    }
-    for (final m in _qrcWordRegex.allMatches(lines)) {
-      if (m.group(0)!.isNotEmpty) return LyricFormat.qrc;
-    }
-    for (final m in _krcWordRegex.allMatches(lines)) {
-      if (m.group(0)!.isNotEmpty) return LyricFormat.krc;
+    if (_karaOkLineRegex.hasMatch(lines)) {
+      if (lines.contains('<')) {
+        for (final m in _krcWordRegex.allMatches(lines)) {
+          if (m.group(0)!.isNotEmpty) return LyricFormat.krc;
+        }
+      }
+      if (lines.contains('(')) {
+        for (final m in _yrcWordRegex.allMatches(lines)) {
+          if (m.group(0)!.isNotEmpty) return LyricFormat.yrc;
+        }
+      }
+      for (final m in _qrcWordRegex.allMatches(lines)) {
+        if (m.group(0)!.isNotEmpty) return LyricFormat.qrc;
+      }
     }
 
     if (_lrcLineRegex.hasMatch(lines)) return LyricFormat.lrc;
@@ -212,7 +220,7 @@ class LrcTool {
       if (regex == null) continue;
 
       final words = _parseKaraOkWords(content, regex, startIdx, durIdx, textIdx,
-          lineStartSec: format == LyricFormat.krc ? _msToSec(m.group(1)!) : 0.0);
+          lineStartMs: format == LyricFormat.krc ? (int.tryParse(m.group(1)!) ?? 0) : 0);
       final lineContent = words.map((w) => w.content).join();
       if (lineContent.isEmpty) continue;
 
@@ -231,13 +239,13 @@ class LrcTool {
     int startIdx,
     int durIdx,
     int textIdx, {
-    double lineStartSec = 0.0,
+    int lineStartMs = 0,
   }) {
     final words = <WordEntry>[];
     for (final m in wordRegex.allMatches(content)) {
       final curr = WordEntry(
-        start: Duration(milliseconds: ((_msToSec(m.group(startIdx)!) + lineStartSec) * 1000).round()),
-        length: Duration(milliseconds: (_msToSec(m.group(durIdx)!) * 1000).round()),
+        start: Duration(milliseconds: int.parse(m.group(startIdx)!) + lineStartMs),
+        length: Duration(milliseconds: int.parse(m.group(durIdx)!)),
         content: m.group(textIdx)?.replaceAll('\n', '') ?? '',
       );
 
@@ -306,60 +314,93 @@ class LrcTool {
     if (transText == null || transText.isEmpty) return main;
 
     final transLines = _parseLrc(transText);
-    if (transLines.isEmpty) return main;
 
-    // 行数一致时直接对齐
-    if (main.lines.length == transLines.length) {
-      for (int i = 0; i < main.lines.length; i++) {
-        if (transLines[i].content.trim().isNotEmpty) {
-          main.lines[i].translation = transLines[i].content;
+    // 酷狗等源的翻译是纯文本（无 LRC 时间戳），按行号对齐
+    // 尝试解析 KRC/QRC/YRC 格式（如有些源的翻译/罗马音带时间戳）
+    if (transLines.isEmpty) {
+      final karaokeFormat = _detectFormat(transText);
+      if (karaokeFormat == LyricFormat.qrc ||
+          karaokeFormat == LyricFormat.krc ||
+          karaokeFormat == LyricFormat.yrc) {
+        final entries = _parseByFormat(transText, karaokeFormat);
+        if (entries.isNotEmpty) {
+          final plainText = entries.map((e) => e.content).join('\n');
+          return _mergeTranslationText(main, plainText);
+        }
+      }
+    }
+
+    if (transLines.isEmpty) {
+      final plainLines = transText
+          .split('\n')
+          .map((l) => l.trim())
+          .toList();
+      final nonEmptyLines = plainLines
+          .where((l) => l.isNotEmpty && l != '//')
+          .toList();
+      if (nonEmptyLines.isEmpty) return main;
+
+      if (main.lines.length == plainLines.length) {
+        for (int i = 0; i < main.lines.length; i++) {
+          if (plainLines[i].isNotEmpty && plainLines[i] != '//') {
+            main.lines[i].translation = plainLines[i];
+          }
+        }
+        return main;
+      }
+
+      int plainIdx = 0;
+      for (var i = 0; i < main.lines.length && plainIdx < plainLines.length; i++) {
+        if (main.lines[i].content.trim().isNotEmpty) {
+          while (plainIdx < plainLines.length &&
+              (plainLines[plainIdx].isEmpty || plainLines[plainIdx] == '//')) {
+            plainIdx++;
+          }
+          if (plainIdx < plainLines.length) {
+            main.lines[i].translation = plainLines[plainIdx++];
+          }
         }
       }
       return main;
     }
 
-    // 时间窗口匹配算法
-    // tolerance 只用于补偿微小的时间偏差，不允许跨行匹配
-    const tolerance = 100;
+    if (main.lines.isEmpty || transLines.isEmpty) return main;
 
-    int transIdx = 0;
+    // 最大容许的时间漂移（5秒）
+    const double maxDrift = 5000.0;
+    int lastMatchedMainIdx = -1;
 
-    for (var i = 0; i < main.lines.length; i++) {
-      final curr = main.lines[i];
-      final currStartMs = curr.start.inMilliseconds;
-      final nextStartMs = curr.nextTime.inMilliseconds;
+    for (final te in transLines) {
+      final transContent = te.content.trim();
+      if (transContent.isEmpty || transContent == '//') continue;
 
-      // 跳过空行（保持翻译对齐）
-      if (curr.content.trim().isEmpty) {
-        continue;
-      }
+      int minDiffIdx = -1;
+      double minDiff = double.infinity;
 
-      // 取当前行和下一行的中点作为右边界，防止跨行匹配
-      final rightBoundary =
-          currStartMs + (nextStartMs - currStartMs) ~/ 2 + tolerance;
+      // 强制从上一次匹配成功的下一行开始找，防止覆盖数据
+      int startIndex = lastMatchedMainIdx + 1;
 
-      while (transIdx < transLines.length) {
-        final te = transLines[transIdx];
-        final transStart = te.start.inMilliseconds;
+      for (int i = startIndex; i < main.lines.length; i++) {
+        final currMain = main.lines[i];
+        if (currMain.content.trim().isEmpty) continue;
 
-        // 翻译行太早，跳过
-        if (transStart < currStartMs - tolerance) {
-          transIdx++;
-          continue;
-        }
+        // 计算当前原文和这句翻译的时间差
+        final double diff = (currMain.start.inMilliseconds - te.start.inMilliseconds).abs().toDouble();
 
-        // 翻译行已经过中点，属于下一行的候选
-        if (transStart > rightBoundary) {
+        if (diff < minDiff) {
+          minDiff = diff;
+          minDiffIdx = i;
+        } else if (diff > minDiff) {
+          // 由于时间戳是递增的，当时间差开始变大时，说明已经越过了最小时间差，直接停止查找
           break;
         }
+      }
 
-        // 命中时间窗口
-        final transContent = te.content.trim();
-        if (transContent.isNotEmpty && transContent != '//') {
-          curr.translation = transContent;
-        }
-        transIdx++;
-        break;
+      // 若找到了最近的行，并且误差在合理范围内，则进行赋值
+      if (minDiffIdx != -1 && minDiff <= maxDrift) {
+        main.lines[minDiffIdx].translation = transContent;
+        // 推进游标，下一句翻译只能找 minDiffIdx 之后的行
+        lastMatchedMainIdx = minDiffIdx;
       }
     }
 
@@ -373,46 +414,89 @@ class LrcTool {
     if (romaText == null || romaText.isEmpty) return main;
 
     final romaLines = _parseLrc(romaText);
-    if (romaLines.isEmpty) return main;
 
-    if (main.lines.length == romaLines.length) {
-      for (int i = 0; i < main.lines.length; i++) {
-        if (romaLines[i].content.trim().isNotEmpty) {
-          main.lines[i].romanization = romaLines[i].content;
+    // 尝试解析 KRC/QRC/YRC 格式（如 QQ 源的罗马音）
+    if (romaLines.isEmpty) {
+      final karaokeFormat = _detectFormat(romaText);
+      if (karaokeFormat == LyricFormat.qrc ||
+          karaokeFormat == LyricFormat.krc ||
+          karaokeFormat == LyricFormat.yrc) {
+        final entries = _parseByFormat(romaText, karaokeFormat);
+        if (entries.isNotEmpty) {
+          final plainText = entries.map((e) => e.content).join('\n');
+          return _mergeRomanizationText(main, plainText);
+        }
+      }
+    }
+
+    if (romaLines.isEmpty) {
+      final plainLines = romaText
+          .split('\n')
+          .map((l) => l.trim())
+          .toList();
+      final nonEmptyLines = plainLines
+          .where((l) => l.isNotEmpty && l != '//')
+          .toList();
+      if (nonEmptyLines.isEmpty) return main;
+
+      if (main.lines.length == plainLines.length) {
+        for (int i = 0; i < main.lines.length; i++) {
+          if (plainLines[i].isNotEmpty && plainLines[i] != '//') {
+            main.lines[i].romanization = plainLines[i];
+          }
+        }
+        return main;
+      }
+
+      int plainIdx = 0;
+      for (var i = 0; i < main.lines.length && plainIdx < plainLines.length; i++) {
+        if (main.lines[i].content.trim().isNotEmpty) {
+          while (plainIdx < plainLines.length &&
+              (plainLines[plainIdx].isEmpty || plainLines[plainIdx] == '//')) {
+            plainIdx++;
+          }
+          if (plainIdx < plainLines.length) {
+            main.lines[i].romanization = plainLines[plainIdx++];
+          }
         }
       }
       return main;
     }
 
-    const tolerance = 100;
-    int romaIdx = 0;
-    for (var i = 0; i < main.lines.length; i++) {
-      final curr = main.lines[i];
-      final currStartMs = curr.start.inMilliseconds;
-      final nextStartMs = curr.nextTime.inMilliseconds;
-      final rightBoundary =
-          currStartMs + (nextStartMs - currStartMs) ~/ 2 + tolerance;
+    if (main.lines.isEmpty || romaLines.isEmpty) return main;
 
-      while (romaIdx < romaLines.length) {
-        final re = romaLines[romaIdx];
-        final romaStartMs = re.start.inMilliseconds;
+    const double maxDrift = 5000.0;
+    int lastMatchedMainIdx = -1;
 
-        // 罗马音行太早，跳过
-        if (romaStartMs < currStartMs - tolerance) {
-          romaIdx++;
-          continue;
-        }
+    for (final romaLine in romaLines) {
+      final romaContent = romaLine.content.trim();
+      if (romaContent.isEmpty) continue;
 
-        // 罗马音行已过半程，属于下一行
-        if (romaStartMs > rightBoundary) {
+      int minDiffIdx = -1;
+      double minDiff = double.infinity;
+
+      int startIndex = lastMatchedMainIdx + 1;
+
+      for (int i = startIndex; i < main.lines.length; i++) {
+        final currMain = main.lines[i];
+        if (currMain.content.trim().isEmpty) continue;
+
+        final double diff =
+            (currMain.start.inMilliseconds - romaLine.start.inMilliseconds)
+                .abs()
+                .toDouble();
+
+        if (diff < minDiff) {
+          minDiff = diff;
+          minDiffIdx = i;
+        } else if (diff > minDiff) {
           break;
         }
+      }
 
-        if (re.content.trim().isNotEmpty) {
-          curr.romanization = re.content;
-        }
-        romaIdx++;
-        break;
+      if (minDiffIdx != -1 && minDiff <= maxDrift) {
+        main.lines[minDiffIdx].romanization = romaContent;
+        lastMatchedMainIdx = minDiffIdx;
       }
     }
     return main;
@@ -470,4 +554,18 @@ class LrcTool {
     // 无逐字数据：用 start + 估计时长 3500ms
     return entry.start.inMilliseconds + 3500;
   }
+}
+
+Future<ParsedLyricResult?> parseLyricInIsolate({
+  required String text,
+  String? transText,
+  String? romanizationText,
+}) async {
+  return Isolate.run(() {
+    return LrcTool.parse(
+      text,
+      transText: transText,
+      romanizationText: romanizationText,
+    );
+  });
 }
