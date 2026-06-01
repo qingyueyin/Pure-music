@@ -15,6 +15,10 @@ class BassFx {
   final ffi.DynamicLibrary _lib;
   BassFx(ffi.DynamicLibrary dynamicLibrary) : _lib = dynamicLibrary;
 
+  void close() {
+    _lib.close();
+  }
+
   /// HSTREAM BASS_FX_TempoCreate(DWORD chan, DWORD flags);
   late final _BASS_FX_TempoCreatePtr = () {
     try {
