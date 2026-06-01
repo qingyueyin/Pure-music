@@ -1,76 +1,16 @@
 import 'package:pure_music/page/page_scaffold.dart';
-import 'package:pure_music/page/settings_page/artist_separator_editor.dart';
-import 'package:pure_music/page/settings_page/check_update.dart';
-import 'package:pure_music/page/settings_page/create_issue.dart';
-import 'package:pure_music/page/settings_page/other_settings.dart';
-import 'package:pure_music/page/settings_page/theme_settings.dart';
+import 'package:pure_music/page/settings_page/settings_tabs.dart';
 import 'package:flutter/material.dart';
-
-class _SettingsSectionHeader extends StatelessWidget {
-  const _SettingsSectionHeader(this.text);
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.only(top: 8.0),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: scheme.onSurface.withValues(alpha: 0.75),
-          fontSize: 14.0,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
-  }
-}
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return PageScaffold(
+    return const PageScaffold(
       title: '设置',
-      actions: const [],
-      body: Row(
-        children: [
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.only(bottom: 96.0),
-              children: const [
-                _SettingsSectionHeader('库与扫描'),
-                SizedBox(height: 16.0),
-                DefaultLyricSourceControl(),
-                SizedBox(height: 16.0),
-                OnlineLyricSettings(),
-                SizedBox(height: 24.0),
-                _SettingsSectionHeader('播放'),
-                SizedBox(height: 24.0),
-                _SettingsSectionHeader('外观'),
-                DynamicThemeSwitch(),
-                SizedBox(height: 16.0),
-                ThemeModeControl(),
-                SizedBox(height: 16.0),
-                AppearanceAdvancedSettingsTile(),
-                SizedBox(height: 16.0),
-                NowPlayingBackgroundModeToggle(),
-                SizedBox(height: 24.0),
-                _SettingsSectionHeader('高级与关于'),
-                ArtistSeparatorEditor(),
-                SizedBox(height: 16.0),
-                CreateIssueTile(),
-                SizedBox(height: 16.0),
-                CheckForUpdate(),
-              ],
-            ),
-          ),
-          const SizedBox(width: 20),
-        ],
-      ),
+      actions: [],
+      body: SettingsTabs(),
     );
   }
 }
