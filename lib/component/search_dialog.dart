@@ -27,6 +27,12 @@ class SearchDialog extends StatefulWidget {
   State<SearchDialog> createState() => _SearchDialogState();
 }
 
+class _SearchCategory {
+  final String label;
+  final IconData icon;
+  const _SearchCategory(this.label, this.icon);
+}
+
 class _SearchDialogState extends State<SearchDialog> {
   late final TextEditingController _searchController = TextEditingController();
   late final ValueNotifier<UnionSearchResult> _result = ValueNotifier(
@@ -34,6 +40,13 @@ class _SearchDialogState extends State<SearchDialog> {
   );
   late final ValueNotifier<bool> _isSearching = ValueNotifier(false);
   Timer? _debounce;
+  int _currentIndex = 0;
+
+  static const _tabs = [
+    _SearchCategory('音乐', Symbols.music_note),
+    _SearchCategory('艺术家', Symbols.person),
+    _SearchCategory('专辑', Symbols.album),
+  ];
 
   @override
   void dispose() {
@@ -42,31 +55,6 @@ class _SearchDialogState extends State<SearchDialog> {
     _result.dispose();
     _isSearching.dispose();
     super.dispose();
-  }
-
-  Widget _sectionHeader(ColorScheme scheme, String title, {String? subtitle}) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
-      child: Row(
-        children: [
-          Text(
-            title,
-            style: TextStyle(
-              color: scheme.onSurface,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          if (subtitle != null) ...[
-            const SizedBox(width: 8),
-            Text(
-              subtitle,
-              style: TextStyle(color: scheme.onSurfaceVariant),
-            ),
-          ],
-        ],
-      ),
-    );
   }
 
   void _onQueryChanged(String raw) {
@@ -81,9 +69,14 @@ class _SearchDialogState extends State<SearchDialog> {
     _isSearching.value = true;
     _debounce = Timer(const Duration(milliseconds: 450), () {
       if (!mounted) return;
-      _result.value = UnionSearchResult.search(query);
+      _search(query);
       _isSearching.value = false;
     });
+  }
+
+  void _search(String query) {
+    final scope = SearchScope.values[_currentIndex];
+    _result.value = UnionSearchResult.search(query, scope: scope);
   }
 
   Widget _musicActionBar(Audio audio) {
@@ -109,6 +102,7 @@ class _SearchDialogState extends State<SearchDialog> {
                   return;
                 }
                 playlist.addPath(audio.path);
+                savePlaylists();
                 showTextOnSnackBar(
                   '成功将${audio.title}添加到歌单${playlist.name}',
                 );
@@ -152,6 +146,7 @@ class _SearchDialogState extends State<SearchDialog> {
         width: width,
         height: height,
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Focus(
               onFocusChange: HotkeysHelper.onFocusChanges,
@@ -196,6 +191,53 @@ class _SearchDialogState extends State<SearchDialog> {
                     : const SizedBox(height: 12.0),
               ),
             ),
+            ValueListenableBuilder(
+              valueListenable: _result,
+              builder: (context, result, _) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12.0),
+                  child: Wrap(
+                    spacing: 8.0,
+                    runSpacing: 8.0,
+                    children: List.generate(_tabs.length, (i) {
+                      final selected = _currentIndex == i;
+                      return OutlinedButton.icon(
+                        onPressed: () {
+                          setState(() => _currentIndex = i);
+                          final query = _searchController.text.trim();
+                          if (query.isNotEmpty) {
+                            _search(query);
+                          }
+                        },
+                        icon: Icon(
+                          _tabs[i].icon,
+                          size: 18,
+                          color: selected ? scheme.onPrimary : scheme.onSurface,
+                        ),
+                        label: Text(
+                          _tabs[i].label,
+                          style: TextStyle(
+                            color:
+                                selected ? scheme.onPrimary : scheme.onSurface,
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          backgroundColor:
+                              selected ? scheme.primary : Colors.transparent,
+                          side: BorderSide(
+                            color: selected ? scheme.primary : scheme.outline,
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 10,
+                          ),
+                        ),
+                      );
+                    }),
+                  ),
+                );
+              },
+            ),
             Expanded(
               child: ValueListenableBuilder(
                 valueListenable: _result,
@@ -208,7 +250,11 @@ class _SearchDialogState extends State<SearchDialog> {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Symbols.search, size: 48, color: scheme.outline),
+                            Icon(
+                              Symbols.search,
+                              size: 48,
+                              color: scheme.outline,
+                            ),
                             const SizedBox(height: 12),
                             Text(
                               '输入关键词开始搜索',
@@ -221,7 +267,8 @@ class _SearchDialogState extends State<SearchDialog> {
                             const SizedBox(height: 4),
                             Text(
                               '支持搜索歌曲、艺术家、专辑。',
-                              style: TextStyle(color: scheme.onSurfaceVariant),
+                              style:
+                                  TextStyle(color: scheme.onSurfaceVariant),
                             ),
                           ],
                         ),
@@ -229,91 +276,69 @@ class _SearchDialogState extends State<SearchDialog> {
                     );
                   }
 
-                  final slivers = <Widget>[];
-                  if (value.audios.isNotEmpty) {
-                    slivers.add(
-                      SliverToBoxAdapter(
-                        child: _sectionHeader(
-                          scheme,
-                          '音乐',
-                          subtitle: '${value.audios.length} 首',
-                        ),
-                      ),
-                    );
-                    slivers.add(
-                      SliverList.builder(
-                        itemCount: value.audios.length,
-                        itemBuilder: (context, i) => AudioTile(
-                          audioIndex: i,
-                          playlist: value.audios,
-                          action: _musicActionBar(value.audios[i]),
-                        ),
-                      ),
-                    );
-                  }
-
-                  if (value.artists.isNotEmpty) {
-                    slivers.add(
-                      SliverToBoxAdapter(
-                        child: _sectionHeader(
-                          scheme,
-                          '艺术家',
-                          subtitle: '${value.artists.length} 位',
-                        ),
-                      ),
-                    );
-                    slivers.add(
-                      SliverList.builder(
-                        itemCount: value.artists.length,
-                        itemBuilder: (context, i) => ArtistTile(
-                          artist: value.artists[i],
-                        ),
-                      ),
-                    );
-                  }
-
-                  if (value.album.isNotEmpty) {
-                    slivers.add(
-                      SliverToBoxAdapter(
-                        child: _sectionHeader(
-                          scheme,
-                          '专辑',
-                          subtitle: '${value.album.length} 张',
-                        ),
-                      ),
-                    );
-                    slivers.add(
-                      SliverList.builder(
-                        itemCount: value.album.length,
-                        itemBuilder: (context, i) => AlbumTile(
-                          album: value.album[i],
-                        ),
-                      ),
-                    );
-                  }
-
-                  if (slivers.isEmpty) {
-                    return Center(
-                      child: Text(
-                        '没有找到相关结果',
-                        style: TextStyle(color: scheme.onSurfaceVariant),
-                      ),
-                    );
-                  }
-
-                  slivers.add(
-                    const SliverPadding(
-                      padding: EdgeInsets.only(bottom: 12.0),
-                    ),
+                  return IndexedStack(
+                    index: _currentIndex,
+                    children: [
+                      _buildMusicList(value),
+                      _buildArtistList(value),
+                      _buildAlbumList(value),
+                    ],
                   );
-
-                  return CustomScrollView(slivers: slivers);
                 },
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildMusicList(UnionSearchResult value) {
+    if (value.audios.isEmpty) {
+      return const Center(child: Text('没有找到相关音乐'));
+    }
+    return CustomScrollView(
+      slivers: [
+        SliverList.builder(
+          itemCount: value.audios.length,
+          itemBuilder: (context, i) => AudioTile(
+            audioIndex: i,
+            playlist: value.audios,
+            action: _musicActionBar(value.audios[i]),
+          ),
+        ),
+        const SliverPadding(padding: EdgeInsets.only(bottom: 12.0)),
+      ],
+    );
+  }
+
+  Widget _buildArtistList(UnionSearchResult value) {
+    if (value.artists.isEmpty) {
+      return const Center(child: Text('没有找到相关艺术家'));
+    }
+    return CustomScrollView(
+      slivers: [
+        SliverList.builder(
+          itemCount: value.artists.length,
+          itemBuilder: (context, i) => ArtistTile(artist: value.artists[i]),
+        ),
+        const SliverPadding(padding: EdgeInsets.only(bottom: 12.0)),
+      ],
+    );
+  }
+
+  Widget _buildAlbumList(UnionSearchResult value) {
+    if (value.album.isEmpty) {
+      return const Center(child: Text('没有找到相关专辑'));
+    }
+    return CustomScrollView(
+      slivers: [
+        SliverList.builder(
+          itemCount: value.album.length,
+          itemBuilder: (context, i) => AlbumTile(album: value.album[i]),
+        ),
+        const SliverPadding(padding: EdgeInsets.only(bottom: 12.0)),
+      ],
     );
   }
 }
