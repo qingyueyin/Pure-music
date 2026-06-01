@@ -110,19 +110,20 @@ class LyricViewController extends ChangeNotifier {
         enableLineSpring: enableLyricSpring,
       );
 
-  LyricDisplayMode get lyricDisplayMode =>
-      lyricSource == LyricFormat.web
-          ? AppSettings.instance.lyricDisplayMode
-          : LyricDisplayMode.enhanced;
+  void triggerRebuild() {
+    notifyListeners();
+  }
 
-  ZhConversionMode get zhConversionMode =>
-      lyricSource == LyricFormat.web
-          ? AppSettings.instance.zhConversionMode
-          : ZhConversionMode.none;
+  LyricDisplayMode get lyricDisplayMode => AppSettings.instance.lyricDisplayMode;
 
-  bool get removeEmptyLines => lyricSource == LyricFormat.web
-      ? AppSettings.instance.removeEmptyLines
-      : false;
+  ZhConversionMode get zhConversionMode => AppSettings.instance.zhConversionMode;
+
+  bool get removeEmptyLines => AppSettings.instance.removeEmptyLines;
+
+  void setRemoveEmptyLines(bool value) {
+    AppSettings.instance.removeEmptyLines = value;
+    notifyListeners();
+  }
 
   void switchLyricTextAlign() {
     lyricTextAlign = switch (lyricTextAlign) {
@@ -131,6 +132,7 @@ class LyricViewController extends ChangeNotifier {
       LyricTextAlign.right => LyricTextAlign.left,
     };
     nowPlayingPagePref.lyricTextAlign = lyricTextAlign;
+    AppPreference.instance.save();
     notifyListeners();
   }
 
@@ -157,6 +159,21 @@ class LyricViewController extends ChangeNotifier {
   void toggleLyricTranslation() {
     showLyricTranslation = !showLyricTranslation;
     nowPlayingPagePref.showLyricTranslation = showLyricTranslation;
+    AppPreference.instance.save();
+    notifyListeners();
+  }
+
+  void setShowLyricTranslation(bool value) {
+    showLyricTranslation = value;
+    nowPlayingPagePref.showLyricTranslation = value;
+    AppPreference.instance.save();
+    notifyListeners();
+  }
+
+  void setShowLyricRoman(bool value) {
+    showLyricRoman = value;
+    nowPlayingPagePref.showLyricRoman = value;
+    AppPreference.instance.save();
     notifyListeners();
   }
 
@@ -320,7 +337,7 @@ class _LyricRomanSwitchBtn extends StatelessWidget {
 
     return IconButton(
       onPressed: lyricViewController.toggleLyricRoman,
-      tooltip: enabled ? '歌词罗马音：显示' : '歌词罗马音：隐藏',
+      tooltip: enabled ? '歌词注音：显示' : '歌词注音：隐藏',
       color: scheme.onSecondaryContainer,
       icon: Icon(
         Symbols.language,
