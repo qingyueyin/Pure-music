@@ -181,7 +181,7 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
                   final nowPlaying = playbackService.nowPlaying;
                   final heroEnabled = !playbackService.nowPlayingChangedRecently;
                   final placeholder = Icon(
-                    Symbols.broken_image,
+                    Symbols.queue_music,
                     size: 48.0,
                     color: scheme.onSecondaryContainer,
                   );
