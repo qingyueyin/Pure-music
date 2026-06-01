@@ -383,6 +383,8 @@ Future<Map<String, dynamic>?> kgLyric(String hash) async {
 
     if (lyricText == null || lyricText.isEmpty) return null;
 
+    lyricText = _decodeHtmlEntities(lyricText);
+
     return {
       'lyric': lyricText,
       'fmt': downloadResp['fmt'] ?? 'lrc',
@@ -392,4 +394,15 @@ Future<Map<String, dynamic>?> kgLyric(String hash) async {
     logger.e('KgSource: lyric failed: $e');
     return null;
   }
+}
+
+String _decodeHtmlEntities(String input) {
+  return input
+      .replaceAll('&amp;', '&')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&apos;', "'")
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&#39;', "'")
+      .replaceAll('&nbsp;', ' ');
 }
