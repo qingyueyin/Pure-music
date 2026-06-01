@@ -1,7 +1,8 @@
 import 'dart:async';
-import 'package:file_picker/file_picker.dart';
+import 'package:pure_music/native/folder_picker_windows.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/preference.dart';
+import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/component/build_index_state_view.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
@@ -110,13 +111,13 @@ class _FolderSelectorViewState extends State<FolderSelectorView> {
           children: [
             FilledButton(
               onPressed: () async {
-                final path = await FilePicker.platform.getDirectoryPath(
-                  dialogTitle: '选择文件夹',
+                final paths = pickMultipleDirectories(
+                  title: '选择文件夹',
                 );
-                if (path == null) return;
+                if (paths.isEmpty) return;
 
                 setState(() {
-                  folders.add(path);
+                  folders.addAll(paths.where((p) => !folders.contains(p)));
                 });
               },
               child: const Text('添加文件夹'),
@@ -202,10 +203,52 @@ class _WindowControlls extends StatefulWidget {
 
 class __WindowControllsState extends State<_WindowControlls>
     with WindowListener {
+  bool _isMaximized = false;
+  bool _isClosing = false;
+
   @override
   void initState() {
     super.initState();
     windowManager.addListener(this);
+    _updateMaximizedState();
+  }
+
+  Future<void> _updateMaximizedState() async {
+    final isMaximized = await windowManager.isMaximized();
+    if (mounted) {
+      setState(() {
+        _isMaximized = isMaximized;
+      });
+    }
+  }
+
+  Future<void> _exitApp() async {
+    if (_isClosing) return;
+    _isClosing = true;
+
+    try {
+      await windowManager.hide().timeout(const Duration(milliseconds: 500));
+    } catch (_) {}
+
+    try {
+      await HotkeysHelper.unregisterAll().timeout(
+        const Duration(milliseconds: 300),
+      );
+    } catch (_) {}
+
+    try {
+      await AppSettings.instance.saveSettings().timeout(
+        const Duration(seconds: 1),
+      );
+    } catch (_) {}
+
+    try {
+      await AppPreference.instance.save().timeout(const Duration(seconds: 1));
+    } catch (_) {}
+
+    try {
+      await windowManager.destroy().timeout(const Duration(seconds: 2));
+    } catch (_) {}
   }
 
   @override
@@ -215,18 +258,27 @@ class __WindowControllsState extends State<_WindowControlls>
   }
 
   @override
+  void onWindowClose() {
+    _exitApp();
+  }
+
+  @override
   void onWindowMaximize() {
-    setState(() {});
+    setState(() {
+      _isMaximized = true;
+    });
   }
 
   @override
   void onWindowUnmaximize() {
-    setState(() {});
+    setState(() {
+      _isMaximized = false;
+    });
   }
 
   @override
   void onWindowRestore() {
-    setState(() {});
+    _updateMaximizedState();
   }
 
   @override
@@ -239,24 +291,17 @@ class __WindowControllsState extends State<_WindowControlls>
           onPressed: windowManager.minimize,
           icon: const Icon(Symbols.remove),
         ),
-        FutureBuilder(
-          future: windowManager.isMaximized(),
-          builder: (context, snapshot) {
-            final isMaximized = snapshot.data ?? false;
-            return IconButton(
-              tooltip: isMaximized ? '还原' : '最大化',
-              onPressed: isMaximized
-                  ? windowManager.unmaximize
-                  : windowManager.maximize,
-              icon: Icon(
-                isMaximized ? Symbols.fullscreen_exit : Symbols.fullscreen,
-              ),
-            );
-          },
+        IconButton(
+          tooltip: _isMaximized ? '还原' : '最大化',
+          onPressed:
+              _isMaximized ? windowManager.unmaximize : windowManager.maximize,
+          icon: Icon(
+            _isMaximized ? Symbols.fullscreen_exit : Symbols.fullscreen,
+          ),
         ),
         IconButton(
           tooltip: '退出',
-          onPressed: windowManager.close,
+          onPressed: _exitApp,
           icon: const Icon(Symbols.close),
         ),
       ],
