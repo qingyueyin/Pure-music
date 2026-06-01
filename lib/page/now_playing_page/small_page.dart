@@ -84,27 +84,11 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
                           padding: const EdgeInsets.symmetric(horizontal: 0),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(12.0),
-                            child: ShaderMask(
-                              shaderCallback: (Rect bounds) {
-                                return const LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [
-                                    Colors.transparent,
-                                    Colors.black,
-                                    Colors.black,
-                                    Colors.transparent,
-                                  ],
-                                  stops: [0.0, 0.08, 0.92, 1.0],
-                                ).createShader(bounds);
-                              },
-                              blendMode: BlendMode.dstIn,
-                              child: const VerticalLyricView(
-                                showControls: true,
-                                centerVertically: false,
-                                enableEdgeSpacer: true,
-                                currentLineAlignment: 0.3,
-                              ),
+                            child: const VerticalLyricView(
+                              showControls: true,
+                              centerVertically: false,
+                              enableEdgeSpacer: true,
+                              currentLineAlignment: 0.3,
                             ),
                           ),
                         ),
