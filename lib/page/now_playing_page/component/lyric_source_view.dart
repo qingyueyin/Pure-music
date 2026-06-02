@@ -45,7 +45,7 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
   bool _isSearching = false;
   bool _isLoadingMore = false;
   bool _hasMore = true;
-  static const int _pageSize = 5;
+  static const int _pageSize = 12;
   static const int _apiPageSize = 30;
 
   @override
@@ -116,6 +116,8 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
             addedCount++;
           }
         }
+        // 重新按分数降序排列整个列表，确保最佳匹配始终在前
+        existing.sort((a, b) => b.score.compareTo(a.score));
         _apiPageMap[source] = nextApiPage;
         _hasMore = newResults.isNotEmpty && addedCount > 0;
         // 加载完成后自动翻到下一页显示
@@ -146,29 +148,33 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
 
   Future<List<SongSearchResult>> _searchSingleSource(
       String query, ResultSource source, {int page = 1}) async {
+    List<SongSearchResult> results;
     switch (source) {
       case ResultSource.qq:
         final raw = await net_api.qqSearchLyric(keyword: query, page: page, pageSize: _apiPageSize);
-        return raw
+        results = raw
             .map((item) => SongSearchResult.fromQQSearchItem(item, widget.audio))
             .where((r) => r != null && r.score >= 0)
             .cast<SongSearchResult>()
             .toList();
       case ResultSource.ne:
         final raw = await net_api.neSearchLyric(keyword: query, page: page, pageSize: _apiPageSize);
-        return raw
+        results = raw
             .map((item) => SongSearchResult.fromNeSearchItem(item, widget.audio))
             .where((r) => r != null && r.score >= 0)
             .cast<SongSearchResult>()
             .toList();
       case ResultSource.kugou:
         final raw = await net_api.kgSearchLyric(keyword: query, page: page, pageSize: _apiPageSize);
-        return raw
+        results = raw
             .map((item) => SongSearchResult.fromKugouSearchItem(item, widget.audio))
             .where((r) => r != null && r.score >= 0)
             .cast<SongSearchResult>()
             .toList();
     }
+    // 按分数降序排列，最匹配的排前面，减少翻页
+    results.sort((a, b) => b.score.compareTo(a.score));
+    return results;
   }
 
   void _switchSource(ResultSource source) {
