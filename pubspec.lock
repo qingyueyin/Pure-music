@@ -519,10 +519,10 @@ packages:
     dependency: "direct main"
     description:
       name: material_symbols_icons
-      sha256: c62b15f2b3de98d72cbff0148812f5ef5159f05e61fc9f9a089ec2bb234df082
+      sha256: "10a74aaa9e566c92f8aa14809d2dd78156fb93743348ebffec0345c38eb35706"
       url: "https://pub.dev"
     source: hosted
-    version: "4.2906.0"
+    version: "4.2928.1"
   mesh_gradient:
     dependency: "direct main"
     description:
@@ -880,7 +880,7 @@ packages:
     source: hosted
     version: "3.1.0"
   win32:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: win32
       sha256: d7cb55e04cd34096cd3a79b3330245f54cb96a370a1c27adb3c84b917de8b08e
