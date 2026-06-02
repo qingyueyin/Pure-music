@@ -72,8 +72,9 @@ Future<void> main() async {
 
   // 优化 ImageCache：调小上限，大曲库下减少内存压力
   // 默认: maximumSize=100, maximumSizeBytes=100MB
-  PaintingBinding.instance.imageCache.maximumSize = 30;
-  PaintingBinding.instance.imageCache.maximumSizeBytes = 24 << 20; // 24MB
+  // 经 DevTools 实测 RSS 约 317MB，Dart Heap 仅 30MB，瓶颈在 Native 内存
+  PaintingBinding.instance.imageCache.maximumSize = 15;
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 12 << 20; // 12MB
 
   final singleInstance = FlutterSingleInstance();
   if (!await singleInstance.isFirstInstance()) {
@@ -121,26 +122,29 @@ Timer? _memoryMonitorTimer;
 
 void _startMemoryMonitor() {
   _memoryMonitorTimer?.cancel();
-  _memoryMonitorTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+  _memoryMonitorTimer = Timer.periodic(const Duration(seconds: 15), (_) {
     try {
       final rssMB = (ProcessInfo.currentRss / (1024 * 1024)).round();
-      if (rssMB > 250) {
-        logger.w('[mem] RSS ${rssMB}MB > 250, tier-3 emergency cleanup');
+      if (rssMB > 200) {
+        logger.w('[mem] RSS ${rssMB}MB > 200, tier-3 emergency cleanup');
         PaintingBinding.instance.imageCache.clear();
         PaintingBinding.instance.imageCache.clearLiveImages();
         CoverImageCache.instance.clear();
+        CoverCache.instance.clear();
         AudioLibrary.instance.evictAllCoversExcept(
           PlayService.instance.playbackService.nowPlaying?.path,
         );
         clearLyricCaches();
-      } else if (rssMB > 180) {
-        logger.w('[mem] RSS ${rssMB}MB > 180, tier-2 cleanup');
+      } else if (rssMB > 150) {
+        logger.w('[mem] RSS ${rssMB}MB > 150, tier-2 cleanup');
         PaintingBinding.instance.imageCache.clear();
+        PaintingBinding.instance.imageCache.clearLiveImages();
         CoverImageCache.instance.clear();
+        CoverCache.instance.clear();
         AudioLibrary.instance.evictAllCoversExcept(
           PlayService.instance.playbackService.nowPlaying?.path,
         );
-      } else if (rssMB > 120) {
+      } else if (rssMB > 100) {
         PaintingBinding.instance.imageCache.clear();
       }
     } catch (_) {}
@@ -157,6 +161,7 @@ void trimAllMemory() {
   PaintingBinding.instance.imageCache.clear();
   PaintingBinding.instance.imageCache.clearLiveImages();
   CoverImageCache.instance.trimMemory();
+  CoverImageCache.instance.clear();
   AudioLibrary.instance.evictAllCoversExcept(
     PlayService.instance.playbackService.nowPlaying?.path,
   );
