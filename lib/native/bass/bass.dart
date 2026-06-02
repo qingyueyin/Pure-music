@@ -2,6 +2,8 @@
 // ignore_for_file: type=lint, unused_field, unused_element
 import 'dart:ffi' as ffi;
 
+const int BASS_CONFIG_BUFFER = 0;
+
 const int BASS_ERROR_UNKNOWN = -1;
 
 const int BASS_ERROR_NOTAUDIO = 17;
@@ -225,6 +227,17 @@ class Bass {
       _lookup<ffi.NativeFunction<BOOL Function(DWORD)>>('BASS_ChannelPause');
   late final _BASS_ChannelPause =
       _BASS_ChannelPausePtr.asFunction<int Function(int)>();
+
+  int BASS_SetConfig(int option, int value) {
+    return _BASS_SetConfig(option, value);
+  }
+
+  late final _BASS_SetConfigPtr =
+      _lookup<ffi.NativeFunction<BOOL Function(DWORD, DWORD)>>(
+        'BASS_SetConfig',
+      );
+  late final _BASS_SetConfig =
+      _BASS_SetConfigPtr.asFunction<int Function(int, int)>();
 
   int BASS_ChannelStart(int handle) {
     return _BASS_ChannelStart(handle);
