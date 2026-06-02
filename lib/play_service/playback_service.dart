@@ -11,7 +11,6 @@ import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/native/rust/api/smtc_flutter.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/core/theme.dart';
-import 'package:pure_music/core/color_extraction.dart';
 import 'package:flutter/foundation.dart';
 
 /// 只通知 now playing 变更
@@ -195,7 +194,6 @@ class PlaybackService extends ChangeNotifier {
         .mark('useExclusiveMode', extra: {'exclusive': exclusive});
     if (_player.useExclusiveMode(exclusive)) {
       _wasapiExclusive.value = exclusive;
-      playService.lyricService.findCurrLyricLineAt(_player.position);
     }
   }
 
@@ -304,16 +302,7 @@ class PlaybackService extends ChangeNotifier {
       // 切歌时立即回收其他 Audio 的封面缓存
       AudioLibrary.instance.evictAllCoversExcept(nowPlaying!.path);
       // 预加载 smallCoverBytes，确保播放页过渡动画时立即有封面可用
-      nowPlaying!.loadSmallCoverBytes().then((_) {
-        final bytes = nowPlaying!.smallCoverBytes;
-        if (bytes != null) {
-          ColorExtractionService().extractDominantColor(bytes).then((color) {
-            if (color != null) {
-              ColorExtractionService().cacheColorForPath(nowPlaying!.path, color);
-            }
-          });
-        }
-      });
+      nowPlaying!.loadSmallCoverBytes();
 
       _player.setSource(nowPlaying!.path);
       setVolumeDsp(AppPreference.instance.playbackPref.volumeDsp);
@@ -417,6 +406,42 @@ class PlaybackService extends ChangeNotifier {
           playlistIndex: _playlistIndex!,
           nowPlaying: nowPlaying!,
         );
+      }
+    }
+  }
+
+  /// 清空播放队列
+  void clearQueue() {
+    logger.i('[action] clearQueue');
+    AudioEchoLogRecorder.instance.mark('clearQueue');
+    _player.pause();
+    _playlist.value = [];
+    _playlistBackup = [];
+    _playlistIndex = null;
+    _nowPlaying.value = null;
+    _smtc.updateState(state: SMTCState.paused);
+  }
+
+  /// 从播放队列中移除指定索引的曲目
+  void removeFromQueue(int index) {
+    logger.i('[action] removeFromQueue index=$index');
+    AudioEchoLogRecorder.instance.mark('removeFromQueue', extra: {'index': index});
+    if (index < 0 || index >= _playlist.value.length) return;
+    final wasPlaying = _playlistIndex == index;
+    _playlist.value = [..._playlist.value]..removeAt(index);
+    _playlistBackup = _playlist.value;
+    if (_playlistIndex != null) {
+      if (_playlistIndex! > index) {
+        _playlistIndex = _playlistIndex! - 1;
+      } else if (wasPlaying) {
+        // 正在播放的曲目被移除，停在当前位置或播放下一首
+        if (_playlist.value.isEmpty) {
+          _player.pause();
+          _playlistIndex = null;
+          _nowPlaying.value = null;
+        } else if (_playlistIndex! < _playlist.value.length) {
+          _loadAndPlay(_playlistIndex!, _playlist.value);
+        }
       }
     }
   }
@@ -581,75 +606,6 @@ class PlaybackService extends ChangeNotifier {
     }
 
     _loadAndPlay(newIndex, _playlist.value);
-  }
-
-  /// 从播放队列中移除指定索引的歌曲
-  void removeFromQueue(int index) {
-    final currentList = List<Audio>.from(_playlist.value);
-    if (index < 0 || index >= currentList.length) return;
-
-    final removed = currentList.removeAt(index);
-    logger.i('[action] removeFromQueue index=$index path=${removed.path}');
-    AudioEchoLogRecorder.instance.mark('removeFromQueue',
-        extra: {'index': index, 'path': removed.path});
-
-    _playlist.value = currentList;
-    _playlistBackup = currentList;
-
-    if (_playlistIndex != null) {
-      if (index < _playlistIndex!) {
-        // 移除的歌曲在当前播放之前，索引前移
-        _playlistIndex = _playlistIndex! - 1;
-      } else if (index == _playlistIndex!) {
-        // 移除的正是当前播放的歌曲
-        if (_playlistIndex! >= currentList.length) {
-          _playlistIndex = currentList.length - 1;
-        }
-        if (_playlistIndex! >= 0 && _playlistIndex! < currentList.length) {
-          _loadAndPlay(_playlistIndex!, currentList);
-        } else {
-          // 队列已空
-          _player.pause();
-          _playerState.value = PlayerState.stopped;
-          _nowPlaying.value = null;
-          _playlistIndex = null;
-        }
-      }
-      // 移除的歌曲在当前播放之后，索引不变
-    }
-
-    if (_playlistIndex != null && _playlist.value.isNotEmpty) {
-      _persistLastSession(
-        playlist: _playlist.value,
-        playlistIndex: _playlistIndex!,
-        nowPlaying: nowPlaying!,
-      );
-    } else {
-      _pref.lastAudioPath = '';
-      _pref.lastPlaylistPaths = [];
-      _pref.lastPlaylistIndex = 0;
-      _savePlaybackOnly();
-    }
-  }
-
-  /// 清空播放队列
-  void clearQueue() {
-    logger.i('[action] clearQueue');
-    AudioEchoLogRecorder.instance.mark('clearQueue');
-    _player.pause();
-    _playerState.value = PlayerState.stopped;
-    _playlist.value = [];
-    _playlistBackup = [];
-    _playlistIndex = null;
-    _nowPlaying.value = null;
-
-    _pref.lastAudioPath = '';
-    _pref.lastPlaylistPaths = [];
-    _pref.lastPlaylistIndex = 0;
-    _savePlaybackOnly();
-
-    // 更新 SMTC
-    _smtc.updateState(state: SMTCState.paused);
   }
 
   /// 暂停
