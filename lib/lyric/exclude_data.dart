@@ -228,12 +228,23 @@ const List<String> defaultExcludeKeywords = [
 const List<String> defaultExcludeRegexes = [
   '(?:【.*?音乐人.*?】|\\(.*?音乐人.*?\\)|「.*?音乐人.*?」|（.*?音乐人.*?）|『.*?音乐人.*?』)',
   '.*?未经.*?不得.*?',
-  // 版权声明（如 "QQ音乐享有本翻译作品的着作权"）
-  'QQ音乐.*?(?:着作权|著作权|版权)',
-  // 翻译作品声明
-  '(?:翻译|本翻译).*?(?:作品|版权|着作权|著作权)',
+  // QQ音乐版权/翻译声明（含常见变体）
+  'QQ音乐.*?(?:着作权|著作权|版权|提供|出品|发行|翻译|享有|独家)',
+  // 翻译作品声明（含日语"翻訳"）
+  '(?:翻译|本翻译|翻訳|本翻訳).*?(?:作品|版权|着作权|著作权|提供|出品)',
+  // 享有/提供 翻译/歌词 声明
+  '(?:享有|提供|出品|发行).*?(?:翻译|翻訳|歌词).*?(?:作品|版权|着作权|著作权)?',
+  // KRC 首行：曲名 - CJK厂牌名+Records（如 "暁Records"），利用CJK拉丁紧邻特征避免误伤
+  // 仅匹配 - CJK文字 Records/Music/... 格式，不会匹配 - Records playing 这类正常歌词
+  r'[-－]\s*(?:[\u2e80-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]+\s*)+(?:Records|records|Music|music)\b',
+  // KRC 首行：曲名 - 厂牌 (xxx records/music) 格式（括号包裹的厂牌信息）
+  r'[-－].*?\([^)]*(?:records|music|studio|band|project|label|entertainment)[^)]*\)',
 ];
 
 const List<String> defaultExcludeSoftRegexes = [
-  // 第1行 "歌曲名 - 歌手名" 格式已在 matchMetadata 中处理
+  // KRC 首行：标题-歌手分隔符 + 厂牌/音乐相关标签（仅在头部/尾部生效）
+  r'[-－]\s*\S*(?:Music|Studio|Band|Project|Label|Entertainment|Official|Records|records)\b',
+  // KRC 首行：空格短横空格 分隔模式（标题 - 歌手的典型模式）
+  // 结合厂牌关键词由上方 regex 覆盖，此处作为兜底弱匹配
+  r'[^\s]+\s*[-－]\s*[^\s]+',
 ];
