@@ -54,7 +54,7 @@ function Update-RunnerRcVersion([string]$version, [string]$buildMode) {
         return
     }
 
-    $normalized = Normalize-Version $version
+    $normalized = ConvertTo-NormalizedVersion $version
     $parts = $normalized -split '\.'
     $major = $parts[0]
     $minor = $parts[1]
@@ -81,7 +81,7 @@ function Read-Input([string]$prompt) {
     return $v
 }
 
-function Normalize-Version([string]$version) {
+function ConvertTo-NormalizedVersion([string]$version) {
     $cleanVersion = $version.Trim()
     $cleanVersion = $cleanVersion -replace '^[vV]', ''
 
@@ -109,8 +109,8 @@ function Normalize-Version([string]$version) {
     return $normalized
 }
 
-function Validate-Version([string]$version) {
-    $normalized = Normalize-Version $version
+function Test-Version([string]$version) {
+    $normalized = ConvertTo-NormalizedVersion $version
     $parts = $normalized -split '\.'
     $major = [int]$parts[0]
     $minor = [int]$parts[1]
@@ -142,7 +142,7 @@ else {
 }
 
 try {
-    $version = Validate-Version $version
+    $version = Test-Version $version
 } catch {
     Write-Error $_.Exception.Message
     Read-Host "Press Enter to exit..."
@@ -367,7 +367,7 @@ Write-Host "Organizing DLLs into: $finalDllDir" -ForegroundColor Cyan
 $keepDllsInRoot = @(
     "flutter_windows.dll"
 )
-function ShouldKeep-DllInRoot([string]$name) {
+function Test-DllInRoot([string]$name) {
     $n = $name.ToLowerInvariant()
     if ($keepDllsInRoot -contains $name) { return $true }
     if ($n -like "*_plugin.dll") { return $true }
@@ -377,7 +377,7 @@ function ShouldKeep-DllInRoot([string]$name) {
 }
 
 Get-ChildItem -Path $finalAppDir -File -Filter "*.dll" | ForEach-Object {
-    if (ShouldKeep-DllInRoot $_.Name) { return }
+    if (Test-DllInRoot $_.Name) { return }
     Move-Item -Path $_.FullName -Destination (Join-Path $finalDllDir $_.Name) -Force
 }
 
@@ -484,7 +484,7 @@ Write-Host "Self-check:" -ForegroundColor Cyan
 Write-Host "  - version=$version, tag=$tag, dist=$dist, bass_plugins=$bassPluginMode" -ForegroundColor Gray
 
 $failed = @()
-function Check-Exists([string]$name, [string]$path) {
+function Confirm-FileExists([string]$name, [string]$path) {
     if (Test-Path $path) {
         Write-Host ("  [OK]   {0}: {1}" -f $name, $path) -ForegroundColor Green
         return
@@ -493,16 +493,16 @@ function Check-Exists([string]$name, [string]$path) {
     $script:failed += $name
 }
 
-Check-Exists "pure_music.exe" (Join-Path $finalAppDir "pure_music.exe")
-Check-Exists "flutter_windows.dll" (Join-Path $finalAppDir "flutter_windows.dll")
-Check-Exists "dll_dir" $finalDllDir
-Check-Exists "bass_dir" (Join-Path $finalDllDir "BASS")
-Check-Exists "desktop_lyric.exe" (Join-Path $finalAppDir "desktop_lyric\desktop_lyric.exe")
-Check-Exists "build_info.txt" (Join-Path $artifactRoot "build_info.txt")
+Confirm-FileExists "pure_music.exe" (Join-Path $finalAppDir "pure_music.exe")
+Confirm-FileExists "flutter_windows.dll" (Join-Path $finalAppDir "flutter_windows.dll")
+Confirm-FileExists "dll_dir" $finalDllDir
+Confirm-FileExists "bass_dir" (Join-Path $finalDllDir "BASS")
+Confirm-FileExists "desktop_lyric.exe" (Join-Path $finalAppDir "desktop_lyric\desktop_lyric.exe")
+Confirm-FileExists "build_info.txt" (Join-Path $artifactRoot "build_info.txt")
 
-Check-Exists "bass.dll" (Join-Path $finalDllDir "BASS\bass.dll")
-Check-Exists "basswasapi.dll" (Join-Path $finalDllDir "BASS\basswasapi.dll")
-Check-Exists "bass_fx.dll" (Join-Path $finalDllDir "BASS\bass_fx.dll")
+Confirm-FileExists "bass.dll" (Join-Path $finalDllDir "BASS\bass.dll")
+Confirm-FileExists "basswasapi.dll" (Join-Path $finalDllDir "BASS\basswasapi.dll")
+Confirm-FileExists "bass_fx.dll" (Join-Path $finalDllDir "BASS\bass_fx.dll")
 
 $pluginDllCount = 0
 try {
