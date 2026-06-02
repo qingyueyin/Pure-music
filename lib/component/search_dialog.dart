@@ -41,6 +41,7 @@ class _SearchDialogState extends State<SearchDialog> {
   late final ValueNotifier<bool> _isSearching = ValueNotifier(false);
   Timer? _debounce;
   int _currentIndex = 0;
+  int _searchVersion = 0;
 
   static const _tabs = [
     _SearchCategory('音乐', Symbols.music_note),
@@ -69,6 +70,7 @@ class _SearchDialogState extends State<SearchDialog> {
     _isSearching.value = true;
     _debounce = Timer(const Duration(milliseconds: 450), () {
       if (!mounted) return;
+      _searchVersion++;
       _search(query);
       _isSearching.value = false;
     });
@@ -206,6 +208,7 @@ class _SearchDialogState extends State<SearchDialog> {
                           setState(() => _currentIndex = i);
                           final query = _searchController.text.trim();
                           if (query.isNotEmpty) {
+                            _searchVersion++;
                             _search(query);
                           }
                         },
@@ -277,6 +280,7 @@ class _SearchDialogState extends State<SearchDialog> {
                   }
 
                   return IndexedStack(
+                    key: ValueKey('search_$_searchVersion'),
                     index: _currentIndex,
                     children: [
                       _buildMusicList(value),
