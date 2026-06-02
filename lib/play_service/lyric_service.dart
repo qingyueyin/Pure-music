@@ -67,7 +67,7 @@ class LyricService extends ChangeNotifier {
   /// 已经提示过/忽略过的歌曲路径，避免重复提示
   /// LRU 集合，上限 2000 条防内存泄漏
   final LinkedHashSet<String> _promptedSongs = LinkedHashSet();
-  static const int _kMaxPromptedSongs = 2000;
+  static const int _kMaxPromptedSongs = 500;
 
   void _addPromptedSong(String path) {
     _promptedSongs.add(path);
