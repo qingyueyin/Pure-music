@@ -2439,7 +2439,7 @@ class NetEaseCloudImpl extends RustOpaque implements NetEaseCloud {
         that: this,
       );
 
-  /// Search exactly like Lyrico's NeSource.search
+  /// Search NeSource
   Future<List<Map<String, String>>> search(
           {required String keyword, required int limit}) =>
       RustLib.instance.api.crateApiNeNetEaseCloudSearch(
