@@ -297,7 +297,7 @@ class BassPlayer {
   }
 
   Duration _computeSpectrumTickPeriod() {
-    return const Duration(milliseconds: 33);
+    return const Duration(milliseconds: 66);
   }
 
   void _refreshStreamSampleRate() {
@@ -319,14 +319,13 @@ class BassPlayer {
   }
 
   /// 根据音频采样率动态计算 WASAPI 缓冲区大小
-  /// 低码率音频用较小缓冲降低延迟，高码率音乐会文件用更大缓冲防卡顿
+  /// 上限收紧至 100ms 以减少 Native 内存占用
   double _computeWasapiBufferSec() {
     _refreshStreamSampleRate();
-    // 根据采样率分档：44.1kHz 以下用 80ms，48kHz 用 100ms，96kHz+ 用 150ms
-    if (_streamSampleRate <= 44100) return 0.08;
-    if (_streamSampleRate <= 48000) return 0.10;
-    if (_streamSampleRate <= 96000) return 0.12;
-    return 0.15;
+    if (_streamSampleRate <= 44100) return 0.06;
+    if (_streamSampleRate <= 48000) return 0.08;
+    if (_streamSampleRate <= 96000) return 0.10;
+    return 0.10;
   }
 
   void _maybeUpdateSpectrum() {
@@ -662,6 +661,8 @@ class BassPlayer {
           );
       }
     }
+
+    _bass.BASS_SetConfig(bass.BASS_CONFIG_BUFFER, 100);
   }
 
   void _startDevice() {
@@ -765,11 +766,12 @@ class BassPlayer {
       logger.e('[bass init] $err');
     }
 
-    // BASS_FX - 加载bass_fx必须在bass初始化之后
-    _loadBassFx();
+    // BASS_FX - 懒加载：首次调节音调/变速时才加载，省 ~8MB Native 内存
+    // 调用 _loadBassFx() 由 setPitch() / setSpeed() 触发
   }
 
   void _loadBassFx() {
+    if (_bassFx != null) return; // 已加载，跳过
     final bassFxLibPath = path.join(_bassDir, 'bass_fx.dll');
     try {
       final bassFxLib = ffi.DynamicLibrary.open(bassFxLibPath);
@@ -796,6 +798,7 @@ class BassPlayer {
       }
       if (prevState) {
         _bassWasapi.BASS_WASAPI_Free();
+        _bassInit();
       }
       wasapiExclusive = exclusive;
       if (_fstream != null && _fPath != null) {
@@ -820,6 +823,8 @@ class BassPlayer {
     _positionUpdater = null;
 
     final oldHandle = _fstream!;
+    _fadeOutOldStream(oldHandle);
+    _bass.BASS_ChannelStop(oldHandle);
     _bass.BASS_StreamFree(oldHandle);
     _fstream = null;
 
@@ -861,7 +866,7 @@ class BassPlayer {
   /// 创建共享模式流
   void _createSharedStream(String path, double seekTo) {
     const flags =
-        bass.BASS_UNICODE | bass.BASS_SAMPLE_FLOAT | bass.BASS_ASYNCFILE | bass.BASS_STREAM_DECODE;
+        bass.BASS_UNICODE | bass.BASS_SAMPLE_FLOAT | bass.BASS_ASYNCFILE;
 
     final pathPointer = path.toNativeUtf16() as ffi.Pointer<ffi.Void>;
     var handle = _bass.BASS_StreamCreateFile(
@@ -1140,6 +1145,8 @@ class BassPlayer {
     _rate = rate;
     if (_fstream == null) return;
 
+    _loadBassFx(); // 懒加载：首次调速时才加载 bass_fx.dll
+
     if (wasapiExclusive && _rate != 1.0) {
       logger.w('[bass] rate change in exclusive mode, fallback to shared mode');
       useExclusiveMode(false);
@@ -1174,6 +1181,8 @@ class BassPlayer {
   void setPitch(double pitch) {
     _pitch = pitch;
     if (_fstream == null) return;
+
+    _loadBassFx(); // 懒加载：首次变调时才加载 bass_fx.dll
 
     if (wasapiExclusive && _pitch != 0.0) {
       logger
@@ -1224,7 +1233,8 @@ class BassPlayer {
       final errCode = _bass.BASS_ErrorGetCode();
       if (errCode != bass.BASS_ERROR_BUSY) break; // 非 BUSY 错误，不重试
 
-      _sleepSync(15);
+      // 等待 50ms 让流完全释放后再重试
+      _sleepSync(50);
     }
 
     if (result == bass.FALSE) {
