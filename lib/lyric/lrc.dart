@@ -223,29 +223,31 @@ class Lrc extends Lyric {
       // b 有逐词标签 → b 是原文，a 是翻译
       b.translation = _extractTranslation(a.content, separator);
       return b;
+    } else if (aHasTags && bHasTags) {
+      // 两行都有逐词标签 → 数据源按 原文、翻译 顺序排列
+      a.translation = _extractTranslation(b.content, separator);
+      return a;
     }
 
-    // 都没有逐词标签，用罗马音判断
+    // 都没有逐词标签，第一行永远是原文
+    // 第二行：纯拉丁→罗马音，CJK→翻译
     final aIsRoman = _isRomanization(a.content);
     final bIsRoman = _isRomanization(b.content);
 
-    if (aIsRoman && !bIsRoman) {
-      // a 是罗马音，b 是原文
-      b.translation = _extractTranslation(b.content, separator);
-      b.romanLyric = _stripTags(a.content);
-      return b;
-    } else if (!aIsRoman && bIsRoman) {
-      // a 是原文，b 是罗马音
-      a.translation = _extractTranslation(a.content, separator);
+    if (!aIsRoman && bIsRoman) {
+      // a 是 CJK 原文，b 是拉丁罗马音
       a.romanLyric = _stripTags(b.content);
       return a;
+    } else if (aIsRoman && !bIsRoman) {
+      // a 是拉丁原文（如英文歌），b 是 CJK 翻译
+      a.translation = _stripTags(b.content);
+      return a;
     } else if (aIsRoman && bIsRoman) {
-      // 两行都是罗马音（罕见）：第一行罗马音，第二行可能是翻译
-      a.romanLyric = _stripTags(a.content);
+      // 两行都是拉丁（英文+翻译）：第一行原文，第二行翻译
       a.translation = _extractTranslation(b.content, separator);
       return a;
     } else {
-      // 都不是罗马音：第一行原文，第二行翻译
+      // 两行都是 CJK：第一行原文，第二行翻译
       a.translation = _stripTags(b.content);
       return a;
     }
@@ -1161,23 +1163,14 @@ class Lrc extends Lyric {
       int? primaryIndex; // null = primary 不在 otherContents 中
       
       if (contentsWithTags.isNotEmpty) {
-        // 从有标签的行中选标签数最多的作为原文
-        int maxTags = -1;
-        int bestIdx = 0;
-        for (int i = 0; i < contentsWithTags.length; i++) {
-          final tagCount = extractTagCount(contentsWithTags[i]);
-          if (tagCount > maxTags) {
-            maxTags = tagCount;
-            bestIdx = i;
-          }
-        }
-        primaryRaw = contentsWithTags[bestIdx];
-        // primary 来自 contentsWithTags，不在 otherContents 中
+        // 有逐词标签：第一行是原文（数据源按 原文、翻译 顺序排列）
+        // 注：QQ API 对日文歌的罗马音/原文/翻译都在同一 QRC 中，但不会走 enhanced 路径
+        // enhanced LRC 来自本地内嵌歌词，原文在前、翻译在后
+        primaryRaw = contentsWithTags[0];
         primaryIndex = null;
 
-        // 将 contentsWithTags 中剩余的条目作为翻译/罗马音处理
-        for (int i = 0; i < contentsWithTags.length; i++) {
-          if (i == bestIdx) continue;
+        // 剩余有标签的行：拉丁→罗马音，CJK→翻译
+        for (int i = 1; i < contentsWithTags.length; i++) {
           final r = contentsWithTags[i];
           if (_isRomanizationStatic(r)) {
             romanContents.add(r);
