@@ -25,6 +25,7 @@ import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
 import 'package:pure_music/component/app_scroll_behavior.dart';
 import 'package:pure_music/core/cache.dart';
+import 'package:pure_music/core/matcher.dart' hide logger;
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:flutter/material.dart';
@@ -157,6 +158,8 @@ class _EntryState extends State<Entry> with WindowListener, WidgetsBindingObserv
     CoverImageCache.instance.clear();
     AudioLibrary.instance.evictStaleCoverBytes();
     PaintingBinding.instance.imageCache.clear();
+    PaintingBinding.instance.imageCache.clearLiveImages();
+    clearLyricCaches();
     logger.w('[mem] low memory - cleared all caches');
   }
 
