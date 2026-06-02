@@ -244,17 +244,17 @@ double _computeScore(Audio audio, String title, String artists, String album,
     {int? duration}) {
   double score = 0.0;
 
-  // 时长严重不匹配 → 直接排除
+  // 时长差异过大 → 不奖励时长分（但仍保留标题/歌手匹配的可能，Acoustic/Remix 版本时长常不同）
   if (duration != null && audio.duration > 0) {
     final diff = (duration - audio.duration).abs();
-    if (diff > 30) return -1.0; // 超过 30 秒差异肯定不是同一首歌
     if (diff <= 3) {
       score += 30; // 3 秒内高度匹配
     } else if (diff <= 10) {
       score += 15; // 10 秒内基本匹配
-    } else {
+    } else if (diff <= 30) {
       score += 5;
     }
+    // diff > 30：不加分也不排除（可能是不同版本/remix/acoustic）
   }
 
   final normalizedAudioTitle = audio.title.toLowerCase();
@@ -265,7 +265,19 @@ double _computeScore(Audio audio, String title, String artists, String album,
   if (normalizedTitle.isEmpty) return -1.0;
   if (normalizedAudioTitle.isEmpty) return -1.0;
 
-  if (normalizedTitle == normalizedAudioTitle) {
+  // 剥离常见后缀（(Acoustic)/(Live)/(Remix)/(Explicit)/Feat. 等）提高匹配准确度
+  String stripTrailingVariants(String t) {
+    return t
+        .replaceAll(RegExp(r'\s*\([^)]*(?:acoustic|live|remix|explicit|deluxe|edit|version|mix|radio|single|demo|bonus|track|album|studio)[^)]*\)', caseSensitive: false), '')
+        .replaceAll(RegExp(r'\s*\(feat\..*\)', caseSensitive: false), '')
+        .replaceAll(RegExp(r'\s*-\s*(?:acoustic|live|remix).*$', caseSensitive: false), '')
+        .trim();
+  }
+  final strippedAudio = stripTrailingVariants(normalizedAudioTitle);
+  final strippedResult = stripTrailingVariants(normalizedTitle);
+
+  // 用剥离后的标题做精确匹配
+  if (strippedResult == strippedAudio) {
     score += 40;
   } else if (normalizedAudioTitle.contains(normalizedTitle) ||
       normalizedTitle.contains(normalizedAudioTitle)) {
@@ -389,7 +401,7 @@ Future<List<SongSearchResult>> uniSearch(Audio audio) async {
 
   final List<SongSearchResult> result = [];
 
-  const int perSourceLimit = 1; // 聚合：每条源只拿一条
+  const int perSourceLimit = 1; // 聚合：每源只取一条，严格筛选
 
   logger.d('=== uniSearch query: "$searchQuery" ===');
 
