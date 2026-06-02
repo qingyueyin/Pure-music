@@ -19,6 +19,8 @@ class Krc extends Lyric {
       '演唱', '歌手', '原唱', '翻唱', '录音', '监制',
       '制作', '统筹', '企划', '宣发', '吉他', '贝斯',
       '鼓', '键盘', '弦乐', '管乐', '打击乐',
+      // QQ音乐KRC常见缩写（词/曲不带"作"前缀）
+      '词', '曲',
       // 英文
       'Composer', 'Lyricist', 'Arranger', 'Producer',
       'Vocal', 'Singer', 'Mixing', 'Mastering',
@@ -51,8 +53,9 @@ class Krc extends Lyric {
     }
     
     // 匹配常见的元数据格式： "角色: 名字" 或 "角色 - 名字"
+    // 包含单字缩写：词/曲（QQ音乐KRC常见）
     final metadataRegex = RegExp(
-      r'^(作曲|作词|编曲|Composer|Lyricist|Arranger|Producer|作曲|作詞|編曲|작곡|작사|편곡)\s*[:：\-–—]',
+      r'^(作曲|作词|编曲|词|曲|Composer|Lyricist|Arranger|Producer|作曲|作詞|編曲|작곡|작사|편곡)\s*[:：\-–—]',
       caseSensitive: false,
     );
     if (metadataRegex.hasMatch(trimmed)) return true;
