@@ -42,7 +42,6 @@ class _AudioTileState extends State<AudioTile> {
   bool _hovered = false;
   int? _dragStartIndex;
   int? _lastDragTargetIndex;
-  bool _isDragUnselecting = false;
   final Set<Audio> _dragRange = {};
   final Set<Audio> _preDragSelection = {};
 
@@ -210,9 +209,6 @@ class _AudioTileState extends State<AudioTile> {
                         widget.multiSelectController!.useMultiSelectView(true);
                       }
 
-                      final isSelected = widget.multiSelectController!.selected
-                          .contains(audio);
-                      _isDragUnselecting = isSelected;
                       _dragStartIndex = widget.audioIndex;
                       _lastDragTargetIndex = widget.audioIndex;
                       _preDragSelection
@@ -222,11 +218,7 @@ class _AudioTileState extends State<AudioTile> {
                         );
                       _dragRange.clear();
                       _dragRange.add(audio);
-                      if (_isDragUnselecting) {
-                        widget.multiSelectController!.unselect(audio);
-                      } else {
-                        widget.multiSelectController!.select(audio);
-                      }
+                      widget.multiSelectController!.select(audio);
                     },
                     onLongPressMoveUpdate: (details) {
                       if (_dragStartIndex == null ||
@@ -259,14 +251,10 @@ class _AudioTileState extends State<AudioTile> {
                       for (int i = oldMin; i <= oldMax; i++) {
                         final item = widget.playlist[i];
                         final inNewRange = i >= newMin && i <= newMax;
-                        if (!inNewRange && _dragRange.contains(item)) {
-                          if (_isDragUnselecting) {
-                            if (_preDragSelection.contains(item)) {
-                              widget.multiSelectController!.select(item);
-                            }
-                          } else if (!_preDragSelection.contains(item)) {
-                            widget.multiSelectController!.unselect(item);
-                          }
+                        if (!inNewRange &&
+                            _dragRange.contains(item) &&
+                            !_preDragSelection.contains(item)) {
+                          widget.multiSelectController!.unselect(item);
                           _dragRange.remove(item);
                         }
                       }
@@ -275,11 +263,7 @@ class _AudioTileState extends State<AudioTile> {
                         if (i < oldMin || i > oldMax) {
                           final item = widget.playlist[i];
                           if (!_dragRange.contains(item)) {
-                            if (_isDragUnselecting) {
-                              widget.multiSelectController!.unselect(item);
-                            } else {
-                              widget.multiSelectController!.select(item);
-                            }
+                            widget.multiSelectController!.select(item);
                             _dragRange.add(item);
                           }
                         }
@@ -288,14 +272,12 @@ class _AudioTileState extends State<AudioTile> {
                     onLongPressEnd: (details) {
                       _dragStartIndex = null;
                       _lastDragTargetIndex = null;
-                      _isDragUnselecting = false;
                       _dragRange.clear();
                       _preDragSelection.clear();
                     },
                     onLongPressCancel: () {
                       _dragStartIndex = null;
                       _lastDragTargetIndex = null;
-                      _isDragUnselecting = false;
                       _dragRange.clear();
                       _preDragSelection.clear();
                     },
