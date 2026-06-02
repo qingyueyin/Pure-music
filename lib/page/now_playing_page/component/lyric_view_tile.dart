@@ -915,13 +915,25 @@ class _LyricTransitionTileState extends State<LyricTransitionTile> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
+    if (widget.compact) {
+      return SizedBox(
+        height: 24.0,
+        width: 72.0,
+        child: CustomPaint(
+          painter: LyricTransitionPainter(
+            scheme,
+            controller,
+            compact: true,
+          ),
+        ),
+      );
+    }
+
     return SizedBox(
-      height: widget.compact ? 24.0 : 40.0,
-      width: widget.compact ? 80.0 : 120.0,
+      height: 40.0,
+      width: 120.0,
       child: Padding(
-        padding: widget.compact
-            ? const EdgeInsets.symmetric(vertical: 0, horizontal: 10)
-            : const EdgeInsets.fromLTRB(12, 18, 12, 6),
+        padding: const EdgeInsets.fromLTRB(12, 18, 12, 6),
         child: CustomPaint(
           painter: LyricTransitionPainter(
             scheme,
@@ -936,6 +948,7 @@ class _LyricTransitionTileState extends State<LyricTransitionTile> {
 class LyricTransitionPainter extends CustomPainter {
   final ColorScheme scheme;
   final LyricTransitionTileController controller;
+  final bool compact;
 
   final Paint circlePaint1 = Paint();
   final Paint circlePaint2 = Paint();
@@ -943,7 +956,7 @@ class LyricTransitionPainter extends CustomPainter {
 
   final double radius = 6;
 
-  LyricTransitionPainter(this.scheme, this.controller)
+  LyricTransitionPainter(this.scheme, this.controller, {this.compact = false})
       : super(repaint: controller);
 
   @override
@@ -963,14 +976,24 @@ class LyricTransitionPainter extends CustomPainter {
     circlePaint2.color = scheme.onSecondaryContainer.withAlpha(a2);
     circlePaint3.color = scheme.onSecondaryContainer.withAlpha(a3);
 
-    final rWithFactor = radius + controller.sizeFactor;
-    final c1 = Offset(rWithFactor, 8);
-    final c2 = Offset(4 * rWithFactor, 8);
-    final c3 = Offset(7 * rWithFactor, 8);
-
-    canvas.drawCircle(c1, rWithFactor, circlePaint1);
-    canvas.drawCircle(c2, rWithFactor, circlePaint2);
-    canvas.drawCircle(c3, rWithFactor, circlePaint3);
+    if (compact) {
+      final r = 3 + controller.sizeFactor * 0.5;
+      final cy = size.height / 2;
+      final c1 = Offset(12, cy);
+      final c2 = Offset(30, cy);
+      final c3 = Offset(48, cy);
+      canvas.drawCircle(c1, r, circlePaint1);
+      canvas.drawCircle(c2, r, circlePaint2);
+      canvas.drawCircle(c3, r, circlePaint3);
+    } else {
+      final rWithFactor = radius + controller.sizeFactor;
+      final c1 = Offset(rWithFactor, 8);
+      final c2 = Offset(4 * rWithFactor, 8);
+      final c3 = Offset(7 * rWithFactor, 8);
+      canvas.drawCircle(c1, rWithFactor, circlePaint1);
+      canvas.drawCircle(c2, rWithFactor, circlePaint2);
+      canvas.drawCircle(c3, rWithFactor, circlePaint3);
+    }
   }
 
   @override

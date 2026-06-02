@@ -178,11 +178,14 @@ class _LyricHorizontalScrollAreaState
     if (_isTransition) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8.0),
-        child: LyricTransitionTile(
-          lrcLine: _transitionLrcLine,
-          syncLine: _transitionSyncLine,
-          enableBreathing: false,
-          compact: widget.compact,
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: LyricTransitionTile(
+            lrcLine: _transitionLrcLine,
+            syncLine: _transitionSyncLine,
+            enableBreathing: false,
+            compact: widget.compact,
+          ),
         ),
       );
     }
