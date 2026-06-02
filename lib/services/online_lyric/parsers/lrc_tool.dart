@@ -307,199 +307,138 @@ class LrcTool {
     }
   }
 
+  /// 时间窗口对齐：翻译行 → 原文行（标准 LRC 格式；KRC/QRC/YRC 走 _mergeTimedSubtitle）。
   static ParsedLyricResult _mergeTranslationText(
-    ParsedLyricResult main,
-    String? transText,
-  ) {
+    ParsedLyricResult main, String? transText) {
     if (transText == null || transText.isEmpty) return main;
-
     final transLines = _parseLrc(transText);
-
-    // 酷狗等源的翻译是纯文本（无 LRC 时间戳），按行号对齐
-    // 尝试解析 KRC/QRC/YRC 格式（如有些源的翻译/罗马音带时间戳）
     if (transLines.isEmpty) {
       final karaokeFormat = _detectFormat(transText);
-      if (karaokeFormat == LyricFormat.qrc ||
-          karaokeFormat == LyricFormat.krc ||
-          karaokeFormat == LyricFormat.yrc) {
+      if (karaokeFormat == LyricFormat.qrc || karaokeFormat == LyricFormat.krc || karaokeFormat == LyricFormat.yrc) {
         final entries = _parseByFormat(transText, karaokeFormat);
         if (entries.isNotEmpty) {
-          final plainText = entries.map((e) => e.content).join('\n');
-          return _mergeTranslationText(main, plainText);
-        }
-      }
-    }
-
-    if (transLines.isEmpty) {
-      final plainLines = transText
-          .split('\n')
-          .map((l) => l.trim())
-          .toList();
-      final nonEmptyLines = plainLines
-          .where((l) => l.isNotEmpty && l != '//')
-          .toList();
-      if (nonEmptyLines.isEmpty) return main;
-
-      if (main.lines.length == plainLines.length) {
-        for (int i = 0; i < main.lines.length; i++) {
-          if (plainLines[i].isNotEmpty && plainLines[i] != '//') {
-            main.lines[i].translation = plainLines[i];
-          }
-        }
-        return main;
-      }
-
-      int plainIdx = 0;
-      for (var i = 0; i < main.lines.length && plainIdx < plainLines.length; i++) {
-        if (main.lines[i].content.trim().isNotEmpty) {
-          while (plainIdx < plainLines.length &&
-              (plainLines[plainIdx].isEmpty || plainLines[plainIdx] == '//')) {
-            plainIdx++;
-          }
-          if (plainIdx < plainLines.length) {
-            main.lines[i].translation = plainLines[plainIdx++];
+          // 过滤翻译里的元数据行，保留时间戳做时间窗口匹配
+          final nonMeta = entries.where((e) {
+            final t = e.content.trim();
+            return t.isNotEmpty && !_isLyricMetadata(t);
+          }).toList();
+          if (nonMeta.isNotEmpty) {
+            return _mergeTimedSubtitle(main, nonMeta, isRomanization: false);
           }
         }
       }
-      return main;
+      return _mergePlainText(main, transText, isRomanization: false);
     }
+    return _mergeTimedSubtitle(main, transLines, isRomanization: false);
+  }
 
-    if (main.lines.isEmpty || transLines.isEmpty) return main;
-
-    // 最大容许的时间漂移（5秒）
-    const double maxDrift = 5000.0;
-    int lastMatchedMainIdx = -1;
-
-    for (final te in transLines) {
-      final transContent = te.content.trim();
-      if (transContent.isEmpty || transContent == '//') continue;
-
-      int minDiffIdx = -1;
-      double minDiff = double.infinity;
-
-      // 强制从上一次匹配成功的下一行开始找，防止覆盖数据
-      int startIndex = lastMatchedMainIdx + 1;
-
-      for (int i = startIndex; i < main.lines.length; i++) {
-        final currMain = main.lines[i];
-        if (currMain.content.trim().isEmpty) continue;
-
-        // 计算当前原文和这句翻译的时间差
-        final double diff = (currMain.start.inMilliseconds - te.start.inMilliseconds).abs().toDouble();
-
-        if (diff < minDiff) {
-          minDiff = diff;
-          minDiffIdx = i;
-        } else if (diff > minDiff) {
-          // 由于时间戳是递增的，当时间差开始变大时，说明已经越过了最小时间差，直接停止查找
-          break;
+  /// 时间窗口对齐：罗马音行 → 原文行（标准 LRC 格式；KRC/QRC/YRC 走 _mergeTimedSubtitle）。
+  static ParsedLyricResult _mergeRomanizationText(
+    ParsedLyricResult main, String? romaText) {
+    if (romaText == null || romaText.isEmpty) return main;
+    final romaLines = _parseLrc(romaText);
+    if (romaLines.isEmpty) {
+      final karaokeFormat = _detectFormat(romaText);
+      if (karaokeFormat == LyricFormat.qrc || karaokeFormat == LyricFormat.krc || karaokeFormat == LyricFormat.yrc) {
+        final entries = _parseByFormat(romaText, karaokeFormat);
+        if (entries.isNotEmpty) {
+          // 过滤罗马音里的元数据行（歌曲信息/版权声明）
+          final nonMeta = entries.where((e) {
+            final t = e.content.trim();
+            return t.isNotEmpty && !_isLyricMetadata(t);
+          }).toList();
+          if (nonMeta.isNotEmpty) {
+            return _mergeTimedSubtitle(main, nonMeta, isRomanization: true);
+          }
         }
       }
+      return _mergePlainText(main, romaText, isRomanization: true);
+    }
+    return _mergeTimedSubtitle(main, romaLines, isRomanization: true);
+  }
 
-      // 若找到了最近的行，并且误差在合理范围内，则进行赋值
-      if (minDiffIdx != -1 && minDiff <= maxDrift) {
-        main.lines[minDiffIdx].translation = transContent;
-        // 推进游标，下一句翻译只能找 minDiffIdx 之后的行
-        lastMatchedMainIdx = minDiffIdx;
+  /// 时间窗口匹配核心算法。
+  /// 原文、翻译、罗马音的行时间戳完全一致时，此算法可正确对齐。
+  static ParsedLyricResult _mergeTimedSubtitle(
+    ParsedLyricResult main, List<LyricEntry> subLines, {required bool isRomanization}) {
+    if (main.lines.isEmpty || subLines.isEmpty) return main;
+
+    final sorted = subLines
+        .where((e) => e.content.trim().isNotEmpty && e.content.trim() != '//')
+        .toList()
+      ..sort((a, b) => a.start.compareTo(b.start));
+    if (sorted.isEmpty) return main;
+
+    const leadToleranceMs = 500;
+    int subIdx = 0;
+
+    for (int i = 0; i < main.lines.length; i++) {
+      // 跳过主元数据行（词/曲/歌曲名等），避免它们的时间窗口捕获正常歌词
+      if (_isLyricMetadata(main.lines[i].content.trim())) continue;
+      final winStart = main.lines[i].start.inMilliseconds;
+      final winEnd = i + 1 < main.lines.length
+          ? main.lines[i + 1].start.inMilliseconds
+          : 0x7FFFFFFFFFFFF;
+
+      String? matched;
+      while (subIdx < sorted.length) {
+        final sub = sorted[subIdx];
+        final subMs = sub.start.inMilliseconds;
+        if (subMs < winStart - leadToleranceMs) { subIdx++; continue; }
+        if (subMs >= winEnd) break;
+        matched = sub.content.trim();
+        subIdx++;
+        break;
+      }
+
+      if (matched != null) {
+        if (isRomanization) {
+          main.lines[i].romanization = matched;
+        } else {
+          main.lines[i].translation = matched;
+        }
       }
     }
-
     return main;
   }
 
-  static ParsedLyricResult _mergeRomanizationText(
-    ParsedLyricResult main,
-    String? romaText,
-  ) {
-    if (romaText == null || romaText.isEmpty) return main;
+  /// 纯文本回退：两边各自过滤（主行去元数据，翻译去空行），然后按索引匹配。
+  static ParsedLyricResult _mergePlainText(
+    ParsedLyricResult main, String plainText, {required bool isRomanization}) {
+    final plainLines = plainText.split('\n').map((l) => l.trim()).toList();
+    if (plainLines.isEmpty) return main;
+    // 翻译侧过滤空行/元数据
+    final subLines = plainLines.where((l) => l.isNotEmpty && l != '//' && !_isLyricMetadata(l)).toList();
+    if (subLines.isEmpty) return main;
 
-    final romaLines = _parseLrc(romaText);
-
-    // 尝试解析 KRC/QRC/YRC 格式（如 QQ 源的罗马音）
-    if (romaLines.isEmpty) {
-      final karaokeFormat = _detectFormat(romaText);
-      if (karaokeFormat == LyricFormat.qrc ||
-          karaokeFormat == LyricFormat.krc ||
-          karaokeFormat == LyricFormat.yrc) {
-        final entries = _parseByFormat(romaText, karaokeFormat);
-        if (entries.isNotEmpty) {
-          final plainText = entries.map((e) => e.content).join('\n');
-          return _mergeRomanizationText(main, plainText);
-        }
+    int subIdx = 0;
+    for (int i = 0; i < main.lines.length && subIdx < subLines.length; i++) {
+      final mainText = main.lines[i].content.trim();
+      // 跳过主行空行和元数据行（不消耗翻译行）
+      if (mainText.isEmpty || _isLyricMetadata(mainText)) continue;
+      final t = subLines[subIdx];
+      if (t.isNotEmpty) {
+        if (isRomanization) { main.lines[i].romanization = t; }
+        else { main.lines[i].translation = t; }
       }
-    }
-
-    if (romaLines.isEmpty) {
-      final plainLines = romaText
-          .split('\n')
-          .map((l) => l.trim())
-          .toList();
-      final nonEmptyLines = plainLines
-          .where((l) => l.isNotEmpty && l != '//')
-          .toList();
-      if (nonEmptyLines.isEmpty) return main;
-
-      if (main.lines.length == plainLines.length) {
-        for (int i = 0; i < main.lines.length; i++) {
-          if (plainLines[i].isNotEmpty && plainLines[i] != '//') {
-            main.lines[i].romanization = plainLines[i];
-          }
-        }
-        return main;
-      }
-
-      int plainIdx = 0;
-      for (var i = 0; i < main.lines.length && plainIdx < plainLines.length; i++) {
-        if (main.lines[i].content.trim().isNotEmpty) {
-          while (plainIdx < plainLines.length &&
-              (plainLines[plainIdx].isEmpty || plainLines[plainIdx] == '//')) {
-            plainIdx++;
-          }
-          if (plainIdx < plainLines.length) {
-            main.lines[i].romanization = plainLines[plainIdx++];
-          }
-        }
-      }
-      return main;
-    }
-
-    if (main.lines.isEmpty || romaLines.isEmpty) return main;
-
-    const double maxDrift = 5000.0;
-    int lastMatchedMainIdx = -1;
-
-    for (final romaLine in romaLines) {
-      final romaContent = romaLine.content.trim();
-      if (romaContent.isEmpty) continue;
-
-      int minDiffIdx = -1;
-      double minDiff = double.infinity;
-
-      int startIndex = lastMatchedMainIdx + 1;
-
-      for (int i = startIndex; i < main.lines.length; i++) {
-        final currMain = main.lines[i];
-        if (currMain.content.trim().isEmpty) continue;
-
-        final double diff =
-            (currMain.start.inMilliseconds - romaLine.start.inMilliseconds)
-                .abs()
-                .toDouble();
-
-        if (diff < minDiff) {
-          minDiff = diff;
-          minDiffIdx = i;
-        } else if (diff > minDiff) {
-          break;
-        }
-      }
-
-      if (minDiffIdx != -1 && minDiff <= maxDrift) {
-        main.lines[minDiffIdx].romanization = romaContent;
-        lastMatchedMainIdx = minDiffIdx;
-      }
+      subIdx++;
     }
     return main;
+  }
+
+  /// 简单判断一行文本是否为歌词元数据（词/曲/版权/歌曲名等）。
+  static bool _isLyricMetadata(String text) {
+    final t = text.replaceAll(RegExp(r'<[^>]*>'), '').trim();
+    if (t.isEmpty) return false;
+    // 中文/日文冒号
+    if (RegExp(r'[：:]').hasMatch(t)) return true;
+    // "-" 分隔符（含空格模式如 "标题 - 歌手" 或不含空格如 "曲名-歌手"）
+    if (t.contains('-')) return true;
+    // 版权/来源关键词
+    if (RegExp(r'(?:QQ音乐|享有|着作权|著作权|版权|提供|出品|发行|翻译|翻訳)').hasMatch(t)) return true;
+    // CJK 前缀 + 冒号（词/曲/编）
+    if (RegExp(r'^[\u4e00-\u9fff]{1,2}[:：]').hasMatch(t)) return true;
+    return false;
   }
 
   static ParsedLyricResult _insertBlankLines(ParsedLyricResult result) {
