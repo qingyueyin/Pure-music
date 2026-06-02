@@ -27,7 +27,7 @@ class AlbumColorCache {
   static const _cacheVersion = 1;
 
   bool _initialized = false;
-  static const int _maxEntries = 500;
+  static const int _maxEntries = 200;
   final Map<String, Map<String, Object?>> _entries = {};
   final Map<String, Future<AlbumColor?>> _inFlight = {};
   Timer? _flushTimer;
@@ -399,9 +399,9 @@ class CoverImageCache {
   static final instance = CoverImageCache._();
   CoverImageCache._();
 
-  final _small = _LruMap<String, ImageProvider>(30);
-  final _medium = _LruMap<String, ImageProvider>(8);
-  final _large = _LruMap<String, ImageProvider>(2);
+  final _small = _LruMap<String, ImageProvider>(12);
+  final _medium = _LruMap<String, ImageProvider>(4);
+  final _large = _LruMap<String, ImageProvider>(1);
   final _pending = <String, Future<ImageProvider?>>{};
 
   _LruMap<String, ImageProvider> _tierFor(int width, int height) {
@@ -483,7 +483,7 @@ class CoverCache {
   static final instance = CoverCache._();
   CoverCache._();
 
-  static const _maxSize = 8;
+  static const _maxSize = 2;
   final _cache = _LruMap<String, Uint8List>(_maxSize);
   final _pending = <String, Future<Uint8List?>>{};
 
