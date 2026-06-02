@@ -147,11 +147,11 @@ int _findHeaderCutoff(
   var lastValidIndex = startIndex - 1;
   for (int i = startIndex; i < limit && i < lines.length; i++) {
     final text = _lineText(lines[i]);
-    if (text.isEmpty) continue;
-
-    final strict = _isStrictMatch(text, keywords, regexes);
-    final weak = _looksLikeMetadata(text, softRegexes);
-
+    final transText = lines[i].translation ?? '';
+    final strict = (text.isNotEmpty && _isStrictMatch(text, keywords, regexes)) ||
+        (transText.isNotEmpty && _isStrictMatch(transText, keywords, regexes));
+    final weak = (text.isNotEmpty && _looksLikeMetadata(text, softRegexes)) ||
+        (transText.isNotEmpty && _looksLikeMetadata(transText, softRegexes));
     if (!strict && !weak) break;
     if (strict) lastValidIndex = i;
   }
@@ -174,11 +174,11 @@ int _findFooterCutoff(
 
   for (int i = lines.length - 1; i >= scanEnd; i--) {
     final text = _lineText(lines[i]);
-    if (text.isEmpty) continue;
-
-    final strict = _isStrictMatch(text, keywords, regexes);
-    final weak = _looksLikeMetadata(text, softRegexes);
-
+    final transText = lines[i].translation ?? '';
+    final strict = (text.isNotEmpty && _isStrictMatch(text, keywords, regexes)) ||
+        (transText.isNotEmpty && _isStrictMatch(transText, keywords, regexes));
+    final weak = (text.isNotEmpty && _looksLikeMetadata(text, softRegexes)) ||
+        (transText.isNotEmpty && _looksLikeMetadata(transText, softRegexes));
     if (!strict && !weak) break;
     if (strict) firstValidIndex = i;
   }
@@ -202,8 +202,10 @@ List<LyricLine> stripLyricMetadata(List<LyricLine>? lines, [StripOptions? option
   // 检查第 1 行是否为 "歌名 - 歌手" 格式
   if (options.matchTitle != null && options.matchArtists.isNotEmpty) {
     final firstText = _lineText(lines[0]).toLowerCase();
-    if (firstText.contains(options.matchTitle!.toLowerCase())) {
-      final hasArtist = options.matchArtists.any((a) => firstText.contains(a.toLowerCase()));
+    final firstTrans = (lines[0].translation ?? '').toLowerCase();
+    final combined = '$firstText $firstTrans';
+    if (combined.contains(options.matchTitle!.toLowerCase())) {
+      final hasArtist = options.matchArtists.any((a) => combined.contains(a.toLowerCase()));
       if (hasArtist) scanStart = 1;
     }
   }
@@ -413,13 +415,16 @@ void blankMetadataLines(List<LyricLine> lines, [StripOptions? options]) {
   }
 
   // ── 预计算每行的匹配状态 ──
+  // 增强 LRC 会把同时戳的版权行合并为 translation，必须连同 translation 一起检查
   final isStrict = List<bool>.filled(totalLines, false);
   final isWeak = List<bool>.filled(totalLines, false);
   for (int i = 0; i < totalLines; i++) {
     final text = _lineText(lines[i]);
-    if (text.isEmpty) continue;
-    isStrict[i] = _isStrictMatch(text, keywords, regexes);
-    isWeak[i] = _looksLikeMetadata(text, options.softRegexes);
+    final transText = lines[i].translation ?? '';
+    isStrict[i] = (text.isNotEmpty && _isStrictMatch(text, keywords, regexes)) ||
+        (transText.isNotEmpty && _isStrictMatch(transText, keywords, regexes));
+    isWeak[i] = (text.isNotEmpty && _looksLikeMetadata(text, options.softRegexes)) ||
+        (transText.isNotEmpty && _looksLikeMetadata(transText, options.softRegexes));
   }
 
   // ── 头部扫描：找元数据区截止位置 ──
