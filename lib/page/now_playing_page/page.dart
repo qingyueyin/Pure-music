@@ -137,11 +137,12 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
       } else {
         _extractDominantColor(aud.smallCoverBytes, token, path);
       }
-      // 只在首进时用小封面喂背景；切歌时留给 debounce 统一更新
-      if (_nowPlayingCoverBytes == null && aud.smallCoverBytes != null) {
+      // 切歌也立即用小封面喂背景，让 mesh gradient 立刻开始取色过渡
+      if (aud.smallCoverBytes != null) {
         _nowPlayingCoverBytes = aud.smallCoverBytes;
       }
     }
+    if (mounted) setState(() {});
 
     _coverDebounceTimer = Timer(MotionDuration.base, () async {
       final audio = playbackService.nowPlaying;
@@ -187,17 +188,12 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
 
   void _onViewModeChanged() {
     if (!mounted) return;
-    if (nowPlayingViewMode.value != NowPlayingViewMode.withPlaylist) {
-      // 切换回歌词/仅封面时恢复显示标题栏
-      _bumpCursor();
-    } else {
-      // 进入播放列表：立即隐藏标题栏 + 光标
+    if (nowPlayingViewMode.value == NowPlayingViewMode.withPlaylist) {
+      // 进入播放列表：取消光标隐藏计时器，标题栏由 ValueListenableBuilder 负责隐藏
       _cursorHideTimer?.cancel();
-      if (!_cursorHidden) {
-        setState(() {
-          _cursorHidden = true;
-        });
-      }
+    } else {
+      // 退出播放列表：恢复标题栏和光标
+      _bumpCursor();
     }
   }
 
@@ -424,9 +420,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                       ),
                     ),
                   ),
-                if (_cursorHidden ||
-                    nowPlayingViewMode.value ==
-                        NowPlayingViewMode.withPlaylist)
+                if (_cursorHidden)
                   const Positioned.fill(
                     child: MouseRegion(
                       cursor: SystemMouseCursors.none,
