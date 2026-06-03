@@ -21,7 +21,7 @@ class PlaybackService extends ChangeNotifier {
   late StreamSubscription _smtcEventStreamSub;
   late StreamSubscription _smtcPositionStreamSub;
   int _lastNowPlayingChangedMs = 0;
-  Timer? _timelineTimer;
+  int _lastSmtcPositionUpdateMs = 0;
 
   PlaybackService(this.playService) {
     _player.onExclusiveModeChanged = (exclusive) {
@@ -56,12 +56,14 @@ class PlaybackService extends ChangeNotifier {
       }
     });
 
-    // SMTC timeline 进度更新（每 5 秒一次，遵循官方文档建议）
+    // SMTC timeline 进度更新（throttle，最多每 5 秒更新一次）
     _smtcPositionStreamSub = positionStream.listen((position) {
-      _timelineTimer?.cancel();
-      _timelineTimer = Timer(const Duration(seconds: 5), () {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (_lastSmtcPositionUpdateMs == 0 ||
+          now - _lastSmtcPositionUpdateMs >= 5000) {
+        _lastSmtcPositionUpdateMs = now;
         _smtc.updateTimeProperties(progress: (position * 1000).round());
-      });
+      }
     });
 
     final savedGains = _pref.eqGains;
@@ -335,6 +337,7 @@ class PlaybackService extends ChangeNotifier {
         duration: nowPlaying!.duration * 1000,
         path: nowPlaying!.path,
       );
+      _lastSmtcPositionUpdateMs = 0;
 
       playService.desktopLyricService.canSendMessage.then((canSend) {
         if (!canSend) return;
@@ -543,6 +546,7 @@ class PlaybackService extends ChangeNotifier {
         duration: nowPlaying!.duration * 1000,
         path: nowPlaying!.path,
       );
+      _lastSmtcPositionUpdateMs = 0;
     } catch (err) {
       logger.e('[restore last session] $err');
     }
@@ -661,11 +665,7 @@ class PlaybackService extends ChangeNotifier {
       _player.pause();
     } catch (_) {}
 
-    // 2. 取消可能仍在 pending 的 SMTC timeline 定时器
-    _timelineTimer?.cancel();
-    _timelineTimer = null;
-
-    // 3. 取消所有 Stream 订阅（在关闭 Controllers 之前）
+    // 2. 取消所有 Stream 订阅（在关闭 Controllers 之前）
     try {
       await _playerStateStreamSub.cancel();
     } catch (_) {}
