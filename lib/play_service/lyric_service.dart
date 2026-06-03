@@ -81,6 +81,7 @@ class LyricService extends ChangeNotifier {
         playService.playbackService.positionStream.listen((pos) {
       final jumped = (pos - _lastPos).abs() > 1.0;
       _lastPos = pos;
+      final posMs = (pos * 1000).round();
       if (jumped) {
         findCurrLyricLineAt(pos);
         return;
@@ -88,12 +89,10 @@ class LyricService extends ChangeNotifier {
       final lyric = _currLyric;
       if (lyric == null) return;
       if (_nextLyricLine >= lyric.lines.length) {
-        // 已超过最后一行：重新计算，防止小幅回退后一直卡在末尾
+        if (_lineStartMs.isEmpty || posMs > _lineStartMs.last) return;
         findCurrLyricLineAt(pos);
         return;
       }
-
-      final posMs = (pos * 1000).round();
       while (_nextLyricLine < _lineStartMs.length &&
           posMs > _lineStartMs[_nextLyricLine]) {
         _nextLyricLine += 1;
@@ -103,6 +102,7 @@ class LyricService extends ChangeNotifier {
       if (currLineIndex < 0 || currLineIndex >= lyric.lines.length) return;
       if (currLineIndex != _lastEmittedLineIndex) {
         _lastEmittedLineIndex = currLineIndex;
+        _lastEmittedLineIndexForHint = currLineIndex;
         _lyricLineStreamController.add(currLineIndex);
       }
 
@@ -237,7 +237,7 @@ class LyricService extends ChangeNotifier {
 
   late final StreamController<int> _lyricLineStreamController =
       StreamController.broadcast(onListen: () {
-    findCurrLyricLineAt(playService.playbackService.position);
+    forceEmitCurrentLine();
   });
 
   Stream<int> get lyricLineStream => _lyricLineStreamController.stream;
