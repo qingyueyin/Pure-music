@@ -14,6 +14,7 @@ import 'package:pure_music/native/rust/frb_generated.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/play_service/play_service.dart';
+import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
@@ -112,7 +113,8 @@ Future<void> main() async {
   await initWindow();
   await ImmersiveModeController.instance.init();
 
-  // 内存监控：每 30s 记录 RSS，超过 250MB 触发紧急清理
+  // 内存监控：每 60s 检查 RSS，仅在窗口未聚焦或 RSS 过高时触发清理
+  // 播放中减少清理频率和强度，避免缓存频繁重建导致卡顿
   _startMemoryMonitor();
 
   runApp(Entry(welcome: welcome));
@@ -120,33 +122,53 @@ Future<void> main() async {
 
 Timer? _memoryMonitorTimer;
 
+/// 播放状态下仅做轻量清理，避免缓存重建开销导致音频卡顿
+bool _isPlaying() {
+  try {
+    return PlayService.instance.playbackService.playerState ==
+        PlayerState.playing;
+  } catch (_) {
+    return false;
+  }
+}
+
 void _startMemoryMonitor() {
   _memoryMonitorTimer?.cancel();
-  _memoryMonitorTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+  _memoryMonitorTimer = Timer.periodic(const Duration(seconds: 60), (_) {
     try {
       final rssMB = (ProcessInfo.currentRss / (1024 * 1024)).round();
-      if (rssMB > 200) {
-        logger.w('[mem] RSS ${rssMB}MB > 200, tier-3 emergency cleanup');
-        PaintingBinding.instance.imageCache.clear();
-        PaintingBinding.instance.imageCache.clearLiveImages();
-        CoverImageCache.instance.clear();
+
+      // 播放状态下调高阈值，避免频繁清理引起缓存重建和 GC 抖动
+      final playing = _isPlaying();
+      final tier3Threshold = playing ? 450 : 400;
+      final tier2Threshold = playing ? 350 : 250;
+
+      if (rssMB > tier3Threshold) {
+        logger.w(
+          '[mem] RSS ${rssMB}MB > $tier3Threshold, tier-3 emergency cleanup',
+        );
+        // 播放中不清空 ImageCache（避免图片重解码导致帧率抖动）
+        if (!playing) {
+          PaintingBinding.instance.imageCache.clear();
+          PaintingBinding.instance.imageCache.clearLiveImages();
+        }
+        CoverImageCache.instance.trimMemory();
         CoverCache.instance.clear();
         AudioLibrary.instance.evictAllCoversExcept(
           PlayService.instance.playbackService.nowPlaying?.path,
         );
         clearLyricCaches();
-      } else if (rssMB > 150) {
-        logger.w('[mem] RSS ${rssMB}MB > 150, tier-2 cleanup');
-        PaintingBinding.instance.imageCache.clear();
-        PaintingBinding.instance.imageCache.clearLiveImages();
-        CoverImageCache.instance.clear();
-        CoverCache.instance.clear();
-        AudioLibrary.instance.evictAllCoversExcept(
-          PlayService.instance.playbackService.nowPlaying?.path,
+      } else if (rssMB > tier2Threshold) {
+        logger.w(
+          '[mem] RSS ${rssMB}MB > $tier2Threshold, tier-2 cleanup',
         );
-      } else if (rssMB > 100) {
-        PaintingBinding.instance.imageCache.clear();
+        if (!playing) {
+          PaintingBinding.instance.imageCache.clear();
+        }
+        CoverImageCache.instance.trimMemory();
+        CoverCache.instance.clear();
       }
+      // 移除原有的 100MB 级清理（过于频繁且无明显收益）
     } catch (_) {}
   });
 }
