@@ -60,7 +60,13 @@ Lyric? getCachedLyric(
 
 /// 搜索指定源并返回最佳匹配的歌词
 Future<Lyric?> getLyricFromPreferredSource(Audio audio, ResultSource source) async {
-  final query = audio.title;
+  final searchQueries = _buildSearchQueries(audio);
+  if (searchQueries.isEmpty) {
+    logger.w('[preferred] no valid search queries');
+    return null;
+  }
+
+  final query = searchQueries.first;
   logger.i('[preferred] searching "$query" from $source');
 
   try {
@@ -390,65 +396,101 @@ class SongSearchResult {
   }
 }
 
-Future<List<SongSearchResult>> uniSearch(Audio audio) async {
-  // 构建查询词：优先用 "title - artist" 格式（API 匹配更准确）
-  String searchQuery;
-  if (audio.title.isNotEmpty && audio.artist.isNotEmpty && audio.artist != 'UNKNOWN') {
-    searchQuery = '${audio.title} - ${audio.artist}';
+/// 清理搜索关键词，移除分隔符和噪音，模仿 Lyrico 的 cleanNoise
+String _cleanForSearch(String text) {
+  return text
+      .replaceAll(RegExp(r'\s*[-–—－/、,，&＆+×|｜]\s*'), ' ')  // 分隔符 → 空格
+      .replaceAll(RegExp(r'[【】\[\]（）()《》<>「」『』"\x27~\u00B7\u30FB]'), ' ')  // 标点符号 → 空格
+      .replaceAll(RegExp(r'\s+'), ' ')  // 多个空格 → 单个
+      .trim();
+}
+
+/// 构建多个搜索查询，模仿 Lyrico 的 buildSearchQueries
+/// 例如："呼吸决定 - Fine乐团" → ["呼吸决定 Fine乐团", "呼吸决定", "Fine乐团 呼吸决定"]
+List<String> _buildSearchQueries(Audio audio) {
+  final queries = <String>[];
+
+  final rawTitle = audio.title.trim();
+  final rawArtist = audio.artist.trim();
+
+  if (rawTitle.isEmpty || rawTitle == 'UNKNOWN') {
+    // 从文件路径提取文件名作为后备
+    final fileName = audio.path.split(RegExp(r'[/\\]')).last.replaceAll(RegExp(r'\.[^.]+$'), '');
+    if (fileName.isNotEmpty) {
+      queries.add(_cleanForSearch(fileName));
+    }
+    return queries;
+  }
+
+  final cleanTitle = _cleanForSearch(rawTitle);
+  final cleanArtist = _cleanForSearch(rawArtist);
+  final hasArtist = cleanArtist.isNotEmpty && cleanArtist != 'UNKNOWN';
+
+  // 1. 主要查询：标题 + 艺术家（空格连接，替代原来的 "title - artist"）
+  if (hasArtist) {
+    queries.add('$cleanTitle $cleanArtist');
   } else {
-    searchQuery = audio.title;
+    queries.add(cleanTitle);
+  }
+
+  // 2. 分段查询：当有多片段时，单独搜标题和艺术家
+  if (hasArtist) {
+    queries.add(cleanTitle);
+    queries.add('$cleanArtist $cleanTitle');  // 反向顺序
+  }
+
+  // 去重，最多5个查询
+  return queries.toSet().take(5).toList();
+}
+
+Future<List<SongSearchResult>> uniSearch(Audio audio) async {
+  final searchQueries = _buildSearchQueries(audio);
+  if (searchQueries.isEmpty) {
+    logger.w('uniSearch: no valid search queries');
+    return [];
   }
 
   final List<SongSearchResult> result = [];
-
   const int perSourceLimit = 1; // 聚合：每源只取一条，严格筛选
 
-  logger.d('=== uniSearch query: "$searchQuery" ===');
+  // 尝试每个查询，直到找到高置信结果
+  for (int i = 0; i < searchQueries.length; i++) {
+    final searchQuery = searchQueries[i];
+    logger.d('=== uniSearch query #${i + 1}: "$searchQuery" ===');
 
-  final kgFuture = _searchKugouWithTimeout(searchQuery, audio, 6, perSourceLimit);
-  final qqFuture = _searchQQWithTimeout(searchQuery, audio, 6, perSourceLimit);
-  final neFuture = _searchNEWithTimeout(searchQuery, audio, 6, perSourceLimit);
+    final kgFuture = _searchKugouWithTimeout(searchQuery, audio, 6, perSourceLimit);
+    final qqFuture = _searchQQWithTimeout(searchQuery, audio, 6, perSourceLimit);
+    final neFuture = _searchNEWithTimeout(searchQuery, audio, 6, perSourceLimit);
 
-  final results = await Future.wait([kgFuture, qqFuture, neFuture], eagerError: false)
-      .timeout(const Duration(seconds: 18), onTimeout: () {
-    logger.w('uniSearch timeout for query: $searchQuery');
-    return <List<SongSearchResult>>[[], [], []];
-  });
+    final results = await Future.wait([kgFuture, qqFuture, neFuture], eagerError: false)
+        .timeout(const Duration(seconds: 18), onTimeout: () {
+      logger.w('uniSearch timeout for query: $searchQuery');
+      return <List<SongSearchResult>>[[], [], []];
+    });
 
-  // 取各来源分数最高的结果
-  final bestResults = <SongSearchResult>[];
-  for (final sourceResults in results) {
-    if (sourceResults.isNotEmpty) {
-      sourceResults.sort((a, b) => b.score.compareTo(a.score));
-      bestResults.add(sourceResults.first);
-    }
-  }
-
-  bestResults.sort((a, b) => b.score.compareTo(a.score));
-
-  // 只保留分数 >= 60 的结果（充分匹配）
-  for (final item in bestResults) {
-    if (item.score >= 60 && !_containsResult(result, item)) {
-      result.add(item);
-    }
-  }
-
-  // 如果上面的搜索没出高置信结果，再用纯标题搜索一次（去掉 - artist 可能干扰匹配）
-  if (result.isEmpty && searchQuery.contains(' - ')) {
-    logger.d('=== uniSearch fallback: title only ===');
-    final titleOnly = audio.title;
-    final kgFb = await _searchKugouWithTimeout(titleOnly, audio, 4, perSourceLimit);
-    final qqFb = await _searchQQWithTimeout(titleOnly, audio, 4, perSourceLimit);
-    final neFb = await _searchNEWithTimeout(titleOnly, audio, 4, perSourceLimit);
-
-    for (final src in [kgFb, qqFb, neFb]) {
-      for (final item in src) {
-        if (item.score >= 60 && !_containsResult(result, item)) {
-          result.add(item);
-        }
+    // 取各来源分数最高的结果
+    final bestResults = <SongSearchResult>[];
+    for (final sourceResults in results) {
+      if (sourceResults.isNotEmpty) {
+        sourceResults.sort((a, b) => b.score.compareTo(a.score));
+        bestResults.add(sourceResults.first);
       }
     }
-    result.sort((a, b) => b.score.compareTo(a.score));
+
+    bestResults.sort((a, b) => b.score.compareTo(a.score));
+
+    // 只保留分数 >= 60 的结果（充分匹配）
+    for (final item in bestResults) {
+      if (item.score >= 60 && !_containsResult(result, item)) {
+        result.add(item);
+      }
+    }
+
+    // 如果已经找到高置信结果，不再尝试后续查询
+    if (result.isNotEmpty) {
+      logger.d('=== uniSearch found results on query #${i + 1}, stopping ===');
+      break;
+    }
   }
 
   logger.d('=== uniSearch done: ${result.length} results, best=${result.isNotEmpty ? result.first.score : 0} ===');
