@@ -23,22 +23,6 @@ enum LyricScrollState {
   programScrolling,
 }
 
-List<LyricLine> _filterEmptyLines(List<LyricLine> lines, bool removeEmpty) {
-  if (!removeEmpty) return lines;
-  return lines.where((line) {
-    if (line is SyncLyricLine) {
-      // 间奏行（words.isEmpty 但 length > 3秒）需要保留用于显示动画
-      if (line.words.isEmpty) {
-        return line.length > const Duration(seconds: 3);
-      }
-      return true;
-    } else if (line is LrcLine) {
-      return !line.isBlank || line.length > const Duration(seconds: 3);
-    }
-    return true;
-  }).toList();
-}
-
 class VerticalLyricView extends StatefulWidget {
   const VerticalLyricView({
     super.key,
@@ -220,44 +204,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   List<double>? _cachedOffsets;
   List<double>? _cachedHeights;
   double _cachedMaxWidth = 0.0;
-  List<LyricLine>? _filteredLines;
-  Map<int, int>? _originalToFilteredIndexMap;
-
-  void _rebuildFilteredLines() {
-    final removeEmpty = _lyricViewController?.removeEmptyLines ?? true;
-    _filteredLines = _filterEmptyLines(widget.lyric.lines, removeEmpty);
-    _originalToFilteredIndexMap = {};
-
-    if (_filteredLines!.isEmpty) return;
-
-    // 为每个原始行建立到过滤后索引的映射
-    // 被过滤掉的行：映射到下一个未过滤行的索引（若已是最后则映射到最后一行）
-    int filteredIdx = 0;
-    for (int origIdx = 0; origIdx < widget.lyric.lines.length; origIdx++) {
-      final line = widget.lyric.lines[origIdx];
-
-      // 在过滤后的列表中查找该行（相同对象引用）
-      if (filteredIdx < _filteredLines!.length &&
-          identical(_filteredLines![filteredIdx], line)) {
-        _originalToFilteredIndexMap![origIdx] = filteredIdx;
-        filteredIdx++;
-      } else {
-        // 该行被过滤掉了，映射到下一个有效的过滤索引
-        // 使用当前 filteredIdx（即下一个未过滤行的索引）
-        final mappedIdx = filteredIdx < _filteredLines!.length
-            ? filteredIdx
-            : _filteredLines!.length - 1;
-        _originalToFilteredIndexMap![origIdx] = mappedIdx;
-      }
-    }
-  }
-
-  List<LyricLine> get _effectiveLines {
-    if (_filteredLines == null) {
-      _rebuildFilteredLines();
-    }
-    return _filteredLines!;
-  }
 
   @override
   void initState() {
@@ -316,9 +262,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   void _computeOffsets(double maxWidth) {
     if (maxWidth <= 0) return;
 
-    // 确保 _filteredLines 和 _originalToFilteredIndexMap 同步
-    _rebuildFilteredLines();
-    final lines = _filteredLines!;
+    final lines = widget.lyric.lines;
 
     final controller = context.read<LyricViewController>();
     final config = controller.renderConfig;
@@ -527,8 +471,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       _cachedMaxWidth = 0.0;
       _cachedOffsets = null;
       _cachedHeights = null;
-      _filteredLines = null;
-      _originalToFilteredIndexMap = null;
       _mainLine = 0;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
@@ -543,14 +485,12 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     _ensureVisibleTimer = Timer(const Duration(milliseconds: 150), () {
       if (_disposed || !mounted) return;
       _cachedMaxWidth = 0.0;
-      _filteredLines = null;
-      _originalToFilteredIndexMap = null;
       final oldMainLine = _mainLine;
       setState(() {});
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_disposed || !mounted) return;
-        if (_mainLine >= _effectiveLines.length) {
-          _mainLine = oldMainLine.clamp(0, _effectiveLines.length - 1);
+        if (_mainLine >= widget.lyric.lines.length) {
+          _mainLine = oldMainLine.clamp(0, widget.lyric.lines.length - 1);
         }
         _scrollToCurrent();
       });
@@ -696,8 +636,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   }
 
   void _initLyricView() {
-    final lines = _effectiveLines;
-    utils.logger.d('_initLyricView: effectiveLines=${lines.length} mainLine=$_mainLine lyric.lines=${widget.lyric.lines.length}');
+    final lines = widget.lyric.lines;
+    utils.logger.d('_initLyricView: lines=${lines.length} mainLine=$_mainLine');
     if (lines.isNotEmpty) {
       for (int i = 0; i < lines.length && i < 3; i++) {
         final l = lines[i];
@@ -745,23 +685,27 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     }
   }
 
-  int _originalIndexToFilteredIndex(int originalIndex) {
-    if (_originalToFilteredIndexMap == null) {
-      _rebuildFilteredLines();
+  /// 判断一行是否已被 blankMetadataLines 清空（不需要渲染）
+  bool _isLineBlankFiltered(LyricLine line) {
+    final removeEmpty = _lyricViewController?.removeEmptyLines ?? true;
+    if (!removeEmpty) return false;
+
+    if (line is SyncLyricLine) {
+      // words 为空且长度 <= 3秒 → 纯空白短行，不渲染
+      return line.words.isEmpty && line.length <= const Duration(seconds: 3);
+    } else if (line is LrcLine) {
+      return line.isBlank && line.length <= const Duration(seconds: 3);
     }
-    final mapped = _originalToFilteredIndexMap![originalIndex] ?? originalIndex;
-    if (_filteredLines == null || _filteredLines!.isEmpty) return 0;
-    return mapped.clamp(0, _filteredLines!.length - 1);
+    return false;
   }
 
   void _updateNextLyricLine(int lyricLine) {
     if (_disposed) return;
-    final filteredIndex = _originalIndexToFilteredIndex(lyricLine);
-    if (_mainLine == filteredIndex) {
+    if (_mainLine == lyricLine) {
       return;
     }
 
-    final lines = _effectiveLines;
+    final lines = widget.lyric.lines;
     final renderConfig = context.read<LyricViewController>().renderConfig;
     final viewportStrategy = LyricViewportStrategy(
       leadingLines: renderConfig.viewportLeadingLines,
@@ -771,12 +715,12 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     );
     final followDecision = viewportStrategy.followDecision(
       currentRange: _viewportRange,
-      nextMainLine: filteredIndex,
+      nextMainLine: lyricLine,
       totalLines: lines.length,
     );
 
     setState(() {
-      _mainLine = filteredIndex;
+      _mainLine = lyricLine;
       _viewportRange = followDecision.nextRange;
     });
 
@@ -865,9 +809,15 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                     top: (widget.centerVertically ? spacerHeight : 0) + extraTopPadding + alignTopPadding,
                     bottom: (widget.centerVertically ? spacerHeight : 0) + extraBottomPadding + alignBottomPadding,
                   ),
-                  itemCount: _effectiveLines.length,
+                  itemCount: widget.lyric.lines.length,
                   itemBuilder: (context, i) {
-                    final line = _effectiveLines[i];
+                    final line = widget.lyric.lines[i];
+
+                    // 空白行/元数据行：不渲染（已被 blankMetadataLines 清空）
+                    if (_isLineBlankFiltered(line)) {
+                      return const SizedBox.shrink();
+                    }
+
                     final signedDist = i - _mainLine;
                     final dist = signedDist.abs();
                     final opacity = dist == 0
