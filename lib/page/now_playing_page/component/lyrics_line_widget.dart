@@ -168,11 +168,9 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
             child: widget.line is SyncLyricLine
                 ? LyricTransitionTile(
                     syncLine: widget.line as SyncLyricLine,
-                    alignment: renderConfig.textAlign,
                   )
                 : LyricTransitionTile(
                     lrcLine: widget.line as LrcLine,
-                    alignment: renderConfig.textAlign,
                   ),
           ),
         ),
