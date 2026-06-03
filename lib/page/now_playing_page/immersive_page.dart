@@ -379,7 +379,7 @@ class _ImmersiveLandscapeLayout extends StatelessWidget {
     return Stack(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(24.0, 32.0, 24.0, 32.0),
+          padding: const EdgeInsets.fromLTRB(24.0, 8.0, 24.0, 8.0),
           child: Row(
             children: [
               // 左侧：封面 + 歌曲信息 (50%)
@@ -399,29 +399,18 @@ class _ImmersiveLandscapeLayout extends StatelessWidget {
                   ),
                 ),
               ),
-              // 右侧：歌词区域 (50%)
+              // 右侧：歌词区域 (50%) - 与普通模式一致，无外层 ShaderMask
               Expanded(
-                child: ShaderMask(
-                  shaderCallback: (Rect bounds) {
-                    return const LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.transparent,
-                        Colors.black,
-                        Colors.black,
-                        Colors.transparent,
-                      ],
-                      stops: [0.0, 0.05, 0.95, 1.0],
-                    ).createShader(bounds);
-                  },
-                  blendMode: BlendMode.dstIn,
-                  child: const VerticalLyricView(
-                    showControls: false,
-                    enableSeekOnTap: false,
-                    centerVertically: false,
-                    enableEdgeSpacer: false,
-                    currentLineAlignment: 0.5,
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                    child: const VerticalLyricView(
+                      showControls: false,
+                      enableSeekOnTap: false,
+                      centerVertically: true,
+                      enableEdgeSpacer: true,
+                      currentLineAlignment: 0.45,
+                    ),
                   ),
                 ),
               ),
