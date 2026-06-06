@@ -361,10 +361,6 @@ class LyricsLinePainter extends CustomPainter {
     final verticalPad = config.lrcVerticalPadding();
     final padding = EdgeInsets.only(left: 12.0, right: 12.0, top: verticalPad, bottom: verticalPad);
 
-    final lineStartMs = lrcLine.start.inMilliseconds.toDouble();
-    final lineEndMs = lineStartMs + lrcLine.length.inMilliseconds.toDouble();
-    final progress = _lineProgress(currentTimeMs, lineStartMs, lineEndMs);
-
     final playedColor = useMaterialYouColor
         ? scheme.primary.withValues(alpha: opacity)
         : (isMainLine
@@ -382,7 +378,7 @@ class LyricsLinePainter extends CustomPainter {
 
     final displayedColor = isMainLine
         ? playedColor
-        : Color.lerp(unplayedColor, playedColor, progress)!;
+        : unplayedColor;
     final maxWidth = size.width - padding.horizontal;
 
     final tp = _buildTextPainter(
@@ -451,13 +447,6 @@ class LyricsLinePainter extends CustomPainter {
     final charStartThreshold = charIndex / totalChars;
     return ((wordProgress - charStartThreshold) /
             (charEndThreshold - charStartThreshold))
-        .clamp(0.0, 1.0);
-  }
-
-  double _lineProgress(double currentMs, double lineStartMs, double lineEndMs) {
-    if (currentMs < lineStartMs) return 0.0;
-    if (currentMs >= lineEndMs || lineEndMs <= lineStartMs) return 1.0;
-    return ((currentMs - lineStartMs) / (lineEndMs - lineStartMs))
         .clamp(0.0, 1.0);
   }
 

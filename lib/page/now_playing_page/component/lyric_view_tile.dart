@@ -443,6 +443,7 @@ class _SyncLineContent extends StatelessWidget {
     int fontWeight, {
     required LyricRenderConfig config,
     double opacity = 1.0,
+    Color? colorOverride,
   }) {
     return Text(
       text,
@@ -455,7 +456,7 @@ class _SyncLineContent extends StatelessWidget {
       },
       style: _lyricTextStyle(
         config: config,
-        color: scheme.onSurface.withValues(alpha: opacity),
+        color: colorOverride ?? scheme.onSurface.withValues(alpha: opacity),
         fontSize: fontSize,
         weight: fontWeight,
         scheme: scheme,
@@ -748,6 +749,11 @@ class _LrcLineContent extends StatelessWidget {
     final translationSize = config.translationFontSize(isMainLine: isMainLine);
     final verticalPad = config.lrcVerticalPadding();
 
+    final isDarkMode = scheme.brightness == Brightness.dark;
+    final Color primaryColor = isMainLine
+        ? (isDarkMode ? Colors.white : Colors.black)
+        : scheme.onSurface.withValues(alpha: 0.25);
+
     final splited = lrcLine.content.split('┃');
     final List<Widget> contents = [
       buildPrimaryText(
@@ -757,6 +763,7 @@ class _LrcLineContent extends StatelessWidget {
         primarySize,
         fontWeight,
         config: config,
+        colorOverride: primaryColor,
       )
     ];
     if (showTranslation) {
@@ -914,6 +921,11 @@ class _LyricTransitionTileState extends State<LyricTransitionTile> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+
+    // 间奏结束后隐藏，避免动画残留
+    if (controller.progress >= 1) {
+      return const SizedBox.shrink();
+    }
 
     if (widget.compact) {
       return SizedBox(
