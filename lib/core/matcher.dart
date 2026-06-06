@@ -333,6 +333,7 @@ class SongSearchResult {
   String album;
   double score;
   int? duration;
+  String? lyricType;
 
   String? qqSongId;
   String? kugouSongHash;
@@ -340,7 +341,7 @@ class SongSearchResult {
 
   SongSearchResult(
       this.source, this.title, this.artists, this.album, this.score,
-      {this.qqSongId, this.kugouSongHash, this.neSongId, this.duration});
+      {this.qqSongId, this.kugouSongHash, this.neSongId, this.duration, this.lyricType});
 
   @override
   String toString() {
@@ -364,6 +365,7 @@ class SongSearchResult {
           duration: item.durationMs ~/ 1000),
       qqSongId: item.id,
       duration: item.durationMs ~/ 1000,
+      lyricType: '逐字',
     );
   }
 
@@ -378,6 +380,7 @@ class SongSearchResult {
           duration: item.durationMs ~/ 1000),
       kugouSongHash: item.hash,
       duration: item.durationMs ~/ 1000,
+      lyricType: '逐字',
     );
   }
 
@@ -392,6 +395,7 @@ class SongSearchResult {
           duration: item.durationMs ~/ 1000),
       neSongId: int.tryParse(item.id),
       duration: item.durationMs ~/ 1000,
+      lyricType: null,
     );
   }
 }
@@ -795,7 +799,7 @@ Lyric? _parsedToLyric(ParsedLyricResult parsed, {String? rawText}) {
       entry.content,
       requiredIsBlank: entry.content.isEmpty,
       translation: entry.translation,
-    );
+    )..romanLyric = entry.romanization;
     // 设置歌词行时长：前奏/间奏空白行需要正确的 length 才能被 UI 显示
     if (entry.content.isEmpty) {
       line.length = entry.nextTime - entry.start;

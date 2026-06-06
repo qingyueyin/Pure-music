@@ -11,6 +11,8 @@ class Lyric {
 
   bool get isEmpty => lines.isEmpty;
   bool get isNotEmpty => lines.isNotEmpty;
+
+  bool get isWordByWord => lines.isNotEmpty && lines.first is SyncLyricLine;
 }
 
 class LyricLine {

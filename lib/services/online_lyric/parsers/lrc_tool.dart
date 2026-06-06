@@ -387,7 +387,13 @@ class LrcTool {
         if (subMs < winStart - leadToleranceMs) { subIdx++; continue; }
         if (subMs >= winEnd) break;
         matched = sub.content.trim();
-        subIdx++;
+        // 仅在翻译时间戳早于下一行时才消耗条目（允许多个逐词 QRC 行共享同一条 LRC 翻译）
+        if (i + 1 < main.lines.length) {
+          final nextWinStart = main.lines[i + 1].start.inMilliseconds;
+          if (subMs < nextWinStart - leadToleranceMs) { subIdx++; }
+        } else {
+          subIdx++;
+        }
         break;
       }
 
@@ -432,8 +438,8 @@ class LrcTool {
     if (t.isEmpty) return false;
     // 中文/日文冒号
     if (RegExp(r'[：:]').hasMatch(t)) return true;
-    // "-" 分隔符（含空格模式如 "标题 - 歌手" 或不含空格如 "曲名-歌手"）
-    if (t.contains('-')) return true;
+    // 横线分隔符（歌名 - 歌手、标题-艺术家），仅短文本判为元数据避免误伤歌词
+    if (t.length < 60 && RegExp(r'[\-\u2013\u2014\uff0d]').hasMatch(t)) return true;
     // 版权/来源关键词
     if (RegExp(r'(?:QQ音乐|享有|着作权|著作权|版权|提供|出品|发行|翻译|翻訳)').hasMatch(t)) return true;
     // CJK 前缀 + 冒号（词/曲/编）

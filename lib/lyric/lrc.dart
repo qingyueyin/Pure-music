@@ -91,9 +91,26 @@ class LrcLine extends UnsyncLyricLine {
   }
 
   static final _metadataPattern = RegExp(
-    r'^[\s\u3000]*([\u4e00-\u9fff]|[a-zA-Z]){1,8}[\s\u3000]*[：:][\s\u3000]*',
+    r'^[\s\u3000]*([\u4e00-\u9fff]|[a-zA-Z]){1,30}[\s\u3000]*[：:][\s\u3000]*',
     caseSensitive: false,
   );
+
+  /// 综合元数据检测（对齐 lrc_tool.dart），覆盖：
+  /// - "Adam Levine：" 等演唱者/作词/作曲标注
+  /// - "词：xxx" "曲：xxx" 等 CJK 元数据
+  /// - "歌名 - 歌手" "标题-艺术家" 等横线分隔
+  /// - 版权/出品/发行等信息
+  static bool isLyricMetadataLine(String text) {
+    final t = text.replaceAll(RegExp(r'<[^>]*>'), '').trim();
+    if (t.isEmpty) return false;
+    // 前缀 + 冒号（词/曲/编/演唱者）
+    if (_metadataPattern.hasMatch(t)) return true;
+    // 横线分隔符（歌名 - 歌手、标题-艺术家）——仅当总长度较短时才判为元数据
+    if (t.length < 60 && RegExp(r'[\-\u2013\u2014\uff0d]').hasMatch(t)) return true;
+    // 版权/来源关键词
+    if (RegExp(r'(?:QQ音乐|享有|著作权|版权|提供|出品|发行|翻译|翻訳)').hasMatch(t)) return true;
+    return false;
+  }
 
   /// line: [mm:ss.msmsms]content
   static LrcLine? fromLine(String line, [int? offset]) {
@@ -130,7 +147,7 @@ class LrcLine extends UnsyncLyricLine {
 
     var inMilliseconds = ((minute * 60 + second) * 1000).toInt();
 
-    final isMetadata = content.isNotEmpty && _isMetadataLine(content);
+    final isMetadata = content.isNotEmpty && isLyricMetadataLine(content);
 
     return LrcLine(
       Duration(
@@ -140,12 +157,6 @@ class LrcLine extends UnsyncLyricLine {
       requiredIsBlank: content.isEmpty,
       isMetadata: isMetadata,
     );
-  }
-
-  static bool _isMetadataLine(String content) {
-    final trimmed = content.trim();
-    if (trimmed.isEmpty) return false;
-    return _metadataPattern.hasMatch(trimmed);
   }
 }
 
@@ -189,14 +200,17 @@ class Lrc extends Lyric {
 
     for (final entry in grouped.entries) {
       final group = entry.value;
-      if (group.length == 1) {
-        combinedLines.add(group[0] as LrcLine);
-      } else if (group.length == 2) {
-        final a = group[0] as LrcLine;
-        final b = group[1] as LrcLine;
+      // 过滤显式标记的元数据行（词/曲/演唱者标注）
+      final validLines = group.where((l) => l is LrcLine && !l.isMetadata).toList();
+      if (validLines.isEmpty) continue;
+      if (validLines.length == 1) {
+        combinedLines.add(validLines[0] as LrcLine);
+      } else if (validLines.length == 2) {
+        final a = validLines[0] as LrcLine;
+        final b = validLines[1] as LrcLine;
         combinedLines.add(_combineTwoLines(a, b, separator));
       } else {
-        final result = _combineMultipleLines(group, separator);
+        final result = _combineMultipleLines(validLines, separator);
         combinedLines.add(result);
       }
     }
@@ -758,6 +772,9 @@ class Lrc extends Lyric {
 
       final contentRaw = line.replaceAll(timeTagRe, '').trim();
 
+      // 过滤元数据行
+      if (LrcLine.isLyricMetadataLine(contentRaw)) continue;
+
       for (final m in timeMatches) {
         final minute = int.tryParse(m.group(1) ?? '');
         final sec = double.tryParse(m.group(2) ?? '');
@@ -1058,6 +1075,9 @@ class Lrc extends Lyric {
 
       final contentRaw = line.replaceAll(timeTagRe, '').trim();
 
+      // 过滤元数据行（"Adam Levine："、"词：xxx"等），避免它们抢真实歌词的主位
+      if (LrcLine.isLyricMetadataLine(contentRaw.replaceAll(wordTagRe, '').trim())) continue;
+
       for (final m in timeMatches) {
         final minute = int.tryParse(m.group(1) ?? '');
         final sec = double.tryParse(m.group(2) ?? '');
@@ -1163,14 +1183,24 @@ class Lrc extends Lyric {
       int? primaryIndex; // null = primary 不在 otherContents 中
       
       if (contentsWithTags.isNotEmpty) {
-        // 有逐词标签：第一行是原文（数据源按 原文、翻译 顺序排列）
-        // 注：QQ API 对日文歌的罗马音/原文/翻译都在同一 QRC 中，但不会走 enhanced 路径
-        // enhanced LRC 来自本地内嵌歌词，原文在前、翻译在后
-        primaryRaw = contentsWithTags[0];
+        // 选逐词标签最多的行作为原文。
+        // 解决元数据行（如 "Adam Levine："）被 50ms 容差和实际歌词分到同一组时抢主位的问题。
+        // 实际歌词的逐词标签数远多于元数据行。
+        int bestTagIdx = 0;
+        int maxTagCount = -1;
+        for (int i = 0; i < contentsWithTags.length; i++) {
+          final tc = extractTagCount(contentsWithTags[i]);
+          if (tc > maxTagCount) {
+            maxTagCount = tc;
+            bestTagIdx = i;
+          }
+        }
+        primaryRaw = contentsWithTags[bestTagIdx];
         primaryIndex = null;
 
         // 剩余有标签的行：拉丁→罗马音，CJK→翻译
-        for (int i = 1; i < contentsWithTags.length; i++) {
+        for (int i = 0; i < contentsWithTags.length; i++) {
+          if (i == bestTagIdx) continue;
           final r = contentsWithTags[i];
           if (_isRomanizationStatic(r)) {
             romanContents.add(r);

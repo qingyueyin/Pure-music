@@ -74,8 +74,12 @@ class PlaybackService extends ChangeNotifier {
     }
     _applyOutputGain();
 
-    Future(() async {
-      await _restoreLastSession();
+    Future.microtask(() async {
+      try {
+        await _restoreLastSession();
+      } catch (err, trace) {
+        logger.e('[restoreLastSession] $err\n$trace');
+      }
     });
   }
 
@@ -105,12 +109,12 @@ class PlaybackService extends ChangeNotifier {
     if (gains.every((g) => g.abs() < 1e-6)) return 0.0;
 
     double maxGain = gains.first;
-    double sum = 0.0;
+    double sumGain = 0.0;
     for (final g in gains) {
       if (g > maxGain) maxGain = g;
-      sum += g;
+      sumGain += g;
     }
-    final meanGain = sum / gains.length;
+    final meanGain = sumGain / gains.length;
 
     final desired = -meanGain;
     final safeUpper = math.max(0.0, (-maxGain - eqAutoHeadroomDb).toDouble());

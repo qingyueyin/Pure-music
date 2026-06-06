@@ -1,8 +1,8 @@
 /// 歌词来源类型枚举
 enum LyricSourceType {
-  qq('QQ音乐'),
+  qq('QQ'),
   kugou('酷狗'),
-  ne('网易云');
+  ne('网易');
 
   final String displayName;
   const LyricSourceType(this.displayName);

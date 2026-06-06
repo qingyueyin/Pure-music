@@ -377,7 +377,7 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
                 children: [
                   _buildTab(ResultSource.qq, 'QQ'),
                   const SizedBox(width: 8),
-                  _buildTab(ResultSource.ne, '网易云'),
+                  _buildTab(ResultSource.ne, '网易'),
                   const SizedBox(width: 8),
                   _buildTab(ResultSource.kugou, '酷狗'),
                 ],
@@ -502,6 +502,7 @@ class SetLyricSourceDialog extends StatefulWidget {
 
 class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
   late final Future<List<SongSearchResult>> _searchFuture;
+  List<SongSearchResult>? _results;
 
   @override
   void initState() {
@@ -510,6 +511,36 @@ class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
         .timeout(const Duration(seconds: 20), onTimeout: () {
       logger.w('SetLyricSourceDialog uniSearch timeout');
       return [];
+    }).then((results) {
+      _results = results;
+      for (int i = 0; i < results.length; i++) {
+        final r = results[i];
+        if (r.source == ResultSource.ne && r.lyricType == null && r.neSongId != null) {
+          _confirmNeLyricType(results, i);
+        }
+      }
+      return results;
+    });
+  }
+
+  void _confirmNeLyricType(List<SongSearchResult> results, int index) {
+    if (!mounted) return;
+    final r = results[index];
+    final cached = getCachedLyric(neSongId: r.neSongId);
+    if (cached != null) {
+      r.lyricType = cached.isWordByWord ? '逐字' : '逐行';
+      if (mounted) setState(() {});
+      return;
+    }
+    net_api.neGetLyric(id: r.neSongId!).then((lr) {
+      if (lr == null || !lr.hasContent) return Future.value();
+      return lr.toParsedLyric();
+    }).then((parsed) {
+      if (parsed != null && parsed.isNotEmpty) {
+        r.lyricType = parsed.hasWordByWord ? '逐字' : '逐行';
+      }
+    }).whenComplete(() {
+      if (mounted) setState(() {});
     });
   }
 
@@ -600,7 +631,7 @@ class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
                         ),
                       );
                     }
-                    final results = snapshot.data!;
+                    final results = _results ?? snapshot.data!;
                     // 搜索结果较少（少于 3 条）时提示手动搜索
                     final showManualHint = results.length < 3;
                     return ListView.builder(
@@ -649,29 +680,25 @@ class _ManualSearchTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final sourceText = switch (searchResult.source) {
-      ResultSource.qq => 'QQ',
-      ResultSource.kugou => '酷狗',
-      ResultSource.ne => '网易云',
-    };
-
     return ListTile(
       title: Text(searchResult.title),
       subtitle: Text('${searchResult.artists} - ${searchResult.album}'),
-      trailing: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.primaryContainer,
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Text(
-          sourceText,
-          style: TextStyle(
-            fontSize: 10,
-            color: Theme.of(context).colorScheme.onPrimaryContainer,
-          ),
-        ),
-      ),
+      trailing: searchResult.lyricType != null
+          ? Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.secondaryContainer,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                searchResult.lyricType!,
+                style: TextStyle(
+                  fontSize: 10,
+                  color: Theme.of(context).colorScheme.onSecondaryContainer,
+                ),
+              ),
+            )
+          : null,
       onTap: () {
         final source = switch (searchResult.source) {
           ResultSource.qq => LyricSourceType.qq,
@@ -707,9 +734,9 @@ class _SearchResultItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final sourceText = switch (searchResult.source) {
-      ResultSource.qq => 'QQ音乐',
+      ResultSource.qq => 'QQ',
       ResultSource.kugou => '酷狗',
-      ResultSource.ne => '网易云',
+      ResultSource.ne => '网易',
     };
 
     return ListTile(
@@ -731,20 +758,42 @@ class _SearchResultItem extends StatelessWidget {
           PlayService.instance.lyricService.useOnlineLyric();
         });
       },
-      leading: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.primaryContainer,
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Text(
-          sourceText,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-            color: Theme.of(context).colorScheme.onPrimaryContainer,
+      leading: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              sourceText,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+              ),
+            ),
           ),
-        ),
+          if (searchResult.lyricType != null) ...[
+            const SizedBox(height: 3),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.secondaryContainer,
+                borderRadius: BorderRadius.circular(3),
+              ),
+              child: Text(
+                searchResult.lyricType!,
+                style: TextStyle(
+                  fontSize: 9,
+                  color: Theme.of(context).colorScheme.onSecondaryContainer,
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
       title: Text(searchResult.title, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
