@@ -575,14 +575,14 @@ class _ReferenceCharItem extends StatelessWidget {
               ),
               if (progress > 0.001)
                 ShaderMask(
-                  blendMode: BlendMode.dstIn,
+                  blendMode: BlendMode.srcIn,
                   shaderCallback: (bounds) {
                     const feather = 0.005;
                     final p0 = (progress - feather).clamp(0.0, progress);
                     return LinearGradient(
-                      colors: const [
-                        Colors.white,
-                        Colors.white,
+                      colors: [
+                        highlightColor,
+                        highlightColor,
                         Colors.transparent,
                         Colors.transparent,
                       ],
@@ -593,7 +593,7 @@ class _ReferenceCharItem extends StatelessWidget {
                     char,
                     style: TextStyle(
                       fontFamily: 'sans-serif',
-                      color: highlightColor,
+                      color: Colors.white,
                       fontSize: fontSize,
                       fontVariations: [FontVariation('wght', config.fontWeight.toDouble())],
                       fontWeight: config.discreteFontWeight(config.fontWeight),
@@ -705,7 +705,11 @@ class _LrcLineContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (lrcLine.isBlank) {
-      if (lrcLine.length > const Duration(seconds: 3) && isMainLine) {
+      // 逐行模式下不用间奏动画
+      final displayMode = context.watch<LyricViewController>().lyricDisplayMode;
+      if (lrcLine.length > const Duration(seconds: 3) &&
+          isMainLine &&
+          displayMode != LyricDisplayMode.lineByLine) {
         return LyricTransitionTile(lrcLine: lrcLine);
       } else {
         return const SizedBox.shrink();
