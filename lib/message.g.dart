@@ -168,3 +168,9 @@ UnlockMessage _$UnlockMessageFromJson(Map<String, dynamic> json) =>
 
 Map<String, dynamic> _$UnlockMessageToJson(UnlockMessage instance) =>
     <String, dynamic>{};
+
+HeartbeatMessage _$HeartbeatMessageFromJson(Map<String, dynamic> json) =>
+    const HeartbeatMessage();
+
+Map<String, dynamic> _$HeartbeatMessageToJson(HeartbeatMessage instance) =>
+    <String, dynamic>{};
