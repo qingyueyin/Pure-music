@@ -693,6 +693,7 @@ class BassPlayer {
   /// ensure that there's bass.dll at path of .exe\\dll\\BASS
   /// leave the device's output freq as it is
   BassPlayer() {
+    // ─── 1. 确定 BASS DLL 目录 ─────────────────────────────────────────────
     final exeBassDir =
         path.join(path.dirname(Platform.resolvedExecutable), 'dll', 'BASS');
     final cwdBassDir = path.join(Directory.current.path, 'dll', 'BASS');
@@ -702,28 +703,67 @@ class BassPlayer {
         ? exeBassDir
         : (cwdBassDll.existsSync() ? cwdBassDir : exeBassDir);
 
+    // ─── 2. 确保 Windows 能找到 BASS 目录下的依赖 DLL ──────────────────────
     if (Platform.isWindows) {
+      // 防线 A: SetDllDirectoryW — 将 BASS 目录加入标准 DLL 搜索路径
+      bool dllDirSet = false;
       try {
         final kernel32 = ffi.DynamicLibrary.open('kernel32.dll');
         _windowsSleep = kernel32
             .lookupFunction<ffi.Void Function(ffi.Uint32), void Function(int)>(
                 'Sleep');
+
         final setDllDirectory = kernel32.lookupFunction<
             ffi.Int32 Function(ffi.Pointer<Utf16>),
             int Function(ffi.Pointer<Utf16>)>('SetDllDirectoryW');
         final bassDir = _bassDir.toNativeUtf16();
-        setDllDirectory(bassDir);
+        dllDirSet = setDllDirectory(bassDir) != 0;
         malloc.free(bassDir);
+
+        if (!dllDirSet) {
+          logger.w('[bass] SetDllDirectoryW failed, falling back to PATH');
+        }
       } catch (e) {
-        logger.e('Failed to SetDllDirectory: $e');
+        logger.w('[bass] SetDllDirectoryW exception: $e');
+      }
+
+      // 防线 B: 将 BASS 目录加入 PATH — 终极保底，不受 SetDefaultDllDirectories 影响
+      if (!dllDirSet) {
+        try {
+          final currentPath = Platform.environment['PATH'] ?? '';
+          if (!currentPath.contains(_bassDir)) {
+            final newPath = '$_bassDir;$currentPath';
+            // 通过 SetEnvironmentVariableW 设置
+            final kernel32 = ffi.DynamicLibrary.open('kernel32.dll');
+            final setEnv = kernel32.lookupFunction<
+                ffi.Int32 Function(ffi.Pointer<Utf16>, ffi.Pointer<Utf16>),
+                int Function(
+                    ffi.Pointer<Utf16>, ffi.Pointer<Utf16>)>('SetEnvironmentVariableW');
+            final nameP = 'PATH'.toNativeUtf16();
+            final valueP = newPath.toNativeUtf16();
+            setEnv(nameP, valueP);
+            malloc.free(nameP);
+            malloc.free(valueP);
+            logger.i('[bass] Added BASS dir to PATH as fallback');
+          }
+        } catch (e) {
+          logger.w('[bass] Failed to update PATH: $e');
+        }
       }
     }
 
-    final bassLibPath = path.join(_bassDir, 'bass.dll');
-    _bassLib = ffi.DynamicLibrary.open(bassLibPath);
-    _bass = bass.Bass(_bassLib);
+    // ─── 3. 加载 bass.dll（核心） ───────────────────────────────────────────
+    ffi.DynamicLibrary bassLib;
     try {
-      _bassChannelGetData = _bassLib.lookupFunction<
+      bassLib = ffi.DynamicLibrary.open(path.join(_bassDir, 'bass.dll'));
+    } catch (e) {
+      logger.e('[bass] FATAL: Cannot load bass.dll from $_bassDir: $e');
+      rethrow;
+    }
+    _bassLib = bassLib;
+    _bass = bass.Bass(bassLib);
+    try {
+      _bassChannelGetData = bassLib.lookupFunction<
           ffi.UnsignedLong Function(
             ffi.UnsignedLong,
             ffi.Pointer<ffi.Void>,
@@ -734,41 +774,54 @@ class BassPlayer {
       _bassChannelGetData = null;
     }
 
-    final bassWasapiLibPath = path.join(_bassDir, 'basswasapi.dll');
-    _bassWasapiLib = ffi.DynamicLibrary.open(bassWasapiLibPath);
-    _bassWasapi = bass_wasapi.BassWasapi(_bassWasapiLib);
+    // ─── 4. 加载 basswasapi.dll ─────────────────────────────────────────────
+    try {
+      final wasapiLib =
+          ffi.DynamicLibrary.open(path.join(_bassDir, 'basswasapi.dll'));
+      _bassWasapiLib = wasapiLib;
+      _bassWasapi = bass_wasapi.BassWasapi(wasapiLib);
+    } catch (e) {
+      logger.e('[bass] FATAL: Cannot load basswasapi.dll: $e');
+      rethrow;
+    }
 
+    // ─── 5. 加载其他 BASS 插件（bassflac.dll 等，通过 BASS_PluginLoad） ─────
     final coreDlls = {
       'bass.dll',
       'basswasapi.dll',
       'bass_fx.dll',
     };
-    final entries = Directory(_bassDir).listSync(followLinks: false);
-    for (final e in entries) {
-      if (e is! File) continue;
-      final name = path.basename(e.path).toLowerCase();
-      if (!name.endsWith('.dll')) continue;
-      if (!name.startsWith('bass')) continue;
-      if (coreDlls.contains(name)) continue;
+    if (Directory(_bassDir).existsSync()) {
+      final entries = Directory(_bassDir).listSync(followLinks: false);
+      for (final e in entries) {
+        if (e is! File) continue;
+        final name = path.basename(e.path).toLowerCase();
+        if (!name.endsWith('.dll')) continue;
+        if (!name.startsWith('bass')) continue;
+        if (coreDlls.contains(name)) continue;
 
-      final pluginFullPath = e.path;
-      final pluginPathP = pluginFullPath.toNativeUtf16().cast<ffi.Char>();
-      final hplugin = _bass.BASS_PluginLoad(pluginPathP, bass.BASS_UNICODE);
-      if (hplugin == 0) {
-        final errCode = _bass.BASS_ErrorGetCode();
-        logger.w('Failed to load plugin $pluginFullPath: Error $errCode');
+        final pluginFullPath = e.path;
+        final pluginPathP = pluginFullPath.toNativeUtf16().cast<ffi.Char>();
+        final hplugin = _bass.BASS_PluginLoad(pluginPathP, bass.BASS_UNICODE);
+        if (hplugin == 0) {
+          final errCode = _bass.BASS_ErrorGetCode();
+          logger.w('[bass] Plugin load failed: $pluginFullPath (error $errCode)');
+        } else {
+          logger.i('[bass] Plugin loaded: $name');
+        }
+        malloc.free(pluginPathP);
       }
-      malloc.free(pluginPathP);
     }
 
+    // ─── 6. BASS 初始化 ─────────────────────────────────────────────────────
     try {
       _bassInit();
     } catch (err) {
-      logger.e('[bass init] $err');
+      logger.e('[bass] Init failed: $err');
     }
 
-    // BASS_FX - 懒加载：首次调节音调/变速时才加载，省 ~8MB Native 内存
-    // 调用 _loadBassFx() 由 setPitch() / setSpeed() 触发
+    // ─── 7. 预加载 BASS_FX（在 bass.dll 已就绪时加载，避免后续依赖解析问题） ─
+    _loadBassFx();
   }
 
   void _loadBassFx() {
@@ -877,9 +930,9 @@ class BassPlayer {
       0,
       flags,
     );
-    malloc.free(pathPointer);
 
     if (handle == 0) {
+      malloc.free(pathPointer);
       throw Exception('Failed to create shared stream');
     }
 
@@ -920,6 +973,8 @@ class BassPlayer {
         flags,
       );
     }
+
+    malloc.free(pathPointer);
 
     if (handle == 0) {
       throw Exception('Failed to create shared stream with fallback');
@@ -1146,8 +1201,7 @@ class BassPlayer {
     _rate = rate;
     if (_fstream == null) return;
 
-    _loadBassFx(); // 懒加载：首次调速时才加载 bass_fx.dll
-
+    // bass_fx.dll 已在构造时预加载，直接使用
     if (wasapiExclusive && _rate != 1.0) {
       logger.w('[bass] rate change in exclusive mode, fallback to shared mode');
       useExclusiveMode(false);
@@ -1183,8 +1237,7 @@ class BassPlayer {
     _pitch = pitch;
     if (_fstream == null) return;
 
-    _loadBassFx(); // 懒加载：首次变调时才加载 bass_fx.dll
-
+    // bass_fx.dll 已在构造时预加载，直接使用
     if (wasapiExclusive && _pitch != 0.0) {
       logger
           .w('[bass] pitch change in exclusive mode, fallback to shared mode');
