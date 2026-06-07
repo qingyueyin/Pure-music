@@ -28,7 +28,6 @@ class _LyricTransitionDotsState extends State<LyricTransitionDots>
   final Stopwatch _stopwatch = Stopwatch();
   final ValueNotifier<double> _progress = ValueNotifier(0);
   double _sizeFactor = 0;
-  double _k = 1;
   int _baseProgressMs = 0;
   late VoidCallback _playingListener;
 
@@ -75,14 +74,9 @@ class _LyricTransitionDotsState extends State<LyricTransitionDots>
   }
 
   void _onTick(Duration elapsed) {
-    _sizeFactor += _k * 1 / 180;
-    if (_sizeFactor > 1) {
-      _k = -1;
-      _sizeFactor = 1;
-    } else if (_sizeFactor < 0) {
-      _k = 1;
-      _sizeFactor = 0;
-    }
+    // Smooth sinusoidal breathing (~6s per cycle, matching main player behavior)
+    final t = (_baseProgressMs + _stopwatch.elapsedMilliseconds) / 1000.0;
+    _sizeFactor = (sin(t * pi / 3) + 1) / 2;
 
     final lenMs = widget.length.inMilliseconds;
     final posMs = _baseProgressMs + _stopwatch.elapsedMilliseconds;
