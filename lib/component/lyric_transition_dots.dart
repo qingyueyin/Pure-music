@@ -136,11 +136,15 @@ class _LyricTransitionPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    circlePaint1.color = color.withValues(alpha: 0.05 + min(progress * 3, 1) * 0.95);
-    circlePaint2.color =
-        color.withValues(alpha: 0.05 + min(max(progress - 1 / 3, 0) * 3, 1) * 0.95);
-    circlePaint3.color =
-        color.withValues(alpha: 0.05 + min(max(progress - 2 / 3, 0) * 3, 1) * 0.95);
+    circlePaint1.color = color.withValues(
+      alpha: 0.05 + min(progress * 3, 1) * 0.95,
+    );
+    circlePaint2.color = color.withValues(
+      alpha: 0.05 + min(max(progress - 1 / 3, 0) * 3, 1) * 0.95,
+    );
+    circlePaint3.color = color.withValues(
+      alpha: 0.05 + min(max(progress - 2 / 3, 0) * 3, 1) * 0.95,
+    );
 
     final rWithFactor = radius + sizeFactor;
     final c1 = Offset(rWithFactor, 8);
@@ -159,4 +163,3 @@ class _LyricTransitionPainter extends CustomPainter {
         oldDelegate.color != color;
   }
 }
-
