@@ -4,6 +4,8 @@ import 'dart:ffi' as ffi;
 
 const int BASS_CONFIG_BUFFER = 0;
 
+const int BASS_CONFIG_DEV_BUFFER = 38;
+
 const int BASS_ERROR_UNKNOWN = -1;
 
 const int BASS_ERROR_NOTAUDIO = 17;
