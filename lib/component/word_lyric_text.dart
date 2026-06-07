@@ -60,11 +60,24 @@ class _WordLyricTextState extends State<WordLyricText> with SingleTickerProvider
       _playingListener = _syncPlaying;
       widget.isPlaying.addListener(_playingListener);
     }
-    if (oldWidget.line != widget.line ||
-        oldWidget.fontSize != widget.fontSize ||
+
+    final contentChanged = oldWidget.line.content != widget.line.content ||
+        oldWidget.line.translation != widget.line.translation ||
+        oldWidget.line.words != widget.line.words;
+    final progressChanged = oldWidget.line.progressMs != widget.line.progressMs;
+    final propsChanged = oldWidget.fontSize != widget.fontSize ||
         oldWidget.fontWeight != widget.fontWeight ||
-        oldWidget.color != widget.color) {
+        oldWidget.color != widget.color;
+
+    if (contentChanged || propsChanged) {
+      // Content/props changed → full layout rebuild
       _resetFromLine(widget.line);
+      _syncPlaying();
+    } else if (progressChanged) {
+      // Only progress changed → recalibrate without layout rebuild
+      _stopwatch.reset();
+      _baseProgressMs = widget.line.progressMs ?? 0;
+      _progressMs.value = _baseProgressMs;
       _syncPlaying();
     }
   }

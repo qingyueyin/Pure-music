@@ -46,7 +46,7 @@ class LyricLineDisplayArea extends StatelessWidget {
 
         final childKey = ValueKey<String>(
           isTransition
-              ? "TRANSITION_${lyricLine.length.inMilliseconds}_${lyricLine.progressMs}"
+              ? "TRANSITION_${lyricLine.length.inMilliseconds}"
               : "${lyricLine.content}|${lyricLine.translation}",
         );
 
