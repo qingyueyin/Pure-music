@@ -148,6 +148,7 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
   Widget _buildReorderList(List<Audio> playlist, ColorScheme scheme) {
     return ReorderableListView.builder(
       padding: const EdgeInsets.only(bottom: 8.0),
+      buildDefaultDragHandles: false,
       itemCount: playlist.length,
       onReorderItem: (oldIndex, newIndex) {
         final pb = playbackService;
@@ -156,20 +157,15 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
         currentList.insert(newIndex, item);
         pb.playlist.value = currentList;
 
-        // 调整当前播放索引
+        // 仅更新当前播放索引，不触发重新播放
         if (pb.playlistIndex == oldIndex) {
-          // 当前播放歌曲被拖动，更新索引到新位置
-          pb.playIndexOfPlaylist(newIndex);
+          pb.setPlaylistIndex(newIndex);
         } else if (oldIndex < pb.playlistIndex &&
             newIndex >= pb.playlistIndex) {
-          // 当前播放之前的歌曲被拖到之后，索引前移
-          final newIdx = pb.playlistIndex - 1;
-          pb.playIndexOfPlaylist(newIdx);
+          pb.setPlaylistIndex(pb.playlistIndex - 1);
         } else if (oldIndex > pb.playlistIndex &&
             newIndex <= pb.playlistIndex) {
-          // 当前播放之后的歌曲被拖到之前，索引后移
-          final newIdx = pb.playlistIndex + 1;
-          pb.playIndexOfPlaylist(newIdx);
+          pb.setPlaylistIndex(pb.playlistIndex + 1);
         }
       },
       proxyDecorator: (child, index, animation) => Material(
