@@ -83,6 +83,10 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
 
     try {
       final results = await _searchSingleSource(searchQuery, source, page: 1);
+      // 如果是网易云源，在显示结果前先批量获取逐字/逐行类型
+      if (source == ResultSource.ne && results.isNotEmpty) {
+        await _fillNeLyricTypes(results);
+      }
       if (mounted) {
         setState(() {
           _resultsMap[source] = results;
@@ -93,6 +97,33 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
     } catch (e) {
       if (mounted) setState(() => _isSearching = false);
     }
+  }
+
+  /// 批量获取网易云结果的逐字/逐行类型
+  Future<void> _fillNeLyricTypes(List<SongSearchResult> results) async {
+    final neResults = results.where((r) => r.source == ResultSource.ne && r.lyricType == null && r.neSongId != null).toList();
+    if (neResults.isEmpty) return;
+
+    final futures = neResults.map((r) async {
+      final cached = getCachedLyric(neSongId: r.neSongId);
+      if (cached != null) {
+        r.lyricType = cached.isWordByWord ? '逐字' : '逐行';
+        return;
+      }
+      try {
+        final lr = await net_api.neGetLyric(id: r.neSongId!);
+        if (lr == null || !lr.hasContent) return;
+        final parsed = await lr.toParsedLyric();
+        if (parsed != null && parsed.isNotEmpty) {
+          r.lyricType = parsed.hasWordByWord ? '逐字' : '逐行';
+        }
+      } catch (_) {
+        // 单个请求失败不影响其他结果
+      }
+    });
+
+    await Future.wait(futures);
+    if (mounted) setState(() {});
   }
 
   /// 加载下一页（API 级别翻页）
@@ -109,13 +140,14 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
       final newResults = await _searchSingleSource(searchQuery, source, page: nextApiPage);
       if (mounted) {
         final existing = _resultsMap[source]!;
-        int addedCount = 0;
+        final newlyAdded = <SongSearchResult>[];
         for (final r in newResults) {
           if (!_containsManualResult(existing, r)) {
             existing.add(r);
-            addedCount++;
+            newlyAdded.add(r);
           }
         }
+        final addedCount = newlyAdded.length;
         // 重新按分数降序排列整个列表，确保最佳匹配始终在前
         existing.sort((a, b) => b.score.compareTo(a.score));
         _apiPageMap[source] = nextApiPage;
@@ -126,6 +158,10 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
           if (_pageMap[source]! < newMaxPage) {
             _pageMap[source] = _pageMap[source]! + 1;
           }
+        }
+        // 如果是网易云源，仅获取新增结果的 lyricType
+        if (source == ResultSource.ne && addedCount > 0) {
+          await _fillNeLyricTypes(newlyAdded);
         }
         setState(() => _isLoadingMore = false);
       }
@@ -532,12 +568,15 @@ class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
       if (mounted) setState(() {});
       return;
     }
-    net_api.neGetLyric(id: r.neSongId!).then((lr) {
-      if (lr == null || !lr.hasContent) return Future.value();
-      return lr.toParsedLyric();
-    }).then((parsed) {
-      if (parsed != null && parsed.isNotEmpty) {
-        r.lyricType = parsed.hasWordByWord ? '逐字' : '逐行';
+    net_api.neGetLyric(id: r.neSongId!).then((lr) async {
+      if (lr == null || !lr.hasContent) return;
+      try {
+        final parsed = await lr.toParsedLyric();
+        if (parsed != null && parsed.isNotEmpty) {
+          r.lyricType = parsed.hasWordByWord ? '逐字' : '逐行';
+        }
+      } catch (_) {
+        // 解析失败不影响其他结果
       }
     }).whenComplete(() {
       if (mounted) setState(() {});
@@ -685,7 +724,7 @@ class _ManualSearchTile extends StatelessWidget {
       subtitle: Text('${searchResult.artists} - ${searchResult.album}'),
       trailing: searchResult.lyricType != null
           ? Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.secondaryContainer,
                 borderRadius: BorderRadius.circular(4),
@@ -693,7 +732,8 @@ class _ManualSearchTile extends StatelessWidget {
               child: Text(
                 searchResult.lyricType!,
                 style: TextStyle(
-                  fontSize: 10,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
                   color: Theme.of(context).colorScheme.onSecondaryContainer,
                 ),
               ),
@@ -762,6 +802,7 @@ class _SearchResultItem extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
+            constraints: const BoxConstraints(minWidth: 36),
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.primaryContainer,
@@ -769,6 +810,7 @@ class _SearchResultItem extends StatelessWidget {
             ),
             child: Text(
               sourceText,
+              textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
@@ -779,15 +821,16 @@ class _SearchResultItem extends StatelessWidget {
           if (searchResult.lyricType != null) ...[
             const SizedBox(height: 3),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.secondaryContainer,
-                borderRadius: BorderRadius.circular(3),
+                borderRadius: BorderRadius.circular(4),
               ),
               child: Text(
                 searchResult.lyricType!,
                 style: TextStyle(
-                  fontSize: 9,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
                   color: Theme.of(context).colorScheme.onSecondaryContainer,
                 ),
               ),
