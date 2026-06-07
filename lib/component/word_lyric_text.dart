@@ -272,36 +272,18 @@ class _WordLyricPainter extends CustomPainter {
       final offset = Offset(dx, dy);
 
       if (i == currentWordIndex && wordProgress > 0) {
-        // Use ShaderMask for smooth gradient effect (karaoke style)
-        final rect = Rect.fromLTWH(dx, dy, w.width, w.height);
-        
-        // Draw outline first
+        // Draw outline
         w.outline.paint(canvas, offset);
-        
-        // Draw with gradient mask for current word
-        final inactiveColor = textColor.withValues(alpha: 0.22 * alpha);
-        final activeColor = textColor.withValues(alpha: alpha);
-        
-        canvas.saveLayer(rect, Paint());
+
+        // Draw inactive (dim) text as base
+        w.inactive.paint(canvas, offset);
+
+        // Clip to the "sung" portion and draw active text over it.
+        // This avoids the expensive saveLayer used by the old ShaderMask approach.
+        final clipWidth = (w.width * wordProgress).clamp(0.0, w.width);
+        canvas.save();
+        canvas.clipRect(Rect.fromLTWH(dx, dy, clipWidth, w.height));
         w.active.paint(canvas, offset);
-        
-        final gradientPaint = Paint()
-          ..blendMode = BlendMode.dstIn
-          ..shader = LinearGradient(
-            colors: [
-              activeColor,
-              activeColor,
-              inactiveColor,
-              inactiveColor,
-            ],
-            stops: [
-              0.0,
-              (wordProgress * 0.8).clamp(0.0, 1.0),
-              (wordProgress * 0.8 + 0.2).clamp(0.0, 1.0),
-              1.0,
-            ],
-          ).createShader(rect);
-        canvas.drawRect(rect, gradientPaint);
         canvas.restore();
       } else if (i < currentWordIndex) {
         // Already passed words - fully highlighted
