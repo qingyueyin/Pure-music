@@ -184,7 +184,7 @@ class _LyricHorizontalScrollAreaState
             lrcLine: _transitionLrcLine,
             syncLine: _transitionSyncLine,
             enableBreathing: false,
-            compact: widget.compact,
+            compact: true,
           ),
         ),
       );
