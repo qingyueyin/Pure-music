@@ -12,10 +12,7 @@ pub struct InstalledFont {
 }
 
 pub fn get_installed_fonts() -> Option<Vec<InstalledFont>> {
-    match _get_installed_fonts() {
-        Ok(value) => Some(value),
-        Err(_) => None,
-    }
+    _get_installed_fonts().ok()
 }
 
 fn _read_fonts_in_folder(path: &Path, result: &mut Vec<InstalledFont>) -> anyhow::Result<()> {

@@ -5,7 +5,7 @@ use palette::{IntoColor, Lab, Srgb};
 use super::logger::log_to_dart;
 
 pub fn extract_colors_from_image(image_bytes: Vec<u8>, num_colors: i32) -> Vec<u32> {
-    let num_colors = num_colors.max(2).min(8) as usize;
+    let num_colors = num_colors.clamp(2, 8) as usize;
     match _extract_colors_from_image(image_bytes, num_colors) {
         Ok(colors) => colors,
         Err(err) => {
@@ -98,7 +98,7 @@ fn _extract_colors_from_image(
     Ok(colors)
 }
 
-fn apply_apple_music_pipeline(pixels: &mut Vec<[u8; 3]>) {
+fn apply_apple_music_pipeline(pixels: &mut [[u8; 3]]) {
     for pixel in pixels.iter_mut() {
         let mut r = pixel[0] as f32 / 255.0;
         let mut g = pixel[1] as f32 / 255.0;
