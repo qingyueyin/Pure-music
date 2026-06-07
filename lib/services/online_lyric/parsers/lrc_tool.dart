@@ -399,7 +399,7 @@ class LrcTool {
 
       if (matched != null) {
         if (isRomanization) {
-          main.lines[i].romanization = matched;
+          main.lines[i].romanization = _addRomajiPunctuationSpacing(matched);
         } else {
           main.lines[i].translation = matched;
         }
@@ -498,6 +498,11 @@ class LrcTool {
     }
     // 无逐字数据：用 start + 估计时长 3500ms
     return entry.start.inMilliseconds + 3500;
+  }
+
+  /// 罗马音标点符号前后加空格（NetEase 源返回的 romaji 常把 !?。， 粘在字母后）
+  static String _addRomajiPunctuationSpacing(String text) {
+    return text.replaceAll(RegExp(r'(\w)([!?.,;:!！？。，；：])'), '\$1 \$2');
   }
 }
 
