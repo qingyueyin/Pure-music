@@ -183,7 +183,7 @@ class AlbumColorCache {
       } catch (_) {}
 
       final dir = await getCacheDir();
-      final file = File('${dir.path}\\$_cacheFileName');
+      final file = File(path.join(dir.path, _cacheFileName));
       final jsonStr = json.encode({'version': _cacheVersion, 'data': _entries});
       final out = await file.create(recursive: true);
       await out.writeAsString(jsonStr);
