@@ -365,6 +365,12 @@ class PlaybackService extends ChangeNotifier {
     _loadAndPlay(audioIndex, playlist.value);
   }
 
+  /// 仅更新播放列表索引，不触发重新播放。用于拖拽排序等场景
+  void setPlaylistIndex(int newIndex) {
+    logger.i('[action] setPlaylistIndex=$newIndex');
+    _playlistIndex = newIndex;
+  }
+
   /// 播放 playlist[audioIndex] 并设置播放列表为 playlist
   void play(int audioIndex, List<Audio> playlist) {
     logger.i('[action] play index=$audioIndex playlistLen=${playlist.length}');
