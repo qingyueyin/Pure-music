@@ -356,6 +356,54 @@ class Lrc extends Lyric {
     return _isRomanizationStatic(text);
   }
 
+  /// 检测文本是否含东方文字（CJK 汉字 / 日文假名 / 韩文 Hangul）
+  /// 用于统一判断「这行是不是亚洲语言原文/翻译」
+  static bool _hasAsianChars(String text) => RegExp(
+    r'[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]',
+  ).hasMatch(text);
+
+  /// 在同一时间戳的歌词行组中，智能选择最佳的主歌词行（原文）。
+  ///
+  /// 决策规则（按优先级）：
+  /// 1. 先按字符类型分类：东方文字行 vs 纯拉丁行
+  /// 2. 如果恰好只有 1 行东方文字 → 它就是原文
+  /// 3. 如果多行东方文字 → 优选有逐字时间戳的那行
+  /// 4. 如果全是拉丁字母 → 优选有逐字时间戳的；都没有则取第一行
+  ///
+  /// 这解决了内嵌歌词顺序为「罗马音 / 日语原文 / 中文翻译」
+  /// 时 group[0] 被错误当作主歌词的问题。
+  static int _bestPrimaryIndex(List<SyncLyricLine> group) {
+    if (group.length <= 1) return 0;
+
+    final asianLines = <int>[];
+    final latinLines = <int>[];
+    for (int i = 0; i < group.length; i++) {
+      final text = group[i].words.map((w) => w.content).join();
+      if (_hasAsianChars(text)) {
+        asianLines.add(i);
+      } else {
+        latinLines.add(i);
+      }
+    }
+
+    // 恰好一行东方文字 → 它就是原文
+    if (asianLines.length == 1) return asianLines[0];
+
+    // 多行东方文字 → 选有逐字时间戳的
+    if (asianLines.length > 1) {
+      for (final idx in asianLines) {
+        if (group[idx].words.length > 1) return idx;
+      }
+      return asianLines[0];
+    }
+
+    // 全是拉丁字母 → 选有逐字时间戳的
+    for (final idx in latinLines) {
+      if (group[idx].words.length > 1) return idx;
+    }
+    return 0;
+  }
+
   /// 静态版本的罗马音判断（用于静态方法）
   /// 
   /// 判断逻辑：
@@ -672,14 +720,21 @@ class Lrc extends Lyric {
           if (group.length == 1) {
             combined.add(group[0]);
           } else {
-            // First line is primary (original), rest are translation/roman
-            final primary = group[0];
+            // 智能选择主歌词行：不再假设 group[0] 一定是原文
+            // 某些内嵌歌词的顺序是「罗马音 / 日语原文 / 中文翻译」，
+            // 需要通过内容特征（CJK 字符 + 逐字时间戳数量）来判断
+            final primaryIdx = _bestPrimaryIndex(group);
+            final primary = group[primaryIdx];
             final romanParts = <String>[];
             final transParts = <String>[];
-            for (int i = 1; i < group.length; i++) {
+            for (int i = 0; i < group.length; i++) {
+              if (i == primaryIdx) continue;
               final text = group[i].words.map((w) => w.content).join().trim();
               if (text.isEmpty) continue;
-              if (_isRomanizationStatic(text)) {
+              // 如果该行不含东方文字 → 一定是罗马音/拼音，
+              // 不用走 _isRomanizationStatic 的英文词检测（防止 "I love you"
+              // 等英文借词被误判成翻译）。
+              if (!_hasAsianChars(text) || _isRomanizationStatic(text)) {
                 romanParts.add(text);
               } else {
                 transParts.add(text);
