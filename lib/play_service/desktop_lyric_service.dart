@@ -552,4 +552,30 @@ class DesktopLyricService extends ChangeNotifier {
       sendLyricLineMessage(lyric.lines[idx], nextLine: nextLine);
     });
   }
+
+  @override
+  void dispose() {
+    // 停止桌面歌词进程
+    if (_process != null) {
+      _process?.kill(ProcessSignal.sigterm);
+      _process = null;
+    }
+    // 取消所有 Stream 订阅
+    _desktopLyricSubscription?.cancel();
+    _desktopLyricSubscription = null;
+    _stderrSubscription?.cancel();
+    _stderrSubscription = null;
+    _positionSub?.cancel();
+    _positionSub = null;
+    // 取消定时器
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+    // 释放 Job Object 句柄
+    _WinJobObject.close(_jobHandle);
+    _jobHandle = null;
+
+    _isRunning = false;
+    _isKilling = false;
+    super.dispose();
+  }
 }
