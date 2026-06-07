@@ -652,7 +652,12 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
           element.start.inMilliseconds / 1000 > playbackService.position,
     );
     final nextLyricLine = next == -1 ? lines.length : next;
-    _mainLine = max(nextLyricLine - 1, 0);
+    int candidate = max(nextLyricLine - 1, 0);
+    // 跳过空白行：如果当前行是空白/元数据行，跳到下一个非空白行
+    while (candidate < lines.length && _isLineBlankFiltered(lines[candidate])) {
+      candidate++;
+    }
+    _mainLine = candidate.clamp(0, lines.length - 1);
     _updateViewportRange(force: true);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
