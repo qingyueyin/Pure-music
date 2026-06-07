@@ -520,11 +520,17 @@ class Lrc extends Lyric {
     // 有强英文指示词 → 不是罗马音
     if (indicatorCount >= 1) return false;
     
-    // 5 个以上单词 → 不可能是罗马音（罗马音每行通常 1-4 个音节词）
-    // 日文歌词的罗马音: "kimi no namae wa" (4词)
-    // 韩文歌词的罗马音: "saranghaeyo" (1词)
-    // 中文歌词的罗马音: "ni hao" (2词)
-    if (words.length >= 5) return false;
+    // 多单词时按平均词长判断：
+    // 罗马音单词几乎全是 1-3 字母的短音节（CV 结构），
+    // 英文歌词平均词长通常 > 3 字母。
+    // 例: "ko do u su ru ka ge ni" (8词, 平均 2 字母) → 罗马音 ✓
+    // 例: "can you feel my heart" (5词) → 会被 strongEnglishIndicators 拦截
+    if (words.length >= 5) {
+      final totalLetters = words.fold<int>(0, (sum, w) =>
+          sum + w.replaceAll(RegExp(r'[^a-zA-Z]'), '').length);
+      final avgLen = totalLetters / words.length;
+      if (avgLen > 3.0) return false;
+    }
     
     // 检测 3+ 连续辅音 → 不可能是罗马音
     // 罗马音几乎没有连续 3 个辅音的情况
@@ -1224,10 +1230,13 @@ class Lrc extends Lyric {
       }
 
       // 判断罗马音（仅对没有逐词标签的行使用）
+      // 无东方文字 → 直接判为罗马音，不经过 _isRomanizationStatic 的
+      // 英文词检测（防止 "ko do u su ru ka ge ni" 等多音节 romaji 被
+      // words.length >= 5 规则误杀）。
       final romanContents = <String>[];
       final otherContents = <String>[];
       for (final c in contentsWithoutTags) {
-        if (_isRomanizationStatic(c)) {
+        if (!_hasAsianChars(c) || _isRomanizationStatic(c)) {
           romanContents.add(c);
         } else {
           otherContents.add(c);
@@ -1258,7 +1267,7 @@ class Lrc extends Lyric {
         for (int i = 0; i < contentsWithTags.length; i++) {
           if (i == bestTagIdx) continue;
           final r = contentsWithTags[i];
-          if (_isRomanizationStatic(r)) {
+          if (!_hasAsianChars(r) || _isRomanizationStatic(r)) {
             romanContents.add(r);
           } else {
             otherContents.add(r);
