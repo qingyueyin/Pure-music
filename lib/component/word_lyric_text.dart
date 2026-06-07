@@ -30,7 +30,8 @@ class WordLyricText extends StatefulWidget {
   State<WordLyricText> createState() => _WordLyricTextState();
 }
 
-class _WordLyricTextState extends State<WordLyricText> with SingleTickerProviderStateMixin {
+class _WordLyricTextState extends State<WordLyricText>
+    with SingleTickerProviderStateMixin {
   late final Ticker _ticker;
   final Stopwatch _stopwatch = Stopwatch();
   final ValueNotifier<int> _progressMs = ValueNotifier(0);
@@ -61,11 +62,13 @@ class _WordLyricTextState extends State<WordLyricText> with SingleTickerProvider
       widget.isPlaying.addListener(_playingListener);
     }
 
-    final contentChanged = oldWidget.line.content != widget.line.content ||
+    final contentChanged =
+        oldWidget.line.content != widget.line.content ||
         oldWidget.line.translation != widget.line.translation ||
         oldWidget.line.words != widget.line.words;
     final progressChanged = oldWidget.line.progressMs != widget.line.progressMs;
-    final propsChanged = oldWidget.fontSize != widget.fontSize ||
+    final propsChanged =
+        oldWidget.fontSize != widget.fontSize ||
         oldWidget.fontWeight != widget.fontWeight ||
         oldWidget.color != widget.color;
 
@@ -87,12 +90,12 @@ class _WordLyricTextState extends State<WordLyricText> with SingleTickerProvider
     _baseProgressMs = line.progressMs ?? 0;
     _progressMs.value = _baseProgressMs;
     final words = line.words ?? const [];
-    
+
     // Detect if startMs is absolute time (>> progressMs) and convert to relative
     final firstWordStartMs = words.isNotEmpty ? words[0].startMs : 0;
     final isAbsoluteTime = firstWordStartMs > _baseProgressMs * 10;
     final timeOffset = isAbsoluteTime ? firstWordStartMs : 0;
-    
+
     final fontWeight = lyricFontWeightFromInt(widget.fontWeight);
     final outlineWidth = lyricOutlineWidth(widget.fontSize);
 
@@ -148,8 +151,14 @@ class _WordLyricTextState extends State<WordLyricText> with SingleTickerProvider
         maxLines: 1,
       )..layout();
 
-      final width = max(basePainter.width, max(activePainter.width, outlinePainter.width));
-      final height = max(basePainter.height, max(activePainter.height, outlinePainter.height));
+      final width = max(
+        basePainter.width,
+        max(activePainter.width, outlinePainter.width),
+      );
+      final height = max(
+        basePainter.height,
+        max(activePainter.height, outlinePainter.height),
+      );
       maxH = max(maxH, height);
 
       layouts.add(
@@ -260,16 +269,16 @@ class _WordLyricPainter extends CustomPainter {
     // Calculate current word index and progress
     int currentWordIndex = -1;
     double wordProgress = 0.0;
-    
+
     for (int i = 0; i < layouts.length; i++) {
       final w = layouts[i];
       final wordStart = w.startMs;
       final wordEnd = w.startMs + w.lengthMs;
-      
+
       if (progressMs >= wordStart && progressMs < wordEnd) {
         currentWordIndex = i;
-        wordProgress = w.lengthMs > 0 
-            ? (progressMs - wordStart) / w.lengthMs 
+        wordProgress = w.lengthMs > 0
+            ? (progressMs - wordStart) / w.lengthMs
             : 0.0;
         break;
       } else if (progressMs >= wordEnd) {
@@ -277,7 +286,7 @@ class _WordLyricPainter extends CustomPainter {
         wordProgress = 1.0;
       }
     }
-    
+
     for (int i = 0; i < layouts.length; i++) {
       final w = layouts[i];
       final dx = startX + w.x;
