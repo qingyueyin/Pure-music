@@ -23,6 +23,9 @@
 
 ## 📸 预览
 
+<img src="screenshot/桌面歌词.png" width="400" alt="桌面歌词">
+<img src="screenshot/桌面歌词隐藏.png" width="400" alt="桌面歌词隐藏">
+
 ---
 
 ## 📁 项目结构
