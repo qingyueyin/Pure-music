@@ -90,7 +90,7 @@ Future<void> main() async {
     logger.e('RustLib.init failed: $e\n$s');
   }
 
-  initRustLogger().listen((msg) {
+  _rustLoggerSub = initRustLogger().listen((msg) {
     logger.i('[rs]: $msg');
   });
 
@@ -121,6 +121,7 @@ Future<void> main() async {
   runApp(Entry(welcome: welcome));
 }
 
+StreamSubscription<String>? _rustLoggerSub;
 Timer? _memoryMonitorTimer;
 
 /// 播放状态下仅做轻量清理，避免缓存重建开销导致音频卡顿
@@ -168,13 +169,17 @@ void _startMemoryMonitor() {
         CoverImageCache.instance.trimMemory();
       }
       // 移除原有的 100MB 级清理（过于频繁且无明显收益）
-    } catch (_) {}
+    } catch (e, trace) {
+        logger.e('[mem] monitor error: $e\n$trace');
+      }
   });
 }
 
 void disposeMemoryMonitor() {
   _memoryMonitorTimer?.cancel();
   _memoryMonitorTimer = null;
+  _rustLoggerSub?.cancel();
+  _rustLoggerSub = null;
 }
 
 /// 强制释放可回收内存，用于窗口最小化/低内存通知等场景
