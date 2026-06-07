@@ -22,6 +22,8 @@ class LyricsLineWidget extends StatefulWidget {
     this.lineOffsetY = 0.0,
     this.staggerDelay = Duration.zero,
     this.isUserScrolling = false,
+    this.isHovered = false,
+    this.onHoverChanged,
     this.onTap,
   });
 
@@ -31,6 +33,8 @@ class LyricsLineWidget extends StatefulWidget {
   final double lineOffsetY;
   final Duration staggerDelay;
   final bool isUserScrolling;
+  final bool isHovered;
+  final void Function(bool)? onHoverChanged;
   final void Function()? onTap;
 
   @override
@@ -151,7 +155,13 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
 
     final renderConfig = context.watch<LyricViewController>().renderConfig;
     final scheme = Theme.of(context).colorScheme;
-    final blurSigma = active ? 0.0 : renderConfig.blurSigmaForDistance(dist);
+    final blurSigma = widget.isUserScrolling
+        ? 0.0
+        : (active ? 0.0 : renderConfig.blurSigmaForDistance(dist));
+
+    final effectiveOpacity = widget.isHovered
+        ? 1.0
+        : _opacityTransition.value;
 
     final isTransitionLine = _isTransitionLine(widget.line, active);
     if (isTransitionLine) {
@@ -168,9 +178,11 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
             child: widget.line is SyncLyricLine
                 ? LyricTransitionTile(
                     syncLine: widget.line as SyncLyricLine,
+                    useMaterialYouColor: AppSettings.instance.useMaterialYouForTransition,
                   )
                 : LyricTransitionTile(
                     lrcLine: widget.line as LrcLine,
+                    useMaterialYouColor: AppSettings.instance.useMaterialYouForTransition,
                   ),
           ),
         ),
@@ -184,7 +196,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
           final lineHeight = LyricsLinePainter(
             line: widget.line,
             currentTimeMs: _currentTimeMs,
-            opacity: _opacityTransition.value,
+            opacity: effectiveOpacity,
             blurSigma: blurSigma,
             scale: _scaleTransition.value,
             offsetY: _offsetYTransition.value,
@@ -194,7 +206,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
             useMaterialYouColor: AppSettings.instance.useMaterialYouForLyrics,
           ).measureHeight(lineWidth);
 
-          return GestureDetector(
+          Widget painted = GestureDetector(
             onTap: widget.onTap,
             child: SizedBox(
               height: lineHeight,
@@ -202,7 +214,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
                 painter: LyricsLinePainter(
                   line: widget.line,
                   currentTimeMs: _currentTimeMs,
-                  opacity: _opacityTransition.value,
+                  opacity: effectiveOpacity,
                   blurSigma: blurSigma,
                   scale: _scaleTransition.value,
                   offsetY: _offsetYTransition.value,
@@ -215,6 +227,16 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
               ),
             ),
           );
+
+          if (widget.onHoverChanged != null) {
+            painted = MouseRegion(
+              onEnter: (_) => widget.onHoverChanged!(true),
+              onExit: (_) => widget.onHoverChanged!(false),
+              child: painted,
+            );
+          }
+
+          return painted;
         },
       ),
     );

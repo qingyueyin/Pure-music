@@ -217,7 +217,8 @@ class _SyncLineContent extends StatelessWidget {
   Widget build(BuildContext context) {
     if (syncLine.words.isEmpty) {
       if (syncLine.length > const Duration(seconds: 3) && isMainLine) {
-        return LyricTransitionTile(syncLine: syncLine);
+        final config = context.watch<LyricViewController>().renderConfig;
+        return LyricTransitionTile(syncLine: syncLine, alignment: config.textAlign, useMaterialYouColor: AppSettings.instance.useMaterialYouForTransition);
       } else {
         return const SizedBox.shrink();
       }
@@ -710,7 +711,8 @@ class _LrcLineContent extends StatelessWidget {
       if (lrcLine.length > const Duration(seconds: 3) &&
           isMainLine &&
           displayMode != LyricDisplayMode.lineByLine) {
-        return LyricTransitionTile(lrcLine: lrcLine);
+        final config = context.watch<LyricViewController>().renderConfig;
+        return LyricTransitionTile(lrcLine: lrcLine, alignment: config.textAlign, useMaterialYouColor: AppSettings.instance.useMaterialYouForTransition);
       } else {
         return const SizedBox.shrink();
       }
@@ -883,6 +885,7 @@ class LyricTransitionTile extends StatefulWidget {
   final LyricTextAlign? alignment;
   final bool enableBreathing;
   final bool compact;
+  final bool useMaterialYouColor;
   const LyricTransitionTile({
     super.key,
     this.lrcLine,
@@ -890,6 +893,7 @@ class LyricTransitionTile extends StatefulWidget {
     this.alignment,
     this.enableBreathing = true,
     this.compact = false,
+    this.useMaterialYouColor = true,
   });
 
   @override
@@ -931,29 +935,47 @@ class _LyricTransitionTileState extends State<LyricTransitionTile> {
       return const SizedBox.shrink();
     }
 
+    final align = widget.alignment ?? LyricTextAlign.center;
+    final alignment = switch (align) {
+      LyricTextAlign.left => Alignment.centerLeft,
+      LyricTextAlign.center => Alignment.center,
+      LyricTextAlign.right => Alignment.centerRight,
+    };
+
     if (widget.compact) {
-      return SizedBox(
-        height: 24.0,
-        width: 72.0,
-        child: CustomPaint(
-          painter: LyricTransitionPainter(
-            scheme,
-            controller,
-            compact: true,
+      return Align(
+        alignment: alignment,
+        child: SizedBox(
+          height: 24.0,
+          width: 72.0,
+          child: CustomPaint(
+            painter: LyricTransitionPainter(
+              scheme,
+              controller,
+              compact: true,
+              useMaterialYouColor: widget.useMaterialYouColor,
+            ),
           ),
         ),
       );
     }
 
     return SizedBox(
+      width: double.infinity,
       height: 40.0,
-      width: 120.0,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 18, 12, 6),
-        child: CustomPaint(
-          painter: LyricTransitionPainter(
-            scheme,
-            controller,
+      child: Align(
+        alignment: alignment,
+        child: SizedBox(
+          width: 120.0,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 18, 12, 6),
+            child: CustomPaint(
+              painter: LyricTransitionPainter(
+                scheme,
+                controller,
+                useMaterialYouColor: widget.useMaterialYouColor,
+              ),
+            ),
           ),
         ),
       ),
@@ -965,6 +987,7 @@ class LyricTransitionPainter extends CustomPainter {
   final ColorScheme scheme;
   final LyricTransitionTileController controller;
   final bool compact;
+  final bool useMaterialYouColor;
 
   final Paint circlePaint1 = Paint();
   final Paint circlePaint2 = Paint();
@@ -972,7 +995,7 @@ class LyricTransitionPainter extends CustomPainter {
 
   final double radius = 6;
 
-  LyricTransitionPainter(this.scheme, this.controller, {this.compact = false})
+  LyricTransitionPainter(this.scheme, this.controller, {this.compact = false, this.useMaterialYouColor = true})
       : super(repaint: controller);
 
   @override
@@ -988,9 +1011,9 @@ class LyricTransitionPainter extends CustomPainter {
         (255 * (0.05 + min(max(controller.progress - 2 / 3, 0) * 3, 1) * 0.95))
             .round()
             .clamp(0, 255);
-    circlePaint1.color = scheme.onSecondaryContainer.withAlpha(a1);
-    circlePaint2.color = scheme.onSecondaryContainer.withAlpha(a2);
-    circlePaint3.color = scheme.onSecondaryContainer.withAlpha(a3);
+    circlePaint1.color = (useMaterialYouColor ? scheme.onSecondaryContainer : Colors.white).withAlpha(a1);
+    circlePaint2.color = (useMaterialYouColor ? scheme.onSecondaryContainer : Colors.white).withAlpha(a2);
+    circlePaint3.color = (useMaterialYouColor ? scheme.onSecondaryContainer : Colors.white).withAlpha(a3);
 
     if (compact) {
       final r = 4 + controller.sizeFactor * 0.5;

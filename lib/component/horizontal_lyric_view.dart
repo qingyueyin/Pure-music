@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_tile.dart';
@@ -185,6 +186,7 @@ class _LyricHorizontalScrollAreaState
             syncLine: _transitionSyncLine,
             enableBreathing: false,
             compact: true,
+            useMaterialYouColor: AppSettings.instance.useMaterialYouForTransition,
           ),
         ),
       );
