@@ -1,7 +1,7 @@
 # 🎵 Pure Music
 
 <p align="center">
-  <img src="app_icon.ico" width="128" height="128" alt="Pure Music Logo">
+  <img src="app_icon.png" width="128" height="128" alt="Pure Music Logo">
 </p>
 
 <p align="center">
@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/Platform-Windows-blue?style=flat-square" alt="Platform">
   <img src="https://img.shields.io/badge/Flutter-3.3+-0x0175C2?style=flat-square" alt="Flutter">
   <img src="https://img.shields.io/badge/Rust-1.70+-000000?style=flat-square" alt="Rust">
-  <img src="https://img.shields.io/github/v/release/qingyueyin/Pure-music?style=flat-square&color=orange" alt="Version">
+  <img src="https://badgen.net/github/release/qingyueyin/Pure-music?icon=github" alt="Version">
   <img src="https://img.shields.io/badge/License-GPL--3.0-green?style=flat-square" alt="License">
   <img src="https://komarev.com/ghpvc/?username=qingyueyin&repo=Pure-music&style=flat-square&label=Views" alt="Views">
 </p>
@@ -352,8 +352,6 @@ cd rust_builder && flutter pub run build_runner build
 - [Lyrico](https://github.com/Replica0110/Lyrico) — 在线歌词搜索与获取方案
 - [original-sound-hq-player](https://github.com/Johnwikix/original-sound-hq-player) — 本地音乐播放器
 - [SPlayer](https://github.com/imsyy/SPlayer) — 基于 Vue + Electron 的简约音乐播放器
-
-</details>
 
 </details>
 
