@@ -230,6 +230,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
 
     return ReorderableListView.builder(
       padding: const EdgeInsets.only(bottom: 80.0),
+      buildDefaultDragHandles: false,
       itemCount: contentList.length,
       onReorderItem: (oldIndex, newIndex) {
         setState(() {
@@ -309,13 +310,6 @@ class _ReorderItem extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.only(right: 16.0),
-                child: Text(
-                  Duration(seconds: audio.duration).toStringHMMSS(),
-                  style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
                 ),
               ),
             ],
