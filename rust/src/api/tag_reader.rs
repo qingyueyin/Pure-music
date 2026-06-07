@@ -202,7 +202,7 @@ pub fn read_audio_extra_metadata(path: String) -> String {
 }
 
 /// K: extension, V: can read tags by using Lofty
-static SUPPORT_FORMAT: phf::Map<&'static str, bool> = phf::phf_map! {
+static SUPPORTED_FORMATS: phf::Map<&'static str, bool> = phf::phf_map! {
     "mp3" => true, "mp2" => false, "mp1" => false,
     "ogg" => true,
     "wav" => true, "wave" => true,
@@ -301,7 +301,7 @@ impl Audio {
             .to_ascii_lowercase()
             .to_string_lossy()
             .to_string();
-        let lofty_support: bool = *SUPPORT_FORMAT.get(&ext_lower)?;
+        let lofty_support: bool = *SUPPORTED_FORMATS.get(&ext_lower)?;
 
         let file_metadata = match fs::metadata(path) {
             Ok(val) => val,
@@ -353,17 +353,11 @@ impl Audio {
                 Ok(value) => Some(value),
                 Err(err) => {
                     log_to_dart(format!("{:?}: {}", path, err));
-                    return Self::new_with_path(path, None);
+                    Self::new_with_path(path, None)
                 }
             }
         } else {
-            match Self::read_by_win_music_properties(path, modified, created) {
-                Ok(value) => Some(value),
-                Err(err) => {
-                    log_to_dart(format!("{:?}: {}", path, err));
-                    return Self::new_with_path(path, None);
-                }
-            }
+            Self::new_with_path(path, None)
         }
     }
 
@@ -386,7 +380,7 @@ impl Audio {
         {
             let artist_strs: Vec<_> = tag.get_strings(&ItemKey::TrackArtist).collect();
             let artist = if artist_strs.is_empty() {
-                std::borrow::Cow::Borrowed("UNKNOWN").to_string()
+                "UNKNOWN".to_string()
             } else {
                 artist_strs.join("/")
             };
@@ -406,8 +400,8 @@ impl Audio {
                 artist,
                 album: tag
                     .album()
-                    .unwrap_or(std::borrow::Cow::Borrowed("UNKNOWN"))
-                    .to_string(),
+                    .map(|a| a.to_string())
+                    .unwrap_or_else(|| "UNKNOWN".to_string()),
                 album_artist,
                 track: tag.track(),
                 duration: properties.duration().as_secs(),
@@ -420,8 +414,8 @@ impl Audio {
             });
         }
 
-        return Some(Audio {
-            title: path.file_name()?.to_string_lossy().to_string(),
+        Some(Audio {
+            title: path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
             artist: std::borrow::Cow::Borrowed("UNKNOWN").to_string(),
             album: std::borrow::Cow::Borrowed("UNKNOWN").to_string(),
             album_artist: None,
@@ -433,7 +427,7 @@ impl Audio {
             modified,
             created,
             by: Some("Lofty".to_string()),
-        });
+        })
     }
 
     /// 使用 Windows Api 获取音乐标签。会因为各种原因返回 Err
@@ -514,7 +508,7 @@ struct AudioFolder {
 
 impl AudioFolder {
     fn to_json_value(&self) -> serde_json::Value {
-        let mut audios_json: Vec<serde_json::Value> = vec![];
+        let mut audios_json: Vec<serde_json::Value> = Vec::new();
         for audio in &self.audios {
             audios_json.push(audio.to_json_value());
         }
@@ -587,13 +581,13 @@ impl AudioFolder {
     fn read_from_folder_recursively(
         folder: impl AsRef<Path>,
         result: &mut Vec<Self>,
-        scaned_count: &mut u64,
+        scanned_count: &mut u64,
         total_count: &mut u64,
-        scaned_folders: &mut HashSet<String>,
+        scanned_folders: &mut HashSet<String>,
         sink: &StreamSink<IndexActionState>,
     ) -> Result<(), io::Error> {
         let folder = folder.as_ref();
-        if scaned_folders.contains(&folder.to_string_lossy().to_string()) {
+        if scanned_folders.contains(&folder.to_string_lossy().to_string()) {
             return Ok(());
         }
 
@@ -606,11 +600,11 @@ impl AudioFolder {
         };
 
         let _ = sink.add(IndexActionState {
-            progress: *scaned_count as f64 / *total_count as f64,
+            progress: *scanned_count as f64 / *total_count as f64,
             message: String::from("正在扫描 ") + &folder.to_string_lossy(),
         });
 
-        scaned_folders.insert(folder.to_string_lossy().to_string());
+        scanned_folders.insert(folder.to_string_lossy().to_string());
         let mut audios: Vec<Audio> = vec![];
         let mut latest: u64 = 0;
 
@@ -636,9 +630,9 @@ impl AudioFolder {
                 let _ = Self::read_from_folder_recursively(
                     entry.path(),
                     result,
-                    scaned_count,
+                    scanned_count,
                     total_count,
-                    scaned_folders,
+                    scanned_folders,
                     sink,
                 );
             } else if let Some(metadata) = Audio::read_from_path(entry.path()) {
@@ -666,9 +660,9 @@ impl AudioFolder {
             }
         }
 
-        *scaned_count += 1;
+        *scanned_count += 1;
         let _ = sink.add(IndexActionState {
-            progress: *scaned_count as f64 / *total_count as f64,
+            progress: *scanned_count as f64 / *total_count as f64,
             message: String::new(),
         });
 
@@ -676,7 +670,7 @@ impl AudioFolder {
     }
 }
 
-fn _get_picture_by_windows(path: &String) -> Result<Vec<u8>, windows::core::Error> {
+fn _get_picture_by_windows(path: &str) -> Result<Vec<u8>, windows::core::Error> {
     let file = StorageFile::GetFileFromPathAsync(&HSTRING::from(path))?.get()?;
     let thumbnail = file
         .GetThumbnailAsyncOverloadDefaultSizeDefaultOptions(ThumbnailMode::MusicView)?
@@ -696,8 +690,8 @@ fn _get_picture_by_windows(path: &String) -> Result<Vec<u8>, windows::core::Erro
     Ok(buffer)
 }
 
-fn _get_picture_by_lofty(path: &String) -> Option<Vec<u8>> {
-    if let Ok(tagged_file) = lofty::read_from_path(&path) {
+fn _get_picture_by_lofty(path: &str) -> Option<Vec<u8>> {
+    if let Ok(tagged_file) = lofty::read_from_path(path) {
         let tag = tagged_file
             .primary_tag()
             .or_else(|| tagged_file.first_tag())?;
@@ -709,7 +703,8 @@ fn _get_picture_by_lofty(path: &String) -> Option<Vec<u8>> {
 }
 
 const PICTURE_CACHE_CAPACITY: usize = 96;
-static PICTURE_CACHE: OnceLock<Mutex<VecDeque<(String, Vec<u8>)>>> = OnceLock::new();
+type PictureCache = OnceLock<Mutex<VecDeque<(String, Vec<u8>)>>>;
+static PICTURE_CACHE: PictureCache = OnceLock::new();
 
 fn _picture_cache_key(path: &str, width: u32, height: u32) -> String {
     let modified_secs = fs::metadata(path)
@@ -725,7 +720,7 @@ fn _picture_cache_key(path: &str, width: u32, height: u32) -> String {
 /// 如果无法通过 Lofty 获取则通过 Windows 获取
 pub fn get_picture_from_path(path: String, width: u32, height: u32) -> Option<Vec<u8>> {
     let cache_key = _picture_cache_key(&path, width, height);
-    if let Some(cache_lock) = PICTURE_CACHE.get_or_init(|| Mutex::new(VecDeque::new())).lock().ok()
+    if let Ok(cache_lock) = PICTURE_CACHE.get_or_init(|| Mutex::new(VecDeque::new())).lock()
     {
         if let Some(pos) = cache_lock.iter().position(|(k, _)| k == &cache_key) {
             let mut cache = cache_lock;
@@ -765,10 +760,10 @@ pub fn get_picture_from_path(path: String, width: u32, height: u32) -> Option<Ve
             );
 
             let mut output = Cursor::new(Vec::new());
-            if let Ok(_) = resized_img.write_to(&mut output, image::ImageFormat::Png) {
+            if resized_img.write_to(&mut output, image::ImageFormat::Png).is_ok() {
                 let out = output.into_inner();
-                if let Some(mut cache) =
-                    PICTURE_CACHE.get_or_init(|| Mutex::new(VecDeque::new())).lock().ok()
+                if let Ok(mut cache) =
+                    PICTURE_CACHE.get_or_init(|| Mutex::new(VecDeque::new())).lock()
                 {
                     if let Some(pos) = cache.iter().position(|(k, _)| k == &cache_key) {
                         cache.remove(pos);
@@ -786,7 +781,7 @@ pub fn get_picture_from_path(path: String, width: u32, height: u32) -> Option<Ve
     pic_option
 }
 
-fn _get_lyric_from_lofty(path: &String) -> Option<String> {
+fn _get_lyric_from_lofty(path: &str) -> Option<String> {
     let path_ref = Path::new(&path);
     let options = ParseOptions::new()
         .parsing_mode(ParsingMode::Relaxed)
@@ -842,7 +837,7 @@ fn _get_lyric_from_lofty(path: &String) -> Option<String> {
                 continue;
             }
             // 判断是否像歌词：包含时间戳标记 [mm:ss 或包含换行符
-            let has_timestamp = text.contains('[') && (text.contains(":") || text.contains('.'));
+            let has_timestamp = text.contains('[') && (text.contains(':') || text.contains('.'));
             let has_newlines = text.contains('\n');
             if has_timestamp || has_newlines {
                 log_to_dart(format!(
@@ -858,7 +853,7 @@ fn _get_lyric_from_lofty(path: &String) -> Option<String> {
     None
 }
 
-fn _get_lyric_from_lrc_file(path: &String) -> anyhow::Result<String> {
+fn _get_lyric_from_lrc_file(path: &str) -> anyhow::Result<String> {
     let mut lrc_file_path = PathBuf::from(path);
     lrc_file_path.set_extension("lrc");
 
@@ -880,23 +875,23 @@ fn _get_lyric_from_lrc_file(path: &String) -> anyhow::Result<String> {
         for chunk in chunk_iter {
             u16_bytes.push(convert_fn([chunk[0], chunk[1]]));
         }
-        return Ok(String::from_utf16(&u16_bytes)?);
+        Ok(String::from_utf16(&u16_bytes)?)
+    } else {
+        Ok(String::from_utf8(lrc_bytes)?)
     }
-
-    return Ok(String::from_utf8(lrc_bytes)?);
 }
 
 /// for Flutter   
 /// 只支持读取 ID3V2, VorbisComment, Mp4Ilst 存储的内嵌歌词
 /// 以及相同目录相同文件名的 .lrc 外挂歌词（utf-8 or utf-16）
 pub fn get_lyric_from_path(path: String) -> Option<String> {
-    return _get_lyric_from_lofty(&path).or_else(|| match _get_lyric_from_lrc_file(&path) {
+    _get_lyric_from_lofty(&path).or_else(|| match _get_lyric_from_lrc_file(&path) {
         Ok(val) => Some(val),
         Err(err) => {
-            log_to_dart(format!("fail to get lrc: {}", err.to_string()));
+            log_to_dart(format!("fail to get lrc: {err}"));
             None
         }
-    });
+    })
 }
 
 /// for Flutter
@@ -950,17 +945,17 @@ pub fn build_index_from_folders_recursively(
 ) -> Result<(), io::Error> {
     let index_dir = PathBuf::from(&index_path);
     let mut audio_folders: Vec<AudioFolder> = vec![];
-    let mut scaned: u64 = 0;
+    let mut scanned: u64 = 0;
     let mut total: u64 = folders.len() as u64;
-    let mut scaned_folders: HashSet<String> = HashSet::new();
+    let mut scanned_folders: HashSet<String> = HashSet::new();
 
     for item in &folders {
         let _ = AudioFolder::read_from_folder_recursively(
             Path::new(item),
             &mut audio_folders,
-            &mut scaned,
+            &mut scanned,
             &mut total,
-            &mut scaned_folders,
+            &mut scanned_folders,
             &sink,
         );
     }
@@ -991,9 +986,9 @@ fn _update_index_below_1_1_0(
     sink: &StreamSink<IndexActionState>,
 ) -> Result<(), io::Error> {
     let mut audio_folders_json: Vec<serde_json::Value> = vec![];
-    let folders = index.as_array().unwrap();
+    let folders = index.as_array().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "index is not an array"))?;
     for item in folders {
-        let path = item["path"].as_str().unwrap();
+        let path = item["path"].as_str().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "missing 'path' field"))?;
         let _ = sink.add(IndexActionState {
             progress: audio_folders_json.len() as f64 / folders.len() as f64,
             message: String::from("正在扫描 ") + path,
@@ -1052,10 +1047,13 @@ pub fn update_index(index_path: String, sink: StreamSink<IndexActionState>) -> a
         return Ok(_update_index_below_1_1_0(&index, &index_path, &sink)?);
     }
 
-    let folders = index["folders"].as_array_mut().unwrap();
+    let folders = index["folders"].as_array_mut().ok_or_else(|| anyhow::anyhow!("missing 'folders' field"))?;
     // 删除访问不到的文件夹的记录
     folders.retain(|item| {
-        let path = item["path"].as_str().unwrap();
+        let path = match item["path"].as_str() {
+            Some(p) => p,
+            None => return false,
+        };
 
         Path::new(path).exists()
     });
@@ -1064,9 +1062,12 @@ pub fn update_index(index_path: String, sink: StreamSink<IndexActionState>) -> a
     let total = folders.len();
 
     for folder_item in folders {
-        let folder_path = folder_item["path"].as_str().unwrap().to_string();
-        let latest = folder_item["latest"].as_u64().unwrap();
-        let old_folder_modified = folder_item["modified"].as_u64().unwrap();
+        let folder_path = match folder_item["path"].as_str() {
+            Some(p) => p.to_string(),
+            None => continue,
+        };
+        let latest = folder_item["latest"].as_u64().unwrap_or(0);
+        let old_folder_modified = folder_item["modified"].as_u64().unwrap_or(0);
 
         let new_folder_modified = match fs::metadata(&folder_path) {
             Ok(value) => match value.modified() {
@@ -1093,17 +1094,26 @@ pub fn update_index(index_path: String, sink: StreamSink<IndexActionState>) -> a
         folder_item["modified"] = serde_json::json!(new_folder_modified);
 
         // 删除访问不到的文件的记录
-        let audios = folder_item["audios"].as_array_mut().unwrap();
+        let audios = match folder_item["audios"].as_array_mut() {
+            Some(a) => a,
+            None => continue,
+        };
         audios.retain(|item| {
-            let path = item["path"].as_str().unwrap();
+            let path = match item["path"].as_str() {
+                Some(p) => p,
+                None => return false,
+            };
 
             Path::new(path).exists()
         });
 
         for audio_item in &mut *audios {
-            let old_audio_modified = audio_item["modified"].as_u64().unwrap();
-            let audio_path = audio_item["path"].as_str().unwrap();
-            let new_audio_modified = match fs::metadata(&audio_path) {
+            let old_audio_modified = audio_item["modified"].as_u64().unwrap_or(0);
+            let audio_path = match audio_item["path"].as_str() {
+                Some(p) => p,
+                None => continue,
+            };
+            let new_audio_modified = match fs::metadata(audio_path) {
                 Ok(value) => match value.modified() {
                     Ok(value) => value
                         .duration_since(UNIX_EPOCH)
