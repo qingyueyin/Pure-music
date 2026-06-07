@@ -1336,6 +1336,15 @@ class _MorphPlayPauseButtonState extends State<_MorphPlayPauseButton>
   void initState() {
     super.initState();
     _controller.value = _state == PlayerState.playing ? 1.0 : 0.0;
+    widget.playerStateStream.listen((newState) {
+      if (mounted) {
+        _controller.animateTo(
+          newState == PlayerState.playing ? 1.0 : 0.0,
+          duration: const Duration(milliseconds: 240),
+          curve: const Cubic(0.2, 0.0, 0.0, 1.0),
+        );
+      }
+    });
   }
 
   @override
@@ -1360,11 +1369,6 @@ class _MorphPlayPauseButtonState extends State<_MorphPlayPauseButton>
           builder: (context, snapshot) {
             _state = snapshot.data ?? _state;
             final isPlaying = _state == PlayerState.playing;
-            _controller.animateTo(
-              isPlaying ? 1.0 : 0.0,
-              duration: const Duration(milliseconds: 240),
-              curve: const Cubic(0.2, 0.0, 0.0, 1.0),
-            );
 
             late final VoidCallback onPressed;
             if (_state == PlayerState.playing) {
