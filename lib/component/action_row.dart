@@ -42,8 +42,9 @@ class ActionRow extends StatelessWidget {
                 );
 
                 stdout.write(
-                  const ControlEventMessage(ControlEvent.lock)
-                      .buildMessageJson(),
+                  const ControlEventMessage(
+                    ControlEvent.lock,
+                  ).buildMessageJson(),
                 );
               }
             },
@@ -69,8 +70,9 @@ class ActionRow extends StatelessWidget {
             IconButton(
               onPressed: () {
                 stdout.write(
-                  const ControlEventMessage(ControlEvent.previousAudio)
-                      .buildMessageJson(),
+                  const ControlEventMessage(
+                    ControlEvent.previousAudio,
+                  ).buildMessageJson(),
                 );
               },
               color: Color(theme.onSurface),
@@ -95,8 +97,9 @@ class ActionRow extends StatelessWidget {
             IconButton(
               onPressed: () {
                 stdout.write(
-                  const ControlEventMessage(ControlEvent.nextAudio)
-                      .buildMessageJson(),
+                  const ControlEventMessage(
+                    ControlEvent.nextAudio,
+                  ).buildMessageJson(),
                 );
               },
               color: Color(theme.onSurface),
@@ -115,8 +118,9 @@ class ActionRow extends StatelessWidget {
             IconButton(
               onPressed: () {
                 stdout.write(
-                  const ControlEventMessage(ControlEvent.close)
-                      .buildMessageJson(),
+                  const ControlEventMessage(
+                    ControlEvent.close,
+                  ).buildMessageJson(),
                 );
               },
               color: Color(theme.onSurface),
