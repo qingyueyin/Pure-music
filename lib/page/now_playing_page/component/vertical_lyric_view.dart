@@ -842,7 +842,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                         milliseconds: _lyricViewController?.renderConfig.enableStaggeredAnimation == true
                             ? ((dist + 1) * 60).clamp(0, 600)
                             : 0);
-                    final isHovered = i == _hoveredLineIndex;
+                    final isHovered = widget.enableSeekOnTap && i == _hoveredLineIndex;
                     return LyricViewTile(
                       key: dist == 0 ? currentLyricTileKey : null,
                       line: line,
@@ -855,11 +855,13 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                           : staggerDelay,
                       isUserScrolling: userIsDragging,
                       isHovered: isHovered,
-                      onHoverChanged: (v) {
-                        setState(() {
-                          _hoveredLineIndex = v ? i : -1;
-                        });
-                      },
+                      onHoverChanged: widget.enableSeekOnTap
+                          ? (v) {
+                              setState(() {
+                                _hoveredLineIndex = v ? i : -1;
+                              });
+                            }
+                          : null,
                       onTap: widget.enableSeekOnTap
                           ? () => _seekToLyricLineWithOriginalIndex(line)
                           : null,
