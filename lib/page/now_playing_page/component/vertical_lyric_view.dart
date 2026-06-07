@@ -608,14 +608,23 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
         _cachedHeights != null &&
         _mainLine < _cachedOffsets!.length) {
       final viewport = scrollController.position.viewportDimension;
-      const spacer = 0.0;
       final alignment = widget.currentLineAlignment;
+
+      // 计算与 ListView padding 匹配的顶部空间偏移量
+      double topPadding;
+      if (widget.centerVertically) {
+        topPadding = viewport / 2.0;
+      } else if (widget.enableEdgeSpacer) {
+        topPadding = viewport;
+      } else {
+        topPadding = viewport * alignment;
+      }
 
       final lineTop = _cachedOffsets![_mainLine];
       final lineHeight = _cachedHeights![_mainLine];
 
       final targetScrollOffset =
-          (spacer + lineTop + lineHeight / 2) - (viewport * alignment);
+          (topPadding + lineTop + lineHeight / 2) - (viewport * alignment);
 
       _animateTo(targetScrollOffset, duration: duration);
       _afterScrollRetryTimer?.cancel();
