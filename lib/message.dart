@@ -13,10 +13,8 @@ abstract class Message {
 
   Map<String, dynamic> _toJson();
 
-  String buildMessageJson() => json.encode({
-        "type": runtimeType.toString(),
-        "message": _toJson(),
-      });
+  String buildMessageJson() =>
+      json.encode({"type": runtimeType.toString(), "message": _toJson()});
 }
 
 @JsonEnum(valueField: "code")
@@ -128,11 +126,7 @@ class NowPlayingChangedMessage extends Message {
   final String artist;
   final String album;
 
-  const NowPlayingChangedMessage(
-    this.title,
-    this.artist,
-    this.album,
-  );
+  const NowPlayingChangedMessage(this.title, this.artist, this.album);
 
   factory NowPlayingChangedMessage.fromJson(Map<String, dynamic> json) =>
       _$NowPlayingChangedMessageFromJson(json);
