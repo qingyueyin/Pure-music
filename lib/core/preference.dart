@@ -15,7 +15,7 @@ class PagePreference {
 
   PagePreference(this.sortMethod, this.sortOrder, this.contentView);
 
-  Map toMap() => {
+  Map<String, dynamic> toMap() => {
         'sortMethod': sortMethod,
         'sortOrder': sortOrder.name,
         'contentView': contentView.name,
@@ -67,7 +67,7 @@ class NowPlayingPagePreference {
         enableLineSpring: enableLyricSpring,
       );
 
-  Map toMap() => {
+  Map<String, dynamic> toMap() => {
         'nowPlayingViewMode': nowPlayingViewMode.name,
         'lyricTextAlign': lyricTextAlign.name,
         'lyricFontSize': lyricFontSize,
@@ -108,7 +108,7 @@ class EqPreset {
 
   EqPreset(this.name, this.gains);
 
-  Map toMap() => {
+  Map<String, dynamic> toMap() => {
         'name': name,
         'gains': gains,
       };
@@ -168,7 +168,7 @@ class PlaybackPreference {
     this.asioDeviceIndex = 0,
   });
 
-  Map toMap() => {
+  Map<String, dynamic> toMap() => {
         'playMode': playMode.name,
         'volumeDsp': volumeDsp,
         'eqGains': eqGains,
