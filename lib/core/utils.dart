@@ -270,11 +270,15 @@ void showHotkeyToast({
     visible.value = true;
   });
 
+  _hotkeyToastTimer?.cancel();
+  _hotkeyToastEntry?.remove();
+
   _hotkeyToastTimer = Timer(const Duration(milliseconds: 1100), () {
     visible.value = false;
     Timer(const Duration(milliseconds: 160), () {
       _hotkeyToastEntry?.remove();
       _hotkeyToastEntry = null;
+      _hotkeyToastTimer = null;
     });
   });
 }
