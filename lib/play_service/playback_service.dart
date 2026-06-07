@@ -56,11 +56,11 @@ class PlaybackService extends ChangeNotifier {
       }
     });
 
-    // SMTC timeline 进度更新（throttle，最多每 5 秒更新一次）
+    // SMTC timeline 进度更新（throttle，最多每 1 秒更新一次）
     _smtcPositionStreamSub = positionStream.listen((position) {
       final now = DateTime.now().millisecondsSinceEpoch;
       if (_lastSmtcPositionUpdateMs == 0 ||
-          now - _lastSmtcPositionUpdateMs >= 5000) {
+          now - _lastSmtcPositionUpdateMs >= 1000) {
         _lastSmtcPositionUpdateMs = now;
         _smtc.updateTimeProperties(progress: (position * 1000).round());
       }
