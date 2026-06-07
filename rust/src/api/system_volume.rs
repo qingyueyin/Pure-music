@@ -28,9 +28,15 @@ mod imp {
     struct ComGuard;
 
     impl ComGuard {
-        fn new() -> Result<Self> {
-            unsafe { CoInitializeEx(None, COINIT_MULTITHREADED).ok() }?;
-            Ok(ComGuard)
+        fn new() -> Option<Self> {
+            let hr = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
+            // S_OK = success, RPC_E_CHANGED_MODE = already initialized (acceptable)
+            // S_FALSE = already initialized
+            if hr.is_ok() || hr.0 == windows::Win32::Foundation::RPC_E_CHANGED_MODE.0 {
+                Some(ComGuard)
+            } else {
+                None
+            }
         }
     }
 
@@ -237,7 +243,7 @@ mod imp {
     static GLOBAL_MANAGER: Mutex<Option<Arc<Mutex<Option<VolumeManager>>>>> = Mutex::new(None);
 
     pub(super) fn system_volume_init(sink: StreamSink<f64>) -> Result<f64> {
-        let _ = ComGuard::new();
+        let _guard = ComGuard::new().ok_or_else(|| anyhow::anyhow!("COM initialization failed"))?;
 
         let sink_arc = Arc::new(Mutex::new(Some(sink)));
         let manager = VolumeManager::new(sink_arc.clone())?;
@@ -251,13 +257,17 @@ mod imp {
             }
         }
 
-        *GLOBAL_MANAGER.lock().unwrap() = Some(manager_arc);
+        // guard is dropped here, but manager_arc keeps COM alive via its own CoInitializeEx calls
+        std::mem::forget(_guard);
+
+        *GLOBAL_MANAGER.lock().map_err(|e| anyhow::anyhow!("Mutex poisoned: {}", e))? = Some(manager_arc);
         Ok(current_vol)
     }
 
     pub(super) fn system_volume_set(val: f64) -> Result<()> {
-        let _ = ComGuard::new();
-        if let Some(manager_arc) = GLOBAL_MANAGER.lock().unwrap().as_ref() {
+        let _guard = ComGuard::new();
+
+        if let Some(manager_arc) = GLOBAL_MANAGER.lock().map_err(|e| anyhow::anyhow!("Mutex poisoned: {}", e))?.as_ref() {
             if let Ok(guard) = manager_arc.lock() {
                 if let Some(manager) = guard.as_ref() {
                     manager.set_volume(val as f32)?;
@@ -268,8 +278,9 @@ mod imp {
     }
 
     pub(super) fn system_volume_get() -> Result<f64> {
-        let _ = ComGuard::new();
-        if let Some(manager_arc) = GLOBAL_MANAGER.lock().unwrap().as_ref() {
+        let _guard = ComGuard::new();
+
+        if let Some(manager_arc) = GLOBAL_MANAGER.lock().map_err(|e| anyhow::anyhow!("Mutex poisoned: {}", e))?.as_ref() {
             if let Ok(guard) = manager_arc.lock() {
                 if let Some(manager) = guard.as_ref() {
                     return Ok(manager.get_volume().unwrap_or(0.0) as f64);
@@ -280,7 +291,9 @@ mod imp {
     }
 
     pub(super) fn system_volume_dispose() {
-        *GLOBAL_MANAGER.lock().unwrap() = None;
+        if let Ok(mut guard) = GLOBAL_MANAGER.lock() {
+            *guard = None;
+        }
     }
 }
 

@@ -10,14 +10,16 @@ pub struct SystemTheme {
     pub accent: (u8, u8, u8, u8),
 }
 
-impl SystemTheme {
+impl Default for SystemTheme {
     fn default() -> Self {
         SystemTheme {
             fore: (255, 255, 255, 255),
             accent: (0, 0, 0, 0),
         }
     }
+}
 
+impl SystemTheme {
     fn from_ui_settings(ui_settings: UISettings) -> Result<Self, windows::core::Error> {
         let fore = ui_settings.GetColorValue(UIColorType::Foreground)?;
         let accent = ui_settings.GetColorValue(UIColorType::Accent)?;
