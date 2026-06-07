@@ -154,7 +154,6 @@ void _startMemoryMonitor() {
           PaintingBinding.instance.imageCache.clearLiveImages();
         }
         CoverImageCache.instance.trimMemory();
-        CoverCache.instance.clear();
         AudioLibrary.instance.evictAllCoversExcept(
           PlayService.instance.playbackService.nowPlaying?.path,
         );
@@ -167,7 +166,6 @@ void _startMemoryMonitor() {
           PaintingBinding.instance.imageCache.clear();
         }
         CoverImageCache.instance.trimMemory();
-        CoverCache.instance.clear();
       }
       // 移除原有的 100MB 级清理（过于频繁且无明显收益）
     } catch (_) {}
