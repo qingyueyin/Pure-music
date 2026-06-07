@@ -235,7 +235,7 @@ class _EntryState extends State<Entry> with WindowListener, WidgetsBindingObserv
               if (state.extra != null) {
                 return NoTransitionPage(
                   key: state.pageKey,
-                  child: AudiosPage(locateTo: state.extra as Audio),
+                  child: AudiosPage(locateTo: state.extra as Audio?),
                 );
               }
               return NoTransitionPage(key: state.pageKey, child: const AudiosPage());
@@ -293,7 +293,10 @@ class _EntryState extends State<Entry> with WindowListener, WidgetsBindingObserv
               GoRoute(
                 path: 'detail',
                 pageBuilder: (context, state) {
-                  final folder = state.extra as AudioFolder;
+                  final folder = state.extra as AudioFolder?;
+                  if (folder == null) {
+                    return NoTransitionPage(key: state.pageKey, child: FolderDetailPage(folder: AudioFolder([], '', 0, 0)));
+                  }
                   return SlideTransitionPage(
                     key: state.pageKey,
                     child: FolderDetailPage(folder: folder),
@@ -312,7 +315,10 @@ class _EntryState extends State<Entry> with WindowListener, WidgetsBindingObserv
               GoRoute(
                 path: 'detail',
                 pageBuilder: (context, state) {
-                  final playlist = state.extra as Playlist;
+                  final playlist = state.extra as Playlist?;
+                  if (playlist == null) {
+                    return NoTransitionPage(key: state.pageKey, child: PlaylistDetailPage(playlist: Playlist('', [])));
+                  }
                   return SlideTransitionPage(
                     key: state.pageKey,
                     child: PlaylistDetailPage(playlist: playlist),
