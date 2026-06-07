@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui' show PlatformDispatcher;
+import 'package:path/path.dart' as p;
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/native/rust/api/library_db.dart' as library_db;
@@ -52,8 +53,8 @@ class AudioLibrary {
     final stopwatch = Stopwatch()..start();
     try {
       final supportPath = (await getAppDataDir()).path;
-      final indexPath = '$supportPath\\index.json';
-      final sqlitePath = '$supportPath\\library.sqlite';
+      final indexPath = p.join(supportPath, 'index.json');
+      final sqlitePath = p.join(supportPath, 'library.sqlite');
 
       if (!File(sqlitePath).existsSync() && File(indexPath).existsSync()) {
         try {
@@ -400,8 +401,8 @@ class Audio {
     try {
       final dir = Directory(File(path).parent.path);
       final candidates = [
-        File('${dir.path}\\cover.jpg'),
-        File('${dir.path}\\cover.png'),
+        File(p.join(dir.path, 'cover.jpg')),
+        File(p.join(dir.path, 'cover.png')),
       ];
       for (final f in candidates) {
         if (f.existsSync()) {

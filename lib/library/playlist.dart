@@ -8,6 +8,7 @@ import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:sqlite3/sqlite3.dart';
+import 'package:path/path.dart' as path;
 
 List<Playlist> PLAYLISTS = [];
 
@@ -15,7 +16,7 @@ Future<void> readPlaylists() async {
   PLAYLISTS = [];
   try {
     final dir = await getAppDataDir();
-    final jsonFile = File('${dir.path}\\playlists.json');
+    final jsonFile = File(path.join(dir.path, 'playlists.json'));
 
     final db = await AppDb.instance.db();
     final playlistCount =
