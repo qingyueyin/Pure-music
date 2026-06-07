@@ -531,6 +531,9 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   }
 
   void _markUserScrolling() {
+    if (_hoveredLineIndex != -1) {
+      _hoveredLineIndex = -1;
+    }
     if (_scrollState != LyricScrollState.userDragging) {
       _stopScrollTicker();
       setState(() {
