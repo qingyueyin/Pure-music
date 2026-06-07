@@ -66,7 +66,6 @@ class PlayService {
     SystemVolumeService.instance.dispose();
     AlbumColorCache.instance.dispose();
     CoverImageCache.instance.dispose();
-    CoverCache.instance.clear();
     LyricViewController.instance.dispose();
     AudioLibrary.instance.dispose();
     AppDb.instance.dispose();
