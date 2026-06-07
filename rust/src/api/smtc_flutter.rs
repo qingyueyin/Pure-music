@@ -24,23 +24,45 @@ use crate::frb_generated::StreamSink;
 
 use super::{logger::log_to_dart, tag_reader};
 
-// 一个最小的静音WAV文件（44100Hz，单声道，16bit，PCM）
-const SILENT_WAV: &[u8] = &[
+/// 生成 1 秒静默 PCM WAV（44100Hz，单声道，16bit）
+/// 用于给 MediaPlayer 提供一个持续活动的播放会话，使 SMTC 能注册到 Windows。
+fn create_silent_wav_1s() -> Vec<u8> {
+    let sample_rate = 44100u32;
+    let num_channels = 1u16;
+    let bits_per_sample = 16u16;
+    let duration_samples = sample_rate; // 1秒
+    let data_size = duration_samples * num_channels as u32 * (bits_per_sample / 8) as u32;
+    // = 44100 * 1 * 2 = 88200
+
+    let total_size = 44 + data_size as usize;
+    let mut wav = Vec::with_capacity(total_size);
+
     // RIFF header
-    b'R', b'I', b'F', b'F',
-    0x24, 0x00, 0x00, 0x00,
-    b'W', b'A', b'V', b'E',
-    b'f', b'm', b't', b' ',
-    0x10, 0x00, 0x00, 0x00,
-    0x01, 0x00,
-    0x01, 0x00,
-    0x44, 0xAC, 0x00, 0x00,
-    0x88, 0x58, 0x01, 0x00,
-    0x02, 0x00,
-    0x10, 0x00,
-    b'd', b'a', b't', b'a',
-    0x00, 0x00, 0x00, 0x00,
-];
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&(36u32 + data_size).to_le_bytes());
+    wav.extend_from_slice(b"WAVE");
+
+    // fmt subchunk
+    wav.extend_from_slice(b"fmt ");
+    wav.extend_from_slice(&16u32.to_le_bytes()); // Subchunk1Size (PCM)
+    wav.extend_from_slice(&1u16.to_le_bytes());  // AudioFormat (PCM)
+    wav.extend_from_slice(&num_channels.to_le_bytes());
+    wav.extend_from_slice(&sample_rate.to_le_bytes());
+    let byte_rate = sample_rate * num_channels as u32 * (bits_per_sample / 8) as u32;
+    wav.extend_from_slice(&byte_rate.to_le_bytes());
+    let block_align = num_channels * (bits_per_sample / 8);
+    wav.extend_from_slice(&block_align.to_le_bytes());
+    wav.extend_from_slice(&bits_per_sample.to_le_bytes());
+
+    // data subchunk
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&data_size.to_le_bytes());
+
+    // 静默数据（全零）
+    wav.resize(total_size, 0u8);
+
+    wav
+}
 
 pub struct SMTCFlutter {
     _smtc: SystemMediaTransportControls,
@@ -150,9 +172,10 @@ impl SMTCFlutter {
     fn _create_silent_media_source() -> Result<MediaSource, windows::core::Error> {
         use windows::core::Interface;
         
+        let wav_bytes = create_silent_wav_1s();
         let stream = InMemoryRandomAccessStream::new()?;
         let writer = DataWriter::CreateDataWriter(&stream)?;
-        writer.WriteBytes(SILENT_WAV)?;
+        writer.WriteBytes(&wav_bytes)?;
         writer.StoreAsync()?.get()?;
         writer.DetachStream()?;
         stream.Seek(0)?;
@@ -177,9 +200,12 @@ impl SMTCFlutter {
         _player.SetIsMuted(true)?;
         _player.SetVolume(0.0)?;
         
-        // Set a silent MediaSource to activate PlaybackSession so SMTC buttons work
+        // 设置静默音源并循环播放，使 PlaybackSession 保持活动状态
+        // SMTC 只有在 MediaPlayer 处于播放状态时才会出现在 Windows 系统中
         if let Ok(source) = Self::_create_silent_media_source() {
             _player.SetSource(&source)?;
+            _player.SetIsLoopingEnabled(true)?;
+            _player.Play()?;
         }
 
         let _smtc = _player.SystemMediaTransportControls()?;
@@ -296,6 +322,13 @@ impl SMTCFlutter {
                 Err(e) => {
                     log_to_dart(format!("SMTC: thumbnail err: {}", e));
                 }
+            }
+        } else {
+            // CopyFromFileAsync 成功，但文件内嵌元数据可能不正确，手动覆盖
+            if let Ok(music_properties) = updater.MusicProperties() {
+                let _ = music_properties.SetTitle(&title);
+                let _ = music_properties.SetArtist(&artist);
+                let _ = music_properties.SetAlbumTitle(&album);
             }
         }
 
