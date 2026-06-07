@@ -125,7 +125,6 @@ class DesktopLyricService extends ChangeNotifier {
   Future<void> _sendQueue = Future.value();
 
   LyricLine? _currentLyricLine;
-  StreamSubscription<double>? _positionSub;
 
   bool isLocked = false;
   bool _isKilling = false;
@@ -164,8 +163,6 @@ class DesktopLyricService extends ChangeNotifier {
     _isRunning = false;
     _isKilling = false;
     isLocked = false;
-    _positionSub?.cancel();
-    _positionSub = null;
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
     _WinJobObject.close(_jobHandle);
@@ -302,9 +299,6 @@ class DesktopLyricService extends ChangeNotifier {
     _isKilling = true;
     notifyListeners();
 
-    _positionSub?.cancel();
-    _positionSub = null;
-
     final process = _process;
     if (process != null) {
       try {
@@ -349,63 +343,6 @@ class DesktopLyricService extends ChangeNotifier {
 
   void sendPlayerStateMessage(bool isPlaying) {
     sendMessage(msg.PlayerStateChangedMessage(isPlaying));
-    
-    if (_positionSub != null) {
-      _positionSub?.cancel();
-      _positionSub = null;
-    }
-    
-    if (isPlaying) {
-      _startPositionListening();
-    }
-  }
-
-  void _startPositionListening() {
-    _positionSub?.cancel();
-    _positionSub = _playbackService.positionStream.listen((pos) {
-      _onPositionUpdate(pos);
-    });
-  }
-
-  void _onPositionUpdate(double position) {
-    if (_currentLyricLine is! SyncLyricLine) return;
-    
-    final line = _currentLyricLine as SyncLyricLine;
-    final currentMs = (position * 1000).round();
-    final lineStartMs = line.start.inMilliseconds;
-    
-    if (currentMs < lineStartMs) return;
-    
-    // Offset into the current line
-    final offsetMs = currentMs - lineStartMs;
-    
-    final words = line.words;
-    int wordIndex = -1;
-    double progress = 0.0;
-    
-    for (int i = 0; i < words.length; i++) {
-      final wordStart = words[i].start.inMilliseconds - lineStartMs;
-      final wordLengthMs = words[i].length.inMilliseconds;
-      final wordEnd = wordStart + wordLengthMs;
-      
-      if (offsetMs >= wordStart && offsetMs < wordEnd) {
-        wordIndex = i;
-        if (wordLengthMs > 0) {
-          final elapsed = offsetMs - wordStart;
-          progress = (elapsed / wordLengthMs * 100).clamp(0.0, 100.0);
-        }
-        break;
-      } else if (offsetMs >= wordEnd) {
-        wordIndex = i;
-        progress = 100.0;
-      } else {
-        break;
-      }
-    }
-    
-    if (wordIndex < 0) return;
-    
-    sendMessage(msg.PositionMessage(wordIndex, progress));
   }
 
   void sendNowPlayingMessage(Audio nowPlaying) {
@@ -565,8 +502,6 @@ class DesktopLyricService extends ChangeNotifier {
     _desktopLyricSubscription = null;
     _stderrSubscription?.cancel();
     _stderrSubscription = null;
-    _positionSub?.cancel();
-    _positionSub = null;
     // 取消定时器
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
