@@ -21,27 +21,24 @@ class _WinJobObject {
   static final DynamicLibrary _kernel32 = DynamicLibrary.open('kernel32.dll');
 
   static final Pointer<Void> Function(Pointer<Void>, Pointer<Utf16>)
-      _createJobObject = _kernel32
-          .lookupFunction<
-              Pointer<Void> Function(Pointer<Void>, Pointer<Utf16>),
-              Pointer<Void> Function(Pointer<Void>, Pointer<Utf16>)>(
-          'CreateJobObjectW');
+      _createJobObject = _kernel32.lookupFunction<
+          Pointer<Void> Function(Pointer<Void>, Pointer<Utf16>),
+          Pointer<Void> Function(
+              Pointer<Void>, Pointer<Utf16>)>('CreateJobObjectW');
 
   static final int Function(Pointer<Void>, int, Pointer<Void>, int)
-      _setInformationJobObject = _kernel32
-          .lookupFunction<
-              Int32 Function(Pointer<Void>, Uint32, Pointer<Void>, Uint32),
-              int Function(Pointer<Void>, int, Pointer<Void>, int)>(
-          'SetInformationJobObject');
+      _setInformationJobObject = _kernel32.lookupFunction<
+          Int32 Function(Pointer<Void>, Uint32, Pointer<Void>, Uint32),
+          int Function(Pointer<Void>, int, Pointer<Void>,
+              int)>('SetInformationJobObject');
 
   static final int Function(Pointer<Void>, int) _assignProcessToJobObject =
-      _kernel32
-          .lookupFunction<
-              Int32 Function(Pointer<Void>, IntPtr),
-              int Function(Pointer<Void>, int)>('AssignProcessToJobObject');
+      _kernel32.lookupFunction<Int32 Function(Pointer<Void>, IntPtr),
+          int Function(Pointer<Void>, int)>('AssignProcessToJobObject');
 
-  static final int Function(Pointer<Void>) _closeHandle = _kernel32
-      .lookupFunction<Int32 Function(Pointer<Void>), int Function(Pointer<Void>)>('CloseHandle');
+  static final int Function(Pointer<Void>) _closeHandle =
+      _kernel32.lookupFunction<Int32 Function(Pointer<Void>),
+          int Function(Pointer<Void>)>('CloseHandle');
 
   static const int _jobObjectExtendedLimitInformation = 9;
   static const int _jobObjectLimitKillOnJobClose = 0x2000;
@@ -68,8 +65,7 @@ class _WinJobObject {
       const infoSize = 144;
       final infoPtr = calloc<Uint8>(infoSize);
       // LimitFlags @ offset 0x10
-      (infoPtr + 0x10).cast<Uint32>().value =
-          _jobObjectLimitKillOnJobClose;
+      (infoPtr + 0x10).cast<Uint32>().value = _jobObjectLimitKillOnJobClose;
 
       final ret = _setInformationJobObject(
         job,
@@ -94,7 +90,8 @@ class _WinJobObject {
         return null;
       }
 
-      logger.i('[desktop lyric] Job Object created, child PID=$childPid secured');
+      logger
+          .i('[desktop lyric] Job Object created, child PID=$childPid secured');
       return job;
     } catch (e) {
       logger.w('[desktop lyric] WinJobObject init error: $e');
@@ -188,7 +185,8 @@ class DesktopLyricService extends ChangeNotifier {
       'desktop_lyric.exe',
     );
     if (!File(desktopLyricPath).existsSync()) {
-      logger.e('[desktop lyric] desktop_lyric.exe not found: $desktopLyricPath');
+      logger
+          .e('[desktop lyric] desktop_lyric.exe not found: $desktopLyricPath');
       return;
     }
 
@@ -221,8 +219,8 @@ class DesktopLyricService extends ChangeNotifier {
     _sendQueueSize = 0;
 
     _stderrSubscription = process.stderr.transform(utf8.decoder).listen(
-      (event) => logger.e('[desktop lyric] $event'),
-    );
+          (event) => logger.e('[desktop lyric] $event'),
+        );
 
     _desktopLyricSubscription = process.stdout.transform(utf8.decoder).listen(
       (event) {
@@ -305,13 +303,17 @@ class DesktopLyricService extends ChangeNotifier {
     final process = _process;
     if (process != null) {
       try {
-        final alreadyExited = await process.exitCode.timeout(
-          const Duration(milliseconds: 200),
-        ).then((_) => true).catchError((_) => false);
+        final alreadyExited = await process.exitCode
+            .timeout(
+              const Duration(milliseconds: 200),
+            )
+            .then((_) => true)
+            .catchError((_) => false);
 
         if (!alreadyExited) {
           if (Platform.isWindows) {
-            Process.run('taskkill', ['/pid', '${process.pid}', '/f']).catchError((_) => ProcessResult(0, 1, '', ''));
+            Process.run('taskkill', ['/pid', '${process.pid}', '/f'])
+                .catchError((_) => ProcessResult(0, 1, '', ''));
           } else {
             process.kill(ProcessSignal.sigterm);
           }
@@ -346,12 +348,12 @@ class DesktopLyricService extends ChangeNotifier {
 
   void sendPlayerStateMessage(bool isPlaying) {
     sendMessage(msg.PlayerStateChangedMessage(isPlaying));
-    
+
     if (_positionSub != null) {
       _positionSub?.cancel();
       _positionSub = null;
     }
-    
+
     if (isPlaying) {
       _startPositionListening();
     }
@@ -376,24 +378,24 @@ class DesktopLyricService extends ChangeNotifier {
     _lastPositionSendMs = now;
 
     if (_currentLyricLine is! SyncLyricLine) return;
-    
+
     final line = _currentLyricLine as SyncLyricLine;
     final currentMs = (position * 1000).round();
     final lineStartMs = line.start.inMilliseconds;
-    
+
     if (currentMs < lineStartMs) return;
-    
+
     final offsetMs = currentMs - lineStartMs;
-    
+
     final words = line.words;
     int wordIndex = -1;
     double progress = 0.0;
-    
+
     for (int i = 0; i < words.length; i++) {
       final wordStart = words[i].start.inMilliseconds - lineStartMs;
       final wordLengthMs = words[i].length.inMilliseconds;
       final wordEnd = wordStart + wordLengthMs;
-      
+
       if (offsetMs >= wordStart && offsetMs < wordEnd) {
         wordIndex = i;
         if (wordLengthMs > 0) {
@@ -408,9 +410,9 @@ class DesktopLyricService extends ChangeNotifier {
         break;
       }
     }
-    
+
     if (wordIndex < 0) return;
-    
+
     sendMessage(msg.PositionMessage(wordIndex, progress));
   }
 
@@ -424,7 +426,7 @@ class DesktopLyricService extends ChangeNotifier {
 
   void sendLyricLineMessage(LyricLine line, {LyricLine? nextLine}) {
     _currentLyricLine = line;
-    
+
     List<msg.LyricWord>? words;
     if (line is SyncLyricLine) {
       final progressMs = ((_playbackService.position * 1000).round() -
@@ -438,12 +440,15 @@ class DesktopLyricService extends ChangeNotifier {
                 w.content,
               ))
           .toList();
-      logger.i('[desktop lyric] sendLyricLineMessage: line is SyncLyricLine, words count = ${words.length}, progressMs=$progressMs');
+      logger.i(
+          '[desktop lyric] sendLyricLineMessage: line is SyncLyricLine, words count = ${words.length}, progressMs=$progressMs');
       if (words.isNotEmpty) {
-        logger.i('[desktop lyric] first word: ${words[0].content}, startMs=${words[0].startMs}, lengthMs=${words[0].lengthMs}');
+        logger.i(
+            '[desktop lyric] first word: ${words[0].content}, startMs=${words[0].startMs}, lengthMs=${words[0].lengthMs}');
       }
     } else {
-      logger.i('[desktop lyric] sendLyricLineMessage: line is ${line.runtimeType}, words = null');
+      logger.i(
+          '[desktop lyric] sendLyricLineMessage: line is ${line.runtimeType}, words = null');
     }
 
     String? nextContent;
@@ -554,7 +559,8 @@ class DesktopLyricService extends ChangeNotifier {
       }
       if (lyric.lines.isEmpty) return;
       if (idx < 0) return;
-      final nextLine = idx + 1 < lyric.lines.length ? lyric.lines[idx + 1] : null;
+      final nextLine =
+          idx + 1 < lyric.lines.length ? lyric.lines[idx + 1] : null;
       sendLyricLineMessage(lyric.lines[idx], nextLine: nextLine);
     });
   }
