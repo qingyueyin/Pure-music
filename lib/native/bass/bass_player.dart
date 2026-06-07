@@ -319,13 +319,13 @@ class BassPlayer {
   }
 
   /// 根据音频采样率动态计算 WASAPI 缓冲区大小
-  /// 上限收紧至 100ms 以减少 Native 内存占用
+  /// 过小的缓冲会在 GC 抖动/IO 延迟时导致缓冲区欠载，产生哒哒哒的卡顿音
   double _computeWasapiBufferSec() {
     _refreshStreamSampleRate();
-    if (_streamSampleRate <= 44100) return 0.06;
-    if (_streamSampleRate <= 48000) return 0.08;
-    if (_streamSampleRate <= 96000) return 0.10;
-    return 0.10;
+    if (_streamSampleRate <= 44100) return 0.10;
+    if (_streamSampleRate <= 48000) return 0.12;
+    if (_streamSampleRate <= 96000) return 0.15;
+    return 0.20;
   }
 
   void _maybeUpdateSpectrum() {
@@ -662,7 +662,8 @@ class BassPlayer {
       }
     }
 
-    _bass.BASS_SetConfig(bass.BASS_CONFIG_BUFFER, 100);
+    _bass.BASS_SetConfig(bass.BASS_CONFIG_BUFFER, 500);
+    _bass.BASS_SetConfig(bass.BASS_CONFIG_DEV_BUFFER, 500);
   }
 
   void _startDevice() {
