@@ -6,6 +6,7 @@ import 'package:pure_music/lyric/exclude_data.dart';
 const _separators = <String>[
   ':', '：', ',', '，', '.', '。', '!', '！', '-', '_',
   '(', '（', '[', '【', '{', '『', '「',
+  ')', '）', ']', '】', '}', '』', '」', '》',
 ];
 
 // 括号对（用于清理文本前后的括号包裹）
@@ -17,6 +18,7 @@ const _bracketPairs = <List<String>>[
   ['{', '}'],
   ['『', '』'],
   ['「', '」'],
+  ['《', '》'],
 ];
 
 /// 歌词元数据剥离选项
@@ -89,6 +91,8 @@ bool _isStrictMatch(String text, List<String> keywords, List<RegExp> regexes) {
 
   for (final kw in keywords) {
     final nkw = kw.toLowerCase().replaceAll(RegExp(r'\s+'), '');
+
+    // 开头匹配：关键词在文本开头，后面紧跟分隔符或为空
     if (normalized.startsWith(nkw)) {
       final remainder = normalized.substring(nkw.length);
       if (remainder.isEmpty) return true;
@@ -96,6 +100,22 @@ bool _isStrictMatch(String text, List<String> keywords, List<RegExp> regexes) {
       if (_separators.contains(remainder[0])) return true;
       // 关键词后有后缀再跟分隔符，如「混音师：李荣浩」「母带后期制作人：李荣浩」
       if (remainder.contains('：') || remainder.contains(':')) return true;
+    }
+
+    // 模糊匹配：关键词出现在文本中任意位置，且后面紧跟分隔符
+    // 用于匹配「片尾曲)」「作词：方文山」等中间嵌入的元数据关键词
+    var searchStart = 1;
+    while (true) {
+      final kwIndex = normalized.indexOf(nkw, searchStart);
+      if (kwIndex < 0) break;
+      final afterKw = normalized.substring(kwIndex + nkw.length);
+      if (afterKw.isNotEmpty &&
+          (_separators.contains(afterKw[0]) ||
+              afterKw.contains('：') ||
+              afterKw.contains(':'))) {
+        return true;
+      }
+      searchStart = kwIndex + 1;
     }
   }
 
@@ -387,6 +407,10 @@ final List<RegExp> _cachedExcludeRegexes = defaultExcludeRegexes
     .map((p) => RegExp(p, caseSensitive: false))
     .toList();
 
+final List<RegExp> _cachedExcludeSoftRegexes = defaultExcludeSoftRegexes
+    .map((p) => RegExp(p, caseSensitive: false))
+    .toList();
+
 void blankMetadataLines(List<LyricLine> lines, [StripOptions? options]) {
   if (lines.isEmpty) return;
   options ??= const StripOptions();
@@ -397,6 +421,9 @@ void blankMetadataLines(List<LyricLine> lines, [StripOptions? options]) {
   final regexes = options.regexes.isNotEmpty
       ? options.regexes
       : _cachedExcludeRegexes;
+  final softRegexes = options.softRegexes.isNotEmpty
+      ? options.softRegexes
+      : _cachedExcludeSoftRegexes;
 
   final totalLines = lines.length;
   final headerLimit = _scanLimit(totalLines, 0.2, 20, 70);
@@ -423,51 +450,47 @@ void blankMetadataLines(List<LyricLine> lines, [StripOptions? options]) {
     final transText = lines[i].translation ?? '';
     isStrict[i] = (text.isNotEmpty && _isStrictMatch(text, keywords, regexes)) ||
         (transText.isNotEmpty && _isStrictMatch(transText, keywords, regexes));
-    isWeak[i] = (text.isNotEmpty && _looksLikeMetadata(text, options.softRegexes)) ||
-        (transText.isNotEmpty && _looksLikeMetadata(transText, options.softRegexes));
+    isWeak[i] = (text.isNotEmpty && _looksLikeMetadata(text, softRegexes)) ||
+        (transText.isNotEmpty && _looksLikeMetadata(transText, softRegexes));
   }
 
   // ── 头部扫描：找元数据区截止位置 ──
-  int lastStrictInHeader = -1;
+  int lastAnyInHeader = -1;
   for (int i = 0; i < headerLimit && i < totalLines; i++) {
-    if (isStrict[i]) {
-      lastStrictInHeader = i;
-    } else if (!isWeak[i]) {
+    if (isStrict[i] || isWeak[i]) {
+      lastAnyInHeader = i;
+    } else {
       break; // 非元数据行 → 停止
     }
   }
-  final headerCutoff = lastStrictInHeader + 1;
+  final headerCutoff = lastAnyInHeader + 1;
 
   // ── 尾部扫描：找元数据区起始位置 ──
-  int firstStrictInFooter = totalLines;
+  int firstAnyInFooter = totalLines;
   for (int i = totalLines - 1;
       i >= (totalLines - footerLimit).clamp(0, totalLines);
       i--) {
-    if (isStrict[i]) {
-      firstStrictInFooter = i;
-    } else if (!isWeak[i]) {
+    if (isStrict[i] || isWeak[i]) {
+      firstAnyInFooter = i;
+    } else {
       break;
     }
   }
 
   // ── 清空头部元数据（全清，含弱匹配） ──
   for (int i = 0; i < headerCutoff; i++) {
-    if (isStrict[i] || isWeak[i]) {
+    blankLine(lines[i]);
+  }
+
+  // ── 清空尾部元数据（全清，含弱匹配） ──
+  if (firstAnyInFooter < totalLines) {
+    for (int i = firstAnyInFooter; i < totalLines; i++) {
       blankLine(lines[i]);
     }
   }
 
-  // ── 清空尾部元数据（全清，含弱匹配） ──
-  if (firstStrictInFooter < totalLines) {
-    for (int i = firstStrictInFooter; i < totalLines; i++) {
-      if (isStrict[i] || isWeak[i]) {
-        blankLine(lines[i]);
-      }
-    }
-  }
-
   // ── 中间区域：仅强匹配 ──
-  for (int i = headerCutoff; i < totalLines; i++) {
+  for (int i = headerCutoff; i < (firstAnyInFooter < totalLines ? firstAnyInFooter : totalLines); i++) {
     if (isStrict[i]) {
       blankLine(lines[i]);
     }
