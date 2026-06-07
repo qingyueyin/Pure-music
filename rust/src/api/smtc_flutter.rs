@@ -132,6 +132,8 @@ impl SMTCFlutter {
     }
 
     pub fn update_state(&self, state: SMTCState) {
+        // 确保静默 MediaPlayer 保持播放状态，维持 SMTC 会话活跃
+        let _ = self._player.Play();
         if let Err(err) = self._update_state(state) {
             log_to_dart(format!("fail to update state: {}", err));
         }
@@ -139,8 +141,10 @@ impl SMTCFlutter {
 
     /// progress, duration: ms
     pub fn update_time_properties(&self, progress: u32) {
+        // 确保静默 MediaPlayer 保持播放状态
+        let _ = self._player.Play();
         if let Err(err) = self._update_time_properties(progress) {
-            log_to_dart(format!("fail to update state: {}", err));
+            log_to_dart(format!("fail to update time properties: {}", err));
         }
     }
 
@@ -152,6 +156,8 @@ impl SMTCFlutter {
         duration: u32,
         path: String,
     ) {
+        // 确保静默 MediaPlayer 保持播放状态，维持 SMTC 会话活跃
+        let _ = self._player.Play();
         if let Err(err) = self._update_display(
             HSTRING::from(title),
             HSTRING::from(artist),
@@ -274,74 +280,37 @@ impl SMTCFlutter {
         let updater = self._smtc.DisplayUpdater()?;
         updater.SetType(MediaPlaybackType::Music)?;
 
-        // 优先使用 CopyFromFileAsync（微软推荐方式，自动提取标题/艺术家/专辑/缩略图）
-        let copy_ok = match StorageFile::GetFileFromPathAsync(&path) {
-            Ok(op) => match op.get() {
-                Ok(file) => match updater.CopyFromFileAsync(MediaPlaybackType::Music, &file) {
-                    Ok(async_op) => match async_op.get() {
-                        Ok(_) => {
-                            log_to_dart("SMTC: CopyFromFileAsync succeeded".to_string());
-                            true
-                        }
-                        Err(e) => {
-                            log_to_dart(format!("SMTC: CopyFromFileAsync get err: {}", e));
-                            false
-                        }
-                    },
-                    Err(e) => {
-                        log_to_dart(format!("SMTC: CopyFromFileAsync call err: {}", e));
-                        false
-                    }
-                },
-                Err(e) => {
-                    log_to_dart(format!("SMTC: GetFileFromPathAsync get err: {}", e));
-                    false
-                }
-            },
+        // 手动设置 MusicProperties（比 CopyFromFileAsync 更快更可靠）
+        if let Ok(music_properties) = updater.MusicProperties() {
+            let _ = music_properties.SetTitle(&title);
+            let _ = music_properties.SetArtist(&artist);
+            let _ = music_properties.SetAlbumTitle(&album);
+        }
+
+        // 缩略图：优先从 tag_reader 读内嵌封面，失败则用 Windows 缩略图
+        match Self::_try_get_thumbnail(&path) {
+            Ok(Some(pic_ref)) => {
+                let _ = updater.SetThumbnail(&pic_ref);
+            }
+            Ok(None) => {}
             Err(e) => {
-                log_to_dart(format!("SMTC: GetFileFromPathAsync err: {}", e));
-                false
-            }
-        };
-
-        if !copy_ok {
-            // 回退：手动设置 MusicProperties
-            log_to_dart("SMTC: falling back to manual MusicProperties".to_string());
-            if let Ok(music_properties) = updater.MusicProperties() {
-                let _ = music_properties.SetTitle(&title);
-                let _ = music_properties.SetArtist(&artist);
-                let _ = music_properties.SetAlbumTitle(&album);
-            }
-
-            // 缩略图：失败不阻塞，仅打日志
-            match Self::_try_get_thumbnail(&path) {
-                Ok(Some(pic_ref)) => {
-                    let _ = updater.SetThumbnail(&pic_ref);
-                }
-                Ok(None) => {}
-                Err(e) => {
-                    log_to_dart(format!("SMTC: thumbnail err: {}", e));
-                }
-            }
-        } else {
-            // CopyFromFileAsync 成功，但文件内嵌元数据可能不正确，手动覆盖
-            if let Ok(music_properties) = updater.MusicProperties() {
-                let _ = music_properties.SetTitle(&title);
-                let _ = music_properties.SetArtist(&artist);
-                let _ = music_properties.SetAlbumTitle(&album);
+                log_to_dart(format!("SMTC: thumbnail err: {}", e));
             }
         }
 
-        // 更新时间线
+        // 更新时间线（非致命：失败了也继续提交，不丢元数据）
         *self.duration_ms.lock().unwrap() = duration;
-        let time_properties = SystemMediaTransportControlsTimelineProperties::new()?;
-        time_properties.SetStartTime(TimeSpan { Duration: 0 })?;
-        time_properties.SetEndTime(TimeSpan::from(Duration::from_millis(duration.into())))?;
-        time_properties.SetMinSeekTime(TimeSpan { Duration: 0 })?;
-        time_properties.SetMaxSeekTime(TimeSpan::from(Duration::from_millis(duration.into())))?;
-        self._smtc.UpdateTimelineProperties(&time_properties)?;
+        if let Ok(time_properties) = SystemMediaTransportControlsTimelineProperties::new() {
+            let _ = time_properties.SetStartTime(TimeSpan { Duration: 0 });
+            let _ = time_properties.SetEndTime(TimeSpan::from(Duration::from_millis(duration.into())));
+            let _ = time_properties.SetMinSeekTime(TimeSpan { Duration: 0 });
+            let _ = time_properties.SetMaxSeekTime(TimeSpan::from(Duration::from_millis(duration.into())));
+            if let Err(e) = self._smtc.UpdateTimelineProperties(&time_properties) {
+                log_to_dart(format!("SMTC: UpdateTimelineProperties err (non-fatal): {}", e));
+            }
+        }
 
-        // 关键：无论如何都要调用 Update() 提交更改
+        // 提交更改 — 这是最关键的调用，绝不能跳过
         updater.Update()?;
 
         if !(self._smtc.IsEnabled()?) {
