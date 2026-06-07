@@ -260,11 +260,12 @@ class AlbumColorCache {
   }
 
   (String, String) _albumKeyAndSignature(Album album) {
-    final audio = album.works.first;
+    final audio = album.works.isEmpty ? null : album.works.first;
+    if (audio == null) return ('album:${album.name}', 'nomedia');
     final parent = Directory(File(audio.path).parent.path);
     final candidates = [
-      File('${parent.path}\\cover.jpg'),
-      File('${parent.path}\\cover.png'),
+      File(path.join(parent.path, 'cover.jpg')),
+      File(path.join(parent.path, 'cover.png')),
     ];
     for (final f in candidates) {
       if (f.existsSync()) {
@@ -281,11 +282,12 @@ class AlbumColorCache {
   }
 
   Future<Uint8List?> _getAlbumCoverBytes(Album album) async {
-    final audio = album.works.first;
+    final audio = album.works.isEmpty ? null : album.works.first;
+    if (audio == null) return null;
     final parent = Directory(File(audio.path).parent.path);
     final candidates = [
-      File('${parent.path}\\cover.jpg'),
-      File('${parent.path}\\cover.png'),
+      File(path.join(parent.path, 'cover.jpg')),
+      File(path.join(parent.path, 'cover.png')),
     ];
     for (final f in candidates) {
       if (f.existsSync()) {
