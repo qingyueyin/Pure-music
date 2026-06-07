@@ -394,9 +394,13 @@ Lyric? _stripMetadata(Lyric lyric) {
   final regList = defaultExcludeRegexes
       .map((p) => RegExp(p, caseSensitive: false))
       .toList();
+  final softRegList = defaultExcludeSoftRegexes
+      .map((p) => RegExp(p, caseSensitive: false))
+      .toList();
   final options = StripOptions(
     keywords: defaultExcludeKeywords,
     regexes: regList,
+    softRegexes: softRegList,
   );
   final filtered = stripLyricMetadata(lyric.lines, options);
   if (!identical(lyric.lines, filtered)) {
