@@ -7,7 +7,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 macro_rules! ne_log {
     ($level:literal, $($arg:tt)*) => {
@@ -16,7 +16,7 @@ macro_rules! ne_log {
 }
 
 const EAPI_KEY: &[u8; 16] = b"e82ckenh8dichen8";
-const CACHE_KEY_KEY: &[u8; 16] = b")(13daqP@ssw0rd~";
+const CACHE_KEY: &[u8; 16] = b")(13daqP@ssw0rd~";
 const DEVICE_ID_XOR_KEY: &str = "3go8&$8*3*3h0k(2)2";
 
 fn pkcs7_pad(data: &[u8], block_size: usize) -> Vec<u8> {
@@ -44,7 +44,7 @@ fn aes_decrypt(data: &[u8], key: &[u8; 16]) -> Result<Vec<u8>, String> {
     if data.is_empty() {
         return Err("empty decryption data".to_string());
     }
-    if data.len() % 16 != 0 {
+    if !data.len().is_multiple_of(16) {
         return Err(format!("invalid encrypted data length: {} (not a multiple of 16)", data.len()));
     }
     let cipher = Aes128::new(key.into());
@@ -93,11 +93,11 @@ fn eapi_response_decrypt(data: &[u8]) -> Result<Vec<u8>, String> {
 }
 
 fn get_cache_key(data: &str) -> String {
-    let encrypted = aes_encrypt(data.as_bytes(), CACHE_KEY_KEY);
+    let encrypted = aes_encrypt(data.as_bytes(), CACHE_KEY);
     BASE64.encode(encrypted)
 }
 
-fn get_anonimous_username(device_id: &str) -> String {
+fn get_anonymous_username(device_id: &str) -> String {
     let mut xored: Vec<char> = Vec::new();
     for (i, c) in device_id.chars().enumerate() {
         let key_char = DEVICE_ID_XOR_KEY
@@ -133,7 +133,7 @@ fn generate_device_id() -> String {
 fn get_current_timestamp() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or(Duration::ZERO)
         .as_millis() as u64
 }
 
@@ -177,7 +177,7 @@ pub struct NetEaseCloud {
 
 impl NetEaseCloud {
     pub fn new() -> Self {
-        let client = reqwest::blocking::Client::builder().build().unwrap();
+        let client = reqwest::blocking::Client::builder().build().expect("Failed to build HTTP client");
 
         NetEaseCloud {
             client,
@@ -188,8 +188,8 @@ impl NetEaseCloud {
     }
 
     /// Headers: User-Agent, Referer, Cookie (only 3)
-    fn get_request_header(&self) -> Vec<(String, String)> {
-        let cookies = self.cookies.lock().unwrap();
+    fn get_request_header(&self) -> Result<Vec<(String, String)>, String> {
+        let cookies = self.cookies.lock().map_err(|e| e.to_string())?;
         let mut headers = vec![
             ("User-Agent".to_string(), "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Safari/537.36 Chrome/91.0.4472.164 NeteaseMusicDesktop/3.1.3.203419".to_string()),
             ("Referer".to_string(), "https://music.163.com/".to_string()),
@@ -198,12 +198,12 @@ impl NetEaseCloud {
         if !cookie_str.is_empty() {
             headers.push(("Cookie".to_string(), cookie_str));
         }
-        headers
+        Ok(headers)
     }
 
     pub fn init(&self) -> Result<(), String> {
         let now = get_current_timestamp();
-        let expire = self.expire.lock().unwrap();
+        let expire = self.expire.lock().map_err(|e| e.to_string())?;
         if *expire > now {
             ne_log!("D", "init: session still valid, expire={}", *expire);
             return Ok(());
@@ -213,7 +213,7 @@ impl NetEaseCloud {
         ne_log!("I", "init: starting anonymous login");
 
         let device_id = generate_device_id();
-        let username = get_anonimous_username(&device_id);
+        let username = get_anonymous_username(&device_id);
         let osver = format!(
             "Microsoft-Windows-10--build-{}00-64bit",
             rand::thread_rng().gen_range(200..300)
@@ -253,7 +253,7 @@ impl NetEaseCloud {
 
         let url = "https://interface.music.163.com/eapi/register/anonimous";
         ne_log!("D", "init: POST {}", url);
-        let headers = self.get_request_header();
+        let headers = self.get_request_header()?;
 
         let mut request = self.client.post(url);
         for (k, v) in headers {
@@ -308,10 +308,11 @@ impl NetEaseCloud {
 
         ne_log!("I", "init: login successful, userId={}", json["userId"].as_i64().unwrap_or(0));
 
-        let mut cookies = self.cookies.lock().unwrap();
+        let mut cookies = self.cookies.lock().map_err(|e| e.to_string())?;
         for (k, v) in &pre_cookies {
             cookies.insert(k.clone(), v.clone());
         }
+        drop(cookies);
 
         if let Some(cookies_header) = cookie_header {
             let cookie_str = cookies_header.to_str().unwrap_or("");
@@ -321,6 +322,7 @@ impl NetEaseCloud {
                     let value = cookie_pair[eq_pos + 1..].trim().to_string();
                     match name.as_str() {
                         "NMTID" | "MUSIC_A" | "__csrf" => {
+                            let mut cookies = self.cookies.lock().map_err(|e| e.to_string())?;
                             cookies.insert(name, value);
                         }
                         _ => {}
@@ -332,8 +334,8 @@ impl NetEaseCloud {
         let user_id = json["userId"].as_i64().unwrap_or(0);
         let new_expire = get_current_timestamp() + 864000;
 
-        *self.user_id.lock().unwrap() = Some(user_id);
-        *self.expire.lock().unwrap() = new_expire;
+        *self.user_id.lock().map_err(|e| e.to_string())? = Some(user_id);
+        *self.expire.lock().map_err(|e| e.to_string())? = new_expire;
 
         Ok(())
     }
@@ -357,7 +359,7 @@ impl NetEaseCloud {
 
         let url = "https://interface.music.163.com/eapi/song/lyric/v1";
         ne_log!("D", "get_lyric: POST {}", url);
-        let headers = self.get_request_header();
+        let headers = self.get_request_header()?;
 
         let mut request = self.client.post(url);
         for (k, v) in headers {
@@ -435,7 +437,7 @@ impl NetEaseCloud {
 
         let url = "https://interface.music.163.com/eapi/search/song/list/page";
         ne_log!("D", "search: POST {}", url);
-        let headers = self.get_request_header();
+        let headers = self.get_request_header()?;
 
         let mut request = self.client.post(url);
         for (k, v) in headers {
