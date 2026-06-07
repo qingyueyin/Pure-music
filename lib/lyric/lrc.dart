@@ -635,6 +635,7 @@ class Lrc extends Lyric {
 
     if (separator == null) {
       result._removeBlankLines();
+      result.lines.removeWhere((l) => l is LrcLine && l.isMetadata);
       return result;
     }
 
