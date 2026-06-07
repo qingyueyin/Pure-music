@@ -100,7 +100,7 @@ class AudioLibrary {
         instance.artistCollection.clear();
         instance.albumCollection.clear();
         instance._buildCollections();
-      instance._startCoverBytesEviction();
+        instance._startCoverBytesEviction();
         logger.i(
           'AudioLibrary init from sqlite: ${stopwatch.elapsedMilliseconds}ms, audios=${instance.audioCollection.length}',
         );
@@ -160,7 +160,7 @@ class AudioLibrary {
       /// 如果albumCollection中有audio.album指向的album，putIfAbsent会返回该album。
       /// 随后往这个album里添加该audio。
       ///
-      /// 如果没有，创建一个名字为audio.album的空艺术家，并将audio.album与之相连。
+      /// 如果没有，创建一个名字为audio.album的空专辑，并将audio.album与之相连。
       /// 随后往这个album里添加该audio。
       albumCollection
           .putIfAbsent(audio.album, () => Album(name: audio.album))
@@ -173,7 +173,7 @@ class AudioLibrary {
       for (Audio audio in artist.works) {
         artist.albumsMap.putIfAbsent(
           audio.album,
-          () => albumCollection[audio.album]!,
+          () => albumCollection[audio.album] ?? Album(name: audio.album),
         );
       }
     }
@@ -520,8 +520,6 @@ class Audio {
       'created': DateTime.fromMillisecondsSinceEpoch(created * 1000).toString(),
     }.toString();
   }
-
-  // _globalLargeCover removed - was write-only, wasted memory
 }
 
 class Artist {
