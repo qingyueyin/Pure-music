@@ -5,6 +5,7 @@ import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/core/matcher.dart' hide logger;
+import 'package:path/path.dart' as path;
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/entry.dart';
 import 'package:pure_music/core/hotkeys.dart';
@@ -99,16 +100,16 @@ Future<void> main() async {
 
   final supportPath = (await getAppDataDir()).path;
   final settingsDir = await getSettingsDir();
-  if (File('${settingsDir.path}\\settings.json').existsSync()) {
+  if (File(path.join(settingsDir.path, 'settings.json')).existsSync()) {
     await AppSettings.readFromJson();
     await loadPrefFont();
   }
-  if (File('${settingsDir.path}\\app_preference.json').existsSync()) {
+  if (File(path.join(settingsDir.path, 'app_preference.json')).existsSync()) {
     await AppPreference.read();
   }
   await AlbumColorCache.instance.init();
 
-  final welcome = !File('$supportPath\\index.json').existsSync();
+  final welcome = !File(path.join(supportPath, 'index.json')).existsSync();
 
   await initWindow();
   await ImmersiveModeController.instance.init();
