@@ -714,6 +714,10 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     }
 
     final lines = widget.lyric.lines;
+    // 跳过空白行：服务可能发出元数据行索引
+    if (lyricLine < lines.length && _isLineBlankFiltered(lines[lyricLine])) {
+      return;
+    }
     final renderConfig = context.read<LyricViewController>().renderConfig;
     final viewportStrategy = LyricViewportStrategy(
       leadingLines: renderConfig.viewportLeadingLines,
@@ -730,6 +734,9 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     setState(() {
       _mainLine = lyricLine;
       _viewportRange = followDecision.nextRange;
+      if (_hoveredLineIndex != -1) {
+        _hoveredLineIndex = -1;
+      }
     });
 
     if (followDecision.shouldScroll) {
