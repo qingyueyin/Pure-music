@@ -12,6 +12,7 @@ import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart';
 import 'package:flutter/material.dart';
 import 'package:sqlite3/sqlite3.dart';
+import 'package:path/path.dart' as path;
 
 class AlbumColor {
   final Color primary;
@@ -37,7 +38,7 @@ class AlbumColorCache {
     _initialized = true;
     try {
       final dir = await getCacheDir();
-      final jsonFile = File('${dir.path}\\$_cacheFileName');
+      final jsonFile = File(path.join(dir.path, _cacheFileName));
 
       try {
         final db = await AppDb.instance.db();
