@@ -1,6 +1,5 @@
 import 'dart:ffi';
 
-
 import 'package:ffi/ffi.dart' as ffi;
 import 'package:win32/win32.dart' as win32;
 
@@ -80,7 +79,6 @@ void showUnlockOverlay(int parentHwnd) {
     className, // Window class
     windowCaption, // Window caption
     win32.WINDOW_STYLE.WS_POPUP, // Window style
-
     // Size and position
     0,
     0,
