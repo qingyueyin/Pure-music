@@ -83,7 +83,7 @@ class AppSettings {
 
   ThemeOption themeOption = ThemeOption.system;
 
-  List artistSeparator = ['/', '、'];
+  List<String> artistSeparator = ['/', '、'];
 
   bool localLyricFirst = true;
   LyricSourceType preferredOnlineSource = LyricSourceType.qq;
@@ -148,7 +148,7 @@ class AppSettings {
 
     final llf = settingsMap['LocalLyricFirst'];
     if (llf != null) {
-      _instance.localLyricFirst = llf == 1 ? true : false;
+      _instance.localLyricFirst = llf == 1;
     }
 
     final st = settingsMap['ShowTranslation'];
@@ -190,9 +190,9 @@ class AppSettings {
         _instance.themeOption = ThemeOption.values[to as int];
       }
 
-      final as = settingsMap['ArtistSeparator'];
-      if (as != null) {
-        _instance.artistSeparator = as;
+      final sep = settingsMap['ArtistSeparator'];
+      if (sep != null) {
+        _instance.artistSeparator = sep;
         _instance.artistSplitPattern = _instance.artistSeparator.join('|');
       }
 
