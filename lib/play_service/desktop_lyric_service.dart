@@ -125,6 +125,7 @@ class DesktopLyricService extends ChangeNotifier {
   Future<void> _sendQueue = Future.value();
 
   LyricLine? _currentLyricLine;
+  LyricLine? _currentNextLine;
 
   bool isLocked = false;
   bool _isKilling = false;
@@ -132,6 +133,7 @@ class DesktopLyricService extends ChangeNotifier {
 
   // ── 心跳 / Job Object ─────────────────────────────────────
   Timer? _heartbeatTimer;
+  Timer? _progressSyncTimer;
   Pointer<Void>? _jobHandle;
 
   /// 桌面歌词是否正在运行
@@ -165,6 +167,8 @@ class DesktopLyricService extends ChangeNotifier {
     isLocked = false;
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
+    _progressSyncTimer?.cancel();
+    _progressSyncTimer = null;
     _WinJobObject.close(_jobHandle);
     _jobHandle = null;
     notifyListeners();
@@ -343,7 +347,62 @@ class DesktopLyricService extends ChangeNotifier {
 
   void sendPlayerStateMessage(bool isPlaying) {
     sendMessage(msg.PlayerStateChangedMessage(isPlaying));
+    if (isPlaying) {
+      _startProgressSync();
+    } else {
+      _stopProgressSync();
+    }
   }
+
+  /// 每 500ms 向桌面歌词发送当前进度校准，消除本地时钟漂移
+  void _startProgressSync() {
+    _progressSyncTimer?.cancel();
+    _progressSyncTimer = Timer.periodic(
+      const Duration(milliseconds: 500),
+      (_) => _syncProgress(),
+    );
+  }
+
+  void _stopProgressSync() {
+    _progressSyncTimer?.cancel();
+    _progressSyncTimer = null;
+  }
+
+  void _syncProgress() {
+    final line = _currentLyricLine;
+    if (line == null) return;
+    final posMs = (_playbackService.position * 1000).round();
+    final lineStartMs = line.start.inMilliseconds;
+    final progressMs = (posMs - lineStartMs).clamp(0, line.length.inMilliseconds);
+
+    // 只在进度有足够变化时发送（避免无效 IPC）
+    if (_lastSentProgressMs != null &&
+        (progressMs - _lastSentProgressMs!).abs() < 100) {
+      return;
+    }
+    _lastSentProgressMs = progressMs;
+
+    List<msg.LyricWord>? words;
+    if (line is SyncLyricLine) {
+      words = line.words
+          .map((w) => msg.LyricWord(
+                w.start.inMilliseconds - lineStartMs,
+                w.length.inMilliseconds,
+                w.content,
+              ))
+          .toList();
+    }
+
+    sendMessage(msg.LyricLineChangedMessage(
+      line.content,
+      line.length,
+      line.translation,
+      words,
+      progressMs,
+      null, null, null,
+    ));
+  }
+  int? _lastSentProgressMs;
 
   void sendNowPlayingMessage(Audio nowPlaying) {
     sendMessage(msg.NowPlayingChangedMessage(
@@ -355,6 +414,8 @@ class DesktopLyricService extends ChangeNotifier {
 
   void sendLyricLineMessage(LyricLine line, {LyricLine? nextLine}) {
     _currentLyricLine = line;
+    _currentNextLine = nextLine;
+    _lastSentProgressMs = null;  // 重置降噪，让下一帧校准立即发送
     
     List<msg.LyricWord>? words;
     if (line is SyncLyricLine) {
@@ -505,6 +566,8 @@ class DesktopLyricService extends ChangeNotifier {
     // 取消定时器
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
+    _progressSyncTimer?.cancel();
+    _progressSyncTimer = null;
     // 释放 Job Object 句柄
     _WinJobObject.close(_jobHandle);
     _jobHandle = null;
