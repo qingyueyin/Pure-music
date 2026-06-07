@@ -163,7 +163,7 @@ class _SmoothLargeSideNav extends StatelessWidget {
                             : expanded
                                 ? Symbols.menu_open
                                 : Symbols.menu,
-                        label: isDrawer ? '关闭' : '侧边栏',
+                        label: isDrawer ? '关闭' : expanded ? '收起' : '展开',
                         expandedT: t,
                         selected: false,
                         onTap: onToggle,
