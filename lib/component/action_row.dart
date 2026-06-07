@@ -6,16 +6,6 @@ import 'package:desktop_lyric/message.dart';
 import 'package:desktop_lyric/desktop_lyric_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-
-import 'dart:io';
-
-import 'package:desktop_lyric/component/desktop_lyric_body.dart';
-import 'package:desktop_lyric/component/foreground.dart';
-import 'package:desktop_lyric/message.dart';
-import 'package:desktop_lyric/desktop_lyric_controller.dart';
-import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-
 import 'package:win32/win32.dart' as win32;
 
 class ActionRow extends StatelessWidget {
@@ -111,6 +101,13 @@ class ActionRow extends StatelessWidget {
               },
               color: Color(theme.onSurface),
               icon: const Icon(Icons.skip_next),
+            ),
+            spacer,
+            IconButton(
+              onPressed: textDisplayController.toggleNowPlayingInfo,
+              color: Color(theme.onSurface),
+              icon: const Icon(Icons.info),
+              tooltip: '显示/隐藏歌曲信息',
             ),
             spacer,
             const _ShowColorSelectorBtn(),
