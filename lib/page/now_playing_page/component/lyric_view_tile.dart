@@ -989,11 +989,11 @@ class LyricTransitionPainter extends CustomPainter {
     circlePaint3.color = scheme.onSecondaryContainer.withAlpha(a3);
 
     if (compact) {
-      final r = 3 + controller.sizeFactor * 0.5;
+      final r = 4 + controller.sizeFactor * 0.5;
       final cy = size.height / 2;
-      final c1 = Offset(12, cy);
-      final c2 = Offset(30, cy);
-      final c3 = Offset(48, cy);
+      final c1 = Offset(10, cy);
+      final c2 = Offset(24, cy);
+      final c3 = Offset(38, cy);
       canvas.drawCircle(c1, r, circlePaint1);
       canvas.drawCircle(c2, r, circlePaint2);
       canvas.drawCircle(c3, r, circlePaint3);
