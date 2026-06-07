@@ -401,16 +401,22 @@ class _ImmersiveLandscapeLayout extends StatelessWidget {
               ),
               // 右侧：歌词区域 (50%) - 与普通模式一致，无外层 ShaderMask
               const Expanded(
-                child: Center(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8.0),
-                    child: VerticalLyricView(
-                      showControls: false,
-                      enableSeekOnTap: false,
-                      centerVertically: true,
-                      enableEdgeSpacer: true,
-                      currentLineAlignment: 0.45,
-                    ),
+                child: ClipRect(
+                  child: Stack(
+                    children: [
+                      Center(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 8.0),
+                          child: VerticalLyricView(
+                            showControls: false,
+                            enableSeekOnTap: false,
+                            centerVertically: true,
+                            enableEdgeSpacer: true,
+                            currentLineAlignment: 0.45,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
