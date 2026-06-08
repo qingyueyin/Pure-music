@@ -364,44 +364,46 @@ class Lrc extends Lyric {
 
   /// 在同一时间戳的歌词行组中，智能选择最佳的主歌词行（原文）。
   ///
-  /// 决策规则（按优先级）：
-  /// 1. 先按字符类型分类：东方文字行 vs 纯拉丁行
-  /// 2. 如果恰好只有 1 行东方文字 → 它就是原文
-  /// 3. 如果多行东方文字 → 优选有逐字时间戳的那行
-  /// 4. 如果全是拉丁字母 → 优选有逐字时间戳的；都没有则取第一行
+  /// 优先级（从高到低）：
+  ///   100 = 东方文字 + 逐字时间戳   → 最有可能是原文（日语/中文/韩语）
+  ///    80 = 拉丁 + 逐字 + 非罗马音   → 英文原文
+  ///    50 = 东方文字，无逐字         → 翻译
+  ///    20 = 拉丁 + 逐字 + 罗马音     → 注音
+  ///    10 = 拉丁，无逐字             → 低置信度
   ///
-  /// 这解决了内嵌歌词顺序为「罗马音 / 日语原文 / 中文翻译」
-  /// 时 group[0] 被错误当作主歌词的问题。
+  /// 这既解决了「罗马音/日语/中文翻译」三行格式，
+  /// 也解决了「英文原文 + 中文翻译」的英文歌场景。
   static int _bestPrimaryIndex(List<SyncLyricLine> group) {
     if (group.length <= 1) return 0;
 
-    final asianLines = <int>[];
-    final latinLines = <int>[];
+    int bestIdx = 0;
+    int bestPriority = -1;
+
     for (int i = 0; i < group.length; i++) {
       final text = group[i].words.map((w) => w.content).join();
-      if (_hasAsianChars(text)) {
-        asianLines.add(i);
+      final hasAsian = _hasAsianChars(text);
+      final hasWordTs = group[i].words.length > 1;
+
+      int priority;
+      if (hasAsian && hasWordTs) {
+        priority = 100;
+      } else if (hasAsian) {
+        priority = 50;
+      } else if (hasWordTs && !_isRomanizationStatic(text)) {
+        priority = 80;
+      } else if (hasWordTs) {
+        priority = 20;
       } else {
-        latinLines.add(i);
+        priority = 10;
+      }
+
+      if (priority > bestPriority) {
+        bestPriority = priority;
+        bestIdx = i;
       }
     }
 
-    // 恰好一行东方文字 → 它就是原文
-    if (asianLines.length == 1) return asianLines[0];
-
-    // 多行东方文字 → 选有逐字时间戳的
-    if (asianLines.length > 1) {
-      for (final idx in asianLines) {
-        if (group[idx].words.length > 1) return idx;
-      }
-      return asianLines[0];
-    }
-
-    // 全是拉丁字母 → 选有逐字时间戳的
-    for (final idx in latinLines) {
-      if (group[idx].words.length > 1) return idx;
-    }
-    return 0;
+    return bestIdx;
   }
 
   /// 静态版本的罗马音判断（用于静态方法）
