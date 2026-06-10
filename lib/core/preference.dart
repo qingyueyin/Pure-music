@@ -268,7 +268,8 @@ class AppPreference {
   Future<void> save() async {
     try {
       final settingsDir = await getSettingsDir();
-      final appPreferencePath = path.join(settingsDir.path, 'app_preference.json');
+      final appPreferencePath =
+          path.join(settingsDir.path, 'app_preference.json');
 
       Map prefMap = {
         'audiosPagePref': audiosPagePref.toMap(),
@@ -300,7 +301,8 @@ class AppPreference {
   Future<void> savePlaybackOnly() async {
     try {
       final settingsDir = await getSettingsDir();
-      final playbackPrefPath = path.join(settingsDir.path, 'playback_pref.json');
+      final playbackPrefPath =
+          path.join(settingsDir.path, 'playback_pref.json');
 
       final prefJson = json.encode(playbackPref.toMap());
       final output = await File(playbackPrefPath).create(recursive: true);
@@ -313,7 +315,8 @@ class AppPreference {
   Future<void> loadPlaybackOnly() async {
     try {
       final settingsDir = await getSettingsDir();
-      final playbackPrefPath = path.join(settingsDir.path, 'playback_pref.json');
+      final playbackPrefPath =
+          path.join(settingsDir.path, 'playback_pref.json');
 
       if (File(playbackPrefPath).existsSync()) {
         final prefJson = await File(playbackPrefPath).readAsString();
@@ -328,7 +331,8 @@ class AppPreference {
   static Future<void> read() async {
     try {
       final settingsDir = await getSettingsDir();
-      final appPreferencePath = path.join(settingsDir.path, 'app_preference.json');
+      final appPreferencePath =
+          path.join(settingsDir.path, 'app_preference.json');
 
       final prefJson = await File(appPreferencePath).readAsString();
       final Map prefMap = json.decode(prefJson);
