@@ -53,7 +53,8 @@ class EnhancedLrc extends Lyric {
 }
 
 class EnhancedLrcLine extends SyncLyricLine {
-  EnhancedLrcLine(super.start, super.length, super.words, [super.translation, super.romanLyric]);
+  EnhancedLrcLine(super.start, super.length, super.words,
+      [super.translation, super.romanLyric]);
 }
 
 class _EnhancedLrcRawLine {
@@ -106,7 +107,8 @@ class LrcLine extends UnsyncLyricLine {
     // 前缀 + 冒号（词/曲/编/演唱者）
     if (_metadataPattern.hasMatch(t)) return true;
     // 横线分隔符（歌名 - 歌手、标题-艺术家）——仅当总长度较短时才判为元数据
-    if (t.length < 60 && RegExp(r'[\-\u2013\u2014\uff0d]').hasMatch(t)) return true;
+    if (t.length < 60 && RegExp(r'[\-\u2013\u2014\uff0d]').hasMatch(t))
+      return true;
     // 版权/来源关键词
     if (RegExp(r'(?:QQ音乐|享有|著作权|版权|提供|出品|发行|翻译|翻訳)').hasMatch(t)) return true;
     return false;
@@ -184,7 +186,7 @@ class Lrc extends Lyric {
 
   /// 智能合并相同时间戳的歌词行
   /// 支持：原文、翻译、注音（罗马音）的自动识别和分组
-  /// 
+  ///
   /// 判断优先级：
   /// 1. 有逐词时间戳标签（<mm:ss.xx>）→ 原文
   /// 2. 纯拉丁字母无 CJK → 罗马音
@@ -201,7 +203,8 @@ class Lrc extends Lyric {
     for (final entry in grouped.entries) {
       final group = entry.value;
       // 过滤显式标记的元数据行（词/曲/演唱者标注）
-      final validLines = group.where((l) => l is LrcLine && !l.isMetadata).toList();
+      final validLines =
+          group.where((l) => l is LrcLine && !l.isMetadata).toList();
       if (validLines.isEmpty) continue;
       if (validLines.length == 1) {
         combinedLines.add(validLines[0] as LrcLine);
@@ -221,7 +224,8 @@ class Lrc extends Lyric {
   /// 判断文本是否包含逐词时间戳标签
   bool _hasWordTimestamps(String text) {
     return RegExp(r'<\d+:\d{2}(?:\.\d+)>').hasMatch(text) ||
-           RegExp(r'<\d+>[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]').hasMatch(text);
+        RegExp(r'<\d+>[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]')
+            .hasMatch(text);
   }
 
   /// 合并两行歌词（原文 + 翻译 或 罗马音 + 原文）
@@ -346,7 +350,7 @@ class Lrc extends Lyric {
   }
 
   /// 判断文本是否为罗马音（注音）
-  /// 
+  ///
   /// 判断逻辑：
   /// 1. 纯拉丁字母（无 CJK、无假名）→ 罗马音
   /// 2. 假名 + 少量拉丁字母 → 日文原文（非罗马音）
@@ -359,8 +363,8 @@ class Lrc extends Lyric {
   /// 检测文本是否含东方文字（CJK 汉字 / 日文假名 / 韩文 Hangul）
   /// 用于统一判断「这行是不是亚洲语言原文/翻译」
   static bool _hasAsianChars(String text) => RegExp(
-    r'[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]',
-  ).hasMatch(text);
+        r'[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]',
+      ).hasMatch(text);
 
   /// 在同一时间戳的歌词行组中，智能选择最佳的主歌词行（原文）。
   ///
@@ -407,7 +411,7 @@ class Lrc extends Lyric {
   }
 
   /// 静态版本的罗马音判断（用于静态方法）
-  /// 
+  ///
   /// 判断逻辑：
   /// 1. 纯拉丁字母（无 CJK、无假名）→ 可能是罗马音
   /// 2. 有假名或汉字 → 不是罗马音
@@ -418,8 +422,10 @@ class Lrc extends Lyric {
     if (stripped.isEmpty) return false;
 
     final cjkCount = RegExp(r'[\u4e00-\u9fff]').allMatches(stripped).length;
-    final hiraganaCount = RegExp(r'[\u3040-\u309f]').allMatches(stripped).length;
-    final katakanaCount = RegExp(r'[\u30a0-\u30ff]').allMatches(stripped).length;
+    final hiraganaCount =
+        RegExp(r'[\u3040-\u309f]').allMatches(stripped).length;
+    final katakanaCount =
+        RegExp(r'[\u30a0-\u30ff]').allMatches(stripped).length;
     final kanaCount = hiraganaCount + katakanaCount;
     final alphaCount = RegExp(r'[a-zA-Z]').allMatches(stripped).length;
 
@@ -429,37 +435,41 @@ class Lrc extends Lyric {
     if (cjkCount > 0 || kanaCount > 0) return false;
 
     // 纯英文文本的排除规则
-    
+
     // 有 & 符号 → 不是罗马音（标题特征）
     if (stripped.contains('&')) return false;
-    
+
     // 有空格+横线组合 → 不是罗马音（标题连接符）
     if (stripped.contains(' - ') || stripped.contains(' — ')) return false;
-    
+
     // 有英文标点 → 不是罗马音
     if (RegExp(r'[.,;!?]').hasMatch(stripped)) return false;
-    
+
     // 有撇号 → 不是罗马音（英文缩写）
     if (stripped.contains("'")) return false;
-    
+
     // 计算元音比例
     // 罗马音（日/韩/中拼音）元音比例通常 ≥ 0.5（CV 音节结构）
     // 英文歌词元音比例通常 < 0.5（辅音更多）
     // 例: "kimi no namae wa" → 7元音/13字母 = 0.54 → 罗马音 ✓
     // 例: "hello world" → 3元音/11字母 = 0.27 → 英文 ✓
     // 例: "no one knows" → 4元音/11字母 = 0.36 → 英文 ✓
-    final vowelCount = RegExp(r'[aeiou]').allMatches(stripped.toLowerCase()).length;
-    final consCount = RegExp(r'[bcdfghjklmnpqrstvwxyz]').allMatches(stripped.toLowerCase()).length;
+    final vowelCount =
+        RegExp(r'[aeiou]').allMatches(stripped.toLowerCase()).length;
+    final consCount = RegExp(r'[bcdfghjklmnpqrstvwxyz]')
+        .allMatches(stripped.toLowerCase())
+        .length;
     final totalLetters = vowelCount + consCount;
     if (totalLetters > 0) {
       final vowelRatio = vowelCount / totalLetters;
       if (vowelRatio < 0.5) return false;
     }
-    
+
     // 分析单词
-    final words = stripped.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+    final words =
+        stripped.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
     if (words.isEmpty) return false;
-    
+
     // 强英文指示词（罗马音不会用的词）
     // 关键：只保留最明确的介词、冠词、代词、缩写，不要太多
     final strongEnglishIndicators = {
@@ -511,36 +521,37 @@ class Lrc extends Lyric {
       'really', 'quite', 'already', 'still', 'yet',
       'even', 'only', 'also', 'again', 'ever',
     };
-    
+
     final lowerWords = words.map((w) => w.toLowerCase()).toList();
     int indicatorCount = 0;
     for (final w in lowerWords) {
       final clean = w.replaceAll(RegExp(r"[^a-z']"), '');
       if (strongEnglishIndicators.contains(clean)) indicatorCount++;
     }
-    
+
     // 有强英文指示词 → 不是罗马音
     if (indicatorCount >= 1) return false;
-    
+
     // 多单词时按平均词长判断：
     // 罗马音单词几乎全是 1-3 字母的短音节（CV 结构），
     // 英文歌词平均词长通常 > 3 字母。
     // 例: "ko do u su ru ka ge ni" (8词, 平均 2 字母) → 罗马音 ✓
     // 例: "can you feel my heart" (5词) → 会被 strongEnglishIndicators 拦截
     if (words.length >= 5) {
-      final totalLetters = words.fold<int>(0, (sum, w) =>
-          sum + w.replaceAll(RegExp(r'[^a-zA-Z]'), '').length);
+      final totalLetters = words.fold<int>(
+          0, (sum, w) => sum + w.replaceAll(RegExp(r'[^a-zA-Z]'), '').length);
       final avgLen = totalLetters / words.length;
       if (avgLen > 3.0) return false;
     }
-    
+
     // 检测 3+ 连续辅音 → 不可能是罗马音
     // 罗马音几乎没有连续 3 个辅音的情况
     // 英文: "world"(rld), "night"(ght), "strong"(str)
-    if (RegExp(r'[bcdfghjklmnpqrstvwxyz]{3,}').hasMatch(stripped.toLowerCase())) {
+    if (RegExp(r'[bcdfghjklmnpqrstvwxyz]{3,}')
+        .hasMatch(stripped.toLowerCase())) {
       return false;
     }
-    
+
     // 检测英文常见后缀 → 不可能是罗马音
     if (RegExp(
       r'\b[a-z]+(ing|ed|ly|tion|sion|ment|ness|ful|ous|able|ible|ture|ize|ise)\b',
@@ -548,29 +559,29 @@ class Lrc extends Lyric {
     ).hasMatch(stripped)) {
       return false;
     }
-    
+
     // 检测全大写单词（标题/歌名特征）
     final upperWords = words.where((w) {
       final alpha = w.replaceAll(RegExp(r'[^a-zA-Z]'), '');
       return alpha.length > 1 && alpha == alpha.toUpperCase();
     }).toList();
-    
+
     if (upperWords.length >= 2) return false;
-    
+
     // 单词长度分析
     int shortWordCount = 0;
     int longWordCount = 0;
-    
+
     for (final w in words) {
       final cleanWord = w.replaceAll(RegExp(r'[^a-zA-Z]'), '');
       if (cleanWord.length <= 5) shortWordCount++;
       if (cleanWord.length > 7) longWordCount++;
     }
-    
+
     // 有长单词 → 不是罗马音（英文歌词）
     // 罗马音中的单词几乎都是短音节（通常 ≤5 个字母）
     if (longWordCount >= 1) return false;
-    
+
     // 短词占多数 → 可能是罗马音
     return shortWordCount >= longWordCount;
   }
@@ -603,18 +614,18 @@ class Lrc extends Lyric {
     }
 
     final metadataTagPattern = RegExp(r'^\[[a-zA-Z]+:');
-    
+
     var lines = <LrcLine>[];
     for (int i = 0; i < lrcLines.length; i++) {
       var line = lrcLines[i].trim();
       if (line.isEmpty || line == '//') continue;
-      
+
       // 过滤 LRC 标准 metadata 标签：[ti:xxx]、[ar:xxx]、[al:xxx]、[by:xxx]、[au:xxx]、[length:xxx] 等
       if (metadataTagPattern.hasMatch(line)) continue;
-      
+
       // 过滤 XML/HTML 标签行
       if (line.startsWith('<') && line.contains('>')) continue;
-      
+
       var lyricLine = LrcLine.fromLine(line, offsetInMilliseconds);
       if (lyricLine == null) {
         continue;
@@ -630,22 +641,22 @@ class Lrc extends Lyric {
     // 估算每行的实际显示时长，并在行间隙超过阈值时插入间奏空白行
     final estimatedFinalLines = <LrcLine>[];
     const interludeThreshold = Duration(milliseconds: 5000);
-    
+
     for (var i = 0; i < lines.length; i++) {
       final currentLine = lines[i];
       final nextLine = i < lines.length - 1 ? lines[i + 1] : null;
-      
+
       if (nextLine != null) {
         final timeGap = nextLine.start - currentLine.start;
         // 估算：如果时间间隔很大（>=5秒），认为当前行歌词较短，剩余时间是间奏
         // 这里使用经验值：假设歌词行显示 3-4 秒，剩余时间作为间奏
         const estimatedLyricDisplayMs = Duration(milliseconds: 3500);
-        
+
         if (timeGap >= interludeThreshold) {
           // 有间奏：歌词行长度设为估计显示时间
           currentLine.length = estimatedLyricDisplayMs;
           estimatedFinalLines.add(currentLine);
-          
+
           // 插入间奏空白行
           final interludeStart = currentLine.start + currentLine.length;
           final interludeDuration = nextLine.start - interludeStart;
@@ -669,7 +680,7 @@ class Lrc extends Lyric {
         estimatedFinalLines.add(currentLine);
       }
     }
-    
+
     lines.clear();
     lines.addAll(estimatedFinalLines);
 
@@ -712,7 +723,8 @@ class Lrc extends Lyric {
 
     // 智能检测 LRC 子格式（逐字 / 增强 / 普通）
     final lrcFormat = detectLrcFormat(lrc);
-    logger.i('[lrc] fromLrcTextAuto: format=${lrcFormat.name} sep=${separator ?? 'null'}');
+    logger.i(
+        '[lrc] fromLrcTextAuto: format=${lrcFormat.name} sep=${separator ?? 'null'}');
     if (lrcFormat == LrcFormatType.wordByWord) {
       final rawLines = parseWordByWordLrc(lrc);
       if (rawLines.isNotEmpty) {
@@ -758,9 +770,11 @@ class Lrc extends Lyric {
           }
         }
         final result = Lyric(combined, source);
-        logger.i('[lrc] fromLrcTextAuto: wordByWord combined -> ${combined.length} lines');
+        logger.i(
+            '[lrc] fromLrcTextAuto: wordByWord combined -> ${combined.length} lines');
         for (int i = 0; i < (combined.length > 3 ? 3 : combined.length); i++) {
-          logger.i('[lrc]   line[$i] start=${combined[i].start.inMilliseconds}ms trans=${combined[i].translation ?? 'null'} roman=${combined[i].romanLyric ?? 'null'}');
+          logger.i(
+              '[lrc]   line[$i] start=${combined[i].start.inMilliseconds}ms trans=${combined[i].translation ?? 'null'} roman=${combined[i].romanLyric ?? 'null'}');
         }
         return result;
       }
@@ -777,9 +791,12 @@ class Lrc extends Lyric {
       final result = fromLrcText(lrc, source, separator: separator);
       if (result != null) {
         logger.i('[lrc] fromLrcText result: ${result.lines.length} lines');
-        for (int i = 0; i < (result.lines.length > 3 ? 3 : result.lines.length); i++) {
+        for (int i = 0;
+            i < (result.lines.length > 3 ? 3 : result.lines.length);
+            i++) {
           final l = result.lines[i];
-          logger.i('[lrc]   line[$i] start=${l.start.inMilliseconds}ms content="${l is LrcLine ? l.content : (l is SyncLyricLine ? l.words.map((w)=>w.content).join() : (l is UnsyncLyricLine ? l.content : ''))}" trans=${l.translation ?? 'null'} roman=${l.romanLyric ?? 'null'}');
+          logger.i(
+              '[lrc]   line[$i] start=${l.start.inMilliseconds}ms content="${l is LrcLine ? l.content : (l is SyncLyricLine ? l.words.map((w) => w.content).join() : (l is UnsyncLyricLine ? l.content : ''))}" trans=${l.translation ?? 'null'} roman=${l.romanLyric ?? 'null'}');
         }
       }
       return result;
@@ -788,9 +805,12 @@ class Lrc extends Lyric {
     final result = _parseEnhancedLrcText(lrc, source, separator: separator);
     if (result != null) {
       logger.i('[lrc] enhanced result: ${result.lines.length} lines');
-      for (int i = 0; i < (result.lines.length > 3 ? 3 : result.lines.length); i++) {
+      for (int i = 0;
+          i < (result.lines.length > 3 ? 3 : result.lines.length);
+          i++) {
         final l = result.lines[i];
-        logger.i('[lrc]   line[$i] start=${l.start.inMilliseconds}ms words=${l is SyncLyricLine ? l.words.length : 'N/A'} trans=${l.translation ?? 'null'} roman=${l.romanLyric ?? 'null'}');
+        logger.i(
+            '[lrc]   line[$i] start=${l.start.inMilliseconds}ms words=${l is SyncLyricLine ? l.words.length : 'N/A'} trans=${l.translation ?? 'null'} roman=${l.romanLyric ?? 'null'}');
       }
     }
     return result;
@@ -1017,7 +1037,8 @@ class Lrc extends Lyric {
       for (int j = 0; j < words.length; j++) {
         final curr = words[j];
         if (curr.length.inMilliseconds <= 0) {
-          final nextWordStart = j < words.length - 1 ? words[j + 1].start : null;
+          final nextWordStart =
+              j < words.length - 1 ? words[j + 1].start : null;
           final end = nextWordStart ?? (line.start + line.length);
           final d = end - curr.start;
           curr.length = d.isNegative
@@ -1140,7 +1161,8 @@ class Lrc extends Lyric {
       final contentRaw = line.replaceAll(timeTagRe, '').trim();
 
       // 过滤元数据行（"Adam Levine："、"词：xxx"等），避免它们抢真实歌词的主位
-      if (LrcLine.isLyricMetadataLine(contentRaw.replaceAll(wordTagRe, '').trim())) continue;
+      if (LrcLine.isLyricMetadataLine(
+          contentRaw.replaceAll(wordTagRe, '').trim())) continue;
 
       for (final m in timeMatches) {
         final minute = int.tryParse(m.group(1) ?? '');
@@ -1248,7 +1270,7 @@ class Lrc extends Lyric {
       // 原文 = 有逐词标签的行（最可靠）；如果没有，从 otherContents 里选标签最多的
       String primaryRaw;
       int? primaryIndex; // null = primary 不在 otherContents 中
-      
+
       if (contentsWithTags.isNotEmpty) {
         // 选逐词标签最多的行作为原文。
         // 解决元数据行（如 "Adam Levine："）被 50ms 容差和实际歌词分到同一组时抢主位的问题。
@@ -1322,20 +1344,19 @@ class Lrc extends Lyric {
 
       // Extract romanization from identified roman lines
       // Only extract if different from primary (skip pure English lines that get misclassified)
-      String? primaryCleaned = primaryText.replaceAll(RegExp(r'<[^>]*>'), '').trim();
-      
+      String? primaryCleaned =
+          primaryText.replaceAll(RegExp(r'<[^>]*>'), '').trim();
+
       for (final r in romanContents) {
-        final parts = separator == null
-            ? <String>[r]
-            : r.split(separator);
+        final parts = separator == null ? <String>[r] : r.split(separator);
         final cleaned = parts.first.replaceAll(RegExp(r'<[^>]*>'), '').trim();
-        
+
         // Skip if identical to primary - this happens when entire line is pure English
         // and gets misclassified as Romanization
         if (cleaned.isEmpty) continue;
         if (cleaned == primaryCleaned) continue;
         if (cleaned.toLowerCase() == primaryCleaned.toLowerCase()) continue;
-        
+
         if (romanText == null || romanText.isEmpty) {
           romanText = cleaned;
         } else {
@@ -1371,7 +1392,8 @@ class Lrc extends Lyric {
       }
 
       if (!hasWordTimestamps && primaryText.isNotEmpty) {
-        final cleanedText = primaryText.replaceAll(RegExp(r'<[^>]*>'), '').trim();
+        final cleanedText =
+            primaryText.replaceAll(RegExp(r'<[^>]*>'), '').trim();
         if (cleanedText.isNotEmpty) {
           words.add(
             EnhancedLrcWord(
@@ -1476,12 +1498,14 @@ class Lrc extends Lyric {
     String? separator = '┃',
   }) async {
     final raw = await getLyricFromPath(path: belongTo.path);
-    logger.i('lrc: fromAudioPath raw=${raw?.substring(0, raw.length > 80 ? 80 : raw.length)}');
+    logger.i(
+        'lrc: fromAudioPath raw=${raw?.substring(0, raw.length > 80 ? 80 : raw.length)}');
     if (raw == null || raw.isEmpty) {
       logger.i('lrc: fromAudioPath -> null (no lyric)');
       return null;
     }
-    final parsed = Lrc.fromLrcTextAuto(raw, LyricFormat.local, separator: separator);
+    final parsed =
+        Lrc.fromLrcTextAuto(raw, LyricFormat.local, separator: separator);
     logger.i('lrc: fromAudioPath parsed=${parsed?.lines.length} lines');
     return parsed;
   }
