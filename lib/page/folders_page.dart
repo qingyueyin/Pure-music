@@ -10,9 +10,14 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:pure_music/core/paths.dart' as app_paths;
 
-class FoldersPage extends StatelessWidget {
+class FoldersPage extends StatefulWidget {
   const FoldersPage({super.key});
 
+  @override
+  State<FoldersPage> createState() => _FoldersPageState();
+}
+
+class _FoldersPageState extends State<FoldersPage> {
   @override
   Widget build(BuildContext context) {
     final contentList = List<AudioFolder>.from(AudioLibrary.instance.folders);
@@ -22,7 +27,10 @@ class FoldersPage extends StatelessWidget {
       subtitle: '${contentList.length} 个文件夹',
       contentList: contentList,
       primaryAction: FilledButton.icon(
-        onPressed: () => showFolderManagerDialog(context),
+        onPressed: () async {
+          await showFolderManagerDialog(context);
+          setState(() {});
+        },
         icon: const Icon(Symbols.folder),
         label: const Text('文件夹管理'),
         style: const ButtonStyle(
