@@ -56,12 +56,23 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
         : widget.audio.title;
     _searchController.text = searchQuery;
     _searchActiveSource();
+    // 监听切歌：歌曲切换后自动关闭弹窗
+    PlayService.instance.playbackService.nowPlayingNotifier.addListener(_onNowPlayingChanged);
   }
 
   @override
   void dispose() {
+    PlayService.instance.playbackService.nowPlayingNotifier.removeListener(_onNowPlayingChanged);
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _onNowPlayingChanged() {
+    if (!mounted) return;
+    final nowPlaying = PlayService.instance.playbackService.nowPlaying;
+    if (nowPlaying == null || nowPlaying.path != widget.audio.path) {
+      Navigator.of(context).pop();
+    }
   }
 
   void _performSearch() {
@@ -557,6 +568,22 @@ class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
       }
       return results;
     });
+    // 监听切歌：歌曲切换后自动关闭弹窗
+    PlayService.instance.playbackService.nowPlayingNotifier.addListener(_onNowPlayingChanged);
+  }
+
+  @override
+  void dispose() {
+    PlayService.instance.playbackService.nowPlayingNotifier.removeListener(_onNowPlayingChanged);
+    super.dispose();
+  }
+
+  void _onNowPlayingChanged() {
+    if (!mounted) return;
+    final nowPlaying = PlayService.instance.playbackService.nowPlaying;
+    if (nowPlaying == null || nowPlaying.path != widget.audio.path) {
+      Navigator.of(context).pop();
+    }
   }
 
   void _confirmNeLyricType(List<SongSearchResult> results, int index) {
