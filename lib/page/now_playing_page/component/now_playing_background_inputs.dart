@@ -14,6 +14,11 @@ class NowPlayingBackgroundInputs {
   final double flowSpeed;
   final double intensity;
 
+  /// Pre-extracted palette colors from Rust k-means.
+  /// When non-null, backgrounds MUST use these instead of calling
+  /// extractColorsFromImage again, avoiding duplicate native image decoding.
+  final List<Color>? preExtractedColors;
+
   const NowPlayingBackgroundInputs({
     this.albumCoverBytes,
     this.dominantColor,
@@ -23,6 +28,7 @@ class NowPlayingBackgroundInputs {
     required this.playerState,
     this.flowSpeed = 1.0,
     this.intensity = 1.0,
+    this.preExtractedColors,
   });
 
   bool get shouldAnimate =>
@@ -37,6 +43,7 @@ class NowPlayingBackgroundInputs {
     PlayerState? playerState,
     double? flowSpeed,
     double? intensity,
+    List<Color>? preExtractedColors,
   }) {
     return NowPlayingBackgroundInputs(
       albumCoverBytes: albumCoverBytes ?? this.albumCoverBytes,
@@ -47,6 +54,7 @@ class NowPlayingBackgroundInputs {
       playerState: playerState ?? this.playerState,
       flowSpeed: flowSpeed ?? this.flowSpeed,
       intensity: intensity ?? this.intensity,
+      preExtractedColors: preExtractedColors ?? this.preExtractedColors,
     );
   }
 }
