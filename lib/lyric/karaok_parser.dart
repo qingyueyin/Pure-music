@@ -1,4 +1,5 @@
 import 'package:pure_music/lyric/lyric.dart';
+import 'package:pure_music/lyric/lrc.dart';
 
 // ──────────────────────────────────────────────
 // KaraOK 格式（YRC/QRC/KRC）解析器
@@ -134,6 +135,10 @@ Lyric? parseKaraokToPureLyric(
     final lineContent = m.group(3)!;
 
     final words = _parseWords(lineContent, cfg, startMs, wordsAreAbsolute);
+    // 过滤元数据行（作詞：xxx、作曲/編曲：xxx 等）
+    final lineText = words.map((w) => w.text).join();
+    if (lineText.isNotEmpty && LrcLine.isLyricMetadataLine(lineText)) continue;
+
     lines.add(_LineData(
       start: Duration(milliseconds: startMs),
       length: Duration(milliseconds: durMs),
@@ -187,7 +192,8 @@ Lyric? parseKaraokToPureLyric(
   }
 
   // 添加前奏空白行
-  if (resultLines.isNotEmpty && resultLines.first.start > const Duration(seconds: 5)) {
+  if (resultLines.isNotEmpty &&
+      resultLines.first.start > const Duration(seconds: 5)) {
     resultLines.insert(
       0,
       SyncLyricLine(Duration.zero, resultLines.first.start, []),
