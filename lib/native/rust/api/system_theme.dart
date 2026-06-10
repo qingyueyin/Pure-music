@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `_get_system_theme`, `default`, `from_ui_settings`
+// These functions are ignored because they are not marked as `pub`: `_get_system_theme`, `from_ui_settings`
 
 class SystemTheme {
   /// a, r, g, b
@@ -19,6 +19,9 @@ class SystemTheme {
     required this.fore,
     required this.accent,
   });
+
+  static Future<SystemTheme> default_() =>
+      RustLib.instance.api.crateApiSystemThemeSystemThemeDefault();
 
   static SystemTheme getSystemTheme() =>
       RustLib.instance.api.crateApiSystemThemeSystemThemeGetSystemTheme();
