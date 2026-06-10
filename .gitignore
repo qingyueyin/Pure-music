@@ -46,7 +46,7 @@ lib/page/settings_page/cpfeedback_key.dart
 .vscode/
 .trae/
 .vs/
-
+.docs/
 
 # Trae specific - ignore rules and skills but keep other .trae files
 .trae/rules/
