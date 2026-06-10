@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:pure_music/component/rectangle_progress_indicator.dart';
 import 'package:pure_music/component/responsive_builder.dart';
 import 'package:pure_music/component/motion.dart';
+import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/core/utils.dart';
@@ -64,20 +66,7 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
   bool _hovered = false;
   bool _controlsVisible = false;
   Timer? _controlsHideTimer;
-  String? _lastPrecachedCoverPath;
   int _precacheToken = 0;
-
-  void _maybePrecacheCover({
-    required String path,
-    required ImageProvider image,
-  }) {
-    if (_lastPrecachedCoverPath == path) return;
-    _lastPrecachedCoverPath = path;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      precacheImage(image, context);
-    });
-  }
 
   void _setControlsVisible(bool visible) {
     if (_controlsVisible == visible) return;
@@ -232,40 +221,7 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
                                   child: SizedBox(
                                     width: 48.0,
                                     height: 48.0,
-                                    child: FutureBuilder(
-                                      future: nowPlaying.cover,
-                                      builder: (context, snapshot) =>
-                                          switch (snapshot.connectionState) {
-                                        ConnectionState.done => snapshot.data ==
-                                                null
-                                            ? Center(child: placeholder)
-                                            : Builder(builder: (context) {
-                                                _maybePrecacheCover(
-                                                  path: nowPlaying.path,
-                                                  image: snapshot.data!,
-                                                );
-                                                return Image(
-                                                  image: snapshot.data!,
-                                                  fit: BoxFit.cover,
-                                                  gaplessPlayback: true,
-                                                  filterQuality:
-                                                      FilterQuality.medium,
-                                                  errorBuilder: (_, __, ___) =>
-                                                      Center(
-                                                    child: placeholder,
-                                                  ),
-                                                );
-                                              }),
-                                        _ => const Center(
-                                            child: SizedBox(
-                                              width: 20,
-                                              height: 20,
-                                              child:
-                                                  CircularProgressIndicator(),
-                                            ),
-                                          ),
-                                      },
-                                    ),
+                                    child: _MiniCoverWidget(audio: nowPlaying),
                                   ),
                                 );
                                 if (!heroEnabled) return cover;
@@ -477,6 +433,85 @@ class _MiniTimeText extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// 迷你封面组件（ZeroBit pattern）：
+/// 同步检查 Audio.smallCoverBytes，已缓存则用 Image.memory 直接渲染；
+/// 未缓存则显示纯色占位 + 异步加载后写回 Audio 并 setState。
+/// 不使用 FutureBuilder，避免鼠标 hover 时因 rebuild 导致的闪烁。
+class _MiniCoverWidget extends StatefulWidget {
+  final Audio audio;
+  const _MiniCoverWidget({required this.audio});
+
+  @override
+  State<_MiniCoverWidget> createState() => _MiniCoverWidgetState();
+}
+
+class _MiniCoverWidgetState extends State<_MiniCoverWidget> {
+  Uint8List? _cached;
+
+  @override
+  void initState() {
+    super.initState();
+    _cached = widget.audio.smallCoverBytes;
+    if (_cached == null) {
+      _load();
+    }
+  }
+
+  @override
+  void didUpdateWidget(_MiniCoverWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.audio != widget.audio ||
+        widget.audio.smallCoverBytes != _cached) {
+      final bytes = widget.audio.smallCoverBytes;
+      if (bytes != null && !identical(bytes, _cached)) {
+        setState(() => _cached = bytes);
+      } else if (bytes == null && _cached != null) {
+        setState(() => _cached = null);
+        _load();
+      }
+    }
+  }
+
+  Future<void> _load() async {
+    final bytes = await widget.audio.loadSmallCoverBytes();
+    if (mounted && bytes != null) {
+      setState(() => _cached = bytes);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_cached != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8.0),
+        child: Image.memory(
+          _cached!,
+          width: 48.0,
+          height: 48.0,
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+          errorBuilder: (_, __, ___) => _placeholder(context),
+        ),
+      );
+    }
+    return _placeholder(context);
+  }
+
+  Widget _placeholder(BuildContext context) {
+    return Container(
+      width: 48.0,
+      height: 48.0,
+      decoration: BoxDecoration(
+        color: Theme.of(context)
+            .colorScheme
+            .surfaceContainerHighest
+            .withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(8.0),
+      ),
     );
   }
 }
