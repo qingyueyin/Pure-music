@@ -122,16 +122,28 @@ class _FolderSelectorViewState extends State<FolderSelectorView> {
               },
               child: const Text('添加文件夹'),
             ),
-            FilledButton(
-              onPressed: () async {
-                AppPreference.instance.userFolders = List.from(folders);
-                await AppPreference.instance.save();
-                setState(() {
-                  selecting = false;
-                });
-              },
-              child: const Text('扫描'),
-            ),
+            if (folders.isEmpty)
+              FilledButton.tonal(
+                onPressed: () async {
+                  AppPreference.instance.userFolders = List.from(folders);
+                  await AppPreference.instance.save();
+                  if (mounted) {
+                    context.go(app_paths.AUDIOS_PAGE);
+                  }
+                },
+                child: const Text('跳过'),
+              )
+            else
+              FilledButton(
+                onPressed: () async {
+                  AppPreference.instance.userFolders = List.from(folders);
+                  await AppPreference.instance.save();
+                  setState(() {
+                    selecting = false;
+                  });
+                },
+                child: const Text('扫描'),
+              ),
           ],
         ),
         const SizedBox(height: 16.0),
@@ -238,8 +250,8 @@ class __WindowControllsState extends State<_WindowControlls>
 
     try {
       await AppSettings.instance.saveSettings().timeout(
-        const Duration(seconds: 1),
-      );
+            const Duration(seconds: 1),
+          );
     } catch (_) {}
 
     try {
