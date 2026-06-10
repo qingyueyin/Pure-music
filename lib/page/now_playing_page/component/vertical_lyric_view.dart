@@ -6,7 +6,7 @@ import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/page/now_playing_page/component/collapsible_lyric_controls.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.dart';
-import 'package:pure_music/page/now_playing_page/component/lyric_view_tile.dart';
+import 'package:pure_music/page/now_playing_page/component/lyrics_line_widget.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_viewport_strategy.dart';
 import 'package:pure_music/page/now_playing_page/component/value_transition.dart';
 import 'package:pure_music/play_service/play_service.dart';
@@ -29,7 +29,7 @@ class VerticalLyricView extends StatefulWidget {
     this.showControls = true,
     this.enableSeekOnTap = true,
     this.centerVertically = true,
-    this.currentLineAlignment = 0.5,
+    this.currentLineAlignment = 0.35,
     this.enableEdgeSpacer = false,
   });
 
@@ -85,16 +85,21 @@ class _VerticalLyricViewState extends State<VerticalLyricView>
           child: ChangeNotifierProvider.value(
             value: lyricViewController,
             child: ListenableBuilder(
-              listenable: PlayService.instance.lyricService,
+              listenable: Listenable.merge([
+                PlayService.instance.lyricService,
+                lyricViewController,
+              ]),
               builder: (context, _) => FutureBuilder(
                 future: PlayService.instance.lyricService.currLyricFuture,
-                  builder: (context, snapshot) {
-                    final lyricNullable = snapshot.data;
-                    if (lyricNullable != null) {
-                      utils.logger.d('FutureBuilder: lines=${lyricNullable.lines.length} state=${snapshot.connectionState}');
-                    } else {
-                      utils.logger.d('FutureBuilder: data=null state=${snapshot.connectionState}');
-                    }
+                builder: (context, snapshot) {
+                  final lyricNullable = snapshot.data;
+                  if (lyricNullable != null) {
+                    utils.logger.d(
+                        'FutureBuilder: lines=${lyricNullable.lines.length} state=${snapshot.connectionState}');
+                  } else {
+                    utils.logger.d(
+                        'FutureBuilder: data=null state=${snapshot.connectionState}');
+                  }
                   final scheme = Theme.of(context).colorScheme;
                   final noLyricWidget = Center(
                     child: Column(
@@ -182,7 +187,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   bool _disposed = false;
   Timer? _ensureVisibleTimer;
   Timer? _userScrollHoldTimer;
-  Timer? _afterScrollRetryTimer;
   Timer? _sizeChangeTimer;
   LyricScrollState _scrollState = LyricScrollState.idle;
   int _mainLine = 0;
@@ -225,6 +229,14 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   /// HQ Player 风格: Sine Out 缓动函数
   static double _sineOutInterpolator(double t, double start, double end) {
     return start + (end - start) * sin(t * 3.141592653589793 / 2);
+  }
+
+  static Duration _scrollDurationForDistance(double distPx) {
+    return Duration(
+      milliseconds: ((300.0 + (distPx / 1200.0).clamp(0.0, 1.0) * 200.0))
+          .round()
+          .clamp(300, 500),
+    );
   }
 
   /// HQ Player 风格: 启动 ValueTransition 驱动的滚动 Ticker
@@ -290,7 +302,9 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
             return 40.0;
           }
         } else if (line is LrcLine) {
-          if (line.isBlank && line.length > const Duration(seconds: 3)) {
+          if (line.isBlank &&
+              line.length > const Duration(seconds: 3) &&
+              line.start == Duration.zero) {
             return 40.0;
           }
         }
@@ -431,9 +445,11 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     _cachedOffsets = offsets;
     _cachedHeights = heights;
     if (lines.isNotEmpty) {
-      utils.logger.d('_computeOffsets: ${lines.length} lines totalOffset=${currentOffset.toStringAsFixed(1)}px');
+      utils.logger.d(
+          '_computeOffsets: ${lines.length} lines totalOffset=${currentOffset.toStringAsFixed(1)}px');
       for (int i = 0; i < lines.length && i < 3; i++) {
-        utils.logger.d('  line[$i] hMain=${heights[i].toStringAsFixed(1)} hSub=${measureLine(lines[i], false).toStringAsFixed(1)} offset=${offsets[i].toStringAsFixed(1)}');
+        utils.logger.d(
+            '  line[$i] hMain=${heights[i].toStringAsFixed(1)} hSub=${measureLine(lines[i], false).toStringAsFixed(1)} offset=${offsets[i].toStringAsFixed(1)}');
       }
     }
   }
@@ -463,11 +479,9 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       _ensureVisibleTimer = null;
       _userScrollHoldTimer?.cancel();
       _userScrollHoldTimer = null;
-      _afterScrollRetryTimer?.cancel();
-      _afterScrollRetryTimer = null;
       _sizeChangeTimer?.cancel();
       _sizeChangeTimer = null;
-      
+
       _cachedMaxWidth = 0.0;
       _cachedOffsets = null;
       _cachedHeights = null;
@@ -520,7 +534,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     _scrollTransition = ValueTransition<double>(
       begin: from,
       interpolator: _sineOutInterpolator,
-      duration: duration ?? const Duration(milliseconds: 300),
+      duration: duration ?? _scrollDurationForDistance(dist),
     );
     _scrollTransition.start(to);
     _startScrollTicker();
@@ -627,11 +641,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
           (topPadding + lineTop + lineHeight / 2) - (viewport * alignment);
 
       _animateTo(targetScrollOffset, duration: duration);
-      _afterScrollRetryTimer?.cancel();
-      _afterScrollRetryTimer = Timer(const Duration(milliseconds: 220), () {
-        if (_disposed || !mounted) return;
-        _scrollToCurrent(const Duration(milliseconds: 180));
-      });
       return;
     }
 
@@ -653,7 +662,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     if (lines.isNotEmpty) {
       for (int i = 0; i < lines.length && i < 3; i++) {
         final l = lines[i];
-        utils.logger.d('  line[$i] start=${l.start.inMilliseconds}ms length=${l.length.inMilliseconds}ms type=${l.runtimeType} blank=${l is LrcLine ? l.isBlank : 'N/A'} trans=${l.translation}');
+        utils.logger.d(
+            '  line[$i] start=${l.start.inMilliseconds}ms length=${l.length.inMilliseconds}ms type=${l.runtimeType} blank=${l is LrcLine ? l.isBlank : 'N/A'} trans=${l.translation}');
       }
     }
     final next = lines.indexWhere(
@@ -704,14 +714,13 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
   /// 判断一行是否已被 blankMetadataLines 清空（不需要渲染）
   bool _isLineBlankFiltered(LyricLine line) {
-    final removeEmpty = _lyricViewController?.removeEmptyLines ?? true;
-    if (!removeEmpty) return false;
-
     if (line is SyncLyricLine) {
       // words 为空且长度 <= 3秒 → 纯空白短行，不渲染
       return line.words.isEmpty && line.length <= const Duration(seconds: 3);
     } else if (line is LrcLine) {
-      return line.isBlank && line.length <= const Duration(seconds: 3);
+      return line.isBlank &&
+          (line.length <= const Duration(seconds: 3) ||
+              line.start > Duration.zero);
     }
     return false;
   }
@@ -780,12 +789,14 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       final viewportHeight = constraints.maxHeight;
       final extraTopPadding = widget.enableEdgeSpacer ? viewportHeight : 0.0;
       final extraBottomPadding = widget.enableEdgeSpacer ? viewportHeight : 0.0;
-      final alignTopPadding = (!widget.centerVertically && !widget.enableEdgeSpacer)
-          ? viewportHeight * widget.currentLineAlignment
-          : 0.0;
-      final alignBottomPadding = (!widget.centerVertically && !widget.enableEdgeSpacer)
-          ? viewportHeight * (1.0 - widget.currentLineAlignment)
-          : 0.0;
+      final alignTopPadding =
+          (!widget.centerVertically && !widget.enableEdgeSpacer)
+              ? viewportHeight * widget.currentLineAlignment
+              : 0.0;
+      final alignBottomPadding =
+          (!widget.centerVertically && !widget.enableEdgeSpacer)
+              ? viewportHeight * (1.0 - widget.currentLineAlignment)
+              : 0.0;
       final userIsDragging = _scrollState == LyricScrollState.userDragging;
       return Stack(
         clipBehavior: Clip.none,
@@ -808,75 +819,81 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                   return false;
                 },
                 child: ShaderMask(
-                shaderCallback: (Rect bounds) {
-                  return const LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      Colors.black,
-                      Colors.black,
-                      Colors.transparent
-                    ],
-                    stops: [0.0, 0.2, 0.8, 1.0],
-                  ).createShader(bounds);
-                },
-                blendMode: BlendMode.dstIn,
-                child: ListView.builder(
-                  key: const ValueKey('lyric_list_view_inner'),
-                  controller: scrollController,
-                  addAutomaticKeepAlives: false,
-                  addRepaintBoundaries: false,
-                  scrollCacheExtent: ScrollCacheExtent.pixels(
-                      viewportStrategy.cacheExtent(constraints.maxHeight)),
-                  padding: EdgeInsets.only(
-                    top: (widget.centerVertically ? spacerHeight : 0) + extraTopPadding + alignTopPadding,
-                    bottom: (widget.centerVertically ? spacerHeight : 0) + extraBottomPadding + alignBottomPadding,
-                  ),
-                  itemCount: widget.lyric.lines.length,
-                  itemBuilder: (context, i) {
-                    final line = widget.lyric.lines[i];
-
-                    // 空白行/元数据行：不渲染（已被 blankMetadataLines 清空）
-                    if (_isLineBlankFiltered(line)) {
-                      return const SizedBox.shrink();
-                    }
-
-                    final signedDist = i - _mainLine;
-                    final dist = signedDist.abs();
-                    final opacity = dist == 0
-                        ? 1.0
-                        : pow(0.88, dist).toDouble().clamp(0.30, 0.90);
-                    final staggerDelay = Duration(
-                        milliseconds: _lyricViewController?.renderConfig.enableStaggeredAnimation == true
-                            ? ((dist + 1) * 60).clamp(0, 600)
-                            : 0);
-                    final isHovered = widget.enableSeekOnTap && i == _hoveredLineIndex;
-                    return LyricViewTile(
-                      key: dist == 0 ? currentLyricTileKey : null,
-                      line: line,
-                      opacity: isHovered
-                          ? 1.0
-                          : opacity,
-                      distance: dist,
-                      staggerDelay: isHovered
-                          ? Duration.zero
-                          : staggerDelay,
-                      isUserScrolling: userIsDragging,
-                      isHovered: isHovered,
-                      onHoverChanged: widget.enableSeekOnTap
-                          ? (v) {
-                              setState(() {
-                                _hoveredLineIndex = v ? i : -1;
-                              });
-                            }
-                          : null,
-                      onTap: widget.enableSeekOnTap
-                          ? () => _seekToLyricLineWithOriginalIndex(line)
-                          : null,
-                    );
+                  shaderCallback: (Rect bounds) {
+                    return const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.transparent,
+                        Colors.black,
+                        Colors.black,
+                        Colors.transparent
+                      ],
+                      stops: [0.0, 0.2, 0.8, 1.0],
+                    ).createShader(bounds);
                   },
-                ),
+                  blendMode: BlendMode.dstIn,
+                  child: ListView.builder(
+                    key: const ValueKey('lyric_list_view_inner'),
+                    controller: scrollController,
+                    addAutomaticKeepAlives: false,
+                    addRepaintBoundaries: false,
+                    scrollCacheExtent: ScrollCacheExtent.pixels(
+                        viewportStrategy.cacheExtent(constraints.maxHeight)),
+                    padding: EdgeInsets.only(
+                      top: (widget.centerVertically ? spacerHeight : 0) +
+                          extraTopPadding +
+                          alignTopPadding,
+                      bottom: (widget.centerVertically ? spacerHeight : 0) +
+                          extraBottomPadding +
+                          alignBottomPadding,
+                    ),
+                    itemCount: widget.lyric.lines.length,
+                    itemBuilder: (context, i) {
+                      final line = widget.lyric.lines[i];
+
+                      // 空白行/元数据行：不渲染（已被 blankMetadataLines 清空）
+                      if (_isLineBlankFiltered(line)) {
+                        return const SizedBox.shrink();
+                      }
+
+                      final signedDist = i - _mainLine;
+                      final dist = signedDist.abs();
+                      final opacity = dist == 0
+                          ? 1.0
+                          : pow(0.88, dist).toDouble().clamp(0.30, 0.90);
+                      final staggerDelay = Duration(
+                          milliseconds: _lyricViewController
+                                      ?.renderConfig.enableStaggeredAnimation ==
+                                  true
+                              ? ((dist + 1) * 60).clamp(0, 600)
+                              : 0);
+                      final isHovered =
+                          widget.enableSeekOnTap && i == _hoveredLineIndex;
+
+                      return LyricsLineWidget(
+                          key: dist == 0 ? currentLyricTileKey : null,
+                          line: line,
+                          opacity: isHovered ? 1.0 : opacity,
+                          distance: dist,
+                          lineOffsetY: 0.0,
+                          staggerDelay:
+                              isHovered ? Duration.zero : staggerDelay,
+                          isUserScrolling: userIsDragging,
+                          isHovered: isHovered,
+                          onHoverChanged: widget.enableSeekOnTap
+                              ? (v) {
+                                  setState(() {
+                                    _hoveredLineIndex = v ? i : -1;
+                                  });
+                                }
+                              : null,
+                          onTap: widget.enableSeekOnTap
+                              ? () => _seekToLyricLineWithOriginalIndex(line)
+                              : null,
+                        );
+                    },
+                  ),
                 ),
               ),
             ),
@@ -893,7 +910,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     super.dispose();
     _ensureVisibleTimer?.cancel();
     _userScrollHoldTimer?.cancel();
-    _afterScrollRetryTimer?.cancel();
     _sizeChangeTimer?.cancel();
     _lyricViewController?.removeListener(_scheduleEnsureCurrentVisible);
     lyricLineStreamSubscription.cancel();

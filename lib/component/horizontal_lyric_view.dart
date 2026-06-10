@@ -76,7 +76,9 @@ class _LyricHorizontalScrollAreaState
 
   static bool _isTransitionLine(LyricLine line) {
     if (line is LrcLine) {
-      return line.isBlank && line.length > const Duration(seconds: 3);
+      return line.isBlank &&
+          line.length > const Duration(seconds: 3) &&
+          line.start == Duration.zero;
     }
     if (line is SyncLyricLine) {
       return line.words.isEmpty && line.length > const Duration(seconds: 3);
