@@ -101,6 +101,8 @@ class AppSettings {
   bool useMaterialYouForLyrics = false;
   bool useMaterialYouForProgressBar = true;
   bool useMaterialYouForTransition = true;
+  bool enableCoverColorExtraction = true;
+  int? customCoverColor;
   Size windowSize = const Size(1280, 756);
   bool isWindowMaximized = false;
 
@@ -282,6 +284,16 @@ class AppSettings {
         _instance.useMaterialYouForTransition = umyt;
       }
 
+      final ecce = settingsMap['EnableCoverColorExtraction'];
+      if (ecce != null) {
+        _instance.enableCoverColorExtraction = ecce;
+      }
+
+      final ccc = settingsMap['CustomCoverColor'];
+      if (ccc != null) {
+        _instance.customCoverColor = ccc;
+      }
+
       final sizeStr = settingsMap['WindowSize'];
       if (sizeStr != null) {
         final sizeStrs = (sizeStr as String).split(',');
@@ -325,6 +337,8 @@ class AppSettings {
         'UseMaterialYouForLyrics': useMaterialYouForLyrics,
         'UseMaterialYouForProgressBar': useMaterialYouForProgressBar,
         'UseMaterialYouForTransition': useMaterialYouForTransition,
+        'EnableCoverColorExtraction': enableCoverColorExtraction,
+        'CustomCoverColor': customCoverColor,
         'IsWindowMaximized': isMaximized,
         'FontFamily': fontFamily,
         'FontPath': fontPath,
