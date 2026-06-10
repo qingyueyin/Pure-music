@@ -759,8 +759,9 @@ Future<Lyric?> _getKugouSyncLyric(String kugouSongHash) async {
       for (final entry in parsed.lines) {
         // 过滤元数据行
         final lineContent = entry.content;
-        if (lineContent.isNotEmpty && LrcLine.isLyricMetadataLine(lineContent))
+        if (lineContent.isNotEmpty && LrcLine.isLyricMetadataLine(lineContent)) {
           continue;
+        }
 
         if (entry.words != null && entry.words!.isNotEmpty) {
           final words = entry.words!.map((w) {
@@ -823,8 +824,9 @@ Lyric? _parsedToLyric(ParsedLyricResult parsed, {String? rawText}) {
     for (final entry in parsed.lines) {
       // 过滤同步歌词中的元数据行
       final lineContent = entry.content;
-      if (lineContent.isNotEmpty && LrcLine.isLyricMetadataLine(lineContent))
+      if (lineContent.isNotEmpty && LrcLine.isLyricMetadataLine(lineContent)) {
         continue;
+      }
 
       if (entry.words != null && entry.words!.isNotEmpty) {
         final words = entry.words!.map((w) {
@@ -864,8 +866,9 @@ Lyric? _parsedToLyric(ParsedLyricResult parsed, {String? rawText}) {
   for (int i = 0; i < parsed.lines.length; i++) {
     final entry = parsed.lines[i];
     // 过滤非同步歌词中的元数据行
-    if (entry.content.isNotEmpty && LrcLine.isLyricMetadataLine(entry.content))
+    if (entry.content.isNotEmpty && LrcLine.isLyricMetadataLine(entry.content)) {
       continue;
+    }
 
     final line = LrcLine(
       entry.start,

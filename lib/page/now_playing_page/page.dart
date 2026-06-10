@@ -118,8 +118,10 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
         _preExtractedPalette = palette;
       });
 
-      // 同步更新主题种子色
-      ThemeProvider.instance.applySeedColorDirectly(dominant, path);
+      // 同步更新主题种子色（仅在封面取色开启时）
+      if (AppSettings.instance.enableCoverColorExtraction) {
+        ThemeProvider.instance.applySeedColorDirectly(dominant, path);
+      }
     } catch (_) {
       // Rust 提取失败，静默忽略
     }

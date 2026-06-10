@@ -142,8 +142,9 @@ class LrcLine extends UnsyncLyricLine {
     // 前缀 + 冒号（词/曲/编/演唱者）
     if (_metadataPattern.hasMatch(t)) return true;
     // 横线分隔符（歌名 - 歌手、标题-艺术家）——仅当总长度较短时才判为元数据
-    if (t.length < 60 && RegExp(r'[\-\u2013\u2014\uff0d]').hasMatch(t))
+    if (t.length < 60 && RegExp(r'[\-\u2013\u2014\uff0d]').hasMatch(t)) {
       return true;
+    }
     // 版权/来源关键词
     if (RegExp(r'(?:QQ音乐|享有|著作权|版权|提供|出品|发行|翻译|翻訳)').hasMatch(t)) return true;
     return false;
@@ -1197,7 +1198,9 @@ class Lrc extends Lyric {
 
       // 过滤元数据行（"Adam Levine："、"词：xxx"等），避免它们抢真实歌词的主位
       if (LrcLine.isLyricMetadataLine(
-          contentRaw.replaceAll(wordTagRe, '').trim())) continue;
+          contentRaw.replaceAll(wordTagRe, '').trim())) {
+        continue;
+      }
 
       for (final m in timeMatches) {
         final minute = int.tryParse(m.group(1) ?? '');

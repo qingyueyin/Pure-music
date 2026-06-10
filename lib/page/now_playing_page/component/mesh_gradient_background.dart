@@ -78,12 +78,7 @@ class _MeshGradientBackgroundInternalState
   int? _lastCoverHash;
   int _lastSpectrumUpdateMs = 0;
 
-
-
-
-
-
-        static final _playOptions = AnimatedMeshGradientOptions(
+  static final _playOptions = AnimatedMeshGradientOptions(
     frequency: 8,
     amplitude: 80,
     speed: 2.5,
@@ -95,12 +90,6 @@ class _MeshGradientBackgroundInternalState
     speed: 0.3,
     grain: 0,
   );
-
-
-
-
-
-
 
   @override
   void initState() {
@@ -155,7 +144,8 @@ class _MeshGradientBackgroundInternalState
         _spectrumSubscription?.cancel();
         _spectrumSubscription = null;
       }
-    } else if (_isPlaying != (oldWidget.inputs.playerState == PlayerState.playing)) {
+    } else if (_isPlaying !=
+        (oldWidget.inputs.playerState == PlayerState.playing)) {
       _syncMeshController();
       _syncSpectrumSubscription();
     }
@@ -245,7 +235,11 @@ class _MeshGradientBackgroundInternalState
   void _listenSpectrum() {
     _spectrumSubscription?.cancel();
     final stream = widget.inputs.spectrumStream;
-    if (stream == null || !widget.inputs.shouldAnimate || !widget.inputs.isVisible) return;
+    if (stream == null ||
+        !widget.inputs.shouldAnimate ||
+        !widget.inputs.isVisible) {
+      return;
+    }
 
     _spectrumSubscription = stream.listen((spectrum) {
       if (!mounted || !_isPlaying || !widget.inputs.isVisible) return;
@@ -277,7 +271,10 @@ class _MeshGradientBackgroundInternalState
         imageBytes: bytes,
         numColors: 4,
       );
-      if (rustColors.isEmpty || _disposed || !mounted || !widget.inputs.isVisible) {
+      if (rustColors.isEmpty ||
+          _disposed ||
+          !mounted ||
+          !widget.inputs.isVisible) {
         return;
       }
       final target = _padToFour(rustColors.map((argb) => Color(argb)).toList());
@@ -301,7 +298,10 @@ class _MeshGradientBackgroundInternalState
         imageBytes: bytes,
         numColors: 4,
       );
-      if (rustColors.isEmpty || _disposed || !mounted || !widget.inputs.isVisible) {
+      if (rustColors.isEmpty ||
+          _disposed ||
+          !mounted ||
+          !widget.inputs.isVisible) {
         return;
       }
 
@@ -349,7 +349,8 @@ class _MeshGradientBackgroundInternalState
           ? List.filled(4, widget.fallbackColor)
           : _paletteColors;
     }
-    final count = _prevPaletteColors.length.clamp(0, _targetPaletteColors.length);
+    final count =
+        _prevPaletteColors.length.clamp(0, _targetPaletteColors.length);
     if (count <= 0) {
       return _targetPaletteColors;
     }
@@ -365,8 +366,7 @@ class _MeshGradientBackgroundInternalState
   /// When stopped, the mesh gradient's internal Ticker is fully halted —
   /// no 60fps setState, no CustomPaint repaint, no shader compute.
   void _syncMeshController() {
-    final shouldRun =
-        _isPlaying && widget.inputs.isVisible;
+    final shouldRun = _isPlaying && widget.inputs.isVisible;
     if (shouldRun) {
       _meshController.start();
     } else {
@@ -387,7 +387,6 @@ class _MeshGradientBackgroundInternalState
     _targetPaletteColors = const [];
     super.dispose();
   }
-
 
   @override
   Widget build(BuildContext context) {
