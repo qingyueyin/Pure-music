@@ -92,9 +92,42 @@ class LrcLine extends UnsyncLyricLine {
   }
 
   static final _metadataPattern = RegExp(
-    r'^[\s\u3000]*([\u4e00-\u9fff]|[a-zA-Z]){1,30}[\s\u3000]*[：:][\s\u3000]*',
+    r'^[\s\u3000]*([\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uff21-\uff3a\uff41-\uff5a\uac00-\ud7afa-zA-Z・／/&、\s\u3000]){1,40}[\s\u3000]*[：:][\s\u3000]*',
     caseSensitive: false,
   );
+
+  /// 剥离文本外层常见的括号对，如 (作曲：周杰伦) → 作曲：周杰伦
+  static String _stripOuterBrackets(String text) {
+    var t = text.trim();
+    var changed = true;
+    var loop = 0;
+    while (changed && loop < 5) {
+      changed = false;
+      loop++;
+      const pairs = [
+        ['(', ')'],
+        ['（', '）'],
+        ['【', '】'],
+        ['[', ']'],
+        ['{', '}'],
+        ['『', '』'],
+        ['「', '」'],
+        ['《', '》'],
+      ];
+      for (final pair in pairs) {
+        final open = pair[0], close = pair[1];
+        if (t.startsWith(open) && t.endsWith(close)) {
+          final inner = t.substring(open.length, t.length - close.length).trim();
+          if (inner.isNotEmpty) {
+            t = inner;
+            changed = true;
+            break;
+          }
+        }
+      }
+    }
+    return t;
+  }
 
   /// 综合元数据检测（对齐 lrc_tool.dart），覆盖：
   /// - "Adam Levine：" 等演唱者/作词/作曲标注
@@ -102,8 +135,10 @@ class LrcLine extends UnsyncLyricLine {
   /// - "歌名 - 歌手" "标题-艺术家" 等横线分隔
   /// - 版权/出品/发行等信息
   static bool isLyricMetadataLine(String text) {
-    final t = text.replaceAll(RegExp(r'<[^>]*>'), '').trim();
+    var t = text.replaceAll(RegExp(r'<[^>]*>'), '').trim();
     if (t.isEmpty) return false;
+    // 剥离外层括号，如 (作曲：周杰伦) → 作曲：周杰伦
+    t = _stripOuterBrackets(t);
     // 前缀 + 冒号（词/曲/编/演唱者）
     if (_metadataPattern.hasMatch(t)) return true;
     // 横线分隔符（歌名 - 歌手、标题-艺术家）——仅当总长度较短时才判为元数据
