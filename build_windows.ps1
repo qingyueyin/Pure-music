@@ -75,6 +75,30 @@ function Update-RunnerRcVersion([string]$version, [string]$buildMode) {
     Write-Host ("Synced Runner.rc: ProductVersion=$productVersion, FileVersion=$fileVersion" -f $productVersion, $fileVersion) -ForegroundColor Gray
 }
 
+function Update-VersionJson([string]$version) {
+    $versionJsonPath = Join-Path $PSScriptRoot "update\version.json"
+    $tag = "v$version"
+    $repo = "qingyueyin/Pure-music"
+    $body = "## 更新内容\n\n请前往 GitHub Releases 查看完整更新日志"
+    $htmlUrl = "https://github.com/$repo/releases"
+
+    $json = @{
+        tag_name = $tag
+        name     = $tag
+        body     = $body
+        html_url = $htmlUrl
+    } | ConvertTo-Json -Compress
+
+    # Pretty-print with 2-space indent
+    $pretty = $json | ConvertFrom-Json | ConvertTo-Json
+
+    $dir = Split-Path $versionJsonPath -Parent
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+
+    Set-Content -Path $versionJsonPath -Value $pretty -Encoding UTF8
+    Write-Host ("Generated update/version.json: tag=$tag" -f $tag) -ForegroundColor Gray
+}
+
 function Read-Input([string]$prompt) {
     $v = Read-Host $prompt
     if ($null -eq $v) { return "" }
@@ -246,6 +270,10 @@ else {
 
 Invoke-Step "sync version to Runner.rc" {
     Update-RunnerRcVersion $version $BuildMode
+}
+
+Invoke-Step "generate update/version.json" {
+    Update-VersionJson $version
 }
 
 Invoke-Step "flutter build windows" {
