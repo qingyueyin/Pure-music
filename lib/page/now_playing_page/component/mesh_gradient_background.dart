@@ -205,7 +205,32 @@ class _MeshGradientBackgroundInternalState
     final newHash = _computeHash(newBytes);
     if (oldBytes != null && _lastCoverHash == newHash) return;
     _lastCoverHash = newHash;
-    _extractPaletteWithTransition();
+
+    // 使用父级预提取的调色板，避免重复 Rust 解码
+    final preExtracted = widget.inputs.preExtractedColors;
+    if (preExtracted != null && preExtracted.isNotEmpty) {
+      _applyPaletteColors(preExtracted);
+    } else {
+      _extractPaletteWithTransition();
+    }
+  }
+
+  /// 直接应用预提取的调色板（跳过 Rust 调用）
+  void _applyPaletteColors(List<Color> colors) {
+    if (_isTransitioning) {
+      _transitionController.stop();
+      _transitionController.value = 0.0;
+    }
+
+    setState(() {
+      _prevPaletteColors = _paletteColors.isEmpty
+          ? List.filled(4, widget.fallbackColor)
+          : _padToFour(List.from(_paletteColors));
+      _targetPaletteColors = _padToFour(colors);
+      _isTransitioning = true;
+    });
+
+    _transitionController.forward();
   }
 
   int _computeHash(Uint8List bytes) {
