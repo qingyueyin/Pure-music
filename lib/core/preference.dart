@@ -261,6 +261,13 @@ class AppPreference {
 
   String customCpFeedbackKey = '';
   String updateRepoSlug = 'qingyueyin/Pure-music';
+  bool autoCheckUpdate = true;
+  String? lastUpdateCheckTime;
+  String? lastSeenUpdateTag;
+  List<String> updateCheckUrls = [
+    'https://raw.githubusercontent.com/qingyueyin/Pure-music/master/update/version.json',
+    'https://gitee.com/qingyueyin/Pure-music/raw/master/update/version.json',
+  ];
 
   /// 用户手动添加的文件夹路径列表（不包括自动发现的子文件夹）
   List<String> userFolders = [];
@@ -287,6 +294,10 @@ class AppPreference {
         'nowPlayingPagePref': nowPlayingPagePref.toMap(),
         'customCpFeedbackKey': customCpFeedbackKey,
         'updateRepoSlug': updateRepoSlug,
+        'autoCheckUpdate': autoCheckUpdate,
+        'lastUpdateCheckTime': lastUpdateCheckTime,
+        'lastSeenUpdateTag': lastSeenUpdateTag,
+        'updateCheckUrls': updateCheckUrls,
         'userFolders': userFolders,
       };
 
@@ -374,6 +385,15 @@ class AppPreference {
       instance.customCpFeedbackKey = prefMap['customCpFeedbackKey'] ?? '';
       instance.updateRepoSlug =
           prefMap['updateRepoSlug'] ?? 'qingyueyin/Pure-music';
+      instance.autoCheckUpdate = prefMap['autoCheckUpdate'] ?? true;
+      instance.lastUpdateCheckTime = prefMap['lastUpdateCheckTime'] as String?;
+      instance.lastSeenUpdateTag = prefMap['lastSeenUpdateTag'] as String?;
+      instance.updateCheckUrls = prefMap['updateCheckUrls'] != null
+          ? List<String>.from(prefMap['updateCheckUrls'])
+          : [
+              'https://raw.githubusercontent.com/qingyueyin/Pure-music/master/update/version.json',
+              'https://gitee.com/qingyueyin/Pure-music/raw/master/update/version.json',
+            ];
       instance.userFolders = prefMap['userFolders'] != null
           ? List<String>.from(prefMap['userFolders'])
           : [];
