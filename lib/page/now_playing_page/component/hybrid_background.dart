@@ -108,7 +108,8 @@ class _HybridBackgroundState extends State<HybridBackground>
   /// Sync spectrum subscription based on playing and visibility state.
   /// Ensures only one active subscription at any time.
   void _syncSpectrumSubscription() {
-    final shouldListen = _isPlaying && widget.inputs.isVisible && widget.inputs.shouldAnimate;
+    final shouldListen =
+        _isPlaying && widget.inputs.isVisible && widget.inputs.shouldAnimate;
 
     if (shouldListen && _spectrumSubscription == null) {
       _listenSpectrum();
@@ -255,7 +256,8 @@ class _HybridBackgroundState extends State<HybridBackground>
 
       if (rustColors.isEmpty || _disposed || !mounted) return;
 
-      final targetColors = _padToFour(rustColors.map((argb) => Color(argb)).toList());
+      final targetColors =
+          _padToFour(rustColors.map((argb) => Color(argb)).toList());
 
       if (_isTransitioning) {
         _transitionController.stop();
@@ -297,7 +299,8 @@ class _HybridBackgroundState extends State<HybridBackground>
           ? List.filled(4, widget.fallbackColor)
           : _paletteColors;
     }
-    final count = _prevPaletteColors.length.clamp(0, _targetPaletteColors.length);
+    final count =
+        _prevPaletteColors.length.clamp(0, _targetPaletteColors.length);
     if (count <= 0) {
       return _targetPaletteColors;
     }
@@ -310,8 +313,7 @@ class _HybridBackgroundState extends State<HybridBackground>
   }
 
   void _syncMeshController() {
-    final shouldRun =
-        widget.inputs.playerState == PlayerState.playing &&
+    final shouldRun = widget.inputs.playerState == PlayerState.playing &&
         widget.inputs.isVisible;
     if (shouldRun) {
       _meshController.start();
@@ -342,7 +344,6 @@ class _HybridBackgroundState extends State<HybridBackground>
       fit: StackFit.expand,
       children: [
         ColoredBox(color: scheme.surface),
-
         if (decodedImage != null)
           RepaintBoundary(
             child: _BlurredCover(
@@ -350,7 +351,6 @@ class _HybridBackgroundState extends State<HybridBackground>
               brightness: brightness,
             ),
           ),
-
         AnimatedOpacity(
           duration: const Duration(milliseconds: 600),
           curve: Curves.easeInOut,
@@ -380,7 +380,6 @@ class _HybridBackgroundState extends State<HybridBackground>
             },
           ),
         ),
-
         Container(
           color: scheme.surface.withValues(alpha: 0.10),
         ),
