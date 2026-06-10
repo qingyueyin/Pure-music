@@ -1,3 +1,5 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
@@ -86,7 +88,9 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
 
   double _targetScale() {
     final active = widget.distance == 0;
-    if (active) return _config.mainLineScale * _config.activeLineScaleMultiplier;
+    if (active) {
+      return _config.mainLineScale * _config.activeLineScaleMultiplier;
+    }
     return _config.subLineScale * _config.inactiveLineScaleMultiplier;
   }
 
@@ -105,8 +109,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
   }
 
   void _onTick(Duration elapsed) {
-    _currentTimeMs =
-        PlayService.instance.playbackService.position * 1000.0;
+    _currentTimeMs = PlayService.instance.playbackService.position * 1000.0;
     setState(() {});
   }
 
@@ -159,85 +162,161 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
         ? 0.0
         : (active ? 0.0 : renderConfig.blurSigmaForDistance(dist));
 
-    final effectiveOpacity = widget.isHovered
-        ? 1.0
-        : _opacityTransition.value;
+    final effectiveOpacity = widget.isHovered ? 1.0 : _opacityTransition.value;
 
     final isTransitionLine = _isTransitionLine(widget.line, active);
     if (isTransitionLine) {
-      return GestureDetector(
-        onTap: widget.onTap,
-        child: Align(
-          alignment: switch (renderConfig.textAlign) {
-            LyricTextAlign.left => Alignment.centerLeft,
-            LyricTextAlign.center => Alignment.center,
-            LyricTextAlign.right => Alignment.centerRight,
-          },
-          child: SizedBox(
-            height: 40.0,
-            child: widget.line is SyncLyricLine
-                ? LyricTransitionTile(
-                    syncLine: widget.line as SyncLyricLine,
-                    useMaterialYouColor: AppSettings.instance.useMaterialYouForTransition,
-                  )
-                : LyricTransitionTile(
-                    lrcLine: widget.line as LrcLine,
-                    useMaterialYouColor: AppSettings.instance.useMaterialYouForTransition,
-                  ),
+      // 匹配 Widget 模式：短空白行在非主行时完全隐藏
+      if (!active) {
+        return const SizedBox.shrink();
+      }
+
+      final verticalPad = widget.line is SyncLyricLine
+          ? renderConfig.syncVerticalPadding(isMainLine: true)
+          : renderConfig.lrcVerticalPadding();
+
+      // 普通歌词遮罩在外层 12px padding 内，painter 内容再内缩 12px；间奏行保持同样结构。
+      const double outerHorizontalPad = 12.0;
+      const double innerHorizontalPad = 12.0;
+
+      final transitionContent = SizedBox(
+        height: 40.0,
+        child: widget.line is SyncLyricLine
+            ? LyricTransitionTile(
+                key: ValueKey(widget.line),
+                syncLine: widget.line as SyncLyricLine,
+                alignment: renderConfig.textAlign,
+                useMaterialYouColor:
+                    AppSettings.instance.useMaterialYouForTransition,
+              )
+            : LyricTransitionTile(
+                key: ValueKey(widget.line),
+                lrcLine: widget.line as LrcLine,
+                alignment: renderConfig.textAlign,
+                useMaterialYouColor:
+                    AppSettings.instance.useMaterialYouForTransition,
+              ),
+      );
+
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: outerHorizontalPad),
+        child: _LocalHoverMask(
+          onTap: widget.onTap,
+          color: scheme.onSurface.withValues(alpha: 0.08),
+          child: Padding(
+            padding: EdgeInsets.only(
+                left: innerHorizontalPad,
+                right: innerHorizontalPad,
+                top: verticalPad,
+                bottom: verticalPad),
+            child: Align(
+              alignment: switch (renderConfig.textAlign) {
+                LyricTextAlign.left => Alignment.centerLeft,
+                LyricTextAlign.center => Alignment.center,
+                LyricTextAlign.right => Alignment.centerRight,
+              },
+              child: transitionContent,
+            ),
           ),
         ),
       );
     }
 
+    // 匹配 Widget 模式：短空白行直接隐藏
+    final isShortBlank = widget.line is SyncLyricLine
+        ? (widget.line as SyncLyricLine).words.isEmpty
+        : widget.line is LrcLine && (widget.line as LrcLine).isBlank;
+    if (isShortBlank) {
+      return const SizedBox.shrink();
+    }
+
     return RepaintBoundary(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final lineWidth = constraints.maxWidth;
-          final lineHeight = LyricsLinePainter(
-            line: widget.line,
-            currentTimeMs: _currentTimeMs,
-            opacity: effectiveOpacity,
-            blurSigma: blurSigma,
-            scale: _scaleTransition.value,
-            offsetY: _offsetYTransition.value,
-            config: renderConfig,
-            scheme: scheme,
-            isMainLine: active,
-            useMaterialYouColor: AppSettings.instance.useMaterialYouForLyrics,
-          ).measureHeight(lineWidth);
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12.0),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final theme = Theme.of(context);
+            final fontFamily = theme.textTheme.bodyMedium?.fontFamily ??
+                theme.textTheme.bodySmall?.fontFamily;
 
-          Widget painted = GestureDetector(
-            onTap: widget.onTap,
-            child: SizedBox(
-              height: lineHeight,
-              child: CustomPaint(
-                painter: LyricsLinePainter(
-                  line: widget.line,
-                  currentTimeMs: _currentTimeMs,
-                  opacity: effectiveOpacity,
-                  blurSigma: blurSigma,
-                  scale: _scaleTransition.value,
-                  offsetY: _offsetYTransition.value,
-                  config: renderConfig,
-                  scheme: scheme,
-                  isMainLine: active,
-                  useMaterialYouColor: AppSettings.instance.useMaterialYouForLyrics,
-                ),
-                size: Size(lineWidth, lineHeight),
+            final lineWidth = constraints.maxWidth;
+            // 按实际主/副行高度测量，与 Widget 模式一致，确保行间间距正确。
+            final lineHeight = LyricsLinePainter(
+              line: widget.line,
+              currentTimeMs: _currentTimeMs,
+              opacity: effectiveOpacity,
+              blurSigma: blurSigma,
+              scale: _scaleTransition.value,
+              offsetY: _offsetYTransition.value,
+              config: renderConfig,
+              scheme: scheme,
+              isMainLine: active,
+              useMaterialYouColor: AppSettings.instance.useMaterialYouForLyrics,
+              fontFamily: fontFamily,
+            ).measureHeight(lineWidth);
+
+            Widget painted = CustomPaint(
+              painter: LyricsLinePainter(
+                line: widget.line,
+                currentTimeMs: _currentTimeMs,
+                opacity: effectiveOpacity,
+                blurSigma: blurSigma,
+                scale: _scaleTransition.value,
+                offsetY: _offsetYTransition.value,
+                config: renderConfig,
+                scheme: scheme,
+                isMainLine: active,
+                useMaterialYouColor:
+                    AppSettings.instance.useMaterialYouForLyrics,
+                fontFamily: fontFamily,
               ),
-            ),
-          );
+              size: Size(lineWidth, lineHeight),
+            );
 
-          if (widget.onHoverChanged != null) {
-            painted = MouseRegion(
-              onEnter: (_) => widget.onHoverChanged!(true),
-              onExit: (_) => widget.onHoverChanged!(false),
+            // 模糊：匹配 Widget 路径 LyricLineSpringMotion 的 ImageFiltered.blur
+            if (blurSigma > 0.01) {
+              painted = ImageFiltered(
+                imageFilter: ImageFilter.blur(
+                  sigmaX: blurSigma,
+                  sigmaY: blurSigma,
+                  tileMode: TileMode.clamp,
+                ),
+                child: painted,
+              );
+            }
+
+            painted = SizedBox(
+              height: lineHeight,
               child: painted,
             );
-          }
 
-          return painted;
-        },
+            // 悬停背景高亮，匹配 Widget 路径的 InkWell
+            if (widget.isHovered && widget.onTap != null) {
+              painted = Container(
+                decoration: BoxDecoration(
+                  color: scheme.onSurface.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12.0),
+                ),
+                child: painted,
+              );
+            }
+
+            painted = GestureDetector(
+              onTap: widget.onTap,
+              child: painted,
+            );
+
+            if (widget.onHoverChanged != null) {
+              painted = MouseRegion(
+                onEnter: (_) => widget.onHoverChanged!(true),
+                onExit: (_) => widget.onHoverChanged!(false),
+                child: painted,
+              );
+            }
+
+            return painted;
+          },
+        ),
       ),
     );
   }
@@ -247,8 +326,47 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
     if (line is SyncLyricLine) {
       return line.words.isEmpty && line.length > const Duration(seconds: 3);
     } else if (line is LrcLine) {
-      return line.isBlank && line.length > const Duration(seconds: 3);
+      return line.isBlank &&
+          line.length > const Duration(seconds: 3) &&
+          line.start == Duration.zero;
     }
     return false;
+  }
+}
+
+class _LocalHoverMask extends StatefulWidget {
+  const _LocalHoverMask({
+    required this.child,
+    required this.color,
+    this.onTap,
+  });
+
+  final Widget child;
+  final Color color;
+  final VoidCallback? onTap;
+
+  @override
+  State<_LocalHoverMask> createState() => _LocalHoverMaskState();
+}
+
+class _LocalHoverMaskState extends State<_LocalHoverMask> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: Container(
+          decoration: BoxDecoration(
+            color: _hovered && widget.onTap != null ? widget.color : null,
+            borderRadius: BorderRadius.circular(12.0),
+          ),
+          child: widget.child,
+        ),
+      ),
+    );
   }
 }

@@ -23,10 +23,11 @@ TextStyle _lyricTextStyle({
   required int weight,
   required ColorScheme scheme,
   double? height,
+  String? fontFamily,
 }) {
   final w = weight.clamp(100, 900);
   return TextStyle(
-    fontFamily: 'sans-serif',
+    fontFamily: fontFamily,
     color: color,
     fontSize: fontSize,
     fontVariations: [FontVariation('wght', w.toDouble())],
@@ -136,7 +137,8 @@ class _LyricViewTileState extends State<LyricViewTile>
     final config = lyricViewController.renderConfig;
     final d = widget.distance ?? (widget.opacity == 1.0 ? 0 : 999);
     final isMainLine = d == 0;
-    final blurSigma = widget.isUserScrolling ? 0.0 : config.blurSigmaForDistance(d);
+    final blurSigma =
+        widget.isUserScrolling ? 0.0 : config.blurSigmaForDistance(d);
 
     Widget content = InkWell(
       onTap: widget.onTap,
@@ -218,13 +220,23 @@ class _SyncLineContent extends StatelessWidget {
     if (syncLine.words.isEmpty) {
       if (syncLine.length > const Duration(seconds: 3) && isMainLine) {
         final config = context.watch<LyricViewController>().renderConfig;
-        return LyricTransitionTile(syncLine: syncLine, alignment: config.textAlign, useMaterialYouColor: AppSettings.instance.useMaterialYouForTransition);
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12.0),
+          child: LyricTransitionTile(
+              syncLine: syncLine,
+              alignment: config.textAlign,
+              useMaterialYouColor:
+                  AppSettings.instance.useMaterialYouForTransition),
+        );
       } else {
         return const SizedBox.shrink();
       }
     }
 
     final scheme = Theme.of(context).colorScheme;
+    final themeFont = Theme.of(context);
+    final fontFamily = themeFont.textTheme.bodyMedium?.fontFamily ??
+        themeFont.textTheme.bodySmall?.fontFamily;
     final lyricViewController = context.watch<LyricViewController>();
     final config = lyricViewController.renderConfig;
 
@@ -246,8 +258,9 @@ class _SyncLineContent extends StatelessWidget {
       for (var word in syncLine.words) {
         final chars = word.content.characters.toList();
         final wordStart = word.start.inMilliseconds.toDouble();
-        final wordEnd = wordStart + max(word.length.inMilliseconds.toDouble(), 1.0);
-        
+        final wordEnd =
+            wordStart + max(word.length.inMilliseconds.toDouble(), 1.0);
+
         final List<Widget> charItems = [];
         for (var i = 0; i < chars.length; i++) {
           final char = ZhConverter.convert(chars[i], zhMode);
@@ -265,7 +278,7 @@ class _SyncLineContent extends StatelessWidget {
             ),
           );
         }
-        
+
         wordWidgets.add(
           _SyncWordWrap(
             word: word,
@@ -292,7 +305,8 @@ class _SyncLineContent extends StatelessWidget {
         ),
       ];
       if (showTranslation && syncLine.translation != null) {
-        final translatedText = ZhConverter.convert(syncLine.translation!, zhMode);
+        final translatedText =
+            ZhConverter.convert(syncLine.translation!, zhMode);
         contents.add(
           SizedBox(height: config.syncTranslationGap(isMainLine: false)),
         );
@@ -304,6 +318,7 @@ class _SyncLineContent extends StatelessWidget {
           fontWeight,
           config: config,
           opacity: 0.5,
+          fontFamily: fontFamily,
         ));
       }
       if (showRoman &&
@@ -319,6 +334,7 @@ class _SyncLineContent extends StatelessWidget {
           fontWeight - 100,
           config: config,
           opacity: 0.35,
+          fontFamily: fontFamily,
         ));
       }
 
@@ -342,12 +358,13 @@ class _SyncLineContent extends StatelessWidget {
       listenable: ThrottledPositionProvider.instance,
       builder: (context, _) {
         final posMs = ThrottledPositionProvider.instance.position * 1000;
-        
+
         final List<Widget> wordWidgets = [];
         for (var word in syncLine.words) {
           final chars = word.content.characters.toList();
           final wordStart = word.start.inMilliseconds.toDouble();
-          final wordEnd = wordStart + max(word.length.inMilliseconds.toDouble(), 1.0);
+          final wordEnd =
+              wordStart + max(word.length.inMilliseconds.toDouble(), 1.0);
 
           final List<Widget> charItems = [];
           for (var i = 0; i < chars.length; i++) {
@@ -408,9 +425,12 @@ class _SyncLineContent extends StatelessWidget {
         translationSize,
         fontWeight,
         config: config,
+        fontFamily: fontFamily,
       ));
     }
-    if (showRoman && syncLine.romanLyric != null && syncLine.romanLyric!.isNotEmpty) {
+    if (showRoman &&
+        syncLine.romanLyric != null &&
+        syncLine.romanLyric!.isNotEmpty) {
       final romanText = ZhConverter.convert(syncLine.romanLyric!, zhMode);
       contents.add(const SizedBox(height: 4.0));
       contents.add(buildSecondaryText(
@@ -421,6 +441,7 @@ class _SyncLineContent extends StatelessWidget {
         fontWeight - 100,
         config: config,
         opacity: 0.35,
+        fontFamily: fontFamily,
       ));
     }
     return Padding(
@@ -445,6 +466,7 @@ class _SyncLineContent extends StatelessWidget {
     required LyricRenderConfig config,
     double opacity = 1.0,
     Color? colorOverride,
+    String? fontFamily,
   }) {
     return Text(
       text,
@@ -462,6 +484,7 @@ class _SyncLineContent extends StatelessWidget {
         weight: fontWeight,
         scheme: scheme,
         height: config.primaryLineHeight(fontWeight),
+        fontFamily: fontFamily,
       ),
     );
   }
@@ -474,6 +497,7 @@ class _SyncLineContent extends StatelessWidget {
     int fontWeight, {
     required LyricRenderConfig config,
     double opacity = 0.70,
+    String? fontFamily,
   }) {
     final translationWeight = (fontWeight - 50).clamp(100, 900);
     return Text(
@@ -492,6 +516,7 @@ class _SyncLineContent extends StatelessWidget {
         weight: translationWeight,
         scheme: scheme,
         height: config.translationLineHeight(fontWeight),
+        fontFamily: fontFamily,
       ),
     );
   }
@@ -525,10 +550,11 @@ class _ReferenceCharItem extends StatelessWidget {
     if (positionMs == null) return 0.0;
     final wordDuration = wordEnd - wordStart;
     if (wordDuration <= 0) return positionMs! >= wordStart ? 1.0 : 0.0;
-    
-    final wordProgress = ((positionMs! - wordStart) / wordDuration).clamp(0.0, 1.0);
+
+    final wordProgress =
+        ((positionMs! - wordStart) / wordDuration).clamp(0.0, 1.0);
     if (wordProgress <= 0.0) return 0.0;
-    
+
     final charStartThreshold = charIndex / totalChars;
     final wavePos = (wordProgress - charStartThreshold) * totalChars * 2.0;
     if (wavePos <= 0.0) return 0.0;
@@ -540,12 +566,15 @@ class _ReferenceCharItem extends StatelessWidget {
     if (positionMs == null) return 0.0;
     final wordDuration = wordEnd - wordStart;
     if (wordDuration <= 0) return positionMs! >= wordStart ? 1.0 : 0.0;
-    final wordProgress = ((positionMs! - wordStart) / wordDuration).clamp(0.0, 1.0);
+    final wordProgress =
+        ((positionMs! - wordStart) / wordDuration).clamp(0.0, 1.0);
     if (wordProgress <= 0.0) return 0.0;
     final charThreshold = (charIndex + 1) / totalChars;
     if (wordProgress >= charThreshold) return 1.0;
     final charStartThreshold = charIndex / totalChars;
-    return ((wordProgress - charStartThreshold) / (charThreshold - charStartThreshold)).clamp(0.0, 1.0);
+    return ((wordProgress - charStartThreshold) /
+            (charThreshold - charStartThreshold))
+        .clamp(0.0, 1.0);
   }
 
   @override
@@ -553,11 +582,14 @@ class _ReferenceCharItem extends StatelessWidget {
     final lift = _calcCharLift();
     final progress = _calcHighlightProgress();
     final isLifted = lift > 0.0;
+    final themeForFont = Theme.of(context);
+    final fontFamily = themeForFont.textTheme.bodyMedium?.fontFamily ??
+        themeForFont.textTheme.bodySmall?.fontFamily;
 
     return TweenAnimationBuilder<double>(
       duration: const Duration(milliseconds: 450),
       curve: Curves.easeOutCubic,
-      tween: Tween(begin: 0.0, end: isLifted ? -4.0 : 0.0),
+      tween: Tween(begin: 0.0, end: isLifted ? -2.0 : 0.0),
       builder: (context, yOffset, child) {
         return Transform.translate(
           offset: Offset(0, yOffset),
@@ -567,9 +599,11 @@ class _ReferenceCharItem extends StatelessWidget {
               Text(
                 char,
                 style: TextStyle(
-                  fontFamily: 'sans-serif',
+                  fontFamily: fontFamily,
                   fontSize: fontSize,
-                  fontVariations: [FontVariation('wght', config.fontWeight.toDouble())],
+                  fontVariations: [
+                    FontVariation('wght', config.fontWeight.toDouble())
+                  ],
                   fontWeight: config.discreteFontWeight(config.fontWeight),
                   height: config.primaryLineHeight(config.fontWeight),
                 ),
@@ -593,10 +627,12 @@ class _ReferenceCharItem extends StatelessWidget {
                   child: Text(
                     char,
                     style: TextStyle(
-                      fontFamily: 'sans-serif',
+                      fontFamily: fontFamily,
                       color: Colors.white,
                       fontSize: fontSize,
-                      fontVariations: [FontVariation('wght', config.fontWeight.toDouble())],
+                      fontVariations: [
+                        FontVariation('wght', config.fontWeight.toDouble())
+                      ],
                       fontWeight: config.discreteFontWeight(config.fontWeight),
                       height: config.primaryLineHeight(config.fontWeight),
                     ),
@@ -640,8 +676,9 @@ class _SyncWordWrap extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final progress = _calcWordProgress();
-    final isStarted = positionMs != null && positionMs! >= word.start.inMilliseconds.toDouble();
-    
+    final isStarted = positionMs != null &&
+        positionMs! >= word.start.inMilliseconds.toDouble();
+
     final dimColor = scheme.onSurface.withValues(alpha: 0.25);
 
     return TweenAnimationBuilder<double>(
@@ -689,10 +726,10 @@ class _SyncWordWrap extends StatelessWidget {
 
 // 辅助转换函数
 WrapAlignment _getWrapAlignment(LyricTextAlign align) => switch (align) {
-  LyricTextAlign.left => WrapAlignment.start,
-  LyricTextAlign.center => WrapAlignment.center,
-  LyricTextAlign.right => WrapAlignment.end,
-};
+      LyricTextAlign.left => WrapAlignment.start,
+      LyricTextAlign.center => WrapAlignment.center,
+      LyricTextAlign.right => WrapAlignment.end,
+    };
 
 class _LrcLineContent extends StatelessWidget {
   const _LrcLineContent({
@@ -706,13 +743,18 @@ class _LrcLineContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (lrcLine.isBlank) {
-      // 逐行模式下不用间奏动画
-      final displayMode = context.watch<LyricViewController>().lyricDisplayMode;
       if (lrcLine.length > const Duration(seconds: 3) &&
           isMainLine &&
-          displayMode != LyricDisplayMode.lineByLine) {
+          lrcLine.start == Duration.zero) {
         final config = context.watch<LyricViewController>().renderConfig;
-        return LyricTransitionTile(lrcLine: lrcLine, alignment: config.textAlign, useMaterialYouColor: AppSettings.instance.useMaterialYouForTransition);
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12.0),
+          child: LyricTransitionTile(
+              lrcLine: lrcLine,
+              alignment: config.textAlign,
+              useMaterialYouColor:
+                  AppSettings.instance.useMaterialYouForTransition),
+        );
       } else {
         return const SizedBox.shrink();
       }
@@ -721,16 +763,21 @@ class _LrcLineContent extends StatelessWidget {
     if (lrcLine.isMetadata) {
       final lyricViewController = context.watch<LyricViewController>();
       final config = lyricViewController.renderConfig;
+      final themeMeta = Theme.of(context);
+      final fontFamilyMeta = themeMeta.textTheme.bodyMedium?.fontFamily ??
+          themeMeta.textTheme.bodySmall?.fontFamily;
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4.0),
         child: Text(
           lrcLine.content,
           style: _lyricTextStyle(
             config: config,
-            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70),
+            color:
+                Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70),
             fontSize: config.primaryFontSize(isMainLine: isMainLine) * 0.85,
             weight: config.fontWeight - 100,
             scheme: Theme.of(context).colorScheme,
+            fontFamily: fontFamilyMeta,
           ),
           textAlign: config.textAlign == LyricTextAlign.left
               ? TextAlign.left
@@ -742,6 +789,9 @@ class _LrcLineContent extends StatelessWidget {
     }
 
     final scheme = Theme.of(context).colorScheme;
+    final themeFont = Theme.of(context);
+    final fontFamily = themeFont.textTheme.bodyMedium?.fontFamily ??
+        themeFont.textTheme.bodySmall?.fontFamily;
     final lyricViewController = context.watch<LyricViewController>();
     final config = lyricViewController.renderConfig;
 
@@ -770,11 +820,13 @@ class _LrcLineContent extends StatelessWidget {
         fontWeight,
         config: config,
         colorOverride: primaryColor,
+        fontFamily: fontFamily,
       )
     ];
     if (showTranslation) {
       final transTexts = <String>[];
-      if (lrcLine.translation != null && lrcLine.translation!.trim().isNotEmpty) {
+      if (lrcLine.translation != null &&
+          lrcLine.translation!.trim().isNotEmpty) {
         transTexts.add(lrcLine.translation!);
       }
       for (var i = 1; i < splited.length; i++) {
@@ -798,6 +850,7 @@ class _LrcLineContent extends StatelessWidget {
           fontWeight,
           config: config,
           opacity: isMainLine ? 0.7 : 0.5,
+          fontFamily: fontFamily,
         ));
       }
     }
@@ -813,6 +866,7 @@ class _LrcLineContent extends StatelessWidget {
         fontWeight - 100,
         config: config,
         opacity: 0.70 * 0.5,
+        fontFamily: fontFamily,
       ));
     }
 
@@ -831,7 +885,10 @@ class _LrcLineContent extends StatelessWidget {
 
   Text buildPrimaryText(String text, ColorScheme scheme, LyricTextAlign align,
       double fontSize, int fontWeight,
-      {required LyricRenderConfig config, double opacity = 1.0, Color? colorOverride}) {
+      {required LyricRenderConfig config,
+      double opacity = 1.0,
+      Color? colorOverride,
+      String? fontFamily}) {
     return Text(
       text,
       softWrap: true,
@@ -848,13 +905,16 @@ class _LrcLineContent extends StatelessWidget {
         weight: fontWeight,
         scheme: scheme,
         height: config.primaryLineHeight(fontWeight),
+        fontFamily: fontFamily,
       ),
     );
   }
 
   Text buildSecondaryText(String text, ColorScheme scheme, LyricTextAlign align,
       double fontSize, int fontWeight,
-      {required LyricRenderConfig config, double opacity = 0.70}) {
+      {required LyricRenderConfig config,
+      double opacity = 0.70,
+      String? fontFamily}) {
     final translationWeight = (fontWeight - 50).clamp(100, 900);
     return Text(
       text,
@@ -872,6 +932,7 @@ class _LrcLineContent extends StatelessWidget {
         weight: translationWeight,
         scheme: scheme,
         height: config.translationLineHeight(fontWeight),
+        fontFamily: fontFamily,
       ),
     );
   }
@@ -906,7 +967,8 @@ class _LyricTransitionTileState extends State<LyricTransitionTile> {
   @override
   void initState() {
     super.initState();
-    controller = LyricTransitionTileController(widget.lrcLine, widget.syncLine, widget.enableBreathing);
+    controller = LyricTransitionTileController(
+        widget.lrcLine, widget.syncLine, widget.enableBreathing);
   }
 
   @override
@@ -915,8 +977,8 @@ class _LyricTransitionTileState extends State<LyricTransitionTile> {
     if (oldWidget.lrcLine != widget.lrcLine ||
         oldWidget.syncLine != widget.syncLine) {
       controller.dispose();
-      controller =
-          LyricTransitionTileController(widget.lrcLine, widget.syncLine, widget.enableBreathing);
+      controller = LyricTransitionTileController(
+          widget.lrcLine, widget.syncLine, widget.enableBreathing);
     }
   }
 
@@ -935,7 +997,7 @@ class _LyricTransitionTileState extends State<LyricTransitionTile> {
       return const SizedBox.shrink();
     }
 
-    final align = widget.alignment ?? LyricTextAlign.center;
+    final align = widget.alignment ?? LyricTextAlign.left;
     final alignment = switch (align) {
       LyricTextAlign.left => Alignment.centerLeft,
       LyricTextAlign.center => Alignment.center,
@@ -967,14 +1029,11 @@ class _LyricTransitionTileState extends State<LyricTransitionTile> {
         alignment: alignment,
         child: SizedBox(
           width: 120.0,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 18, 12, 6),
-            child: CustomPaint(
-              painter: LyricTransitionPainter(
-                scheme,
-                controller,
-                useMaterialYouColor: widget.useMaterialYouColor,
-              ),
+          child: CustomPaint(
+            painter: LyricTransitionPainter(
+              scheme,
+              controller,
+              useMaterialYouColor: widget.useMaterialYouColor,
             ),
           ),
         ),
@@ -995,25 +1054,43 @@ class LyricTransitionPainter extends CustomPainter {
 
   final double radius = 6;
 
-  LyricTransitionPainter(this.scheme, this.controller, {this.compact = false, this.useMaterialYouColor = true})
+  LyricTransitionPainter(this.scheme, this.controller,
+      {this.compact = false, this.useMaterialYouColor = true})
       : super(repaint: controller);
 
   @override
   void paint(Canvas canvas, Size size) {
-    final a1 = (255 * (0.05 + min(controller.progress * 3, 1) * 0.95))
+    final progress = controller.progress.clamp(0.0, 1.0);
+    final enterOpacity =
+        Curves.easeOutCubic.transform((progress / 0.12).clamp(0.0, 1.0));
+    final exitOpacity = Curves.easeOutCubic
+        .transform(((1.0 - progress) / 0.18).clamp(0.0, 1.0));
+    final opacityEnvelope = enterOpacity * exitOpacity;
+
+    final a1 = (255 *
+            opacityEnvelope *
+            (0.05 + min(controller.progress * 3, 1) * 0.95))
         .round()
         .clamp(0, 255);
-    final a2 =
-        (255 * (0.05 + min(max(controller.progress - 1 / 3, 0) * 3, 1) * 0.95))
-            .round()
-            .clamp(0, 255);
-    final a3 =
-        (255 * (0.05 + min(max(controller.progress - 2 / 3, 0) * 3, 1) * 0.95))
-            .round()
-            .clamp(0, 255);
-    circlePaint1.color = (useMaterialYouColor ? scheme.onSecondaryContainer : Colors.white).withAlpha(a1);
-    circlePaint2.color = (useMaterialYouColor ? scheme.onSecondaryContainer : Colors.white).withAlpha(a2);
-    circlePaint3.color = (useMaterialYouColor ? scheme.onSecondaryContainer : Colors.white).withAlpha(a3);
+    final a2 = (255 *
+            opacityEnvelope *
+            (0.05 + min(max(controller.progress - 1 / 3, 0) * 3, 1) * 0.95))
+        .round()
+        .clamp(0, 255);
+    final a3 = (255 *
+            opacityEnvelope *
+            (0.05 + min(max(controller.progress - 2 / 3, 0) * 3, 1) * 0.95))
+        .round()
+        .clamp(0, 255);
+    circlePaint1.color =
+        (useMaterialYouColor ? scheme.onSecondaryContainer : Colors.white)
+            .withAlpha(a1);
+    circlePaint2.color =
+        (useMaterialYouColor ? scheme.onSecondaryContainer : Colors.white)
+            .withAlpha(a2);
+    circlePaint3.color =
+        (useMaterialYouColor ? scheme.onSecondaryContainer : Colors.white)
+            .withAlpha(a3);
 
     if (compact) {
       final r = 4 + controller.sizeFactor * 0.5;
@@ -1026,9 +1103,10 @@ class LyricTransitionPainter extends CustomPainter {
       canvas.drawCircle(c3, r, circlePaint3);
     } else {
       final rWithFactor = radius + controller.sizeFactor;
-      final c1 = Offset(rWithFactor, 8);
-      final c2 = Offset(4 * rWithFactor, 8);
-      final c3 = Offset(7 * rWithFactor, 8);
+      final cy = size.height / 2;
+      final c1 = Offset(rWithFactor, cy);
+      final c2 = Offset(4 * rWithFactor, cy);
+      final c3 = Offset(7 * rWithFactor, cy);
       canvas.drawCircle(c1, rWithFactor, circlePaint1);
       canvas.drawCircle(c2, rWithFactor, circlePaint2);
       canvas.drawCircle(c3, rWithFactor, circlePaint3);
@@ -1071,33 +1149,42 @@ class _TransitionControllerManager {
 
   void _ensureSubscribed() {
     if (_sharedPositionSub != null) return;
-    _sharedPositionSub =
-        PlayService.instance.playbackService.positionStream.listen(
-      (position) {
-        final now = DateTime.now().millisecondsSinceEpoch;
-        if (now - _lastUpdateMs < _throttleMs) return;
-        _lastUpdateMs = now;
+    try {
+      _sharedPositionSub =
+          PlayService.instance.playbackService.positionStream.listen(
+        (position) {
+          final now = DateTime.now().millisecondsSinceEpoch;
+          if (now - _lastUpdateMs < _throttleMs) return;
+          _lastUpdateMs = now;
 
-        // 遍历快照，避免并发修改
-        final controllers = List<LyricTransitionTileController>.from(
-          _controllers,
-        );
-        for (final c in controllers) {
-          if (c._disposed) {
-            _controllers.remove(c);
-          } else {
-            c._updateProgress(position);
+          // 遍历快照，避免并发修改
+          final controllers = List<LyricTransitionTileController>.from(
+            _controllers,
+          );
+          for (final c in controllers) {
+            if (c._disposed) {
+              _controllers.remove(c);
+            } else {
+              c._updateProgress(position);
+            }
           }
-        }
 
-        // 如果全部已 dispose，取消订阅
-        if (_controllers.isEmpty) {
+          // 如果全部已 dispose，取消订阅
+          if (_controllers.isEmpty) {
+            _sharedPositionSub?.cancel();
+            _sharedPositionSub = null;
+          }
+        },
+        onError: (_) {
+          // 流错误时清理订阅，下次 register 会重新订阅
           _sharedPositionSub?.cancel();
           _sharedPositionSub = null;
-        }
-      },
-      onError: (_) {},
-    );
+        },
+        cancelOnError: false,
+      );
+    } catch (_) {
+      _sharedPositionSub = null;
+    }
   }
 }
 
@@ -1120,7 +1207,8 @@ class LyricTransitionTileController extends ChangeNotifier {
   late final Ticker factorTicker;
   bool _disposed = false;
 
-  LyricTransitionTileController([this.lrcLine, this.syncLine, bool enableBreathing = true]) {
+  LyricTransitionTileController(
+      [this.lrcLine, this.syncLine, bool enableBreathing = true]) {
     _TransitionControllerManager.instance.register(this);
     if (enableBreathing) {
       factorTicker = Ticker((elapsed) {
@@ -1152,6 +1240,13 @@ class LyricTransitionTileController extends ChangeNotifier {
     } else {
       startInMs = syncLine!.start.inMilliseconds;
       lengthInMs = syncLine!.length.inMilliseconds;
+    }
+    // 防止除零：lengthInMs 可能因数据异常为 0
+    if (lengthInMs <= 0) {
+      progress = 1.0;
+      notifyListeners();
+      dispose();
+      return;
     }
     final sinceStart = position * 1000 - startInMs;
     progress = max(sinceStart, 0) / lengthInMs;
