@@ -54,7 +54,8 @@ class LyricViewController extends ChangeNotifier {
 
       final found = lyric?.lines.any(
             (line) => line.romanLyric != null && line.romanLyric!.isNotEmpty,
-          ) ?? false;
+          ) ??
+          false;
 
       if (found != hasRomanLyric) {
         hasRomanLyric = found;
@@ -114,16 +115,11 @@ class LyricViewController extends ChangeNotifier {
     notifyListeners();
   }
 
-  LyricDisplayMode get lyricDisplayMode => AppSettings.instance.lyricDisplayMode;
+  LyricDisplayMode get lyricDisplayMode =>
+      AppSettings.instance.lyricDisplayMode;
 
-  ZhConversionMode get zhConversionMode => AppSettings.instance.zhConversionMode;
-
-  bool get removeEmptyLines => AppSettings.instance.removeEmptyLines;
-
-  void setRemoveEmptyLines(bool value) {
-    AppSettings.instance.removeEmptyLines = value;
-    notifyListeners();
-  }
+  ZhConversionMode get zhConversionMode =>
+      AppSettings.instance.zhConversionMode;
 
   void switchLyricTextAlign() {
     lyricTextAlign = switch (lyricTextAlign) {
@@ -398,3 +394,5 @@ class _FontWeightBtn extends StatelessWidget {
     );
   }
 }
+
+
