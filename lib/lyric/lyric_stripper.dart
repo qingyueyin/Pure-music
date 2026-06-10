@@ -4,9 +4,31 @@ import 'package:pure_music/lyric/exclude_data.dart';
 
 // 分隔符列表（用于判断关键词后的字符是否为有效分隔符）
 const _separators = <String>[
-  ':', '：', ',', '，', '.', '。', '!', '！', '-', '_',
-  '(', '（', '[', '【', '{', '『', '「',
-  ')', '）', ']', '】', '}', '』', '」', '》',
+  ':',
+  '：',
+  ',',
+  '，',
+  '.',
+  '。',
+  '!',
+  '！',
+  '-',
+  '_',
+  '(',
+  '（',
+  '[',
+  '【',
+  '{',
+  '『',
+  '「',
+  ')',
+  '）',
+  ']',
+  '】',
+  '}',
+  '』',
+  '」',
+  '》',
 ];
 
 // 括号对（用于清理文本前后的括号包裹）
@@ -26,6 +48,7 @@ class StripOptions {
   final List<String> keywords;
   final List<RegExp> regexes;
   final List<RegExp> softRegexes;
+
   /// 歌曲名+歌手，用于过滤第 1 行 "歌名 - 歌手" 格式
   final String? matchTitle;
   final List<String> matchArtists;
@@ -65,7 +88,9 @@ String _cleanText(String text) {
       final open = pair[0], close = pair[1];
       if (processed.startsWith(open)) {
         if (processed.endsWith(close)) {
-          processed = processed.substring(open.length, processed.length - close.length).trim();
+          processed = processed
+              .substring(open.length, processed.length - close.length)
+              .trim();
           changed = true;
           break;
         }
@@ -138,6 +163,46 @@ bool _looksLikeMetadata(String text, List<RegExp> softRegexes) {
   return false;
 }
 
+bool _isBracketedTitleArtistLine(String text) {
+  final cleaned = text.trim();
+  return RegExp(
+    r'^(?:【[^】]+】|\[[^\]]+\])\s*[-－–—]\s*(?:【[^】]+】|\[[^\]]+\])$',
+  ).hasMatch(cleaned);
+}
+
+bool _isUnbracketedTitleArtistLine(String text) {
+  final cleaned = text.trim();
+  if (cleaned.length > 90) return false;
+  final match = RegExp(r'\s[-－–—]\s').firstMatch(cleaned);
+  if (match == null) return false;
+
+  final left = cleaned.substring(0, match.start).trim();
+  final right = cleaned.substring(match.end).trim();
+  if (left.isEmpty || right.isEmpty) return false;
+
+  return (_looksLikeArtistList(left) && _looksLikeSongTitle(right)) ||
+      (_looksLikeSongTitle(left) && _looksLikeArtistList(right));
+}
+
+bool _looksLikeArtistList(String text) {
+  if (RegExp(r'[/、,&]|\b(?:feat\.?|ft\.?|with|x)\b', caseSensitive: false)
+      .hasMatch(text)) {
+    return true;
+  }
+  if (RegExp(r'[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]').hasMatch(text) &&
+      text.length <= 30) {
+    return true;
+  }
+  final words = RegExp(r"[A-Z][a-zA-Z0-9']+").allMatches(text).length;
+  return words >= 1 && text.length <= 40;
+}
+
+bool _looksLikeSongTitle(String text) {
+  if (text.length < 2 || text.length > 70) return false;
+  return RegExp(r'[A-Za-z0-9\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]')
+      .hasMatch(text);
+}
+
 /// 判断一行是否已被清空（适用于 blankMetadataLines 后的检查）
 bool _isLineBlanked(LyricLine line) {
   if (line is SyncLyricLine) return line.words.isEmpty;
@@ -168,7 +233,8 @@ int _findHeaderCutoff(
   for (int i = startIndex; i < limit && i < lines.length; i++) {
     final text = _lineText(lines[i]);
     final transText = lines[i].translation ?? '';
-    final strict = (text.isNotEmpty && _isStrictMatch(text, keywords, regexes)) ||
+    final strict = (text.isNotEmpty &&
+            _isStrictMatch(text, keywords, regexes)) ||
         (transText.isNotEmpty && _isStrictMatch(transText, keywords, regexes));
     final weak = (text.isNotEmpty && _looksLikeMetadata(text, softRegexes)) ||
         (transText.isNotEmpty && _looksLikeMetadata(transText, softRegexes));
@@ -195,7 +261,8 @@ int _findFooterCutoff(
   for (int i = lines.length - 1; i >= scanEnd; i--) {
     final text = _lineText(lines[i]);
     final transText = lines[i].translation ?? '';
-    final strict = (text.isNotEmpty && _isStrictMatch(text, keywords, regexes)) ||
+    final strict = (text.isNotEmpty &&
+            _isStrictMatch(text, keywords, regexes)) ||
         (transText.isNotEmpty && _isStrictMatch(transText, keywords, regexes));
     final weak = (text.isNotEmpty && _looksLikeMetadata(text, softRegexes)) ||
         (transText.isNotEmpty && _looksLikeMetadata(transText, softRegexes));
@@ -213,7 +280,8 @@ int _findFooterCutoff(
 /// 1. 强匹配（关键词+分隔符 / 正则）→ 确定为元数据行
 /// 2. 弱匹配（含冒号/连字符）→ 若夹在强匹配行之间则视为元数据
 /// 3. 真正的歌词行作为防火墙，阻止误删
-List<LyricLine> stripLyricMetadata(List<LyricLine>? lines, [StripOptions? options]) {
+List<LyricLine> stripLyricMetadata(List<LyricLine>? lines,
+    [StripOptions? options]) {
   if (lines == null || lines.isEmpty) return [];
   options ??= const StripOptions();
 
@@ -225,12 +293,15 @@ List<LyricLine> stripLyricMetadata(List<LyricLine>? lines, [StripOptions? option
     final firstTrans = (lines[0].translation ?? '').toLowerCase();
     final combined = '$firstText $firstTrans';
     if (combined.contains(options.matchTitle!.toLowerCase())) {
-      final hasArtist = options.matchArtists.any((a) => combined.contains(a.toLowerCase()));
+      final hasArtist =
+          options.matchArtists.any((a) => combined.contains(a.toLowerCase()));
       if (hasArtist) scanStart = 1;
     }
   }
 
-  if (options.keywords.isEmpty && options.regexes.isEmpty && options.softRegexes.isEmpty) {
+  if (options.keywords.isEmpty &&
+      options.regexes.isEmpty &&
+      options.softRegexes.isEmpty) {
     return lines;
   }
 
@@ -239,12 +310,20 @@ List<LyricLine> stripLyricMetadata(List<LyricLine>? lines, [StripOptions? option
   final footerLimit = _scanLimit(totalLines, 0.2, 20, 50);
 
   final startIdx = _findHeaderCutoff(
-    lines, scanStart,
-    options.keywords, options.regexes, options.softRegexes, headerLimit,
+    lines,
+    scanStart,
+    options.keywords,
+    options.regexes,
+    options.softRegexes,
+    headerLimit,
   );
   final endIdx = _findFooterCutoff(
-    lines, startIdx,
-    options.keywords, options.regexes, options.softRegexes, footerLimit,
+    lines,
+    startIdx,
+    options.keywords,
+    options.regexes,
+    options.softRegexes,
+    footerLimit,
   );
 
   if (startIdx == 0 && endIdx == totalLines) return lines;
@@ -259,102 +338,127 @@ List<LyricLine> stripLyricMetadata(List<LyricLine>? lines, [StripOptions? option
 // 流媒体平台审查策略各异（保留首尾字母 / 只保留首字母 / 纯星号），
 // 每个词覆盖多种常见变体。替换是链式的，派生后缀（-ing/-ed/-er/-ty）
 // 由基础词规则自动处理，无需单独列出。
+// 注意：规则按从具体到通用的顺序排列，避免通用模式过早匹配。
 final List<_ProfanityRule> _profanityRules = [
   // ── fuck / fucking / fucker / fucked / motherfucker ──
-  _ProfanityRule(RegExp(r'mother\*{4}er', caseSensitive: false), 'motherfucker'),
+  _ProfanityRule(
+      RegExp(r'mother\*{4}er', caseSensitive: false), 'motherfucker'),
+  _ProfanityRule(RegExp(r'f\*{3}k', caseSensitive: false), 'fuck'), // f***k
   _ProfanityRule(RegExp(r'f\*{2}k', caseSensitive: false), 'fuck'),
   _ProfanityRule(RegExp(r'fu\*k', caseSensitive: false), 'fuck'),
-  _ProfanityRule(RegExp(r'f\*{3}(?!\w)', caseSensitive: false), 'fuck'),        // f*** → fuck
-  _ProfanityRule(RegExp(r'\*{4}ing', caseSensitive: false), 'fucking'),          // ****ing
-  _ProfanityRule(RegExp(r'\*{4}er', caseSensitive: false), 'fucker'),            // ****er
-  _ProfanityRule(RegExp(r'\*{4}ed', caseSensitive: false), 'fucked'),            // ****ed
+  _ProfanityRule(
+      RegExp(r'f\*{3}(?!\w)', caseSensitive: false), 'fuck'), // f*** → fuck
+  _ProfanityRule(
+      RegExp(r'\*{4}ing', caseSensitive: false), 'fucking'), // ****ing
+  _ProfanityRule(RegExp(r'\*{4}er', caseSensitive: false), 'fucker'), // ****er
+  _ProfanityRule(RegExp(r'\*{4}ed', caseSensitive: false), 'fucked'), // ****ed
 
   // ── shit / bullshit ──
   _ProfanityRule(RegExp(r'bulls\*{2}t', caseSensitive: false), 'bullshit'),
   _ProfanityRule(RegExp(r'bullsh\*t', caseSensitive: false), 'bullshit'),
-  _ProfanityRule(RegExp(r's\*{2}t', caseSensitive: false), 'shit'),              // s**t
-  _ProfanityRule(RegExp(r'sh\*t', caseSensitive: false), 'shit'),                // sh*t
-  _ProfanityRule(RegExp(r'sh\*{2}', caseSensitive: false), 'shit'),              // sh**
+  _ProfanityRule(RegExp(r'sh\*{2}t', caseSensitive: false), 'shit'), // sh**t
+  _ProfanityRule(RegExp(r's\*{2}t', caseSensitive: false), 'shit'), // s**t
+  _ProfanityRule(RegExp(r'sh\*t', caseSensitive: false), 'shit'), // sh*t
+  _ProfanityRule(RegExp(r'sh\*{2}(?!\w)', caseSensitive: false),
+      'shit'), // sh** → shit (only at word end)
 
   // ── piss / pissed ──
-  _ProfanityRule(RegExp(r'p\*{2}sed', caseSensitive: false), 'pissed'),          // p**sed
-  _ProfanityRule(RegExp(r'pi\*{2}ed', caseSensitive: false), 'pissed'),          // pi**ed
-  _ProfanityRule(RegExp(r'p\*{2}s', caseSensitive: false), 'piss'),              // p**s
-  _ProfanityRule(RegExp(r'pi\*s', caseSensitive: false), 'piss'),                // pi*s
+  _ProfanityRule(
+      RegExp(r'p\*{2}sed', caseSensitive: false), 'pissed'), // p**sed
+  _ProfanityRule(
+      RegExp(r'pi\*{2}ed', caseSensitive: false), 'pissed'), // pi**ed
+  _ProfanityRule(RegExp(r'p\*{2}s', caseSensitive: false), 'piss'), // p**s
+  _ProfanityRule(RegExp(r'pi\*s', caseSensitive: false), 'piss'), // pi*s
 
   // ── pussy ──
-  _ProfanityRule(RegExp(r'p\*{3}y', caseSensitive: false), 'pussy'),             // p***y
-  _ProfanityRule(RegExp(r'pu\*{2}y', caseSensitive: false), 'pussy'),            // pu**y
+  _ProfanityRule(RegExp(r'p\*{3}y', caseSensitive: false), 'pussy'), // p***y
+  _ProfanityRule(RegExp(r'pu\*{2}y', caseSensitive: false), 'pussy'), // pu**y
 
   // ── bitch ──
-  _ProfanityRule(RegExp(r'b\*{3}h', caseSensitive: false), 'bitch'),             // b***h
-  _ProfanityRule(RegExp(r'bi\*{2}h', caseSensitive: false), 'bitch'),            // bi**h
+  _ProfanityRule(RegExp(r'b\*{3}h', caseSensitive: false), 'bitch'), // b***h
+  _ProfanityRule(RegExp(r'bi\*{2}h', caseSensitive: false), 'bitch'), // bi**h
+  _ProfanityRule(
+      RegExp(r'b\*{4}(?!\w)', caseSensitive: false), 'bitch'), // b**** → bitch
 
   // ── cunt ──
-  _ProfanityRule(RegExp(r'c\*{2}t', caseSensitive: false), 'cunt'),              // c**t
-  _ProfanityRule(RegExp(r'cu\*t', caseSensitive: false), 'cunt'),                // cu*t
+  _ProfanityRule(RegExp(r'cu\*{2}t', caseSensitive: false), 'cunt'), // cu**t
+  _ProfanityRule(RegExp(r'c\*{2}t', caseSensitive: false), 'cunt'), // c**t
+  _ProfanityRule(RegExp(r'cu\*t', caseSensitive: false), 'cunt'), // cu*t
 
   // ── cock ──
-  _ProfanityRule(RegExp(r'c\*{2}k', caseSensitive: false), 'cock'),              // c**k
-  _ProfanityRule(RegExp(r'co\*k', caseSensitive: false), 'cock'),                // co*k
-  _ProfanityRule(RegExp(r'co\*{2}', caseSensitive: false), 'cock'),              // co**
+  _ProfanityRule(RegExp(r'c\*{3}k', caseSensitive: false), 'cock'), // c***k
+  _ProfanityRule(RegExp(r'c\*{2}k', caseSensitive: false), 'cock'), // c**k
+  _ProfanityRule(RegExp(r'co\*k', caseSensitive: false), 'cock'), // co*k
+  _ProfanityRule(
+      RegExp(r'co\*{2}(?!\w)', caseSensitive: false), 'cock'), // co** → cock
 
   // ── dick ──
-  _ProfanityRule(RegExp(r'd\*{2}k', caseSensitive: false), 'dick'),              // d**k
-  _ProfanityRule(RegExp(r'di\*k', caseSensitive: false), 'dick'),                // di*k
+  _ProfanityRule(RegExp(r'd\*{2}k', caseSensitive: false), 'dick'), // d**k
+  _ProfanityRule(RegExp(r'di\*k', caseSensitive: false), 'dick'), // di*k
 
   // ── damn ──
-  _ProfanityRule(RegExp(r'd\*{2}n', caseSensitive: false), 'damn'),              // d**n
-  _ProfanityRule(RegExp(r'da\*n', caseSensitive: false), 'damn'),                // da*n
+  _ProfanityRule(RegExp(r'd\*{2}n', caseSensitive: false), 'damn'), // d**n
+  _ProfanityRule(RegExp(r'da\*n', caseSensitive: false), 'damn'), // da*n
 
   // ── ass / asshole ──
-  _ProfanityRule(RegExp(r'ass\*{2}le', caseSensitive: false), 'asshole'),        // ass**le
-  _ProfanityRule(RegExp(r'as\*{2}le', caseSensitive: false), 'asshole'),         // as**le
-  _ProfanityRule(RegExp(r'a\*{2}hole', caseSensitive: false), 'asshole'),        // a**hole
-  _ProfanityRule(RegExp(r'a\*{2}(?!\w)', caseSensitive: false), 'ass'),          // a** → ass
+  _ProfanityRule(
+      RegExp(r'ass\*{2}le', caseSensitive: false), 'asshole'), // ass**le
+  _ProfanityRule(
+      RegExp(r'as\*{2}le', caseSensitive: false), 'asshole'), // as**le
+  _ProfanityRule(
+      RegExp(r'a\*{2}hole', caseSensitive: false), 'asshole'), // a**hole
+  _ProfanityRule(
+      RegExp(r'a\*{2}(?!\w)', caseSensitive: false), 'ass'), // a** → ass
 
   // ── whore ──
-  _ProfanityRule(RegExp(r'w\*{3}e', caseSensitive: false), 'whore'),             // w***e
-  _ProfanityRule(RegExp(r'wh\*{2}e', caseSensitive: false), 'whore'),            // wh**e
+  _ProfanityRule(RegExp(r'w\*{3}e', caseSensitive: false), 'whore'), // w***e
+  _ProfanityRule(RegExp(r'wh\*{2}e', caseSensitive: false), 'whore'), // wh**e
 
   // ── slut ── (s**t 已分配给 shit，sl*t 是 slut 的专属模式)
-  _ProfanityRule(RegExp(r'sl\*t', caseSensitive: false), 'slut'),                // sl*t
+  _ProfanityRule(RegExp(r'sl\*t', caseSensitive: false), 'slut'), // sl*t
 
   // ── bastard ──
-  _ProfanityRule(RegExp(r'bas\*{4}', caseSensitive: false), 'bastard'),           // bas****
-  _ProfanityRule(RegExp(r'b\*{2}tard', caseSensitive: false), 'bastard'),         // b**tard
+  _ProfanityRule(
+      RegExp(r'bas\*{4}', caseSensitive: false), 'bastard'), // bas****
+  _ProfanityRule(
+      RegExp(r'b\*{2}tard', caseSensitive: false), 'bastard'), // b**tard
 
   // ── prick ──
-  _ProfanityRule(RegExp(r'pr\*{2}k', caseSensitive: false), 'prick'),            // pr**k
+  _ProfanityRule(RegExp(r'pr\*{2}k', caseSensitive: false), 'prick'), // pr**k
 
   // ── twat ──
-  _ProfanityRule(RegExp(r'tw\*t', caseSensitive: false), 'twat'),                // tw*t
+  _ProfanityRule(RegExp(r'tw\*t', caseSensitive: false), 'twat'), // tw*t
 
   // ── wanker ──
-  _ProfanityRule(RegExp(r'w\*{2}ker', caseSensitive: false), 'wanker'),          // w**ker
-  _ProfanityRule(RegExp(r'wa\*{2}er', caseSensitive: false), 'wanker'),          // wa**er
+  _ProfanityRule(
+      RegExp(r'w\*{2}ker', caseSensitive: false), 'wanker'), // w**ker
+  _ProfanityRule(
+      RegExp(r'wa\*{2}er', caseSensitive: false), 'wanker'), // wa**er
 
   // ── sucker ──
-  _ProfanityRule(RegExp(r's\*{2}ker', caseSensitive: false), 'sucker'),          // s**ker
-  _ProfanityRule(RegExp(r'su\*{2}er', caseSensitive: false), 'sucker'),          // su**er
+  _ProfanityRule(
+      RegExp(r's\*{2}ker', caseSensitive: false), 'sucker'), // s**ker
+  _ProfanityRule(
+      RegExp(r'su\*{2}er', caseSensitive: false), 'sucker'), // su**er
 
   // ── fag / faggot ──
-  _ProfanityRule(RegExp(r'f\*{3}ot', caseSensitive: false), 'faggot'),           // f***ot
-  _ProfanityRule(RegExp(r'fa\*{3}t', caseSensitive: false), 'faggot'),           // fa***t
-  _ProfanityRule(RegExp(r'f\*g(?!\w)', caseSensitive: false), 'fag'),            // f*g → fag
+  _ProfanityRule(RegExp(r'f\*{3}ot', caseSensitive: false), 'faggot'), // f***ot
+  _ProfanityRule(RegExp(r'fa\*{3}t', caseSensitive: false), 'faggot'), // fa***t
+  _ProfanityRule(
+      RegExp(r'f\*g(?!\w)', caseSensitive: false), 'fag'), // f*g → fag
 
   // ── retard ──
-  _ProfanityRule(RegExp(r'r\*{4}d', caseSensitive: false), 'retard'),            // r****d
-  _ProfanityRule(RegExp(r're\*{3}d', caseSensitive: false), 'retard'),           // re***d
+  _ProfanityRule(RegExp(r'r\*{4}d', caseSensitive: false), 'retard'), // r****d
+  _ProfanityRule(RegExp(r're\*{3}d', caseSensitive: false), 'retard'), // re***d
 
   // ── douche ──
-  _ProfanityRule(RegExp(r'do\*{3}e', caseSensitive: false), 'douche'),           // do***e
-  _ProfanityRule(RegExp(r'd\*{4}e', caseSensitive: false), 'douche'),            // d****e
+  _ProfanityRule(RegExp(r'do\*{3}e', caseSensitive: false), 'douche'), // do***e
+  _ProfanityRule(RegExp(r'd\*{4}e', caseSensitive: false), 'douche'), // d****e
 
   // ── nigga / nigger ──
-  _ProfanityRule(RegExp(r'n\*{3}a', caseSensitive: false), 'nigga'),             // n***a
-  _ProfanityRule(RegExp(r'ni\*{2}a', caseSensitive: false), 'nigga'),            // ni**a
-  _ProfanityRule(RegExp(r'n\*{4}r', caseSensitive: false), 'nigger'),            // n****r
+  _ProfanityRule(RegExp(r'n\*{3}a', caseSensitive: false), 'nigga'), // n***a
+  _ProfanityRule(RegExp(r'ni\*{2}a', caseSensitive: false), 'nigga'), // ni**a
+  _ProfanityRule(RegExp(r'n\*{4}r', caseSensitive: false), 'nigger'), // n****r
 ];
 
 class _ProfanityRule {
@@ -403,9 +507,8 @@ void applyProfanityUncensor(Lyric lyric) {
 /// 3. 真正的歌词行作为"防火墙"，阻止弱匹配蔓延
 
 /// 预编译的正则列表，避免每次调用都重新编译
-final List<RegExp> _cachedExcludeRegexes = defaultExcludeRegexes
-    .map((p) => RegExp(p, caseSensitive: false))
-    .toList();
+final List<RegExp> _cachedExcludeRegexes =
+    defaultExcludeRegexes.map((p) => RegExp(p, caseSensitive: false)).toList();
 
 final List<RegExp> _cachedExcludeSoftRegexes = defaultExcludeSoftRegexes
     .map((p) => RegExp(p, caseSensitive: false))
@@ -415,12 +518,10 @@ void blankMetadataLines(List<LyricLine> lines, [StripOptions? options]) {
   if (lines.isEmpty) return;
   options ??= const StripOptions();
 
-  final keywords = options.keywords.isNotEmpty
-      ? options.keywords
-      : defaultExcludeKeywords;
-  final regexes = options.regexes.isNotEmpty
-      ? options.regexes
-      : _cachedExcludeRegexes;
+  final keywords =
+      options.keywords.isNotEmpty ? options.keywords : defaultExcludeKeywords;
+  final regexes =
+      options.regexes.isNotEmpty ? options.regexes : _cachedExcludeRegexes;
   final softRegexes = options.softRegexes.isNotEmpty
       ? options.softRegexes
       : _cachedExcludeSoftRegexes;
@@ -445,19 +546,28 @@ void blankMetadataLines(List<LyricLine> lines, [StripOptions? options]) {
   // 增强 LRC 会把同时戳的版权行合并为 translation，必须连同 translation 一起检查
   final isStrict = List<bool>.filled(totalLines, false);
   final isWeak = List<bool>.filled(totalLines, false);
+  final isTitleArtist = List<bool>.filled(totalLines, false);
   for (int i = 0; i < totalLines; i++) {
     final text = _lineText(lines[i]);
     final transText = lines[i].translation ?? '';
-    isStrict[i] = (text.isNotEmpty && _isStrictMatch(text, keywords, regexes)) ||
+    isStrict[i] = (text.isNotEmpty &&
+            _isStrictMatch(text, keywords, regexes)) ||
         (transText.isNotEmpty && _isStrictMatch(transText, keywords, regexes));
     isWeak[i] = (text.isNotEmpty && _looksLikeMetadata(text, softRegexes)) ||
         (transText.isNotEmpty && _looksLikeMetadata(transText, softRegexes));
+    isTitleArtist[i] = (text.isNotEmpty &&
+            (_isBracketedTitleArtistLine(text) ||
+                _isUnbracketedTitleArtistLine(text))) ||
+        (transText.isNotEmpty &&
+            (_isBracketedTitleArtistLine(transText) ||
+                _isUnbracketedTitleArtistLine(transText)));
   }
 
   // ── 头部扫描：找元数据区截止位置 ──
   int lastAnyInHeader = -1;
   for (int i = 0; i < headerLimit && i < totalLines; i++) {
-    if (isStrict[i] || isWeak[i]) {
+    if (_isLineBlanked(lines[i])) continue;
+    if (isStrict[i] || isTitleArtist[i]) {
       lastAnyInHeader = i;
     } else {
       break; // 非元数据行 → 停止
@@ -470,7 +580,8 @@ void blankMetadataLines(List<LyricLine> lines, [StripOptions? options]) {
   for (int i = totalLines - 1;
       i >= (totalLines - footerLimit).clamp(0, totalLines);
       i--) {
-    if (isStrict[i] || isWeak[i]) {
+    if (_isLineBlanked(lines[i])) continue;
+    if (isStrict[i] || isTitleArtist[i]) {
       firstAnyInFooter = i;
     } else {
       break;
@@ -490,7 +601,9 @@ void blankMetadataLines(List<LyricLine> lines, [StripOptions? options]) {
   }
 
   // ── 中间区域：仅强匹配 ──
-  for (int i = headerCutoff; i < (firstAnyInFooter < totalLines ? firstAnyInFooter : totalLines); i++) {
+  for (int i = headerCutoff;
+      i < (firstAnyInFooter < totalLines ? firstAnyInFooter : totalLines);
+      i++) {
     if (isStrict[i]) {
       blankLine(lines[i]);
     }
