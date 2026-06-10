@@ -19,7 +19,9 @@ fn _extract_colors_from_image(
     image_bytes: Vec<u8>,
     num_colors: usize,
 ) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
+    // 解码图片 → 立即缩放以减小内存占用
     let img = image::load_from_memory(&image_bytes)?;
+    // 显式 drop image_bytes（已 move 进此函数，离开作用域即释放）
 
     let (width, height) = img.dimensions();
     let resize_dim = if width.max(height) > 200 {
@@ -37,13 +39,20 @@ fn _extract_colors_from_image(
         resize_dim.1,
         image::imageops::FilterType::Triangle,
     );
+    // 释放原始大图
+    drop(img);
 
     let rgba = resized.to_rgba8();
+    // 释放缩放后的图
+    drop(resized);
+
     let mut pixels: Vec<[u8; 3]> = rgba
         .pixels()
         .filter(|p| p[3] > 128)
         .map(|p| [p[0], p[1], p[2]])
         .collect();
+    // 释放 RGBA 缓冲
+    drop(rgba);
 
     if pixels.is_empty() {
         return Ok(vec![]);
@@ -51,6 +60,7 @@ fn _extract_colors_from_image(
 
     apply_apple_music_pipeline(&mut pixels);
 
+    // 转换为 Lab 色彩空间用于 k-means
     let lab_pixels: Vec<Lab> = pixels
         .iter()
         .map(|[r, g, b]| {
@@ -59,10 +69,13 @@ fn _extract_colors_from_image(
             linear.into_color()
         })
         .collect();
+    // 释放 RGB 像素（Lab 已构建完成）
+    drop(pixels);
 
-    let max_iter = 20;
-    let converge = 5.0;
-    let runs = 3;
+    // 缩减 k-means 迭代：封面取色不需要 20 轮的高精度
+    let max_iter = 10;
+    let converge = 8.0; // 放宽收敛条件
+    let runs = 2;       // 减少重复运行次数
     let seed = 0;
 
     let mut result = Kmeans::new();
@@ -79,6 +92,8 @@ fn _extract_colors_from_image(
             result = run_result;
         }
     }
+    // 释放 Lab 像素，k-means 已收敛
+    drop(lab_pixels);
 
     let sorted = Lab::sort_indexed_colors(&result.centroids, &result.indices);
 
