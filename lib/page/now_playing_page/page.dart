@@ -9,8 +9,9 @@ import 'package:pure_music/component/hotkey_ui_feedback.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/side_nav.dart';
 import 'package:pure_music/component/title_bar.dart';
-import 'package:pure_music/core/color_extraction.dart';
 import 'package:pure_music/core/cache.dart';
+import 'package:pure_music/core/color_extraction.dart';
+import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/immersive.dart';
 import 'package:pure_music/core/settings.dart';
@@ -29,6 +30,7 @@ import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/playback_service.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
+import 'package:pure_music/native/rust/api/color_extraction.dart' as rust_color;
 import 'package:pure_music/native/rust/api/tag_reader.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -62,7 +64,11 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   bool _cursorHidden = false;
   bool _lastImmersive = false;
   Color? _dominantColor;
+  List<Color>? _preExtractedPalette;
   final ColorExtractionService _colorService = ColorExtractionService();
+
+  /// 用于防重复：同一次切歌内只提取一次调色板
+  int _lastPaletteToken = -1;
 
   void _bumpCursor() {
     _cursorHideTimer?.cancel();
@@ -83,16 +89,39 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   /// Returns true if the request is stale and should be aborted.
   bool _isCoverRequestStale(int token, String expectedPath) {
     return token != _coverRequestToken ||
-           playbackService.nowPlaying?.path != expectedPath ||
-           !mounted;
+        playbackService.nowPlaying?.path != expectedPath ||
+        !mounted;
   }
 
-  Future<void> _extractDominantColor(
-    Uint8List? bytes, int token, String path) async {
-    if (bytes == null) return;
-    final color = await _colorService.extractDominantColor(bytes);
-    if (!_isCoverRequestStale(token, path) && color != null) {
-      setState(() => _dominantColor = color);
+  /// 用 Rust k-means 一次性提取调色板 + 主色。
+  /// 结果同时用于：背景 mesh gradient、ThemeProvider 种子色。
+  Future<void> _extractPaletteOnce(
+      Uint8List bytes, int token, String path) async {
+    if (_lastPaletteToken == token) return; // 已提取过
+    _lastPaletteToken = token;
+
+    try {
+      final rustColors = await rust_color.extractColorsFromImage(
+        imageBytes: bytes,
+        numColors: 4,
+      );
+      if (_isCoverRequestStale(token, path) || rustColors.isEmpty) return;
+
+      final palette = rustColors.map((argb) => Color(argb)).toList();
+      final dominant = palette.first;
+
+      // 缓存主色（供后续同步读取）
+      _colorService.cacheColorForPath(path, dominant);
+
+      setState(() {
+        _dominantColor = dominant;
+        _preExtractedPalette = palette;
+      });
+
+      // 同步更新主题种子色
+      ThemeProvider.instance.applySeedColorDirectly(dominant, path);
+    } catch (_) {
+      // Rust 提取失败，静默忽略
     }
   }
 
@@ -135,13 +164,18 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
       if (cached != null) {
         _dominantColor = cached;
       } else {
-        _extractDominantColor(aud.smallCoverBytes, token, path);
+        final smallBytes = aud.smallCoverBytes;
+        if (smallBytes != null) {
+          _extractPaletteOnce(smallBytes, token, path);
+        }
       }
       // 切歌也立即用小封面喂背景，让 mesh gradient 立刻开始取色过渡
-      if (aud.smallCoverBytes != null) {
-        _nowPlayingCoverBytes = aud.smallCoverBytes;
+      final smallBytes = aud.smallCoverBytes;
+      if (smallBytes != null) {
+        _nowPlayingCoverBytes = smallBytes;
       }
     }
+    _lastPaletteToken = -1; // 新歌重置 token
     if (mounted) setState(() {});
 
     _coverDebounceTimer = Timer(MotionDuration.base, () async {
@@ -161,9 +195,8 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
         if (_isCoverRequestStale(token, path)) return;
 
         if (bytes != null) {
-          if (_dominantColor == null) {
-            await _extractDominantColor(bytes, token, path);
-          }
+          // 用大图重新提取调色板（更准确），替换小图的临时结果
+          await _extractPaletteOnce(bytes, token, path);
           _nowPlayingCoverBytes = bytes;
           if (mounted) setState(() {});
         } else {
@@ -306,10 +339,13 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                                 flowSpeed: 1.0,
                                 intensity:
                                     brightness == Brightness.dark ? 1.0 : 0.9,
+                                preExtractedColors: _preExtractedPalette,
                               );
                               final softBg = _dominantColor != null
-                                  ? _softenColor(_dominantColor!, isDark: brightness == Brightness.dark)
-                                  : _softenColor(scheme.primary, isDark: brightness == Brightness.dark);
+                                  ? _softenColor(_dominantColor!,
+                                      isDark: brightness == Brightness.dark)
+                                  : _softenColor(scheme.primary,
+                                      isDark: brightness == Brightness.dark);
                               return NowPlayingBackground(
                                 mode: backgroundMode,
                                 inputs: backgroundInputs,
@@ -328,8 +364,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                       backgroundColor: const WidgetStatePropertyAll(
                         Colors.transparent,
                       ),
-                      overlayColor:
-                          WidgetStateProperty.resolveWith((states) {
+                      overlayColor: WidgetStateProperty.resolveWith((states) {
                         if (states.contains(WidgetState.pressed)) {
                           return scheme.onSecondaryContainer.withValues(
                             alpha: 0.04,
@@ -372,8 +407,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                     child: SafeArea(
                       bottom: false,
                       child: Padding(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 12.0),
+                        padding: const EdgeInsets.symmetric(horizontal: 12.0),
                         child: ValueListenableBuilder(
                           valueListenable: nowPlayingViewMode,
                           builder: (context, viewMode, _) {
@@ -396,8 +430,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                                           builder: (context) => IconButton(
                                             tooltip: '侧边栏',
                                             onPressed: () {
-                                              Scaffold.of(context)
-                                                  .openDrawer();
+                                              Scaffold.of(context).openDrawer();
                                             },
                                             icon: const Icon(Symbols.menu),
                                           ),
@@ -652,7 +685,7 @@ class _DesktopLyricSwitch extends StatelessWidget {
         final desktopLyricService = PlayService.instance.desktopLyricService;
         final isRunning = desktopLyricService.isRunning;
         final isKilling = desktopLyricService.isKilling;
-        
+
         // 关闭过程中显示 loading 并禁用按钮
         if (isKilling) {
           return IconButton(
@@ -666,7 +699,7 @@ class _DesktopLyricSwitch extends StatelessWidget {
             color: scheme.onSurface,
           );
         }
-        
+
         return IconButton(
           tooltip: !isRunning
               ? '打开桌面歌词'
@@ -1159,7 +1192,7 @@ class _NowPlayingMainControls extends StatelessWidget {
             final playerState = snapshot.data!;
             final isPlaying = playerState == PlayerState.playing;
             final isCompleted = playerState == PlayerState.completed;
-            
+
             return IconButton(
               tooltip: isPlaying ? '暂停' : '播放',
               onPressed: () {
@@ -1565,7 +1598,9 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider> {
     final nowPlayingPath = playbackService.nowPlaying?.path;
     final useMonetBar = AppSettings.instance.useMaterialYouForProgressBar;
     final barColor = useMonetBar ? scheme.primary : scheme.onSurface;
-    final barGlow = useMonetBar ? scheme.primaryContainer : scheme.onSurface.withValues(alpha: 0.3);
+    final barGlow = useMonetBar
+        ? scheme.primaryContainer
+        : scheme.onSurface.withValues(alpha: 0.3);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -1617,15 +1652,15 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider> {
                       behavior: HitTestBehavior.opaque,
                       onHorizontalDragStart: (details) {
                         isDragging = true;
-                        final value = (details.localPosition.dx / width)
-                                .clamp(0.0, 1.0) *
-                            max;
+                        final value =
+                            (details.localPosition.dx / width).clamp(0.0, 1.0) *
+                                max;
                         dragPosition.value = value;
                       },
                       onHorizontalDragUpdate: (details) {
-                        final value = (details.localPosition.dx / width)
-                                .clamp(0.0, 1.0) *
-                            max;
+                        final value =
+                            (details.localPosition.dx / width).clamp(0.0, 1.0) *
+                                max;
                         dragPosition.value = value;
                       },
                       onHorizontalDragEnd: (details) {
@@ -1633,9 +1668,9 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider> {
                         playbackService.seek(dragPosition.value);
                       },
                       onTapDown: (details) {
-                        final value = (details.localPosition.dx / width)
-                                .clamp(0.0, 1.0) *
-                            max;
+                        final value =
+                            (details.localPosition.dx / width).clamp(0.0, 1.0) *
+                                max;
                         playbackService.seek(value);
                       },
                       child: CustomPaint(
@@ -1814,7 +1849,9 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
     final token = _coverRequestToken;
     final nextAudio = playbackService.nowPlaying;
     if (nextAudio == null) {
-      if (_loResCoverPath != null || _hiResCoverPath != null || _immediateCoverPath != null) {
+      if (_loResCoverPath != null ||
+          _hiResCoverPath != null ||
+          _immediateCoverPath != null) {
         _hiResDebounceTimer?.cancel();
         unawaited(Future.wait<void>([
           if (_loResCover != null) _loResCover!.evict(),
@@ -1848,7 +1885,8 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
     // Try to use parent's preloaded cover first to avoid placeholder flash
     final parentState = context.findAncestorStateOfType<_NowPlayingPageState>();
     final preloadedCover = parentState?.nowPlayingCover;
-    if (preloadedCover != null && nextAudio.path == parentState?._nowPlayingCoverPath) {
+    if (preloadedCover != null &&
+        nextAudio.path == parentState?._nowPlayingCoverPath) {
       setState(() {
         _loResCover = preloadedCover;
         _loResCoverPath = nextAudio.path;
@@ -1922,7 +1960,8 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
     final parentState = context.findAncestorStateOfType<_NowPlayingPageState>();
     final preloadedCover = parentState?.nowPlayingCover;
     final currentPath = playbackService.nowPlaying?.path;
-    if (preloadedCover != null && currentPath != null &&
+    if (preloadedCover != null &&
+        currentPath != null &&
         currentPath == parentState?._nowPlayingCoverPath) {
       _loResCover = preloadedCover;
       _loResCoverPath = currentPath;
@@ -1999,8 +2038,10 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
             (_hiResCoverPath == nowPlayingPath && _hiResCover != null)
                 ? _hiResCover
                 : (_loResCoverPath == nowPlayingPath ? _loResCover : null);
-        final fallbackCover = currentCover == null && nowPlaying != null &&
-                _immediateCoverPath == nowPlayingPath && _immediateCover != null
+        final fallbackCover = currentCover == null &&
+                nowPlaying != null &&
+                _immediateCoverPath == nowPlayingPath &&
+                _immediateCover != null
             ? MemoryImage(_immediateCover!)
             : null;
         final coverWidget = currentCover == null && fallbackCover == null
