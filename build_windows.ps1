@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$Version = "",
 
@@ -78,24 +78,21 @@ function Update-RunnerRcVersion([string]$version, [string]$buildMode) {
 function Update-VersionJson([string]$version) {
     $versionJsonPath = Join-Path $PSScriptRoot "update\version.json"
     $tag = "v$version"
-    $repo = "qingyueyin/Pure-music"
-    $body = "## 更新内容\n\n请前往 GitHub Releases 查看完整更新日志"
-    $htmlUrl = "https://github.com/$repo/releases"
 
-    $json = @{
-        tag_name = $tag
-        name     = $tag
-        body     = $body
-        html_url = $htmlUrl
-    } | ConvertTo-Json -Compress
-
-    # Pretty-print with 2-space indent
-    $pretty = $json | ConvertFrom-Json | ConvertTo-Json
+    # 手动拼接 JSON，避免 ConvertTo-Json 在 PS5.1 下的 Unicode 编码问题
+    $json = [System.Text.StringBuilder]::new()
+    [void]$json.AppendLine("{")
+    [void]$json.AppendLine("  ""tag_name"": ""$tag"",")
+    [void]$json.AppendLine("  ""name"": ""$tag"",")
+    [void]$json.AppendLine("  ""body"": ""## 更新内容\n\n请前往 GitHub Releases 查看完整更新日志"",")
+    [void]$json.AppendLine("  ""html_url"": ""https://github.com/qingyueyin/Pure-music/releases""")
+    [void]$json.AppendLine("}")
 
     $dir = Split-Path $versionJsonPath -Parent
     if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
 
-    Set-Content -Path $versionJsonPath -Value $pretty -Encoding UTF8
+    # 用 UTF8 without BOM 写入
+    [System.IO.File]::WriteAllText($versionJsonPath, $json.ToString(), [System.Text.UTF8Encoding]::new($false))
     Write-Host ("Generated update/version.json: tag=$tag" -f $tag) -ForegroundColor Gray
 }
 

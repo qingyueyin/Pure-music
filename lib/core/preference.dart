@@ -265,8 +265,8 @@ class AppPreference {
   String? lastUpdateCheckTime;
   String? lastSeenUpdateTag;
   List<String> updateCheckUrls = [
-    'https://raw.githubusercontent.com/qingyueyin/Pure-music/master/update/version.json',
-    'https://gitee.com/qingyueyin/Pure-music/raw/master/update/version.json',
+    'https://raw.githubusercontent.com/qingyueyin/Pure-music/main/update/version.json',
+    'https://gitee.com/qingyueyin/Pure-music/raw/main/update/version.json',
   ];
 
   /// 用户手动添加的文件夹路径列表（不包括自动发现的子文件夹）
@@ -391,8 +391,8 @@ class AppPreference {
       instance.updateCheckUrls = prefMap['updateCheckUrls'] != null
           ? List<String>.from(prefMap['updateCheckUrls'])
           : [
-              'https://raw.githubusercontent.com/qingyueyin/Pure-music/master/update/version.json',
-              'https://gitee.com/qingyueyin/Pure-music/raw/master/update/version.json',
+              'https://raw.githubusercontent.com/qingyueyin/Pure-music/main/update/version.json',
+              'https://gitee.com/qingyueyin/Pure-music/raw/main/update/version.json',
             ];
       instance.userFolders = prefMap['userFolders'] != null
           ? List<String>.from(prefMap['userFolders'])
