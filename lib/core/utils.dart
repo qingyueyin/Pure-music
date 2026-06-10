@@ -84,7 +84,7 @@ extension PinyinCompare on String {
 
     _pinyinCache[this] = pinyin;
     _pinyinCacheAccessOrder.add(this);
-    
+
     while (_pinyinCache.length > _pinyinCacheMaxSize) {
       final oldestKey = _pinyinCacheAccessOrder.removeAt(0);
       _pinyinCache.remove(oldestKey);
@@ -192,7 +192,8 @@ void showHotkeyToast({
   required String text,
   IconData? icon,
 }) {
-  final context = scaffoldMessengerKey.currentContext ?? routerKey.currentContext;
+  final context =
+      scaffoldMessengerKey.currentContext ?? routerKey.currentContext;
   if (context == null) return;
   final overlay = Overlay.of(context, rootOverlay: true);
 
@@ -353,7 +354,7 @@ final logger = Logger(
 );
 
 /// Soften a color for background readability.
-/// 
+///
 /// When [isDark] is true, darkens the color slightly for dark mode backgrounds.
 /// When [isDark] is false, lightens the color slightly for light mode backgrounds.
 Color softenColorForBackground(Color color, {required bool isDark}) {
