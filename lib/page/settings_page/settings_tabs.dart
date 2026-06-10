@@ -9,11 +9,11 @@ import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/native/rust/api/installed_font.dart';
 import 'package:pure_music/lyric/lyric_source.dart';
 import 'package:pure_music/component/settings_tile.dart';
+import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.dart';
 import 'package:pure_music/page/settings_page/check_update.dart';
 import 'package:pure_music/page/settings_page/create_issue.dart';
 import 'package:pure_music/page/settings_page/artist_separator_editor.dart';
-import 'package:pure_music/play_service/play_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -59,9 +59,10 @@ class _SettingsTabsState extends State<SettingsTabs> {
               ),
               style: OutlinedButton.styleFrom(
                 backgroundColor: selected ? scheme.primary : Colors.transparent,
-                side:
-                    BorderSide(color: selected ? scheme.primary : scheme.outline),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                side: BorderSide(
+                    color: selected ? scheme.primary : scheme.outline),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               ),
             );
           }),
@@ -105,6 +106,8 @@ class _AppearanceTabContent extends StatelessWidget {
         _MonetLyricsSwitch(),
         SizedBox(height: 16.0),
         _MonetTransitionSwitch(),
+        SizedBox(height: 16.0),
+        _CoverColorExtractionSwitch(),
       ],
     );
   }
@@ -148,7 +151,8 @@ class _MonetProgressBarSwitch extends StatefulWidget {
   const _MonetProgressBarSwitch();
 
   @override
-  State<_MonetProgressBarSwitch> createState() => _MonetProgressBarSwitchState();
+  State<_MonetProgressBarSwitch> createState() =>
+      _MonetProgressBarSwitchState();
 }
 
 class _MonetProgressBarSwitchState extends State<_MonetProgressBarSwitch> {
@@ -157,7 +161,7 @@ class _MonetProgressBarSwitchState extends State<_MonetProgressBarSwitch> {
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      description: '进度条莫奈取色',
+      description: '主题色进度条',
       subtitle: '进度条使用主题色渲染',
       action: Switch(
         value: settings.useMaterialYouForProgressBar,
@@ -185,8 +189,8 @@ class _MonetLyricsSwitchState extends State<_MonetLyricsSwitch> {
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      description: '莫奈取色歌词',
-      subtitle: '启用后歌词使用主题色渲染',
+      description: '主题色歌词',
+      subtitle: '歌词使用主题色渲染',
       action: Switch(
         value: settings.useMaterialYouForLyrics,
         onChanged: (v) {
@@ -214,7 +218,7 @@ class _MonetTransitionSwitchState extends State<_MonetTransitionSwitch> {
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      description: '间奏动画莫奈取色',
+      description: '主题色间奏动画',
       subtitle: '间奏动画使用主题色渲染',
       action: Switch(
         value: settings.useMaterialYouForTransition,
@@ -226,6 +230,445 @@ class _MonetTransitionSwitchState extends State<_MonetTransitionSwitch> {
           LyricViewController.instance.triggerRebuild();
         },
       ),
+    );
+  }
+}
+
+class _CoverColorExtractionSwitch extends StatefulWidget {
+  const _CoverColorExtractionSwitch();
+
+  @override
+  State<_CoverColorExtractionSwitch> createState() =>
+      _CoverColorExtractionSwitchState();
+}
+
+class _CoverColorExtractionSwitchState
+    extends State<_CoverColorExtractionSwitch> {
+  final settings = AppSettings.instance;
+
+  void _refreshTheme() {
+    final audio = PlayService.instance.playbackService.nowPlaying;
+    if (audio != null) {
+      ThemeProvider.instance.applyThemeFromAudio(audio);
+    } else {
+      ThemeProvider.instance.applyThemeOption(settings.themeOption);
+    }
+  }
+
+  Future<Color?> _openColorPicker() async {
+    return showDialog<Color>(
+      context: context,
+      builder: (context) => const _ThemeColorPickerDialog(),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isAuto = settings.enableCoverColorExtraction;
+
+    return SettingsTile(
+      description: '应用主题色',
+      subtitle: isAuto ? '从专辑封面自动提取' : '自定义应用整体颜色',
+      action: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (!isAuto)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: OutlinedButton(
+                onPressed: () async {
+                  final result = await _openColorPicker();
+                  if (result != null && mounted) {
+                    setState(() {
+                      settings.customCoverColor = result.toARGB32();
+                    });
+                    settings.saveSettings();
+                    _refreshTheme();
+                  }
+                },
+                style: OutlinedButton.styleFrom(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+                child: const Text('自定义'),
+              ),
+            ),
+          Switch(
+            value: isAuto,
+            onChanged: (v) {
+              setState(() => settings.enableCoverColorExtraction = v);
+              settings.saveSettings();
+              _refreshTheme();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 自定义主题色选择对话框 — HSV 色域 + 色相条 + Hex 输入
+class _ThemeColorPickerDialog extends StatefulWidget {
+  const _ThemeColorPickerDialog();
+
+  @override
+  State<_ThemeColorPickerDialog> createState() =>
+      _ThemeColorPickerDialogState();
+}
+
+class _ThemeColorPickerDialogState extends State<_ThemeColorPickerDialog> {
+  late HSVColor _hsv;
+  late TextEditingController _hexCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    final custom = AppSettings.instance.customCoverColor;
+    final color =
+        custom != null ? Color(custom) : Theme.of(context).colorScheme.primary;
+    _hsv = HSVColor.fromColor(color);
+    _hexCtrl = TextEditingController(text: _colorToHex(color));
+  }
+
+  @override
+  void dispose() {
+    _hexCtrl.dispose();
+    super.dispose();
+  }
+
+  void _updateColor(HSVColor hsv) {
+    setState(() {
+      _hsv = hsv;
+      _hexCtrl.text = _colorToHex(hsv.toColor());
+    });
+  }
+
+  void _onHexSubmitted(String text) {
+    final parsed = _parseHex(text);
+    if (parsed != null) {
+      _updateColor(HSVColor.fromColor(parsed));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final color = _hsv.toColor();
+    final size = MediaQuery.of(context).size;
+    final pickerSize = (size.width * 0.65).clamp(220.0, 300.0);
+
+    return AlertDialog(
+      title: const Text('自定义主题色'),
+      content: SizedBox(
+        width: pickerSize + 32,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 2D 色域 (饱和度 × 明度)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: SizedBox(
+                width: pickerSize,
+                height: pickerSize * 0.7,
+                child: _HsvPicker(
+                  hsv: _hsv,
+                  onChanged: _updateColor,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            // 色相条 + 预览
+            Row(
+              children: [
+                // 当前颜色预览
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: scheme.outline.withValues(alpha: 0.4),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // 色相条
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: SizedBox(
+                      height: 20,
+                      child: _HueSlider(
+                        hue: _hsv.hue,
+                        onChanged: (hue) => _updateColor(
+                          _hsv.withHue(hue),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            // Hex 输入
+            Row(
+              children: [
+                Text(
+                  '#',
+                  style: TextStyle(
+                    color: scheme.onSurface,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: TextField(
+                    controller: _hexCtrl,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      hintText: 'RRGGBB',
+                      hintStyle: TextStyle(
+                        color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
+                      ),
+                    ),
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 16,
+                      letterSpacing: 1.2,
+                    ),
+                    textCapitalization: TextCapitalization.characters,
+                    inputFormatters: [
+                      UpperCaseTextFormatter(),
+                      LengthLimitingTextInputFormatter(6),
+                      FilteringTextInputFormatter.allow(RegExp(r'[0-9A-Fa-f]')),
+                    ],
+                    onSubmitted: _onHexSubmitted,
+                    onChanged: (text) {
+                      if (text.length == 6) _onHexSubmitted(text);
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(color),
+          child: const Text('确定'),
+        ),
+      ],
+    );
+  }
+}
+
+/// 2D 色域选择：横轴 = 饱和度，纵轴 = 明度
+class _HsvPicker extends StatelessWidget {
+  final HSVColor hsv;
+  final ValueChanged<HSVColor> onChanged;
+
+  const _HsvPicker({required this.hsv, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final w = constraints.maxWidth;
+        final h = constraints.maxHeight;
+        return GestureDetector(
+          onPanDown: (d) => _pick(d.localPosition, w, h),
+          onPanUpdate: (d) => _pick(d.localPosition, w, h),
+          child: CustomPaint(
+            painter: _HsvPainter(hsv),
+            child: const RepaintBoundary(
+              child: SizedBox.expand(),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _pick(Offset pos, double w, double h) {
+    final saturation = (pos.dx / w).clamp(0.0, 1.0);
+    final value = (1.0 - pos.dy / h).clamp(0.0, 1.0);
+    onChanged(hsv.withSaturation(saturation).withValue(value));
+  }
+}
+
+class _HsvPainter extends CustomPainter {
+  final HSVColor hsv;
+  _HsvPainter(this.hsv);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final hueColor = HSVColor.fromAHSV(1, hsv.hue, 1, 1).toColor();
+
+    // 底层：从白到纯色（饱和度渐变）
+    final satGradient = LinearGradient(
+      colors: [Colors.white, hueColor],
+      begin: Alignment.centerLeft,
+      end: Alignment.centerRight,
+    );
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()..shader = satGradient.createShader(Offset.zero & size),
+    );
+
+    // 顶层：从透明到黑（明度渐变）
+    const valGradient = LinearGradient(
+      colors: [Colors.transparent, Colors.black],
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+    );
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()..shader = valGradient.createShader(Offset.zero & size),
+    );
+
+    // 选取指示器
+    final sx = hsv.saturation * size.width;
+    final sy = (1.0 - hsv.value) * size.height;
+    final indicator = Offset(sx, sy);
+    canvas.drawCircle(
+      indicator,
+      6,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.fill,
+    );
+    canvas.drawCircle(
+      indicator,
+      6,
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.3)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_HsvPainter old) => old.hsv != hsv;
+}
+
+/// 色相选择条
+class _HueSlider extends StatelessWidget {
+  final double hue;
+  final ValueChanged<double> onChanged;
+
+  const _HueSlider({required this.hue, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return GestureDetector(
+          onPanDown: (d) => _pick(d.localPosition, constraints.maxWidth),
+          onPanUpdate: (d) => _pick(d.localPosition, constraints.maxWidth),
+          child: CustomPaint(
+            painter: _HueBarPainter(hue),
+            child: const SizedBox.expand(),
+          ),
+        );
+      },
+    );
+  }
+
+  void _pick(Offset pos, double w) {
+    final hue = (pos.dx / w * 360).clamp(0.0, 360.0);
+    onChanged(hue);
+  }
+}
+
+class _HueBarPainter extends CustomPainter {
+  final double hue;
+  _HueBarPainter(this.hue);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // 色相渐变条
+    final gradient = LinearGradient(
+      colors: List.generate(
+        12,
+        (i) => HSVColor.fromAHSV(1, i * 30.0, 1, 1).toColor(),
+      ),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(6)),
+      Paint()..shader = gradient.createShader(Offset.zero & size),
+    );
+
+    // 指示器
+    final x = (hue / 360) * size.width;
+    canvas.drawCircle(
+      Offset(x, size.height / 2),
+      8,
+      Paint()..color = Colors.white,
+    );
+    canvas.drawCircle(
+      Offset(x, size.height / 2),
+      8,
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.25)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_HueBarPainter old) => old.hue != hue;
+}
+
+String _colorToHex(Color color) {
+  return color
+      .toARGB32()
+      .toRadixString(16)
+      .padLeft(8, '0')
+      .substring(2)
+      .toUpperCase();
+}
+
+Color? _parseHex(String hex) {
+  hex = hex.trim().replaceFirst('#', '');
+  if (hex.length == 6) {
+    final value = int.tryParse(hex, radix: 16);
+    if (value != null) return Color(0xFF000000 | value);
+  }
+  if (hex.length == 3) {
+    final r = hex[0];
+    final g = hex[1];
+    final b = hex[2];
+    return _parseHex('$r$r$g$g$b$b');
+  }
+  return null;
+}
+
+class UpperCaseTextFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    return TextEditingValue(
+      text: newValue.text.toUpperCase(),
+      selection: newValue.selection,
     );
   }
 }
@@ -299,20 +742,6 @@ class _LyricsTabContentState extends State<_LyricsTabContent> {
               });
               settings.saveSettings();
               LyricViewController.instance.triggerRebuild();
-            },
-          ),
-        ),
-        const SizedBox(height: 16.0),
-        SettingsTile(
-          description: '移除空行',
-          action: Switch(
-            value: settings.removeEmptyLines,
-            onChanged: (v) {
-              setState(() {
-                settings.removeEmptyLines = v;
-              });
-              settings.saveSettings();
-              LyricViewController.instance.setRemoveEmptyLines(v);
             },
           ),
         ),
@@ -454,7 +883,6 @@ class _AdvancedTabContent extends StatelessWidget {
     );
   }
 }
-
 
 class SelectFontCombobox extends StatelessWidget {
   const SelectFontCombobox({super.key});
