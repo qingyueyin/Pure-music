@@ -1,10 +1,11 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/library/audio_library.dart';
+import 'package:pure_music/native/rust/api/color_extraction.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:flutter/material.dart';
-import 'package:palette_generator/palette_generator.dart';
 
 ColorScheme _applyLightSurfacePalette(ColorScheme scheme) {
   return scheme.copyWith(
@@ -116,11 +117,25 @@ class ThemeProvider extends ChangeNotifier {
     });
   }
 
-  /// 用 palette_generator 从封面提取最佳种子色。
-  /// 优先级：vibrantColor > mutedColor > dominantColor > fallback
-  /// 种子色只提取一次，light/dark 两套方案共用同一个种子。
-  Future<Color> _extractSeedColor(ImageProvider image, String cacheKey) async {
-    // 查缓存
+  /// 直接应用预计算好的种子色（来自 Rust k-means 或其它提取路径）。
+  /// 跳过 PaletteGenerator，避免重复解码。
+  void applySeedColorDirectly(Color seedColor, String cacheKey) {
+    final cached = _seedCache[cacheKey];
+    if (cached != null) {
+      _touchSeedCache(cacheKey);
+      _applySeedColor(cached);
+      return;
+    }
+
+    _evictSeedCache();
+    _seedCache[cacheKey] = seedColor;
+    _seedAccessOrder.add(cacheKey);
+    _applySeedColor(seedColor);
+  }
+
+  /// 用 Rust k-means 从封面字节提取种子色（替换 palette_generator）。
+  /// k-means 排序后的第一个颜色即最 dominant 的颜色。
+  Future<Color> _extractSeedColor(Uint8List bytes, String cacheKey) async {
     final cached = _seedCache[cacheKey];
     if (cached != null) {
       _touchSeedCache(cacheKey);
@@ -128,24 +143,15 @@ class ThemeProvider extends ChangeNotifier {
     }
 
     try {
-      final palette = await PaletteGenerator.fromImageProvider(
-        image,
-        size: const Size(120, 120),
-        maximumColorCount: 8,
+      final rustColors = await extractColorsFromImage(
+        imageBytes: bytes,
+        numColors: 4,
       );
 
-      Color seedColor;
-      if (palette.vibrantColor != null) {
-        seedColor = palette.vibrantColor!.color;
-      } else if (palette.mutedColor != null) {
-        seedColor = palette.mutedColor!.color;
-      } else if (palette.dominantColor != null) {
-        seedColor = palette.dominantColor!.color;
-      } else {
-        seedColor = const Color(0xff27272a);
-      }
+      final seedColor = rustColors.isNotEmpty
+          ? Color(rustColors.first)
+          : const Color(0xff27272a);
 
-      // 写缓存
       _evictSeedCache();
       _seedCache[cacheKey] = seedColor;
       _seedAccessOrder.add(cacheKey);
@@ -183,6 +189,14 @@ class ThemeProvider extends ChangeNotifier {
   }
 
   void applyThemeFromAudio(Audio audio) {
+    if (!AppSettings.instance.enableCoverColorExtraction) {
+      final custom = AppSettings.instance.customCoverColor;
+      if (custom != null) {
+        _applySeedColor(Color(custom));
+      }
+      return;
+    }
+
     _themeRequestToken += 1;
     final token = _themeRequestToken;
 
@@ -190,14 +204,13 @@ class ThemeProvider extends ChangeNotifier {
     _themeDebounceTimer = Timer(const Duration(milliseconds: 200), () async {
       if (token != _themeRequestToken) return;
 
-      final image = await audio.mediumCover;
-      if (image == null || token != _themeRequestToken) return;
+      // 用小封面字节直接调 Rust k-means，跳过 PaletteGenerator 的重复解码
+      final bytes = audio.smallCoverBytes;
+      if (bytes == null || token != _themeRequestToken) return;
 
-      // 1. 提取种子色（只用一次，light/dark 共用）
-      final seedColor = await _extractSeedColor(image, audio.path);
+      final seedColor = await _extractSeedColor(bytes, audio.path);
       if (token != _themeRequestToken) return;
 
-      // 2. 同时生成 light/dark 两套方案
       _applySeedColor(seedColor);
     });
   }
