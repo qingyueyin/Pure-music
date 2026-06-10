@@ -145,7 +145,10 @@ class AppSettings {
     if (to != null) {
       _instance.themeOption = ThemeOption.values[to];
     }
-    _instance.artistSeparator = settingsMap['ArtistSeparator'];
+    final oldSep = settingsMap['ArtistSeparator'];
+    if (oldSep != null) {
+      _instance.artistSeparator = List<String>.from(oldSep);
+    }
     _instance.artistSplitPattern = _instance.artistSeparator.join('|');
 
     final llf = settingsMap['LocalLyricFirst'];
@@ -194,7 +197,7 @@ class AppSettings {
 
       final sep = settingsMap['ArtistSeparator'];
       if (sep != null) {
-        _instance.artistSeparator = sep;
+        _instance.artistSeparator = List<String>.from(sep);
         _instance.artistSplitPattern = _instance.artistSeparator.join('|');
       }
 
