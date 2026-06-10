@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:io';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -24,6 +25,15 @@ class AudioLibrary {
   Map<String, Artist> artistCollection = {};
 
   Map<String, Album> albumCollection = {};
+
+  /// 小封面字节缓存数量硬上限。
+  /// 超出时按 LRU 逐出最旧的，避免大曲库快速浏览时 Uint8List 堆积。
+  /// 200 × ~5KB ≈ 1MB 封顶。
+  static const int _maxCachedSmallCovers = 200;
+
+  /// 访问顺序追踪队列：最近访问的 path 在末尾，最旧的在开头。
+  /// 仅用于 _smallCoverBytes 的 LRU 逐出，不涵盖 ImageProvider 缓存。
+  final LinkedHashSet<String> _smallCoverOrder = LinkedHashSet<String>();
 
   /// must call [initFromIndex]
   static AudioLibrary get instance {
@@ -202,6 +212,23 @@ class AudioLibrary {
     return folders.toString();
   }
 
+  /// 注册一个小封面字节缓存到追踪队列，超出上限时逐出最旧的。
+  void _registerSmallCoverBytes(Audio audio) {
+    _smallCoverOrder.remove(audio.path);
+    _smallCoverOrder.add(audio.path);
+    while (_smallCoverOrder.length > _maxCachedSmallCovers) {
+      final oldest = _smallCoverOrder.first;
+      _smallCoverOrder.remove(oldest);
+      // 在 audioCollection 中找到对应 Audio 并逐出
+      for (final a in audioCollection) {
+        if (a.path == oldest) {
+          a._smallCoverBytes = null;
+          break;
+        }
+      }
+    }
+  }
+
   /// 定时清理 Audio 实例中的原始 cover bytes。
   /// 大曲库下 _coverBytes 会占用大量内存，周期性释放可减少内存压力。
   /// Cover 仍可通过 CoverImageCache 重新获取。
@@ -224,7 +251,12 @@ class AudioLibrary {
     final playingPath = PlayService.instance.playbackService.nowPlaying?.path;
     int evicted = 0;
     for (final audio in audioCollection) {
-      if (audio._coverImage == null && audio._mediumCoverImage == null && audio._largeCoverImage == null && audio._smallCoverBytes == null) continue;
+      if (audio._coverImage == null &&
+          audio._mediumCoverImage == null &&
+          audio._largeCoverImage == null &&
+          audio._smallCoverBytes == null) {
+        continue;
+      }
       if (audio.path == playingPath) continue;
       if (now - audio._coverLastAccessMs < coldMs) continue;
       audio.evictCoverCache();
@@ -239,7 +271,12 @@ class AudioLibrary {
   void evictAllCoversExcept(String? playingPath) {
     int evicted = 0;
     for (final audio in audioCollection) {
-      if (audio._coverImage == null && audio._mediumCoverImage == null && audio._largeCoverImage == null && audio._smallCoverBytes == null) continue;
+      if (audio._coverImage == null &&
+          audio._mediumCoverImage == null &&
+          audio._largeCoverImage == null &&
+          audio._smallCoverBytes == null) {
+        continue;
+      }
       if (audio.path == playingPath) continue;
       audio.evictCoverCache();
       evicted++;
@@ -253,6 +290,7 @@ class AudioLibrary {
   void dispose() {
     _coverBytesEvictionTimer?.cancel();
     _coverBytesEvictionTimer = null;
+    _smallCoverOrder.clear();
     audioCollection.clear();
     artistCollection.clear();
     albumCollection.clear();
@@ -274,8 +312,8 @@ class AudioFolder {
 
   AudioFolder(this.audios, this.path, this.modified, this.latest);
 
-  factory AudioFolder.fromMap(Map map, List<Audio> audios) =>
-      AudioFolder(audios, map['path'] ?? '', map['modified'] ?? 0, map['latest'] ?? 0);
+  factory AudioFolder.fromMap(Map map, List<Audio> audios) => AudioFolder(
+      audios, map['path'] ?? '', map['modified'] ?? 0, map['latest'] ?? 0);
 
   @override
   String toString() {
@@ -361,8 +399,7 @@ class Audio {
         ),
         splitedAlbumArtists = (albumArtist ?? '').isEmpty
             ? const []
-            : albumArtist!
-                .split(AppSettings.instance.artistSplitRegex);
+            : albumArtist!.split(AppSettings.instance.artistSplitRegex);
 
   factory Audio.fromMap(Map map) => Audio(
         map['title'] ?? '',
@@ -422,7 +459,7 @@ class Audio {
   /// 缓存ImageProvider实例，避免每次创建新实例导致Flutter ImageCache失效
   /// 缓存bytes时，每次加载图片都要重新解码，内存占用很大。快速滚动时能到700mb
   /// 缓存ImageProvider不用重新解码。快速滚动时最多250mb
-  /// 
+  ///
   /// 先检查 _coverImage，命中直接返回同一实例；永不走 FFI
   Future<ImageProvider?> get cover async {
     _touchCoverAccess();
@@ -455,6 +492,8 @@ class Audio {
       );
       if (bytes != null) {
         _smallCoverBytes = bytes;
+        _touchCoverAccess();
+        AudioLibrary.instance._registerSmallCoverBytes(this);
       }
       return bytes;
     } catch (_) {
@@ -472,6 +511,7 @@ class Audio {
     _mediumCoverImage = null;
     _largeCoverImage = null;
     _smallCoverBytes = null;
+    AudioLibrary.instance._smallCoverOrder.remove(path);
   }
 
   /// audio detail page
