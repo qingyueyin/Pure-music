@@ -17,7 +17,9 @@ const bool portableBuild = bool.fromEnvironment(
 Future<Directory> getAppDataDir() async {
   final exe = Platform.resolvedExecutable;
   final exeBase = path.basename(exe).toLowerCase();
-  if (portableBuild && exeBase != 'dart.exe' && exeBase != 'flutter_tester.exe') {
+  if (portableBuild &&
+      exeBase != 'dart.exe' &&
+      exeBase != 'flutter_tester.exe') {
     final portable = Directory(path.join(path.dirname(exe), 'data'));
     try {
       return portable.create(recursive: true);
@@ -32,7 +34,8 @@ Future<Directory> getAppDataDir() async {
 
   final userProfile = Platform.environment['USERPROFILE'];
   if (userProfile != null) {
-    final dir = Directory(path.join(userProfile, 'AppData', 'Roaming', 'pure_music'));
+    final dir =
+        Directory(path.join(userProfile, 'AppData', 'Roaming', 'pure_music'));
     return dir.create(recursive: true);
   }
 
@@ -54,13 +57,12 @@ Future<Directory> getDbDir() async {
   return Directory(path.join(root.path, 'db')).create(recursive: true);
 }
 
-
 /// 歌词显示模式（控制是否使用逐字歌词）
 enum LyricDisplayMode {
-  lineByLine,    // 逐行歌词（标准LRC格式）
-  wordByWord,    // 逐字歌词（带逐字时间戳）
-  plain,         // 旧名兼容
-  enhanced,      // 旧名兼容
+  lineByLine, // 逐行歌词（标准LRC格式）
+  wordByWord, // 逐字歌词（带逐字时间戳）
+  plain, // 旧名兼容
+  enhanced, // 旧名兼容
 }
 
 enum ThemeOption { system, light, dark }
@@ -76,6 +78,7 @@ class AppSettings {
     _github ??= GitHub();
     return _github!;
   }
+
   static void closeGithub() {
     _github?.dispose();
     _github = null;
@@ -91,7 +94,6 @@ class AppSettings {
   bool showRomanization = true;
   LyricDisplayMode lyricDisplayMode = LyricDisplayMode.wordByWord;
   ZhConversionMode zhConversionMode = ZhConversionMode.none;
-  bool removeEmptyLines = true;
   bool promptWriteLyricToTag = true;
   int promptWriteLyricToTagDelay = 15;
   bool autoWriteLyricToTag = false;
@@ -242,11 +244,6 @@ class AppSettings {
         };
       }
 
-      final rel = settingsMap['RemoveEmptyLines'];
-      if (rel != null) {
-        _instance.removeEmptyLines = rel;
-      }
-
       final pwt = settingsMap['PromptWriteLyricToTag'];
       if (pwt != null) {
         _instance.promptWriteLyricToTag = pwt;
@@ -318,7 +315,6 @@ class AppSettings {
         'ShowRomanization': showRomanization,
         'LyricDisplayMode': lyricDisplayMode.name,
         'ZhConversionMode': zhConversionMode.name,
-        'RemoveEmptyLines': removeEmptyLines,
         'PromptWriteLyricToTag': promptWriteLyricToTag,
         'PromptWriteLyricToTagDelay': promptWriteLyricToTagDelay,
         'AutoWriteLyricToTag': autoWriteLyricToTag,
