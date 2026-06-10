@@ -43,6 +43,10 @@ class LyricRenderConfig {
   final bool enableStaggeredAnimation;
   final bool enableAudioReactive;
   final double audioReactiveStrength;
+
+  /// true → CustomPaint (LyricsLineWidget), 零 GC 压力
+  /// false → Widget 方案 (LyricViewTile), 逐字动画更丰富
+  final bool useCustomPaint;
   final double viewportFadeExtent;
   final double mainLineScale;
   final double subLineScale;
@@ -72,6 +76,7 @@ class LyricRenderConfig {
     this.enableStaggeredAnimation = true,
     this.enableAudioReactive = false,
     this.audioReactiveStrength = 0.5,
+    this.useCustomPaint = true,
     this.viewportFadeExtent = 0.04,
     this.mainLineScale = 1.0,
     this.subLineScale = 1.0,
@@ -106,6 +111,7 @@ class LyricRenderConfig {
     bool? enableStaggeredAnimation,
     bool? enableAudioReactive,
     double? audioReactiveStrength,
+    bool? useCustomPaint,
     double? viewportFadeExtent,
     double? mainLineScale,
     double? subLineScale,
@@ -138,6 +144,7 @@ class LyricRenderConfig {
       enableAudioReactive: enableAudioReactive ?? this.enableAudioReactive,
       audioReactiveStrength:
           audioReactiveStrength ?? this.audioReactiveStrength,
+      useCustomPaint: useCustomPaint ?? this.useCustomPaint,
       viewportFadeExtent: viewportFadeExtent ?? this.viewportFadeExtent,
       mainLineScale: mainLineScale ?? this.mainLineScale,
       subLineScale: subLineScale ?? this.subLineScale,
