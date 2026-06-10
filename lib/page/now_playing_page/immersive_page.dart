@@ -65,8 +65,8 @@ class _ImmersivePortraitLayout extends StatelessWidget {
                       end: Alignment.bottomCenter,
                       colors: [
                         Colors.transparent,
-                        Colors.black,       
-                        Colors.black,       
+                        Colors.black,
+                        Colors.black,
                         Colors.transparent,
                       ],
                       stops: [0.0, 0.05, 0.95, 1.0],
@@ -78,7 +78,7 @@ class _ImmersivePortraitLayout extends StatelessWidget {
                     enableSeekOnTap: true,
                     centerVertically: false,
                     enableEdgeSpacer: false,
-                    currentLineAlignment: 0.3,
+                    currentLineAlignment: 0.45,
                   ),
                 ),
               ),
@@ -255,7 +255,7 @@ class _ImmersiveCoverThumbnailState extends State<_ImmersiveCoverThumbnail> {
 
   void _onPlaybackChange() {
     if (_exiting) return;
-    
+
     final nextAudio = playbackService.nowPlaying;
     if (nextAudio == null) {
       if (_coverPath != null) {

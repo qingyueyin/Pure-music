@@ -87,7 +87,8 @@ class _NowPlayingLargePage extends StatelessWidget {
                         spacer,
                         IconButton(
                           tooltip: '上一曲',
-                          onPressed: PlayService.instance.playbackService.lastAudio,
+                          onPressed:
+                              PlayService.instance.playbackService.lastAudio,
                           icon: const Icon(
                             Symbols.skip_previous,
                             fill: 1.0,
@@ -105,11 +106,12 @@ class _NowPlayingLargePage extends StatelessWidget {
                             final state = snapshot.data!;
                             final isPlaying = state == PlayerState.playing;
                             final isCompleted = state == PlayerState.completed;
-                            
+
                             return IconButton(
                               tooltip: isPlaying ? '暂停' : '播放',
                               onPressed: () {
-                                final service = PlayService.instance.playbackService;
+                                final service =
+                                    PlayService.instance.playbackService;
                                 if (isPlaying) {
                                   service.pause();
                                 } else if (isCompleted) {
@@ -130,7 +132,8 @@ class _NowPlayingLargePage extends StatelessWidget {
                         spacer,
                         IconButton(
                           tooltip: '下一曲',
-                          onPressed: PlayService.instance.playbackService.nextAudio,
+                          onPressed:
+                              PlayService.instance.playbackService.nextAudio,
                           icon: const Icon(
                             Symbols.skip_next,
                             fill: 1.0,
@@ -227,17 +230,16 @@ class _NowPlayingLargeViewSwitch extends StatelessWidget {
         },
         icon: switch (value) {
           NowPlayingViewMode.withPlaylist => const Icon(
-            Symbols.lyrics,
-            fill: 1.0,
-          ),
+              Symbols.lyrics,
+              fill: 1.0,
+            ),
           _ => const Icon(
-            Symbols.queue_music,
-            fill: 1.0,
-          ),
+              Symbols.queue_music,
+              fill: 1.0,
+            ),
         },
         color: Theme.of(context).colorScheme.onSurface,
       ),
     );
   }
 }
-
