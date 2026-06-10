@@ -170,6 +170,11 @@ impl SMTCFlutter {
     }
 
     pub fn close(self) {
+        // 先禁用 SMTC 控件，避免残留的 SMTC 会话干扰下次启动
+        let _ = self._smtc.SetIsEnabled(false);
+        // 更新一次状态让 Windows 知道播放已停止
+        let _ = self._smtc.SetPlaybackStatus(MediaPlaybackStatus::Stopped);
+        // 最后关闭 MediaPlayer，释放 COM 资源
         let _ = self._player.Close();
     }
 }
@@ -219,8 +224,13 @@ impl SMTCFlutter {
 
         // 关键：初始化时调用DisplayUpdater.Update()，确保SMTC注册到系统
         // 只有Update()被调用后，SMTC的按钮事件才会被系统分发
+        // 同时立即设置占位信息，覆盖上一个异常退出残留的 SMTC 显示
         let updater = _smtc.DisplayUpdater()?;
         updater.SetType(MediaPlaybackType::Music)?;
+        if let Ok(music_properties) = updater.MusicProperties() {
+            let _ = music_properties.SetTitle(&HSTRING::from("Pure Music"));
+            let _ = music_properties.SetArtist(&HSTRING::from(""));
+        }
         updater.Update()?;
         log_to_dart("SMTC: DisplayUpdater.Update() called during init".to_string());
 
