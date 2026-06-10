@@ -75,6 +75,7 @@ class LyricService extends ChangeNotifier {
       _promptedSongs.remove(_promptedSongs.first);
     }
   }
+
   Timer? _promptTimer;
   LyricService(this.playService) {
     _positionStreamSubscription =
@@ -255,7 +256,8 @@ class LyricService extends ChangeNotifier {
       return;
     }
     final posMs = (playService.playbackService.position * 1000).round();
-    final next = _findLrcPos(time: posMs, lines: lyric.lines, hint: _lastEmittedLineIndexForHint);
+    final next = _findLrcPos(
+        time: posMs, lines: lyric.lines, hint: _lastEmittedLineIndexForHint);
     _nextLyricLine = next == -1 ? lyric.lines.length : next;
     final currLineIndex = _nextLyricLine - 1;
     if (currLineIndex < 0) return;
@@ -301,9 +303,9 @@ class LyricService extends ChangeNotifier {
     final next = _findLrcPos(time: posMs, lines: lyric.lines, hint: hint);
     _nextLyricLine = next == -1 ? lyric.lines.length : next;
     final currLineIndex = _nextLyricLine - 1;
-    
+
     if (currLineIndex < 0) return;
-    
+
     if (currLineIndex != _lastEmittedLineIndex) {
       _lastEmittedLineIndex = currLineIndex;
       _lastEmittedLineIndexForHint = currLineIndex;
@@ -372,15 +374,20 @@ class LyricService extends ChangeNotifier {
   }
 
   void _setCurrLyric(Lyric lyric) {
-    // 对所有歌词统一将元数据行清空（保留时间戳结构，不影响前奏/间奏计算）
-    blankMetadataLines(lyric.lines);
-    // 还原歌词中被 * 屏蔽的脏话词
+    // 先还原歌词中被 * 屏蔽的脏话词，避免星号/连字符干扰元数据检测
     applyProfanityUncensor(lyric);
+    // 再对所有歌词统一将元数据行清空（保留时间戳结构，不影响前奏/间奏计算）
+    blankMetadataLines(lyric.lines);
 
     _currLyric = lyric;
-    _lineStartMs = lyric.lines
-        .map((line) => line.start.inMilliseconds)
-        .toList();
+    _lineStartMs = lyric.lines.map((line) {
+      // 逐字歌词：用第一个词的 start 作为有效行开始时间，
+      // 避免行切换先于逐词高亮触发，导致"上抬比高亮快"的视觉错位
+      if (line is SyncLyricLine && line.words.isNotEmpty) {
+        return line.words.first.start.inMilliseconds;
+      }
+      return line.start.inMilliseconds;
+    }).toList();
     _lastEmittedLineIndexForHint = -1;
   }
 
@@ -408,7 +415,8 @@ class LyricService extends ChangeNotifier {
     _lyricCache.remove(audioPath);
 
     final lyricSource = lyricSources[audioPath];
-    final isFromWeb = lyricSource != null && lyricSource.source != LyricSourceType.local;
+    final isFromWeb =
+        lyricSource != null && lyricSource.source != LyricSourceType.local;
 
     if (lyricSource == null) {
       // 未指定单曲来源 → 使用全局「首选歌词来源」设置
@@ -423,7 +431,8 @@ class LyricService extends ChangeNotifier {
           LyricSourceType.qq => ResultSource.qq,
           LyricSourceType.kugou => ResultSource.kugou,
           LyricSourceType.ne => ResultSource.ne,
-          LyricSourceType.local => ResultSource.qq, // unreachable in online mode
+          LyricSourceType.local =>
+            ResultSource.qq, // unreachable in online mode
         };
         logger.i('[updateLyric] online mode: preferred=$rs');
         currLyricFuture = getLyricFromPreferredSource(nowPlaying, rs);
@@ -433,7 +442,8 @@ class LyricService extends ChangeNotifier {
         logger.i('[updateLyric] source=local, using loadLyricFromAudio');
         currLyricFuture = loadLyricFromAudio(nowPlaying.path);
       } else {
-        logger.i('[updateLyric] source=${lyricSource.source.name}, using getOnlineLyric');
+        logger.i(
+            '[updateLyric] source=${lyricSource.source.name}, using getOnlineLyric');
         currLyricFuture = getOnlineLyric(
           qqSongId: lyricSource.qqSongId,
           kugouSongHash: lyricSource.kugouSongHash,
@@ -616,7 +626,8 @@ class LyricService extends ChangeNotifier {
     // 优先使用已保存的指定来源，避免重新搜索导致加载失败
     final savedSource = lyricSources[nowPlaying.path];
     if (savedSource != null && savedSource.source != LyricSourceType.local) {
-      logger.i('[useOnlineLyric] using saved source: ${savedSource.source.name}');
+      logger
+          .i('[useOnlineLyric] using saved source: ${savedSource.source.name}');
       currLyricFuture = getOnlineLyric(
         qqSongId: savedSource.qqSongId,
         kugouSongHash: savedSource.kugouSongHash,
@@ -670,7 +681,8 @@ class LyricService extends ChangeNotifier {
   final _lyricChangeListeners = <VoidCallback>{};
 
   @override
-  void addListener(VoidCallback listener) => _lyricChangeListeners.add(listener);
+  void addListener(VoidCallback listener) =>
+      _lyricChangeListeners.add(listener);
 
   @override
   void removeListener(VoidCallback listener) =>
