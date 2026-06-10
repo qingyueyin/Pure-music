@@ -6,7 +6,6 @@ import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/zh_converter.dart';
 import 'package:pure_music/component/settings_tile.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
-import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
@@ -95,25 +94,6 @@ class _OnlineLyricSettingsState extends State<OnlineLyricSettings> {
                     settings.zhConversionMode = newSelection.first;
                     _onChanged('zhConversionMode');
                   },
-                ),
-                const SizedBox(height: 16.0),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '空行过滤',
-                        style: TextStyle(color: scheme.onSurface),
-                      ),
-                    ),
-                    Switch(
-                      value: LyricViewController.instance.removeEmptyLines,
-                      onChanged: (v) {
-                        LyricViewController.instance.setRemoveEmptyLines(v);
-                        settings.saveSettings();
-                        setState(() {});
-                      },
-                    ),
-                  ],
                 ),
               ],
             ),
