@@ -142,8 +142,10 @@ void _startMemoryMonitor() {
 
       // 播放状态下调高阈值，避免频繁清理引起缓存重建和 GC 抖动
       final playing = _isPlaying();
-      final tier3Threshold = playing ? 450 : 400;
-      final tier2Threshold = playing ? 350 : 250;
+      // 起始 RSS ~230MB，阈值从低到高逐级清理
+      final tier1Threshold = playing ? 340 : 280;
+      final tier2Threshold = playing ? 380 : 320;
+      final tier3Threshold = playing ? 440 : 380;
 
       if (rssMB > tier3Threshold) {
         logger.w(
@@ -167,8 +169,12 @@ void _startMemoryMonitor() {
           PaintingBinding.instance.imageCache.clear();
         }
         CoverImageCache.instance.trimMemory();
+      } else if (rssMB > tier1Threshold) {
+        // tier-1 轻量清理：仅清 ImageCache（不碰 CoverImageCache 和歌词缓存）
+        if (!playing) {
+          PaintingBinding.instance.imageCache.clear();
+        }
       }
-      // 移除原有的 100MB 级清理（过于频繁且无明显收益）
     } catch (e, trace) {
         logger.e('[mem] monitor error: $e\n$trace');
       }
