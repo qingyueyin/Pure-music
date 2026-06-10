@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
-import 'package:github/github.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/core/update_checker.dart';
 import 'package:pure_music/component/settings_tile.dart';
 import 'package:pure_music/native/rust/api/utils.dart' as rust_utils;
 import 'package:pure_music/core/utils.dart';
@@ -17,23 +17,6 @@ class CheckForUpdate extends StatefulWidget {
 
 class _CheckForUpdateState extends State<CheckForUpdate> {
   bool isChecking = false;
-
-  static int compareSemVer(String a, String b) {
-    final cleanA = a.replaceAll(RegExp(r'[^0-9.]'), '');
-    final cleanB = b.replaceAll(RegExp(r'[^0-9.]'), '');
-
-    final partsA = cleanA.split('.').where((s) => s.isNotEmpty).toList();
-    final partsB = cleanB.split('.').where((s) => s.isNotEmpty).toList();
-
-    final maxLen = partsA.length > partsB.length ? partsA.length : partsB.length;
-
-    for (int i = 0; i < maxLen; i++) {
-      final numA = i < partsA.length ? int.tryParse(partsA[i]) ?? 0 : 0;
-      final numB = i < partsB.length ? int.tryParse(partsB[i]) ?? 0 : 0;
-      if (numA != numB) return numA.compareTo(numB);
-    }
-    return 0;
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -54,19 +37,16 @@ class _CheckForUpdateState extends State<CheckForUpdate> {
                 setState(() => isChecking = true);
 
                 try {
-                  final newest = await AppSettings.github.repositories
-                      .listReleases(
-                        RepositorySlug.full(AppPreference.instance.updateRepoSlug),
-                      )
-                      .first;
-                  final newestTag = newest.tagName ?? '';
-                  const currVer = AppSettings.version;
-
+                  final newest = await UpdateChecker.checkForUpdate();
                   if (!context.mounted) return;
-                  if (compareSemVer(newestTag, currVer) > 0) {
+
+                  if (newest != null &&
+                      UpdateChecker.hasNewVersion(
+                          newest.tagName, AppSettings.version)) {
+                    if (!context.mounted) return;
                     showDialog(
                       context: context,
-                      builder: (context) => NewestUpdateView(release: newest),
+                      builder: (context) => NewestUpdateView(info: newest),
                     );
                   } else {
                     showTextOnSnackBar('无新版本');
@@ -86,10 +66,10 @@ class _CheckForUpdateState extends State<CheckForUpdate> {
 class NewestUpdateView extends StatelessWidget {
   const NewestUpdateView({
     super.key,
-    required this.release,
+    required this.info,
   });
 
-  final Release release;
+  final UpdateInfo info;
 
   @override
   Widget build(BuildContext context) {
@@ -108,7 +88,7 @@ class NewestUpdateView extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    release.name ?? '新版本',
+                    info.name ?? '新版本',
                     style: TextStyle(
                       color: scheme.onSurface,
                       fontSize: 18.0,
@@ -117,7 +97,7 @@ class NewestUpdateView extends StatelessWidget {
                   ),
                   const SizedBox(width: 16.0),
                   Text(
-                    '${release.tagName}\n${release.publishedAt}',
+                    info.tagName,
                     style: TextStyle(color: scheme.onSurface),
                   ),
                 ],
@@ -125,7 +105,7 @@ class NewestUpdateView extends StatelessWidget {
             ),
             Expanded(
               child: Markdown(
-                data: release.body ?? '',
+                data: info.body ?? '',
                 onTapLink: (text, href, title) {
                   if (href != null) {
                     rust_utils.launchInBrowser(uri: href);
@@ -149,8 +129,8 @@ class NewestUpdateView extends StatelessWidget {
                   const SizedBox(width: 16.0),
                   TextButton.icon(
                     onPressed: () {
-                      if (release.htmlUrl != null) {
-                        rust_utils.launchInBrowser(uri: release.htmlUrl!);
+                      if (info.htmlUrl != null) {
+                        rust_utils.launchInBrowser(uri: info.htmlUrl!);
                       }
                       Navigator.pop(context);
                     },
@@ -163,6 +143,32 @@ class NewestUpdateView extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 自动检查更新开关
+class AutoUpdateToggle extends StatelessWidget {
+  const AutoUpdateToggle({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return StatefulBuilder(
+      builder: (context, setState) {
+        final enabled = AppPreference.instance.autoCheckUpdate;
+        return SettingsTile(
+          description: '启动时自动检查更新',
+          subtitle: enabled ? '已开启' : '已关闭',
+          action: Switch(
+            value: enabled,
+            onChanged: (value) {
+              AppPreference.instance.autoCheckUpdate = value;
+              AppPreference.instance.save();
+              setState(() {});
+            },
+          ),
+        );
+      },
     );
   }
 }

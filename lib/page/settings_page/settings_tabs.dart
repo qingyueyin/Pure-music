@@ -878,6 +878,8 @@ class _AdvancedTabContent extends StatelessWidget {
         SizedBox(height: 16.0),
         CreateIssueTile(),
         SizedBox(height: 16.0),
+        AutoUpdateToggle(),
+        SizedBox(height: 16.0),
         CheckForUpdate(),
       ],
     );

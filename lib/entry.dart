@@ -17,6 +17,7 @@ import 'package:pure_music/page/playlist_detail_page.dart';
 import 'package:pure_music/page/playlists_page.dart';
 import 'package:pure_music/page/search_page/search_page.dart';
 import 'package:pure_music/page/search_page/search_result_page.dart';
+import 'package:pure_music/page/settings_page/check_update.dart';
 import 'package:pure_music/page/settings_page/create_issue.dart';
 import 'package:pure_music/page/settings_page/page.dart';
 import 'package:pure_music/page/updating_page.dart';
@@ -26,7 +27,9 @@ import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
 import 'package:pure_music/component/app_scroll_behavior.dart';
 import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/core/matcher.dart' hide logger;
+import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/theme.dart';
+import 'package:pure_music/core/update_checker.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -126,6 +129,8 @@ class _EntryState extends State<Entry> with WindowListener, WidgetsBindingObserv
       if (Platform.environment['CP_ECHO_RECORD'] == '1') {
         AudioEchoLogRecorder.instance.start();
       }
+      // 启动后延迟检查更新
+      _autoCheckUpdate();
     });
   }
 
@@ -151,6 +156,30 @@ class _EntryState extends State<Entry> with WindowListener, WidgetsBindingObserv
   @override
   void onWindowFocus() {
     // Window focus handler
+  }
+
+  /// 启动后延迟检查更新
+  Future<void> _autoCheckUpdate() async {
+    if (!AppPreference.instance.autoCheckUpdate) return;
+
+    // 延迟 5 秒，避免影响启动性能
+    await Future.delayed(const Duration(seconds: 5));
+    if (!mounted) return;
+
+    final newest = await UpdateChecker.checkForUpdate();
+    if (!mounted || newest == null) return;
+
+    if (UpdateChecker.shouldNotify(newest.tagName)) {
+      // 记录已提醒版本，避免反复弹窗
+      AppPreference.instance.lastSeenUpdateTag = newest.tagName;
+      AppPreference.instance.save();
+
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (context) => NewestUpdateView(info: newest),
+      );
+    }
   }
 
   /// 内存不足时的统一清理入口
