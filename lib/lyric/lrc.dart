@@ -117,7 +117,8 @@ class LrcLine extends UnsyncLyricLine {
       for (final pair in pairs) {
         final open = pair[0], close = pair[1];
         if (t.startsWith(open) && t.endsWith(close)) {
-          final inner = t.substring(open.length, t.length - close.length).trim();
+          final inner =
+              t.substring(open.length, t.length - close.length).trim();
           if (inner.isNotEmpty) {
             t = inner;
             changed = true;
@@ -652,6 +653,8 @@ class Lrc extends Lyric {
     final metadataTagPattern = RegExp(r'^\[[a-zA-Z]+:');
 
     var lines = <LrcLine>[];
+    int? maxMetadataTimeMs; // 记录被过滤元数据行的最大时间戳
+
     for (int i = 0; i < lrcLines.length; i++) {
       var line = lrcLines[i].trim();
       if (line.isEmpty || line == '//') continue;
@@ -667,6 +670,15 @@ class Lrc extends Lyric {
         continue;
       }
 
+      // 如果是元数据行，记录时间戳但不添加到 lines
+      if (lyricLine.isMetadata) {
+        final ms = lyricLine.start.inMilliseconds;
+        if (maxMetadataTimeMs == null || ms > maxMetadataTimeMs) {
+          maxMetadataTimeMs = ms;
+        }
+        continue;
+      }
+
       lines.add(lyricLine);
     }
 
@@ -674,63 +686,38 @@ class Lrc extends Lyric {
       return null;
     }
 
-    // 估算每行的实际显示时长，并在行间隙超过阈值时插入间奏空白行
-    final estimatedFinalLines = <LrcLine>[];
-    const interludeThreshold = Duration(milliseconds: 5000);
-
+    // 估算每行的实际显示时长（逐行歌词不插入中间间奏，只在开头插入）
     for (var i = 0; i < lines.length; i++) {
       final currentLine = lines[i];
       final nextLine = i < lines.length - 1 ? lines[i + 1] : null;
 
       if (nextLine != null) {
         final timeGap = nextLine.start - currentLine.start;
-        // 估算：如果时间间隔很大（>=5秒），认为当前行歌词较短，剩余时间是间奏
-        // 这里使用经验值：假设歌词行显示 3-4 秒，剩余时间作为间奏
-        const estimatedLyricDisplayMs = Duration(milliseconds: 3500);
-
-        if (timeGap >= interludeThreshold) {
-          // 有间奏：歌词行长度设为估计显示时间
-          currentLine.length = estimatedLyricDisplayMs;
-          estimatedFinalLines.add(currentLine);
-
-          // 插入间奏空白行
-          final interludeStart = currentLine.start + currentLine.length;
-          final interludeDuration = nextLine.start - interludeStart;
-          if (interludeDuration > Duration.zero) {
-            estimatedFinalLines.add(
-              LrcLine(
-                interludeStart,
-                '',
-                requiredIsBlank: true,
-              )..length = interludeDuration,
-            );
-          }
-        } else {
-          // 无间奏：正常设置 length
-          currentLine.length = timeGap;
-          estimatedFinalLines.add(currentLine);
-        }
+        currentLine.length = timeGap;
       } else {
         // 最后一行
         currentLine.length = Duration.zero;
-        estimatedFinalLines.add(currentLine);
       }
     }
 
-    lines.clear();
-    lines.addAll(estimatedFinalLines);
+    // 为前奏间隙创建空白行：从元数据最后时间戳（如果有）或 0 到第一句真实歌词
+    if (lines.isNotEmpty) {
+      final firstRealStart = lines.first.start;
+      final introStart = maxMetadataTimeMs != null
+          ? Duration(milliseconds: maxMetadataTimeMs)
+          : Duration.zero;
 
-    // 为前奏间隙创建空白行（第一句歌词开始前有时间间隙）
-    if (lines.isNotEmpty && lines.first.start > Duration.zero) {
-      final firstLineStart = lines.first.start;
-      lines.insert(
-        0,
-        LrcLine(
-          Duration.zero,
-          '',
-          requiredIsBlank: true,
-        )..length = firstLineStart,
-      );
+      // 如果第一句歌词在元数据之后，插入前奏空白行
+      if (firstRealStart > introStart) {
+        lines.insert(
+          0,
+          LrcLine(
+            introStart,
+            '',
+            requiredIsBlank: true,
+          )..length = firstRealStart - introStart,
+        );
+      }
     }
 
     final result = Lrc(lines, source);
@@ -738,7 +725,6 @@ class Lrc extends Lyric {
 
     if (separator == null) {
       result._removeBlankLines();
-      result.lines.removeWhere((l) => l is LrcLine && l.isMetadata);
       return result;
     }
 
@@ -882,6 +868,9 @@ class Lrc extends Lyric {
     final attributePattern = RegExp(r'^\[(\d+)\]');
 
     final rawLines = <_EnhancedLrcRawLine>[];
+    final filteredMetadataMs = <int>{};
+    // 记录最大的元数据时间戳，用于计算间奏开始时间
+    int? maxMetadataTimeMs;
 
     for (final raw in lrcLines) {
       final line = raw.trimRight();
@@ -893,7 +882,21 @@ class Lrc extends Lyric {
       final contentRaw = line.replaceAll(timeTagRe, '').trim();
 
       // 过滤元数据行
-      if (LrcLine.isLyricMetadataLine(contentRaw)) continue;
+      if (LrcLine.isLyricMetadataLine(contentRaw)) {
+        for (final m in timeMatches) {
+          final mm = int.tryParse(m.group(1) ?? '');
+          final ss = double.tryParse(m.group(2) ?? '');
+          if (mm != null && ss != null) {
+            final ms = max(((mm * 60 + ss) * 1000).round() - offsetMs, 0);
+            filteredMetadataMs.add(ms);
+            // 更新最大元数据时间戳
+            if (maxMetadataTimeMs == null || ms > maxMetadataTimeMs) {
+              maxMetadataTimeMs = ms;
+            }
+          }
+        }
+        continue;
+      }
 
       for (final m in timeMatches) {
         final minute = int.tryParse(m.group(1) ?? '');
@@ -901,6 +904,8 @@ class Lrc extends Lyric {
         if (minute == null || sec == null) continue;
         final lineStartMs =
             max(((minute * 60 + sec) * 1000).round() - offsetMs, 0);
+
+        if (filteredMetadataMs.contains(lineStartMs)) continue;
 
         rawLines.add(_EnhancedLrcRawLine(
           Duration(milliseconds: lineStartMs),
@@ -1039,6 +1044,12 @@ class Lrc extends Lyric {
 
       if (primaryWords.isEmpty) continue;
 
+      // 元数据残留保护：primary 匹配元数据特征 → 整组跳过
+      if (LrcLine.isLyricMetadataLine(
+          primaryContent.replaceAll(RegExp(r'<[^>]*>'), '').trim())) {
+        continue;
+      }
+
       final line = EnhancedLrcLine(
         start,
         Duration.zero,
@@ -1126,16 +1137,32 @@ class Lrc extends Lyric {
       }
     }
 
-    if (finalLines.isNotEmpty && finalLines.first.start > Duration.zero) {
-      final firstLineStart = finalLines.first.start;
-      finalLines.insert(
-        0,
-        EnhancedLrcLine(
-          Duration.zero,
-          firstLineStart,
-          [],
-        ),
-      );
+    // 插入前奏空白行：从元数据最后时间戳（如果有）或 0 到第一句歌词
+    if (finalLines.isNotEmpty) {
+      final firstLine = finalLines.first;
+      final firstLineStart = firstLine.start;
+      final introStart = maxMetadataTimeMs != null
+          ? Duration(milliseconds: maxMetadataTimeMs)
+          : Duration.zero;
+
+      logger.i('[lrc] _parseLyricify: maxMetadataTimeMs=$maxMetadataTimeMs, firstLineStart=${firstLineStart.inMilliseconds}ms, introStart=${introStart.inMilliseconds}ms');
+
+      // 如果第一句歌词在元数据之后，且第一行不是从 introStart 开始的空白行，插入间奏空白行
+      final firstLineIsIntroBlank = firstLine is SyncLyricLine &&
+                                     firstLine.words.isEmpty &&
+                                     firstLineStart == introStart;
+
+      if (firstLineStart > introStart && !firstLineIsIntroBlank) {
+        logger.i('[lrc] _parseLyricify: inserting intro blank line from ${introStart.inMilliseconds}ms to ${firstLineStart.inMilliseconds}ms');
+        finalLines.insert(
+          0,
+          EnhancedLrcLine(
+            introStart,
+            firstLineStart - introStart,
+            [],
+          ),
+        );
+      }
     }
 
     cleanLyricBlankLines(finalLines);
@@ -1186,6 +1213,10 @@ class Lrc extends Lyric {
     }
 
     final rawLines = <_EnhancedLrcRawLine>[];
+    // 记录被过滤元数据行的时间戳，后续同步过滤同时间戳的罗马音残留行
+    final filteredMetadataMs = <int>{};
+    // 记录最大的元数据时间戳，用于计算间奏开始时间
+    int? maxMetadataTimeMs;
 
     for (final raw in lrcLines) {
       final line = raw.trimRight();
@@ -1199,6 +1230,19 @@ class Lrc extends Lyric {
       // 过滤元数据行（"Adam Levine："、"词：xxx"等），避免它们抢真实歌词的主位
       if (LrcLine.isLyricMetadataLine(
           contentRaw.replaceAll(wordTagRe, '').trim())) {
+        // 记录该行所有时间戳，以便后续过滤同组的罗马音等残留行
+        for (final m in timeMatches) {
+          final mm = int.tryParse(m.group(1) ?? '');
+          final ss = double.tryParse(m.group(2) ?? '');
+          if (mm != null && ss != null) {
+            final ms = max(((mm * 60 + ss) * 1000).round() - offsetMs, 0);
+            filteredMetadataMs.add(ms);
+            // 更新最大元数据时间戳
+            if (maxMetadataTimeMs == null || ms > maxMetadataTimeMs) {
+              maxMetadataTimeMs = ms;
+            }
+          }
+        }
         continue;
       }
 
@@ -1208,6 +1252,9 @@ class Lrc extends Lyric {
         if (minute == null || sec == null) continue;
         final lineStartMs =
             max(((minute * 60 + sec) * 1000).round() - offsetMs, 0);
+
+        // 检查该时间戳是否已被元数据过滤
+        if (filteredMetadataMs.contains(lineStartMs)) continue;
 
         rawLines.add(_EnhancedLrcRawLine(
           Duration(milliseconds: lineStartMs),
@@ -1443,7 +1490,12 @@ class Lrc extends Lyric {
         }
       }
 
-      if (words.isEmpty) continue;
+      // 元数据残留保护：primary 匹配元数据特征 → 整组跳过
+      if (words.isEmpty ||
+          LrcLine.isLyricMetadataLine(
+              primaryText.replaceAll(wordTagRe, '').trim())) {
+        continue;
+      }
 
       parsedLines.add(
         EnhancedLrcLine(
@@ -1505,16 +1557,32 @@ class Lrc extends Lyric {
       }
     }
 
-    if (finalLines.isNotEmpty && finalLines.first.start > Duration.zero) {
-      final firstLineStart = finalLines.first.start;
-      finalLines.insert(
-        0,
-        EnhancedLrcLine(
-          Duration.zero,
-          firstLineStart,
-          [],
-        ),
-      );
+    // 插入前奏空白行：从元数据最后时间戳（如果有）或 0 到第一句歌词
+    if (finalLines.isNotEmpty) {
+      final firstLine = finalLines.first;
+      final firstLineStart = firstLine.start;
+      final introStart = maxMetadataTimeMs != null
+          ? Duration(milliseconds: maxMetadataTimeMs)
+          : Duration.zero;
+
+      logger.i('[lrc] _parseEnhancedLrcText: maxMetadataTimeMs=$maxMetadataTimeMs, firstLineStart=${firstLineStart.inMilliseconds}ms, introStart=${introStart.inMilliseconds}ms');
+
+      // 如果第一句歌词在元数据之后，且第一行不是从 introStart 开始的空白行，插入间奏空白行
+      final firstLineIsIntroBlank = firstLine is SyncLyricLine &&
+                                     firstLine.words.isEmpty &&
+                                     firstLineStart == introStart;
+
+      if (firstLineStart > introStart && !firstLineIsIntroBlank) {
+        logger.i('[lrc] _parseEnhancedLrcText: inserting intro blank line from ${introStart.inMilliseconds}ms to ${firstLineStart.inMilliseconds}ms');
+        finalLines.insert(
+          0,
+          EnhancedLrcLine(
+            introStart,
+            firstLineStart - introStart,
+            [],
+          ),
+        );
+      }
     }
 
     cleanLyricBlankLines(finalLines);
