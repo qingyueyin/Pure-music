@@ -381,6 +381,20 @@ class Audio {
     _coverLastAccessMs = DateTime.now().millisecondsSinceEpoch;
   }
 
+  /// split + trim + 去空 + 去重（保持首次出现顺序）
+  static List<String> _splitAndDedup(String raw, RegExp regex) {
+    final seen = <String>{};
+    final result = <String>[];
+    for (final part in raw.split(regex)) {
+      final trimmed = part.trim();
+      if (trimmed.isEmpty) continue;
+      if (seen.add(trimmed)) {
+        result.add(trimmed);
+      }
+    }
+    return result;
+  }
+
   Audio(
     this.title,
     this.artist,
@@ -394,12 +408,14 @@ class Audio {
     this.modified,
     this.created,
     this.by,
-  )   : splitedArtists = artist.split(
+  )   : splitedArtists = _splitAndDedup(
+          artist,
           AppSettings.instance.artistSplitRegex,
         ),
-        splitedAlbumArtists = (albumArtist ?? '').isEmpty
-            ? const []
-            : albumArtist!.split(AppSettings.instance.artistSplitRegex);
+        splitedAlbumArtists = _splitAndDedup(
+          albumArtist ?? '',
+          AppSettings.instance.artistSplitRegex,
+        );
 
   factory Audio.fromMap(Map map) => Audio(
         map['title'] ?? '',
