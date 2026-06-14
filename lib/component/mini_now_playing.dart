@@ -106,8 +106,9 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
         duration: MotionDuration.fast,
         curve: MotionCurve.standard,
         decoration: BoxDecoration(
-          color:
-              _hovered ? scheme.onSecondaryContainer.withValues(alpha: 0.06) : null,
+          color: _hovered
+              ? scheme.onSecondaryContainer.withValues(alpha: 0.06)
+              : null,
           borderRadius: BorderRadius.circular(8.0),
         ),
         child: Material(
@@ -126,7 +127,8 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
             onTap: () {
               final playbackService = PlayService.instance.playbackService;
               final nowPlaying = playbackService.nowPlaying;
-              if (nowPlaying != null && !playbackService.nowPlayingChangedRecently) {
+              if (nowPlaying != null &&
+                  !playbackService.nowPlayingChangedRecently) {
                 _precacheToken += 1;
                 final token = _precacheToken;
                 final config = createLocalImageConfiguration(context);
@@ -147,6 +149,7 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
                   stream.addListener(listener);
                   return completer.future;
                 }
+
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (!mounted) return;
                   () async {
@@ -164,11 +167,13 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8.0),
               child: ListenableBuilder(
-                listenable: PlayService.instance.playbackService,
+                listenable:
+                    PlayService.instance.playbackService.nowPlayingNotifier,
                 builder: (context, _) {
                   final playbackService = PlayService.instance.playbackService;
                   final nowPlaying = playbackService.nowPlaying;
-                  final heroEnabled = !playbackService.nowPlayingChangedRecently;
+                  final heroEnabled =
+                      !playbackService.nowPlayingChangedRecently;
                   final placeholder = Icon(
                     Symbols.queue_music,
                     size: 48.0,
