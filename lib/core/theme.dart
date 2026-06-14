@@ -8,10 +8,14 @@ import 'package:pure_music/play_service/play_service.dart';
 import 'package:flutter/material.dart';
 
 ColorScheme _applyLightSurfacePalette(ColorScheme scheme) {
+  // Keep the default Material 3 surface hierarchy for light mode.
+  // The scaffold/canvas background uses surfaceContainerLow (via entry.dart)
+  // to avoid harsh pure-white backgrounds — surface remains the brightest
+  // for cards/dialogs that need to pop.
   return scheme.copyWith(
-    surface: scheme.surfaceContainer,
-    surfaceContainer: scheme.surface,
-    surfaceContainerLow: scheme.surfaceContainerLowest,
+    surface: scheme.surface,
+    surfaceContainer: scheme.surfaceContainer,
+    surfaceContainerLow: scheme.surfaceContainerLow,
     surfaceContainerHigh: scheme.surfaceContainerHigh,
     surfaceContainerHighest: scheme.surfaceContainerHighest,
   );
@@ -297,7 +301,8 @@ class ThemeProvider extends ChangeNotifier {
           }
           return null;
         }),
-        foregroundColor: WidgetStatePropertyAll(currScheme.onSecondaryContainer),
+        foregroundColor:
+            WidgetStatePropertyAll(currScheme.onSecondaryContainer),
         padding: const WidgetStatePropertyAll(
           EdgeInsets.symmetric(horizontal: 16.0),
         ),
