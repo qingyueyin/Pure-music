@@ -665,7 +665,11 @@ class _ExclusiveModeSwitch extends StatelessWidget {
         icon: Center(
           child: Text(
             exclusive ? 'Excl' : 'Shrd',
-            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              color: scheme.onSurface,
+            ),
           ),
         ),
         color: scheme.onSurface,
