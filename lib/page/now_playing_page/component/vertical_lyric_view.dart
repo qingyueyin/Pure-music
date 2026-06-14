@@ -7,6 +7,7 @@ import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/page/now_playing_page/component/collapsible_lyric_controls.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.dart';
 import 'package:pure_music/page/now_playing_page/component/lyrics_line_widget.dart';
+import 'package:pure_music/page/now_playing_page/component/lyrics_line_painter.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_viewport_strategy.dart';
 import 'package:pure_music/page/now_playing_page/component/value_transition.dart';
 import 'package:pure_music/play_service/play_service.dart';
@@ -188,6 +189,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   Timer? _ensureVisibleTimer;
   Timer? _userScrollHoldTimer;
   Timer? _sizeChangeTimer;
+  Timer? _idleCleanupTimer; // 空闲清理定时器
+  DateTime _lastActivityTime = DateTime.now(); // 最后活动时间
   LyricScrollState _scrollState = LyricScrollState.idle;
   int _mainLine = 0;
   int _pendingScrollRetries = 0;
@@ -224,6 +227,37 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       if (!mounted) return;
       lyricService.findCurrLyricLineAt(playbackService.position);
     });
+
+    // 启动空闲检测：每 3 秒检查一次，如果 5 秒无活动则执行深度清理
+    _idleCleanupTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (!_disposed && mounted) {
+        final idleTime = DateTime.now().difference(_lastActivityTime);
+        if (idleTime.inSeconds >= 5) {
+          // 空闲 5 秒，执行深度清理
+          utils.logger.d('[Memory] Idle ${idleTime.inSeconds}s, FULL cleanup');
+
+          // 1. 完全清空对象池（而不是压缩）
+          LyricsLinePainter.clearPool();
+
+          // 2. 清空缓存的偏移量和高度（强制下次重新计算）
+          _cachedOffsets = null;
+          _cachedHeights = null;
+
+          // 3. 触发完整重建（改变 _cachedMaxWidth 会导致所有非当前行key变化）
+          _cachedMaxWidth = (_cachedMaxWidth == 0.0) ? 0.1 : 0.0;
+
+          // 4. 强制 setState 触发 build
+          if (mounted) {
+            setState(() {});
+          }
+        }
+      }
+    });
+  }
+
+  /// 标记活动时间（切歌、滚动、行变化）
+  void _markActivity() {
+    _lastActivityTime = DateTime.now();
   }
 
   /// HQ Player 风格: Sine Out 缓动函数
@@ -473,6 +507,9 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   void didUpdateWidget(covariant _VerticalLyricScrollView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.lyric != widget.lyric) {
+      // 切歌时标记活动
+      _markActivity();
+
       // 切歌时取消所有待处理的 Timer/Ticker，避免泄漏
       _stopScrollTicker();
       _ensureVisibleTimer?.cancel();
@@ -486,10 +523,12 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       _cachedOffsets = null;
       _cachedHeights = null;
       _mainLine = 0;
+
+      // 延迟清空 TextPainter 对象池，避免在绘制过程中销毁正在使用的对象
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _initLyricView();
-        }
+        if (_disposed || !mounted) return;
+        LyricsLinePainter.clearPool();
+        _initLyricView();
       });
     }
   }
@@ -531,11 +570,9 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       return;
     }
 
-    _scrollTransition = ValueTransition<double>(
-      begin: from,
-      interpolator: _sineOutInterpolator,
-      duration: duration ?? _scrollDurationForDistance(dist),
-    );
+    // 重用现有 transition，避免创建新对象
+    _scrollTransition.begin = from;
+    _scrollTransition.duration = duration ?? _scrollDurationForDistance(dist);
     _scrollTransition.start(to);
     _startScrollTicker();
 
@@ -545,6 +582,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   }
 
   void _markUserScrolling() {
+    _markActivity(); // 标记活动
     if (_hoveredLineIndex != -1) {
       _hoveredLineIndex = -1;
     }
@@ -715,7 +753,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   /// 判断一行是否已被 blankMetadataLines 清空（不需要渲染）
   bool _isLineBlankFiltered(LyricLine line) {
     if (line is SyncLyricLine) {
-      // words 为空且长度 <= 3秒 → 纯空白短行，不渲染
       return line.words.isEmpty && line.length <= const Duration(seconds: 3);
     } else if (line is LrcLine) {
       return line.isBlank &&
@@ -730,6 +767,9 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     if (_mainLine == lyricLine) {
       return;
     }
+
+    // 歌词行自动切换不算作"活动"，只有用户操作才算
+    // _markActivity(); // 删除这行
 
     final lines = widget.lyric.lines;
     // 跳过空白行：服务可能发出元数据行索引
@@ -774,7 +814,9 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       userScrollHoldDuration: renderConfig.userScrollHoldDuration,
     );
     return LayoutBuilder(builder: (context, constraints) {
-      if (constraints.maxWidth != _cachedMaxWidth) {
+      final needsOffsets =
+          _cachedOffsets == null || constraints.maxWidth != _cachedMaxWidth;
+      if (needsOffsets) {
         _cachedMaxWidth = constraints.maxWidth;
         // 延迟精确偏移量到首帧后，避免阻塞初始渲染
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -782,6 +824,14 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
           _computeOffsets(constraints.maxWidth);
           // 精确偏移量算完后重定位到当前行
           _scrollToCurrent(const Duration(milliseconds: 150));
+        });
+      } else {
+        // 页面重建但宽度未变（如从其他页返回播放页）：重定位到当前行
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_disposed || !mounted) return;
+          if (_cachedOffsets != null) {
+            _ensureCurrentLineVisible();
+          }
         });
       }
 
@@ -820,24 +870,28 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                 },
                 child: ShaderMask(
                   shaderCallback: (Rect bounds) {
-                    return const LinearGradient(
+                    // 开启了歌词模糊 → 加大边缘渐隐（和模糊效果协同）
+                    // 关闭 → 仅保留很小的边缘淡出以免生硬裁切
+                    final fadeIn = renderConfig.enableBlur ? 0.20 : 0.05;
+                    final fadeOut = renderConfig.enableBlur ? 0.80 : 0.95;
+                    return LinearGradient(
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
-                      colors: [
+                      colors: const [
                         Colors.transparent,
                         Colors.black,
                         Colors.black,
                         Colors.transparent
                       ],
-                      stops: [0.0, 0.2, 0.8, 1.0],
+                      stops: [0.0, fadeIn, fadeOut, 1.0],
                     ).createShader(bounds);
                   },
                   blendMode: BlendMode.dstIn,
                   child: ListView.builder(
                     key: const ValueKey('lyric_list_view_inner'),
                     controller: scrollController,
-                    addAutomaticKeepAlives: false,
-                    addRepaintBoundaries: false,
+                    addAutomaticKeepAlives: true, // 改为 true，保持 Widget 状态
+                    addRepaintBoundaries: true, // 改为 true，每行独立重绘
                     scrollCacheExtent: ScrollCacheExtent.pixels(
                         viewportStrategy.cacheExtent(constraints.maxHeight)),
                     padding: EdgeInsets.only(
@@ -871,27 +925,32 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                       final isHovered =
                           widget.enableSeekOnTap && i == _hoveredLineIndex;
 
+                      // 为每行创建稳定的 key，避免 Widget 重建
+                      // 但在空闲清理时，通过改变 key 强制重建非当前行
+                      final lineKey = dist == 0
+                          ? currentLyricTileKey
+                          : ValueKey('lyric_line_${i}_${_cachedMaxWidth.toInt()}');
+
                       return LyricsLineWidget(
-                          key: dist == 0 ? currentLyricTileKey : null,
-                          line: line,
-                          opacity: isHovered ? 1.0 : opacity,
-                          distance: dist,
-                          lineOffsetY: 0.0,
-                          staggerDelay:
-                              isHovered ? Duration.zero : staggerDelay,
-                          isUserScrolling: userIsDragging,
-                          isHovered: isHovered,
-                          onHoverChanged: widget.enableSeekOnTap
-                              ? (v) {
-                                  setState(() {
-                                    _hoveredLineIndex = v ? i : -1;
-                                  });
-                                }
-                              : null,
-                          onTap: widget.enableSeekOnTap
-                              ? () => _seekToLyricLineWithOriginalIndex(line)
-                              : null,
-                        );
+                        key: lineKey,
+                        line: line,
+                        opacity: isHovered ? 1.0 : opacity,
+                        distance: dist,
+                        lineOffsetY: 0.0,
+                        staggerDelay: isHovered ? Duration.zero : staggerDelay,
+                        isUserScrolling: userIsDragging,
+                        isHovered: isHovered,
+                        onHoverChanged: widget.enableSeekOnTap
+                            ? (v) {
+                                setState(() {
+                                  _hoveredLineIndex = v ? i : -1;
+                                });
+                              }
+                            : null,
+                        onTap: widget.enableSeekOnTap
+                            ? () => _seekToLyricLineWithOriginalIndex(line)
+                            : null,
+                      );
                     },
                   ),
                 ),
@@ -911,8 +970,12 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     _ensureVisibleTimer?.cancel();
     _userScrollHoldTimer?.cancel();
     _sizeChangeTimer?.cancel();
+    _idleCleanupTimer?.cancel(); // 取消空闲检测
     _lyricViewController?.removeListener(_scheduleEnsureCurrentVisible);
     lyricLineStreamSubscription.cancel();
     scrollController.dispose();
+
+    // 清空 TextPainter 对象池，释放内存
+    LyricsLinePainter.clearPool();
   }
 }
