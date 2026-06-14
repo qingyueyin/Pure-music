@@ -155,6 +155,7 @@ class _SearchDialogState extends State<SearchDialog> {
               child: TextField(
                 controller: _searchController,
                 autofocus: true,
+                style: TextStyle(color: scheme.onSurface),
                 decoration: InputDecoration(
                   prefixIcon: const Icon(Symbols.search),
                   hintText: '搜索歌曲、艺术家、专辑',
@@ -270,8 +271,7 @@ class _SearchDialogState extends State<SearchDialog> {
                             const SizedBox(height: 4),
                             Text(
                               '支持搜索歌曲、艺术家、专辑。',
-                              style:
-                                  TextStyle(color: scheme.onSurfaceVariant),
+                              style: TextStyle(color: scheme.onSurfaceVariant),
                             ),
                           ],
                         ),
