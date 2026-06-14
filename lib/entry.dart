@@ -98,7 +98,8 @@ class DetailTransitionPage<T> extends CustomTransitionPage<T> {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    final fade = CurvedAnimation(parent: animation, curve: Curves.easeInOutCubic);
+    final fade =
+        CurvedAnimation(parent: animation, curve: Curves.easeInOutCubic);
     final slide = Tween(
       begin: const Offset(0, 0.06),
       end: Offset.zero,
@@ -118,7 +119,8 @@ class Entry extends StatefulWidget {
   State<Entry> createState() => _EntryState();
 }
 
-class _EntryState extends State<Entry> with WindowListener, WidgetsBindingObserver {
+class _EntryState extends State<Entry>
+    with WindowListener, WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
@@ -276,7 +278,8 @@ class _EntryState extends State<Entry> with WindowListener, WidgetsBindingObserv
                   child: AudiosPage(locateTo: state.extra as Audio?),
                 );
               }
-              return NoTransitionPage(key: state.pageKey, child: const AudiosPage());
+              return NoTransitionPage(
+                  key: state.pageKey, child: const AudiosPage());
             },
             routes: [
               GoRoute(
@@ -292,8 +295,8 @@ class _EntryState extends State<Entry> with WindowListener, WidgetsBindingObserv
           /// artists page
           GoRoute(
             path: app_paths.ARTISTS_PAGE,
-            pageBuilder: (context, state) =>
-                NoTransitionPage(key: state.pageKey, child: const ArtistsPage()),
+            pageBuilder: (context, state) => NoTransitionPage(
+                key: state.pageKey, child: const ArtistsPage()),
             routes: [
               GoRoute(
                 path: 'detail',
@@ -324,8 +327,8 @@ class _EntryState extends State<Entry> with WindowListener, WidgetsBindingObserv
           /// folders page
           GoRoute(
             path: app_paths.FOLDERS_PAGE,
-            pageBuilder: (context, state) =>
-                NoTransitionPage(key: state.pageKey, child: const FoldersPage()),
+            pageBuilder: (context, state) => NoTransitionPage(
+                key: state.pageKey, child: const FoldersPage()),
             routes: [
               /// folder detail page
               GoRoute(
@@ -333,7 +336,10 @@ class _EntryState extends State<Entry> with WindowListener, WidgetsBindingObserv
                 pageBuilder: (context, state) {
                   final folder = state.extra as AudioFolder?;
                   if (folder == null) {
-                    return NoTransitionPage(key: state.pageKey, child: FolderDetailPage(folder: AudioFolder([], '', 0, 0)));
+                    return NoTransitionPage(
+                        key: state.pageKey,
+                        child: FolderDetailPage(
+                            folder: AudioFolder([], '', 0, 0)));
                   }
                   return SlideTransitionPage(
                     key: state.pageKey,
@@ -347,15 +353,17 @@ class _EntryState extends State<Entry> with WindowListener, WidgetsBindingObserv
           /// playlists page
           GoRoute(
             path: app_paths.PLAYLISTS_PAGE,
-            pageBuilder: (context, state) =>
-                NoTransitionPage(key: state.pageKey, child: const PlaylistsPage()),
+            pageBuilder: (context, state) => NoTransitionPage(
+                key: state.pageKey, child: const PlaylistsPage()),
             routes: [
               GoRoute(
                 path: 'detail',
                 pageBuilder: (context, state) {
                   final playlist = state.extra as Playlist?;
                   if (playlist == null) {
-                    return NoTransitionPage(key: state.pageKey, child: PlaylistDetailPage(playlist: Playlist('', [])));
+                    return NoTransitionPage(
+                        key: state.pageKey,
+                        child: PlaylistDetailPage(playlist: Playlist('', [])));
                   }
                   return SlideTransitionPage(
                     key: state.pageKey,
