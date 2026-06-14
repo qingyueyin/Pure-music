@@ -80,7 +80,8 @@ class _SideNavState extends State<SideNav> {
       builder: (context, screenType) {
         return LayoutBuilder(
           builder: (context, constraints) {
-            final expandedWidth = math.min(_expandedWidth, constraints.maxWidth);
+            final expandedWidth =
+                math.min(_expandedWidth, constraints.maxWidth);
             return ValueListenableBuilder(
               valueListenable: sidebarExpanded,
               builder: (context, expanded, _) {
@@ -137,9 +138,9 @@ class _SmoothLargeSideNav extends StatelessWidget {
         curve: MotionCurve.emphasized,
         tween: Tween(begin: 0.0, end: expanded ? 1.0 : 0.0),
         builder: (context, t, _) {
-          final visibleWidth = (lerpDouble(_collapsedWidth, expandedWidth, t) ??
-                  _collapsedWidth)
-              .clamp(_collapsedWidth, expandedWidth);
+          final visibleWidth =
+              (lerpDouble(_collapsedWidth, expandedWidth, t) ?? _collapsedWidth)
+                  .clamp(_collapsedWidth, expandedWidth);
           return SizedBox(
             width: visibleWidth,
             height: double.infinity,
@@ -147,7 +148,7 @@ class _SmoothLargeSideNav extends StatelessWidget {
               padding: const EdgeInsets.all(8.0),
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerLow,
+                  color: colorScheme.surface,
                   borderRadius: BorderRadius.circular(28.0),
                 ),
                 child: ClipRRect(
@@ -163,7 +164,11 @@ class _SmoothLargeSideNav extends StatelessWidget {
                             : expanded
                                 ? Symbols.menu_open
                                 : Symbols.menu,
-                        label: isDrawer ? '关闭' : expanded ? '收起' : '展开',
+                        label: isDrawer
+                            ? '关闭'
+                            : expanded
+                                ? '收起'
+                                : '展开',
                         expandedT: t,
                         selected: false,
                         onTap: onToggle,
@@ -253,7 +258,8 @@ class _NavItem extends StatelessWidget {
                 SizedBox(width: iconLeftPad),
                 SizedBox(
                   width: iconSize,
-                  child: Icon(icon, size: iconSize, color: fg.withValues(alpha: 0.90)),
+                  child: Icon(icon,
+                      size: iconSize, color: fg.withValues(alpha: 0.90)),
                 ),
                 if (expandedT > 0.01)
                   Opacity(
@@ -268,7 +274,8 @@ class _NavItem extends StatelessWidget {
                         style: TextStyle(
                           color: fg,
                           fontSize: 14.5,
-                          fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                          fontWeight:
+                              selected ? FontWeight.w600 : FontWeight.w500,
                         ),
                       ),
                     ),
