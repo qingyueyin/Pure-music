@@ -700,6 +700,11 @@ class LyricService extends ChangeNotifier {
     _cancelLyricWritePrompt();
     _lyricLineStreamController.close();
     _positionStreamSubscription.cancel();
+    _lyricCache.clear();
     super.dispose();
+  }
+
+  void clearCache() {
+    _lyricCache.clear();
   }
 }
