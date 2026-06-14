@@ -44,13 +44,38 @@ class LyricsLineWidget extends StatefulWidget {
 }
 
 class _LyricsLineWidgetState extends State<LyricsLineWidget>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   late final ValueTransition<double> _offsetYTransition;
   late final ValueTransition<double> _scaleTransition;
   late final ValueTransition<double> _opacityTransition;
   late final LyricRenderConfig _config;
   Ticker? _ticker;
   double _currentTimeMs = 0;
+
+  // 缓存 ImageFilter 和 Painter，避免每帧重建
+  ImageFilter? _cachedBlurFilter;
+  double _cachedBlurSigma = 0.0;
+  LyricsLinePainter? _cachedPainter;
+
+  @override
+  bool get wantKeepAlive {
+    // 只保留当前行附近的 Widget（前后各 2 行），远离的可以销毁以节省内存
+    final dist = (widget.distance ?? 999).abs();
+    final shouldKeep = dist <= 2;
+
+    // 如果从 keepAlive 变为不 keepAlive，主动清理缓存
+    if (!shouldKeep && (_cachedPainter != null || _cachedBlurFilter != null)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _cachedPainter = null;
+          _cachedBlurFilter = null;
+          _cachedBlurSigma = 0.0;
+        }
+      });
+    }
+
+    return shouldKeep;
+  }
 
   @override
   void initState() {
@@ -80,9 +105,11 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
 
   void _initTicker() {
     final active = widget.distance == 0;
-    if (active) {
+    if (active && _ticker == null) {
       _ticker = createTicker(_onTick);
       _ticker!.start();
+    } else if (!active && _ticker != null) {
+      _ticker!.stop();
     }
   }
 
@@ -109,8 +136,12 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
   }
 
   void _onTick(Duration elapsed) {
-    _currentTimeMs = PlayService.instance.playbackService.position * 1000.0;
-    setState(() {});
+    final newTimeMs = PlayService.instance.playbackService.position * 1000.0;
+    // 只在时间变化超过 16ms（约 1 帧）时才更新，避免无意义的重建
+    if ((newTimeMs - _currentTimeMs).abs() >= 16.0) {
+      _currentTimeMs = newTimeMs;
+      setState(() {});
+    }
   }
 
   @override
@@ -128,22 +159,44 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
     }
 
     final isActive = widget.distance == 0;
-    if (isActive && _ticker == null) {
-      _initTicker();
-    } else if (!isActive && _ticker != null) {
-      _ticker!.dispose();
-      _ticker = null;
+    final wasActive = oldWidget.distance == 0;
+
+    // 只在活动状态变化时处理 Ticker，避免频繁创建销毁
+    if (isActive != wasActive) {
+      if (isActive && _ticker == null) {
+        _ticker = createTicker(_onTick);
+        _ticker!.start();
+      } else if (!isActive && _ticker != null) {
+        _ticker!.stop();
+      }
+
+      // 非当前行时清空缓存，释放内存
+      if (!isActive) {
+        _cachedPainter = null;
+        _cachedBlurFilter = null;
+        _cachedBlurSigma = 0.0;
+      }
+    }
+
+    // 行内容变化时清空缓存
+    if (widget.line != oldWidget.line) {
+      _cachedPainter = null;
     }
   }
 
   @override
   void dispose() {
     _ticker?.dispose();
+    // ImageFilter 不需要手动 dispose，由 Flutter 引擎管理
+    _cachedBlurFilter = null;
+    _cachedPainter = null;
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // AutomaticKeepAliveClientMixin 必需
+
     final dist = (widget.distance ?? 0).abs();
     final active = widget.distance == 0;
     if (dist == 0 && !_offsetYTransition.isActive) {
@@ -240,23 +293,20 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
                 theme.textTheme.bodySmall?.fontFamily;
 
             final lineWidth = constraints.maxWidth;
-            // 按实际主/副行高度测量，与 Widget 模式一致，确保行间间距正确。
-            final lineHeight = LyricsLinePainter(
-              line: widget.line,
-              currentTimeMs: _currentTimeMs,
-              opacity: effectiveOpacity,
-              blurSigma: blurSigma,
-              scale: _scaleTransition.value,
-              offsetY: _offsetYTransition.value,
-              config: renderConfig,
-              scheme: scheme,
-              isMainLine: active,
-              useMaterialYouColor: AppSettings.instance.useMaterialYouForLyrics,
-              fontFamily: fontFamily,
-            ).measureHeight(lineWidth);
 
-            Widget painted = CustomPaint(
-              painter: LyricsLinePainter(
+            // 复用或创建 painter，利用 shouldRepaint 优化
+            if (_cachedPainter == null ||
+                _cachedPainter!.line != widget.line ||
+                _cachedPainter!.currentTimeMs != _currentTimeMs ||
+                _cachedPainter!.opacity != effectiveOpacity ||
+                _cachedPainter!.blurSigma != blurSigma ||
+                _cachedPainter!.scale != _scaleTransition.value ||
+                _cachedPainter!.offsetY != _offsetYTransition.value ||
+                _cachedPainter!.config != renderConfig ||
+                _cachedPainter!.isMainLine != active ||
+                _cachedPainter!.useMaterialYouColor != AppSettings.instance.useMaterialYouForLyrics ||
+                _cachedPainter!.fontFamily != fontFamily) {
+              _cachedPainter = LyricsLinePainter(
                 line: widget.line,
                 currentTimeMs: _currentTimeMs,
                 opacity: effectiveOpacity,
@@ -266,23 +316,37 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
                 config: renderConfig,
                 scheme: scheme,
                 isMainLine: active,
-                useMaterialYouColor:
-                    AppSettings.instance.useMaterialYouForLyrics,
+                useMaterialYouColor: AppSettings.instance.useMaterialYouForLyrics,
                 fontFamily: fontFamily,
-              ),
+              );
+            }
+
+            final lineHeight = _cachedPainter!.measureHeight(lineWidth);
+
+            Widget painted = CustomPaint(
+              painter: _cachedPainter,
               size: Size(lineWidth, lineHeight),
             );
 
-            // 模糊：匹配 Widget 路径 LyricLineSpringMotion 的 ImageFiltered.blur
+            // 模糊：缓存 ImageFilter，避免每帧重建 GPU 资源
             if (blurSigma > 0.01) {
-              painted = ImageFiltered(
-                imageFilter: ImageFilter.blur(
+              if (_cachedBlurFilter == null || (_cachedBlurSigma - blurSigma).abs() > 0.01) {
+                // ImageFilter 不需要手动 dispose，直接覆盖即可
+                _cachedBlurFilter = ImageFilter.blur(
                   sigmaX: blurSigma,
                   sigmaY: blurSigma,
                   tileMode: TileMode.clamp,
-                ),
+                );
+                _cachedBlurSigma = blurSigma;
+              }
+              painted = ImageFiltered(
+                imageFilter: _cachedBlurFilter!,
                 child: painted,
               );
+            } else if (_cachedBlurFilter != null) {
+              // blurSigma 变为 0，清空缓存的 filter
+              _cachedBlurFilter = null;
+              _cachedBlurSigma = 0.0;
             }
 
             painted = SizedBox(
