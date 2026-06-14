@@ -51,6 +51,12 @@ class LyricsLinePainter extends CustomPainter {
   final bool useMaterialYouColor;
   final String? fontFamily;
 
+  // 复用 TextPainter 实例，避免频繁创建销毁
+  static final _textPainterPool = <TextPainter>[];
+  static const _maxPoolSize = 3; // 从 4 降到 3，进一步减少内存
+  static int _poolHitCount = 0; // 池命中计数
+  static int _poolMissCount = 0; // 池未命中计数
+
   const LyricsLinePainter({
     required this.line,
     required this.currentTimeMs,
@@ -64,6 +70,50 @@ class LyricsLinePainter extends CustomPainter {
     this.useMaterialYouColor = false,
     this.fontFamily,
   });
+
+  /// 清空对象池（歌曲切换时调用）
+  static void clearPool() {
+    for (final tp in _textPainterPool) {
+      tp.dispose();
+    }
+    _textPainterPool.clear();
+    _poolHitCount = 0;
+    _poolMissCount = 0;
+  }
+
+  /// 压缩对象池（主动瘦身，保留最少必要对象）
+  static void trimPool() {
+    // 只保留 1 个对象，其余全部释放
+    while (_textPainterPool.length > 1) {
+      final tp = _textPainterPool.removeAt(0);
+      tp.dispose();
+    }
+  }
+
+  /// 获取池使用统计（用于调试和优化）
+  static String getPoolStats() {
+    final total = _poolHitCount + _poolMissCount;
+    final hitRate = total > 0 ? (_poolHitCount / total * 100).toStringAsFixed(1) : '0.0';
+    return 'Pool: size=${_textPainterPool.length}/$_maxPoolSize, hit=$hitRate%';
+  }
+
+  static TextPainter _obtainTextPainter() {
+    if (_textPainterPool.isNotEmpty) {
+      _poolHitCount++;
+      return _textPainterPool.removeLast();
+    }
+    _poolMissCount++;
+    return TextPainter(textDirection: TextDirection.ltr);
+  }
+
+  static void _recycleTextPainter(TextPainter tp) {
+    if (_textPainterPool.length < _maxPoolSize) {
+      tp.text = null; // 清空引用
+      _textPainterPool.add(tp);
+    } else {
+      tp.dispose(); // 池满直接 dispose，不再累积
+    }
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -101,10 +151,12 @@ class LyricsLinePainter extends CustomPainter {
     final lineHeight = fontSize * config.primaryLineHeight();
 
     final isDarkMode = scheme.brightness == Brightness.dark;
-    // 匹配 Widget 路径：_SyncWordWrap 使用 onSurface.alpha(0.25) 作暗淡色
+    // 非当前行歌词在浅色模式下需要更高不透明度以保持可读性
     final unplayedColor = useMaterialYouColor
-        ? scheme.onSurface.withValues(alpha: opacity * 0.35)
-        : scheme.onSurface.withValues(alpha: opacity * 0.25);
+        ? scheme.onSurface
+            .withValues(alpha: isDarkMode ? opacity * 0.22 : opacity * 0.45)
+        : scheme.onSurface
+            .withValues(alpha: isDarkMode ? opacity * 0.18 : opacity * 0.35);
     // 主行播放色：Widget 路径用 isDarkMode ? white : black
     final mainPlayedColor = isDarkMode
         ? Colors.white.withValues(alpha: opacity)
@@ -124,6 +176,19 @@ class LyricsLinePainter extends CustomPainter {
     final maxWidth = size.width - padding.horizontal;
 
     final zhMode = LyricViewController.instance.zhConversionMode;
+
+    // ── Shared measurer (avoids creating one TextPainter per character) ──
+    final measureTp = _obtainTextPainter();
+    TextStyle measureStyle(double fs, FontWeight fw) => TextStyle(
+          fontFamily: fontFamily,
+          fontSize: fs,
+          fontWeight: fw,
+          letterSpacing: 0,
+          height: config.primaryLineHeight(),
+          fontVariations: fontFamily == null
+              ? [FontVariation('wght', fw.value.toDouble())]
+              : null,
+        );
 
     // ── Collect all character positions ─────────────────────────────────────
     final charInfos = <_CharInfo>[];
@@ -154,12 +219,12 @@ class LyricsLinePainter extends CustomPainter {
       double wordWidth = 0.0;
       for (final rawChar in chars) {
         final char = ZhConverter.convert(rawChar, zhMode);
-        final tpDim =
-            _buildTextPainter(char, unplayedColor, fontSize, fontWeight, 0);
-        tpDim.layout();
+        measureTp.text =
+            TextSpan(text: char, style: measureStyle(fontSize, fontWeight));
+        measureTp.layout();
         convertedChars.add(char);
-        charWidths.add(tpDim.width);
-        wordWidth += tpDim.width;
+        charWidths.add(measureTp.width);
+        wordWidth += measureTp.width;
       }
 
       final contentRight = padding.left + maxWidth;
@@ -277,135 +342,178 @@ class LyricsLinePainter extends CustomPainter {
       }
     }
 
-    // ── Pass 1: draw all dim (unplayed) characters ──────────────────────────
-    for (final info in charInfos) {
-      final tp =
-          _buildTextPainter(info.char, unplayedColor, fontSize, fontWeight, 0);
-      tp.layout();
-      tp.paint(canvas, Offset(info.x, info.y + info.yLift));
-    }
+    // ── Pre-build shared TextPainter + styles ──────────────────────────────
+    final tp = _obtainTextPainter();
+    final dimStyle = TextStyle(
+      fontFamily: fontFamily,
+      fontSize: fontSize,
+      color: unplayedColor,
+      fontWeight: fontWeight,
+      letterSpacing: 0,
+      height: config.primaryLineHeight(),
+      fontVariations: fontFamily == null
+          ? [FontVariation('wght', fontWeight.value.toDouble())]
+          : null,
+    );
+    final playedStyle = TextStyle(
+      fontFamily: fontFamily,
+      fontSize: fontSize,
+      color: playedColor,
+      fontWeight: fontWeight,
+      letterSpacing: 0,
+      height: config.primaryLineHeight(),
+      fontVariations: fontFamily == null
+          ? [FontVariation('wght', fontWeight.value.toDouble())]
+          : null,
+    );
 
-    // ── Pass 2: line-level highlight sweep (主行 only) ────────────────────────
-    // 每个视觉行只做一次连续 mask，进度由当前词真实 wordProgress 决定，避免词切换时重复闪动。
-    if (isMainLine) {
-      for (final group in lineGroups) {
-        if (group.chars.isEmpty) continue;
-        double left = double.infinity;
-        double top = double.infinity;
-        double right = double.negativeInfinity;
-        double bottom = double.negativeInfinity;
-        for (final info in group.chars) {
-          final tp = _buildTextPainter(
-              info.char, playedColor, fontSize, fontWeight, 0);
-          tp.layout();
-          left = left < info.x ? left : info.x;
-          top = top < info.y + info.yLift ? top : info.y + info.yLift;
-          right = right > info.x + info.width ? right : info.x + info.width;
-          bottom = bottom > info.y + info.yLift + tp.height
-              ? bottom
-              : info.y + info.yLift + tp.height;
-        }
-
-        double revealUnits = 0.0;
-        final words = <int, List<_CharInfo>>{};
-        for (final info in group.chars) {
-          words.putIfAbsent(info.wordIndex, () => []).add(info);
-        }
-
-        const gapUnits = 0.45;
-        final segmentStarts = <double>[];
-        final segmentEnds = <double>[];
-        final segmentUnits = <double>[];
-        double? previousRight;
-
-        for (int wordOrder = 0; wordOrder < words.values.length; wordOrder++) {
-          final wordChars = words.values.elementAt(wordOrder);
-          final progress = wordChars.first.wordProgress.clamp(0.0, 1.0);
-          final wordLeft =
-              wordChars.map((info) => info.x).reduce((a, b) => a < b ? a : b);
-          final wordRight = wordChars
-              .map((info) => info.x + info.width)
-              .reduce((a, b) => a > b ? a : b);
-
-          final wordUnits = wordChars.length.toDouble() +
-              (wordOrder > 0 && previousRight != null ? gapUnits : 0.0);
-          if (progress > 0.0) {
-            revealUnits += wordUnits * progress;
-          } else {
-            break;
-          }
-
-          if (wordOrder > 0 && previousRight != null) {
-            segmentStarts.add(previousRight);
-            segmentEnds.add(wordLeft);
-            segmentUnits.add(gapUnits);
-          }
-          for (final info in wordChars) {
-            segmentStarts.add(info.x);
-            segmentEnds.add(info.x + info.width);
-            segmentUnits.add(1.0);
-          }
-          previousRight = wordRight;
-        }
-
-        if (revealUnits <= 0.0 || segmentStarts.isEmpty) continue;
-
-        double highlightRight = segmentStarts.first;
-        var remainingUnits = revealUnits;
-        for (int i = 0; i < segmentStarts.length; i++) {
-          final units = segmentUnits[i];
-          if (remainingUnits >= units) {
-            highlightRight = segmentEnds[i];
-            remainingUnits -= units;
-            continue;
-          }
-          final localProgress = (remainingUnits / units).clamp(0.0, 1.0);
-          highlightRight = segmentStarts[i] +
-              (segmentEnds[i] - segmentStarts[i]) * localProgress;
-          break;
-        }
-
-        if (highlightRight <= left) continue;
-
-        if (highlightRight >= right - 0.5) {
-          for (final info in group.chars) {
-            final tp = _buildTextPainter(
-                info.char, playedColor, fontSize, fontWeight, 0);
-            tp.layout();
-            tp.paint(canvas, Offset(info.x, info.y + info.yLift));
-          }
-          continue;
-        }
-
-        final bounds = Rect.fromLTRB(left, top, right, bottom);
-        final width = bounds.width <= 0 ? 1.0 : bounds.width;
-        final sweepProgress = ((highlightRight - left) / width).clamp(0.0, 1.0);
-        final feather = (32.0 / width).clamp(0.045, 0.16);
-        final p0 = (sweepProgress - feather).clamp(0.0, sweepProgress);
-        final p1 = (sweepProgress + feather * 0.45).clamp(sweepProgress, 1.0);
-        final shader = LinearGradient(
-          colors: [
-            Colors.white,
-            Colors.white,
-            Colors.white.withValues(alpha: 0.48),
-            Colors.transparent,
-          ],
-          stops: [0.0, p0, sweepProgress, p1],
-        ).createShader(bounds);
-
-        canvas.save();
-        canvas.clipRect(bounds);
-        canvas.saveLayer(bounds, Paint());
-        for (final info in group.chars) {
-          final tp = _buildTextPainter(
-              info.char, playedColor, fontSize, fontWeight, 0);
+    // ── Helper: paint one word with a given style ─────────────────────────
+    void paintWord(List<_CharInfo> wc, TextStyle style, bool useLift) {
+      if (useLift) {
+        for (final info in wc) {
+          tp.text = TextSpan(text: info.char, style: style);
           tp.layout();
           tp.paint(canvas, Offset(info.x, info.y + info.yLift));
         }
-        final paint = Paint()
-          ..blendMode = BlendMode.dstIn
-          ..shader = shader;
-        canvas.drawRect(bounds, paint);
+      } else {
+        final text = wc.map((c) => c.char).join();
+        tp.text = TextSpan(text: text, style: style);
+        tp.layout();
+        tp.paint(canvas, Offset(wc.first.x, wc.first.y));
+      }
+    }
+
+    // ── Per visual line ────────────────────────────────────────────────────
+    for (final group in lineGroups) {
+      if (group.chars.isEmpty) continue;
+
+      final wordMap = <int, List<_CharInfo>>{};
+      for (final info in group.chars) {
+        wordMap.putIfAbsent(info.wordIndex, () => []).add(info);
+      }
+      final words = wordMap.entries.toList()
+        ..sort((a, b) => a.key.compareTo(b.key));
+
+      if (!isMainLine) {
+        for (final entry in words) {
+          paintWord(entry.value, dimStyle, false);
+        }
+        continue;
+      }
+
+      // ── Compute bounds & sweep position ────────────────────────────────
+      double left = double.infinity, top = double.infinity;
+      double right = double.negativeInfinity, bottom = double.negativeInfinity;
+      for (final entry in words) {
+        final wc = entry.value;
+        final text = wc.map((c) => c.char).join();
+        tp.text = TextSpan(text: text, style: playedStyle);
+        tp.layout();
+        final w = tp.width;
+        final h = tp.height;
+        final wx = wc.first.x;
+        final wy = wc.first.y;
+        left = left < wx ? left : wx;
+        top = top < wy ? top : wy;
+        right = right > wx + w ? right : wx + w;
+        bottom = bottom > wy + h ? bottom : wy + h;
+      }
+
+      const gapUnits = 0.45;
+      final segStarts = <double>[], segEnds = <double>[], segUnits = <double>[];
+      double? prevR;
+      double reveal = 0.0;
+      for (int wi = 0; wi < words.length; wi++) {
+        final wc = words[wi].value;
+        final wp = wc.first.wordProgress.clamp(0.0, 1.0);
+        if (wp <= 0.0) break;
+        final wL = wc.map((c) => c.x).reduce((a, b) => a < b ? a : b);
+        final wR = wc.map((c) => c.x + c.width).reduce((a, b) => a > b ? a : b);
+        final wU =
+            wc.length.toDouble() + (wi > 0 && prevR != null ? gapUnits : 0.0);
+        reveal += wU * wp;
+        if (wi > 0 && prevR != null) {
+          segStarts.add(prevR);
+          segEnds.add(wL);
+          segUnits.add(gapUnits);
+        }
+        for (final info in wc) {
+          segStarts.add(info.x);
+          segEnds.add(info.x + info.width);
+          segUnits.add(1.0);
+        }
+        prevR = wR;
+      }
+      if (reveal <= 0.0 || segStarts.isEmpty) {
+        for (final entry in words) {
+          paintWord(entry.value, dimStyle, false);
+        }
+        continue;
+      }
+
+      double highlightR = segStarts.first;
+      var rem = reveal;
+      for (int i = 0; i < segStarts.length; i++) {
+        if (rem >= segUnits[i]) {
+          highlightR = segEnds[i];
+          rem -= segUnits[i];
+        } else {
+          final lp = (rem / segUnits[i]).clamp(0.0, 1.0);
+          highlightR = segStarts[i] + (segEnds[i] - segStarts[i]) * lp;
+          break;
+        }
+      }
+      if (highlightR <= left) {
+        for (final entry in words) {
+          paintWord(entry.value, dimStyle, false);
+        }
+        continue;
+      }
+
+      // ── Gradient (2.1.3 formula) ───────────────────────────────────────
+      final bounds = Rect.fromLTRB(left, top, right, bottom);
+      final bw = bounds.width <= 0 ? 1.0 : bounds.width;
+      final sweepP = ((highlightR - left) / bw).clamp(0.0, 1.0);
+      final feather = (24.0 / bw).clamp(0.035, 0.14);
+      final p0 = (sweepP - feather).clamp(0.0, sweepP);
+      final p1 = (sweepP + feather * 0.35).clamp(sweepP, 1.0);
+      final shader = LinearGradient(
+        begin: Alignment.centerLeft,
+        end: Alignment.centerRight,
+        colors: [
+          Colors.white,
+          Colors.white,
+          Colors.white.withValues(alpha: 0.65),
+          Colors.transparent
+        ],
+        stops: [0.0, p0, sweepP, p1],
+      ).createShader(bounds);
+
+      // ── Pass 1: dim ──────────────────────────────────────────────────
+      for (final entry in words) {
+        paintWord(
+            entry.value, dimStyle, entry.value.any((c) => c.yLift != 0.0));
+      }
+
+      // ── Pass 2: saveLayer + played ────────────────────────────────────
+      if (highlightR >= right - 0.5) {
+        for (final entry in words) {
+          paintWord(
+              entry.value, playedStyle, entry.value.any((c) => c.yLift != 0.0));
+        }
+      } else {
+        canvas.save();
+        canvas.clipRect(bounds);
+        canvas.saveLayer(bounds, Paint());
+        for (final entry in words) {
+          paintWord(
+              entry.value, playedStyle, entry.value.any((c) => c.yLift != 0.0));
+        }
+        canvas.drawRect(
+            bounds,
+            Paint()
+              ..blendMode = BlendMode.dstIn
+              ..shader = shader);
         canvas.restore();
         canvas.restore();
       }
@@ -427,7 +535,7 @@ class LyricsLinePainter extends CustomPainter {
         final translated = ZhConverter.convert(syncLine.translation!, zhMode);
         final translationFontSize =
             config.translationFontSize(isMainLine: isMainLine);
-        final tp = _buildTextPainter(
+        final transTp = _buildTextPainter(
           translated,
           translationColor,
           translationFontSize,
@@ -436,9 +544,10 @@ class LyricsLinePainter extends CustomPainter {
           isTranslation: true,
           textAlign: blockTextAlign,
         );
-        tp.layout(minWidth: maxWidth, maxWidth: maxWidth);
-        tp.paint(canvas, Offset(padding.left, cursorY));
-        cursorY += tp.height;
+        transTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
+        transTp.paint(canvas, Offset(padding.left, cursorY));
+        cursorY += transTp.height;
+        _recycleTextPainter(transTp);
       }
       if (config.showRoman && syncLine.romanLyric != null) {
         if (config.showTranslation && syncLine.translation != null) {
@@ -449,7 +558,7 @@ class LyricsLinePainter extends CustomPainter {
             config.translationFontSize(isMainLine: isMainLine) * 0.85;
         final romanWeight = config
             .discreteFontWeight((config.fontWeight - 100).clamp(100, 900));
-        final tp = _buildTextPainter(
+        final romanTp = _buildTextPainter(
           romanText,
           secondaryColor,
           romanFontSize,
@@ -458,10 +567,15 @@ class LyricsLinePainter extends CustomPainter {
           isTranslation: true,
           textAlign: blockTextAlign,
         );
-        tp.layout(minWidth: maxWidth, maxWidth: maxWidth);
-        tp.paint(canvas, Offset(padding.left, cursorY));
+        romanTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
+        romanTp.paint(canvas, Offset(padding.left, cursorY));
+        _recycleTextPainter(romanTp);
       }
     }
+
+    // 回收 TextPainter
+    _recycleTextPainter(measureTp);
+    _recycleTextPainter(tp);
 
     canvas.restore();
   }
@@ -491,8 +605,10 @@ class LyricsLinePainter extends CustomPainter {
 
     final isDarkMode = scheme.brightness == Brightness.dark;
     final unplayedColor = useMaterialYouColor
-        ? scheme.onSurface.withValues(alpha: opacity * 0.35)
-        : scheme.onSurface.withValues(alpha: opacity * 0.25);
+        ? scheme.onSurface
+            .withValues(alpha: isDarkMode ? opacity * 0.22 : opacity * 0.45)
+        : scheme.onSurface
+            .withValues(alpha: isDarkMode ? opacity * 0.18 : opacity * 0.35);
     final mainPlayedColor = isDarkMode
         ? Colors.white.withValues(alpha: opacity)
         : Colors.black.withValues(alpha: opacity);
@@ -523,7 +639,7 @@ class LyricsLinePainter extends CustomPainter {
       final metaWeight =
           config.discreteFontWeight((config.fontWeight - 100).clamp(100, 900));
       final metaText = ZhConverter.convert(lrcLine.content, zhMode);
-      final tp = _buildTextPainter(
+      final metaTp = _buildTextPainter(
         metaText,
         metadataColor,
         metaFontSize,
@@ -531,8 +647,9 @@ class LyricsLinePainter extends CustomPainter {
         letterSpace,
         textAlign: blockTextAlign,
       );
-      tp.layout(minWidth: maxWidth, maxWidth: maxWidth);
-      tp.paint(canvas, Offset(padding.left, padding.top));
+      metaTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
+      metaTp.paint(canvas, Offset(padding.left, padding.top));
+      _recycleTextPainter(metaTp);
       canvas.restore();
       return;
     }
@@ -541,7 +658,7 @@ class LyricsLinePainter extends CustomPainter {
     final splited = lrcLine.content.split('┃');
     final mainText = ZhConverter.convert(splited.first, zhMode);
 
-    final tp = _buildTextPainter(
+    final mainTp = _buildTextPainter(
       mainText,
       displayedColor,
       fontSize,
@@ -549,10 +666,10 @@ class LyricsLinePainter extends CustomPainter {
       letterSpace,
       textAlign: blockTextAlign,
     );
-    tp.layout(minWidth: maxWidth, maxWidth: maxWidth);
-    tp.paint(canvas, Offset(padding.left, padding.top));
+    mainTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
+    mainTp.paint(canvas, Offset(padding.left, padding.top));
 
-    double cursorY = padding.top + tp.height;
+    double cursorY = padding.top + mainTp.height;
 
     final translationWeight =
         config.discreteFontWeight((config.fontWeight - 50).clamp(100, 900));
@@ -594,6 +711,7 @@ class LyricsLinePainter extends CustomPainter {
         tTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
         tTp.paint(canvas, Offset(padding.left, cursorY));
         cursorY += tTp.height;
+        _recycleTextPainter(tTp);
       }
     }
 
@@ -615,7 +733,11 @@ class LyricsLinePainter extends CustomPainter {
       );
       rTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
       rTp.paint(canvas, Offset(padding.left, cursorY));
+      _recycleTextPainter(rTp);
     }
+
+    // 回收主行 TextPainter
+    _recycleTextPainter(mainTp);
 
     canvas.restore();
   }
@@ -663,27 +785,26 @@ class LyricsLinePainter extends CustomPainter {
     bool isTranslation = false,
     TextAlign textAlign = TextAlign.left,
   }) {
-    return TextPainter(
-      text: TextSpan(
-        text: text,
-        style: TextStyle(
-          fontFamily: fontFamily,
-          fontSize: fontSize,
-          color: color,
-          fontWeight: fontWeight,
-          letterSpacing: letterSpacing,
-          fontVariations: fontFamily == null
-              ? [FontVariation('wght', fontWeight.value.toDouble())]
-              : null,
-          height: isTranslation
-              ? config.translationLineHeight(config.fontWeight)
-              : config.primaryLineHeight(config.fontWeight),
-        ),
+    final tp = _obtainTextPainter();
+    tp.text = TextSpan(
+      text: text,
+      style: TextStyle(
+        fontFamily: fontFamily,
+        fontSize: fontSize,
+        color: color,
+        fontWeight: fontWeight,
+        letterSpacing: letterSpacing,
+        fontVariations: fontFamily == null
+            ? [FontVariation('wght', fontWeight.value.toDouble())]
+            : null,
+        height: isTranslation
+            ? config.translationLineHeight(config.fontWeight)
+            : config.primaryLineHeight(config.fontWeight),
       ),
-      textDirection: TextDirection.ltr,
-      textAlign: textAlign,
-      maxLines: null,
     );
+    tp.textDirection = TextDirection.ltr;
+    tp.textAlign = textAlign;
+    return tp;
   }
 
   @override
@@ -717,13 +838,12 @@ class LyricsLinePainter extends CustomPainter {
 
       final fontSize = config.primaryFontSize(isMainLine: isMainLine);
       final fontWeight = config.discreteFontWeight(config.fontWeight);
-      // 与 paint 模式用同样的 letterSpacing:0 算宽度
-      const letterSpace = 0.0;
       final lineH = fontSize * config.primaryLineHeight();
 
       // 穷举每个字 + 词间 gap，与 _paintSyncLine 完全一致的换行逻辑
       double curX = padding.left;
       int visualLines = 1;
+      final charTp = _obtainTextPainter(); // 复用单个 TextPainter 测量字符宽度
       for (final word in syncLine.words) {
         final content = word.obscene
             ? String.fromCharCodes(List.filled(word.content.runes.length, 0x5F))
@@ -731,10 +851,20 @@ class LyricsLinePainter extends CustomPainter {
         final chars = content.characters.toList();
         double wordWidth = 0;
         for (final ch in chars) {
-          final tp = _buildTextPainter(
-              ch, scheme.onSurface, fontSize, fontWeight, letterSpace);
-          tp.layout();
-          wordWidth += tp.width;
+          charTp.text = TextSpan(
+              text: ch,
+              style: TextStyle(
+                fontFamily: fontFamily,
+                fontSize: fontSize,
+                fontWeight: fontWeight,
+                letterSpacing: 0,
+                height: config.primaryLineHeight(),
+                fontVariations: fontFamily == null
+                    ? [FontVariation('wght', fontWeight.value.toDouble())]
+                    : null,
+              ));
+          charTp.layout();
+          wordWidth += charTp.width;
         }
         final needsWrap = curX + wordWidth > padding.left + lineWidth - 1.0;
         if (needsWrap && curX > padding.left) {
@@ -743,6 +873,7 @@ class LyricsLinePainter extends CustomPainter {
         }
         curX += wordWidth + fontSize * 0.12;
       }
+      _recycleTextPainter(charTp);
 
       final double mainHeight = visualLines * lineH;
       double height = padding.vertical + mainHeight;
@@ -764,6 +895,7 @@ class LyricsLinePainter extends CustomPainter {
           tTp.layout(maxWidth: lineWidth);
           height +=
               tTp.height + config.syncTranslationGap(isMainLine: isMainLine);
+          _recycleTextPainter(tTp);
         }
         if (config.showRoman && syncLine.romanLyric != null) {
           final romanFontSize =
@@ -783,6 +915,7 @@ class LyricsLinePainter extends CustomPainter {
           if (config.showTranslation && syncLine.translation != null) {
             height += 4.0; // roman gap
           }
+          _recycleTextPainter(rTp);
         }
       }
       return height;
@@ -845,6 +978,7 @@ class LyricsLinePainter extends CustomPainter {
           height += tTp.height +
               config.lrcTranslationGap(
                   isMainLine: isMainLine, translationIndex: 0);
+          _recycleTextPainter(tTp);
         }
       }
       if (config.showRoman && lrcLine.romanLyric != null) {
@@ -865,7 +999,9 @@ class LyricsLinePainter extends CustomPainter {
         if (config.showTranslation && transTexts.isNotEmpty) {
           height += 4.0;
         }
+        _recycleTextPainter(rTp);
       }
+      _recycleTextPainter(mainTp);
       return height;
     }
     return 60;
