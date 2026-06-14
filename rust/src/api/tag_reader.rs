@@ -27,6 +27,22 @@ use crate::frb_generated::StreamSink;
 use super::library_db;
 use super::logger::log_to_dart;
 
+/// 将迭代器中的字符串去重后用 "/" 拼接。
+/// FLAC Vorbis Comment 可能包含重复的多值标签（如多个相同的 ARTIST）。
+fn join_deduped<'a>(items: impl IntoIterator<Item = &'a str>) -> String {
+    let mut seen = HashSet::new();
+    let mut result = String::new();
+    for item in items {
+        if seen.insert(item.to_string()) {
+            if !result.is_empty() {
+                result.push('/');
+            }
+            result.push_str(item);
+        }
+    }
+    result
+}
+
 /// for Flutter
 pub fn read_audio_extra_metadata(path: String) -> String {
     let file_size = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
@@ -78,8 +94,8 @@ pub fn read_audio_extra_metadata(path: String) -> String {
                 }
             };
 
-            let track_artist = tag.get_strings(&ItemKey::TrackArtist).collect::<Vec<_>>().join("/");
-            let album_artist = tag.get_strings(&ItemKey::AlbumArtist).collect::<Vec<_>>().join("/");
+            let track_artist = join_deduped(tag.get_strings(&ItemKey::TrackArtist));
+            let album_artist = join_deduped(tag.get_strings(&ItemKey::AlbumArtist));
 
             push_kv(
                 "genre",
@@ -378,18 +394,22 @@ impl Audio {
             .primary_tag()
             .or_else(|| tagged_file.first_tag())
         {
-            let artist_strs: Vec<_> = tag.get_strings(&ItemKey::TrackArtist).collect();
-            let artist = if artist_strs.is_empty() {
-                "UNKNOWN".to_string()
-            } else {
-                artist_strs.join("/")
+            let artist = {
+                let joined = join_deduped(tag.get_strings(&ItemKey::TrackArtist));
+                if joined.is_empty() {
+                    "UNKNOWN".to_string()
+                } else {
+                    joined
+                }
             };
 
-            let album_artist_strs: Vec<_> = tag.get_strings(&ItemKey::AlbumArtist).collect();
-            let album_artist = if album_artist_strs.is_empty() {
-                None
-            } else {
-                Some(album_artist_strs.join("/"))
+            let album_artist = {
+                let joined = join_deduped(tag.get_strings(&ItemKey::AlbumArtist));
+                if joined.is_empty() {
+                    None
+                } else {
+                    Some(joined)
+                }
             };
 
             return Some(Audio {
