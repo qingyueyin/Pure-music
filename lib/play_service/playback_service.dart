@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/core/enums.dart';
+import 'package:pure_music/core/matcher.dart' hide logger;
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
@@ -307,6 +308,9 @@ class PlaybackService extends ChangeNotifier {
       _lastNowPlayingChangedMs = DateTime.now().millisecondsSinceEpoch;
       // 切歌时立即回收其他 Audio 的封面缓存
       AudioLibrary.instance.evictAllCoversExcept(nowPlaying!.path);
+      // 清理旧的歌词搜索/获取缓存，防止快速切歌累积内存
+      clearLyricCaches();
+      playService.lyricService.clearCache();
       // 预加载 smallCoverBytes，确保播放页过渡动画时立即有封面可用
       nowPlaying!.loadSmallCoverBytes();
 
@@ -351,6 +355,9 @@ class PlaybackService extends ChangeNotifier {
         );
         playService.desktopLyricService.sendNowPlayingMessage(nowPlaying!);
       });
+
+      // 通知所有 ListenableBuilder，确保 UI 随切歌同步刷新
+      notifyListeners();
     } catch (err) {
       logger.e('[load and play] $err');
       showTextOnSnackBar(err.toString());
@@ -411,7 +418,8 @@ class PlaybackService extends ChangeNotifier {
     AudioEchoLogRecorder.instance
         .mark('addToNext', extra: {'path': audio.path});
     if (_playlistIndex != null) {
-      _playlist.value = [..._playlist.value]..insert(_playlistIndex! + 1, audio);
+      _playlist.value = [..._playlist.value]
+        ..insert(_playlistIndex! + 1, audio);
       _playlistBackup = _playlist.value;
       if (nowPlaying != null) {
         _persistLastSession(
@@ -438,7 +446,8 @@ class PlaybackService extends ChangeNotifier {
   /// 从播放队列中移除指定索引的曲目
   void removeFromQueue(int index) {
     logger.i('[action] removeFromQueue index=$index');
-    AudioEchoLogRecorder.instance.mark('removeFromQueue', extra: {'index': index});
+    AudioEchoLogRecorder.instance
+        .mark('removeFromQueue', extra: {'index': index});
     if (index < 0 || index >= _playlist.value.length) return;
     final wasPlaying = _playlistIndex == index;
     _playlist.value = [..._playlist.value]..removeAt(index);
@@ -693,7 +702,10 @@ class PlaybackService extends ChangeNotifier {
     try {
       _smtc.updateState(state: SMTCState.paused);
       await Future.delayed(const Duration(milliseconds: 50));
-      await _smtc.close().timeout(const Duration(milliseconds: 500)).catchError((_) {});
+      await _smtc
+          .close()
+          .timeout(const Duration(milliseconds: 500))
+          .catchError((_) {});
     } catch (_) {}
 
     // 6. dispose ValueNotifiers（释放 _playlist 引用的 Audio 列表）
