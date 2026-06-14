@@ -690,62 +690,68 @@ class _LyricsTabContentState extends State<_LyricsTabContent> {
       children: [
         const DefaultLyricSourceControl(),
         const SizedBox(height: 16.0),
-        SettingsTile(
-          description: '歌词模式',
-          subtitle: '获取到的网络歌词格式',
-          action: SegmentedButton<LyricDisplayMode>(
-            showSelectedIcon: false,
-            segments: const [
-              ButtonSegment<LyricDisplayMode>(
-                value: LyricDisplayMode.lineByLine,
-                label: Text('逐行歌词'),
-              ),
-              ButtonSegment<LyricDisplayMode>(
-                value: LyricDisplayMode.wordByWord,
-                label: Text('逐字歌词'),
-              ),
-            ],
-            selected: {settings.lyricDisplayMode},
-            onSelectionChanged: (newSelection) {
-              setState(() {
-                settings.lyricDisplayMode = newSelection.first;
-              });
-              settings.saveSettings();
-              LyricViewController.instance.triggerRebuild();
-            },
-          ),
-        ),
-        const SizedBox(height: 16.0),
-        SettingsTile(
-          description: '注音',
-          subtitle: '获取网络歌词中的注音',
-          action: Switch(
-            value: settings.showRomanization,
-            onChanged: (v) {
-              setState(() {
-                settings.showRomanization = v;
-              });
-              settings.saveSettings();
-              LyricViewController.instance.triggerRebuild();
-            },
-          ),
-        ),
-        const SizedBox(height: 16.0),
-        SettingsTile(
-          description: '翻译',
-          subtitle: '获取网络歌词中的翻译',
-          action: Switch(
-            value: settings.showTranslation,
-            onChanged: (v) {
-              setState(() {
-                settings.showTranslation = v;
-              });
-              settings.saveSettings();
-              LyricViewController.instance.triggerRebuild();
-            },
-          ),
-        ),
-        const SizedBox(height: 16.0),
+        // 注释：歌词模式设置暂时隐藏，功能未实现
+        // 问题：用户设置后没有实际效果，渲染器直接根据歌词数据类型（SyncLyricLine/LrcLine）决定显示方式
+        // TODO: 实现强制显示模式转换（例如：把逐字歌词降级显示为逐行）
+        // SettingsTile(
+        //   description: '歌词模式',
+        //   subtitle: '获取到的网络歌词格式',
+        //   action: SegmentedButton<LyricDisplayMode>(
+        //     showSelectedIcon: false,
+        //     segments: const [
+        //       ButtonSegment<LyricDisplayMode>(
+        //         value: LyricDisplayMode.lineByLine,
+        //         label: Text('逐行歌词'),
+        //       ),
+        //       ButtonSegment<LyricDisplayMode>(
+        //         value: LyricDisplayMode.wordByWord,
+        //         label: Text('逐字歌词'),
+        //       ),
+        //     ],
+        //     selected: {settings.lyricDisplayMode},
+        //     onSelectionChanged: (newSelection) {
+        //       setState(() {
+        //         settings.lyricDisplayMode = newSelection.first;
+        //       });
+        //       settings.saveSettings();
+        //       LyricViewController.instance.triggerRebuild();
+        //     },
+        //   ),
+        // ),
+        // const SizedBox(height: 16.0),
+        // 注释：这两个设置暂时隐藏，因为第三方歌词 API 总是返回全部数据（主歌词+翻译+注音），
+        // 无法单独控制是否获取翻译和注音。播放页面已有显示/隐藏开关，这里的设置是冗余的。
+        // TODO: 未来如果 API 支持分别请求，可以重新启用
+        // SettingsTile(
+        //   description: '注音',
+        //   subtitle: '获取网络歌词中的注音',
+        //   action: Switch(
+        //     value: settings.showRomanization,
+        //     onChanged: (v) {
+        //       setState(() {
+        //         settings.showRomanization = v;
+        //       });
+        //       settings.saveSettings();
+        //       LyricViewController.instance.triggerRebuild();
+        //     },
+        //   ),
+        // ),
+        // const SizedBox(height: 16.0),
+        // SettingsTile(
+        //   description: '翻译',
+        //   subtitle: '获取网络歌词中的翻译',
+        //   action: Switch(
+        //     value: settings.showTranslation,
+        //     onChanged: (v) {
+        //       setState(() {
+        //         settings.showTranslation = v;
+        //       });
+        //       settings.saveSettings();
+        //       LyricViewController.instance.triggerRebuild();
+        //     },
+        //   ),
+        // ),
+        // const SizedBox(height: 16.0),
         SettingsTile(
           description: '歌词转换',
           action: SegmentedButton<ZhConversionMode>(
@@ -775,90 +781,92 @@ class _LyricsTabContentState extends State<_LyricsTabContent> {
           ),
         ),
         const SizedBox(height: 16.0),
-        SettingsTile(
-          description: '歌词写入标签提示',
-          subtitle: '获取网络歌词后询问是否写入音频标签',
-          action: Switch(
-            value: settings.promptWriteLyricToTag,
-            onChanged: (v) {
-              setState(() {
-                settings.promptWriteLyricToTag = v;
-                if (!v) settings.autoWriteLyricToTag = false;
-              });
-              settings.saveSettings();
-              if (!v) {
-                PlayService.instance.lyricService.resetLyricWritePrompts();
-              }
-            },
-          ),
-        ),
-        if (settings.promptWriteLyricToTag) ...[
-          const SizedBox(height: 16.0),
-          SettingsTile(
-            description: '自动写入标签',
-            subtitle: settings.autoWriteLyricToTag
-                ? '获取歌词 ${settings.autoWriteLyricToTagDelay} 秒后自动写入，无需确认'
-                : '开启后静默写入，不再弹窗询问',
-            action: Switch(
-              value: settings.autoWriteLyricToTag,
-              onChanged: (v) {
-                setState(() {
-                  settings.autoWriteLyricToTag = v;
-                });
-                settings.saveSettings();
-                PlayService.instance.lyricService.resetLyricWritePrompts();
-              },
-            ),
-          ),
-          if (settings.autoWriteLyricToTag) ...[
-            const SizedBox(height: 16.0),
-            SettingsTile(
-              description: '自动写入延迟',
-              subtitle: '获取歌词后 ${settings.autoWriteLyricToTagDelay} 秒自动写入',
-              action: SizedBox(
-                width: 140,
-                child: Slider(
-                  value: settings.autoWriteLyricToTagDelay.toDouble(),
-                  min: 10,
-                  max: 120,
-                  divisions: 11,
-                  label: '${settings.autoWriteLyricToTagDelay}秒',
-                  onChanged: (v) {
-                    setState(() {
-                      settings.autoWriteLyricToTagDelay = v.round();
-                    });
-                    settings.saveSettings();
-                  },
-                ),
-              ),
-            ),
-          ],
-          const SizedBox(height: 16.0),
-          SettingsTile(
-            description: '提示延迟',
-            subtitle: settings.autoWriteLyricToTag
-                ? '自动写入已启用，提示不生效'
-                : '获取歌词后等待 ${settings.promptWriteLyricToTagDelay} 秒再提示',
-            action: SizedBox(
-              width: 140,
-              child: Slider(
-                value: settings.promptWriteLyricToTagDelay.toDouble(),
-                min: 5,
-                max: 60,
-                divisions: 11,
-                label: '${settings.promptWriteLyricToTagDelay}秒',
-                onChanged: settings.autoWriteLyricToTag
-                    ? null
-                    : (v) {
-                        setState(() {
-                          settings.promptWriteLyricToTagDelay = v.round();
-                        });
-                        settings.saveSettings();
-                      },
-              ),
-            ),
-          ),
-        ],
+        // 注释：歌词写入标签功能暂时隐藏，功能未完全实现
+        // TODO: 完善歌词写入标签功能后重新启用
+        // SettingsTile(
+        //   description: '歌词写入标签提示',
+        //   subtitle: '获取网络歌词后询问是否写入音频标签',
+        //   action: Switch(
+        //     value: settings.promptWriteLyricToTag,
+        //     onChanged: (v) {
+        //       setState(() {
+        //         settings.promptWriteLyricToTag = v;
+        //         if (!v) settings.autoWriteLyricToTag = false;
+        //       });
+        //       settings.saveSettings();
+        //       if (!v) {
+        //         PlayService.instance.lyricService.resetLyricWritePrompts();
+        //       }
+        //     },
+        //   ),
+        // ),
+        // if (settings.promptWriteLyricToTag) ...[
+        //   const SizedBox(height: 16.0),
+        //   SettingsTile(
+        //     description: '自动写入标签',
+        //     subtitle: settings.autoWriteLyricToTag
+        //         ? '获取歌词 ${settings.autoWriteLyricToTagDelay} 秒后自动写入，无需确认'
+        //         : '开启后静默写入，不再弹窗询问',
+        //     action: Switch(
+        //       value: settings.autoWriteLyricToTag,
+        //       onChanged: (v) {
+        //         setState(() {
+        //           settings.autoWriteLyricToTag = v;
+        //         });
+        //         settings.saveSettings();
+        //         PlayService.instance.lyricService.resetLyricWritePrompts();
+        //       },
+        //     ),
+        //   ),
+        //   if (settings.autoWriteLyricToTag) ...[
+        //     const SizedBox(height: 16.0),
+        //     SettingsTile(
+        //       description: '自动写入延迟',
+        //       subtitle: '获取歌词后 ${settings.autoWriteLyricToTagDelay} 秒自动写入',
+        //       action: SizedBox(
+        //         width: 140,
+        //         child: Slider(
+        //           value: settings.autoWriteLyricToTagDelay.toDouble(),
+        //           min: 10,
+        //           max: 120,
+        //           divisions: 11,
+        //           label: '${settings.autoWriteLyricToTagDelay}秒',
+        //           onChanged: (v) {
+        //             setState(() {
+        //               settings.autoWriteLyricToTagDelay = v.round();
+        //             });
+        //             settings.saveSettings();
+        //           },
+        //         ),
+        //       ),
+        //     ),
+        //   ],
+        //   const SizedBox(height: 16.0),
+        //   SettingsTile(
+        //     description: '提示延迟',
+        //     subtitle: settings.autoWriteLyricToTag
+        //         ? '自动写入已启用，提示不生效'
+        //         : '获取歌词后等待 ${settings.promptWriteLyricToTagDelay} 秒再提示',
+        //     action: SizedBox(
+        //       width: 140,
+        //       child: Slider(
+        //         value: settings.promptWriteLyricToTagDelay.toDouble(),
+        //         min: 5,
+        //         max: 60,
+        //         divisions: 11,
+        //         label: '${settings.promptWriteLyricToTagDelay}秒',
+        //         onChanged: settings.autoWriteLyricToTag
+        //             ? null
+        //             : (v) {
+        //                 setState(() {
+        //                   settings.promptWriteLyricToTagDelay = v.round();
+        //                 });
+        //                 settings.saveSettings();
+        //               },
+        //       ),
+        //     ),
+        //   ),
+        // ],
       ],
     );
   }
