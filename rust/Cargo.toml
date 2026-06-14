@@ -52,4 +52,28 @@ palette = "0.7"
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
 
+# ========================================
+# 🚀 编译加速配置
+# ========================================
+
+[profile.dev]
+# 开发模式：最快编译速度
+opt-level = 0          # 不优化，编译最快
+debug = 1              # 减少调试信息（0=无，1=行号，2=完整）
+incremental = true     # 增量编译
+split-debuginfo = "unpacked"  # Windows 加速调试信息生成
+
+# 依赖库优化（编译一次后缓存，显著提升后续编译速度）
+[profile.dev.package."*"]
+opt-level = 2          # 依赖库使用中等优化
+debug = false          # 依赖库不生成调试信息
+
+[profile.release]
+# Release 模式保持高质量
+opt-level = 3          # 最高优化
+lto = "thin"           # 链接时优化
+codegen-units = 1      # 单个编译单元，生成最优代码
+strip = true           # 移除调试符号
+panic = "abort"        # panic 时直接退出（减小体积）
+
 
