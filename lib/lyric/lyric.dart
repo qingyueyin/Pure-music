@@ -4,8 +4,9 @@ class Lyric {
   final List<LyricLine> lines;
   final LyricFormat source;
   final String? rawText;
+  final bool isDuet; // TTML 对唱标记：同时存在 v1 和 v2
 
-  const Lyric(this.lines, [this.source = LyricFormat.local, this.rawText]);
+  const Lyric(this.lines, [this.source = LyricFormat.local, this.rawText, this.isDuet = false]);
 
   static const Lyric empty = Lyric([]);
 
@@ -38,7 +39,15 @@ class SyncLyricLine extends LyricLine {
     this.romanLyric = romanLyric;
   }
 
-  String get content => words.map((w) => w.content).join();
+  String get content => words.map((w) => w.content).join(' ');
+}
+
+class RubyTag {
+  final String text;
+  final Duration start;
+  final Duration length;
+
+  RubyTag(this.text, this.start, this.length);
 }
 
 class SyncLyricWord {
@@ -46,9 +55,15 @@ class SyncLyricWord {
   Duration length;
   String content;
   bool obscene;
+  bool isMerged;
+  int? emptyBeat;  // amll:empty-beat 空拍标记
+  List<RubyTag>? ruby;  // tts:ruby 注音
 
   SyncLyricWord(this.start, this.length, this.content)
-      : obscene = false;
+      : obscene = false,
+        isMerged = false,
+        emptyBeat = null,
+        ruby = null;
 }
 
 class UnsyncLyricLine extends LyricLine {

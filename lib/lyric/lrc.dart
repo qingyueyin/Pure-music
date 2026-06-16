@@ -686,7 +686,7 @@ class Lrc extends Lyric {
       return null;
     }
 
-    // 估算每行的实际显示时长（逐行歌词不插入中间间奏，只在开头插入）
+    // 估算每行的实际显示时长
     for (var i = 0; i < lines.length; i++) {
       final currentLine = lines[i];
       final nextLine = i < lines.length - 1 ? lines[i + 1] : null;
@@ -695,12 +695,16 @@ class Lrc extends Lyric {
         final timeGap = nextLine.start - currentLine.start;
         currentLine.length = timeGap;
       } else {
-        // 最后一行
-        currentLine.length = Duration.zero;
+        // 最后一行：使用默认的 3.5 秒作为持续时间
+        currentLine.length = const Duration(milliseconds: 3500);
       }
     }
 
-    // 为前奏间隙创建空白行：从元数据最后时间戳（如果有）或 0 到第一句真实歌词
+    // 插入间奏空白行（开头前奏 + 中间间奏）
+    final linesWithInterludes = <LrcLine>[];
+    const gapThreshold = Duration(milliseconds: 5000);
+
+    // 1. 开头前奏：从元数据最后时间戳（如果有）或 0 到第一句真实歌词
     if (lines.isNotEmpty) {
       final firstRealStart = lines.first.start;
       final introStart = maxMetadataTimeMs != null
@@ -709,8 +713,7 @@ class Lrc extends Lyric {
 
       // 如果第一句歌词在元数据之后，插入前奏空白行
       if (firstRealStart > introStart) {
-        lines.insert(
-          0,
+        linesWithInterludes.add(
           LrcLine(
             introStart,
             '',
@@ -719,6 +722,30 @@ class Lrc extends Lyric {
         );
       }
     }
+
+    // 2. 中间间奏：遍历所有行，检测间隙并插入空白行
+    for (int i = 0; i < lines.length; i++) {
+      final line = lines[i];
+      linesWithInterludes.add(line);
+
+      if (i >= lines.length - 1) continue;
+      final nextStart = lines[i + 1].start;
+      final gapStart = line.start + line.length;
+      final gapLen = nextStart - gapStart;
+
+      // 间隙 ≥5s 时插入空白行
+      if (gapLen >= gapThreshold) {
+        linesWithInterludes.add(
+          LrcLine(
+            gapStart,
+            '',
+            requiredIsBlank: true,
+          )..length = gapLen,
+        );
+      }
+    }
+
+    lines = linesWithInterludes;
 
     final result = Lrc(lines, source);
     result._sort();
@@ -791,12 +818,14 @@ class Lrc extends Lyric {
             combined.add(primary);
           }
         }
-        final result = Lyric(combined, source);
+        // 插入开头前奏和中间间奏空白行（与 enhanced/Lyricify 对齐）
+        final withInterludes = _insertInterludesForWordByWord(combined);
+        final result = Lyric(withInterludes, source);
         logger.i(
-            '[lrc] fromLrcTextAuto: wordByWord combined -> ${combined.length} lines');
-        for (int i = 0; i < (combined.length > 3 ? 3 : combined.length); i++) {
+            '[lrc] fromLrcTextAuto: wordByWord combined -> ${combined.length} lines, after interludes -> ${withInterludes.length} lines');
+        for (int i = 0; i < (withInterludes.length > 3 ? 3 : withInterludes.length); i++) {
           logger.i(
-              '[lrc]   line[$i] start=${combined[i].start.inMilliseconds}ms trans=${combined[i].translation ?? 'null'} roman=${combined[i].romanLyric ?? 'null'}');
+              '[lrc]   line[$i] start=${withInterludes[i].start.inMilliseconds}ms trans=${withInterludes[i].translation ?? 'null'} roman=${withInterludes[i].romanLyric ?? 'null'}');
         }
         return result;
       }
@@ -838,7 +867,49 @@ class Lrc extends Lyric {
     return result;
   }
 
-  /// Detect Lyricify format: lines containing word(start,duration) patterns
+  /// 为 wordByWord 格式插入开头前奏和中间间奏空白行
+  /// 逻辑与 _parseLyricify / _parseEnhancedLrcText 的间奏插入对齐
+  static List<SyncLyricLine> _insertInterludesForWordByWord(
+      List<SyncLyricLine> lines) {
+    if (lines.isEmpty) return lines;
+
+    final result = <SyncLyricLine>[];
+    const gapThreshold = Duration(milliseconds: 5000);
+
+    // 开头前奏：第一行前超过 5 秒则插入空白行
+    final firstLine = lines.first;
+    if (firstLine.start >= gapThreshold) {
+      result.add(SyncLyricLine(
+        Duration.zero,
+        firstLine.start,
+        [],
+      ));
+    }
+
+    // 中间间奏：基于最后一个字的实际结束时间计算间隙
+    for (int i = 0; i < lines.length; i++) {
+      final line = lines[i];
+      result.add(line);
+
+      if (i >= lines.length - 1) continue;
+      final nextStart = lines[i + 1].start;
+      final gapStart = line.words.isNotEmpty
+          ? line.words.last.start + line.words.last.length
+          : line.start + const Duration(milliseconds: 3500);
+      final gapLen = nextStart - gapStart;
+
+      if (gapLen >= gapThreshold) {
+        result.add(SyncLyricLine(
+          gapStart,
+          gapLen,
+          [],
+        ));
+      }
+    }
+
+    return result;
+  }
+
   static bool _isLyricifyFormat(String text) {
     return RegExp(r'\S.*?\(\d+,\d+\)').hasMatch(text);
   }
@@ -1086,7 +1157,10 @@ class Lrc extends Lyric {
         if (curr.length.inMilliseconds <= 0) {
           final nextWordStart =
               j < words.length - 1 ? words[j + 1].start : null;
-          final end = nextWordStart ?? (line.start + line.length);
+
+          // 修复：最后一个词不要用 line.length（会拉长到下一行），而是用合理的估计值
+          final end = nextWordStart ?? (curr.start + const Duration(milliseconds: 500));
+
           final d = end - curr.start;
           curr.length = d.isNegative
               ? Duration.zero
@@ -1103,7 +1177,10 @@ class Lrc extends Lyric {
           final curr = bgW[j];
           if (curr.length.inMilliseconds <= 0) {
             final nextBgStart = j < bgW.length - 1 ? bgW[j + 1].start : null;
-            final bgEnd = nextBgStart ?? (line.start + line.length);
+
+            // 修复：最后一个背景词也不要用 line.length
+            final bgEnd = nextBgStart ?? (curr.start + const Duration(milliseconds: 500));
+
             final d = bgEnd - curr.start;
             curr.length = d.isNegative
                 ? Duration.zero
@@ -1124,7 +1201,12 @@ class Lrc extends Lyric {
 
       if (i >= parsedLines.length - 1) continue;
       final nextStart = parsedLines[i + 1].start;
-      final gapStart = line.start + line.length;
+      // 间奏起点 = 本行最后一个字的实际结束时间（而非占满到下一行的 length），
+      // 否则 gapStart 恒等于 nextStart、gapLen 恒为 0，中间间奏永远插不进来。
+      // 对齐在线源 lrc_tool 的 _actualLineEndMs 算法。
+      final gapStart = line.words.isNotEmpty
+          ? line.words.last.start + line.words.last.length
+          : line.start + const Duration(milliseconds: 3500);
       final gapLen = nextStart - gapStart;
       if (gapLen >= gapThreshold) {
         finalLines.add(
@@ -1227,9 +1309,19 @@ class Lrc extends Lyric {
 
       final contentRaw = line.replaceAll(timeTagRe, '').trim();
 
-      // 过滤元数据行（"Adam Levine："、"词：xxx"等），避免它们抢真实歌词的主位
-      if (LrcLine.isLyricMetadataLine(
-          contentRaw.replaceAll(wordTagRe, '').trim())) {
+      // 从逐字时间戳中提取文本内容（不能直接用 replaceAll 删除标签，
+      // 因为 wordTagRe 的匹配包含文本，删除标签的同时也会删除文本内容，
+      // 导致「全部是逐字标签」的行得到空字符串，元数据检测失效）
+      final wordContent = wordTagRe
+          .allMatches(contentRaw)
+          .map((m) => m.group(2) ?? '')
+          .join();
+      final metadataCheckText =
+          wordContent.isNotEmpty ? wordContent.trim() : contentRaw;
+
+      // 过滤元数据行（"Adam Levine："、"词：xxx"、"Lyrics by："等），
+      // 避免它们抢真实歌词的主位
+      if (LrcLine.isLyricMetadataLine(metadataCheckText)) {
         // 记录该行所有时间戳，以便后续过滤同组的罗马音等残留行
         for (final m in timeMatches) {
           final mm = int.tryParse(m.group(1) ?? '');
@@ -1491,9 +1583,15 @@ class Lrc extends Lyric {
       }
 
       // 元数据残留保护：primary 匹配元数据特征 → 整组跳过
+      // 使用 allMatches 提取文本内容，避免 wordTagRe 的 replaceAll 吞掉文本
+      final primaryWordContent = wordTagRe
+          .allMatches(primaryText)
+          .map((m) => m.group(2) ?? '')
+          .join();
+      final primaryCheckText =
+          primaryWordContent.isNotEmpty ? primaryWordContent.trim() : primaryText;
       if (words.isEmpty ||
-          LrcLine.isLyricMetadataLine(
-              primaryText.replaceAll(wordTagRe, '').trim())) {
+          LrcLine.isLyricMetadataLine(primaryCheckText)) {
         continue;
       }
 
@@ -1526,7 +1624,10 @@ class Lrc extends Lyric {
       for (int j = 0; j < words.length; j++) {
         final curr = words[j];
         final nextWordStart = j < words.length - 1 ? words[j + 1].start : null;
-        final end = nextWordStart ?? (line.start + line.length);
+
+        // 修复：最后一个词不要用 line.length（会拉长到下一行），而是用合理的估计值
+        final end = nextWordStart ?? (curr.start + const Duration(milliseconds: 500));
+
         final d = end - curr.start;
         curr.length = d.isNegative
             ? Duration.zero
@@ -1544,7 +1645,12 @@ class Lrc extends Lyric {
 
       if (i >= parsedLines.length - 1) continue;
       final nextStart = parsedLines[i + 1].start;
-      final gapStart = line.start + line.length;
+      // 间奏起点 = 本行最后一个字的实际结束时间（而非占满到下一行的 length），
+      // 否则 gapStart 恒等于 nextStart、gapLen 恒为 0，中间间奏永远插不进来。
+      // 对齐在线源 lrc_tool 的 _actualLineEndMs 算法。
+      final gapStart = line.words.isNotEmpty
+          ? line.words.last.start + line.words.last.length
+          : line.start + const Duration(milliseconds: 3500);
       final gapLen = nextStart - gapStart;
       if (gapLen >= gapThreshold) {
         finalLines.add(
