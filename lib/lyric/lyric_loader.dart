@@ -18,7 +18,7 @@ import 'package:fl_charset/fl_charset.dart';
 // ──────────────────────────────────────────────
 // 支持的歌词扩展名（按优先级从高到低）
 // ──────────────────────────────────────────────
-const _kLyricExts = ['.yrc', '.qrc', '.krc', '.lrc'];
+const _kLyricExts = ['.yrc', '.qrc', '.krc', '.ttml', '.lrc'];
 
 /// 编码检测优先级（仅用于 UTF-8 解码失败后的 fallback）
 /// 不包含 ascii——utf8 完全覆盖 ascii，且 ascii 检测会误判中文文件。
@@ -83,65 +83,45 @@ List<String> _candidatePaths(String filePath, List<String> exts) {
 }
 
 // ──────────────────────────────────────────────
-// 搜索同目录下包含歌曲名的 .lrc 文件（模糊匹配）
+// 搜索目录下包含歌曲名的歌词文件（模糊匹配，按 exts 优先级）
 // ──────────────────────────────────────────────
-Future<String?> _findLrcInDirectory(String songPath, String songName) async {
-  final dir = Directory(p.dirname(songPath));
+Future<_ExternalLyricResult?> _findLyricInDirectory(
+  Directory dir,
+  String songName,
+  List<String> exts,
+) async {
   if (!await dir.exists()) return null;
 
   try {
     final songNameLower = songName.toLowerCase();
+    _ExternalLyricResult? best;
+    int bestPriority = 999;
+
     await for (final entity in dir.list()) {
       if (entity is File) {
         final ext = p.extension(entity.path).toLowerCase();
-        if (ext == '.lrc') {
-          final lrcBase = p.basenameWithoutExtension(entity.path).toLowerCase();
-          logger.i('lyric_loader:   found .lrc: $lrcBase, checking contains...');
-          if (lrcBase.contains(songNameLower)) {
-            final content = await _safeReadFile(entity.path);
-            if (content != null && content.trim().isNotEmpty) {
-              logger.i('lyric_loader:   fuzzy match OK: $lrcBase');
-              return content;
-            }
-          }
+        final priority = exts.indexOf(ext);
+        if (priority == -1) continue;
+
+        final base = p.basenameWithoutExtension(entity.path).toLowerCase();
+        if (!base.contains(songNameLower)) continue;
+
+        // 已找到更高优先级的，跳过
+        if (priority >= bestPriority) continue;
+
+        final content = await _safeReadFile(entity.path);
+        if (content != null && content.trim().isNotEmpty) {
+          logger.i('lyric_loader:   fuzzy match OK: $ext ($base)');
+          best = _ExternalLyricResult(content: content, ext: ext);
+          bestPriority = priority;
         }
       }
     }
+    return best;
   } catch (e) {
-    logger.e('lyric_loader: error scanning directory for lrc: $e');
+    logger.e('lyric_loader: error scanning directory: $e');
+    return null;
   }
-  logger.i('lyric_loader:   fuzzy match: no .lrc files found in ${dir.path}');
-  return null;
-}
-
-// ──────────────────────────────────────────────
-// 搜索父目录中的 .lrc 文件
-// ──────────────────────────────────────────────
-Future<String?> _findLrcInParentDirectory(String songPath, String songName) async {
-  final dir = Directory(p.dirname(songPath));
-  if (!await dir.exists()) return null;
-
-  try {
-    final parent = dir.parent;
-    if (parent.path == dir.path) return null;
-
-    final songNameLower = songName.toLowerCase();
-    await for (final entity in parent.list()) {
-      if (entity is File) {
-        final ext = p.extension(entity.path).toLowerCase();
-        if (ext == '.lrc' &&
-            p.basenameWithoutExtension(entity.path).toLowerCase().contains(songNameLower)) {
-          final content = await _safeReadFile(entity.path);
-          if (content != null && content.trim().isNotEmpty) {
-            return content;
-          }
-        }
-      }
-    }
-  } catch (e) {
-    logger.e('lyric_loader: error scanning parent directory for lrc: $e');
-  }
-  return null;
 }
 
 // ──────────────────────────────────────────────
@@ -220,8 +200,8 @@ Future<_ExternalLyricResult?> _loadExternalLyric(String audioPath) async {
 
     String? transContent;
 
-    // YRC / QRC：尝试配对读取同目录 .lrc 作为翻译
-    if (ext == '.yrc' || ext == '.qrc') {
+    // YRC / QRC / KRC / TTML：尝试配对读取同目录 .lrc 作为翻译
+    if (ext == '.yrc' || ext == '.qrc' || ext == '.krc' || ext == '.ttml') {
       final vtsPaths = _candidatePaths(audioPath, ['.lrc']);
       for (final vp in vtsPaths) {
         final tc = await _safeReadFile(vp);
@@ -230,7 +210,11 @@ Future<_ExternalLyricResult?> _loadExternalLyric(String audioPath) async {
           break;
         }
       }
-      transContent ??= await _findLrcInDirectory(audioPath, songName);
+      transContent ??= (await _findLyricInDirectory(
+        Directory(p.dirname(audioPath)),
+        songName,
+        ['.lrc'],
+      ))?.content;
     }
 
     return _ExternalLyricResult(
@@ -240,25 +224,17 @@ Future<_ExternalLyricResult?> _loadExternalLyric(String audioPath) async {
     );
   }
 
-  logger.i('lyric_loader: exact match failed, trying fuzzy match...');
-  // ── 精确同名文件未找到，尝试同目录模糊匹配 .lrc ──
-  final fuzzyLrc = await _findLrcInDirectory(audioPath, songName);
-  if (fuzzyLrc != null && fuzzyLrc.trim().isNotEmpty) {
-    return _ExternalLyricResult(
-      content: fuzzyLrc,
-      ext: '.lrc',
-      transContent: null,
-    );
-  }
+  logger.i('lyric_loader: exact match failed, trying fuzzy match...（all exts）');
+  // ── 精确同名文件未找到，尝试同目录模糊匹配（所有支持格式，按优先级）──
+  final dir = Directory(p.dirname(audioPath));
+  final fuzzy = await _findLyricInDirectory(dir, songName, _kLyricExts);
+  if (fuzzy != null) return fuzzy;
 
-  // ── 同目录模糊匹配失败，尝试父目录模糊匹配 .lrc ──
-  final parentLrc = await _findLrcInParentDirectory(audioPath, songName);
-  if (parentLrc != null && parentLrc.trim().isNotEmpty) {
-    return _ExternalLyricResult(
-      content: parentLrc,
-      ext: '.lrc',
-      transContent: null,
-    );
+  // ── 同目录模糊匹配失败，尝试父目录模糊匹配 ──
+  final parent = dir.parent;
+  if (parent.path != dir.path) {
+    final parentFuzzy = await _findLyricInDirectory(parent, songName, _kLyricExts);
+    if (parentFuzzy != null) return parentFuzzy;
   }
 
   return null;
@@ -284,6 +260,8 @@ Lyric? _parseExternalToPureLyric(
     case '.lrc':
       return Lrc.fromLrcTextAuto(result.content, LyricFormat.local,
           separator: separator);
+    case '.ttml':
+      return Ttml.fromTtmlText(result.content, separator: separator);
     default:
       return null;
   }
@@ -314,7 +292,7 @@ Lyric? _parseEmbeddedToPureLyric(String embeddedLyric,
 /// 加载音频文件的歌词。
 ///
 /// 策略：
-/// 1. 在音频文件同目录搜索外挂歌词文件（.yrc > .qrc > .krc > .lrc）
+/// 1. 在音频文件同目录搜索外挂歌词文件（.yrc > .qrc > .krc > .ttml > .lrc）
 /// 2. 自动检测文件编码，解密加密的 KRC/QRC
 /// 3. 外挂 YRC/QRC 自动配对同目录 .lrc 作为翻译
 /// 4. 若无外挂文件，回退到 Rust FFI 读取音频标签内嵌歌词
