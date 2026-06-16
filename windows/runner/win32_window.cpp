@@ -222,12 +222,28 @@ Win32Window::MessageHandler(HWND hwnd,
       if (wparam == SIZE_MINIMIZED) {
         return 0;
       }
-      
+
       RECT rect = GetClientArea();
       if (child_content_ != nullptr) {
         MoveWindow(child_content_, rect.left, rect.top, rect.right - rect.left,
                    rect.bottom - rect.top, TRUE);
       }
+      return 0;
+    }
+
+    case WM_EXITSIZEMOVE: {
+      // 拖拽缩放结束后，窗口尺寸已稳定。此时重新对齐 Flutter 子窗口并强制
+      // 重绘，确保 DWM 任务栏缩略图/Alt+Tab 预览抓取到与最终窗口尺寸匹配的
+      // 一帧，避免拖拽过程中遗留的「旧内容 + 新窗口框」错配快照导致预览变形。
+      if (child_content_ != nullptr) {
+        RECT rect = GetClientArea();
+        MoveWindow(child_content_, rect.left, rect.top, rect.right - rect.left,
+                   rect.bottom - rect.top, TRUE);
+        RedrawWindow(child_content_, nullptr, nullptr,
+                     RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
+      }
+      RedrawWindow(window_handle_, nullptr, nullptr,
+                   RDW_INVALIDATE | RDW_UPDATENOW);
       return 0;
     }
 
