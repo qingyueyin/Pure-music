@@ -28,21 +28,22 @@ class _ImmersivePortraitLayout extends StatelessWidget {
     return Stack(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(24.0, 32.0, 16.0, 16.0),
+          padding: const EdgeInsets.fromLTRB(12.0, 16.0, 12.0, 16.0),
           child: Column(
             children: [
-              const Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  SizedBox(
-                    width: 80.0,
-                    height: 80.0,
-                    child: _ImmersiveCoverThumbnail(),
-                  ),
-                  SizedBox(width: 12.0),
-                  Expanded(
-                    child: Align(
-                      alignment: Alignment.bottomLeft,
+              const Padding(
+                // 封面额外右移 12px，使封面左缘与歌词文字左缘对齐
+                padding: EdgeInsets.only(left: 12.0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 80.0,
+                      height: 80.0,
+                      child: _ImmersiveCoverThumbnail(),
+                    ),
+                    SizedBox(width: 12.0),
+                    Expanded(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -53,10 +54,10 @@ class _ImmersivePortraitLayout extends StatelessWidget {
                         ],
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
               Expanded(
                 child: ShaderMask(
                   shaderCallback: (Rect bounds) {
@@ -77,8 +78,9 @@ class _ImmersivePortraitLayout extends StatelessWidget {
                     showControls: false,
                     enableSeekOnTap: true,
                     centerVertically: false,
-                    enableEdgeSpacer: false,
-                    currentLineAlignment: 0.45,
+                    enableEdgeSpacer: true,
+                    // 压缩顶部空间后，进一步降低对齐位置，使当前行更靠上
+                    currentLineAlignment: 0.10,
                   ),
                 ),
               ),
