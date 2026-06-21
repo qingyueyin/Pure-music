@@ -428,7 +428,7 @@ class SongSearchResult {
   }
 }
 
-/// 清理搜索关键词，移除分隔符和噪音，模仿 Lyrico 的 cleanNoise
+/// 清理搜索关键词，移除分隔符和噪音
 String _cleanForSearch(String text) {
   return text
       .replaceAll(RegExp(r'\s*[-–—－/、,，&＆+×|｜]\s*'), ' ') // 分隔符 → 空格
@@ -438,7 +438,7 @@ String _cleanForSearch(String text) {
       .trim();
 }
 
-/// 构建多个搜索查询，模仿 Lyrico 的 buildSearchQueries
+/// 构建多个搜索查询
 /// 例如："呼吸决定 - Fine乐团" → ["呼吸决定 Fine乐团", "呼吸决定", "Fine乐团 呼吸决定"]
 List<String> _buildSearchQueries(Audio audio) {
   final queries = <String>[];

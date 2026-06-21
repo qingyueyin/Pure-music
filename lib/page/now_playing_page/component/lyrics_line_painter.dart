@@ -240,7 +240,7 @@ class LyricsLinePainter extends CustomPainter {
         firstOnLine = true;
       }
 
-      // ── 词级波浪窗口进度计算（匹配 ZeroBit）───────────────────────────
+      // ── 词级波浪窗口进度计算 ───────────────────────────
       // stepRatio = 0.1：前一个字动画跑到 10% 时，后一个字开始
       // waveWidth = 1.0 / (stepRatio * (charCount - 1) + 1.0)
       // windowStart[i] = i * stepRatio * waveWidth
@@ -387,7 +387,7 @@ class LyricsLinePainter extends CustomPainter {
     void paintWord(List<_CharInfo> wc, TextStyle style, bool useLift,
         {bool applyScale = false}) {
       if (useLift) {
-        // 词时长阈值判断（匹配 ZeroBit）
+        // 词时长阈值判断
         final wordDurationSec = wc.first.wordDurationSec;
         const rippleThreshold = 1.5;
         final enableEffect = applyScale && wordDurationSec >= rippleThreshold;
@@ -396,13 +396,13 @@ class LyricsLinePainter extends CustomPainter {
           final charProgress = info.charProgress;
           double scale = 1.0;
           if (enableEffect && charProgress > 0.0 && charProgress < 1.0) {
-            // 词时长归一化（匹配 ZeroBit：在 [1.5, 3.0] 区间归一化）
+            // 词时长归一化（在 [1.5, 3.0] 区间归一化）
             final effectRatio = (((wordDurationSec - rippleThreshold) /
                         (3.0 - rippleThreshold)))
                     .clamp(0.0, 1.0);
             final ripplesScaleMax = 1.1 + 0.05 * effectRatio;
 
-            // 非对称曲线：前 60% 放大（easeOut），后 40% 缩小（easeIn）（匹配 ZeroBit）
+            // 非对称曲线：前 60% 放大（easeOut），后 40% 缩小（easeIn）
             double animationCurve;
             if (charProgress < 0.6) {
               animationCurve = Curves.easeOut.transform(charProgress / 0.6);
@@ -551,7 +551,7 @@ class LyricsLinePainter extends CustomPainter {
             entry.value, dimStyle, entry.value.any((c) => c.yLift != 0.0));
       }
 
-      // ── Pass 2: Glow layer (逐字符独立辉光，匹配 ZeroBit) ───────────────────
+      // ── Pass 2: Glow layer (逐字符独立辉光) ───────────────────
       if (config.enableGlow) {
         _paintGlowLayer(canvas, words, playedStyle);
       }
@@ -859,13 +859,12 @@ class LyricsLinePainter extends CustomPainter {
   }
 
   /// 辉光层：逐字符独立绘制，每个字符根据自己的 charProgress 计算独立辉光
-  /// 匹配 ZeroBit 的 _HighlightedWord 实现
   void _paintGlowLayer(
     Canvas canvas,
     List<MapEntry<int, List<_CharInfo>>> words,
     TextStyle playedStyle,
   ) {
-    const rippleThreshold = 1.5; // 词时长阈值（秒），匹配 ZeroBit
+    const rippleThreshold = 1.5; // 词时长阈值（秒）
 
     final baseColor = playedStyle.color ?? Colors.white;
 
@@ -888,7 +887,7 @@ class LyricsLinePainter extends CustomPainter {
         final charProgress = info.charProgress;
         if (charProgress <= 0.0) continue;
 
-        // 非对称曲线：前 60% 放大（easeOut），后 40% 缩小（easeIn）（匹配 ZeroBit）
+        // 非对称曲线：前 60% 放大（easeOut），后 40% 缩小（easeIn）
         double animationCurve;
         if (charProgress < 0.6) {
           animationCurve = Curves.easeOut.transform(charProgress / 0.6);
@@ -897,7 +896,7 @@ class LyricsLinePainter extends CustomPainter {
               1.0 - Curves.easeIn.transform((charProgress - 0.6) / 0.4);
         }
 
-        // 辉光 alpha（匹配 ZeroBit：lerp(0.0, glowAlphaMax, animationCurve)）
+        // 辉光 alpha
         final glowAlpha = (glowAlphaMax * animationCurve).clamp(0.0, 1.0);
         if (glowAlpha <= 0.02) continue;
 

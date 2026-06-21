@@ -442,7 +442,7 @@ class _MiniTimeText extends StatelessWidget {
   }
 }
 
-/// 迷你封面组件（ZeroBit pattern）：
+/// 迷你封面组件：
 /// 同步检查 Audio.smallCoverBytes，已缓存则用 Image.memory 直接渲染；
 /// 未缓存则显示纯色占位 + 异步加载后写回 Audio 并 setState。
 /// 不使用 FutureBuilder，避免鼠标 hover 时因 rebuild 导致的闪烁。

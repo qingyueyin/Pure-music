@@ -200,10 +200,10 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
   final currentLyricTileKey = GlobalKey();
 
-  /// HQ Player 风格: 悬停歌词行高亮遮罩
+  /// 悬停歌词行高亮遮罩
   int _hoveredLineIndex = -1;
 
-  /// HQ Player 风格: ValueTransition 驱动的平滑滚动
+  /// ValueTransition 驱动的平滑滚动
   late ValueTransition<double> _scrollTransition;
   Ticker? _scrollTicker;
   bool _scrollTickerActive = false;
@@ -261,7 +261,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     _lastActivityTime = DateTime.now();
   }
 
-  /// HQ Player 风格: Sine Out 缓动函数
+  /// Sine Out 缓动函数
   static double _sineOutInterpolator(double t, double start, double end) {
     return start + (end - start) * sin(t * 3.141592653589793 / 2);
   }
@@ -274,7 +274,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     );
   }
 
-  /// HQ Player 风格: 启动 ValueTransition 驱动的滚动 Ticker
+  /// 启动 ValueTransition 驱动的滚动 Ticker
   void _startScrollTicker() {
     if (_scrollTickerActive) return;
     _scrollTicker?.dispose();
@@ -552,7 +552,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     });
   }
 
-  /// HQ Player 风格: ValueTransition 驱动的丝滑滚动
+  /// ValueTransition 驱动的丝滑滚动
   void _animateTo(double targetOffset, {Duration? duration}) {
     if (!scrollController.hasClients) return;
     final minExtent = scrollController.position.minScrollExtent;

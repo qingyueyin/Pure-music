@@ -3,19 +3,19 @@ import 'package:flutter/material.dart';
 
 /// 歌词辉光效果绘制器
 ///
-/// 参考 ZeroBit-Player 的智能辉光系统，适配到 Pure-music 的 CustomPainter 架构
+/// 智能辉光系统，集成于 CustomPainter 架构
 class LyricsGlowPainter {
-  // 辉光效果常量（参考 ZeroBit 原版参数，增强 blur 半径）
-  static const double glowAlphaMin = 0.2;          // ZeroBit: _glowAlphaMin = 0.2
-  static const double glowAlphaExtra = 0.3;        // ZeroBit: _glowAlphaExtra = 0.3
-  static const double ripplesScaleMin = 1.1;       // ZeroBit: _ripplesScaleMin = 1.1
-  static const double ripplesScaleExtra = 0.1;     // ZeroBit: _ripplesScaleExtra = 0.1
+  // 辉光效果常量
+  static const double glowAlphaMin = 0.2;
+  static const double glowAlphaExtra = 0.3;
+  static const double ripplesScaleMin = 1.1;
+  static const double ripplesScaleExtra = 0.1;
   static const double rippleThreshold = 1.5;       // 缩放阈值（≥1.5s → 单纯缩放）
   static const double glowThreshold = 2.5;         // 辉光阈值（≥2.5s → 缩放+辉光）
   
-  // blur 半径（比 ZeroBit 更大，因为 CustomPainter 没有 Widget 层的额外光晕）
-  static const double innerBlurRadius = 12.0;      // ZeroBit: 4
-  static const double outerBlurRadius = 24.0;      // ZeroBit: 8
+  // blur 半径（CustomPainter 架构下需较大值补偿无 Widget 层光晕）
+  static const double innerBlurRadius = 12.0;
+  static const double outerBlurRadius = 24.0;
 
   /// 计算辉光强度（基于词的持续时间）
   ///
@@ -109,7 +109,7 @@ class LyricsGlowPainter {
 
     textPainter.layout();
 
-    // 应用缩放（以字符底部中心为原点，匹配 ZeroBit 的 Alignment.bottomCenter）
+    // 应用缩放（以字符底部中心为原点）
     if (scale != 1.0) {
       canvas.save();
       final centerX = offset.dx + textPainter.width / 2;
