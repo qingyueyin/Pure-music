@@ -142,12 +142,29 @@ class LrcLine extends UnsyncLyricLine {
     t = _stripOuterBrackets(t);
     // 前缀 + 冒号（词/曲/编/演唱者）
     if (_metadataPattern.hasMatch(t)) return true;
-    // 横线分隔符（歌名 - 歌手、标题-艺术家）——仅当总长度较短时才判为元数据
-    if (t.length < 60 && RegExp(r'[\-\u2013\u2014\uff0d]').hasMatch(t)) {
-      return true;
+    // 横线分隔符（歌名 - 歌手、标题 - 艺术家）——要求整行仅被一条前后有空格的
+    // 横线分成两个短字段，避免普通歌词里的连字符复合词（如 right-side、Click-click）被误判。
+    if (t.length < 60) {
+      final dashParts = t.split(RegExp(r'\s+[-–—－]\s+'));
+      if (dashParts.length == 2 &&
+          dashParts[0].trim().isNotEmpty &&
+          dashParts[1].trim().isNotEmpty &&
+          dashParts[0].trim().length <= 40 &&
+          dashParts[1].trim().length <= 40) {
+        return true;
+      }
     }
     // 版权/来源关键词
-    if (RegExp(r'(?:QQ音乐|享有|著作权|版权|提供|出品|发行|翻译|翻訳)').hasMatch(t)) return true;
+    if (RegExp(
+          r'(?:'
+          r'QQ音乐|享有|著作权|版权|提供|出品|发行|翻译|翻訳|'
+          r'©|copyright|All Rights Reserved|Used by Permission|'
+          r'(administered|published|distributed|lyrics|composed|produced|written)\s+by[:：\s]'
+          r')',
+          caseSensitive: false,
+        ).hasMatch(t)) {
+      return true;
+    }
     return false;
   }
 
@@ -704,14 +721,14 @@ class Lrc extends Lyric {
     final linesWithInterludes = <LrcLine>[];
     const gapThreshold = Duration(milliseconds: 5000);
 
-    // 1. 开头前奏：从元数据最后时间戳（如果有）或 0 到第一句真实歌词
+    // 1. 开头前奏：从 0 到第一句真实歌词。
+    // 元数据行已被过滤，它们所占的时间应该合并进前奏间奏里显示，
+    // 而不是从元数据结束位置才开始插空白（否则空白太短会被 UI 忽略）。
     if (lines.isNotEmpty) {
       final firstRealStart = lines.first.start;
-      final introStart = maxMetadataTimeMs != null
-          ? Duration(milliseconds: maxMetadataTimeMs)
-          : Duration.zero;
+      const introStart = Duration.zero;
 
-      // 如果第一句歌词在元数据之后，插入前奏空白行
+      // 如果第一句歌词不在 0 时刻，插入前奏空白行
       if (firstRealStart > introStart) {
         linesWithInterludes.add(
           LrcLine(
@@ -938,6 +955,24 @@ class Lrc extends Lyric {
     final syllablePattern = RegExp(r'([^\(]*?)\((\d+),(\d+)\)');
     final attributePattern = RegExp(r'^\[(\d+)\]');
 
+    // 预计算整首歌的近似总时长，用于把元数据过滤限制在首尾附近。
+    int maxTimeMs = 0;
+    for (final raw in lrcLines) {
+      final line = raw.trimRight();
+      if (line.trim().isEmpty) continue;
+      for (final m in timeTagRe.allMatches(line)) {
+        final mm = int.tryParse(m.group(1) ?? '');
+        final ss = double.tryParse(m.group(2) ?? '');
+        if (mm != null && ss != null) {
+          final ms = ((mm * 60 + ss) * 1000).round() - offsetMs;
+          if (ms > maxTimeMs) maxTimeMs = ms;
+        }
+      }
+    }
+    final totalMs = maxTimeMs + 5000;
+    const edgeThresholdMs = 30000;
+    final useEdgeFilter = totalMs > edgeThresholdMs * 2;
+
     final rawLines = <_EnhancedLrcRawLine>[];
     final filteredMetadataMs = <int>{};
     // 记录最大的元数据时间戳，用于计算间奏开始时间
@@ -952,17 +987,22 @@ class Lrc extends Lyric {
 
       final contentRaw = line.replaceAll(timeTagRe, '').trim();
 
-      // 过滤元数据行
+      // 过滤元数据行，只在歌曲首尾附近生效，防止中间歌词被误伤
       if (LrcLine.isLyricMetadataLine(contentRaw)) {
         for (final m in timeMatches) {
           final mm = int.tryParse(m.group(1) ?? '');
           final ss = double.tryParse(m.group(2) ?? '');
           if (mm != null && ss != null) {
             final ms = max(((mm * 60 + ss) * 1000).round() - offsetMs, 0);
-            filteredMetadataMs.add(ms);
-            // 更新最大元数据时间戳
-            if (maxMetadataTimeMs == null || ms > maxMetadataTimeMs) {
-              maxMetadataTimeMs = ms;
+            // 只在首尾阈值内过滤；中间的歌词即使命中元数据特征也保留
+            if (!useEdgeFilter ||
+                ms <= edgeThresholdMs ||
+                ms >= totalMs - edgeThresholdMs) {
+              filteredMetadataMs.add(ms);
+              // 更新最大元数据时间戳
+              if (maxMetadataTimeMs == null || ms > maxMetadataTimeMs) {
+                maxMetadataTimeMs = ms;
+              }
             }
           }
         }
@@ -1116,8 +1156,14 @@ class Lrc extends Lyric {
       if (primaryWords.isEmpty) continue;
 
       // 元数据残留保护：primary 匹配元数据特征 → 整组跳过
-      if (LrcLine.isLyricMetadataLine(
-          primaryContent.replaceAll(RegExp(r'<[^>]*>'), '').trim())) {
+      // 只在首尾附近生效，避免中间普通歌词被误伤
+      final startMs = start.inMilliseconds;
+      final nearEdge = !useEdgeFilter ||
+          startMs <= edgeThresholdMs ||
+          startMs >= totalMs - edgeThresholdMs;
+      if (nearEdge &&
+          LrcLine.isLyricMetadataLine(
+              primaryContent.replaceAll(RegExp(r'<[^>]*>'), '').trim())) {
         continue;
       }
 
@@ -1219,17 +1265,16 @@ class Lrc extends Lyric {
       }
     }
 
-    // 插入前奏空白行：从元数据最后时间戳（如果有）或 0 到第一句歌词
+    // 插入前奏空白行：从 0 到第一句歌词。
+    // 元数据行已被过滤，它们所占的时间应该合并进前奏间奏里显示。
     if (finalLines.isNotEmpty) {
       final firstLine = finalLines.first;
       final firstLineStart = firstLine.start;
-      final introStart = maxMetadataTimeMs != null
-          ? Duration(milliseconds: maxMetadataTimeMs)
-          : Duration.zero;
+      const introStart = Duration.zero;
 
       logger.i('[lrc] _parseLyricify: maxMetadataTimeMs=$maxMetadataTimeMs, firstLineStart=${firstLineStart.inMilliseconds}ms, introStart=${introStart.inMilliseconds}ms');
 
-      // 如果第一句歌词在元数据之后，且第一行不是从 introStart 开始的空白行，插入间奏空白行
+      // 如果第一句歌词不在 0 时刻，且第一行不是已经从 0 开始的空白行，插入前奏空白行
       final firstLineIsIntroBlank = firstLine is SyncLyricLine &&
                                      firstLine.words.isEmpty &&
                                      firstLineStart == introStart;
@@ -1294,8 +1339,27 @@ class Lrc extends Lyric {
       return max(rawMs - offsetMs, 0);
     }
 
+    // 预计算整首歌的近似总时长，用于把元数据过滤限制在首尾附近。
+    // 普通歌词中的“作词/作曲”等元数据极少出现在歌曲中间。
+    int maxTimeMs = 0;
+    for (final raw in lrcLines) {
+      final line = raw.trimRight();
+      if (line.trim().isEmpty) continue;
+      for (final m in timeTagRe.allMatches(line)) {
+        final mm = int.tryParse(m.group(1) ?? '');
+        final ss = double.tryParse(m.group(2) ?? '');
+        if (mm != null && ss != null) {
+          final ms = ((mm * 60 + ss) * 1000).round() - offsetMs;
+          if (ms > maxTimeMs) maxTimeMs = ms;
+        }
+      }
+    }
+    final totalMs = maxTimeMs + 5000;
+    const edgeThresholdMs = 30000;
+    final useEdgeFilter = totalMs > edgeThresholdMs * 2;
+
     final rawLines = <_EnhancedLrcRawLine>[];
-    // 记录被过滤元数据行的时间戳，后续同步过滤同时间戳的罗马音残留行
+    // 记录被过滤元数据行的时间戳，后续同步过滤同时间戳的罗马音等残留行
     final filteredMetadataMs = <int>{};
     // 记录最大的元数据时间戳，用于计算间奏开始时间
     int? maxMetadataTimeMs;
@@ -1320,7 +1384,7 @@ class Lrc extends Lyric {
           wordContent.isNotEmpty ? wordContent.trim() : contentRaw;
 
       // 过滤元数据行（"Adam Levine："、"词：xxx"、"Lyrics by："等），
-      // 避免它们抢真实歌词的主位
+      // 避免它们抢真实歌词的主位。只在歌曲首尾附近生效，防止中间歌词被误伤。
       if (LrcLine.isLyricMetadataLine(metadataCheckText)) {
         // 记录该行所有时间戳，以便后续过滤同组的罗马音等残留行
         for (final m in timeMatches) {
@@ -1328,10 +1392,15 @@ class Lrc extends Lyric {
           final ss = double.tryParse(m.group(2) ?? '');
           if (mm != null && ss != null) {
             final ms = max(((mm * 60 + ss) * 1000).round() - offsetMs, 0);
-            filteredMetadataMs.add(ms);
-            // 更新最大元数据时间戳
-            if (maxMetadataTimeMs == null || ms > maxMetadataTimeMs) {
-              maxMetadataTimeMs = ms;
+            // 只在首尾阈值内过滤；中间的歌词即使命中元数据特征也保留
+            if (!useEdgeFilter ||
+                ms <= edgeThresholdMs ||
+                ms >= totalMs - edgeThresholdMs) {
+              filteredMetadataMs.add(ms);
+              // 更新最大元数据时间戳
+              if (maxMetadataTimeMs == null || ms > maxMetadataTimeMs) {
+                maxMetadataTimeMs = ms;
+              }
             }
           }
         }
@@ -1584,6 +1653,11 @@ class Lrc extends Lyric {
 
       // 元数据残留保护：primary 匹配元数据特征 → 整组跳过
       // 使用 allMatches 提取文本内容，避免 wordTagRe 的 replaceAll 吞掉文本
+      // 只在首尾附近生效，避免中间普通歌词被误伤
+      final startMs = start.inMilliseconds;
+      final nearEdge = !useEdgeFilter ||
+          startMs <= edgeThresholdMs ||
+          startMs >= totalMs - edgeThresholdMs;
       final primaryWordContent = wordTagRe
           .allMatches(primaryText)
           .map((m) => m.group(2) ?? '')
@@ -1591,7 +1665,7 @@ class Lrc extends Lyric {
       final primaryCheckText =
           primaryWordContent.isNotEmpty ? primaryWordContent.trim() : primaryText;
       if (words.isEmpty ||
-          LrcLine.isLyricMetadataLine(primaryCheckText)) {
+          (nearEdge && LrcLine.isLyricMetadataLine(primaryCheckText))) {
         continue;
       }
 
@@ -1663,17 +1737,16 @@ class Lrc extends Lyric {
       }
     }
 
-    // 插入前奏空白行：从元数据最后时间戳（如果有）或 0 到第一句歌词
+    // 插入前奏空白行：从 0 到第一句歌词。
+    // 元数据行已被过滤，它们所占的时间应该合并进前奏间奏里显示。
     if (finalLines.isNotEmpty) {
       final firstLine = finalLines.first;
       final firstLineStart = firstLine.start;
-      final introStart = maxMetadataTimeMs != null
-          ? Duration(milliseconds: maxMetadataTimeMs)
-          : Duration.zero;
+      const introStart = Duration.zero;
 
       logger.i('[lrc] _parseEnhancedLrcText: maxMetadataTimeMs=$maxMetadataTimeMs, firstLineStart=${firstLineStart.inMilliseconds}ms, introStart=${introStart.inMilliseconds}ms');
 
-      // 如果第一句歌词在元数据之后，且第一行不是从 introStart 开始的空白行，插入间奏空白行
+      // 如果第一句歌词不在 0 时刻，且第一行不是已经从 0 开始的空白行，插入前奏空白行
       final firstLineIsIntroBlank = firstLine is SyncLyricLine &&
                                      firstLine.words.isEmpty &&
                                      firstLineStart == introStart;
