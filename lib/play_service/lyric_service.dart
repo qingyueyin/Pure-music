@@ -60,8 +60,7 @@ class LyricService extends ChangeNotifier {
   late StreamSubscription _positionStreamSubscription;
   double _lastPos = 0.0;
   Lyric? _currLyric;
-  List<int> _lineStartMs = const [];
-  int _lastEmittedLineIndex = -1;
+  Set<int> _lastEmittedLineIndices = const {};
   int _lastDesktopLyricLineIndex = -1;
 
   /// 已经提示过/忽略过的歌曲路径，避免重复提示
@@ -83,44 +82,59 @@ class LyricService extends ChangeNotifier {
       final jumped = (pos - _lastPos).abs() > 1.0;
       _lastPos = pos;
       final posMs = (pos * 1000).round();
-      if (jumped) {
-        findCurrLyricLineAt(pos);
-        return;
-      }
-      final lyric = _currLyric;
-      if (lyric == null) return;
-      if (_nextLyricLine >= lyric.lines.length) {
-        if (_lineStartMs.isEmpty || posMs > _lineStartMs.last) return;
-        findCurrLyricLineAt(pos);
-        return;
-      }
-      while (_nextLyricLine < _lineStartMs.length &&
-          posMs > _lineStartMs[_nextLyricLine]) {
-        _nextLyricLine += 1;
-      }
-
-      final currLineIndex = _nextLyricLine - 1;
-      if (currLineIndex < 0 || currLineIndex >= lyric.lines.length) return;
-      if (currLineIndex != _lastEmittedLineIndex) {
-        _lastEmittedLineIndex = currLineIndex;
-        _lastEmittedLineIndexForHint = currLineIndex;
-        _lyricLineStreamController.add(currLineIndex);
-      }
-
-      if (currLineIndex != _lastDesktopLyricLineIndex) {
-        _lastDesktopLyricLineIndex = currLineIndex;
-        final nextLine = currLineIndex + 1 < lyric.lines.length
-            ? lyric.lines[currLineIndex + 1]
-            : null;
-        playService.desktopLyricService.canSendMessage.then((canSend) {
-          if (!canSend) return;
-          playService.desktopLyricService.sendLyricLineMessage(
-            lyric.lines[currLineIndex],
-            nextLine: nextLine,
-          );
-        });
-      }
+      _emitActiveLines(posMs, force: jumped);
     });
+  }
+
+  /// 找出当前时间下所有处于活动时间内的歌词行索引。
+  /// 支持普通歌词（通常只有一个）和对唱重叠歌词（可能多个）。
+  List<int> _findActiveLineIndices(int posMs) {
+    final lyric = _currLyric;
+    if (lyric == null || lyric.lines.isEmpty) return const [];
+    final active = <int>[];
+    for (int i = 0; i < lyric.lines.length; i++) {
+      final line = lyric.lines[i];
+      final startMs = line is SyncLyricLine && line.words.isNotEmpty
+          ? line.words.first.start.inMilliseconds
+          : line.start.inMilliseconds;
+      // 行结束时间必须用 line.start + line.length，不能用 startMs + length，
+      // 否则逐字歌词中第一个词开始时间晚于行开始时，会把行尾算错。
+      final endMs = line.start.inMilliseconds + line.length.inMilliseconds;
+      if (posMs >= startMs && posMs < endMs) {
+        active.add(i);
+      }
+    }
+    return active;
+  }
+
+  void _emitActiveLines(int posMs, {bool force = false}) {
+    final lyric = _currLyric;
+    if (lyric == null || lyric.lines.isEmpty) return;
+
+    final active = _findActiveLineIndices(posMs);
+    final activeSet = active.toSet();
+
+    if (force || activeSet != _lastEmittedLineIndices) {
+      logger.d('LyricService emit active: pos=$posMs active=$active force=$force');
+      _lastEmittedLineIndices = activeSet;
+      _lyricLineStreamController.add(active);
+    }
+
+    // 桌面歌词只显示第一个活动行
+    final desktopIndex = active.isNotEmpty ? active.first : -1;
+    if (desktopIndex >= 0 && desktopIndex != _lastDesktopLyricLineIndex) {
+      _lastDesktopLyricLineIndex = desktopIndex;
+      final nextLine = desktopIndex + 1 < lyric.lines.length
+          ? lyric.lines[desktopIndex + 1]
+          : null;
+      playService.desktopLyricService.canSendMessage.then((canSend) {
+        if (!canSend) return;
+        playService.desktopLyricService.sendLyricLineMessage(
+          lyric.lines[desktopIndex],
+          nextLine: nextLine,
+        );
+      });
+    }
   }
 
   Audio? _getNowPlaying() => playService.playbackService.nowPlaying;
@@ -232,18 +246,14 @@ class LyricService extends ChangeNotifier {
   /// 当前歌词是否已加载
   bool get hasLyric => _currLyric != null;
 
-  /// 下一行歌词
-  int _nextLyricLine = 0;
-  int _lastEmittedLineIndexForHint = -1;
-
-  late final StreamController<int> _lyricLineStreamController =
+  late final StreamController<List<int>> _lyricLineStreamController =
       StreamController.broadcast(onListen: () {
     forceEmitCurrentLine();
   });
 
-  Stream<int> get lyricLineStream => _lyricLineStreamController.stream;
+  Stream<List<int>> get lyricLineStream => _lyricLineStreamController.stream;
 
-  /// 强制发射当前行（绕过 _lastEmittedLineIndex 检查），
+  /// 强制发射当前行（绕过 _lastEmittedLineIndices 检查），
   /// 用于新创建的歌词 view 初始化时获取当前行
   void forceEmitCurrentLine() {
     final lyric = _currLyric;
@@ -256,30 +266,7 @@ class LyricService extends ChangeNotifier {
       return;
     }
     final posMs = (playService.playbackService.position * 1000).round();
-    final next = _findLrcPos(
-        time: posMs, lines: lyric.lines, hint: _lastEmittedLineIndexForHint);
-    _nextLyricLine = next == -1 ? lyric.lines.length : next;
-    final currLineIndex = _nextLyricLine - 1;
-    if (currLineIndex < 0) return;
-    if (currLineIndex >= lyric.lines.length) return;
-
-    _lastEmittedLineIndex = currLineIndex;
-    _lastEmittedLineIndexForHint = currLineIndex;
-    _lyricLineStreamController.add(currLineIndex);
-
-    if (currLineIndex != _lastDesktopLyricLineIndex) {
-      _lastDesktopLyricLineIndex = currLineIndex;
-      final nextLine = currLineIndex + 1 < lyric.lines.length
-          ? lyric.lines[currLineIndex + 1]
-          : null;
-      playService.desktopLyricService.canSendMessage.then((canSend) {
-        if (!canSend) return;
-        playService.desktopLyricService.sendLyricLineMessage(
-          lyric.lines[currLineIndex],
-          nextLine: nextLine,
-        );
-      });
-    }
+    _emitActiveLines(posMs, force: true);
   }
 
   /// 重新计算歌词进行到第几行
@@ -299,78 +286,7 @@ class LyricService extends ChangeNotifier {
     }
 
     final posMs = (positionSeconds * 1000).round();
-    final hint = _lastEmittedLineIndexForHint;
-    final next = _findLrcPos(time: posMs, lines: lyric.lines, hint: hint);
-    _nextLyricLine = next == -1 ? lyric.lines.length : next;
-    final currLineIndex = _nextLyricLine - 1;
-
-    if (currLineIndex < 0) return;
-
-    if (currLineIndex != _lastEmittedLineIndex) {
-      _lastEmittedLineIndex = currLineIndex;
-      _lastEmittedLineIndexForHint = currLineIndex;
-      _lyricLineStreamController.add(currLineIndex);
-    }
-
-    if (currLineIndex >= lyric.lines.length) return;
-    if (currLineIndex != _lastDesktopLyricLineIndex) {
-      _lastDesktopLyricLineIndex = currLineIndex;
-      final nextLine = currLineIndex + 1 < lyric.lines.length
-          ? lyric.lines[currLineIndex + 1]
-          : null;
-      playService.desktopLyricService.canSendMessage.then((canSend) {
-        if (!canSend) return;
-        playService.desktopLyricService.sendLyricLineMessage(
-          lyric.lines[currLineIndex],
-          nextLine: nextLine,
-        );
-      });
-    }
-  }
-
-  /// hint 优先 + 二分搜索查找歌词位置
-  /// 正常播放时 hint 命中率 >95%，时间复杂度接近 O(1)
-  int _findLrcPos({
-    required int time,
-    required List<LyricLine> lines,
-    required int hint,
-  }) {
-    final n = lines.length;
-    if (n == 0) return -1;
-
-    if (hint >= 0 && hint < n) {
-      final seg = lines[hint];
-      final segEndMs = seg.start.inMilliseconds + seg.length.inMilliseconds;
-      if (time >= seg.start.inMilliseconds && time < segEndMs) {
-        return hint + 1;
-      }
-      final nextIndex = hint + 1;
-      if (nextIndex < n) {
-        final segNext = lines[nextIndex];
-        final segNextEnd =
-            segNext.start.inMilliseconds + segNext.length.inMilliseconds;
-        if (time >= segNext.start.inMilliseconds && time < segNextEnd) {
-          return nextIndex + 1;
-        }
-      }
-    }
-
-    return _lowerBoundGreater(_lineStartMs, time);
-  }
-
-  int _lowerBoundGreater(List<int> arr, int x) {
-    if (arr.isEmpty) return -1;
-    int lo = 0;
-    int hi = arr.length;
-    while (lo < hi) {
-      final mid = (lo + hi) >> 1;
-      if (arr[mid] > x) {
-        hi = mid;
-      } else {
-        lo = mid + 1;
-      }
-    }
-    return lo >= arr.length ? -1 : lo;
+    _emitActiveLines(posMs, force: true);
   }
 
   void _setCurrLyric(Lyric lyric) {
@@ -380,15 +296,6 @@ class LyricService extends ChangeNotifier {
     blankMetadataLines(lyric.lines);
 
     _currLyric = lyric;
-    _lineStartMs = lyric.lines.map((line) {
-      // 逐字歌词：用第一个词的 start 作为有效行开始时间，
-      // 避免行切换先于逐词高亮触发，导致"上抬比高亮快"的视觉错位
-      if (line is SyncLyricLine && line.words.isNotEmpty) {
-        return line.words.first.start.inMilliseconds;
-      }
-      return line.start.inMilliseconds;
-    }).toList();
-    _lastEmittedLineIndexForHint = -1;
   }
 
   /// 根据默认歌词来源获取歌词：
@@ -409,8 +316,7 @@ class LyricService extends ChangeNotifier {
 
     currLyricFuture.ignore();
     _currLyric = null;
-    _lineStartMs = const [];
-    _lastEmittedLineIndex = -1;
+    _lastEmittedLineIndices = const {};
     _lastDesktopLyricLineIndex = -1;
     _lyricCache.remove(audioPath);
 
@@ -455,7 +361,6 @@ class LyricService extends ChangeNotifier {
     currLyricFuture.then((value) {
       logger.d('[lyric_service] then: value=${value?.lines.length ?? "null"}');
       if (value != null) {
-        _nextLyricLine = 0;
         _setCurrLyric(value);
         _lyricCache.put(audioPath, value);
         // 网络歌词加载成功后，安排写入标签提示
@@ -593,8 +498,7 @@ class LyricService extends ChangeNotifier {
 
     currLyricFuture.ignore();
     _currLyric = null;
-    _lineStartMs = const [];
-    _lastEmittedLineIndex = -1;
+    _lastEmittedLineIndices = const {};
     _lastDesktopLyricLineIndex = -1;
 
     currLyricFuture = loadLyricFromAudio(nowPlaying.path);
@@ -619,8 +523,7 @@ class LyricService extends ChangeNotifier {
 
     currLyricFuture.ignore();
     _currLyric = null;
-    _lineStartMs = const [];
-    _lastEmittedLineIndex = -1;
+    _lastEmittedLineIndices = const {};
     _lastDesktopLyricLineIndex = -1;
 
     // 优先使用已保存的指定来源，避免重新搜索导致加载失败
@@ -661,7 +564,7 @@ class LyricService extends ChangeNotifier {
 
   void useSpecificLyric(Lyric lyric) {
     currLyricFuture.ignore();
-    _lastEmittedLineIndex = -1;
+    _lastEmittedLineIndices = const {};
     _lastDesktopLyricLineIndex = -1;
 
     currLyricFuture = Future.value(lyric);
