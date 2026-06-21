@@ -295,7 +295,8 @@ flutter run
 flutter build windows --release
 
 # 重新生成 FRB 绑定（修改 Rust 后）
-cd rust_builder && flutter pub run build_runner build
+# 需先安装: cargo install flutter_rust_bridge_codegen
+flutter_rust_bridge_codegen generate
 ```
 
 </details>
@@ -337,8 +338,7 @@ cd rust_builder && flutter pub run build_runner build
 | [pinyin](https://pub.dev/packages/pinyin) | 拼音转换 |
 | [fl_charset](https://pub.dev/packages/fl_charset) | 字符编码检测 |
 | [logger](https://pub.dev/packages/logger) | 日志记录 |
-| [xml](https://pub.dev/packages/xml) | XML 解析 |
-| [github](https://pub.dev/packages/github) | GitHub API
+| [xml](https://pub.dev/packages/xml) | XML 解析 
 
 </details>
 

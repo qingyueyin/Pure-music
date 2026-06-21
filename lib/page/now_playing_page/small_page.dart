@@ -81,18 +81,14 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
                       NowPlayingViewMode.onlyMain =>
                         const Center(child: _NowPlayingInfo()),
                       NowPlayingViewMode.withLyric => Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 0),
-                          child: Padding(
-                            // 抵消歌词行内部的 12px 水平 padding，让歌词贴近切换按钮
-                            padding: const EdgeInsets.symmetric(horizontal: -12.0),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(12.0),
-                              child: const VerticalLyricView(
-                                showControls: true,
-                                centerVertically: false,
-                                enableEdgeSpacer: true,
-                                currentLineAlignment: 0.3,
-                              ),
+                          padding: const EdgeInsets.only(right: 8.0),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12.0),
+                            child: const VerticalLyricView(
+                              showControls: true,
+                              centerVertically: false,
+                              enableEdgeSpacer: true,
+                              currentLineAlignment: 0.3,
                             ),
                           ),
                         ),
