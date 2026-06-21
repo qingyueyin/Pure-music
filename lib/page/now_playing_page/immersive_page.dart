@@ -42,7 +42,7 @@ class _ImmersivePortraitLayout extends StatelessWidget {
                       height: 80.0,
                       child: _ImmersiveCoverThumbnail(),
                     ),
-                    SizedBox(width: 12.0),
+                    SizedBox(width: 8.0),
                     Expanded(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
@@ -406,16 +406,14 @@ class _ImmersiveLandscapeLayout extends StatelessWidget {
                 child: ClipRect(
                   child: Stack(
                     children: [
-                      Center(
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 8.0),
-                          child: VerticalLyricView(
-                            showControls: false,
-                            enableSeekOnTap: false,
-                            centerVertically: true,
-                            enableEdgeSpacer: true,
-                            currentLineAlignment: 0.45,
-                          ),
+                      Padding(
+                        padding: EdgeInsets.only(right: 8.0),
+                        child: VerticalLyricView(
+                          showControls: false,
+                          enableSeekOnTap: false,
+                          centerVertically: true,
+                          enableEdgeSpacer: true,
+                          currentLineAlignment: 0.45,
                         ),
                       ),
                     ],
