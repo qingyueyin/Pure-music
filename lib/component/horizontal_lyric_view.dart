@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
+import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_tile.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:flutter/material.dart';
@@ -24,7 +25,10 @@ class HorizontalLyricView extends StatelessWidget {
         borderRadius: BorderRadius.circular(16.0),
       ),
       child: ListenableBuilder(
-        listenable: PlayService.instance.lyricService,
+        listenable: Listenable.merge([
+          PlayService.instance.lyricService,
+          LyricViewController.instance,
+        ]),
         builder: (context, _) => FutureBuilder(
           future: PlayService.instance.lyricService.currLyricFuture,
           builder: (context, snapshot) {
@@ -34,7 +38,7 @@ class HorizontalLyricView extends StatelessWidget {
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    'Enjoy Music',
+                    '快来播放音乐吧~',
                     style: TextStyle(color: scheme.onSecondaryContainer),
                   ),
                 ),
@@ -108,6 +112,15 @@ class _LyricHorizontalScrollAreaState
     }
   }
 
+  Widget _buildText(String content, ColorScheme scheme) {
+    return Text(
+      content,
+      maxLines: 1,
+      softWrap: false,
+      style: TextStyle(color: scheme.onSecondaryContainer),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -115,11 +128,11 @@ class _LyricHorizontalScrollAreaState
       _setContent(widget.lyric.lines.first);
     }
 
-    lyricLineStreamSubscription = lyricService.lyricLineStream.listen((line) {
-      if (widget.lyric.lines.isEmpty) return;
+    lyricLineStreamSubscription = lyricService.lyricLineStream.listen((lines) {
+      if (widget.lyric.lines.isEmpty || lines.isEmpty) return;
       _scrollToken += 1;
       final token = _scrollToken;
-      final currLine = widget.lyric.lines[line];
+      final currLine = widget.lyric.lines[lines.first];
 
       setState(() {
         _setContent(currLine);
@@ -178,35 +191,38 @@ class _LyricHorizontalScrollAreaState
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
-    if (_isTransition) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8.0),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: LyricTransitionTile(
-            lrcLine: _transitionLrcLine,
-            syncLine: _transitionSyncLine,
-            enableBreathing: false,
-            compact: true,
-            useMaterialYouColor: AppSettings.instance.useMaterialYouForTransition,
-          ),
-        ),
-      );
-    }
+    return ListenableBuilder(
+      listenable: LyricViewController.instance,
+      builder: (context, _) {
+        if (_isTransition) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: LyricTransitionTile(
+                lrcLine: _transitionLrcLine,
+                syncLine: _transitionSyncLine,
+                enableBreathing: false,
+                compact: true,
+                useMaterialYouColor:
+                    AppSettings.instance.useMaterialYouForTransition,
+              ),
+            ),
+          );
+        }
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8.0),
-      child: SingleChildScrollView(
-        controller: scrollController,
-        scrollDirection: Axis.horizontal,
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: Text(
-            currContent,
-            style: TextStyle(color: scheme.onSecondaryContainer),
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12.0),
+          child: SingleChildScrollView(
+            controller: scrollController,
+            scrollDirection: Axis.horizontal,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: _buildText(currContent, scheme),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
