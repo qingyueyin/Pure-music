@@ -17,6 +17,7 @@ class _CharInfo {
   final double wordProgress;
   final int wordIndex;
   final bool isPlaying;
+  final double wordDurationSec; // 词时长（秒），用于辉光阈值判断
 
   _CharInfo({
     required this.char,
@@ -28,6 +29,7 @@ class _CharInfo {
     required this.wordProgress,
     required this.wordIndex,
     required this.isPlaying,
+    required this.wordDurationSec,
   });
 }
 
@@ -50,6 +52,14 @@ class LyricsLinePainter extends CustomPainter {
   final bool isMainLine;
   final bool useMaterialYouColor;
   final String? fontFamily;
+  final String? agent;
+
+  // 对唱时按 agent 强制对齐：v1 左对齐，v2 右对齐
+  LyricTextAlign get _effectiveTextAlign {
+    if (agent == 'v2') return LyricTextAlign.right;
+    if (agent == 'v1') return LyricTextAlign.left;
+    return config.textAlign;
+  }
 
   // 复用 TextPainter 实例，避免频繁创建销毁
   static final _textPainterPool = <TextPainter>[];
@@ -69,6 +79,7 @@ class LyricsLinePainter extends CustomPainter {
     this.isMainLine = false,
     this.useMaterialYouColor = false,
     this.fontFamily,
+    this.agent,
   });
 
   /// 清空对象池（歌曲切换时调用）
@@ -130,33 +141,27 @@ class LyricsLinePainter extends CustomPainter {
 
     canvas.save();
     canvas.translate(0, offsetY);
-    // scale 以对齐点为原点，避免缩放后居中/右对齐偏移（Widget 的 Transform.scale 有 alignment 参数）
-    final scaleOriginX = switch (config.textAlign) {
-      LyricTextAlign.left => 0.0,
-      LyricTextAlign.center => size.width / 2,
-      LyricTextAlign.right => size.width,
-    };
-    canvas.translate(scaleOriginX, 0);
+    // 统一从左侧原点缩放，对齐由 TextPainter.textAlign 独立处理
     canvas.scale(scale);
-    canvas.translate(-scaleOriginX, 0);
 
     final fontSize = config.primaryFontSize(isMainLine: isMainLine);
     final letterSpace = config.letterSpacing(fontSize: fontSize);
     final fontWeight = config.discreteFontWeight(config.fontWeight);
     final verticalPad =
         isMainLine ? config.syncVerticalPadding(isMainLine: true) : 12.0;
+    // padding 在逻辑空间需要除以 scale，这样在物理空间才是固定的 12px
     final padding = EdgeInsets.only(
-        left: 12.0, right: 12.0, top: verticalPad, bottom: verticalPad);
+        left: 12.0 / scale, right: 12.0 / scale, top: verticalPad, bottom: verticalPad);
     // 行高：TextStyle.height=1.2 → fontSize*1.2，与 TextPainter.layout 结果等价
     final lineHeight = fontSize * config.primaryLineHeight();
 
     final isDarkMode = scheme.brightness == Brightness.dark;
-    // 非当前行歌词在浅色模式下需要更高不透明度以保持可读性
+    // 非当前行歌词 - 参考图二效果：暗但清晰可读
     final unplayedColor = useMaterialYouColor
         ? scheme.onSurface
-            .withValues(alpha: isDarkMode ? opacity * 0.22 : opacity * 0.45)
+            .withValues(alpha: isDarkMode ? opacity * 0.40 : opacity * 0.50)
         : scheme.onSurface
-            .withValues(alpha: isDarkMode ? opacity * 0.18 : opacity * 0.35);
+            .withValues(alpha: isDarkMode ? opacity * 0.35 : opacity * 0.45);
     // 主行播放色：Widget 路径用 isDarkMode ? white : black
     final mainPlayedColor = isDarkMode
         ? Colors.white.withValues(alpha: opacity)
@@ -173,7 +178,7 @@ class LyricsLinePainter extends CustomPainter {
         ? scheme.onSurface.withValues(alpha: opacity * 0.60)
         : scheme.onSurface.withValues(alpha: opacity * 0.70);
 
-    final maxWidth = size.width - padding.horizontal;
+    final maxWidth = size.width / scale - padding.horizontal;
 
     final zhMode = LyricViewController.instance.zhConversionMode;
 
@@ -207,6 +212,7 @@ class LyricsLinePainter extends CustomPainter {
       final wordTotalChars = chars.length;
       final wordStartMs = word.start.inMilliseconds.toDouble();
       final wordEndMs = wordStartMs + word.length.inMilliseconds.toDouble();
+      final wordDurationSec = word.length.inMilliseconds / 1000.0;
 
       // 单词级别的上抬动画：高亮与上抬同源
       // - 使用 _calcCharProgress 同一个进度值，永远同步
@@ -234,22 +240,29 @@ class LyricsLinePainter extends CustomPainter {
         firstOnLine = true;
       }
 
+      // ── 词级波浪窗口进度计算（匹配 ZeroBit）───────────────────────────
+      // stepRatio = 0.1：前一个字动画跑到 10% 时，后一个字开始
+      // waveWidth = 1.0 / (stepRatio * (charCount - 1) + 1.0)
+      // windowStart[i] = i * stepRatio * waveWidth
+      // charProgress = (wordProgress - windowStart[i]) / waveWidth
+      const stepRatio = 0.1;
+      final waveWidth = 1.0 / (stepRatio * (wordTotalChars - 1) + 1.0);
+
+      final wordProgress = _calcWordProgress(
+        currentTimeMs,
+        wordStartMs,
+        wordEndMs,
+      );
+
       for (int i = 0; i < convertedChars.length; i++) {
         final char = convertedChars[i];
         if (char == ' ' && firstOnLine) continue;
 
-        final charProgress = _calcCharProgress(
-          currentTimeMs,
-          wordStartMs,
-          wordEndMs,
-          i,
-          wordTotalChars,
-        );
-        final wordProgress = _calcWordProgress(
-          currentTimeMs,
-          wordStartMs,
-          wordEndMs,
-        );
+        // 词级波浪窗口：每个字符有启动偏移，形成连贯波浪
+        final windowStart = i * stepRatio * waveWidth;
+        final charProgress =
+            ((wordProgress - windowStart) / waveWidth).clamp(0.0, 1.0);
+
         final liftProgress = _calcLiftProgress(charProgress, wordProgress);
         final isPlaying =
             currentTimeMs >= wordStartMs && currentTimeMs < wordEndMs;
@@ -276,6 +289,7 @@ class LyricsLinePainter extends CustomPainter {
           wordProgress: wordProgress,
           wordIndex: wordIndex,
           isPlaying: isPlaying,
+          wordDurationSec: wordDurationSec,
         ));
 
         cursorX += charWidth;
@@ -303,7 +317,8 @@ class LyricsLinePainter extends CustomPainter {
     }
 
     // ── Apply text alignment (per-line, matching Widget Wrap behavior) ───────
-    if (config.textAlign != LyricTextAlign.left) {
+    // 所有值都在逻辑（缩放）空间中，直接计算即可
+    if (_effectiveTextAlign != LyricTextAlign.left) {
       for (final group in lineGroups) {
         if (group.chars.isEmpty) continue;
         final left =
@@ -313,7 +328,7 @@ class LyricsLinePainter extends CustomPainter {
             .reduce((a, b) => a > b ? a : b);
         final lineWidth = right - left;
 
-        final lineStartX = switch (config.textAlign) {
+        final lineStartX = switch (_effectiveTextAlign) {
           LyricTextAlign.center => padding.left + (maxWidth - lineWidth) / 2,
           LyricTextAlign.right => padding.left + maxWidth - lineWidth,
           LyricTextAlign.left => padding.left,
@@ -332,6 +347,7 @@ class LyricsLinePainter extends CustomPainter {
             wordProgress: original.wordProgress,
             wordIndex: original.wordIndex,
             isPlaying: original.isPlaying,
+            wordDurationSec: original.wordDurationSec,
           );
         }
       }
@@ -368,12 +384,52 @@ class LyricsLinePainter extends CustomPainter {
     );
 
     // ── Helper: paint one word with a given style ─────────────────────────
-    void paintWord(List<_CharInfo> wc, TextStyle style, bool useLift) {
+    void paintWord(List<_CharInfo> wc, TextStyle style, bool useLift,
+        {bool applyScale = false}) {
       if (useLift) {
+        // 词时长阈值判断（匹配 ZeroBit）
+        final wordDurationSec = wc.first.wordDurationSec;
+        const rippleThreshold = 1.5;
+        final enableEffect = applyScale && wordDurationSec >= rippleThreshold;
+
         for (final info in wc) {
+          final charProgress = info.charProgress;
+          double scale = 1.0;
+          if (enableEffect && charProgress > 0.0 && charProgress < 1.0) {
+            // 词时长归一化（匹配 ZeroBit：在 [1.5, 3.0] 区间归一化）
+            final effectRatio = (((wordDurationSec - rippleThreshold) /
+                        (3.0 - rippleThreshold)))
+                    .clamp(0.0, 1.0);
+            final ripplesScaleMax = 1.1 + 0.05 * effectRatio;
+
+            // 非对称曲线：前 60% 放大（easeOut），后 40% 缩小（easeIn）（匹配 ZeroBit）
+            double animationCurve;
+            if (charProgress < 0.6) {
+              animationCurve = Curves.easeOut.transform(charProgress / 0.6);
+            } else {
+              animationCurve =
+                  1.0 - Curves.easeIn.transform((charProgress - 0.6) / 0.4);
+            }
+            scale = 1.0 + (ripplesScaleMax - 1.0) * animationCurve;
+          }
+
           tp.text = TextSpan(text: info.char, style: style);
           tp.layout();
+
+          if (scale != 1.0) {
+            canvas.save();
+            final centerX = info.x + tp.width / 2;
+            final bottomY = info.y + info.yLift + tp.height;
+            canvas.translate(centerX, bottomY);
+            canvas.scale(scale);
+            canvas.translate(-centerX, -bottomY);
+          }
+
           tp.paint(canvas, Offset(info.x, info.y + info.yLift));
+
+          if (scale != 1.0) {
+            canvas.restore();
+          }
         }
       } else {
         final text = wc.map((c) => c.char).join();
@@ -474,7 +530,7 @@ class LyricsLinePainter extends CustomPainter {
       final bounds = Rect.fromLTRB(left, top, right, bottom);
       final bw = bounds.width <= 0 ? 1.0 : bounds.width;
       final sweepP = ((highlightR - left) / bw).clamp(0.0, 1.0);
-      final feather = (24.0 / bw).clamp(0.035, 0.14);
+      final feather = (32.0 / bw).clamp(0.04, 0.18);
       final p0 = (sweepP - feather).clamp(0.0, sweepP);
       final p1 = (sweepP + feather * 0.35).clamp(sweepP, 1.0);
       final shader = LinearGradient(
@@ -483,7 +539,7 @@ class LyricsLinePainter extends CustomPainter {
         colors: [
           Colors.white,
           Colors.white,
-          Colors.white.withValues(alpha: 0.65),
+          Colors.white.withValues(alpha: 0.50),
           Colors.transparent
         ],
         stops: [0.0, p0, sweepP, p1],
@@ -495,11 +551,17 @@ class LyricsLinePainter extends CustomPainter {
             entry.value, dimStyle, entry.value.any((c) => c.yLift != 0.0));
       }
 
-      // ── Pass 2: saveLayer + played ────────────────────────────────────
+      // ── Pass 2: Glow layer (逐字符独立辉光，匹配 ZeroBit) ───────────────────
+      if (config.enableGlow) {
+        _paintGlowLayer(canvas, words, playedStyle);
+      }
+
+      // ── Pass 3: played 文字层（最上层，覆盖辉光，保持文字锐利）────────────
       if (highlightR >= right - 0.5) {
         for (final entry in words) {
           paintWord(
-              entry.value, playedStyle, entry.value.any((c) => c.yLift != 0.0));
+              entry.value, playedStyle, entry.value.any((c) => c.yLift != 0.0),
+              applyScale: true);
         }
       } else {
         canvas.save();
@@ -507,7 +569,8 @@ class LyricsLinePainter extends CustomPainter {
         canvas.saveLayer(bounds, Paint());
         for (final entry in words) {
           paintWord(
-              entry.value, playedStyle, entry.value.any((c) => c.yLift != 0.0));
+              entry.value, playedStyle, entry.value.any((c) => c.yLift != 0.0),
+              applyScale: true);
         }
         canvas.drawRect(
             bounds,
@@ -525,7 +588,7 @@ class LyricsLinePainter extends CustomPainter {
       final gap = config.syncTranslationGap(isMainLine: isMainLine);
       final translationWeight =
           config.discreteFontWeight((config.fontWeight - 50).clamp(100, 900));
-      final blockTextAlign = switch (config.textAlign) {
+      final blockTextAlign = switch (_effectiveTextAlign) {
         LyricTextAlign.left => TextAlign.left,
         LyricTextAlign.center => TextAlign.center,
         LyricTextAlign.right => TextAlign.right,
@@ -573,6 +636,62 @@ class LyricsLinePainter extends CustomPainter {
       }
     }
 
+    // ── Background vocal (和声) ─────────────────────────────────────────────
+    // 顺序：原文 -> 翻译 -> 和声 -> 和声翻译
+    // 和声默认不显示，当前行激活时随整体透明度平滑切入
+    final bgText = syncLine.bgText;
+    final bgTranslation = syncLine.bgTranslation;
+    final hasBg = bgText != null && bgText.isNotEmpty;
+    final hasBgTranslation = bgTranslation != null && bgTranslation.isNotEmpty;
+    if (hasBg || hasBgTranslation) {
+      final bgAlpha = isMainLine ? opacity : 0.0;
+      if (bgAlpha > 0.001) {
+        final bgFontSize = fontSize * 0.60;
+        final bgWeight = config.discreteFontWeight(
+          (config.fontWeight - 150).clamp(100, 900),
+        );
+        final blockTextAlign = switch (_effectiveTextAlign) {
+          LyricTextAlign.left => TextAlign.left,
+          LyricTextAlign.center => TextAlign.center,
+          LyricTextAlign.right => TextAlign.right,
+        };
+
+        void paintBgLine(String text, double size, Color color) {
+          final tp = _buildTextPainter(
+            ZhConverter.convert(text, zhMode),
+            color.withValues(alpha: color.a * bgAlpha),
+            size,
+            bgWeight,
+            letterSpace,
+            textAlign: blockTextAlign,
+          );
+          tp.layout(minWidth: maxWidth, maxWidth: maxWidth);
+          cursorY += bgFontSize * 0.45; // gap
+          tp.paint(canvas, Offset(padding.left, cursorY));
+          cursorY += tp.height;
+          _recycleTextPainter(tp);
+        }
+
+        cursorY += bgFontSize * 0.35; // extra top gap before bg block
+        if (hasBg) {
+          paintBgLine(
+            bgText,
+            bgFontSize,
+            useMaterialYouColor
+                ? scheme.primary
+                : (isDarkMode ? Colors.white : Colors.black),
+          );
+        }
+        if (hasBgTranslation) {
+          paintBgLine(
+            bgTranslation,
+            bgFontSize * 0.90,
+            secondaryColor,
+          );
+        }
+      }
+    }
+
     // 回收 TextPainter
     _recycleTextPainter(measureTp);
     _recycleTextPainter(tp);
@@ -585,15 +704,8 @@ class LyricsLinePainter extends CustomPainter {
 
     canvas.save();
     canvas.translate(0, offsetY);
-    // scale 以对齐点为原点
-    final scaleOriginX = switch (config.textAlign) {
-      LyricTextAlign.left => 0.0,
-      LyricTextAlign.center => size.width / 2,
-      LyricTextAlign.right => size.width,
-    };
-    canvas.translate(scaleOriginX, 0);
+    // 统一从左侧原点缩放，对齐由 TextPainter.textAlign 独立处理
     canvas.scale(scale);
-    canvas.translate(-scaleOriginX, 0);
 
     final zhMode = LyricViewController.instance.zhConversionMode;
     final fontSize = config.primaryFontSize(isMainLine: isMainLine);
@@ -604,11 +716,12 @@ class LyricsLinePainter extends CustomPainter {
         left: 12.0, right: 12.0, top: verticalPad, bottom: verticalPad);
 
     final isDarkMode = scheme.brightness == Brightness.dark;
+    // 非当前行歌词 - 参考图二效果：暗但清晰可读
     final unplayedColor = useMaterialYouColor
         ? scheme.onSurface
-            .withValues(alpha: isDarkMode ? opacity * 0.22 : opacity * 0.45)
+            .withValues(alpha: isDarkMode ? opacity * 0.40 : opacity * 0.50)
         : scheme.onSurface
-            .withValues(alpha: isDarkMode ? opacity * 0.18 : opacity * 0.35);
+            .withValues(alpha: isDarkMode ? opacity * 0.35 : opacity * 0.45);
     final mainPlayedColor = isDarkMode
         ? Colors.white.withValues(alpha: opacity)
         : Colors.black.withValues(alpha: opacity);
@@ -626,8 +739,11 @@ class LyricsLinePainter extends CustomPainter {
         : scheme.onSurface.withValues(alpha: opacity * 0.70);
 
     final displayedColor = isMainLine ? playedColor : unplayedColor;
-    final maxWidth = size.width - padding.horizontal;
-    final blockTextAlign = switch (config.textAlign) {
+    // padding 在逻辑空间需要除以 scale，这样在物理空间才是固定的 12px
+    final adjustedPadding = EdgeInsets.only(
+        left: 12.0 / scale, right: 12.0 / scale, top: padding.top, bottom: padding.bottom);
+    final maxWidth = size.width / scale - adjustedPadding.horizontal;
+    final blockTextAlign = switch (_effectiveTextAlign) {
       LyricTextAlign.left => TextAlign.left,
       LyricTextAlign.center => TextAlign.center,
       LyricTextAlign.right => TextAlign.right,
@@ -648,7 +764,7 @@ class LyricsLinePainter extends CustomPainter {
         textAlign: blockTextAlign,
       );
       metaTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
-      metaTp.paint(canvas, Offset(padding.left, padding.top));
+      metaTp.paint(canvas, Offset(adjustedPadding.left, adjustedPadding.top));
       _recycleTextPainter(metaTp);
       canvas.restore();
       return;
@@ -667,9 +783,9 @@ class LyricsLinePainter extends CustomPainter {
       textAlign: blockTextAlign,
     );
     mainTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
-    mainTp.paint(canvas, Offset(padding.left, padding.top));
+    mainTp.paint(canvas, Offset(adjustedPadding.left, adjustedPadding.top));
 
-    double cursorY = padding.top + mainTp.height;
+    double cursorY = adjustedPadding.top + mainTp.height;
 
     final translationWeight =
         config.discreteFontWeight((config.fontWeight - 50).clamp(100, 900));
@@ -709,7 +825,7 @@ class LyricsLinePainter extends CustomPainter {
           textAlign: blockTextAlign,
         );
         tTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
-        tTp.paint(canvas, Offset(padding.left, cursorY));
+        tTp.paint(canvas, Offset(adjustedPadding.left, cursorY));
         cursorY += tTp.height;
         _recycleTextPainter(tTp);
       }
@@ -732,7 +848,7 @@ class LyricsLinePainter extends CustomPainter {
         textAlign: blockTextAlign,
       );
       rTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
-      rTp.paint(canvas, Offset(padding.left, cursorY));
+      rTp.paint(canvas, Offset(adjustedPadding.left, cursorY));
       _recycleTextPainter(rTp);
     }
 
@@ -742,20 +858,74 @@ class LyricsLinePainter extends CustomPainter {
     canvas.restore();
   }
 
-  double _calcCharProgress(
-    double currentMs,
-    double wordStartMs,
-    double wordEndMs,
-    int charIndex,
-    int totalChars,
+  /// 辉光层：逐字符独立绘制，每个字符根据自己的 charProgress 计算独立辉光
+  /// 匹配 ZeroBit 的 _HighlightedWord 实现
+  void _paintGlowLayer(
+    Canvas canvas,
+    List<MapEntry<int, List<_CharInfo>>> words,
+    TextStyle playedStyle,
   ) {
-    final wordProgress = _calcWordProgress(currentMs, wordStartMs, wordEndMs);
-    final charEndThreshold = (charIndex + 1) / totalChars;
-    if (wordProgress >= charEndThreshold) return 1.0;
-    final charStartThreshold = charIndex / totalChars;
-    return ((wordProgress - charStartThreshold) /
-            (charEndThreshold - charStartThreshold))
-        .clamp(0.0, 1.0);
+    const rippleThreshold = 1.5; // 词时长阈值（秒），匹配 ZeroBit
+
+    final baseColor = playedStyle.color ?? Colors.white;
+
+    for (final entry in words) {
+      final wc = entry.value;
+      if (wc.isEmpty) continue;
+
+      // 词级判断：只对正在播放且未播完的词画辉光
+      final isPlaying = wc.first.isPlaying;
+      final wordProgress = wc.first.wordProgress;
+      final wordDurationSec = wc.first.wordDurationSec;
+      if (!isPlaying) continue;
+      if (wordProgress >= 1.0) continue;
+      if (wordDurationSec < rippleThreshold) continue; // 词时长不足阈值，不触发辉光
+
+      // 辉光 alpha 最大值：固定 0.5（视觉效果更好）
+      const glowAlphaMax = 0.5;
+
+      for (final info in wc) {
+        final charProgress = info.charProgress;
+        if (charProgress <= 0.0) continue;
+
+        // 非对称曲线：前 60% 放大（easeOut），后 40% 缩小（easeIn）（匹配 ZeroBit）
+        double animationCurve;
+        if (charProgress < 0.6) {
+          animationCurve = Curves.easeOut.transform(charProgress / 0.6);
+        } else {
+          animationCurve =
+              1.0 - Curves.easeIn.transform((charProgress - 0.6) / 0.4);
+        }
+
+        // 辉光 alpha（匹配 ZeroBit：lerp(0.0, glowAlphaMax, animationCurve)）
+        final glowAlpha = (glowAlphaMax * animationCurve).clamp(0.0, 1.0);
+        if (glowAlpha <= 0.02) continue;
+
+        // 辉光层不缩放，只画 shadow，避免与 played 层叠加产生重影
+        final tp = _obtainTextPainter();
+        tp.text = TextSpan(
+          text: info.char,
+          style: playedStyle.copyWith(
+            color: Colors.transparent, // 字符本身透明，只显示 shadow
+            shadows: [
+              Shadow(
+                color: baseColor.withValues(alpha: glowAlpha * 0.6),
+                blurRadius: 4,
+                offset: Offset.zero,
+              ),
+              Shadow(
+                color: baseColor.withValues(alpha: glowAlpha),
+                blurRadius: 8,
+                offset: Offset.zero,
+              ),
+            ],
+          ),
+        );
+        tp.layout();
+        tp.paint(canvas, Offset(info.x, info.y + info.yLift));
+        _recycleTextPainter(tp);
+      }
+    }
   }
 
   double _calcWordProgress(
@@ -817,7 +987,8 @@ class LyricsLinePainter extends CustomPainter {
         line != oldDelegate.line ||
         config != oldDelegate.config ||
         useMaterialYouColor != oldDelegate.useMaterialYouColor ||
-        fontFamily != oldDelegate.fontFamily;
+        fontFamily != oldDelegate.fontFamily ||
+        agent != oldDelegate.agent;
   }
 
   double measureHeight(double maxWidth) {
@@ -877,6 +1048,7 @@ class LyricsLinePainter extends CustomPainter {
 
       final double mainHeight = visualLines * lineH;
       double height = padding.vertical + mainHeight;
+
       if ((config.showTranslation && syncLine.translation != null) ||
           (config.showRoman && syncLine.romanLyric != null)) {
         final translationFontSize =
@@ -918,6 +1090,43 @@ class LyricsLinePainter extends CustomPainter {
           _recycleTextPainter(rTp);
         }
       }
+
+      // 和声 + 和声翻译高度（始终预留，避免行激活时布局跳动；绘制时才按透明度隐藏）
+      if ((syncLine.bgText != null && syncLine.bgText!.isNotEmpty) ||
+          (syncLine.bgTranslation != null &&
+              syncLine.bgTranslation!.isNotEmpty)) {
+        final bgFontSize = fontSize * 0.60;
+        final bgWeight = config.discreteFontWeight(
+          (config.fontWeight - 150).clamp(100, 900),
+        );
+        final gap = bgFontSize * 0.80; // top + between gaps approx
+        if (syncLine.bgText != null && syncLine.bgText!.isNotEmpty) {
+          final bgTp = _buildTextPainter(
+            syncLine.bgText!,
+            scheme.onSurface,
+            bgFontSize,
+            bgWeight,
+            config.letterSpacing(fontSize: bgFontSize),
+          );
+          bgTp.layout(maxWidth: lineWidth);
+          height += gap + bgTp.height;
+          _recycleTextPainter(bgTp);
+        }
+        if (syncLine.bgTranslation != null &&
+            syncLine.bgTranslation!.isNotEmpty) {
+          final bgTransTp = _buildTextPainter(
+            syncLine.bgTranslation!,
+            scheme.onSurface,
+            bgFontSize * 0.90,
+            bgWeight,
+            config.letterSpacing(fontSize: bgFontSize * 0.90),
+          );
+          bgTransTp.layout(maxWidth: lineWidth);
+          height += bgFontSize * 0.45 + bgTransTp.height;
+          _recycleTextPainter(bgTransTp);
+        }
+      }
+
       return height;
     } else if (line is LrcLine) {
       final lrcLine = line as LrcLine;
@@ -929,7 +1138,7 @@ class LyricsLinePainter extends CustomPainter {
 
       final fontWeight = config.discreteFontWeight(config.fontWeight);
       final letterSpace = config.letterSpacing(fontSize: fontSize);
-      final blockTextAlign = switch (config.textAlign) {
+      final blockTextAlign = switch (_effectiveTextAlign) {
         LyricTextAlign.left => TextAlign.left,
         LyricTextAlign.center => TextAlign.center,
         LyricTextAlign.right => TextAlign.right,
