@@ -39,7 +39,7 @@ class SyncLyricLine extends LyricLine {
     this.romanLyric = romanLyric;
   }
 
-  String get content => words.map((w) => w.content).join(' ');
+  String get content => words.map((w) => w.content).join();
 }
 
 class RubyTag {
