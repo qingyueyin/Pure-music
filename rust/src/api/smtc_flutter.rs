@@ -132,8 +132,6 @@ impl SMTCFlutter {
     }
 
     pub fn update_state(&self, state: SMTCState) {
-        // 确保静默 MediaPlayer 保持播放状态，维持 SMTC 会话活跃
-        let _ = self._player.Play();
         if let Err(err) = self._update_state(state) {
             log_to_dart(format!("fail to update state: {}", err));
         }
@@ -141,8 +139,6 @@ impl SMTCFlutter {
 
     /// progress, duration: ms
     pub fn update_time_properties(&self, progress: u32) {
-        // 确保静默 MediaPlayer 保持播放状态
-        let _ = self._player.Play();
         if let Err(err) = self._update_time_properties(progress) {
             log_to_dart(format!("fail to update time properties: {}", err));
         }
@@ -156,8 +152,6 @@ impl SMTCFlutter {
         duration: u32,
         path: String,
     ) {
-        // 确保静默 MediaPlayer 保持播放状态，维持 SMTC 会话活跃
-        let _ = self._player.Play();
         if let Err(err) = self._update_display(
             HSTRING::from(title),
             HSTRING::from(artist),
