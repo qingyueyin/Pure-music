@@ -192,7 +192,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   Timer? _idleCleanupTimer; // 空闲清理定时器
   DateTime _lastActivityTime = DateTime.now(); // 最后活动时间
   LyricScrollState _scrollState = LyricScrollState.idle;
-  int _mainLine = 0;
+  Set<int> _mainLines = const {0};
+  int _scrollAnchorLine = 0;
   int _pendingScrollRetries = 0;
   LyricViewportRange _viewportRange =
       const LyricViewportRange(start: 0, end: 0);
@@ -522,7 +523,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       _cachedMaxWidth = 0.0;
       _cachedOffsets = null;
       _cachedHeights = null;
-      _mainLine = 0;
+      _mainLines = const {0};
+      _scrollAnchorLine = 0;
 
       // 延迟清空 TextPainter 对象池，避免在绘制过程中销毁正在使用的对象
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -538,12 +540,12 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     _ensureVisibleTimer = Timer(const Duration(milliseconds: 150), () {
       if (_disposed || !mounted) return;
       _cachedMaxWidth = 0.0;
-      final oldMainLine = _mainLine;
+      final oldAnchor = _scrollAnchorLine;
       setState(() {});
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_disposed || !mounted) return;
-        if (_mainLine >= widget.lyric.lines.length) {
-          _mainLine = oldMainLine.clamp(0, widget.lyric.lines.length - 1);
+        if (_scrollAnchorLine >= widget.lyric.lines.length) {
+          _scrollAnchorLine = oldAnchor.clamp(0, widget.lyric.lines.length - 1);
         }
         _scrollToCurrent();
       });
@@ -618,11 +620,11 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       overscanScreens: renderConfig.viewportOverscanScreens,
       userScrollHoldDuration: renderConfig.userScrollHoldDuration,
     );
-    if (!force && !viewportStrategy.shouldRealign(_viewportRange, _mainLine)) {
+    if (!force && !viewportStrategy.shouldRealign(_viewportRange, _scrollAnchorLine)) {
       return;
     }
     _viewportRange = viewportStrategy.rangeForMainLine(
-      mainLine: _mainLine,
+      mainLine: _scrollAnchorLine,
       totalLines: widget.lyric.lines.length,
     );
   }
@@ -645,12 +647,14 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     _scrollState = LyricScrollState.programScrolling;
 
     final targetContext = currentLyricTileKey.currentContext;
+    utils.logger.d('_scrollToCurrent: anchor=$_scrollAnchorLine targetContext=$targetContext cachedOffsets=${_cachedOffsets != null}');
     if (targetContext != null && targetContext.mounted) {
       final targetObject = targetContext.findRenderObject();
       if (targetObject is RenderBox) {
         final viewport = RenderAbstractViewport.of(targetObject);
         final alignment = widget.currentLineAlignment;
         final revealed = viewport.getOffsetToReveal(targetObject, alignment);
+        utils.logger.d('  scroll via key -> offset=${revealed.offset}');
         _animateTo(revealed.offset, duration: duration);
         return;
       }
@@ -658,26 +662,33 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
     if (_cachedOffsets != null &&
         _cachedHeights != null &&
-        _mainLine < _cachedOffsets!.length) {
+        _scrollAnchorLine < _cachedOffsets!.length) {
       final viewport = scrollController.position.viewportDimension;
       final alignment = widget.currentLineAlignment;
 
       // 计算与 ListView padding 匹配的顶部空间偏移量
-      double topPadding;
+      // 必须与 build 中 padding 的计算逻辑完全一致：
+      //   top = (centerVertically ? spacerHeight : 0)
+      //       + (enableEdgeSpacer ? viewportHeight : 0)
+      //       + (!centerVertically && !enableEdgeSpacer ? viewportHeight * alignment : 0)
+      double topPadding = 0;
       if (widget.centerVertically) {
-        topPadding = viewport / 2.0;
-      } else if (widget.enableEdgeSpacer) {
-        topPadding = viewport;
-      } else {
-        topPadding = viewport * alignment;
+        topPadding += viewport / 2.0; // spacerHeight
+      }
+      if (widget.enableEdgeSpacer) {
+        topPadding += viewport; // extraTopPadding
+      }
+      if (!widget.centerVertically && !widget.enableEdgeSpacer) {
+        topPadding += viewport * alignment; // alignTopPadding
       }
 
-      final lineTop = _cachedOffsets![_mainLine];
-      final lineHeight = _cachedHeights![_mainLine];
+      final lineTop = _cachedOffsets![_scrollAnchorLine];
+      final lineHeight = _cachedHeights![_scrollAnchorLine];
 
       final targetScrollOffset =
           (topPadding + lineTop + lineHeight / 2) - (viewport * alignment);
 
+      utils.logger.d('  scroll via cached -> offset=$targetScrollOffset');
       _animateTo(targetScrollOffset, duration: duration);
       return;
     }
@@ -696,7 +707,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
   void _initLyricView() {
     final lines = widget.lyric.lines;
-    utils.logger.d('_initLyricView: lines=${lines.length} mainLine=$_mainLine');
+    utils.logger.d('_initLyricView: lines=${lines.length} anchor=$_scrollAnchorLine mainLines=$_mainLines');
     if (lines.isNotEmpty) {
       for (int i = 0; i < lines.length && i < 3; i++) {
         final l = lines[i];
@@ -714,7 +725,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     while (candidate < lines.length && _isLineBlankFiltered(lines[candidate])) {
       candidate++;
     }
-    _mainLine = candidate.clamp(0, lines.length - 1);
+    _scrollAnchorLine = candidate.clamp(0, lines.length - 1);
+    _mainLines = {_scrollAnchorLine};
     _updateViewportRange(force: true);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -734,7 +746,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   void _seekToLyricLine(int i) {
     playbackService.seek(widget.lyric.lines[i].start.inMilliseconds / 1000);
     setState(() {
-      _mainLine = i;
+      _scrollAnchorLine = i;
+      _mainLines = {i};
       _updateViewportRange(force: true);
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -762,9 +775,11 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     return false;
   }
 
-  void _updateNextLyricLine(int lyricLine) {
+  void _updateNextLyricLine(List<int> lyricLines) {
     if (_disposed) return;
-    if (_mainLine == lyricLine) {
+    final activeSet = lyricLines.toSet();
+    utils.logger.d('verticalLyric received: active=$activeSet currentAnchor=$_scrollAnchorLine currentMain=$_mainLines');
+    if (_mainLines == activeSet) {
       return;
     }
 
@@ -773,9 +788,11 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
     final lines = widget.lyric.lines;
     // 跳过空白行：服务可能发出元数据行索引
-    if (lyricLine < lines.length && _isLineBlankFiltered(lines[lyricLine])) {
-      return;
-    }
+    final firstVisible = activeSet
+        .where((i) => i >= 0 && i < lines.length && !_isLineBlankFiltered(lines[i]))
+        .firstOrNull;
+    if (firstVisible == null) return;
+
     final renderConfig = context.read<LyricViewController>().renderConfig;
     final viewportStrategy = LyricViewportStrategy(
       leadingLines: renderConfig.viewportLeadingLines,
@@ -785,12 +802,13 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     );
     final followDecision = viewportStrategy.followDecision(
       currentRange: _viewportRange,
-      nextMainLine: lyricLine,
+      nextMainLine: firstVisible,
       totalLines: lines.length,
     );
 
     setState(() {
-      _mainLine = lyricLine;
+      _mainLines = activeSet;
+      _scrollAnchorLine = firstVisible;
       _viewportRange = followDecision.nextRange;
       if (_hoveredLineIndex != -1) {
         _hoveredLineIndex = -1;
@@ -911,9 +929,13 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                         return const SizedBox.shrink();
                       }
 
-                      final signedDist = i - _mainLine;
-                      final dist = signedDist.abs();
-                      final opacity = dist == 0
+                      final dist = _mainLines.isEmpty
+                          ? (i - _scrollAnchorLine).abs()
+                          : _mainLines
+                              .map((m) => (i - m).abs())
+                              .reduce((a, b) => a < b ? a : b);
+                      final isMain = _mainLines.contains(i);
+                      final opacity = isMain
                           ? 1.0
                           : pow(0.88, dist).toDouble().clamp(0.30, 0.90);
                       final staggerDelay = Duration(
@@ -927,7 +949,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
                       // 为每行创建稳定的 key，避免 Widget 重建
                       // 但在空闲清理时，通过改变 key 强制重建非当前行
-                      final lineKey = dist == 0
+                      final lineKey = i == _scrollAnchorLine
                           ? currentLyricTileKey
                           : ValueKey('lyric_line_${i}_${_cachedMaxWidth.toInt()}');
 
