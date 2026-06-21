@@ -61,156 +61,172 @@ pub fn read_audio_extra_metadata(path: String) -> String {
 
     let mut items: Vec<serde_json::Value> = vec![];
 
-    if let Ok(tagged_file) = lofty::read_from_path(&path) {
-        let props = tagged_file.properties();
-        if let Some(ch) = props.channels() {
-            root.insert(
-                "channels".to_string(),
-                serde_json::Value::Number((ch as u64).into()),
-            );
-        }
-        if let Some(bd) = props.bit_depth() {
-            root.insert(
-                "bit_depth".to_string(),
-                serde_json::Value::Number((bd as u64).into()),
-            );
-        }
+    let options = ParseOptions::new()
+        .parsing_mode(ParsingMode::Relaxed)
+        .read_tags(true)
+        .read_cover_art(false)
+        .read_properties(true);
 
-        if let Some(tag) = tagged_file.primary_tag().or_else(|| tagged_file.first_tag()) {
-            let mut push_kv = |key: &str, val: Option<&str>| {
-                if let Some(v) = val {
-                    if !v.trim().is_empty() {
-                        let mut m = serde_json::Map::new();
-                        m.insert(
-                            "key".to_string(),
-                            serde_json::Value::String(key.to_string()),
-                        );
-                        m.insert(
-                            "value".to_string(),
-                            serde_json::Value::String(v.to_string()),
-                        );
-                        items.push(serde_json::Value::Object(m));
-                    }
+    let tagged_file = match Probe::open(&path)
+        .and_then(|p| p.options(options).read())
+    {
+        Ok(val) => val,
+        Err(err) => {
+            log_to_dart(format!("{:?}: {}", path, err));
+            // still return the root with items collected so far (empty)
+            root.insert("items".to_string(), serde_json::Value::Array(items));
+            return serde_json::Value::Object(root).to_string();
+        }
+    };
+
+    let props = tagged_file.properties();
+    if let Some(ch) = props.channels() {
+        root.insert(
+            "channels".to_string(),
+            serde_json::Value::Number((ch as u64).into()),
+        );
+    }
+    if let Some(bd) = props.bit_depth() {
+        root.insert(
+            "bit_depth".to_string(),
+            serde_json::Value::Number((bd as u64).into()),
+        );
+    }
+
+    if let Some(tag) = tagged_file.primary_tag().or_else(|| tagged_file.first_tag()) {
+        let mut push_kv = |key: &str, val: Option<&str>| {
+            if let Some(v) = val {
+                if !v.trim().is_empty() {
+                    let mut m = serde_json::Map::new();
+                    m.insert(
+                        "key".to_string(),
+                        serde_json::Value::String(key.to_string()),
+                    );
+                    m.insert(
+                        "value".to_string(),
+                        serde_json::Value::String(v.to_string()),
+                    );
+                    items.push(serde_json::Value::Object(m));
                 }
-            };
+            }
+        };
 
-            let track_artist = join_deduped(tag.get_strings(&ItemKey::TrackArtist));
-            let album_artist = join_deduped(tag.get_strings(&ItemKey::AlbumArtist));
+        let track_artist = join_deduped(tag.get_strings(&ItemKey::TrackArtist));
+        let album_artist = join_deduped(tag.get_strings(&ItemKey::AlbumArtist));
 
-            push_kv(
-                "genre",
-                tag.get(&ItemKey::Genre).and_then(|v| v.value().text()),
-            );
-            push_kv(
-                "date",
-                tag.get(&ItemKey::RecordingDate).and_then(|v| v.value().text()),
-            );
-            push_kv(
-                "year",
-                tag.get(&ItemKey::Year).and_then(|v| v.value().text()),
-            );
-            push_kv(
-                "release_date",
-                tag.get(&ItemKey::ReleaseDate).and_then(|v| v.value().text()),
-            );
-            push_kv(
-                "disc",
-                tag.get(&ItemKey::DiscNumber).and_then(|v| v.value().text()),
-            );
-            push_kv(
-                "disc_total",
-                tag.get(&ItemKey::DiscTotal).and_then(|v| v.value().text()),
-            );
-            push_kv(
-                "track_total",
-                tag.get(&ItemKey::TrackTotal).and_then(|v| v.value().text()),
-            );
-            push_kv(
-                "artist",
-                if track_artist.is_empty() {
-                    None
-                } else {
-                    Some(track_artist.as_str())
-                },
-            );
-            push_kv(
-                "album_artist",
-                if album_artist.is_empty() {
-                    None
-                } else {
-                    Some(album_artist.as_str())
-                },
-            );
-            push_kv(
-                "composer",
-                tag.get(&ItemKey::Composer).and_then(|v| v.value().text()),
-            );
-            push_kv(
-                "lyricist",
-                tag.get(&ItemKey::Lyricist).and_then(|v| v.value().text()),
-            );
-            push_kv(
-                "label",
-                tag.get(&ItemKey::Label).and_then(|v| v.value().text()),
-            );
-            push_kv(
-                "comment",
-                tag.get(&ItemKey::Comment).and_then(|v| v.value().text()),
-            );
-            push_kv(
-                "encoded_by",
-                tag.get(&ItemKey::EncodedBy).and_then(|v| v.value().text()),
-            );
-            push_kv(
-                "encoder",
-                tag.get(&ItemKey::EncoderSoftware)
-                    .and_then(|v| v.value().text())
-                    .or_else(|| tag.get(&ItemKey::EncodedBy).and_then(|v| v.value().text())),
-            );
-            push_kv(
-                "encoder_settings",
-                tag.get(&ItemKey::EncoderSettings).and_then(|v| v.value().text()),
-            );
-            push_kv(
-                "replaygain_track_gain",
-                tag.get(&ItemKey::ReplayGainTrackGain)
-                    .and_then(|v| v.value().text()),
-            );
-            push_kv(
-                "replaygain_track_peak",
-                tag.get(&ItemKey::ReplayGainTrackPeak)
-                    .and_then(|v| v.value().text()),
-            );
-            push_kv(
-                "replaygain_album_gain",
-                tag.get(&ItemKey::ReplayGainAlbumGain)
-                    .and_then(|v| v.value().text()),
-            );
-            push_kv(
-                "replaygain_album_peak",
-                tag.get(&ItemKey::ReplayGainAlbumPeak)
-                    .and_then(|v| v.value().text()),
-            );
-            push_kv(
-                "bpm",
-                tag.get(&ItemKey::Bpm)
-                    .and_then(|v| v.value().text())
-                    .or_else(|| tag.get(&ItemKey::IntegerBpm).and_then(|v| v.value().text())),
-            );
-            push_kv(
-                "language",
-                tag.get(&ItemKey::Language).and_then(|v| v.value().text()),
-            );
-            push_kv(
-                "copyright",
-                tag.get(&ItemKey::CopyrightMessage)
-                    .and_then(|v| v.value().text()),
-            );
-            push_kv(
-                "license",
-                tag.get(&ItemKey::License).and_then(|v| v.value().text()),
-            );
-        }
+        push_kv(
+            "genre",
+            tag.get(&ItemKey::Genre).and_then(|v| v.value().text()),
+        );
+        push_kv(
+            "date",
+            tag.get(&ItemKey::RecordingDate).and_then(|v| v.value().text()),
+        );
+        push_kv(
+            "year",
+            tag.get(&ItemKey::Year).and_then(|v| v.value().text()),
+        );
+        push_kv(
+            "release_date",
+            tag.get(&ItemKey::ReleaseDate).and_then(|v| v.value().text()),
+        );
+        push_kv(
+            "disc",
+            tag.get(&ItemKey::DiscNumber).and_then(|v| v.value().text()),
+        );
+        push_kv(
+            "disc_total",
+            tag.get(&ItemKey::DiscTotal).and_then(|v| v.value().text()),
+        );
+        push_kv(
+            "track_total",
+            tag.get(&ItemKey::TrackTotal).and_then(|v| v.value().text()),
+        );
+        push_kv(
+            "artist",
+            if track_artist.is_empty() {
+                None
+            } else {
+                Some(track_artist.as_str())
+            },
+        );
+        push_kv(
+            "album_artist",
+            if album_artist.is_empty() {
+                None
+            } else {
+                Some(album_artist.as_str())
+            },
+        );
+        push_kv(
+            "composer",
+            tag.get(&ItemKey::Composer).and_then(|v| v.value().text()),
+        );
+        push_kv(
+            "lyricist",
+            tag.get(&ItemKey::Lyricist).and_then(|v| v.value().text()),
+        );
+        push_kv(
+            "label",
+            tag.get(&ItemKey::Label).and_then(|v| v.value().text()),
+        );
+        push_kv(
+            "comment",
+            tag.get(&ItemKey::Comment).and_then(|v| v.value().text()),
+        );
+        push_kv(
+            "encoded_by",
+            tag.get(&ItemKey::EncodedBy).and_then(|v| v.value().text()),
+        );
+        push_kv(
+            "encoder",
+            tag.get(&ItemKey::EncoderSoftware)
+                .and_then(|v| v.value().text())
+                .or_else(|| tag.get(&ItemKey::EncodedBy).and_then(|v| v.value().text())),
+        );
+        push_kv(
+            "encoder_settings",
+            tag.get(&ItemKey::EncoderSettings).and_then(|v| v.value().text()),
+        );
+        push_kv(
+            "replaygain_track_gain",
+            tag.get(&ItemKey::ReplayGainTrackGain)
+                .and_then(|v| v.value().text()),
+        );
+        push_kv(
+            "replaygain_track_peak",
+            tag.get(&ItemKey::ReplayGainTrackPeak)
+                .and_then(|v| v.value().text()),
+        );
+        push_kv(
+            "replaygain_album_gain",
+            tag.get(&ItemKey::ReplayGainAlbumGain)
+                .and_then(|v| v.value().text()),
+        );
+        push_kv(
+            "replaygain_album_peak",
+            tag.get(&ItemKey::ReplayGainAlbumPeak)
+                .and_then(|v| v.value().text()),
+        );
+        push_kv(
+            "bpm",
+            tag.get(&ItemKey::Bpm)
+                .and_then(|v| v.value().text())
+                .or_else(|| tag.get(&ItemKey::IntegerBpm).and_then(|v| v.value().text())),
+        );
+        push_kv(
+            "language",
+            tag.get(&ItemKey::Language).and_then(|v| v.value().text()),
+        );
+        push_kv(
+            "copyright",
+            tag.get(&ItemKey::CopyrightMessage)
+                .and_then(|v| v.value().text()),
+        );
+        push_kv(
+            "license",
+            tag.get(&ItemKey::License).and_then(|v| v.value().text()),
+        );
     }
 
     root.insert("items".to_string(), serde_json::Value::Array(items));
@@ -380,7 +396,15 @@ impl Audio {
     /// 使用 lofty 获取音乐标签。只在文件名不正确、没有标签或包含不支持的编码时返回 None
     fn read_by_lofty(path: impl AsRef<Path>, modified: u64, created: u64) -> Option<Self> {
         let path = path.as_ref();
-        let tagged_file = match lofty::read_from_path(path) {
+        let options = ParseOptions::new()
+            .parsing_mode(ParsingMode::Relaxed)
+            .read_tags(true)
+            .read_cover_art(false)
+            .read_properties(true);
+
+        let tagged_file = match Probe::open(path)
+            .and_then(|p| p.options(options).read())
+        {
             Ok(val) => val,
             Err(err) => {
                 log_to_dart(format!("{:?}: {}", path, err));
@@ -711,15 +735,24 @@ fn _get_picture_by_windows(path: &str) -> Result<Vec<u8>, windows::core::Error> 
 }
 
 fn _get_picture_by_lofty(path: &str) -> Option<Vec<u8>> {
-    if let Ok(tagged_file) = lofty::read_from_path(path) {
-        let tag = tagged_file
-            .primary_tag()
-            .or_else(|| tagged_file.first_tag())?;
+    let options = ParseOptions::new()
+        .parsing_mode(ParsingMode::Relaxed)
+        .read_tags(true)
+        .read_cover_art(true)
+        .read_properties(false);
 
-        return Some(tag.pictures().first()?.data().to_vec());
-    }
+    let tagged_file = match Probe::open(path)
+        .and_then(|p| p.options(options).read())
+    {
+        Ok(f) => f,
+        Err(_) => return None,
+    };
 
-    None
+    let tag = tagged_file
+        .primary_tag()
+        .or_else(|| tagged_file.first_tag())?;
+
+    Some(tag.pictures().first()?.data().to_vec())
 }
 
 const PICTURE_CACHE_CAPACITY: usize = 96;
