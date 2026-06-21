@@ -29,15 +29,13 @@ class _NowPlayingLargePage extends StatelessWidget {
                         child: switch (value) {
                           NowPlayingViewMode.withPlaylist =>
                             const CurrentPlaylistView(),
-                          _ => const Center(
-                              child: Padding(
-                                padding: EdgeInsets.symmetric(horizontal: 8.0),
+                          _ => const Padding(
+                                padding: EdgeInsets.only(right: 8.0),
                                 child: VerticalLyricView(
                                   enableEdgeSpacer: true,
                                   currentLineAlignment: 0.45,
                                 ),
                               ),
-                            ),
                         },
                       ),
                     ),
