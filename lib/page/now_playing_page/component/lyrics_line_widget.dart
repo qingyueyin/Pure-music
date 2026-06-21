@@ -319,7 +319,8 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
                 _cachedPainter!.config != renderConfig ||
                 _cachedPainter!.isMainLine != active ||
                 _cachedPainter!.useMaterialYouColor != AppSettings.instance.useMaterialYouForLyrics ||
-                _cachedPainter!.fontFamily != fontFamily) {
+                _cachedPainter!.fontFamily != fontFamily ||
+                _cachedPainter!.agent != (widget.line is SyncLyricLine ? (widget.line as SyncLyricLine).agent : null)) {
               _cachedPainter = LyricsLinePainter(
                 line: widget.line,
                 currentTimeMs: _currentTimeMs,
@@ -332,6 +333,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
                 isMainLine: active,
                 useMaterialYouColor: AppSettings.instance.useMaterialYouForLyrics,
                 fontFamily: fontFamily,
+                agent: widget.line is SyncLyricLine ? (widget.line as SyncLyricLine).agent : null,
               );
             }
 
