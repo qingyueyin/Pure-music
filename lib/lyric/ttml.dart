@@ -1,8 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:xml/xml.dart';
 
 class Ttml extends Lyric {
-  Ttml(super.lines, [super.source = LyricFormat.local, super.rawText]);
+  Ttml(super.lines, [super.source = LyricFormat.local, super.rawText, super.isDuet]);
 
   static Ttml? fromTtmlText(String ttml, {String? separator}) {
     try {
@@ -32,15 +33,23 @@ class Ttml extends Lyric {
 
       if (lines.isEmpty) return null;
 
+      final isDuet = lines.any((l) => l.agent == 'v1') && lines.any((l) => l.agent == 'v2');
+
       lines.sort((a, b) => a.start.compareTo(b.start));
 
       for (int i = 0; i < lines.length; i++) {
         final line = lines[i];
         final nextStart = i < lines.length - 1 ? lines[i + 1].start : null;
-        final lineLen = nextStart == null
-            ? const Duration(seconds: 5)
-            : (nextStart - line.start);
-        line.length = lineLen.isNegative ? Duration.zero : lineLen;
+
+        // 统一使用 nextLine.start - line.start 作为 length，与 LRC 行为一致
+        // 这样可以避免 TTML end 时间不准确导致的行间间隔或重叠问题
+        if (nextStart != null) {
+          final lineLen = nextStart - line.start;
+          line.length = lineLen.isNegative ? Duration.zero : lineLen;
+        } else if (line.length <= Duration.zero) {
+          // 最后一行且没有 end 时间，默认 5 秒
+          line.length = const Duration(seconds: 5);
+        }
 
         _fillWordDurations(line.words, line.start, line.length, nextStart);
 
@@ -49,17 +58,17 @@ class Ttml extends Lyric {
         }
       }
 
-      return Ttml(lines);
-    } catch (e) {
+      return Ttml(lines, LyricFormat.local, ttml, isDuet);
+    } catch (e, stack) {
+      if (kDebugMode) {
+        print('TTML parse failed: $e\n$stack');
+      }
       return null;
     }
   }
 
   static String _preformatTtml(String ttml) {
-    return ttml
-        .replaceAll('&nbsp;', '&#160;')
-        .replaceAll('</span><span', '</span> <span')
-        .replaceAll(',</span><span', ',</span> <span');
+    return ttml.replaceAll('&nbsp;', '&#160;');
   }
 
   static String _decodeEntities(String text) {
@@ -74,9 +83,12 @@ class Ttml extends Lyric {
   }
 
   static String _cleanText(String text) {
-    return _decodeEntities(text)
-        .replaceAll(RegExp(r'[ \t\r\n]+'), ' ')
-        .trim();
+    var decoded = _decodeEntities(text);
+    // 先把普通空白（含 XML 格式化产生的换行）序列替换为一个空格
+    decoded = decoded.replaceAll(RegExp(r'[ \t\r\n]+'), ' ');
+    // 把 <br/> 占位符换回真正的换行
+    decoded = decoded.replaceAll('\u0001', '\n');
+    return decoded.trim();
   }
 
   static bool _isMusicSymbolOnly(String text) {
@@ -180,17 +192,34 @@ class Ttml extends Lyric {
     final agent = _attr(p, 'agent').ifBlank(() => _attr(p, 'ttm:agent'));
     final resolvedAgent = agentAlignment[agent] ?? agent;
 
-    final children = p.childElements.toList();
-    if (children.isEmpty) {
+    final children = p.children.toList();
+    if (children.isEmpty ||
+        children.every((c) => c is XmlText && _cleanText(c.value).isEmpty)) {
       final text = _cleanText(p.innerText);
-      if (text.isEmpty || _isMusicSymbolOnly(text)) return null;
+      final duration = end != null ? end - begin : Duration.zero;
+
+      // 长时间空白段落保留为间奏/过渡行
+      if (text.isEmpty || _isMusicSymbolOnly(text)) {
+        if (duration >= const Duration(seconds: 3)) {
+          final line = TtmlLine(
+            begin,
+            duration,
+            const [],
+            null,
+          );
+          if (resolvedAgent.isNotEmpty) line.agent = resolvedAgent;
+          return line;
+        }
+        return null;
+      }
+
       final parts = separator != null ? text.split(separator) : [text];
       final wordContent = parts.first.trim();
       final translation = parts.length > 1 ? parts.sublist(1).join(separator ?? '').trim() : null;
 
       final line = TtmlLine(
         begin,
-        end != null ? end - begin : Duration.zero,
+        duration,
         [SyncLyricWord(Duration.zero, Duration.zero, wordContent)],
         translation?.isNotEmpty == true ? translation : null,
       );
@@ -198,25 +227,30 @@ class Ttml extends Lyric {
       return line;
     }
 
-    final mainSpans = <XmlElement>[];
+    final mainNodes = <XmlNode>[];
     final translationSpans = <XmlElement>[];
     XmlElement? bgSpan;
     final romanSpans = <XmlElement>[];
 
     for (final child in children) {
-      if (_hasRole(child, 'x-translation') && !_hasRole(child, 'x-bg')) {
-        translationSpans.add(child);
-      } else if (_hasRole(child, 'x-bg')) {
-        bgSpan = child;
-      } else if (_hasRole(child, 'x-roman')) {
-        romanSpans.add(child);
-      } else {
-        mainSpans.add(child);
+      if (child is XmlElement) {
+        if (_hasRole(child, 'x-translation') && !_hasRole(child, 'x-bg')) {
+          translationSpans.add(child);
+        } else if (_hasRole(child, 'x-bg')) {
+          bgSpan = child;
+        } else if (_hasRole(child, 'x-roman')) {
+          romanSpans.add(child);
+        } else {
+          mainNodes.add(child);
+        }
+      } else if (child is XmlText) {
+        // 保留 span 之间的空格、标点等文本节点
+        mainNodes.add(child);
       }
     }
 
     final words = <SyncLyricWord>[];
-    final text = _collectMainText(mainSpans, words, end);
+    final text = _collectMainText(mainNodes, words, end, parentBegin: begin);
 
     final inlineTranslation = translationSpans
         .map((s) => _cleanText(s.innerText))
@@ -246,13 +280,25 @@ class Ttml extends Lyric {
         inlineTranslation.isNotEmpty ? inlineTranslation : lineTranslation;
     if (translation != null && translation.isEmpty) translation = null;
 
+    final duration = end != null ? end - begin : Duration.zero;
     if (text.isEmpty && bgSpan == null && translation == null && pronunciation == null) {
+      // 非空子元素但最终无歌词内容（如仅时间标签的段落），保留为间奏行
+      if (duration >= const Duration(seconds: 3)) {
+        final line = TtmlLine(
+          begin,
+          duration,
+          const [],
+          null,
+        );
+        if (resolvedAgent.isNotEmpty) line.agent = resolvedAgent;
+        return line;
+      }
       return null;
     }
 
     final line = TtmlLine(
       begin,
-      end != null ? end - begin : Duration.zero,
+      duration,
       words,
       translation,
     );
@@ -266,46 +312,118 @@ class Ttml extends Lyric {
     return line;
   }
 
+
   static String _collectMainText(
-    List<XmlElement> elements,
+    List<XmlNode> nodes,
     List<SyncLyricWord> words,
-    Duration? fallbackEnd,
-  ) {
+    Duration? fallbackEnd, {
+    Duration parentBegin = Duration.zero,
+  }) {
     final buffer = StringBuffer();
-    for (final element in elements) {
-      _collectMainTextFromElement(element, words, buffer, fallbackEnd);
+    for (int i = 0; i < nodes.length; i++) {
+      final separator = _wordSeparatorAfter(nodes, i);
+      _collectMainTextFromNode(
+        nodes[i],
+        words,
+        buffer,
+        fallbackEnd,
+        parentBegin,
+        separator,
+      );
     }
     return _cleanText(buffer.toString());
   }
 
-  static void _collectMainTextFromElement(
-    XmlElement element,
+  /// 判断当前节点后是否需要加一个词间隔空格。
+  /// 仅当相邻的下一个节点是空白文本节点，且该空白节点之后还有非空内容时才返回空格。
+  static String _wordSeparatorAfter(List<XmlNode> nodes, int index) {
+    if (index + 1 >= nodes.length) return '';
+    final next = nodes[index + 1];
+    if (next is! XmlText) return '';
+    if (!RegExp(r'^[ \t\r\n]+$').hasMatch(next.value)) return '';
+
+    for (int i = index + 2; i < nodes.length; i++) {
+      final node = nodes[i];
+      if (node is XmlElement) {
+        if (node.name.local == 'br') return '';
+        return ' ';
+      }
+      if (node is XmlText && !RegExp(r'^[ \t\r\n]*$').hasMatch(node.value)) {
+        return ' ';
+      }
+    }
+    return '';
+  }
+
+  static void _collectMainTextFromNode(
+    XmlNode node,
     List<SyncLyricWord> words,
     StringBuffer buffer,
     Duration? fallbackEnd,
+    Duration parentBegin,
+    String trailingSpace,
   ) {
-    final children = element.children.toList();
-    for (final child in children) {
-      if (child is XmlText) {
-        buffer.write(_decodeEntities(child.value));
-      } else if (child is XmlElement) {
-        final begin = _parseTime(_attr(child, 'begin'));
-        if (begin != null) {
-          final inner = StringBuffer();
-          _collectRawText(child, inner);
-          final nested = _cleanText(inner.toString());
-          if (nested.isNotEmpty) {
-            words.add(SyncLyricWord(
-              begin,
-              (_parseTime(_attr(child, 'end')) ?? fallbackEnd ?? begin + _estimateDuration(nested)) - begin,
-              nested,
-            ));
-          }
-          buffer.write(nested);
-        } else {
-          _collectMainTextFromElement(child, words, buffer, fallbackEnd);
-        }
+    if (node is XmlText) {
+      buffer.write(_decodeEntities(node.value));
+      return;
+    }
+
+    if (node is! XmlElement) return;
+    final element = node;
+
+    // <br/> 用占位符标记，最后 _cleanText 会换回真正的换行
+    if (element.name.local == 'br') {
+      if (words.isNotEmpty) {
+        final last = words.last;
+        words[words.length - 1] = SyncLyricWord(
+          last.start,
+          last.length,
+          '${last.content}\n',
+        );
       }
+      buffer.write('\u0001');
+      return;
+    }
+
+    // 先检查当前元素自己是否有 begin 属性（例如顶层 <span>）
+    final rawBegin = _attr(element, 'begin');
+    final parsedBegin = _parseTime(rawBegin);
+    if (parsedBegin != null) {
+      final actualBegin = _isOffsetTime(rawBegin)
+          ? parentBegin + parsedBegin
+          : parsedBegin;
+
+      final inner = StringBuffer();
+      _collectRawText(element, inner);
+      final text = _cleanText(inner.toString());
+      final wordText = text + trailingSpace;
+      if (wordText.isNotEmpty) {
+        final parsedEnd = _parseTime(_attr(element, 'end'));
+        final actualEnd = parsedEnd != null && _isOffsetTime(_attr(element, 'end'))
+            ? parentBegin + parsedEnd
+            : parsedEnd;
+        words.add(SyncLyricWord(
+          actualBegin,
+          (actualEnd ?? fallbackEnd ?? actualBegin + _estimateDuration(text)) - actualBegin,
+          wordText,
+        ));
+      }
+      buffer.write(wordText);
+      return; // 已处理，不再遍历子元素
+    }
+
+    // 如果当前元素没有 begin，则遍历其子元素
+    final children = element.children.toList();
+    for (int i = 0; i < children.length; i++) {
+      final childTrailing = _wordSeparatorAfter(children, i);
+      _collectMainTextFromNode(
+        children[i],
+        words,
+        buffer,
+        fallbackEnd,
+        parentBegin,
+        childTrailing,
+      );
     }
   }
 
@@ -326,7 +444,13 @@ class Ttml extends Lyric {
     String? fallbackTranslation,
   ) {
     final bgWords = <SyncLyricWord>[];
-    final bgText = _collectMainText([bgSpan], bgWords, fallbackEnd);
+    final bgBegin = _parseTime(_attr(bgSpan, 'begin')) ?? Duration.zero;
+    final bgText = _collectMainText(
+      [bgSpan],
+      bgWords,
+      fallbackEnd,
+      parentBegin: bgBegin,
+    );
 
     final translationChildren = bgSpan.childElements
         .where((e) => _hasRole(e, 'x-translation'))
@@ -375,6 +499,7 @@ class Ttml extends Lyric {
     time = time.trim();
     if (time.isEmpty) return null;
 
+    // 时:分:秒 或 分:秒（绝对时间）
     if (time.contains(':')) {
       final parts = time.split(':');
       if (parts.length == 3) {
@@ -393,12 +518,40 @@ class Ttml extends Lyric {
       }
     }
 
+    // 毫秒：500ms
+    final msMatch = RegExp(r'^(\d+(?:\.\d+)?)ms$').firstMatch(time);
+    if (msMatch != null) {
+      final ms = double.tryParse(msMatch.group(1)!) ?? 0;
+      return Duration(milliseconds: ms.round());
+    }
+
+    // 秒：1.5s
+    final sMatch = RegExp(r'^(\d+(?:\.\d+)?)s$').firstMatch(time);
+    if (sMatch != null) {
+      final seconds = double.tryParse(sMatch.group(1)!) ?? 0;
+      return Duration(milliseconds: (seconds * 1000).round());
+    }
+
+    // 帧：f1200（默认 30fps）
+    final fMatch = RegExp(r'^(\d+)f$').firstMatch(time);
+    if (fMatch != null) {
+      final frames = int.tryParse(fMatch.group(1)!) ?? 0;
+      const fps = 30;
+      return Duration(milliseconds: (frames / fps * 1000).round());
+    }
+
+    // 纯数字秒
     final seconds = double.tryParse(time);
     if (seconds != null) {
       return Duration(milliseconds: (seconds * 1000).round());
     }
 
     return null;
+  }
+
+  /// 判断 TTML 时间是否为 offset 形式（需要叠加父元素开始时间）
+  static bool _isOffsetTime(String time) {
+    return RegExp(r'^\d+(?:\.\d+)?[msf]$').hasMatch(time.trim());
   }
 
   static double _parseSeconds(String s) {
