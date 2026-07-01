@@ -468,9 +468,14 @@ class Ttml extends Lyric {
         .where((w) => w.content.isNotEmpty)
         .toList();
 
+    var finalBgText = cleanedBgText;
+    if (bgTranslation.isNotEmpty && finalBgText.contains(bgTranslation)) {
+      finalBgText = finalBgText.replaceAll(bgTranslation, '').trim();
+    }
+
     line.bgStart = _parseTime(_attr(bgSpan, 'begin'));
     line.bgEnd = _parseTime(_attr(bgSpan, 'end')) ?? fallbackEnd;
-    line.bgText = cleanedBgText.isNotEmpty ? cleanedBgText : null;
+    line.bgText = finalBgText.isNotEmpty ? finalBgText : null;
     line.bgWords = cleanedBgWords;
     line.bgTranslation = bgTranslation.isNotEmpty ? bgTranslation : null;
   }
