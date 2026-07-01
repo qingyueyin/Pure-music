@@ -128,11 +128,11 @@ class _LyricHorizontalScrollAreaState
       _setContent(widget.lyric.lines.first);
     }
 
-    lyricLineStreamSubscription = lyricService.lyricLineStream.listen((lines) {
-      if (widget.lyric.lines.isEmpty || lines.isEmpty) return;
+    lyricLineStreamSubscription = lyricService.lyricLineStream.listen((line) {
+      if (widget.lyric.lines.isEmpty) return;
       _scrollToken += 1;
       final token = _scrollToken;
-      final currLine = widget.lyric.lines[lines.first];
+      final currLine = widget.lyric.lines[line];
 
       setState(() {
         _setContent(currLine);
