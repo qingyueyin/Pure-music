@@ -101,10 +101,17 @@ class LyricService extends ChangeNotifier {
 
       final currLineIndex = _nextLyricLine - 1;
       if (currLineIndex < 0 || currLineIndex >= lyric.lines.length) return;
-      if (currLineIndex != _lastEmittedLineIndex) {
+
+      final activeIndices = _computeActiveLines(posMs);
+      if (currLineIndex != _lastEmittedLineIndex ||
+          !listEquals(_lastEmittedActiveIndices, activeIndices)) {
         _lastEmittedLineIndex = currLineIndex;
         _lastEmittedLineIndexForHint = currLineIndex;
-        _lyricLineStreamController.add(currLineIndex);
+        _lastEmittedActiveIndices = activeIndices;
+        _lyricLineStreamController.add(LyricLineUpdate(
+          primaryIndex: currLineIndex,
+          activeIndices: activeIndices,
+        ));
       }
 
       if (currLineIndex != _lastDesktopLyricLineIndex) {
@@ -235,13 +242,14 @@ class LyricService extends ChangeNotifier {
   /// 下一行歌词
   int _nextLyricLine = 0;
   int _lastEmittedLineIndexForHint = -1;
+  List<int> _lastEmittedActiveIndices = const [];
 
-  late final StreamController<int> _lyricLineStreamController =
+  late final StreamController<LyricLineUpdate> _lyricLineStreamController =
       StreamController.broadcast(onListen: () {
     forceEmitCurrentLine();
   });
 
-  Stream<int> get lyricLineStream => _lyricLineStreamController.stream;
+  Stream<LyricLineUpdate> get lyricLineStream => _lyricLineStreamController.stream;
 
   /// 强制发射当前行（绕过 _lastEmittedLineIndex 检查），
   /// 用于新创建的歌词 view 初始化时获取当前行
@@ -265,7 +273,10 @@ class LyricService extends ChangeNotifier {
 
     _lastEmittedLineIndex = currLineIndex;
     _lastEmittedLineIndexForHint = currLineIndex;
-    _lyricLineStreamController.add(currLineIndex);
+    _lyricLineStreamController.add(LyricLineUpdate(
+      primaryIndex: currLineIndex,
+      activeIndices: _computeActiveLines(posMs),
+    ));
 
     if (currLineIndex != _lastDesktopLyricLineIndex) {
       _lastDesktopLyricLineIndex = currLineIndex;
@@ -306,10 +317,16 @@ class LyricService extends ChangeNotifier {
 
     if (currLineIndex < 0) return;
 
-    if (currLineIndex != _lastEmittedLineIndex) {
+    final activeIndices = _computeActiveLines(posMs);
+    if (currLineIndex != _lastEmittedLineIndex ||
+        !listEquals(_lastEmittedActiveIndices, activeIndices)) {
       _lastEmittedLineIndex = currLineIndex;
       _lastEmittedLineIndexForHint = currLineIndex;
-      _lyricLineStreamController.add(currLineIndex);
+      _lastEmittedActiveIndices = activeIndices;
+      _lyricLineStreamController.add(LyricLineUpdate(
+        primaryIndex: currLineIndex,
+        activeIndices: activeIndices,
+      ));
     }
 
     if (currLineIndex >= lyric.lines.length) return;
@@ -356,6 +373,22 @@ class LyricService extends ChangeNotifier {
     }
 
     return _lowerBoundGreater(_lineStartMs, time);
+  }
+
+  List<int> _computeActiveLines(int posMs) {
+    final lyric = _currLyric;
+    if (lyric == null) return const [];
+    final active = <int>[];
+    // 只有 TTML 有时间重叠行，用全扫描即可（行数通常 < 200）
+    for (int i = 0; i < lyric.lines.length; i++) {
+      final line = lyric.lines[i];
+      final start = line.start.inMilliseconds;
+      final end = start + line.length.inMilliseconds;
+      if (posMs >= start && posMs < end) {
+        active.add(i);
+      }
+    }
+    return active;
   }
 
   int _lowerBoundGreater(List<int> arr, int x) {

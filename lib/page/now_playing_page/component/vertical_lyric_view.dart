@@ -193,6 +193,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   DateTime _lastActivityTime = DateTime.now(); // 最后活动时间
   LyricScrollState _scrollState = LyricScrollState.idle;
   int _mainLine = 0;
+  final Set<int> _activeLines = {};
   int _pendingScrollRetries = 0;
   LyricViewportRange _viewportRange =
       const LyricViewportRange(start: 0, end: 0);
@@ -762,18 +763,22 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     return false;
   }
 
-  void _updateNextLyricLine(int lyricLine) {
+  void _updateNextLyricLine(LyricLineUpdate update) {
     if (_disposed) return;
-    if (_mainLine == lyricLine) {
+    final lineChanged = _mainLine != update.primaryIndex;
+
+    if (!lineChanged) {
+      setState(() {
+        _activeLines
+          ..clear()
+          ..addAll(update.activeIndices);
+      });
       return;
     }
 
-    // 歌词行自动切换不算作"活动"，只有用户操作才算
-    // _markActivity(); // 删除这行
-
     final lines = widget.lyric.lines;
-    // 跳过空白行：服务可能发出元数据行索引
-    if (lyricLine < lines.length && _isLineBlankFiltered(lines[lyricLine])) {
+    if (update.primaryIndex < lines.length &&
+        _isLineBlankFiltered(lines[update.primaryIndex])) {
       return;
     }
     final renderConfig = context.read<LyricViewController>().renderConfig;
@@ -785,12 +790,15 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     );
     final followDecision = viewportStrategy.followDecision(
       currentRange: _viewportRange,
-      nextMainLine: lyricLine,
+      nextMainLine: update.primaryIndex,
       totalLines: lines.length,
     );
 
     setState(() {
-      _mainLine = lyricLine;
+      _mainLine = update.primaryIndex;
+      _activeLines
+        ..clear()
+        ..addAll(update.activeIndices);
       _viewportRange = followDecision.nextRange;
       if (_hoveredLineIndex != -1) {
         _hoveredLineIndex = -1;
@@ -913,7 +921,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
                       final signedDist = i - _mainLine;
                       final dist = signedDist.abs();
-                      final opacity = dist == 0
+                      final opacity = dist == 0 || _activeLines.contains(i)
                           ? 1.0
                           : pow(0.88, dist).toDouble().clamp(0.30, 0.90);
                       final staggerDelay = Duration(
