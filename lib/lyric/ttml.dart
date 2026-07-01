@@ -59,7 +59,32 @@ class Ttml extends Lyric {
         }
       }
 
-      return Ttml(lines, LyricFormat.local, ttml, isDuet);
+      // 检测相邻行之间的时间间隙，自动插入间奏行
+      final linesWithGaps = <TtmlLine>[];
+      for (int i = 0; i < lines.length; i++) {
+        final line = lines[i];
+        linesWithGaps.add(line);
+
+        if (i < lines.length - 1) {
+          final nextLine = lines[i + 1];
+          final currentEnd = line.start + line.length;
+          final gapStart = currentEnd;
+          final gapDuration = nextLine.start - gapStart;
+
+          // 如果间隙 >= 3 秒，插入间奏行
+          if (gapDuration >= const Duration(seconds: 5)) {
+            final transitionLine = TtmlLine(
+              gapStart,
+              gapDuration,
+              const [],
+              null,
+            );
+            linesWithGaps.add(transitionLine);
+          }
+        }
+      }
+
+      return Ttml(linesWithGaps, LyricFormat.local, ttml, isDuet);
     } catch (e, stack) {
       if (kDebugMode) {
         print('TTML parse failed: $e\n$stack');
@@ -286,6 +311,7 @@ class Ttml extends Lyric {
     if (text.isEmpty && bgSpan == null && translation == null && pronunciation == null) {
       // 非空子元素但最终无歌词内容（如仅时间标签的段落），保留为间奏行
       if (duration >= const Duration(seconds: 3)) {
+        print('[TTML] 间奏行(无内容): begin=$begin, duration=$duration');
         final line = TtmlLine(
           begin,
           duration,
@@ -295,6 +321,7 @@ class Ttml extends Lyric {
         if (resolvedAgent.isNotEmpty) line.agent = resolvedAgent;
         return line;
       }
+      print('[TTML] 无内容段跳过: begin=$begin, duration=$duration');
       return null;
     }
 
