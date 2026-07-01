@@ -478,6 +478,15 @@ class Ttml extends Lyric {
     line.bgText = finalBgText.isNotEmpty ? finalBgText : null;
     line.bgWords = cleanedBgWords;
     line.bgTranslation = bgTranslation.isNotEmpty ? bgTranslation : null;
+    if (finalBgText.isNotEmpty) {
+      line.bg = BackgroundVocal(
+        text: finalBgText,
+        words: cleanedBgWords,
+        start: line.bgStart ?? Duration.zero,
+        end: line.bgEnd ?? Duration.zero,
+        translation: bgTranslation.isNotEmpty ? bgTranslation : null,
+      );
+    }
   }
 
   static void _mergeConsecutiveWords(List<SyncLyricWord> words) {

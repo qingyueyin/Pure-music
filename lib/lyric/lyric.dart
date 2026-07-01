@@ -36,6 +36,24 @@ class LyricLine {
       : romanLyric = null;
 }
 
+class BackgroundVocal {
+  final String text;
+  final List<SyncLyricWord> words;
+  final Duration start;
+  final Duration end;
+  String? translation;
+  String? romanLyric;
+
+  BackgroundVocal({
+    required this.text,
+    required this.words,
+    required this.start,
+    required this.end,
+    this.translation,
+    this.romanLyric,
+  });
+}
+
 class SyncLyricLine extends LyricLine {
   final List<SyncLyricWord> words;
   String? agent;
@@ -44,6 +62,7 @@ class SyncLyricLine extends LyricLine {
   String? bgTranslation;
   Duration? bgStart;
   Duration? bgEnd;
+  BackgroundVocal? bg;
 
   SyncLyricLine(super.start, super.length, this.words, [super.translation, String? romanLyric]) {
     this.romanLyric = romanLyric;

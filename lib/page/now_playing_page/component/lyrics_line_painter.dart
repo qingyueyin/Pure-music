@@ -681,13 +681,45 @@ class LyricsLinePainter extends CustomPainter {
 
         cursorY += bgFontSize * 0.35; // extra top gap before bg block
         if (hasBg) {
-          paintBgLine(
-            bgText,
-            bgFontSize,
-            useMaterialYouColor
+          final bgVocal = syncLine.bg;
+          if (bgVocal != null && bgVocal.words.isNotEmpty) {
+            final baseColor = useMaterialYouColor
                 ? scheme.primary
-                : (isDarkMode ? Colors.white : Colors.black),
-          );
+                : (isDarkMode ? Colors.white : Colors.black);
+            final unplayedColor = baseColor.withValues(alpha: 0.3);
+            final spans = bgVocal.words.map((w) {
+              final ws = w.start.inMilliseconds.toDouble();
+              final we = ws + w.length.inMilliseconds.toDouble();
+              final p = _calcWordProgress(currentTimeMs, ws, we);
+              final c = Color.lerp(unplayedColor, baseColor, p)!;
+              return TextSpan(
+                text: ZhConverter.convert(w.content, zhMode),
+                style: TextStyle(
+                  color: c.withValues(alpha: bgAlpha),
+                  fontSize: bgFontSize,
+                  fontWeight: bgWeight,
+                  letterSpacing: letterSpace,
+                ),
+              );
+            }).toList();
+            final tp = _obtainTextPainter();
+            tp.text = TextSpan(children: spans);
+            tp.textDirection = TextDirection.ltr;
+            tp.textAlign = blockTextAlign;
+            tp.layout(maxWidth: maxWidth);
+            cursorY += bgFontSize * 0.45;
+            tp.paint(canvas, Offset(padding.left, cursorY));
+            cursorY += tp.height;
+            _recycleTextPainter(tp);
+          } else {
+            paintBgLine(
+              bgText,
+              bgFontSize,
+              useMaterialYouColor
+                  ? scheme.primary
+                  : (isDarkMode ? Colors.white : Colors.black),
+            );
+          }
         }
         if (hasBgTranslation) {
           paintBgLine(
