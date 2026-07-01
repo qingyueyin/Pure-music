@@ -103,29 +103,48 @@ class LyricService extends ChangeNotifier {
       if (currLineIndex < 0 || currLineIndex >= lyric.lines.length) return;
 
       final activeIndices = _computeActiveLines(posMs);
-      if (currLineIndex != _lastEmittedLineIndex ||
+      var primaryIndex = currLineIndex;
+      if (activeIndices.isEmpty && currLineIndex + 1 < lyric.lines.length) {
+        // 间奏：当前行已结束且下一行未开始，推进到下一行预览
+        final currEnd = lyric.lines[currLineIndex].start.inMilliseconds +
+            lyric.lines[currLineIndex].length.inMilliseconds;
+        final nextStart = _lineStartMs[currLineIndex + 1];
+        if (posMs >= currEnd && posMs < nextStart) {
+          primaryIndex = currLineIndex + 1;
+        }
+      } else if (activeIndices.isNotEmpty) {
+        // 当前行指针还未推进但下一行已激活（posMs == nextStart 的边界），
+        // 取最早激活行做 primaryIndex
+        final minActive = activeIndices.first;
+        if (minActive > currLineIndex) {
+          primaryIndex = minActive;
+        }
+      }
+      if (primaryIndex != _lastEmittedLineIndex ||
           !listEquals(_lastEmittedActiveIndices, activeIndices)) {
-        _lastEmittedLineIndex = currLineIndex;
-        _lastEmittedLineIndexForHint = currLineIndex;
+        _lastEmittedLineIndex = primaryIndex;
+        _lastEmittedLineIndexForHint = primaryIndex;
         _lastEmittedActiveIndices = activeIndices;
         _lyricLineStreamController.add(LyricLineUpdate(
-          primaryIndex: currLineIndex,
+          primaryIndex: primaryIndex,
           activeIndices: activeIndices,
         ));
       }
 
-      if (currLineIndex != _lastDesktopLyricLineIndex) {
-        _lastDesktopLyricLineIndex = currLineIndex;
-        final nextLine = currLineIndex + 1 < lyric.lines.length
-            ? lyric.lines[currLineIndex + 1]
-            : null;
-        playService.desktopLyricService.canSendMessage.then((canSend) {
-          if (!canSend) return;
-          playService.desktopLyricService.sendLyricLineMessage(
-            lyric.lines[currLineIndex],
-            nextLine: nextLine,
-          );
-        });
+      if (primaryIndex != _lastDesktopLyricLineIndex) {
+        _lastDesktopLyricLineIndex = primaryIndex;
+        if (primaryIndex >= 0 && primaryIndex < lyric.lines.length) {
+          final nextLine = primaryIndex + 1 < lyric.lines.length
+              ? lyric.lines[primaryIndex + 1]
+              : null;
+          playService.desktopLyricService.canSendMessage.then((canSend) {
+            if (!canSend) return;
+            playService.desktopLyricService.sendLyricLineMessage(
+              lyric.lines[primaryIndex],
+              nextLine: nextLine,
+            );
+          });
+        }
       }
     });
   }
@@ -271,25 +290,43 @@ class LyricService extends ChangeNotifier {
     if (currLineIndex < 0) return;
     if (currLineIndex >= lyric.lines.length) return;
 
-    _lastEmittedLineIndex = currLineIndex;
-    _lastEmittedLineIndexForHint = currLineIndex;
-    _lyricLineStreamController.add(LyricLineUpdate(
-      primaryIndex: currLineIndex,
-      activeIndices: _computeActiveLines(posMs),
-    ));
+    final activeIndices = _computeActiveLines(posMs);
+    var primaryIndex = currLineIndex;
+    if (activeIndices.isEmpty && currLineIndex + 1 < lyric.lines.length) {
+      final currEnd = lyric.lines[currLineIndex].start.inMilliseconds +
+          lyric.lines[currLineIndex].length.inMilliseconds;
+      final nextStart = _lineStartMs[currLineIndex + 1];
+      if (posMs >= currEnd && posMs < nextStart) {
+        primaryIndex = currLineIndex + 1;
+      }
+    } else if (activeIndices.isNotEmpty) {
+      final minActive = activeIndices.first;
+      if (minActive > currLineIndex) {
+        primaryIndex = minActive;
+      }
+    }
+    _lastEmittedLineIndex = primaryIndex;
+    _lastEmittedLineIndexForHint = primaryIndex;
+    _lastEmittedActiveIndices = activeIndices;
+      _lyricLineStreamController.add(LyricLineUpdate(
+        primaryIndex: primaryIndex,
+        activeIndices: activeIndices,
+      ));
 
-    if (currLineIndex != _lastDesktopLyricLineIndex) {
-      _lastDesktopLyricLineIndex = currLineIndex;
-      final nextLine = currLineIndex + 1 < lyric.lines.length
-          ? lyric.lines[currLineIndex + 1]
-          : null;
-      playService.desktopLyricService.canSendMessage.then((canSend) {
-        if (!canSend) return;
-        playService.desktopLyricService.sendLyricLineMessage(
-          lyric.lines[currLineIndex],
-          nextLine: nextLine,
-        );
-      });
+    if (primaryIndex != _lastDesktopLyricLineIndex) {
+      _lastDesktopLyricLineIndex = primaryIndex;
+      if (primaryIndex >= 0 && primaryIndex < lyric.lines.length) {
+        final nextLine = primaryIndex + 1 < lyric.lines.length
+            ? lyric.lines[primaryIndex + 1]
+            : null;
+        playService.desktopLyricService.canSendMessage.then((canSend) {
+          if (!canSend) return;
+          playService.desktopLyricService.sendLyricLineMessage(
+            lyric.lines[primaryIndex],
+            nextLine: nextLine,
+          );
+        });
+      }
     }
   }
 
@@ -318,30 +355,46 @@ class LyricService extends ChangeNotifier {
     if (currLineIndex < 0) return;
 
     final activeIndices = _computeActiveLines(posMs);
-    if (currLineIndex != _lastEmittedLineIndex ||
+    var primaryIndex = currLineIndex;
+    if (activeIndices.isEmpty && currLineIndex + 1 < lyric.lines.length) {
+      final currEnd = lyric.lines[currLineIndex].start.inMilliseconds +
+          lyric.lines[currLineIndex].length.inMilliseconds;
+      final nextStart = lyric.lines[currLineIndex + 1].start.inMilliseconds;
+      if (posMs >= currEnd && posMs < nextStart) {
+        primaryIndex = currLineIndex + 1;
+      }
+    } else if (activeIndices.isNotEmpty) {
+      final minActive = activeIndices.first;
+      if (minActive > currLineIndex) {
+        primaryIndex = minActive;
+      }
+    }
+    if (primaryIndex != _lastEmittedLineIndex ||
         !listEquals(_lastEmittedActiveIndices, activeIndices)) {
-      _lastEmittedLineIndex = currLineIndex;
-      _lastEmittedLineIndexForHint = currLineIndex;
+      _lastEmittedLineIndex = primaryIndex;
+      _lastEmittedLineIndexForHint = primaryIndex;
       _lastEmittedActiveIndices = activeIndices;
       _lyricLineStreamController.add(LyricLineUpdate(
-        primaryIndex: currLineIndex,
+        primaryIndex: primaryIndex,
         activeIndices: activeIndices,
       ));
     }
 
-    if (currLineIndex >= lyric.lines.length) return;
-    if (currLineIndex != _lastDesktopLyricLineIndex) {
-      _lastDesktopLyricLineIndex = currLineIndex;
-      final nextLine = currLineIndex + 1 < lyric.lines.length
-          ? lyric.lines[currLineIndex + 1]
-          : null;
-      playService.desktopLyricService.canSendMessage.then((canSend) {
-        if (!canSend) return;
-        playService.desktopLyricService.sendLyricLineMessage(
-          lyric.lines[currLineIndex],
-          nextLine: nextLine,
-        );
-      });
+    if (primaryIndex >= lyric.lines.length) return;
+    if (primaryIndex != _lastDesktopLyricLineIndex) {
+      _lastDesktopLyricLineIndex = primaryIndex;
+      if (primaryIndex >= 0 && primaryIndex < lyric.lines.length) {
+        final nextLine = primaryIndex + 1 < lyric.lines.length
+            ? lyric.lines[primaryIndex + 1]
+            : null;
+        playService.desktopLyricService.canSendMessage.then((canSend) {
+          if (!canSend) return;
+          playService.desktopLyricService.sendLyricLineMessage(
+            lyric.lines[primaryIndex],
+            nextLine: nextLine,
+          );
+        });
+      }
     }
   }
 

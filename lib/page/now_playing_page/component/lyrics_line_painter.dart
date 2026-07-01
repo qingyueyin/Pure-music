@@ -922,13 +922,11 @@ class LyricsLinePainter extends CustomPainter {
       // 词级判断：只对正在播放且未播完的词画辉光
       final isPlaying = wc.first.isPlaying;
       final wordProgress = wc.first.wordProgress;
-      final wordDurationSec = wc.first.wordDurationSec;
       final isMerged = wc.first.isMerged;
       if (!isPlaying) continue;
       if (wordProgress >= 1.0) continue;
-      // TTML 合并词始终辉光；非 TTML 仍用原时长阈值
-      const rippleThreshold = 1.5;
-      if (!isMerged && wordDurationSec < rippleThreshold) continue;
+      // 仅合并词有辉光；单 span 长音仅缩放
+      if (!isMerged) continue;
 
       // 辉光 alpha 最大值：固定 0.5（视觉效果更好）
       const glowAlphaMax = 0.5;
