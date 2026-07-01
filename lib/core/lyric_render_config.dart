@@ -77,7 +77,7 @@ class LyricRenderConfig {
     this.enableStaggeredAnimation = true,
     this.enableAudioReactive = false,
     this.audioReactiveStrength = 0.5,
-    this.enableGlow = true, // 默认启用辉光效果
+    this.enableGlow = false,
     this.useCustomPaint = true,
     this.viewportFadeExtent = 0.04,
     this.mainLineScale = 1.0,

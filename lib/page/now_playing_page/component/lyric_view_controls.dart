@@ -32,6 +32,7 @@ class LyricViewController extends ChangeNotifier {
     showLyricRoman = nowPlayingPagePref.showLyricRoman;
     enableLyricScale = nowPlayingPagePref.enableLyricScale;
     enableLyricSpring = nowPlayingPagePref.enableLyricSpring;
+    enableLyricGlow = nowPlayingPagePref.enableLyricGlow;
 
     _listenToLyricChanges();
   }
@@ -97,6 +98,7 @@ class LyricViewController extends ChangeNotifier {
   late bool enableLyricBlur;
   late bool enableLyricScale;
   late bool enableLyricSpring;
+  late bool enableLyricGlow;
 
   LyricRenderConfig get renderConfig =>
       nowPlayingPagePref.lyricRenderConfig.copyWith(
@@ -109,6 +111,7 @@ class LyricViewController extends ChangeNotifier {
         enableBlur: enableLyricBlur,
         enableLineScale: enableLyricScale,
         enableLineSpring: enableLyricSpring,
+        enableGlow: enableLyricGlow,
       );
 
   void triggerRebuild() {

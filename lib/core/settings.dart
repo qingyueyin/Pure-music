@@ -99,8 +99,8 @@ class AppSettings {
   bool autoWriteLyricToTag = false;
   int autoWriteLyricToTagDelay = 30;
   bool useMaterialYouForLyrics = false;
-  bool useMaterialYouForProgressBar = true;
-  bool useMaterialYouForTransition = true;
+  bool useMaterialYouForProgressBar = false;
+  bool useMaterialYouForTransition = false;
   bool enableCoverColorExtraction = true;
   int? customCoverColor;
   Size windowSize = const Size(1280, 756);

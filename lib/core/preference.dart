@@ -39,6 +39,7 @@ class NowPlayingPagePreference {
   bool enableLyricBlur;
   bool enableLyricScale;
   bool enableLyricSpring;
+  bool enableLyricGlow;
   NowPlayingBackgroundMode backgroundMode;
 
   NowPlayingPagePreference(
@@ -52,7 +53,8 @@ class NowPlayingPagePreference {
     this.showLyricRoman = true,
     this.enableLyricScale = true,
     this.enableLyricSpring = true,
-    this.backgroundMode = NowPlayingBackgroundMode.blurCover,
+    this.enableLyricGlow = false,
+    this.backgroundMode = NowPlayingBackgroundMode.meshGradient,
   });
 
   LyricRenderConfig get lyricRenderConfig => LyricRenderConfig(
@@ -65,6 +67,7 @@ class NowPlayingPagePreference {
         enableBlur: enableLyricBlur,
         enableLineScale: enableLyricScale,
         enableLineSpring: enableLyricSpring,
+        enableGlow: enableLyricGlow,
       );
 
   Map<String, dynamic> toMap() => {
@@ -78,6 +81,7 @@ class NowPlayingPagePreference {
         'enableLyricBlur': enableLyricBlur,
         'enableLyricScale': enableLyricScale,
         'enableLyricSpring': enableLyricSpring,
+        'enableLyricGlow': enableLyricGlow,
         'backgroundMode': backgroundMode.name,
       };
 
@@ -97,6 +101,7 @@ class NowPlayingPagePreference {
       showLyricRoman: map['showLyricRoman'] ?? true,
       enableLyricScale: map['enableLyricScale'] ?? true,
       enableLyricSpring: map['enableLyricSpring'] ?? true,
+      enableLyricGlow: map['enableLyricGlow'] ?? false,
       backgroundMode: backgroundMode,
     );
   }

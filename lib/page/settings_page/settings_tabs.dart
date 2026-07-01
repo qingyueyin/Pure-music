@@ -234,6 +234,36 @@ class _MonetTransitionSwitchState extends State<_MonetTransitionSwitch> {
   }
 }
 
+class _GlowEffectSwitch extends StatefulWidget {
+  const _GlowEffectSwitch();
+
+  @override
+  State<_GlowEffectSwitch> createState() => _GlowEffectSwitchState();
+}
+
+class _GlowEffectSwitchState extends State<_GlowEffectSwitch> {
+  final nowPlayingPagePref = AppPreference.instance.nowPlayingPagePref;
+
+  @override
+  Widget build(BuildContext context) {
+    return SettingsTile(
+      description: '辉光缩放效果',
+      subtitle: '逐字播放时的辉光缩放动画',
+      action: Switch(
+        value: nowPlayingPagePref.enableLyricGlow,
+        onChanged: (v) {
+          setState(() {
+            nowPlayingPagePref.enableLyricGlow = v;
+          });
+          AppPreference.instance.save();
+          LyricViewController.instance.enableLyricGlow = v;
+          LyricViewController.instance.triggerRebuild();
+        },
+      ),
+    );
+  }
+}
+
 class _CoverColorExtractionSwitch extends StatefulWidget {
   const _CoverColorExtractionSwitch();
 
@@ -780,6 +810,8 @@ class _LyricsTabContentState extends State<_LyricsTabContent> {
             },
           ),
         ),
+        const SizedBox(height: 16.0),
+        const _GlowEffectSwitch(),
         const SizedBox(height: 16.0),
         // 注释：歌词写入标签功能暂时隐藏，功能未完全实现
         // TODO: 完善歌词写入标签功能后重新启用
