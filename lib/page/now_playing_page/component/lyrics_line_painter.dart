@@ -141,28 +141,33 @@ class LyricsLinePainter extends CustomPainter {
 
     canvas.save();
     canvas.translate(0, offsetY);
-    // 统一从左侧原点缩放，对齐由 TextPainter.textAlign 独立处理
+    // scale 以对齐点为原点，避免缩放后居中/右对齐偏移
+    final scaleOriginX = switch (_effectiveTextAlign) {
+      LyricTextAlign.left => 0.0,
+      LyricTextAlign.center => size.width / 2,
+      LyricTextAlign.right => size.width,
+    };
+    canvas.translate(scaleOriginX, 0);
     canvas.scale(scale);
+    canvas.translate(-scaleOriginX, 0);
 
     final fontSize = config.primaryFontSize(isMainLine: isMainLine);
     final letterSpace = config.letterSpacing(fontSize: fontSize);
     final fontWeight = config.discreteFontWeight(config.fontWeight);
     final verticalPad =
         isMainLine ? config.syncVerticalPadding(isMainLine: true) : 12.0;
-    // padding 在逻辑空间需要除以 scale，这样在物理空间才是固定的 12px
     final padding = EdgeInsets.only(
-        left: 12.0 / scale, right: 12.0 / scale, top: verticalPad, bottom: verticalPad);
+        left: 12.0, right: 12.0, top: verticalPad, bottom: verticalPad);
     // 行高：TextStyle.height=1.2 → fontSize*1.2，与 TextPainter.layout 结果等价
     final lineHeight = fontSize * config.primaryLineHeight();
 
     final isDarkMode = scheme.brightness == Brightness.dark;
-    // 非当前行歌词 - 参考图二效果：暗但清晰可读
+
     final unplayedColor = useMaterialYouColor
         ? scheme.onSurface
             .withValues(alpha: isDarkMode ? opacity * 0.40 : opacity * 0.50)
         : scheme.onSurface
             .withValues(alpha: isDarkMode ? opacity * 0.35 : opacity * 0.45);
-    // 主行播放色：Widget 路径用 isDarkMode ? white : black
     final mainPlayedColor = isDarkMode
         ? Colors.white.withValues(alpha: opacity)
         : Colors.black.withValues(alpha: opacity);
@@ -178,7 +183,7 @@ class LyricsLinePainter extends CustomPainter {
         ? scheme.onSurface.withValues(alpha: opacity * 0.60)
         : scheme.onSurface.withValues(alpha: opacity * 0.70);
 
-    final maxWidth = size.width / scale - padding.horizontal;
+    final maxWidth = size.width - padding.horizontal;
 
     final zhMode = LyricViewController.instance.zhConversionMode;
 
@@ -561,7 +566,7 @@ class LyricsLinePainter extends CustomPainter {
         for (final entry in words) {
           paintWord(
               entry.value, playedStyle, entry.value.any((c) => c.yLift != 0.0),
-              applyScale: true);
+              applyScale: config.enableGlow);
         }
       } else {
         canvas.save();
@@ -570,7 +575,7 @@ class LyricsLinePainter extends CustomPainter {
         for (final entry in words) {
           paintWord(
               entry.value, playedStyle, entry.value.any((c) => c.yLift != 0.0),
-              applyScale: true);
+              applyScale: config.enableGlow);
         }
         canvas.drawRect(
             bounds,
@@ -704,8 +709,15 @@ class LyricsLinePainter extends CustomPainter {
 
     canvas.save();
     canvas.translate(0, offsetY);
-    // 统一从左侧原点缩放，对齐由 TextPainter.textAlign 独立处理
+    // scale 以对齐点为原点，避免缩放后居中/右对齐偏移
+    final scaleOriginX = switch (_effectiveTextAlign) {
+      LyricTextAlign.left => 0.0,
+      LyricTextAlign.center => size.width / 2,
+      LyricTextAlign.right => size.width,
+    };
+    canvas.translate(scaleOriginX, 0);
     canvas.scale(scale);
+    canvas.translate(-scaleOriginX, 0);
 
     final zhMode = LyricViewController.instance.zhConversionMode;
     final fontSize = config.primaryFontSize(isMainLine: isMainLine);
@@ -716,7 +728,7 @@ class LyricsLinePainter extends CustomPainter {
         left: 12.0, right: 12.0, top: verticalPad, bottom: verticalPad);
 
     final isDarkMode = scheme.brightness == Brightness.dark;
-    // 非当前行歌词 - 参考图二效果：暗但清晰可读
+
     final unplayedColor = useMaterialYouColor
         ? scheme.onSurface
             .withValues(alpha: isDarkMode ? opacity * 0.40 : opacity * 0.50)
@@ -739,10 +751,7 @@ class LyricsLinePainter extends CustomPainter {
         : scheme.onSurface.withValues(alpha: opacity * 0.70);
 
     final displayedColor = isMainLine ? playedColor : unplayedColor;
-    // padding 在逻辑空间需要除以 scale，这样在物理空间才是固定的 12px
-    final adjustedPadding = EdgeInsets.only(
-        left: 12.0 / scale, right: 12.0 / scale, top: padding.top, bottom: padding.bottom);
-    final maxWidth = size.width / scale - adjustedPadding.horizontal;
+    final maxWidth = size.width - padding.horizontal;
     final blockTextAlign = switch (_effectiveTextAlign) {
       LyricTextAlign.left => TextAlign.left,
       LyricTextAlign.center => TextAlign.center,
@@ -764,7 +773,7 @@ class LyricsLinePainter extends CustomPainter {
         textAlign: blockTextAlign,
       );
       metaTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
-      metaTp.paint(canvas, Offset(adjustedPadding.left, adjustedPadding.top));
+      metaTp.paint(canvas, Offset(padding.left, padding.top));
       _recycleTextPainter(metaTp);
       canvas.restore();
       return;
@@ -783,9 +792,9 @@ class LyricsLinePainter extends CustomPainter {
       textAlign: blockTextAlign,
     );
     mainTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
-    mainTp.paint(canvas, Offset(adjustedPadding.left, adjustedPadding.top));
+    mainTp.paint(canvas, Offset(padding.left, padding.top));
 
-    double cursorY = adjustedPadding.top + mainTp.height;
+    double cursorY = padding.top + mainTp.height;
 
     final translationWeight =
         config.discreteFontWeight((config.fontWeight - 50).clamp(100, 900));
@@ -825,7 +834,7 @@ class LyricsLinePainter extends CustomPainter {
           textAlign: blockTextAlign,
         );
         tTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
-        tTp.paint(canvas, Offset(adjustedPadding.left, cursorY));
+        tTp.paint(canvas, Offset(padding.left, cursorY));
         cursorY += tTp.height;
         _recycleTextPainter(tTp);
       }
@@ -848,7 +857,7 @@ class LyricsLinePainter extends CustomPainter {
         textAlign: blockTextAlign,
       );
       rTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
-      rTp.paint(canvas, Offset(adjustedPadding.left, cursorY));
+      rTp.paint(canvas, Offset(padding.left, cursorY));
       _recycleTextPainter(rTp);
     }
 
