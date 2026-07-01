@@ -43,7 +43,8 @@ class LyricRenderConfig {
   final bool enableStaggeredAnimation;
   final bool enableAudioReactive;
   final double audioReactiveStrength;
-  final bool enableGlow; // 启用歌词辉光效果
+  final bool enableGlow;
+  final bool hasMultipleAgents; // 多声部 TTML 时对齐由 agent 决定
 
   /// true → CustomPaint (LyricsLineWidget), 零 GC 压力
   /// false → Widget 方案 (LyricViewTile), 逐字动画更丰富
@@ -78,6 +79,7 @@ class LyricRenderConfig {
     this.enableAudioReactive = false,
     this.audioReactiveStrength = 0.5,
     this.enableGlow = false,
+    this.hasMultipleAgents = false,
     this.useCustomPaint = true,
     this.viewportFadeExtent = 0.04,
     this.mainLineScale = 1.0,
@@ -114,6 +116,7 @@ class LyricRenderConfig {
     bool? enableAudioReactive,
     double? audioReactiveStrength,
     bool? enableGlow,
+    bool? hasMultipleAgents,
     bool? useCustomPaint,
     double? viewportFadeExtent,
     double? mainLineScale,
@@ -148,6 +151,7 @@ class LyricRenderConfig {
       audioReactiveStrength:
           audioReactiveStrength ?? this.audioReactiveStrength,
       enableGlow: enableGlow ?? this.enableGlow,
+      hasMultipleAgents: hasMultipleAgents ?? this.hasMultipleAgents,
       useCustomPaint: useCustomPaint ?? this.useCustomPaint,
       viewportFadeExtent: viewportFadeExtent ?? this.viewportFadeExtent,
       mainLineScale: mainLineScale ?? this.mainLineScale,

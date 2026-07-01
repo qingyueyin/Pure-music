@@ -54,10 +54,12 @@ class LyricsLinePainter extends CustomPainter {
   final String? fontFamily;
   final String? agent;
 
-  // 对唱时按 agent 强制对齐：v1 左对齐，v2 右对齐
+  // 多声部时按 agent 强制对齐：v1 左对齐，v2 右对齐
   LyricTextAlign get _effectiveTextAlign {
-    if (agent == 'v2') return LyricTextAlign.right;
-    if (agent == 'v1') return LyricTextAlign.left;
+    if (config.hasMultipleAgents) {
+      if (agent == 'v2') return LyricTextAlign.right;
+      if (agent == 'v1') return LyricTextAlign.left;
+    }
     return config.textAlign;
   }
 

@@ -120,6 +120,7 @@ class LyricViewController extends ChangeNotifier {
         enableLineScale: enableLyricScale,
         enableLineSpring: enableLyricSpring,
         enableGlow: enableLyricGlow,
+        hasMultipleAgents: hasMultipleAgents,
       );
 
   void triggerRebuild() {
