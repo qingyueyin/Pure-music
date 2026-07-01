@@ -396,15 +396,14 @@ impl Audio {
     /// 使用 lofty 获取音乐标签。只在文件名不正确、没有标签或包含不支持的编码时返回 None
     fn read_by_lofty(path: impl AsRef<Path>, modified: u64, created: u64) -> Option<Self> {
         let path = path.as_ref();
-        let options = ParseOptions::new()
-            .parsing_mode(ParsingMode::Relaxed)
-            .read_tags(true)
-            .read_cover_art(false)
-            .read_properties(true);
-
-        let tagged_file = match Probe::open(path)
-            .and_then(|p| p.options(options).read())
-        {
+        let mut file = match std::fs::File::open(path) {
+            Ok(f) => f,
+            Err(err) => {
+                log_to_dart(format!("{:?}: {}", path, err));
+                return None;
+            }
+        };
+        let tagged_file = match lofty::read_from(&mut file) {
             Ok(val) => val,
             Err(err) => {
                 log_to_dart(format!("{:?}: {}", path, err));
