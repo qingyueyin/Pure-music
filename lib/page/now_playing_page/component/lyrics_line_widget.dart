@@ -15,27 +15,6 @@ import 'package:pure_music/page/now_playing_page/component/lyrics_line_painter.d
 import 'package:pure_music/page/now_playing_page/component/value_transition.dart';
 import 'package:pure_music/play_service/play_service.dart';
 
-// ===== 全局共享的 ImageFilter 池 =====
-// 避免每个 Widget 都创建相同 sigma 的 ImageFilter
-final Map<double, ImageFilter> _sharedBlurFilters = {};
-
-ImageFilter _getSharedBlurFilter(double sigma) {
-  // 四舍五入到 0.1 精度，避免浮点误差
-  final key = (sigma * 10).round() / 10.0;
-  return _sharedBlurFilters.putIfAbsent(key, () {
-    return ImageFilter.blur(
-      sigmaX: key,
-      sigmaY: key,
-      tileMode: TileMode.clamp,
-    );
-  });
-}
-
-void clearBlurFilterPool() {
-  _sharedBlurFilters.clear();
-}
-// ===== 全局共享池结束 =====
-
 class LyricsLineWidget extends StatefulWidget {
   const LyricsLineWidget({
     super.key,
@@ -73,7 +52,9 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
   Ticker? _ticker;
   double _currentTimeMs = 0;
 
-  // 缓存 Painter，避免每帧重建（ImageFilter 使用全局共享池）
+  // 缓存 ImageFilter 和 Painter，避免每帧重建
+  ImageFilter? _cachedBlurFilter;
+  double _cachedBlurSigma = 0.0;
   LyricsLinePainter? _cachedPainter;
 
   @override
@@ -83,10 +64,12 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
     final shouldKeep = dist <= 2;
 
     // 如果从 keepAlive 变为不 keepAlive，主动清理缓存
-    if (!shouldKeep) {
+    if (!shouldKeep && (_cachedPainter != null || _cachedBlurFilter != null)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           _cachedPainter = null;
+          _cachedBlurFilter = null;
+          _cachedBlurSigma = 0.0;
         }
       });
     }
@@ -190,6 +173,8 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
       // 非当前行时清空缓存，释放内存
       if (!isActive) {
         _cachedPainter = null;
+        _cachedBlurFilter = null;
+        _cachedBlurSigma = 0.0;
       }
     }
 
@@ -202,7 +187,8 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
   @override
   void dispose() {
     _ticker?.dispose();
-    // Painter 缓存清空，ImageFilter 使用全局共享池
+    // ImageFilter 不需要手动 dispose，由 Flutter 引擎管理
+    _cachedBlurFilter = null;
     _cachedPainter = null;
     super.dispose();
   }
@@ -344,12 +330,25 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
               size: Size(lineWidth, lineHeight),
             );
 
-            // 模糊：使用全局共享的 ImageFilter 池
+            // 模糊：缓存 ImageFilter，避免每帧重建 GPU 资源
             if (blurSigma > 0.01) {
+              if (_cachedBlurFilter == null || (_cachedBlurSigma - blurSigma).abs() > 0.01) {
+                // ImageFilter 不需要手动 dispose，直接覆盖即可
+                _cachedBlurFilter = ImageFilter.blur(
+                  sigmaX: blurSigma,
+                  sigmaY: blurSigma,
+                  tileMode: TileMode.clamp,
+                );
+                _cachedBlurSigma = blurSigma;
+              }
               painted = ImageFiltered(
-                imageFilter: _getSharedBlurFilter(blurSigma),
+                imageFilter: _cachedBlurFilter!,
                 child: painted,
               );
+            } else if (_cachedBlurFilter != null) {
+              // blurSigma 变为 0，清空缓存的 filter
+              _cachedBlurFilter = null;
+              _cachedBlurSigma = 0.0;
             }
 
             painted = SizedBox(
