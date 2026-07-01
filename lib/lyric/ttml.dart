@@ -41,14 +41,15 @@ class Ttml extends Lyric {
         final line = lines[i];
         final nextStart = i < lines.length - 1 ? lines[i + 1].start : null;
 
-        // 统一使用 nextLine.start - line.start 作为 length，与 LRC 行为一致
-        // 这样可以避免 TTML end 时间不准确导致的行间间隔或重叠问题
-        if (nextStart != null) {
-          final lineLen = nextStart - line.start;
-          line.length = lineLen.isNegative ? Duration.zero : lineLen;
-        } else if (line.length <= Duration.zero) {
-          // 最后一行且没有 end 时间，默认 5 秒
-          line.length = const Duration(seconds: 5);
+        // TTML 自身有精确 begin/end，保留原始时长
+        // 对唱重叠（V1/V2 同时唱）、间奏（行间空白）均由 TTML 定义
+        if (line.length <= Duration.zero) {
+          if (nextStart != null) {
+            final nextBasedLen = nextStart - line.start;
+            line.length = nextBasedLen.isNegative ? Duration.zero : nextBasedLen;
+          } else {
+            line.length = const Duration(seconds: 5);
+          }
         }
 
         _fillWordDurations(line.words, line.start, line.length, nextStart);
@@ -445,12 +446,19 @@ class Ttml extends Lyric {
   ) {
     final bgWords = <SyncLyricWord>[];
     final bgBegin = _parseTime(_attr(bgSpan, 'begin')) ?? Duration.zero;
+
+    // 排除翻译子节点，让 inner span 各自成为独立词
+    final bgChildren = bgSpan.children.where((child) {
+      if (child is XmlElement && _hasRole(child, 'x-translation')) return false;
+      return true;
+    }).toList();
     final bgText = _collectMainText(
-      [bgSpan],
+      bgChildren,
       bgWords,
       fallbackEnd,
       parentBegin: bgBegin,
     );
+    _mergeConsecutiveWords(bgWords);
 
     final translationChildren = bgSpan.childElements
         .where((e) => _hasRole(e, 'x-translation'))
@@ -464,13 +472,19 @@ class Ttml extends Lyric {
 
     final cleanedBgText = _removeBgParentheses(bgText);
     final cleanedBgWords = bgWords
-        .map((w) => SyncLyricWord(w.start, w.length, _removeBgParentheses(w.content)))
+        .map((w) => SyncLyricWord(
+            w.start,
+            w.length,
+            w.content.replaceAll(RegExp(r'[()（）]'), '')))
         .where((w) => w.content.isNotEmpty)
         .toList();
 
     var finalBgText = cleanedBgText;
     if (bgTranslation.isNotEmpty && finalBgText.contains(bgTranslation)) {
       finalBgText = finalBgText.replaceAll(bgTranslation, '').trim();
+      for (final w in cleanedBgWords) {
+        w.content = w.content.replaceAll(bgTranslation, '').trim();
+      }
     }
 
     line.bgStart = _parseTime(_attr(bgSpan, 'begin'));
@@ -498,13 +512,19 @@ class Ttml extends Lyric {
       final curEnd = cur.content.endsWith(' ') || cur.content.endsWith('\n');
       final nextStart = next.content.startsWith(' ') || next.content.startsWith('\n');
       if (!curEnd && !nextStart) {
+        // 用 span 原始 begin/end 判断时间连续性，超过 100ms 间隔不合并
+        final gap = next.start - (cur.start + cur.length);
+        if (gap > const Duration(milliseconds: 100)) {
+          wi++;
+          continue;
+        }
         final mergedEnd = next.start + next.length;
         final mergedLen = mergedEnd - cur.start;
         words[wi] = SyncLyricWord(
           cur.start,
           mergedLen.isNegative ? Duration.zero : mergedLen,
           '${cur.content}${next.content}',
-        );
+        )..isMerged = true;
         words.removeAt(wi + 1);
       } else {
         wi++;

@@ -95,6 +95,18 @@ class SyncLyricWord {
         ruby = null;
 }
 
+class LyricLineUpdate {
+  final int primaryIndex;
+  final List<int> activeIndices;
+
+  const LyricLineUpdate({
+    required this.primaryIndex,
+    required this.activeIndices,
+  });
+
+  bool isActive(int lineIndex) => activeIndices.contains(lineIndex);
+}
+
 class UnsyncLyricLine extends LyricLine {
   String content;
 

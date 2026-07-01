@@ -18,6 +18,7 @@ class _CharInfo {
   final int wordIndex;
   final bool isPlaying;
   final double wordDurationSec; // 词时长（秒），用于辉光阈值判断
+  final bool isMerged; // 多 span 合并产生（TTML），决定辉光
 
   _CharInfo({
     required this.char,
@@ -30,6 +31,7 @@ class _CharInfo {
     required this.wordIndex,
     required this.isPlaying,
     required this.wordDurationSec,
+    required this.isMerged,
   });
 }
 
@@ -297,6 +299,7 @@ class LyricsLinePainter extends CustomPainter {
           wordIndex: wordIndex,
           isPlaying: isPlaying,
           wordDurationSec: wordDurationSec,
+          isMerged: word.isMerged,
         ));
 
         cursorX += charWidth;
@@ -355,6 +358,7 @@ class LyricsLinePainter extends CustomPainter {
             wordIndex: original.wordIndex,
             isPlaying: original.isPlaying,
             wordDurationSec: original.wordDurationSec,
+            isMerged: original.isMerged,
           );
         }
       }
@@ -396,8 +400,10 @@ class LyricsLinePainter extends CustomPainter {
       if (useLift) {
         // 词时长阈值判断
         final wordDurationSec = wc.first.wordDurationSec;
+        final isMerged = wc.first.isMerged;
         const rippleThreshold = 1.5;
-        final enableEffect = applyScale && wordDurationSec >= rippleThreshold;
+        final enableEffect = applyScale &&
+            (isMerged || wordDurationSec >= rippleThreshold);
 
         for (final info in wc) {
           final charProgress = info.charProgress;
@@ -706,7 +712,7 @@ class LyricsLinePainter extends CustomPainter {
             tp.text = TextSpan(children: spans);
             tp.textDirection = TextDirection.ltr;
             tp.textAlign = blockTextAlign;
-            tp.layout(maxWidth: maxWidth);
+            tp.layout(minWidth: maxWidth, maxWidth: maxWidth);
             cursorY += bgFontSize * 0.45;
             tp.paint(canvas, Offset(padding.left, cursorY));
             cursorY += tp.height;
@@ -907,8 +913,6 @@ class LyricsLinePainter extends CustomPainter {
     List<MapEntry<int, List<_CharInfo>>> words,
     TextStyle playedStyle,
   ) {
-    const rippleThreshold = 1.5; // 词时长阈值（秒）
-
     final baseColor = playedStyle.color ?? Colors.white;
 
     for (final entry in words) {
@@ -919,9 +923,12 @@ class LyricsLinePainter extends CustomPainter {
       final isPlaying = wc.first.isPlaying;
       final wordProgress = wc.first.wordProgress;
       final wordDurationSec = wc.first.wordDurationSec;
+      final isMerged = wc.first.isMerged;
       if (!isPlaying) continue;
       if (wordProgress >= 1.0) continue;
-      if (wordDurationSec < rippleThreshold) continue; // 词时长不足阈值，不触发辉光
+      // TTML 合并词始终辉光；非 TTML 仍用原时长阈值
+      const rippleThreshold = 1.5;
+      if (!isMerged && wordDurationSec < rippleThreshold) continue;
 
       // 辉光 alpha 最大值：固定 0.5（视觉效果更好）
       const glowAlphaMax = 0.5;
