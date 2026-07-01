@@ -220,7 +220,7 @@ class Ttml extends Lyric {
       final line = TtmlLine(
         begin,
         duration,
-        [SyncLyricWord(Duration.zero, Duration.zero, wordContent)],
+        [SyncLyricWord(begin, Duration.zero, wordContent)],
         translation?.isNotEmpty == true ? translation : null,
       );
       if (resolvedAgent.isNotEmpty) line.agent = resolvedAgent;
