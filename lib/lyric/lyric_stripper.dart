@@ -1,5 +1,6 @@
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/lyric/lrc.dart';
+import 'package:pure_music/lyric/ttml.dart';
 import 'package:pure_music/lyric/exclude_data.dart';
 
 // 分隔符列表（用于判断关键词后的字符是否为有效分隔符）
@@ -640,6 +641,9 @@ LyricLine _createPrelude(LyricLine exemplar, Duration length) {
   }
   if (exemplar is EnhancedLrcLine) {
     return EnhancedLrcLine(Duration.zero, length, []);
+  }
+  if (exemplar is TtmlLine) {
+    return TtmlLine(Duration.zero, length, []);
   }
   return SyncLyricLine(Duration.zero, length, []);
 }

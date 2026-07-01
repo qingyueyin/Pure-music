@@ -251,6 +251,7 @@ class Ttml extends Lyric {
 
     final words = <SyncLyricWord>[];
     final text = _collectMainText(mainNodes, words, end, parentBegin: begin);
+    _mergeConsecutiveWords(words);
 
     final inlineTranslation = translationSpans
         .map((s) => _cleanText(s.innerText))
@@ -311,7 +312,6 @@ class Ttml extends Lyric {
 
     return line;
   }
-
 
   static String _collectMainText(
     List<XmlNode> nodes,
@@ -473,6 +473,29 @@ class Ttml extends Lyric {
     line.bgText = cleanedBgText.isNotEmpty ? cleanedBgText : null;
     line.bgWords = cleanedBgWords;
     line.bgTranslation = bgTranslation.isNotEmpty ? bgTranslation : null;
+  }
+
+  static void _mergeConsecutiveWords(List<SyncLyricWord> words) {
+    if (words.length <= 1) return;
+    int wi = 0;
+    while (wi < words.length - 1) {
+      final cur = words[wi];
+      final next = words[wi + 1];
+      final curEnd = cur.content.endsWith(' ') || cur.content.endsWith('\n');
+      final nextStart = next.content.startsWith(' ') || next.content.startsWith('\n');
+      if (!curEnd && !nextStart) {
+        final mergedEnd = next.start + next.length;
+        final mergedLen = mergedEnd - cur.start;
+        words[wi] = SyncLyricWord(
+          cur.start,
+          mergedLen.isNegative ? Duration.zero : mergedLen,
+          '${cur.content}${next.content}',
+        );
+        words.removeAt(wi + 1);
+      } else {
+        wi++;
+      }
+    }
   }
 
   static void _fillWordDurations(
