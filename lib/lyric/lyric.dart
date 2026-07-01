@@ -14,6 +14,16 @@ class Lyric {
   bool get isNotEmpty => lines.isNotEmpty;
 
   bool get isWordByWord => lines.isNotEmpty && lines.first is SyncLyricLine;
+
+  int get uniqueAgentCount {
+    final agents = <String>{};
+    for (final line in lines) {
+      if (line is SyncLyricLine && (line.agent?.isNotEmpty == true)) {
+        agents.add(line.agent!);
+      }
+    }
+    return agents.length;
+  }
 }
 
 class LyricLine {

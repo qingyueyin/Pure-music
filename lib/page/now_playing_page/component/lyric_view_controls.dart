@@ -20,6 +20,7 @@ class LyricViewController extends ChangeNotifier {
   bool _disposed = false;
   bool _isListening = false;
   bool hasRomanLyric = false;
+  bool hasMultipleAgents = false;
   LyricFormat lyricSource = LyricFormat.local;
 
   LyricViewController._internal() {
@@ -67,6 +68,13 @@ class LyricViewController extends ChangeNotifier {
         final newSource = lyric.source;
         if (newSource != lyricSource) {
           lyricSource = newSource;
+          needsNotify = true;
+        }
+
+        final agentCount = lyric.uniqueAgentCount;
+        final newHasMultipleAgents = agentCount > 1;
+        if (newHasMultipleAgents != hasMultipleAgents) {
+          hasMultipleAgents = newHasMultipleAgents;
           needsNotify = true;
         }
       }
@@ -245,7 +253,12 @@ class LyricViewControls extends StatelessWidget {
         const SizedBox(height: 8.0),
         const _LyricBlurSwitchBtn(),
         const SizedBox(height: 8.0),
-        const _LyricAlignSwitchBtn(),
+        Consumer<LyricViewController>(
+          builder: (context, c, _) => Visibility(
+            visible: !c.hasMultipleAgents,
+            child: const _LyricAlignSwitchBtn(),
+          ),
+        ),
         const SizedBox(height: 8.0),
         const _FontSizeBtn(),
         const SizedBox(height: 8.0),
