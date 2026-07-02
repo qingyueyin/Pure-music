@@ -629,6 +629,7 @@ impl AudioFolder {
         scanned_folders: &mut HashSet<String>,
         sink: &StreamSink<IndexActionState>,
     ) -> Result<(), io::Error> {
+        // total_count 已被外部预计为准确的目录总数，在此不递增
         let folder = folder.as_ref();
         if scanned_folders.contains(&folder.to_string_lossy().to_string()) {
             return Ok(());
@@ -669,7 +670,6 @@ impl AudioFolder {
             };
 
             if file_type.is_dir() {
-                *total_count += 1;
                 let _ = Self::read_from_folder_recursively(
                     entry.path(),
                     result,
@@ -988,6 +988,22 @@ pub fn write_lyric_to_path(path: String, lyric: String) -> Result<(), String> {
     Ok(())
 }
 
+/// 递归计数所有子目录（含自身）。
+fn count_subdirs(folder: impl AsRef<Path>, count: &mut u64, seen: &mut HashSet<String>) {
+    let folder_str = folder.as_ref().to_string_lossy().to_string();
+    if !seen.insert(folder_str) {
+        return;
+    }
+    *count += 1;
+    if let Ok(dir) = fs::read_dir(folder.as_ref()) {
+        for entry in dir.flatten() {
+            if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                count_subdirs(entry.path(), count, seen);
+            }
+        }
+    }
+}
+
 /// for Flutter  
 /// 扫描给定路径下所有子文件夹（包括自己）的音乐文件并把索引保存在 index_path/index.json。
 pub fn build_index_from_folders_recursively(
@@ -998,7 +1014,11 @@ pub fn build_index_from_folders_recursively(
     let index_dir = PathBuf::from(&index_path);
     let mut audio_folders: Vec<AudioFolder> = vec![];
     let mut scanned: u64 = 0;
-    let mut total: u64 = folders.len() as u64;
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut total: u64 = 0;
+    for item in &folders {
+        count_subdirs(Path::new(item), &mut total, &mut seen);
+    }
     let mut scanned_folders: HashSet<String> = HashSet::new();
 
     for item in &folders {
@@ -1074,6 +1094,38 @@ fn _update_index_below_1_1_0(
     Ok(())
 }
 
+fn discover_new_audio_folders(
+    root: &Path,
+    existing_paths: &HashSet<String>,
+    new_entries: &mut Vec<serde_json::Value>,
+    scanned: &mut HashSet<String>,
+) {
+    let dir_str = root.to_string_lossy().to_string();
+    if !scanned.insert(dir_str.clone()) {
+        return;
+    }
+
+    if !existing_paths.contains(&dir_str) {
+        if let Ok(audio_folder) = AudioFolder::read_from_folder(root) {
+            new_entries.push(audio_folder.to_json_value());
+            return;
+        }
+    }
+
+    if let Ok(entries) = fs::read_dir(root) {
+        for entry in entries.flatten() {
+            if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                discover_new_audio_folders(
+                    &entry.path(),
+                    existing_paths,
+                    new_entries,
+                    scanned,
+                );
+            }
+        }
+    }
+}
+
 /// for Flutter   
 /// 读取 index_path/index.json，检查更新。不可能重新读取被修改的文件夹下所有的音乐标签，这样太耗时。  
 ///
@@ -1113,7 +1165,7 @@ pub fn update_index(index_path: String, sink: StreamSink<IndexActionState>) -> a
     let mut updated = 0;
     let total = folders.len();
 
-    for folder_item in folders {
+    for folder_item in folders.iter_mut() {
         let folder_path = match folder_item["path"].as_str() {
             Some(p) => p.to_string(),
             None => continue,
@@ -1233,6 +1285,32 @@ pub fn update_index(index_path: String, sink: StreamSink<IndexActionState>) -> a
             progress: updated as f64 / total as f64,
             message: String::new(),
         });
+    }
+
+    // 发现未索引的新增子文件夹
+    {
+        let existing_paths: HashSet<String> = folders
+            .iter()
+            .filter_map(|f| f.get("path").and_then(|v| v.as_str()).map(String::from))
+            .collect();
+        let mut new_entries: Vec<serde_json::Value> = Vec::new();
+        let mut scanned_dirs: HashSet<String> = HashSet::new();
+        // 从每个已知文件夹根部递归查找
+        for folder_item in folders.iter() {
+            if let Some(root_path) = folder_item["path"].as_str() {
+                let _ = sink.add(IndexActionState {
+                    progress: 0.0,
+                    message: format!("正在检查新增文件夹 {}", root_path),
+                });
+                discover_new_audio_folders(
+                    Path::new(root_path),
+                    &existing_paths,
+                    &mut new_entries,
+                    &mut scanned_dirs,
+                );
+            }
+        }
+        folders.extend(new_entries);
     }
 
     fs::File::create(index_path)?.write_all(index.to_string().as_bytes())?;
