@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:pure_music/core/preference.dart';
-import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
