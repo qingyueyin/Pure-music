@@ -107,6 +107,8 @@ class _AppearanceTabContent extends StatelessWidget {
         SizedBox(height: 16.0),
         _MonetTransitionSwitch(),
         SizedBox(height: 16.0),
+        _MonetControlsSwitch(),
+        SizedBox(height: 16.0),
         _CoverColorExtractionSwitch(),
       ],
     );
@@ -234,6 +236,35 @@ class _MonetTransitionSwitchState extends State<_MonetTransitionSwitch> {
   }
 }
 
+class _MonetControlsSwitch extends StatefulWidget {
+  const _MonetControlsSwitch();
+
+  @override
+  State<_MonetControlsSwitch> createState() => _MonetControlsSwitchState();
+}
+
+class _MonetControlsSwitchState extends State<_MonetControlsSwitch> {
+  final settings = AppSettings.instance;
+
+  @override
+  Widget build(BuildContext context) {
+    return SettingsTile(
+      description: '主题色控件',
+      subtitle: '播放页控件使用主题色渲染',
+      action: Switch(
+        value: settings.useMaterialYouForControls,
+        onChanged: (v) {
+          setState(() {
+            settings.useMaterialYouForControls = v;
+          });
+          settings.saveSettings();
+          AppSettings.rebuildNotifier.notifyListeners();
+        },
+      ),
+    );
+  }
+}
+
 class _GlowEffectSwitch extends StatefulWidget {
   const _GlowEffectSwitch();
 
@@ -247,7 +278,7 @@ class _GlowEffectSwitchState extends State<_GlowEffectSwitch> {
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      description: '辉光缩放效果',
+      description: '辉光缩放效果（实验性）',
       subtitle: '逐字播放时的辉光缩放动画',
       action: Switch(
         value: nowPlayingPagePref.enableLyricGlow,

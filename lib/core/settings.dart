@@ -68,6 +68,7 @@ enum LyricDisplayMode {
 enum ThemeOption { system, light, dark }
 
 class AppSettings {
+  static final rebuildNotifier = ChangeNotifier();
   static const String version = String.fromEnvironment(
     'APP_VERSION',
     defaultValue: '2.0.0-preview',
@@ -101,6 +102,7 @@ class AppSettings {
   bool useMaterialYouForLyrics = false;
   bool useMaterialYouForProgressBar = false;
   bool useMaterialYouForTransition = false;
+  bool useMaterialYouForControls = false;
   bool enableCoverColorExtraction = true;
   int? customCoverColor;
   Size windowSize = const Size(1280, 756);
@@ -284,6 +286,11 @@ class AppSettings {
         _instance.useMaterialYouForTransition = umyt;
       }
 
+      final umyc = settingsMap['UseMaterialYouForControls'];
+      if (umyc != null) {
+        _instance.useMaterialYouForControls = umyc;
+      }
+
       final ecce = settingsMap['EnableCoverColorExtraction'];
       if (ecce != null) {
         _instance.enableCoverColorExtraction = ecce;
@@ -337,6 +344,7 @@ class AppSettings {
         'UseMaterialYouForLyrics': useMaterialYouForLyrics,
         'UseMaterialYouForProgressBar': useMaterialYouForProgressBar,
         'UseMaterialYouForTransition': useMaterialYouForTransition,
+        'UseMaterialYouForControls': useMaterialYouForControls,
         'EnableCoverColorExtraction': enableCoverColorExtraction,
         'CustomCoverColor': customCoverColor,
         'IsWindowMaximized': isMaximized,
