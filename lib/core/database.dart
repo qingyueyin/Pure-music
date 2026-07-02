@@ -68,10 +68,17 @@ CREATE TABLE IF NOT EXISTS album_colors (
   }
 
   void _migrate(Database db) {
-    final version = db.select('PRAGMA user_version').first['user_version'] as int;
-    if (version < 1) {
-      db.execute('ALTER TABLE playlist_items ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0');
-      db.execute('PRAGMA user_version = 1');
+    db.execute('BEGIN');
+    try {
+      final version = db.select('PRAGMA user_version').first['user_version'] as int;
+      if (version < 1) {
+        db.execute('ALTER TABLE playlist_items ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0');
+        db.execute('PRAGMA user_version = 1');
+      }
+      db.execute('COMMIT');
+    } catch (e) {
+      db.execute('ROLLBACK');
+      rethrow;
     }
   }
 

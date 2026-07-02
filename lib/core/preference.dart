@@ -277,13 +277,20 @@ class AppPreference {
   /// 用户手动添加的文件夹路径列表（不包括自动发现的子文件夹）
   List<String> userFolders = [];
 
+  /// 上次读取的原始 JSON，保存时保留未知字段
+  Map? _rawPrefMap;
+
   Future<void> save() async {
     try {
       final settingsDir = await getSettingsDir();
       final appPreferencePath =
           path.join(settingsDir.path, 'app_preference.json');
 
-      Map prefMap = {
+      final prefMap = _rawPrefMap != null
+          ? Map<String, dynamic>.from(_rawPrefMap!)
+          : <String, dynamic>{};
+      prefMap['version'] = AppSettings.version;
+      prefMap.addAll({
         'audiosPagePref': audiosPagePref.toMap(),
         'artistsPagePref': artistsPagePref.toMap(),
         'artistDetailPagePref': artistDetailPagePref.toMap(),
@@ -304,7 +311,7 @@ class AppPreference {
         'lastSeenUpdateTag': lastSeenUpdateTag,
         'updateCheckUrls': updateCheckUrls,
         'userFolders': userFolders,
-      };
+      });
 
       final prefJson = json.encode(prefMap);
       final output = await File(appPreferencePath).create(recursive: true);
@@ -352,6 +359,7 @@ class AppPreference {
 
       final prefJson = await File(appPreferencePath).readAsString();
       final Map prefMap = json.decode(prefJson);
+      instance._rawPrefMap = prefMap;
 
       instance.audiosPagePref =
           PagePreference.fromMap(prefMap['audiosPagePref']);
