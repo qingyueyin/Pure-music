@@ -6,20 +6,13 @@ import 'package:flutter/material.dart';
 import 'package:pure_music/page/now_playing_page/component/now_playing_background_inputs.dart';
 
 /// Decode size for the source cover before blurring.
-const int _kDecodeSize = 256;
+const int _kDecodeSize = 400;
 
-/// Output size of the blurred snapshot.  The Gaussian blur destroys all
-/// high‑frequency detail, so a modest output resolution looks identical to
-/// a full‑res blur while using a fraction of the GPU texture memory.
-const int _kBlurOutputSize = 200;
+const int _kBlurOutputSize = 400;
 
-/// Blur sigma for the one‑time pre‑render, chosen per brightness.
-/// Dark themes benefit from a stronger blur (depth / atmosphere); light
-/// themes look muddy with too much blur.
-double _blurSigmaFor(Brightness brightness) =>
-    brightness == Brightness.dark ? 55.0 : 30.0;
+const _kBlurSigma = 20.0;
 
-const _kFadeStops = <double>[0.0, 0.5, 1.0];
+const _kFadeStops = <double>[0.0, 0.3, 1.0];
 const _kFadeColors = <Color>[
   Colors.white,
   Colors.white,
@@ -46,12 +39,10 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
   ui.Image? _blurredImage;
   bool _isLoading = false;
   bool _disposed = false;
-  Brightness? _lastBrightness;
 
   @override
   void initState() {
     super.initState();
-    // _decodeAndBlur 内部用 Theme.of(context)，不能在 initState 里直接调
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _decodeAndBlur();
     });
@@ -60,13 +51,6 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final brightness = Theme.of(context).colorScheme.brightness;
-    if (_lastBrightness != null && _lastBrightness != brightness) {
-      _lastBrightness = brightness;
-      _decodeAndBlur();
-    } else {
-      _lastBrightness = brightness;
-    }
   }
 
   @override
@@ -117,8 +101,7 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
     }
     if (_disposed) return;
 
-    final brightness = Theme.of(context).colorScheme.brightness;
-    final sigma = _blurSigmaFor(brightness);
+    const sigma = _kBlurSigma;
 
     setState(() => _isLoading = true);
 
@@ -141,7 +124,8 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
       final recorder = ui.PictureRecorder();
       final canvas = ui.Canvas(recorder);
       final blurPaint = ui.Paint()
-        ..imageFilter = ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma);
+        ..imageFilter = ui.ImageFilter.blur(
+            sigmaX: sigma, sigmaY: sigma, tileMode: ui.TileMode.clamp);
       final srcRect = ui.Rect.fromLTWH(
         0,
         0,
