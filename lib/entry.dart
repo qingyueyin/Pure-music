@@ -176,9 +176,10 @@ class _EntryState extends State<Entry>
       AppPreference.instance.lastSeenUpdateTag = newest.tagName;
       AppPreference.instance.save();
 
-      if (!mounted) return;
+      final ctx = routerKey.currentState?.overlay?.context;
+      if (ctx == null || !ctx.mounted) return;
       showDialog(
-        context: context,
+        context: ctx,
         builder: (context) => NewestUpdateView(info: newest),
       );
     }
