@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -15,6 +16,7 @@ class _NowPlayingPitchControlState extends State<NowPlayingPitchControl> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final useMonet = AppSettings.instance.useMaterialYouForControls;
 
     return MenuAnchor(
       style: MenuStyle(
@@ -33,7 +35,7 @@ class _NowPlayingPitchControlState extends State<NowPlayingPitchControl> {
           },
           tooltip: '音调',
           icon: const Icon(Symbols.music_note),
-          color: scheme.onSecondaryContainer,
+          color: useMonet ? scheme.primary : scheme.onSecondaryContainer,
         );
       },
       menuChildren: const [
@@ -95,6 +97,7 @@ class _NowPlayingPitchPanelState extends State<NowPlayingPitchPanel> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final playbackService = PlayService.instance.playbackService;
+    final useMonet = AppSettings.instance.useMaterialYouForControls;
 
     return SizedBox(
       width: widget.width,
@@ -146,7 +149,7 @@ class _NowPlayingPitchPanelState extends State<NowPlayingPitchPanel> {
                           }
                         : null,
                     icon: const Icon(Symbols.remove),
-                    color: scheme.onSurface,
+                    color: useMonet ? scheme.primary : scheme.onSurface,
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
                   ),
@@ -208,7 +211,7 @@ class _NowPlayingPitchPanelState extends State<NowPlayingPitchPanel> {
                           }
                         : null,
                     icon: const Icon(Symbols.add),
-                    color: scheme.onSurface,
+                    color: useMonet ? scheme.primary : scheme.onSurface,
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
                   ),

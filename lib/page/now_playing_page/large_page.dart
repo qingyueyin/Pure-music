@@ -5,6 +5,7 @@ class _NowPlayingLargePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final useMonet = AppSettings.instance.useMaterialYouForControls;
     const spacer = SizedBox(width: 8.0);
     return Column(
       children: [
@@ -72,7 +73,7 @@ class _NowPlayingLargePage extends StatelessWidget {
                             );
                           },
                           icon: const Icon(Symbols.graphic_eq),
-                          color: Theme.of(context).colorScheme.onSurface,
+                          color: useMonet ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface,
                         ),
                       ],
                     ),
@@ -92,7 +93,7 @@ class _NowPlayingLargePage extends StatelessWidget {
                             fill: 1.0,
                           ),
                           iconSize: 28,
-                          color: Theme.of(context).colorScheme.onSurface,
+                          color: useMonet ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface,
                         ),
                         spacer,
                         StreamBuilder(
@@ -123,7 +124,7 @@ class _NowPlayingLargePage extends StatelessWidget {
                                 fill: 1.0,
                               ),
                               iconSize: 36,
-                              color: Theme.of(context).colorScheme.onSurface,
+                              color: useMonet ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface,
                             );
                           },
                         ),
@@ -137,7 +138,7 @@ class _NowPlayingLargePage extends StatelessWidget {
                             fill: 1.0,
                           ),
                           iconSize: 28,
-                          color: Theme.of(context).colorScheme.onSurface,
+                          color: useMonet ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface,
                         ),
                         spacer,
                         const _NowPlayingLargeViewSwitch(),
@@ -207,6 +208,7 @@ class _NowPlayingLargeViewSwitch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final useMonet = AppSettings.instance.useMaterialYouForControls;
     return ValueListenableBuilder(
       valueListenable: nowPlayingViewMode,
       builder: (context, value, _) => IconButton(
@@ -236,7 +238,7 @@ class _NowPlayingLargeViewSwitch extends StatelessWidget {
               fill: 1.0,
             ),
         },
-        color: Theme.of(context).colorScheme.onSurface,
+        color: useMonet ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface,
       ),
     );
   }

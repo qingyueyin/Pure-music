@@ -15,6 +15,7 @@ import 'package:pure_music/core/color_extraction.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/immersive.dart';
+import 'package:flutter/foundation.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/system_volume_service.dart';
 import 'package:pure_music/core/utils.dart';
@@ -361,44 +362,55 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                     ],
                   ),
                 ),
-                IconButtonTheme(
-                  data: IconButtonThemeData(
-                    style: ButtonStyle(
-                      backgroundColor: const WidgetStatePropertyAll(
-                        Colors.transparent,
-                      ),
-                      overlayColor: WidgetStateProperty.resolveWith((states) {
-                        if (states.contains(WidgetState.pressed)) {
-                          return scheme.onSecondaryContainer.withValues(
-                            alpha: 0.04,
-                          );
-                        }
-                        if (states.contains(WidgetState.hovered) ||
-                            states.contains(WidgetState.focused)) {
-                          return scheme.onSecondaryContainer.withValues(
-                            alpha: 0.02,
-                          );
-                        }
-                        return Colors.transparent;
-                      }),
-                    ),
-                  ),
-                  child: ChangeNotifierProvider.value(
-                    value: PlayService.instance.playbackService,
-                    builder: (context, _) => immersive
-                        ? const _NowPlayingImmersivePage()
-                        : ResponsiveBuilder2(
-                            builder: (context, screenType) {
-                              switch (screenType) {
-                                case ScreenType.small:
-                                  return const _NowPlayingSmallPage();
-                                case ScreenType.medium:
-                                case ScreenType.large:
-                                  return const _NowPlayingLargePage();
-                              }
-                            },
+                ListenableBuilder(
+                  listenable: AppSettings.rebuildNotifier,
+                  builder: (context, _) {
+                    final useMonet =
+                        AppSettings.instance.useMaterialYouForControls;
+                    return IconButtonTheme(
+                      data: IconButtonThemeData(
+                        style: ButtonStyle(
+                          foregroundColor: useMonet
+                              ? WidgetStatePropertyAll(scheme.primary)
+                              : null,
+                          backgroundColor: const WidgetStatePropertyAll(
+                            Colors.transparent,
                           ),
-                  ),
+                          overlayColor:
+                              WidgetStateProperty.resolveWith((states) {
+                            if (states.contains(WidgetState.pressed)) {
+                              return scheme.onSecondaryContainer.withValues(
+                                alpha: 0.04,
+                              );
+                            }
+                            if (states.contains(WidgetState.hovered) ||
+                                states.contains(WidgetState.focused)) {
+                              return scheme.onSecondaryContainer.withValues(
+                                alpha: 0.02,
+                              );
+                            }
+                            return Colors.transparent;
+                          }),
+                        ),
+                      ),
+                      child: ChangeNotifierProvider.value(
+                        value: PlayService.instance.playbackService,
+                        builder: (context, _) => immersive
+                            ? const _NowPlayingImmersivePage()
+                            : ResponsiveBuilder2(
+                                builder: (context, screenType) {
+                                  switch (screenType) {
+                                    case ScreenType.small:
+                                      return const _NowPlayingSmallPage();
+                                    case ScreenType.medium:
+                                    case ScreenType.large:
+                                      return const _NowPlayingLargePage();
+                                  }
+                                },
+                              ),
+                      ),
+                    );
+                  },
                 ),
                 if (immersive) const _ImmersiveHelpOverlay(),
                 if (!immersive)
@@ -477,6 +489,7 @@ class _NowPlayingMoreAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final useMonet = AppSettings.instance.useMaterialYouForControls;
     final playbackService = context.watch<PlaybackService>();
     final nowPlaying = playbackService.nowPlaying;
     final scheme = Theme.of(context).colorScheme;
@@ -488,7 +501,7 @@ class _NowPlayingMoreAction extends StatelessWidget {
         tooltip: '更多',
         onPressed: null,
         icon: const Icon(Symbols.more_vert),
-        color: scheme.onSurface,
+        color: useMonet ? scheme.primary : scheme.onSurface,
       );
     }
 
@@ -581,7 +594,7 @@ class _NowPlayingMoreAction extends StatelessWidget {
             }
           },
           icon: const Icon(Symbols.more_vert),
-          color: scheme.onSurface,
+          color: useMonet ? scheme.primary : scheme.onSurface,
         ),
       ),
     );
@@ -593,6 +606,7 @@ class _NowPlayingPlaybackModeSwitch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final useMonet = AppSettings.instance.useMaterialYouForControls;
     final scheme = Theme.of(context).colorScheme;
     final playbackService = PlayService.instance.playbackService;
     //
@@ -634,7 +648,7 @@ class _NowPlayingPlaybackModeSwitch extends StatelessWidget {
             playbackService.setPlayMode(PlayMode.forward);
           },
           icon: Icon(icon, fill: 0.0, weight: 400.0),
-          color: scheme.onSurface,
+          color: useMonet ? scheme.primary : scheme.onSurface,
         );
       },
     );
@@ -646,6 +660,7 @@ class _ExclusiveModeSwitch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final useMonet = AppSettings.instance.useMaterialYouForControls;
     final scheme = Theme.of(context).colorScheme;
     //
     return ValueListenableBuilder(
@@ -661,11 +676,11 @@ class _ExclusiveModeSwitch extends StatelessWidget {
             style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.bold,
-              color: scheme.onSurface,
+              color: useMonet ? scheme.primary : scheme.onSurface,
             ),
           ),
         ),
-        color: scheme.onSurface,
+        color: useMonet ? scheme.primary : scheme.onSurface,
       ),
     );
   }
@@ -676,6 +691,7 @@ class _DesktopLyricSwitch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final useMonet = AppSettings.instance.useMaterialYouForControls;
     final scheme = Theme.of(context).colorScheme;
     //
     return ListenableBuilder(
@@ -686,7 +702,7 @@ class _DesktopLyricSwitch extends StatelessWidget {
         final isKilling = desktopLyricService.isKilling;
 
         // 关闭过程中显示 loading 并禁用按钮
-        if (isKilling) {
+                  if (isKilling) {
           return IconButton(
             tooltip: '正在关闭桌面歌词...',
             onPressed: null,
@@ -695,7 +711,7 @@ class _DesktopLyricSwitch extends StatelessWidget {
               height: 20,
               child: CircularProgressIndicator(),
             ),
-            color: scheme.onSurface,
+            color: useMonet ? scheme.primary : scheme.onSurface,
           );
         }
 
@@ -714,7 +730,7 @@ class _DesktopLyricSwitch extends StatelessWidget {
             desktopLyricService.isLocked ? Symbols.lock : Symbols.toast,
             fill: isRunning ? 1 : 0,
           ),
-          color: scheme.onSurface,
+          color: useMonet ? scheme.primary : scheme.onSurface,
         );
       },
     );
@@ -848,6 +864,7 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
 
   @override
   Widget build(BuildContext context) {
+    final useMonet = AppSettings.instance.useMaterialYouForControls;
     final scheme = Theme.of(context).colorScheme;
     //
 
@@ -1086,7 +1103,7 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
             }
           },
           icon: const Icon(Symbols.volume_up),
-          color: scheme.onSurface,
+          color: useMonet ? scheme.primary : scheme.onSurface,
         );
       },
     );
@@ -1168,7 +1185,7 @@ class _NowPlayingMainControls extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final playbackService = PlayService.instance.playbackService;
-    //
+    final useMonet = AppSettings.instance.useMaterialYouForControls;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -1181,7 +1198,7 @@ class _NowPlayingMainControls extends StatelessWidget {
             fill: 1.0,
           ),
           iconSize: 28,
-          color: scheme.onSurface,
+          color: useMonet ? scheme.primary : scheme.onSurface,
         ),
         const SizedBox(width: 32),
         StreamBuilder(
@@ -1192,6 +1209,7 @@ class _NowPlayingMainControls extends StatelessWidget {
             final isPlaying = playerState == PlayerState.playing;
             final isCompleted = playerState == PlayerState.completed;
 
+            final monet = AppSettings.instance.useMaterialYouForControls;
             return IconButton(
               tooltip: isPlaying ? '暂停' : '播放',
               onPressed: () {
@@ -1208,7 +1226,7 @@ class _NowPlayingMainControls extends StatelessWidget {
                 fill: 1.0,
               ),
               iconSize: 36,
-              color: scheme.onSurface,
+              color: monet ? scheme.primary : scheme.onSurface,
             );
           },
         ),
@@ -1221,7 +1239,7 @@ class _NowPlayingMainControls extends StatelessWidget {
             fill: 1.0,
           ),
           iconSize: 28,
-          color: scheme.onSurface,
+          color: useMonet ? scheme.primary : scheme.onSurface,
         ),
       ],
     );

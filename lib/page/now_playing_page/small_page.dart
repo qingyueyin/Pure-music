@@ -60,6 +60,7 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
 
   @override
   Widget build(BuildContext context) {
+    final useMonet = AppSettings.instance.useMaterialYouForControls;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Column(
@@ -129,7 +130,7 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
                   );
                 },
                 icon: const Icon(Symbols.graphic_eq),
-                color: Theme.of(context).colorScheme.onSecondaryContainer,
+                color: useMonet ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSecondaryContainer,
               ),
               const _NowPlayingMoreAction(),
             ],
@@ -158,6 +159,7 @@ class _NowPlayingSmallViewSwitchState
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final useMonet = AppSettings.instance.useMaterialYouForControls;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4.0),
@@ -188,7 +190,7 @@ class _NowPlayingSmallViewSwitchState
                 child: Center(
                   child: Icon(
                     widget.icon,
-                    color: scheme.onSecondaryContainer,
+                    color: useMonet ? scheme.primary : scheme.onSecondaryContainer,
                   ),
                 ),
               ),
