@@ -23,7 +23,6 @@ const int _lyricCacheMaxSize = 64;
 final Map<String, Future<Lyric?>> _lyricFetchCache = {};
 final Map<String, Lyric> _lyricResultCache = {};
 final List<String> _lyricCacheAccessOrder = [];
-int _manualSearchSeq = 0;
 
 String _cacheKey({String? qqSongId, String? kugouSongHash, int? neSongId}) {
   return qqSongId != null
@@ -590,101 +589,6 @@ Future<List<SongSearchResult>> _searchNEWithTimeout(
   }
 }
 
-Future<List<SongSearchResult>> manualSearch(Audio audio, String query,
-    {int limit = 10}) async {
-  logger.d('=== manualSearch START: query="$query", limit=$limit ===');
-
-  final currentSeq = ++_manualSearchSeq;
-
-  const int perSourceLimit = 10;
-  const int pageSize = perSourceLimit;
-
-  final neFuture = _neSearchSafe(keyword: query, pageSize: pageSize);
-  final kgFuture = _kgSearchSafe(keyword: query, pageSize: pageSize);
-  final qqFuture = _qqSearchSafe(keyword: query, pageSize: pageSize);
-
-  final results = await Future.wait([neFuture, kgFuture, qqFuture]);
-
-  if (currentSeq != _manualSearchSeq) {
-    logger.d(
-        '[MS] cancelled: new request started (seq=$currentSeq, current=$_manualSearchSeq)');
-    return [];
-  }
-
-  final neResults = results[0];
-  final kugouResults = results[1];
-  final qqResults = results[2];
-
-  final List<SongSearchResult> result = [];
-
-  for (final item in neResults.take(perSourceLimit)) {
-    final searchResult = SongSearchResult.fromNeSearchItem(item, audio);
-    if (searchResult != null &&
-        searchResult.score > 0 &&
-        !_containsResult(result, searchResult)) {
-      result.add(searchResult);
-    }
-  }
-
-  for (final item in kugouResults.take(perSourceLimit)) {
-    final searchResult = SongSearchResult.fromKugouSearchItem(item, audio);
-    if (searchResult != null &&
-        searchResult.score > 0 &&
-        !_containsResult(result, searchResult)) {
-      result.add(searchResult);
-    }
-  }
-
-  for (final item in qqResults.take(perSourceLimit)) {
-    final searchResult = SongSearchResult.fromQQSearchItem(item, audio);
-    if (searchResult != null &&
-        searchResult.score > 0 &&
-        !_containsResult(result, searchResult)) {
-      result.add(searchResult);
-    }
-  }
-
-  result.sort((a, b) => b.score.compareTo(a.score));
-  logger.d('=== manualSearch done: ${result.length} results ===');
-  return result.sublist(0, min(limit, result.length));
-}
-
-Future<List<dynamic>> _neSearchSafe(
-    {required String keyword, required int pageSize}) async {
-  try {
-    return await net_api
-        .neSearchLyric(keyword: keyword, pageSize: pageSize)
-        .timeout(const Duration(seconds: 8));
-  } catch (err, trace) {
-    logger.e('[MS] NE ERROR: $err', stackTrace: trace);
-    return [];
-  }
-}
-
-Future<List<dynamic>> _kgSearchSafe(
-    {required String keyword, required int pageSize}) async {
-  try {
-    return await net_api
-        .kgSearchLyric(keyword: keyword, pageSize: pageSize)
-        .timeout(const Duration(seconds: 8));
-  } catch (err, trace) {
-    logger.e('[MS] KG ERROR: $err', stackTrace: trace);
-    return [];
-  }
-}
-
-Future<List<dynamic>> _qqSearchSafe(
-    {required String keyword, required int pageSize}) async {
-  try {
-    return await net_api
-        .qqSearchLyric(keyword: keyword, pageSize: pageSize)
-        .timeout(const Duration(seconds: 8));
-  } catch (err, trace) {
-    logger.e('[MS] QQ ERROR: $err', stackTrace: trace);
-    return [];
-  }
-}
-
 bool _containsResult(List<SongSearchResult> list, SongSearchResult item) {
   for (final r in list) {
     if (r.qqSongId != null && r.qqSongId == item.qqSongId) return true;
@@ -859,38 +763,6 @@ Lyric? _parsedToLyric(ParsedLyricResult parsed, {String? rawText}) {
   }
   final result = Lrc(unsyncLines, LyricFormat.web, rawText);
   return _postStripMetadata(result);
-}
-
-Future<Lyric?> getMostMatchedLyric(Audio audio) async {
-  final unisearchResult = await uniSearch(audio)
-      .timeout(const Duration(seconds: 22), onTimeout: () {
-    logger.w('getMostMatchedLyric uniSearch timeout');
-    return [];
-  });
-
-  if (unisearchResult.isEmpty) {
-    logger.w("No search result for '${audio.title}' by ${audio.artist}");
-    return null;
-  }
-
-  final bestMatch = unisearchResult.first;
-  final lyric = await getOnlineLyric(
-    qqSongId: bestMatch.qqSongId,
-    kugouSongHash: bestMatch.kugouSongHash,
-    neSongId: bestMatch.neSongId,
-  ).timeout(const Duration(seconds: 15), onTimeout: () {
-    logger.w('getMostMatchedLyric getOnlineLyric timeout');
-    return null;
-  });
-
-  if (lyric != null && lyric.lines.isNotEmpty) {
-    logger.i(
-        "Found lyric from ${bestMatch.source} for '${audio.title}' by ${audio.artist} (score: ${bestMatch.score})");
-    return lyric;
-  }
-
-  logger.w("No lyric found for '${audio.title}' by ${audio.artist}");
-  return null;
 }
 
 /// 在线歌词的后处理：用 stripLyricMetadata 做全方位元数据剥离
