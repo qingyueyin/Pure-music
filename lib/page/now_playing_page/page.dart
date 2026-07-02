@@ -9,6 +9,7 @@ import 'package:pure_music/component/hotkey_ui_feedback.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/side_nav.dart';
 import 'package:pure_music/component/title_bar.dart';
+import 'package:pure_music/core/menu_styles.dart';
 import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/core/color_extraction.dart';
 import 'package:pure_music/core/theme.dart';
@@ -479,16 +480,8 @@ class _NowPlayingMoreAction extends StatelessWidget {
     final playbackService = context.watch<PlaybackService>();
     final nowPlaying = playbackService.nowPlaying;
     final scheme = Theme.of(context).colorScheme;
-    final menuStyle = MenuStyle(
-      shape: WidgetStatePropertyAll(
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      ),
-    );
-    final menuItemStyle = ButtonStyle(
-      shape: WidgetStatePropertyAll(
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
+    final menuStyle = appMenuStyle;
+    final menuItemStyle = appMenuItemStyle;
 
     if (nowPlaying == null) {
       return IconButton(

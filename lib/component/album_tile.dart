@@ -3,6 +3,7 @@ import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/page/uni_page.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/cache.dart';
+import 'package:pure_music/core/menu_styles.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -48,16 +49,8 @@ class _AlbumTileState extends State<AlbumTile> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final menuStyle = MenuStyle(
-      shape: WidgetStatePropertyAll(
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      ),
-    );
-    final menuItemStyle = ButtonStyle(
-      shape: WidgetStatePropertyAll(
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
+    final menuStyle = appMenuStyle;
+    final menuItemStyle = appMenuItemStyle;
     final placeholder = Icon(
       Symbols.queue_music,
       size: 48,

@@ -21,35 +21,6 @@ extension StringHMMSS on Duration {
   }
 }
 
-/// 把 dec 表示成两位 hex
-String _toHexString(int dec) {
-  assert(dec >= 0 && dec <= 0xff);
-
-  var hex = dec.toRadixString(16);
-  if (hex.length == 1) hex = '0$hex';
-  return hex;
-}
-
-extension RGBHexString on Color {
-  String toRGBHexString() {
-    final argb = toARGB32();
-    final redHex = _toHexString((argb >> 16) & 0xff);
-    final greenHex = _toHexString((argb >> 8) & 0xff);
-    final blueHex = _toHexString(argb & 0xff);
-
-    return '#$redHex$greenHex$blueHex';
-  }
-}
-
-/// [rgbHexStr] 必须是 #RRGGBB
-Color? fromRGBHexString(String rgbHexStr) {
-  if (rgbHexStr.startsWith('#') && rgbHexStr.length == 7) {
-    return Color(0xff000000 + int.parse(rgbHexStr.substring(1), radix: 16));
-  }
-
-  return null;
-}
-
 const int _pinyinCacheMaxSize = 2000;
 Map<String, String> _pinyinCache = {};
 List<String> _pinyinCacheAccessOrder = [];
@@ -352,20 +323,3 @@ final logger = Logger(
   output: loggerMemoryOutput,
   level: Level.all,
 );
-
-/// Soften a color for background readability.
-///
-/// When [isDark] is true, darkens the color slightly for dark mode backgrounds.
-/// When [isDark] is false, lightens the color slightly for light mode backgrounds.
-Color softenColorForBackground(Color color, {required bool isDark}) {
-  final hsl = HSLColor.fromColor(color);
-  if (isDark) {
-    // Keep saturation intact, only darken slightly for readability
-    final softLightness = (hsl.lightness * 0.55).clamp(0.10, 0.40);
-    return hsl.withLightness(softLightness).toColor();
-  } else {
-    // Keep saturation intact, only lighten slightly for readability
-    final softLightness = (hsl.lightness * 0.50 + 0.38).clamp(0.50, 0.80);
-    return hsl.withLightness(softLightness).toColor();
-  }
-}

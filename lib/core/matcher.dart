@@ -228,39 +228,10 @@ Future<Lyric?> _fetchLyricInternal({
   return null;
 }
 
-final Set<String> _searchDedupCache = {};
-int _searchQueryCounter = 0;
-
-void clearSearchDedupCache() {
-  _searchDedupCache.clear();
-  _searchQueryCounter = 0;
-}
-
 void clearLyricCaches() {
   _lyricResultCache.clear();
   _lyricFetchCache.clear();
   _lyricCacheAccessOrder.clear();
-  _searchDedupCache.clear();
-  _searchQueryCounter = 0;
-}
-
-bool shouldPerformSearch(String query) {
-  _searchQueryCounter++;
-  final key = '${_searchQueryCounter}_$query';
-
-  for (final k in _searchDedupCache) {
-    if (k.endsWith('_$query')) {
-      return false;
-    }
-  }
-
-  _searchDedupCache.add(key);
-
-  if (_searchDedupCache.length > 100) {
-    _searchDedupCache.clear();
-  }
-
-  return true;
 }
 
 double _computeScore(Audio audio, String title, String artists, String album,
