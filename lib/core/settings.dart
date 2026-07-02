@@ -67,8 +67,12 @@ enum LyricDisplayMode {
 
 enum ThemeOption { system, light, dark }
 
+class RebuildNotifier extends ChangeNotifier {
+  void rebuild() => notifyListeners();
+}
+
 class AppSettings {
-  static final rebuildNotifier = ChangeNotifier();
+  static final rebuildNotifier = RebuildNotifier();
   static const String version = String.fromEnvironment(
     'APP_VERSION',
     defaultValue: '2.0.0-preview',

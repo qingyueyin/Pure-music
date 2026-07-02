@@ -258,7 +258,7 @@ class _MonetControlsSwitchState extends State<_MonetControlsSwitch> {
             settings.useMaterialYouForControls = v;
           });
           settings.saveSettings();
-          AppSettings.rebuildNotifier.notifyListeners();
+          AppSettings.rebuildNotifier.rebuild();
         },
       ),
     );
