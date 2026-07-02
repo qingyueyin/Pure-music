@@ -4,18 +4,15 @@ import 'dart:io';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/cache.dart';
-import 'package:pure_music/core/matcher.dart' hide logger;
 import 'package:path/path.dart' as path;
-import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/entry.dart';
 import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/core/immersive.dart';
+import 'package:pure_music/core/memory_monitor.dart';
 import 'package:pure_music/native/rust/api/logger.dart';
 import 'package:pure_music/native/rust/frb_generated.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/utils.dart';
-import 'package:pure_music/play_service/play_service.dart';
-import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
@@ -114,89 +111,17 @@ Future<void> main() async {
   await initWindow();
   await ImmersiveModeController.instance.init();
 
-  // 内存监控：每 60s 检查 RSS，仅在窗口未聚焦或 RSS 过高时触发清理
-  // 播放中减少清理频率和强度，避免缓存频繁重建导致卡顿
-  _startMemoryMonitor();
+  MemoryMonitorService.instance.start();
 
   runApp(Entry(welcome: welcome));
 }
 
 StreamSubscription<String>? _rustLoggerSub;
-Timer? _memoryMonitorTimer;
-
-/// 播放状态下仅做轻量清理，避免缓存重建开销导致音频卡顿
-bool _isPlaying() {
-  try {
-    return PlayService.instance.playbackService.playerState ==
-        PlayerState.playing;
-  } catch (_) {
-    return false;
-  }
-}
-
-void _startMemoryMonitor() {
-  _memoryMonitorTimer?.cancel();
-  _memoryMonitorTimer = Timer.periodic(const Duration(seconds: 60), (_) {
-    try {
-      final rssMB = (ProcessInfo.currentRss / (1024 * 1024)).round();
-
-      // 播放状态下调高阈值，避免频繁清理引起缓存重建和 GC 抖动
-      final playing = _isPlaying();
-      // 起始 RSS ~230MB，阈值从低到高逐级清理
-      final tier1Threshold = playing ? 340 : 280;
-      final tier2Threshold = playing ? 380 : 320;
-      final tier3Threshold = playing ? 440 : 380;
-
-      if (rssMB > tier3Threshold) {
-        logger.w(
-          '[mem] RSS ${rssMB}MB > $tier3Threshold, tier-3 emergency cleanup',
-        );
-        // 播放中不清空 ImageCache（避免图片重解码导致帧率抖动）
-        if (!playing) {
-          PaintingBinding.instance.imageCache.clear();
-          PaintingBinding.instance.imageCache.clearLiveImages();
-        }
-        CoverImageCache.instance.trimMemory();
-        AudioLibrary.instance.evictAllCoversExcept(
-          PlayService.instance.playbackService.nowPlaying?.path,
-        );
-        clearLyricCaches();
-      } else if (rssMB > tier2Threshold) {
-        logger.w(
-          '[mem] RSS ${rssMB}MB > $tier2Threshold, tier-2 cleanup',
-        );
-        if (!playing) {
-          PaintingBinding.instance.imageCache.clear();
-        }
-        CoverImageCache.instance.trimMemory();
-      } else if (rssMB > tier1Threshold) {
-        // tier-1 轻量清理：仅清 ImageCache（不碰 CoverImageCache 和歌词缓存）
-        if (!playing) {
-          PaintingBinding.instance.imageCache.clear();
-        }
-      }
-    } catch (e, trace) {
-        logger.e('[mem] monitor error: $e\n$trace');
-      }
-  });
-}
 
 void disposeMemoryMonitor() {
-  _memoryMonitorTimer?.cancel();
-  _memoryMonitorTimer = null;
+  MemoryMonitorService.instance.stop();
   _rustLoggerSub?.cancel();
   _rustLoggerSub = null;
-}
-
-/// 强制释放可回收内存，用于窗口最小化/低内存通知等场景
-void trimAllMemory() {
-  PaintingBinding.instance.imageCache.clear();
-  PaintingBinding.instance.imageCache.clearLiveImages();
-  CoverImageCache.instance.trimMemory();
-  CoverImageCache.instance.clear();
-  AudioLibrary.instance.evictAllCoversExcept(
-    PlayService.instance.playbackService.nowPlaying?.path,
-  );
 }
 
 

@@ -1,13 +1,11 @@
 import 'dart:async';
 import 'dart:collection';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:pure_music/core/database.dart';
-import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart';
 import 'package:flutter/material.dart';
@@ -24,7 +22,6 @@ class AlbumColorCache {
   static final instance = AlbumColorCache._();
   AlbumColorCache._();
 
-  static const _cacheFileName = 'album_colors.json';
   static const _cacheVersion = 1;
 
   bool _initialized = false;
@@ -37,21 +34,8 @@ class AlbumColorCache {
     if (_initialized) return;
     _initialized = true;
     try {
-      final dir = await getCacheDir();
-      final jsonFile = File(path.join(dir.path, _cacheFileName));
-
-      try {
-        final db = await AppDb.instance.db();
-        _loadFromDb(db);
-        if (_entries.isEmpty && jsonFile.existsSync()) {
-          _loadFromJsonFile(jsonFile);
-          _persistToDb(db);
-        }
-        return;
-      } catch (_) {}
-
-      if (!jsonFile.existsSync()) return;
-      _loadFromJsonFile(jsonFile);
+      final db = await AppDb.instance.db();
+      _loadFromDb(db);
     } catch (_) {}
   }
 
@@ -176,17 +160,8 @@ class AlbumColorCache {
 
   Future<void> flush() async {
     try {
-      try {
-        final db = await AppDb.instance.db();
-        _persistToDb(db);
-        return;
-      } catch (_) {}
-
-      final dir = await getCacheDir();
-      final file = File(path.join(dir.path, _cacheFileName));
-      final jsonStr = json.encode({'version': _cacheVersion, 'data': _entries});
-      final out = await file.create(recursive: true);
-      await out.writeAsString(jsonStr);
+      final db = await AppDb.instance.db();
+      _persistToDb(db);
     } catch (_) {}
   }
 
@@ -243,19 +218,6 @@ class AlbumColorCache {
     } catch (_) {
       db.execute('ROLLBACK');
       rethrow;
-    }
-  }
-
-  void _loadFromJsonFile(File file) {
-    final str = file.readAsStringSync();
-    final decoded = json.decode(str);
-    if (decoded is! Map) return;
-    if (decoded['version'] != _cacheVersion) return;
-    final data = decoded['data'];
-    if (data is! Map) return;
-    for (final e in data.entries) {
-      if (e.key is! String || e.value is! Map) continue;
-      _entries[e.key] = Map<String, Object?>.from(e.value);
     }
   }
 

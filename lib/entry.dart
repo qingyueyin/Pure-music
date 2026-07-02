@@ -26,6 +26,7 @@ import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
 import 'package:pure_music/component/app_scroll_behavior.dart';
 import 'package:pure_music/core/cache.dart';
+import 'package:pure_music/core/memory_monitor.dart';
 import 'package:pure_music/core/matcher.dart' hide logger;
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/theme.dart';
@@ -150,8 +151,7 @@ class _EntryState extends State<Entry>
 
   @override
   void onWindowMinimize() {
-    PaintingBinding.instance.imageCache.clear();
-    CoverImageCache.instance.trimMemory();
+    MemoryMonitorService.instance.trimAll();
     logger.i('[mem] window minimized - cleared invisible caches');
   }
 
