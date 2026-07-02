@@ -21,32 +21,16 @@ class BuildIndexStateView extends StatefulWidget {
 }
 
 class _BuildIndexStateViewState extends State<BuildIndexStateView> {
-  late final Stream<IndexActionState> buildIndexStream;
-  StreamSubscription? _subscription;
+  late final Stream<IndexActionState> _buildIndexStream;
+  bool _done = false;
 
   @override
   void initState() {
     super.initState();
-    buildIndexStream = buildIndexFromFoldersRecursively(
+    _buildIndexStream = buildIndexFromFoldersRecursively(
       folders: widget.folders,
       indexPath: widget.indexPath.path,
-    ).asBroadcastStream();
-
-    _subscription = buildIndexStream.listen(
-      (action) {
-        logger.i('[build index] ${action.progress}: ${action.message}');
-      },
-      onDone: () {
-        widget.whenIndexBuilt();
-        _subscription?.cancel();
-      },
     );
-  }
-
-  @override
-  void dispose() {
-    _subscription?.cancel();
-    super.dispose();
   }
 
   @override
@@ -54,8 +38,18 @@ class _BuildIndexStateViewState extends State<BuildIndexStateView> {
     final scheme = Theme.of(context).colorScheme;
 
     return StreamBuilder(
-      stream: buildIndexStream,
+      stream: _buildIndexStream,
       builder: (context, snapshot) {
+        if (snapshot.hasData) {
+          logger.i(
+            '[build index] ${snapshot.data!.progress}: ${snapshot.data!.message}',
+          );
+        }
+        if (!_done && snapshot.connectionState == ConnectionState.done) {
+          _done = true;
+          WidgetsBinding.instance
+              .addPostFrameCallback((_) => widget.whenIndexBuilt());
+        }
         return Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
