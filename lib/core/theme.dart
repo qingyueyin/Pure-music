@@ -66,8 +66,10 @@ class ThemeProvider extends ChangeNotifier {
     return _instance!;
   }
 
+  Color? _lastAlbumSeedColor;
+
   void applyThemeOption(ThemeOption option) {
-    final seed = Color(AppSettings.getWindowsTheme());
+    final seed = _lastAlbumSeedColor ?? Color(AppSettings.getWindowsTheme());
     lightScheme = _applyLightSurfacePalette(ColorScheme.fromSeed(
       seedColor: seed,
       brightness: Brightness.light,
@@ -170,6 +172,7 @@ class ThemeProvider extends ChangeNotifier {
   /// 用种子色同时生成 light/dark 两套 ColorScheme。
   /// ColorScheme.fromSeed 是同步的，不需要 Future。
   void _applySeedColor(Color seedColor, {bool notify = true}) {
+    _lastAlbumSeedColor = seedColor;
     lightScheme = _applyLightSurfacePalette(
       ColorScheme.fromSeed(
         seedColor: seedColor,
