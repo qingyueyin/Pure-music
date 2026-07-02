@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 import 'dart:collection';
 import 'dart:io';
 
@@ -157,30 +156,12 @@ class LyricService extends ChangeNotifier {
   }) {
     if (lyric.lines.isEmpty) return null;
 
-    String formatTimeTag(Duration t) {
-      final totalMs = max(0, t.inMilliseconds);
-      final m = totalMs ~/ 60000;
-      final s = (totalMs % 60000) / 1000.0;
-      final mm = m.toString().padLeft(2, '0');
-      final ss = s.toStringAsFixed(2).padLeft(5, '0');
-      return '[$mm:$ss]';
-    }
-
-    String formatWordTag(Duration t) {
-      final totalMs = max(0, t.inMilliseconds);
-      final m = totalMs ~/ 60000;
-      final s = (totalMs % 60000) / 1000.0;
-      final mm = m.toString().padLeft(2, '0');
-      final ss = s.toStringAsFixed(2).padLeft(5, '0');
-      return '<$mm:$ss>';
-    }
-
     String buildEnhancedLine(SyncLyricLine line) {
       final buffer = StringBuffer();
-      buffer.write(formatTimeTag(line.start));
+      buffer.write(line.start.toStringLrc());
       for (final w in line.words) {
         if (w.content.isEmpty) continue;
-        buffer.write(formatWordTag(w.start));
+        buffer.write(w.start.toStringLrc(open: '<', close: '>'));
         buffer.write(w.content);
       }
       if (line.translation != null && line.translation!.trim().isNotEmpty) {
@@ -191,7 +172,7 @@ class LyricService extends ChangeNotifier {
     }
 
     String buildUnsyncLine(LrcLine line) {
-      return '${formatTimeTag(line.start)}${line.content}';
+      return '${line.start.toStringLrc()}${line.content}';
     }
 
     final lines = <String>[];

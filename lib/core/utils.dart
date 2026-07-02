@@ -19,6 +19,16 @@ extension StringHMMSS on Duration {
     final seconds = totalSeconds % 60;
     return '$minutes:${seconds.toString().padLeft(2, '0')}';
   }
+
+  /// LRC/增强 LRC 时间标签格式 [mm:ss.xx] 或 <mm:ss.xx>
+  String toStringLrc({String open = '[', String close = ']'}) {
+    final totalMs = inMilliseconds < 0 ? 0 : inMilliseconds;
+    final m = totalMs ~/ 60000;
+    final s = (totalMs % 60000) / 1000.0;
+    final mm = m.toString().padLeft(2, '0');
+    final ss = s.toStringAsFixed(2).padLeft(5, '0');
+    return '$open$mm:$ss$close';
+  }
 }
 
 const int _pinyinCacheMaxSize = 2000;
