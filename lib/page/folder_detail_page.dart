@@ -8,36 +8,49 @@ import 'package:pure_music/page/uni_page_components.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
-class FolderDetailPage extends StatelessWidget {
+class FolderDetailPage extends StatefulWidget {
   final AudioFolder folder;
   const FolderDetailPage({super.key, required this.folder});
 
   @override
+  State<FolderDetailPage> createState() => _FolderDetailPageState();
+}
+
+class _FolderDetailPageState extends State<FolderDetailPage> {
+  late final MultiSelectController<Audio> _multiSelectController;
+  late final List<Audio> _contentList;
+
+  @override
+  void initState() {
+    super.initState();
+    _multiSelectController = MultiSelectController<Audio>();
+    _contentList = List<Audio>.from(widget.folder.audios);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final contentList = List<Audio>.from(folder.audios);
-    final multiSelectController = MultiSelectController<Audio>();
     return UniPage<Audio>(
       pref: AppPreference.instance.folderDetailPagePref,
-      title: folder.path,
-      subtitle: '${contentList.length} 首乐曲',
-      contentList: contentList,
+      title: widget.folder.path,
+      subtitle: '${_contentList.length} 首乐曲',
+      contentList: _contentList,
       contentBuilder: (context, item, i, multiSelectController, _) => AudioTile(
         audioIndex: i,
-        playlist: contentList,
+        playlist: _contentList,
         multiSelectController: multiSelectController,
       ),
       enableShufflePlay: true,
       enableSortMethod: true,
       enableSortOrder: true,
       enableContentViewSwitch: true,
-      multiSelectController: multiSelectController,
+      multiSelectController: _multiSelectController,
       multiSelectViewActions: [
-        AddAllToPlaylist(multiSelectController: multiSelectController),
+        AddAllToPlaylist(multiSelectController: _multiSelectController),
         MultiSelectSelectOrClearAll(
-          multiSelectController: multiSelectController,
-          contentList: contentList,
+          multiSelectController: _multiSelectController,
+          contentList: _contentList,
         ),
-        MultiSelectExit(multiSelectController: multiSelectController),
+        MultiSelectExit(multiSelectController: _multiSelectController),
       ],
       sortMethods: [
         SortMethodDesc(

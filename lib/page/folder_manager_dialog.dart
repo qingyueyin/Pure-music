@@ -30,6 +30,48 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
   final applicationSupportDirectory = getAppDataDir();
 
   bool editing = true;
+  bool building = false;
+
+  Widget? _buildView;
+
+  void _startBuild() {
+    building = true;
+    _buildView = FutureBuilder(
+      future: applicationSupportDirectory,
+      builder: (context, snapshot) {
+        if (snapshot.data == null) {
+          return const Center(
+            child: Text('Fail to get app data dir.'),
+          );
+        }
+        return Center(
+          child: BuildIndexStateView(
+            key: const ValueKey('index_builder'),
+            indexPath: snapshot.data!,
+            folders: folders,
+            whenIndexBuilt: () async {
+              await Future.wait([
+                AudioLibrary.initFromIndex(),
+                readPlaylists(),
+                readLyricSources(),
+              ]);
+              AlbumColorCache.instance
+                  .prewarmAlbums(
+                    AudioLibrary.instance.albumCollection.values,
+                  )
+                  .ignore();
+              if (context.mounted) {
+                Navigator.pop(context);
+              }
+            },
+          ),
+        );
+      },
+    );
+    setState(() {
+      editing = false;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -64,6 +106,7 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
                   duration: const Duration(milliseconds: 150),
                   child: editing
                       ? ListView.builder(
+                          key: const ValueKey('folder_list'),
                           itemCount: folders.length,
                           itemBuilder: (context, i) => ListTile(
                             title: Text(folders[i], maxLines: 1),
@@ -79,39 +122,7 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
                             ),
                           ),
                         )
-                      : FutureBuilder(
-                          future: applicationSupportDirectory,
-                          builder: (context, snapshot) {
-                            if (snapshot.data == null) {
-                              return const Center(
-                                child: Text('Fail to get app data dir.'),
-                              );
-                            }
-
-                            return Center(
-                              child: BuildIndexStateView(
-                                indexPath: snapshot.data!,
-                                folders: folders,
-                                whenIndexBuilt: () async {
-                                  await Future.wait([
-                                    AudioLibrary.initFromIndex(),
-                                    readPlaylists(),
-                                    readLyricSources(),
-                                  ]);
-                                  AlbumColorCache.instance
-                                      .prewarmAlbums(
-                                        AudioLibrary
-                                            .instance.albumCollection.values,
-                                      )
-                                      .ignore();
-                                  if (context.mounted) {
-                                    Navigator.pop(context);
-                                  }
-                                },
-                              ),
-                            );
-                          },
-                        ),
+                      : (_buildView ?? const SizedBox(key: ValueKey('empty'))),
                 ),
               ),
               const SizedBox(height: 16.0),
@@ -119,50 +130,58 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
-                    onPressed: () {
-                      final paths = pickMultipleDirectories(
-                        title: '选择文件夹',
-                      );
-                      if (paths.isEmpty) return;
+                    onPressed: building
+                        ? null
+                        : () {
+                            final paths = pickMultipleDirectories(
+                              title: '选择文件夹',
+                            );
+                            if (paths.isEmpty) return;
 
-                      setState(() {
-                        folders.addAll(paths.where((p) => !folders.contains(p)));
-                      });
-                    },
+                            setState(() {
+                              folders.addAll(paths.where(
+                                (p) => !folders.any((f) =>
+                                    f.toLowerCase() == p.toLowerCase()),
+                              ));
+                            });
+                          },
                     child: const Text('添加'),
                   ),
                   const SizedBox(width: 8.0),
                   TextButton(
-                    onPressed: () => Navigator.pop(context),
+                    onPressed:
+                        building ? null : () => Navigator.pop(context),
                     child: const Text('取消'),
                   ),
                   const SizedBox(width: 8.0),
                   TextButton(
-                    onPressed: () async {
-                      // 将新增的文件夹保存到偏好设置
-                      final toSave = folders
-                          .where((f) =>
-                              !AppPreference.instance.userFolders.contains(f))
-                          .toSet()
-                          .toList();
-                      final toRemove = AppPreference.instance.userFolders
-                          .where((f) => !folders.contains(f))
-                          .toList();
+                    onPressed: building
+                        ? null
+                        : () {
+                            // 将新增的文件夹保存到偏好设置
+                            final existing =
+                                AppPreference.instance.userFolders;
+                            final toSave = folders
+                                .where((f) => !existing.any((e) =>
+                                    e.toLowerCase() == f.toLowerCase()))
+                                .toList();
+                            final toRemove = existing
+                                .where((f) => !folders.any((u) =>
+                                    u.toLowerCase() == f.toLowerCase()))
+                                .toList();
 
-                      final updated = List<String>.from(
-                        AppPreference.instance.userFolders,
-                      );
-                      updated.addAll(toSave);
-                      updated.removeWhere((f) => toRemove.contains(f));
+                            final updated = List<String>.from(
+                              AppPreference.instance.userFolders,
+                            );
+                            updated.addAll(toSave);
+                            updated.removeWhere(
+                                (f) => toRemove.contains(f));
 
-                      AppPreference.instance.userFolders = updated;
-                      await AppPreference.instance.save();
+                            AppPreference.instance.userFolders = updated;
+                            AppPreference.instance.save();
 
-                      // 退出编辑模式，触发 BuildIndexStateView 显示索引构建进度
-                      setState(() {
-                        editing = false;
-                      });
-                    },
+                            _startBuild();
+                          },
                     child: const Text('确定'),
                   ),
                 ],
