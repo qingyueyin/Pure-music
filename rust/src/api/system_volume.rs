@@ -4,7 +4,7 @@ use flutter_rust_bridge::frb;
 
 #[cfg(all(not(frb_expand), target_os = "windows"))]
 mod imp {
-    use std::sync::{Arc, Mutex};
+    use std::sync::{Arc, Mutex, OnceLock};
 
     use crate::frb_generated::StreamSink;
     use anyhow::Result;
@@ -45,6 +45,8 @@ mod imp {
             unsafe { CoUninitialize() };
         }
     }
+
+    static COM_GUARD: OnceLock<ComGuard> = OnceLock::new();
 
     #[implement(IAudioEndpointVolumeCallback)]
     struct VolumeChangeCallback {
@@ -123,6 +125,8 @@ mod imp {
         sink: Arc<Mutex<Option<StreamSink<f64>>>>,
     }
 
+    // SAFETY: VolumeManager 持有 COM 接口，全部创建于 COINIT_MULTITHREADED（MTA）模式。
+    // MTA 下的 COM 接口是线程安全的，可从任意线程调用。
     unsafe impl Send for VolumeManager {}
     unsafe impl Sync for VolumeManager {}
 
@@ -243,7 +247,8 @@ mod imp {
     static GLOBAL_MANAGER: Mutex<Option<Arc<Mutex<Option<VolumeManager>>>>> = Mutex::new(None);
 
     pub(super) fn system_volume_init(sink: StreamSink<f64>) -> Result<f64> {
-        let _guard = ComGuard::new().ok_or_else(|| anyhow::anyhow!("COM initialization failed"))?;
+        let guard = ComGuard::new().ok_or_else(|| anyhow::anyhow!("COM initialization failed"))?;
+        COM_GUARD.set(guard).map_err(|_| anyhow::anyhow!("COM already initialized"))?;
 
         let sink_arc = Arc::new(Mutex::new(Some(sink)));
         let manager = VolumeManager::new(sink_arc.clone())?;
@@ -256,9 +261,6 @@ mod imp {
                 m.register_device_notification(manager_arc.clone())?;
             }
         }
-
-        // guard is dropped here, but manager_arc keeps COM alive via its own CoInitializeEx calls
-        std::mem::forget(_guard);
 
         *GLOBAL_MANAGER.lock().map_err(|e| anyhow::anyhow!("Mutex poisoned: {}", e))? = Some(manager_arc);
         Ok(current_vol)
