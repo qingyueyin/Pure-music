@@ -221,22 +221,27 @@ class AlbumColorCache {
     }
   }
 
-  (String, String) _albumKeyAndSignature(Album album) {
-    final audio = album.works.isEmpty ? null : album.works.first;
-    if (audio == null) return ('album:${album.name}', 'nomedia');
-    final parent = Directory(File(audio.path).parent.path);
+  File? _findLocalCoverFile(Directory parent) {
     final candidates = [
       File(path.join(parent.path, 'cover.jpg')),
       File(path.join(parent.path, 'cover.png')),
     ];
     for (final f in candidates) {
-      if (f.existsSync()) {
-        final stat = f.statSync();
-        final mod = stat.modified.millisecondsSinceEpoch;
-        final key = 'file:${f.path}';
-        final sig = '$key|$mod';
-        return (key, sig);
-      }
+      if (f.existsSync()) return f;
+    }
+    return null;
+  }
+
+  (String, String) _albumKeyAndSignature(Album album) {
+    final audio = album.works.isEmpty ? null : album.works.first;
+    if (audio == null) return ('album:${album.name}', 'nomedia');
+    final parent = Directory(File(audio.path).parent.path);
+    final cover = _findLocalCoverFile(parent);
+    if (cover != null) {
+      final mod = cover.statSync().modified.millisecondsSinceEpoch;
+      final key = 'file:${cover.path}';
+      final sig = '$key|$mod';
+      return (key, sig);
     }
     final key = 'audio:${audio.path}';
     final sig = '$key|${audio.modified}';
@@ -247,15 +252,8 @@ class AlbumColorCache {
     final audio = album.works.isEmpty ? null : album.works.first;
     if (audio == null) return null;
     final parent = Directory(File(audio.path).parent.path);
-    final candidates = [
-      File(path.join(parent.path, 'cover.jpg')),
-      File(path.join(parent.path, 'cover.png')),
-    ];
-    for (final f in candidates) {
-      if (f.existsSync()) {
-        return f.readAsBytes();
-      }
-    }
+    final cover = _findLocalCoverFile(parent);
+    if (cover != null) return cover.readAsBytes();
 
     final bytes = await getPictureFromPath(path: audio.path, width: 64, height: 64);
     return bytes;
