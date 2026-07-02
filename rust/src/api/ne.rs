@@ -169,22 +169,31 @@ pub struct LyricUser {
 }
 
 pub struct NetEaseCloud {
-    client: reqwest::blocking::Client,
+    client: Mutex<Option<reqwest::blocking::Client>>,
     cookies: Mutex<HashMap<String, String>>,
     user_id: Mutex<Option<i64>>,
     expire: Mutex<u64>,
+    init_mutex: Mutex<()>,
 }
 
 impl NetEaseCloud {
     pub fn new() -> Self {
-        let client = reqwest::blocking::Client::builder().build().expect("Failed to build HTTP client");
-
+        let client = reqwest::blocking::Client::builder().build().ok();
         NetEaseCloud {
-            client,
+            client: Mutex::new(client),
             cookies: Mutex::new(HashMap::new()),
             user_id: Mutex::new(None),
             expire: Mutex::new(0),
+            init_mutex: Mutex::new(()),
         }
+    }
+
+    fn client(&self) -> Result<reqwest::blocking::Client, String> {
+        self.client
+            .lock()
+            .map_err(|e| e.to_string())?
+            .clone()
+            .ok_or_else(|| "HTTP client init failed".to_string())
     }
 
     /// Headers: User-Agent, Referer, Cookie (only 3)
@@ -202,6 +211,8 @@ impl NetEaseCloud {
     }
 
     pub fn init(&self) -> Result<(), String> {
+        let _init_lock = self.init_mutex.lock().map_err(|e| e.to_string())?;
+
         let now = get_current_timestamp();
         let expire = self.expire.lock().map_err(|e| e.to_string())?;
         if *expire > now {
@@ -255,7 +266,8 @@ impl NetEaseCloud {
         ne_log!("D", "init: POST {}", url);
         let headers = self.get_request_header()?;
 
-        let mut request = self.client.post(url);
+        let client = self.client()?;
+        let mut request = client.post(url);
         for (k, v) in headers {
             request = request.header(&k, &v);
         }
@@ -361,7 +373,8 @@ impl NetEaseCloud {
         ne_log!("D", "get_lyric: POST {}", url);
         let headers = self.get_request_header()?;
 
-        let mut request = self.client.post(url);
+        let client = self.client()?;
+        let mut request = client.post(url);
         for (k, v) in headers {
             request = request.header(&k, &v);
         }
@@ -439,7 +452,8 @@ impl NetEaseCloud {
         ne_log!("D", "search: POST {}", url);
         let headers = self.get_request_header()?;
 
-        let mut request = self.client.post(url);
+        let client = self.client()?;
+        let mut request = client.post(url);
         for (k, v) in headers {
             request = request.header(&k, &v);
         }
