@@ -39,6 +39,15 @@ class _FoldersPageState extends State<FoldersPage> {
       AlbumColorCache.instance
           .prewarmAlbums(AudioLibrary.instance.albumCollection.values)
           .ignore();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                '已刷新，当前 ${AudioLibrary.instance.folders.length} 个文件夹'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     } catch (e) {
       logger.e('refresh index failed: $e');
     }
@@ -62,10 +71,13 @@ class _FoldersPageState extends State<FoldersPage> {
               child: CircularProgressIndicator(strokeWidth: 2),
             )
           else
-            IconButton(
-              tooltip: '刷新',
+            OutlinedButton.icon(
               onPressed: _refreshIndex,
-              icon: const Icon(Symbols.refresh),
+              icon: const Icon(Symbols.refresh, size: 18),
+              label: const Text('刷新'),
+              style: const ButtonStyle(
+                fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
+              ),
             ),
           const SizedBox(width: 8),
           FilledButton.icon(
