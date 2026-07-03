@@ -1174,17 +1174,19 @@ pub fn update_index(index_path: String, sink: StreamSink<IndexActionState>) -> a
         let old_folder_modified = folder_item["modified"].as_u64().unwrap_or(0);
 
         // 始终清理已不存在的文件，不依赖文件夹修改时间
-        let audios = match folder_item["audios"].as_array_mut() {
-            Some(a) => a,
-            None => continue,
-        };
-        audios.retain(|item| {
-            let path = match item["path"].as_str() {
-                Some(p) => p,
-                None => return false,
+        {
+            let audios = match folder_item["audios"].as_array_mut() {
+                Some(a) => a,
+                None => continue,
             };
-            Path::new(path).exists()
-        });
+            audios.retain(|item| {
+                let path = match item["path"].as_str() {
+                    Some(p) => p,
+                    None => return false,
+                };
+                Path::new(path).exists()
+            });
+        }
 
         let new_folder_modified = match fs::metadata(&folder_path) {
             Ok(value) => match value.modified() {
@@ -1192,22 +1194,13 @@ pub fn update_index(index_path: String, sink: StreamSink<IndexActionState>) -> a
                     .duration_since(UNIX_EPOCH)
                     .unwrap_or(Duration::ZERO)
                     .as_secs(),
-                Err(_) => {
-                    folder_item["modified"] = serde_json::json!(old_folder_modified);
-                    updated += 1;
-                    continue;
-                }
+                Err(_) => continue,
             },
-            Err(_) => {
-                folder_item["modified"] = serde_json::json!(old_folder_modified);
-                updated += 1;
-                continue;
-            }
+            Err(_) => continue,
         };
 
         // 文件夹未被修改时只做删除检查，跳过更新/新增
         if new_folder_modified <= old_folder_modified {
-            folder_item["modified"] = serde_json::json!(old_folder_modified);
             updated += 1;
             continue;
         }
@@ -1219,6 +1212,10 @@ pub fn update_index(index_path: String, sink: StreamSink<IndexActionState>) -> a
 
         folder_item["modified"] = serde_json::json!(new_folder_modified);
 
+        let audios = match folder_item["audios"].as_array_mut() {
+            Some(a) => a,
+            None => continue,
+        };
         for audio_item in &mut *audios {
             let old_audio_modified = audio_item["modified"].as_u64().unwrap_or(0);
             let audio_path = match audio_item["path"].as_str() {
