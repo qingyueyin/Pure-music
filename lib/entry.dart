@@ -1,5 +1,7 @@
 import 'dart:io';
+import 'dart:ui' show PointerDeviceKind;
 
+import 'package:flutter/gestures.dart' show kBackMouseButton;
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/library/union_search_result.dart';
 import 'package:pure_music/component/app_shell.dart';
@@ -26,6 +28,7 @@ import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
 import 'package:pure_music/component/app_scroll_behavior.dart';
 import 'package:pure_music/core/cache.dart';
+import 'package:pure_music/core/immersive.dart';
 import 'package:pure_music/core/memory_monitor.dart';
 import 'package:pure_music/core/matcher.dart' hide logger;
 import 'package:pure_music/core/preference.dart';
@@ -160,6 +163,33 @@ class _EntryState extends State<Entry>
     // Window focus handler
   }
 
+  void _onPointerDown(PointerDownEvent event) {
+    if (event.kind != PointerDeviceKind.mouse) return;
+    if (event.buttons == kBackMouseButton) {
+      _handleMouseBack();
+    }
+  }
+
+  Future<void> _handleMouseBack() async {
+    final routerContext = routerKey.currentContext;
+    if (routerContext == null) return;
+
+    if (ImmersiveModeController.instance.enabled) {
+      await ImmersiveModeController.instance.exit();
+      final startIndex = AppPreference.instance.startPage
+          .clamp(0, app_paths.START_PAGES.length - 1);
+      GoRouter.of(routerContext).go(app_paths.START_PAGES[startIndex]);
+      return;
+    }
+
+    final navigator = Navigator.maybeOf(routerContext);
+    if (navigator?.canPop() == true) {
+      navigator?.pop();
+    } else if (routerKey.currentContext?.canPop() == true) {
+      routerKey.currentContext?.pop();
+    }
+  }
+
   /// 启动后延迟检查更新
   Future<void> _autoCheckUpdate() async {
     if (!AppPreference.instance.autoCheckUpdate) return;
@@ -238,24 +268,27 @@ class _EntryState extends State<Entry>
       value: ThemeProvider.instance,
       builder: (context, _) {
         final theme = Provider.of<ThemeProvider>(context);
-        return MaterialApp.router(
-          scaffoldMessengerKey: scaffoldMessengerKey,
-          debugShowCheckedModeBanner: false,
-          scrollBehavior: const AppScrollBehavior(),
-          theme: fromSchemeAndFontFamily(
-            fontFamily: theme.fontFamily,
-            colorScheme: theme.lightScheme,
+        return Listener(
+          onPointerDown: _onPointerDown,
+          child: MaterialApp.router(
+            scaffoldMessengerKey: scaffoldMessengerKey,
+            debugShowCheckedModeBanner: false,
+            scrollBehavior: const AppScrollBehavior(),
+            theme: fromSchemeAndFontFamily(
+              fontFamily: theme.fontFamily,
+              colorScheme: theme.lightScheme,
+            ),
+            darkTheme: fromSchemeAndFontFamily(
+              fontFamily: theme.fontFamily,
+              colorScheme: theme.darkScheme,
+            ),
+            themeAnimationDuration: const Duration(milliseconds: 560),
+            themeAnimationCurve: Curves.easeInOutCubic,
+            themeMode: theme.themeMode,
+            localizationsDelegates: GlobalMaterialLocalizations.delegates,
+            supportedLocales: supportedLocales,
+            routerConfig: config,
           ),
-          darkTheme: fromSchemeAndFontFamily(
-            fontFamily: theme.fontFamily,
-            colorScheme: theme.darkScheme,
-          ),
-          themeAnimationDuration: const Duration(milliseconds: 560),
-          themeAnimationCurve: Curves.easeInOutCubic,
-          themeMode: theme.themeMode,
-          localizationsDelegates: GlobalMaterialLocalizations.delegates,
-          supportedLocales: supportedLocales,
-          routerConfig: config,
         );
       },
     );
