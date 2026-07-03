@@ -92,6 +92,11 @@ class _FolderSelectorViewState extends State<FolderSelectorView> {
                         AppSettings.instance.saveSettings(),
                         AudioLibrary.initFromIndex(),
                       ]);
+                      AppPreference.instance.userFolders = AudioLibrary
+                          .instance.folders
+                          .map((f) => f.path)
+                          .toList();
+                      await AppPreference.instance.save();
                       if (context.mounted) {
                         context.go(app_paths.AUDIOS_PAGE);
                       }

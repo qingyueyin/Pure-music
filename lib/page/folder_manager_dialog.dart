@@ -25,7 +25,7 @@ class FolderManagerDialog extends StatefulWidget {
 }
 
 class _FolderManagerDialogState extends State<FolderManagerDialog> {
-  List<String> folders = List.from(AppPreference.instance.userFolders);
+  List<AudioFolder> folders = List.from(AudioLibrary.instance.folders);
 
   final applicationSupportDirectory = getAppDataDir();
 
@@ -48,7 +48,7 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
           child: BuildIndexStateView(
             key: const ValueKey('index_builder'),
             indexPath: snapshot.data!,
-            folders: folders,
+            folders: folders.map((f) => f.path).toList(),
             whenIndexBuilt: () async {
               await Future.wait([
                 AudioLibrary.initFromIndex(),
@@ -109,7 +109,8 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
                           key: const ValueKey('folder_list'),
                           itemCount: folders.length,
                           itemBuilder: (context, i) => ListTile(
-                            title: Text(folders[i], maxLines: 1),
+                            title: Text(folders[i].path, maxLines: 1),
+                            subtitle: Text('${folders[i].audios.length} 首乐曲'),
                             trailing: IconButton(
                               tooltip: '移除',
                               color: scheme.error,
@@ -139,10 +140,13 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
                             if (paths.isEmpty) return;
 
                             setState(() {
-                              folders.addAll(paths.where(
-                                (p) => !folders.any((f) =>
-                                    f.toLowerCase() == p.toLowerCase()),
-                              ));
+                              for (final p in paths) {
+                                final exists = folders.any(
+                                    (f) => f.path.toLowerCase() == p.toLowerCase());
+                                if (!exists) {
+                                  folders.add(AudioFolder([], p, 0, 0));
+                                }
+                              }
                             });
                           },
                     child: const Text('添加'),
@@ -158,26 +162,8 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
                     onPressed: building
                         ? null
                         : () {
-                            // 将新增的文件夹保存到偏好设置
-                            final existing =
-                                AppPreference.instance.userFolders;
-                            final toSave = folders
-                                .where((f) => !existing.any((e) =>
-                                    e.toLowerCase() == f.toLowerCase()))
-                                .toList();
-                            final toRemove = existing
-                                .where((f) => !folders.any((u) =>
-                                    u.toLowerCase() == f.toLowerCase()))
-                                .toList();
-
-                            final updated = List<String>.from(
-                              AppPreference.instance.userFolders,
-                            );
-                            updated.addAll(toSave);
-                            updated.removeWhere(
-                                (f) => toRemove.contains(f));
-
-                            AppPreference.instance.userFolders = updated;
+                            AppPreference.instance.userFolders =
+                                folders.map((f) => f.path).toList();
                             AppPreference.instance.save();
 
                             _startBuild();
