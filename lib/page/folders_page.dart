@@ -14,6 +14,7 @@ import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:pure_music/core/paths.dart' as app_paths;
+import 'package:path/path.dart' as p;
 
 class FoldersPage extends StatefulWidget {
   const FoldersPage({super.key});
@@ -156,18 +157,23 @@ class AudioFolderTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Tooltip(
       message: audioFolder.path,
       child: ListTile(
         title: Text(
-          audioFolder.path,
+          p.basename(audioFolder.path),
           softWrap: false,
           maxLines: 1,
         ),
         subtitle: Text(
-          '修改日期：${DateTime.fromMillisecondsSinceEpoch(audioFolder.modified * 1000).toString().substring(0, 19)}',
+          p.dirname(audioFolder.path),
           softWrap: false,
           maxLines: 1,
+        ),
+        trailing: Text(
+          '${audioFolder.audios.length} 首',
+          style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.6)),
         ),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(8.0),
