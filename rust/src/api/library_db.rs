@@ -174,7 +174,10 @@ pub(crate) fn write_index_value_to_sqlite(
         }
     }
 
-    if !current_folder_paths.is_empty() {
+    if current_folder_paths.is_empty() {
+        tx.execute("DELETE FROM audios", [])?;
+        tx.execute("DELETE FROM folders", [])?;
+    } else {
         let placeholders: String = current_folder_paths
             .iter()
             .enumerate()

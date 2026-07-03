@@ -1,9 +1,14 @@
 import 'package:pure_music/core/preference.dart';
+import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/utils.dart';
+import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/library/audio_library.dart';
+import 'package:pure_music/library/playlist.dart';
+import 'package:pure_music/lyric/lyric_source.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/page/folder_manager_dialog.dart';
 import 'package:pure_music/page/uni_page.dart';
+import 'package:pure_music/native/rust/api/tag_reader.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -18,6 +23,28 @@ class FoldersPage extends StatefulWidget {
 }
 
 class _FoldersPageState extends State<FoldersPage> {
+  bool _updating = false;
+
+  Future<void> _refreshIndex() async {
+    setState(() => _updating = true);
+    try {
+      final dir = await getAppDataDir();
+      final stream = updateIndex(indexPath: dir.path);
+      await for (final _ in stream) {}
+      await Future.wait([
+        AudioLibrary.initFromIndex(),
+        readPlaylists(),
+        readLyricSources(),
+      ]);
+      AlbumColorCache.instance
+          .prewarmAlbums(AudioLibrary.instance.albumCollection.values)
+          .ignore();
+    } catch (e) {
+      logger.e('refresh index failed: $e');
+    }
+    if (mounted) setState(() => _updating = false);
+  }
+
   @override
   Widget build(BuildContext context) {
     final contentList = List<AudioFolder>.from(AudioLibrary.instance.folders);
@@ -26,16 +53,33 @@ class _FoldersPageState extends State<FoldersPage> {
       title: '文件夹',
       subtitle: '${contentList.length} 个文件夹',
       contentList: contentList,
-      primaryAction: FilledButton.icon(
-        onPressed: () async {
-          await showFolderManagerDialog(context);
-          setState(() {});
-        },
-        icon: const Icon(Symbols.folder),
-        label: const Text('文件夹管理'),
-        style: const ButtonStyle(
-          fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
-        ),
+      primaryAction: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_updating)
+            const SizedBox(
+              width: 20, height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          else
+            IconButton(
+              tooltip: '刷新',
+              onPressed: _refreshIndex,
+              icon: const Icon(Symbols.refresh),
+            ),
+          const SizedBox(width: 8),
+          FilledButton.icon(
+            onPressed: () async {
+              await showFolderManagerDialog(context);
+              setState(() {});
+            },
+            icon: const Icon(Symbols.folder),
+            label: const Text('文件夹管理'),
+            style: const ButtonStyle(
+              fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
+            ),
+          ),
+        ],
       ),
       contentBuilder: (context, item, i, multiSelectController, view) =>
           AudioFolderTile(audioFolder: item),
