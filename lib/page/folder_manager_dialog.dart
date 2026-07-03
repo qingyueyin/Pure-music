@@ -160,22 +160,37 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
                   const SizedBox(width: 8.0),
                   TextButton(
                     onPressed: building
-                        ? null
-                        : () {
-                            final kept = folders.map((f) => f.path).toList();
-                            final original = AudioLibrary
-                                .instance.folders
-                                .map((f) => f.path)
-                                .toList();
-                            final removed =
-                                original.where((f) => !kept.contains(f)).toList();
+                          ? null
+                          : () {
+                              final kept = folders.map((f) => f.path).toList();
+                              final original = AudioLibrary
+                                  .instance.folders
+                                  .map((f) => f.path)
+                                  .toList();
 
-                            AppPreference.instance.userFolders = kept;
-                            AppPreference.instance.excludedFolderPaths
-                                .removeWhere((f) => kept.contains(f));
-                            AppPreference.instance.excludedFolderPaths
-                                .addAll(removed);
-                            AppPreference.instance.save();
+                              final added = kept
+                                  .where((f) => !original.contains(f))
+                                  .toList();
+                              final removed = original
+                                  .where((f) => !kept.contains(f))
+                                  .toList();
+
+                              AppPreference.instance.userFolders.addAll(
+                                added.where(
+                                  (f) =>
+                                      !AppPreference
+                                          .instance.userFolders
+                                          .contains(f),
+                                ),
+                              );
+                              AppPreference.instance.userFolders.removeWhere(
+                                (f) => !kept.contains(f),
+                              );
+                              AppPreference.instance.excludedFolderPaths
+                                  .removeWhere((f) => kept.contains(f));
+                              AppPreference.instance.excludedFolderPaths
+                                  .addAll(removed);
+                              AppPreference.instance.save();
 
                             _startBuild();
                           },

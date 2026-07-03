@@ -4,7 +4,7 @@ use flutter_rust_bridge::frb;
 
 #[cfg(all(not(frb_expand), target_os = "windows"))]
 mod imp {
-    use std::sync::{Arc, Mutex, OnceLock};
+    use std::sync::{Arc, Mutex};
 
     use crate::frb_generated::StreamSink;
     use anyhow::Result;
@@ -46,7 +46,7 @@ mod imp {
         }
     }
 
-    static COM_GUARD: OnceLock<ComGuard> = OnceLock::new();
+    static COM_GUARD: Mutex<Option<ComGuard>> = Mutex::new(None);
 
     #[implement(IAudioEndpointVolumeCallback)]
     struct VolumeChangeCallback {
@@ -247,8 +247,12 @@ mod imp {
     static GLOBAL_MANAGER: Mutex<Option<Arc<Mutex<Option<VolumeManager>>>>> = Mutex::new(None);
 
     pub(super) fn system_volume_init(sink: StreamSink<f64>) -> Result<f64> {
-        let guard = ComGuard::new().ok_or_else(|| anyhow::anyhow!("COM initialization failed"))?;
-        COM_GUARD.set(guard).map_err(|_| anyhow::anyhow!("COM already initialized"))?;
+        let mut com_guard = COM_GUARD.lock().map_err(|e| anyhow::anyhow!("Mutex poisoned: {}", e))?;
+        if com_guard.is_some() {
+            return Err(anyhow::anyhow!("COM already initialized"));
+        }
+        *com_guard = Some(ComGuard::new().ok_or_else(|| anyhow::anyhow!("COM initialization failed"))?);
+        drop(com_guard);
 
         let sink_arc = Arc::new(Mutex::new(Some(sink)));
         let manager = VolumeManager::new(sink_arc.clone())?;
@@ -267,8 +271,6 @@ mod imp {
     }
 
     pub(super) fn system_volume_set(val: f64) -> Result<()> {
-        let _guard = ComGuard::new();
-
         if let Some(manager_arc) = GLOBAL_MANAGER.lock().map_err(|e| anyhow::anyhow!("Mutex poisoned: {}", e))?.as_ref() {
             if let Ok(guard) = manager_arc.lock() {
                 if let Some(manager) = guard.as_ref() {
@@ -280,8 +282,6 @@ mod imp {
     }
 
     pub(super) fn system_volume_get() -> Result<f64> {
-        let _guard = ComGuard::new();
-
         if let Some(manager_arc) = GLOBAL_MANAGER.lock().map_err(|e| anyhow::anyhow!("Mutex poisoned: {}", e))?.as_ref() {
             if let Ok(guard) = manager_arc.lock() {
                 if let Some(manager) = guard.as_ref() {
@@ -294,6 +294,9 @@ mod imp {
 
     pub(super) fn system_volume_dispose() {
         if let Ok(mut guard) = GLOBAL_MANAGER.lock() {
+            *guard = None;
+        }
+        if let Ok(mut guard) = COM_GUARD.lock() {
             *guard = None;
         }
     }
