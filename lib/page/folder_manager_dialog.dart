@@ -162,8 +162,19 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
                     onPressed: building
                         ? null
                         : () {
-                            AppPreference.instance.userFolders =
-                                folders.map((f) => f.path).toList();
+                            final kept = folders.map((f) => f.path).toList();
+                            final original = AudioLibrary
+                                .instance.folders
+                                .map((f) => f.path)
+                                .toList();
+                            final removed =
+                                original.where((f) => !kept.contains(f)).toList();
+
+                            AppPreference.instance.userFolders = kept;
+                            AppPreference.instance.excludedFolderPaths
+                                .removeWhere((f) => kept.contains(f));
+                            AppPreference.instance.excludedFolderPaths
+                                .addAll(removed);
                             AppPreference.instance.save();
 
                             _startBuild();

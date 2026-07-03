@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'dart:ui' show PlatformDispatcher;
 import 'package:path/path.dart' as p;
 import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/native/rust/api/library_db.dart' as library_db;
 import 'package:pure_music/native/rust/api/tag_reader.dart';
@@ -107,6 +108,7 @@ class AudioLibrary {
         }
 
         _instance = AudioLibrary._(folders);
+        _instance._filterExcludedFolders();
         instance.artistCollection.clear();
         instance.albumCollection.clear();
         instance._buildCollections();
@@ -132,6 +134,7 @@ class AudioLibrary {
       }
 
       _instance = AudioLibrary._(folders);
+      _instance._filterExcludedFolders();
 
       instance.artistCollection.clear();
       instance.albumCollection.clear();
@@ -142,6 +145,13 @@ class AudioLibrary {
       );
     } catch (err, trace) {
       logger.e(err, stackTrace: trace);
+    }
+  }
+
+  void _filterExcludedFolders() {
+    final excluded = AppPreference.instance.excludedFolderPaths;
+    if (excluded.isNotEmpty) {
+      folders.removeWhere((f) => excluded.contains(f.path));
     }
   }
 

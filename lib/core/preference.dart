@@ -277,6 +277,8 @@ class AppPreference {
   /// 用户手动添加的文件夹路径列表（不包括自动发现的子文件夹）
   List<String> userFolders = [];
 
+  List<String> excludedFolderPaths = [];
+
   /// 上次读取的原始 JSON，保存时保留未知字段
   Map? _rawPrefMap;
 
@@ -311,6 +313,7 @@ class AppPreference {
         'lastSeenUpdateTag': lastSeenUpdateTag,
         'updateCheckUrls': updateCheckUrls,
         'userFolders': userFolders,
+        'excludedFolderPaths': excludedFolderPaths,
       });
 
       final prefJson = json.encode(prefMap);
@@ -409,6 +412,9 @@ class AppPreference {
             ];
       instance.userFolders = prefMap['userFolders'] != null
           ? List<String>.from(prefMap['userFolders'])
+          : [];
+      instance.excludedFolderPaths = prefMap['excludedFolderPaths'] != null
+          ? List<String>.from(prefMap['excludedFolderPaths'])
           : [];
 
       if (instance.userFolders.isEmpty) {
