@@ -108,7 +108,7 @@ class AudioLibrary {
         }
 
         _instance = AudioLibrary._(folders);
-        _instance._filterExcludedFolders();
+        instance._filterExcludedFolders();
         instance.artistCollection.clear();
         instance.albumCollection.clear();
         instance._buildCollections();
@@ -134,7 +134,7 @@ class AudioLibrary {
       }
 
       _instance = AudioLibrary._(folders);
-      _instance._filterExcludedFolders();
+      instance._filterExcludedFolders();
 
       instance.artistCollection.clear();
       instance.albumCollection.clear();
