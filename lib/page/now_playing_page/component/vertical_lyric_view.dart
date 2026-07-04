@@ -16,6 +16,16 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 
+const _opacityBase = 0.88;
+const _opacityMinClamp = 0.30;
+const _opacityMaxClamp = 0.90;
+const _staggerBaseMs = 60;
+const _staggerMaxMs = 600;
+const _shaderFadeInWithBlur = 0.20;
+const _shaderFadeInWithoutBlur = 0.05;
+const _shaderFadeOutWithBlur = 0.80;
+const _shaderFadeOutWithoutBlur = 0.95;
+
 bool alwaysShowLyricViewControls = false;
 
 enum LyricScrollState {
@@ -229,7 +239,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       lyricService.findCurrLyricLineAt(playbackService.position);
     });
 
-    // 启动空闲检测：每 3 秒检查一次，如果 5 秒无活动则执行深度清理
+    // 启动空闲检测
     _idleCleanupTimer = Timer.periodic(const Duration(seconds: 3), (_) {
       if (!_disposed && mounted) {
         final idleTime = DateTime.now().difference(_lastActivityTime);
@@ -870,8 +880,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                   shaderCallback: (Rect bounds) {
                     // 开启了歌词模糊 → 加大边缘渐隐（和模糊效果协同）
                     // 关闭 → 仅保留很小的边缘淡出以免生硬裁切
-                    final fadeIn = renderConfig.enableBlur ? 0.20 : 0.05;
-                    final fadeOut = renderConfig.enableBlur ? 0.80 : 0.95;
+                    final fadeIn = renderConfig.enableBlur ? _shaderFadeInWithBlur : _shaderFadeInWithoutBlur;
+                    final fadeOut = renderConfig.enableBlur ? _shaderFadeOutWithBlur : _shaderFadeOutWithoutBlur;
                     return LinearGradient(
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
@@ -913,12 +923,12 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                       final dist = signedDist.abs();
                       final opacity = dist == 0 || _activeLines.contains(i)
                           ? 1.0
-                          : pow(0.88, dist).toDouble().clamp(0.30, 0.90);
+                          : pow(_opacityBase, dist).toDouble().clamp(_opacityMinClamp, _opacityMaxClamp);
                       final staggerDelay = Duration(
                           milliseconds: _lyricViewController
                                       ?.renderConfig.enableStaggeredAnimation ==
                                   true
-                              ? ((dist + 1) * 60).clamp(0, 600)
+                              ? ((dist + 1) * _staggerBaseMs).clamp(0, _staggerMaxMs)
                               : 0);
                       final isHovered =
                           widget.enableSeekOnTap && i == _hoveredLineIndex;

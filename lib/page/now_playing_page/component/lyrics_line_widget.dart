@@ -168,11 +168,11 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
           : renderConfig.lrcVerticalPadding();
 
       // 普通歌词遮罩在外层 12px padding 内，painter 内容再内缩 12px；间奏行保持同样结构。
-      const double outerHorizontalPad = 12.0;
-      const double innerHorizontalPad = 12.0;
+      const double outerHorizontalPad = transitionTileMargin;
+      const double innerHorizontalPad = transitionTileMargin;
 
       final transitionContent = SizedBox(
-        height: 40.0,
+        height: transitionTileHeight,
         child: widget.line is SyncLyricLine
             ? LyricTransitionTile(
                 key: ValueKey(widget.line),
@@ -327,7 +327,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
 
     return RepaintBoundary(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12.0),
+        padding: const EdgeInsets.symmetric(horizontal: transitionTileMargin),
         child: inner,
       ),
     );

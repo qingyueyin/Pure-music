@@ -8,6 +8,22 @@ import 'package:pure_music/play_service/play_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
+const compactTransitionTileHeight = 24.0;
+const compactTransitionTileWidth = 72.0;
+const transitionTileHeight = 40.0;
+const _baseRadius = 6.0;
+const _compactBaseRadius = 4.0;
+const _compactSizeFactorMultiplier = 0.5;
+const _circleGapMultiplier = 3.0;
+const compactTransitionTileMargin = 10.0;
+const transitionTileMargin = 12.0;
+const _enterOpacityFraction = 0.12;
+const _exitOpacityFraction = 0.18;
+const _alphaBase = 0.05;
+const _alphaRange = 0.95;
+const _staggerStep = 1 / 3;
+const _breathingStep = 1 / 180;
+
 /// 歌词间奏表示
 /// lrcLine 和 syncLine 必须有且只有一个不为空
 class LyricTransitionTile extends StatefulWidget {
@@ -78,8 +94,8 @@ class _LyricTransitionTileState extends State<LyricTransitionTile> {
       return Align(
         alignment: alignment,
         child: SizedBox(
-          height: 24.0,
-          width: 72.0,
+          height: compactTransitionTileHeight,
+          width: compactTransitionTileWidth,
           child: CustomPaint(
             painter: LyricTransitionPainter(
               scheme,
@@ -95,7 +111,7 @@ class _LyricTransitionTileState extends State<LyricTransitionTile> {
 
     return SizedBox(
       width: double.infinity,
-      height: 40.0,
+      height: transitionTileHeight,
       child: CustomPaint(
         painter: LyricTransitionPainter(
           scheme,
@@ -119,7 +135,7 @@ class LyricTransitionPainter extends CustomPainter {
   final Paint circlePaint2 = Paint();
   final Paint circlePaint3 = Paint();
 
-  final double radius = 6;
+  final double radius = _baseRadius;
 
   LyricTransitionPainter(this.scheme, this.controller,
       {this.compact = false,
@@ -131,24 +147,24 @@ class LyricTransitionPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final progress = controller.progress.clamp(0.0, 1.0);
     final enterOpacity =
-        Curves.easeOutCubic.transform((progress / 0.12).clamp(0.0, 1.0));
+        Curves.easeOutCubic.transform((progress / _enterOpacityFraction).clamp(0.0, 1.0));
     final exitOpacity = Curves.easeOutCubic
-        .transform(((1.0 - progress) / 0.18).clamp(0.0, 1.0));
+        .transform(((1.0 - progress) / _exitOpacityFraction).clamp(0.0, 1.0));
     final opacityEnvelope = enterOpacity * exitOpacity;
 
     final a1 = (255 *
             opacityEnvelope *
-            (0.05 + min(controller.progress * 3, 1) * 0.95))
+            (_alphaBase + min(controller.progress * 3, 1) * _alphaRange))
         .round()
         .clamp(0, 255);
     final a2 = (255 *
             opacityEnvelope *
-            (0.05 + min(max(controller.progress - 1 / 3, 0) * 3, 1) * 0.95))
+            (_alphaBase + min(max(controller.progress - _staggerStep, 0) * 3, 1) * _alphaRange))
         .round()
         .clamp(0, 255);
     final a3 = (255 *
             opacityEnvelope *
-            (0.05 + min(max(controller.progress - 2 / 3, 0) * 3, 1) * 0.95))
+            (_alphaBase + min(max(controller.progress - 2 * _staggerStep, 0) * 3, 1) * _alphaRange))
         .round()
         .clamp(0, 255);
     final transitionColor = useMaterialYouColor
@@ -160,12 +176,12 @@ class LyricTransitionPainter extends CustomPainter {
 
     final cy = size.height / 2;
     if (compact) {
-      final r = 4 + controller.sizeFactor * 0.5;
-      final gap = 3.0 * r;
+      final r = _compactBaseRadius + controller.sizeFactor * _compactSizeFactorMultiplier;
+      final gap = _circleGapMultiplier * r;
       final double x1, x2, x3;
       switch (alignment) {
         case LyricTextAlign.left:
-          x1 = 10.0;
+          x1 = compactTransitionTileMargin;
           x2 = x1 + gap;
           x3 = x2 + gap;
         case LyricTextAlign.center:
@@ -173,7 +189,7 @@ class LyricTransitionPainter extends CustomPainter {
           x1 = x2 - gap;
           x3 = x2 + gap;
         case LyricTextAlign.right:
-          x3 = size.width - 10.0;
+          x3 = size.width - compactTransitionTileMargin;
           x2 = x3 - gap;
           x1 = x2 - gap;
       }
@@ -182,11 +198,11 @@ class LyricTransitionPainter extends CustomPainter {
       canvas.drawCircle(Offset(x3, cy), r, circlePaint3);
     } else {
       final rWithFactor = radius + controller.sizeFactor;
-      final gap = 3.0 * rWithFactor;
+      final gap = _circleGapMultiplier * rWithFactor;
       final double x1, x2, x3;
       switch (alignment) {
         case LyricTextAlign.left:
-          x1 = 12.0;
+          x1 = transitionTileMargin;
           x2 = x1 + gap;
           x3 = x2 + gap;
         case LyricTextAlign.center:
@@ -194,7 +210,7 @@ class LyricTransitionPainter extends CustomPainter {
           x1 = x2 - gap;
           x3 = x2 + gap;
         case LyricTextAlign.right:
-          x3 = size.width - 12.0;
+          x3 = size.width - transitionTileMargin;
           x2 = x3 - gap;
           x1 = x2 - gap;
       }
@@ -304,7 +320,7 @@ class LyricTransitionTileController extends ChangeNotifier {
     if (enableBreathing) {
       factorTicker = Ticker((elapsed) {
         if (_disposed) return;
-        sizeFactor += k * 1 / 180;
+        sizeFactor += k * _breathingStep;
         if (sizeFactor > 1) {
           k = -1;
           sizeFactor = 1;
