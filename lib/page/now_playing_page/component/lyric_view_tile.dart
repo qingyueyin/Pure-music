@@ -85,6 +85,7 @@ class _LyricTransitionTileState extends State<LyricTransitionTile> {
               scheme,
               controller,
               compact: true,
+              alignment: align,
               useMaterialYouColor: widget.useMaterialYouColor,
             ),
           ),
@@ -95,17 +96,12 @@ class _LyricTransitionTileState extends State<LyricTransitionTile> {
     return SizedBox(
       width: double.infinity,
       height: 40.0,
-      child: Align(
-        alignment: alignment,
-        child: SizedBox(
-          width: 120.0,
-          child: CustomPaint(
-            painter: LyricTransitionPainter(
-              scheme,
-              controller,
-              useMaterialYouColor: widget.useMaterialYouColor,
-            ),
-          ),
+      child: CustomPaint(
+        painter: LyricTransitionPainter(
+          scheme,
+          controller,
+          alignment: align,
+          useMaterialYouColor: widget.useMaterialYouColor,
         ),
       ),
     );
@@ -117,6 +113,7 @@ class LyricTransitionPainter extends CustomPainter {
   final LyricTransitionTileController controller;
   final bool compact;
   final bool useMaterialYouColor;
+  final LyricTextAlign alignment;
 
   final Paint circlePaint1 = Paint();
   final Paint circlePaint2 = Paint();
@@ -125,7 +122,9 @@ class LyricTransitionPainter extends CustomPainter {
   final double radius = 6;
 
   LyricTransitionPainter(this.scheme, this.controller,
-      {this.compact = false, this.useMaterialYouColor = true})
+      {this.compact = false,
+      this.useMaterialYouColor = true,
+      this.alignment = LyricTextAlign.left})
       : super(repaint: controller);
 
   @override
@@ -162,18 +161,30 @@ class LyricTransitionPainter extends CustomPainter {
     if (compact) {
       final r = 4 + controller.sizeFactor * 0.5;
       final cy = size.height / 2;
-      final c1 = Offset(10, cy);
-      final c2 = Offset(24, cy);
-      final c3 = Offset(38, cy);
+      const gap = 14.0;
+      final groupLeft = switch (alignment) {
+        LyricTextAlign.left => 10.0,
+        LyricTextAlign.center => size.width / 2 - gap,
+        LyricTextAlign.right => size.width - 10.0 - 2 * gap,
+      };
+      final c1 = Offset(groupLeft, cy);
+      final c2 = Offset(groupLeft + gap, cy);
+      final c3 = Offset(groupLeft + 2 * gap, cy);
       canvas.drawCircle(c1, r, circlePaint1);
       canvas.drawCircle(c2, r, circlePaint2);
       canvas.drawCircle(c3, r, circlePaint3);
     } else {
       final rWithFactor = radius + controller.sizeFactor;
       final cy = size.height / 2;
-      final c1 = Offset(rWithFactor, cy);
-      final c2 = Offset(4 * rWithFactor, cy);
-      final c3 = Offset(7 * rWithFactor, cy);
+      final gap = 3.0 * rWithFactor;
+      final groupLeft = switch (alignment) {
+        LyricTextAlign.left => 12.0,
+        LyricTextAlign.center => size.width / 2 - gap,
+        LyricTextAlign.right => size.width - 12.0 - 2 * gap,
+      };
+      final c1 = Offset(groupLeft, cy);
+      final c2 = Offset(groupLeft + gap, cy);
+      final c3 = Offset(groupLeft + 2 * gap, cy);
       canvas.drawCircle(c1, rWithFactor, circlePaint1);
       canvas.drawCircle(c2, rWithFactor, circlePaint2);
       canvas.drawCircle(c3, rWithFactor, circlePaint3);
