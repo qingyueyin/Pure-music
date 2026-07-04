@@ -98,6 +98,10 @@ class BassPlayer {
 
   Timer? _fadeInTimer;
 
+  /// 淡出旧流时延迟释放资源的定时器
+  Timer? _fadeOutTimer;
+  int? _fadeOutHandle;
+
   /// 独占模式状态变化回调
   Function(bool)? onExclusiveModeChanged;
 
@@ -1061,16 +1065,49 @@ class BassPlayer {
     start();
   }
 
-  /// Crossfade: 淡出旧流 - 设置静音后停止
-  void _fadeOutOldStream(int handle) {
-    // 快速降低音量避免爆音（立即执行，不阻塞）
-    _bass.BASS_ChannelSetAttribute(handle, bass.BASS_ATTRIB_VOLDSP, 0.0);
+  /// Crossfade: 淡出旧流
+  /// [durationMs] 淡出时长；[delayCleanup] 为 true 时延迟释放资源，用于曲间 crossfade
+  void _fadeOutOldStream(
+    int handle, {
+    int durationMs = 100,
+    bool delayCleanup = false,
+  }) {
+    _bass.BASS_ChannelSlideAttribute(
+      handle,
+      bass.BASS_ATTRIB_VOLDSP,
+      0.0,
+      durationMs,
+    );
+
+    if (!delayCleanup) return;
+
+    // 清理上一条未释放的旧流
+    _fadeOutTimer?.cancel();
+    if (_fadeOutHandle != null && _fadeOutHandle != handle) {
+      _bass.BASS_ChannelStop(_fadeOutHandle!);
+      _bass.BASS_StreamFree(_fadeOutHandle!);
+    }
+    _fadeOutHandle = handle;
+
+    _fadeOutTimer = Timer(Duration(milliseconds: durationMs + 20), () {
+      if (_fadeOutHandle == handle) {
+        _bass.BASS_ChannelStop(handle);
+        _bass.BASS_StreamFree(handle);
+        _fadeOutHandle = null;
+        _fadeOutTimer = null;
+      }
+    });
   }
 
-  /// Crossfade: 淡入新流 - 恢复音量
+  /// Crossfade: 淡入新流 - 200ms 从静音滑到目标音量
   void _fadeInNewStream(int handle, double targetVolume) {
-    // 直接设置目标音量（因为旧流已静音，不会有爆音）
-    _bass.BASS_ChannelSetAttribute(handle, bass.BASS_ATTRIB_VOLDSP, targetVolume);
+    _bass.BASS_ChannelSetAttribute(handle, bass.BASS_ATTRIB_VOLDSP, 0.0);
+    _bass.BASS_ChannelSlideAttribute(
+      handle,
+      bass.BASS_ATTRIB_VOLDSP,
+      targetVolume,
+      200,
+    );
   }
 
   /// if setSource has been called once,
@@ -1085,23 +1122,12 @@ class BassPlayer {
       _removeEQ();
       final oldHandle = _fstream!;
 
-      // Crossfade: 淡出旧流 (50ms)
-      _fadeOutOldStream(oldHandle);
-
-      // Only stop the channel, don't call BASS_WASAPI_Free here
-      // That's handled in useExclusiveMode when switching modes
-      final stopped = _bass.BASS_ChannelStop(oldHandle);
-      if (stopped == 0) {
-        logger.w(
-          '[bass] cleanup stop failed: err=${_bass.BASS_ErrorGetCode()} handle=$oldHandle',
-        );
-      }
-      final freed = _bass.BASS_StreamFree(oldHandle);
-      if (freed == 0) {
-        logger.w(
-          '[bass] cleanup free failed: err=${_bass.BASS_ErrorGetCode()} handle=$oldHandle',
-        );
-      }
+      // Crossfade: 淡出旧流，延迟释放资源
+      _fadeOutOldStream(
+        oldHandle,
+        durationMs: 300,
+        delayCleanup: true,
+      );
       _fstream = null;
       _streamWasapiExclusive = false; // 重置流的状态标志
     }
@@ -1590,6 +1616,13 @@ class BassPlayer {
   void freeFStream() {
     if (_fstream == null) return;
 
+    _fadeOutTimer?.cancel();
+    _fadeOutTimer = null;
+    if (_fadeOutHandle != null) {
+      _bass.BASS_StreamFree(_fadeOutHandle!);
+      _fadeOutHandle = null;
+    }
+
     if (_bass.BASS_StreamFree(_fstream!) == 0) {
       switch (_bass.BASS_ErrorGetCode()) {
         case bass.BASS_ERROR_HANDLE:
@@ -1613,6 +1646,12 @@ class BassPlayer {
   /// Also free the bass.dll.
   void free() {
     _fadeInTimer?.cancel();
+    _fadeOutTimer?.cancel();
+    _fadeOutTimer = null;
+    if (_fadeOutHandle != null) {
+      _bass.BASS_StreamFree(_fadeOutHandle!);
+      _fadeOutHandle = null;
+    }
     _positionUpdaterVersion++;
     _positionUpdater?.cancel();
     _positionUpdater = null;
