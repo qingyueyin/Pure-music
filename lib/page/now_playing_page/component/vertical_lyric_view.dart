@@ -198,7 +198,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   LyricViewportRange _viewportRange =
       const LyricViewportRange(start: 0, end: 0);
 
-  final currentLyricTileKey = GlobalKey();
+  final Map<int, GlobalKey> _lineKeys = {};
 
   /// 悬停歌词行高亮遮罩
   int _hoveredLineIndex = -1;
@@ -323,8 +323,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
         config.letterSpacing(fontSize: baseSize, weight: weight);
     final discreteWeight = config.discreteFontWeight(weight);
 
-    final subSize = config.primaryFontSize(isMainLine: false);
-    final subTransSize = config.translationFontSize(isMainLine: false);
     final mainSize = config.primaryFontSize(isMainLine: true);
     final mainTransSize = config.translationFontSize(isMainLine: true);
 
@@ -351,15 +349,15 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
         if (line.isBlank) return 0.0;
       }
 
-      final primarySize = isMain ? mainSize : subSize;
-      final transSize = isMain ? mainTransSize : subTransSize;
+      final primarySize = mainSize;
+      final transSize = mainTransSize;
       final contentWidth = maxWidth - 24.0;
 
       double h = 0.0;
 
       final double vertPad;
       if (line is SyncLyricLine) {
-        vertPad = config.syncVerticalPadding(isMainLine: isMain);
+        vertPad = config.syncVerticalPadding(isMainLine: true);
       } else {
         vertPad = config.lrcVerticalPadding();
       }
@@ -386,7 +384,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
       if (showTrans) {
         if (line is SyncLyricLine && line.translation != null) {
-          h += config.syncTranslationGap(isMainLine: isMain);
+          h += config.syncTranslationGap(isMainLine: true);
           painter.text = TextSpan(
             text: line.translation!,
             style: TextStyle(
@@ -407,7 +405,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
           final parts = line.content.split('┃');
           for (int i = 1; i < parts.length; i++) {
             h += config.lrcTranslationGap(
-              isMainLine: isMain,
+              isMainLine: true,
               translationIndex: i - 1,
             );
             painter.text = TextSpan(
@@ -500,7 +498,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     _lyricViewController?.addListener(_scheduleEnsureCurrentVisible);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _scrollToCurrent(const Duration(milliseconds: 100));
+      if (mounted) _scrollToCurrent(Duration.zero);
     });
   }
 
@@ -524,6 +522,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       _cachedOffsets = null;
       _cachedHeights = null;
       _mainLine = 0;
+      _lineKeys.clear();
 
       // 延迟清空 TextPainter 对象池，避免在绘制过程中销毁正在使用的对象
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -645,7 +644,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
     _scrollState = LyricScrollState.programScrolling;
 
-    final targetContext = currentLyricTileKey.currentContext;
+    final targetKey = _lineKeys[_mainLine];
+    final targetContext = targetKey?.currentContext;
     if (targetContext != null && targetContext.mounted) {
       final targetObject = targetContext.findRenderObject();
       if (targetObject is RenderBox) {
@@ -729,7 +729,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     if (_cachedOffsets == null && _cachedMaxWidth > 0) {
       _computeOffsets(_cachedMaxWidth);
     }
-    _scrollToCurrent(const Duration(milliseconds: 320));
+    _scrollToCurrent(Duration.zero);
   }
 
   void _seekToLyricLine(int i) {
@@ -826,20 +826,10 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
           _cachedOffsets == null || constraints.maxWidth != _cachedMaxWidth;
       if (needsOffsets) {
         _cachedMaxWidth = constraints.maxWidth;
-        // 延迟精确偏移量到首帧后，避免阻塞初始渲染
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (_disposed || !mounted) return;
           _computeOffsets(constraints.maxWidth);
-          // 精确偏移量算完后重定位到当前行
-          _scrollToCurrent(const Duration(milliseconds: 150));
-        });
-      } else {
-        // 页面重建但宽度未变（如从其他页返回播放页）：重定位到当前行
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (_disposed || !mounted) return;
-          if (_cachedOffsets != null) {
-            _ensureCurrentLineVisible();
-          }
+          _scrollToCurrent(Duration.zero);
         });
       }
 
@@ -933,32 +923,31 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                       final isHovered =
                           widget.enableSeekOnTap && i == _hoveredLineIndex;
 
-                      // 为每行创建稳定的 key，避免 Widget 重建
-                      // 但在空闲清理时，通过改变 key 强制重建非当前行
-                      final lineKey = dist == 0
-                          ? currentLyricTileKey
-                          : ValueKey('lyric_line_${i}_${_cachedMaxWidth.toInt()}');
-
-                      return LyricsLineWidget(
-                        key: lineKey,
-                        line: line,
-                        opacity: isHovered ? 1.0 : opacity,
-                        distance: dist,
-                        lineOffsetY: 0.0,
-                        staggerDelay: isHovered ? Duration.zero : staggerDelay,
-                        isUserScrolling: userIsDragging,
-                        isHovered: isHovered,
-                        onHoverChanged: widget.enableSeekOnTap
-                            ? (v) {
-                                setState(() {
-                                  _hoveredLineIndex = v ? i : -1;
-                                });
-                              }
-                            : null,
-                        onTap: widget.enableSeekOnTap
-                            ? () => _seekToLyricLineWithOriginalIndex(line)
-                            : null,
+                      Widget lineWidget = SizedBox(
+                        key: _lineKeys[i] ??= GlobalKey(),
+                        child: LyricsLineWidget(
+                          key: ValueKey('lyric_line_$i'),
+                          line: line,
+                          opacity: isHovered ? 1.0 : opacity,
+                          distance: dist,
+                          lineOffsetY: 0.0,
+                          staggerDelay: isHovered ? Duration.zero : staggerDelay,
+                          isUserScrolling: userIsDragging,
+                          isHovered: isHovered,
+                          onHoverChanged: widget.enableSeekOnTap
+                              ? (v) {
+                                  setState(() {
+                                    _hoveredLineIndex = v ? i : -1;
+                                  });
+                                }
+                              : null,
+                          onTap: widget.enableSeekOnTap
+                              ? () => _seekToLyricLineWithOriginalIndex(line)
+                              : null,
+                        ),
                       );
+
+                      return lineWidget;
                     },
                   ),
                 ),
@@ -974,6 +963,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   void dispose() {
     _disposed = true;
     _stopScrollTicker();
+    _lineKeys.clear();
     super.dispose();
     _ensureVisibleTimer?.cancel();
     _userScrollHoldTimer?.cancel();
