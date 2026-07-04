@@ -48,22 +48,26 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
   static final Map<double, ImageFilter> _blurFilterCache = {};
 
   static ImageFilter _getBlurFilter(double sigma) {
-    return _blurFilterCache.putIfAbsent(sigma, () => ImageFilter.blur(
-      sigmaX: sigma,
-      sigmaY: sigma,
-      tileMode: TileMode.clamp,
-    ));
+    return _blurFilterCache.putIfAbsent(
+        sigma,
+        () => ImageFilter.blur(
+              sigmaX: sigma,
+              sigmaY: sigma,
+              tileMode: TileMode.clamp,
+            ));
   }
 
-  static void clearBlurFilterCache() {
-    _blurFilterCache.clear();
-  }
   late final LyricRenderConfig _config;
   Ticker? _ticker;
   double _currentTimeMs = 0;
-  double _rawTimeMs = 0;
+
+  /// seek 后用于过滤旧进度回调的临时目标
+  double? _pendingSeekMs;
+  DateTime? _pendingSeekAt;
+  static const _seekGuardWindowMs = 200;
 
   late final AnimationController _scaleController;
+  late final AnimationController _floatController;
 
   // 缓存 Painter，避免每帧重建
   LyricsLinePainter? _cachedPainter;
@@ -94,6 +98,11 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
     _scaleController.value = widget.distance == 0
         ? _config.mainLineScale * _config.activeLineScaleMultiplier
         : _config.subLineScale * _config.inactiveLineScaleMultiplier;
+    _floatController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _floatController.value = widget.distance == 0 ? 1.0 : 0.0;
     _initTicker();
   }
 
@@ -110,11 +119,22 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
     _scaleController.animateWith(simulation);
   }
 
+  void _animateFloat() {
+    final target = widget.distance == 0 ? 1.0 : 0.0;
+    if ((_floatController.value - target).abs() < 0.001) return;
+    _floatController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 600),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
   void _initTicker() {
     if (widget.distance == 0 && _ticker == null) {
       final rawMs = PlayService.instance.playbackService.position * 1000.0;
       _currentTimeMs = rawMs;
-      _rawTimeMs = rawMs;
+      _pendingSeekMs = null;
+      _pendingSeekAt = null;
       _ticker = createTicker(_onTick);
       _ticker!.start();
     }
@@ -127,18 +147,34 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
   }
 
   void _onTick(Duration elapsed) {
-    _rawTimeMs = PlayService.instance.playbackService.position * 1000.0;
-    final delta = _rawTimeMs - _currentTimeMs;
+    final rawMs = PlayService.instance.playbackService.position * 1000.0;
+    final delta = rawMs - _currentTimeMs;
+
+    // seek 保护：大幅跳转后的短窗口内，忽略与跳转方向相反的旧进度回调
+    if (_pendingSeekMs != null && _pendingSeekAt != null) {
+      final age = DateTime.now().difference(_pendingSeekAt!).inMilliseconds;
+      if (age > _seekGuardWindowMs || (rawMs - _pendingSeekMs!).abs() <= 50) {
+        _pendingSeekMs = null;
+        _pendingSeekAt = null;
+      } else if ((rawMs > _currentTimeMs) !=
+          (_pendingSeekMs! > _currentTimeMs)) {
+        // 方向相反，跳过本次回调
+        setState(() {});
+        return;
+      }
+    }
 
     if (delta.abs() >= 100) {
-      // Seek 或大幅跳转：直接同步
-      _currentTimeMs = _rawTimeMs;
+      // Seek 或大幅跳转：记录目标并直接同步
+      _pendingSeekMs = rawMs;
+      _pendingSeekAt = DateTime.now();
+      _currentTimeMs = rawMs;
     } else if (delta > 0) {
       // 播放中：直接同步 raw，避免平滑滞后导致歌词末尾覆盖不全
-      _currentTimeMs = _rawTimeMs;
+      _currentTimeMs = rawMs;
     } else if (delta < -32) {
       // 暂停或倒带：回退到 raw
-      _currentTimeMs = _rawTimeMs;
+      _currentTimeMs = rawMs;
     }
 
     setState(() {});
@@ -159,6 +195,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
       }
 
       _animateScale();
+      _animateFloat();
 
       if (!isActive) {
         _cachedPainter = null;
@@ -167,6 +204,8 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
 
     if (widget.line != oldWidget.line) {
       _cachedPainter = null;
+      _pendingSeekMs = null;
+      _pendingSeekAt = null;
     }
   }
 
@@ -174,6 +213,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
   void dispose() {
     _ticker?.dispose();
     _scaleController.dispose();
+    _floatController.dispose();
     _cachedPainter = null;
     super.dispose();
   }
@@ -183,7 +223,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
     super.build(context); // AutomaticKeepAliveClientMixin 必需
 
     final dist = (widget.distance ?? 0).abs();
-    final active = widget.distance == 0;
+    final isCurrentLine = widget.distance == 0;
 
     final renderConfig = context.watch<LyricViewController>().renderConfig;
 
@@ -204,11 +244,11 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
     final scheme = Theme.of(context).colorScheme;
     final blurSigma = widget.isUserScrolling
         ? 0.0
-        : (active ? 0.0 : renderConfig.blurSigmaForDistance(dist));
+        : (isCurrentLine ? 0.0 : renderConfig.blurSigmaForDistance(dist));
 
-    final isTransitionLine = _isTransitionLine(widget.line, active);
+    final isTransitionLine = _isTransitionLine(widget.line, isCurrentLine);
     if (isTransitionLine) {
-      if (!active) {
+      if (!isCurrentLine) {
         return const SizedBox.shrink();
       }
 
@@ -275,7 +315,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
             _cachedPainter!.currentTimeMs != _currentTimeMs ||
             _cachedPainter!.blurSigma != blurSigma ||
             _cachedPainter!.config != renderConfig ||
-            _cachedPainter!.isMainLine != active ||
+            _cachedPainter!.isMainLine != isCurrentLine ||
             _cachedPainter!.useMaterialYouColor !=
                 AppSettings.instance.useMaterialYouForLyrics ||
             _cachedPainter!.fontFamily != fontFamily ||
@@ -289,7 +329,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
             blurSigma: blurSigma,
             config: renderConfig,
             scheme: scheme,
-            isMainLine: active,
+            isMainLine: isCurrentLine,
             useMaterialYouColor: AppSettings.instance.useMaterialYouForLyrics,
             fontFamily: fontFamily,
             agent: widget.line is SyncLyricLine
@@ -336,6 +376,18 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
         return Transform.scale(
           scale: _scaleController.value,
           alignment: scaleAlignment,
+          child: child!,
+        );
+      },
+      child: inner,
+    );
+
+    inner = AnimatedBuilder(
+      animation: _floatController,
+      builder: (context, child) {
+        final offsetY = _floatController.value * -4.0;
+        return Transform.translate(
+          offset: Offset(0, offsetY),
           child: child!,
         );
       },

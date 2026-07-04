@@ -203,6 +203,9 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   DateTime _lastActivityTime = DateTime.now(); // 最后活动时间
   LyricScrollState _scrollState = LyricScrollState.idle;
   int _mainLine = 0;
+
+  /// TTML 重叠行的额外透明度 boost，不决定“当前高亮行”。
+  /// 唯一当前行来源是 [_mainLine]。
   final Set<int> _activeLines = {};
   int _pendingScrollRetries = 0;
   LyricViewportRange _viewportRange =
