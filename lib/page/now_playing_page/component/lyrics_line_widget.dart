@@ -39,6 +39,11 @@ class LyricsLineWidget extends StatefulWidget {
   final void Function(bool)? onHoverChanged;
   final VoidCallback? onTap;
 
+  /// 清空 blur filter 缓存，用于切歌或内存紧张时释放 GPU 资源
+  static void clearBlurFilterCache() {
+    _LyricsLineWidgetState._blurFilterCache.clear();
+  }
+
   @override
   State<LyricsLineWidget> createState() => _LyricsLineWidgetState();
 }
