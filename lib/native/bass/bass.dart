@@ -261,6 +261,23 @@ class Bass {
   late final _BASS_ChannelSetAttribute =
       _BASS_ChannelSetAttributePtr.asFunction<int Function(int, int, double)>();
 
+  int BASS_ChannelSlideAttribute(
+    int handle,
+    int attrib,
+    double value,
+    int time,
+  ) {
+    return _BASS_ChannelSlideAttribute(handle, attrib, value, time);
+  }
+
+  late final _BASS_ChannelSlideAttributePtr =
+      _lookup<ffi.NativeFunction<BOOL Function(DWORD, DWORD, ffi.Float, DWORD)>>(
+        'BASS_ChannelSlideAttribute',
+      );
+  late final _BASS_ChannelSlideAttribute =
+      _BASS_ChannelSlideAttributePtr.asFunction<
+          int Function(int, int, double, int)>();
+
   int BASS_ChannelSetFX(int handle, int type, int priority) {
     return _BASS_ChannelSetFX(handle, type, priority);
   }
