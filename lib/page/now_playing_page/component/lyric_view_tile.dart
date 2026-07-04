@@ -158,36 +158,49 @@ class LyricTransitionPainter extends CustomPainter {
     circlePaint2.color = transitionColor.withAlpha(a2);
     circlePaint3.color = transitionColor.withAlpha(a3);
 
+    final cy = size.height / 2;
     if (compact) {
       final r = 4 + controller.sizeFactor * 0.5;
-      final cy = size.height / 2;
-      const gap = 14.0;
-      final groupLeft = switch (alignment) {
-        LyricTextAlign.left => 10.0,
-        LyricTextAlign.center => size.width / 2 - gap,
-        LyricTextAlign.right => size.width - 10.0 - 2 * gap,
-      };
-      final c1 = Offset(groupLeft, cy);
-      final c2 = Offset(groupLeft + gap, cy);
-      final c3 = Offset(groupLeft + 2 * gap, cy);
-      canvas.drawCircle(c1, r, circlePaint1);
-      canvas.drawCircle(c2, r, circlePaint2);
-      canvas.drawCircle(c3, r, circlePaint3);
+      final gap = 3.0 * r;
+      final double x1, x2, x3;
+      switch (alignment) {
+        case LyricTextAlign.left:
+          x1 = 10.0;
+          x2 = x1 + gap;
+          x3 = x2 + gap;
+        case LyricTextAlign.center:
+          x2 = size.width / 2;
+          x1 = x2 - gap;
+          x3 = x2 + gap;
+        case LyricTextAlign.right:
+          x3 = size.width - 10.0;
+          x2 = x3 - gap;
+          x1 = x2 - gap;
+      }
+      canvas.drawCircle(Offset(x1, cy), r, circlePaint1);
+      canvas.drawCircle(Offset(x2, cy), r, circlePaint2);
+      canvas.drawCircle(Offset(x3, cy), r, circlePaint3);
     } else {
       final rWithFactor = radius + controller.sizeFactor;
-      final cy = size.height / 2;
       final gap = 3.0 * rWithFactor;
-      final groupLeft = switch (alignment) {
-        LyricTextAlign.left => 12.0,
-        LyricTextAlign.center => size.width / 2 - gap,
-        LyricTextAlign.right => size.width - 12.0 - 2 * gap,
-      };
-      final c1 = Offset(groupLeft, cy);
-      final c2 = Offset(groupLeft + gap, cy);
-      final c3 = Offset(groupLeft + 2 * gap, cy);
-      canvas.drawCircle(c1, rWithFactor, circlePaint1);
-      canvas.drawCircle(c2, rWithFactor, circlePaint2);
-      canvas.drawCircle(c3, rWithFactor, circlePaint3);
+      final double x1, x2, x3;
+      switch (alignment) {
+        case LyricTextAlign.left:
+          x1 = 12.0;
+          x2 = x1 + gap;
+          x3 = x2 + gap;
+        case LyricTextAlign.center:
+          x2 = size.width / 2;
+          x1 = x2 - gap;
+          x3 = x2 + gap;
+        case LyricTextAlign.right:
+          x3 = size.width - 12.0;
+          x2 = x3 - gap;
+          x1 = x2 - gap;
+      }
+      canvas.drawCircle(Offset(x1, cy), rWithFactor, circlePaint1);
+      canvas.drawCircle(Offset(x2, cy), rWithFactor, circlePaint2);
+      canvas.drawCircle(Offset(x3, cy), rWithFactor, circlePaint3);
     }
   }
 
