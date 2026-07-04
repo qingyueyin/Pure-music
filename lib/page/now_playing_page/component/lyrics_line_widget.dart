@@ -138,12 +138,19 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
 
     final renderConfig = context.watch<LyricViewController>().renderConfig;
 
-    final align = widget.line is SyncLyricLine
+    final effectiveTextAlign = renderConfig.hasMultipleAgents && widget.line is SyncLyricLine
         ? switch ((widget.line as SyncLyricLine).agent) {
             'v2' => LyricTextAlign.right,
+            'v1' => LyricTextAlign.left,
             _ => renderConfig.textAlign,
           }
         : renderConfig.textAlign;
+
+    final scaleAlignment = switch (effectiveTextAlign) {
+      LyricTextAlign.left => Alignment.centerLeft,
+      LyricTextAlign.center => Alignment.center,
+      LyricTextAlign.right => Alignment.centerRight,
+    };
     final scheme = Theme.of(context).colorScheme;
     final blurSigma = widget.isUserScrolling
         ? 0.0
@@ -170,14 +177,14 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
             ? LyricTransitionTile(
                 key: ValueKey(widget.line),
                 syncLine: widget.line as SyncLyricLine,
-                alignment: align,
+                alignment: effectiveTextAlign,
                 useMaterialYouColor:
                     AppSettings.instance.useMaterialYouForTransition,
               )
             : LyricTransitionTile(
                 key: ValueKey(widget.line),
                 lrcLine: widget.line as LrcLine,
-                alignment: align,
+                alignment: effectiveTextAlign,
                 useMaterialYouColor:
                     AppSettings.instance.useMaterialYouForTransition,
               ),
@@ -195,11 +202,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
                 top: verticalPad,
                 bottom: verticalPad),
             child: Align(
-              alignment: switch (align) {
-                LyricTextAlign.left => Alignment.centerLeft,
-                LyricTextAlign.center => Alignment.center,
-                LyricTextAlign.right => Alignment.centerRight,
-              },
+              alignment: scaleAlignment,
               child: transitionContent,
             ),
           ),
@@ -252,16 +255,25 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
           size: Size(lineWidth, lineHeight),
         );
 
-        if (blurSigma > 0.01) {
-          painted = ImageFiltered(
-            imageFilter: ImageFilter.blur(
-              sigmaX: blurSigma,
-              sigmaY: blurSigma,
-              tileMode: TileMode.clamp,
-            ),
-            child: painted,
-          );
-        }
+        painted = TweenAnimationBuilder<double>(
+          tween: Tween(begin: blurSigma, end: blurSigma),
+          duration: const Duration(milliseconds: 600),
+          curve: Curves.easeOutCubic,
+          builder: (context, sigma, child) {
+            if (sigma > 0.01) {
+              return ImageFiltered(
+                imageFilter: ImageFilter.blur(
+                  sigmaX: sigma,
+                  sigmaY: sigma,
+                  tileMode: TileMode.clamp,
+                ),
+                child: child!,
+              );
+            }
+            return child!;
+          },
+          child: painted,
+        );
 
         painted = SizedBox(
           height: lineHeight,
@@ -270,6 +282,24 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
 
         return painted;
       },
+    );
+
+    // AnimatedScale/Opacity 在外层，确保 setState 时 didUpdateWidget 被调用
+    inner = AnimatedScale(
+      scale: active
+          ? _config.mainLineScale * _config.activeLineScaleMultiplier
+          : _config.subLineScale * _config.inactiveLineScaleMultiplier,
+      alignment: scaleAlignment,
+      duration: const Duration(milliseconds: 600),
+      curve: Curves.easeOutCubic,
+      child: inner,
+    );
+
+    inner = AnimatedOpacity(
+      opacity: widget.isHovered ? 1.0 : _targetOpacity(),
+      duration: const Duration(milliseconds: 600),
+      curve: Curves.easeOutCubic,
+      child: inner,
     );
 
     if (widget.isHovered && widget.onTap != null) {
