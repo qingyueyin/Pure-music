@@ -29,16 +29,16 @@ class MemoryMonitorService {
 
   void start() {
     _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 60), (_) {
+    _timer = Timer.periodic(const Duration(seconds: 30), (_) {
       try {
         final rssMB = (ProcessInfo.currentRss / (1024 * 1024)).round();
 
         // 播放状态下调高阈值，避免频繁清理引起缓存重建和 GC 抖动
         final playing = _isPlaying();
         // 起始 RSS ~230MB，阈值从低到高逐级清理
-        final tier1Threshold = playing ? 340 : 280;
-        final tier2Threshold = playing ? 380 : 320;
-        final tier3Threshold = playing ? 440 : 380;
+        final tier1Threshold = playing ? 300 : 260;
+        final tier2Threshold = playing ? 340 : 290;
+        final tier3Threshold = playing ? 400 : 340;
 
         if (rssMB > tier3Threshold) {
           logger.w(
