@@ -208,6 +208,11 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   LyricViewportRange _viewportRange =
       const LyricViewportRange(start: 0, end: 0);
 
+  /// 标记是否需要执行首次进入页面时的定位滚动。
+  /// forceEmitCurrentLine 与 _scrollToCurrent 不在同一时机就绪，
+  /// 需要在收到歌词行更新后补一次滚动。
+  bool _needsInitialScroll = true;
+
   final Map<int, GlobalKey> _lineKeys = {};
 
   /// 悬停歌词行高亮遮罩
@@ -759,6 +764,14 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
           ..clear()
           ..addAll(update.activeIndices);
       });
+      // 首次进入页面时即使行号未变，也可能从未滚动过，补一次定位
+      if (_needsInitialScroll) {
+        _needsInitialScroll = false;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_disposed || !mounted) return;
+          _scrollToCurrent(Duration.zero);
+        });
+      }
       return;
     }
 
@@ -791,6 +804,9 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       }
     });
 
+    // 行号已变化，首次定位需求已被本次更新覆盖
+    _needsInitialScroll = false;
+
     if (followDecision.shouldScroll) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _scrollToCurrent();
@@ -815,7 +831,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (_disposed || !mounted) return;
           _computeOffsets(constraints.maxWidth);
-          _scrollToCurrent(Duration.zero);
         });
       }
 
@@ -856,8 +871,12 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                   shaderCallback: (Rect bounds) {
                     // 开启了歌词模糊 → 加大边缘渐隐（和模糊效果协同）
                     // 关闭 → 仅保留很小的边缘淡出以免生硬裁切
-                    final fadeIn = renderConfig.enableBlur ? _shaderFadeInWithBlur : _shaderFadeInWithoutBlur;
-                    final fadeOut = renderConfig.enableBlur ? _shaderFadeOutWithBlur : _shaderFadeOutWithoutBlur;
+                    final fadeIn = renderConfig.enableBlur
+                        ? _shaderFadeInWithBlur
+                        : _shaderFadeInWithoutBlur;
+                    final fadeOut = renderConfig.enableBlur
+                        ? _shaderFadeOutWithBlur
+                        : _shaderFadeOutWithoutBlur;
                     return LinearGradient(
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
@@ -899,12 +918,15 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                       final dist = signedDist.abs();
                       final opacity = dist == 0 || _activeLines.contains(i)
                           ? 1.0
-                          : pow(_opacityBase, dist).toDouble().clamp(_opacityMinClamp, _opacityMaxClamp);
+                          : pow(_opacityBase, dist)
+                              .toDouble()
+                              .clamp(_opacityMinClamp, _opacityMaxClamp);
                       final staggerDelay = Duration(
                           milliseconds: _lyricViewController
                                       ?.renderConfig.enableStaggeredAnimation ==
                                   true
-                              ? ((dist + 1) * _staggerBaseMs).clamp(0, _staggerMaxMs)
+                              ? ((dist + 1) * _staggerBaseMs)
+                                  .clamp(0, _staggerMaxMs)
                               : 0);
                       final isHovered =
                           widget.enableSeekOnTap && i == _hoveredLineIndex;
@@ -917,7 +939,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                           opacity: isHovered ? 1.0 : opacity,
                           distance: dist,
                           lineOffsetY: 0.0,
-                          staggerDelay: isHovered ? Duration.zero : staggerDelay,
+                          staggerDelay:
+                              isHovered ? Duration.zero : staggerDelay,
                           isUserScrolling: userIsDragging,
                           isHovered: isHovered,
                           onHoverChanged: widget.enableSeekOnTap
