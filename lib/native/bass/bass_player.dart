@@ -94,6 +94,8 @@ class BassPlayer {
   /// 是否启用 wasapi 独占模式
   bool wasapiExclusive = false;
 
+  Timer? _fadeInTimer;
+
   /// 独占模式状态变化回调
   Function(bool)? onExclusiveModeChanged;
 
@@ -847,19 +849,76 @@ class BassPlayer {
         return false;
       }
       final lastPos = position;
-      if (_fstream != null && !prevState) {
-        _bass.BASS_ChannelStop(_fstream!);
-      }
-      if (prevState) {
+
+      if (exclusive && !prevState) {
+        if (_fstream == null || _fPath == null) return false;
+        // 1) 建解码流（旧流仍在播放，文件 I/O 对用户透明）
+        final decodeHandle = _createDecodeStream(_fPath!);
+        if (decodeHandle == 0) throw Exception('Failed to create decode stream');
+
+        // 2) 预初始化 WASAPI，旧流继续通过 BASS 播放
+        _removeEQ();
+        _positionUpdaterVersion++;
+        _positionUpdater?.cancel();
+        _positionUpdater = null;
+        final oldHandle = _fstream!;
+        _fstream = decodeHandle;
+        _streamWasapiExclusive = true;
+        wasapiExclusive = true;
+        try {
+          _bassWasapiInit();
+        } catch (err) {
+          _bass.BASS_StreamFree(decodeHandle);
+          _fstream = oldHandle;
+          _streamWasapiExclusive = false;
+          wasapiExclusive = false;
+          showTextOnSnackBar('独占模式初始化失败');
+          return false;
+        }
+
+        // 3) WASAPI 准备就绪，停旧流（间隙极短，仅 Start 耗时）
+        _fadeOutOldStream(oldHandle);
+        _bass.BASS_ChannelStop(oldHandle);
+        _bass.BASS_StreamFree(oldHandle);
+
+        // 4) 启动 WASAPI 输出
+        setVolumeDsp(0.0);
+        if (lastPos > 0) seek(lastPos);
+        if (_bassWasapi.BASS_WASAPI_Start() == bass.FALSE) {
+          _fallbackFromExclusive();
+          onExclusiveModeChanged?.call(false);
+          return false;
+        }
+        _fadeInWasapiVolume();
+        _playerStateStreamController.add(playerState);
+        _refreshStreamSampleRate();
+        _spectrumTickPeriod = _computeSpectrumTickPeriod();
+        _lastSpectrumUpdateUs = 0;
+        _positionUpdater = _getPositionUpdater(_computePlayingTickPeriod());
+      } else if (!exclusive && prevState) {
+        _removeEQ();
+        _positionUpdaterVersion++;
+        _positionUpdater?.cancel();
+        _positionUpdater = null;
+        _bassWasapi.BASS_WASAPI_Stop(bass.TRUE);
         _bassWasapi.BASS_WASAPI_Free();
+        _bass.BASS_StreamFree(_fstream!);
+        _fstream = null;
+        _streamWasapiExclusive = false;
+        wasapiExclusive = false;
         _bassInit();
+        if (_fPath != null) {
+          _createSharedStream(_fPath!, lastPos);
+        }
+      } else {
+        wasapiExclusive = exclusive;
+        if (_fstream != null && _fPath != null) {
+          _rebuildStream(_fPath!, lastPos);
+        }
       }
-      wasapiExclusive = exclusive;
-      if (_fstream != null && _fPath != null) {
-        _rebuildStream(_fPath!, lastPos);
-      }
-      onExclusiveModeChanged?.call(exclusive);
-      return true;
+
+      onExclusiveModeChanged?.call(wasapiExclusive);
+      return wasapiExclusive == exclusive;
     } catch (err) {
       logger.e('[use exclusive mode] $err');
       showTextOnSnackBar(err.toString());
@@ -888,21 +947,18 @@ class BassPlayer {
     _logAudioState('_rebuildStream(done)');
   }
 
-  /// 创建独占模式流
-  void _createWasapiStream(String path, double seekTo) {
+  int _createDecodeStream(String path) {
     const flags =
         bass.BASS_UNICODE | bass.BASS_SAMPLE_FLOAT | bass.BASS_ASYNCFILE | bass.BASS_STREAM_DECODE;
-
     final pathPointer = path.toNativeUtf16() as ffi.Pointer<ffi.Void>;
-    var handle = _bass.BASS_StreamCreateFile(
-      bass.FALSE,
-      pathPointer,
-      0,
-      0,
-      flags,
-    );
+    final handle = _bass.BASS_StreamCreateFile(bass.FALSE, pathPointer, 0, 0, flags);
     malloc.free(pathPointer);
+    return handle;
+  }
 
+  /// 创建独占模式流
+  void _createWasapiStream(String path, double seekTo) {
+    var handle = _createDecodeStream(path);
     if (handle == 0) {
       throw Exception('Failed to create WASAPI exclusive stream');
     }
@@ -910,7 +966,7 @@ class BassPlayer {
     _fstream = handle;
     _streamWasapiExclusive = true;
 
-    setVolumeDsp(AppPreference.instance.playbackPref.volumeDsp);
+    setVolumeDsp(0.0);
     if (seekTo > 0.0) {
       seek(seekTo);
     }
@@ -1348,7 +1404,8 @@ class BassPlayer {
     } catch (err) {
       logger.w('[bass] wasapi exclusive init failed, fallback to shared: $err');
       showTextOnSnackBar('独占模式初始化失败，已切回共享模式');
-      useExclusiveMode(false);
+      _fallbackFromExclusive();
+      onExclusiveModeChanged?.call(false);
       return;
     }
 
@@ -1357,17 +1414,58 @@ class BassPlayer {
         case bass.BASS_ERROR_INIT:
           _bassWasapiInit();
           _startWasapiExclusive();
-          break;
+          return;
         case bass.BASS_ERROR_UNKNOWN:
           throw const FormatException('Some other mystery problem!');
       }
     }
+
+    // 正常启动（切歌/恢复），直接设音量，不做淡入
+    setVolumeDsp(AppPreference.instance.playbackPref.volumeDsp);
+
     _playerStateStreamController.add(playerState);
     _positionUpdater?.cancel();
     _refreshStreamSampleRate();
     _spectrumTickPeriod = _computeSpectrumTickPeriod();
     _lastSpectrumUpdateUs = 0;
     _positionUpdater = _getPositionUpdater(_computePlayingTickPeriod());
+  }
+
+  void _fallbackFromExclusive() {
+    _bassWasapi.BASS_WASAPI_Stop(bass.TRUE);
+    _bassWasapi.BASS_WASAPI_Free();
+    if (_fstream != null) {
+      _bass.BASS_StreamFree(_fstream!);
+      _fstream = null;
+    }
+    wasapiExclusive = false;
+    _streamWasapiExclusive = false;
+    _bassInit();
+    if (_fPath != null) {
+      final seekPos = position;
+      _positionUpdaterVersion++;
+      _positionUpdater?.cancel();
+      _positionUpdater = null;
+      _createSharedStream(_fPath!, seekPos);
+    }
+  }
+
+  void _fadeInWasapiVolume() {
+    _fadeInTimer?.cancel();
+    final target = AppPreference.instance.playbackPref.volumeDsp;
+    const steps = 10;
+    const stepMs = 20;
+    int step = 0;
+    _fadeInTimer = Timer.periodic(const Duration(milliseconds: stepMs), (timer) {
+      step++;
+      if (step >= steps) {
+        setVolumeDsp(target);
+        timer.cancel();
+        _fadeInTimer = null;
+      } else {
+        setVolumeDsp(target * (step / steps));
+      }
+    });
   }
 
   /// start/resume channel
@@ -1511,6 +1609,7 @@ class BassPlayer {
   ///
   /// Also free the bass.dll.
   void free() {
+    _fadeInTimer?.cancel();
     _positionUpdaterVersion++;
     _positionUpdater?.cancel();
     _positionUpdater = null;
