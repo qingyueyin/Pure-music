@@ -29,7 +29,7 @@ class MemoryMonitorService {
 
   void start() {
     _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 60), (_) {
+    _timer = Timer.periodic(const Duration(seconds: 30), (_) {
       try {
         final rssMB = (ProcessInfo.currentRss / (1024 * 1024)).round();
 

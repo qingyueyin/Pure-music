@@ -6,9 +6,10 @@ import 'package:flutter/material.dart';
 import 'package:pure_music/page/now_playing_page/component/now_playing_background_inputs.dart';
 
 /// Decode size for the source cover before blurring.
-const int _kDecodeSize = 400;
+/// 200x200 已足够覆盖全屏模糊，相比 400x400 节省 75% 纹理内存。
+const int _kDecodeSize = 200;
 
-const int _kBlurOutputSize = 400;
+const int _kBlurOutputSize = 200;
 
 const _kBlurSigma = 20.0;
 

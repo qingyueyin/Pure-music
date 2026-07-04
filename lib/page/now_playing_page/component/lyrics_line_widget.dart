@@ -2,6 +2,7 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/physics.dart';
 import 'package:provider/provider.dart';
 
 import 'package:pure_music/core/enums.dart';
@@ -36,7 +37,7 @@ class LyricsLineWidget extends StatefulWidget {
   final bool isUserScrolling;
   final bool isHovered;
   final void Function(bool)? onHoverChanged;
-  final void Function()? onTap;
+  final VoidCallback? onTap;
 
   @override
   State<LyricsLineWidget> createState() => _LyricsLineWidgetState();
@@ -71,6 +72,14 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
   Ticker? _ticker;
   double _currentTimeMs = 0;
 
+  /// seek 后用于过滤旧进度回调的临时目标
+  double? _pendingSeekMs;
+  DateTime? _pendingSeekAt;
+  static const _seekGuardWindowMs = 200;
+
+  late final AnimationController _scaleController;
+  late final AnimationController _floatController;
+
   // 缓存 Painter，避免每帧重建
   LyricsLinePainter? _cachedPainter;
 
@@ -96,11 +105,47 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
   void initState() {
     super.initState();
     _config = context.read<LyricViewController>().renderConfig;
+    _scaleController = AnimationController.unbounded(vsync: this);
+    _scaleController.value = widget.distance == 0
+        ? _config.mainLineScale * _config.activeLineScaleMultiplier
+        : _config.subLineScale * _config.inactiveLineScaleMultiplier;
+    _floatController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _floatController.value = widget.distance == 0 ? 1.0 : 0.0;
     _initTicker();
+  }
+
+  void _animateScale() {
+    final target = widget.distance == 0
+        ? _config.mainLineScale * _config.activeLineScaleMultiplier
+        : _config.subLineScale * _config.inactiveLineScaleMultiplier;
+    final simulation = SpringSimulation(
+      const SpringDescription(mass: 1, stiffness: 100, damping: 17),
+      _scaleController.value,
+      target,
+      0,
+    );
+    _scaleController.animateWith(simulation);
+  }
+
+  void _animateFloat() {
+    final target = widget.distance == 0 ? 1.0 : 0.0;
+    if ((_floatController.value - target).abs() < 0.001) return;
+    _floatController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 600),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   void _initTicker() {
     if (widget.distance == 0 && _ticker == null) {
+      final rawMs = PlayService.instance.playbackService.position * 1000.0;
+      _currentTimeMs = rawMs;
+      _pendingSeekMs = null;
+      _pendingSeekAt = null;
       _ticker = createTicker(_onTick);
       _ticker!.start();
     }
@@ -113,12 +158,37 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
   }
 
   void _onTick(Duration elapsed) {
-    final newTimeMs = PlayService.instance.playbackService.position * 1000.0;
-    // 只在时间变化超过 16ms（约 1 帧）时才更新，避免无意义的重建
-    if ((newTimeMs - _currentTimeMs).abs() >= 16.0) {
-      _currentTimeMs = newTimeMs;
-      setState(() {});
+    final rawMs = PlayService.instance.playbackService.position * 1000.0;
+    final delta = rawMs - _currentTimeMs;
+
+    // seek 保护：大幅跳转后的短窗口内，忽略与跳转方向相反的旧进度回调
+    if (_pendingSeekMs != null && _pendingSeekAt != null) {
+      final age = DateTime.now().difference(_pendingSeekAt!).inMilliseconds;
+      if (age > _seekGuardWindowMs || (rawMs - _pendingSeekMs!).abs() <= 50) {
+        _pendingSeekMs = null;
+        _pendingSeekAt = null;
+      } else if ((rawMs > _currentTimeMs) !=
+          (_pendingSeekMs! > _currentTimeMs)) {
+        // 方向相反，跳过本次回调
+        setState(() {});
+        return;
+      }
     }
+
+    if (delta.abs() >= 100) {
+      // Seek 或大幅跳转：记录目标并直接同步
+      _pendingSeekMs = rawMs;
+      _pendingSeekAt = DateTime.now();
+      _currentTimeMs = rawMs;
+    } else if (delta > 0) {
+      // 播放中：直接同步 raw，避免平滑滞后导致歌词末尾覆盖不全
+      _currentTimeMs = rawMs;
+    } else if (delta < -32) {
+      // 暂停或倒带：回退到 raw
+      _currentTimeMs = rawMs;
+    }
+
+    setState(() {});
   }
 
   @override
@@ -135,6 +205,9 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
         _ticker?.stop();
       }
 
+      _animateScale();
+      _animateFloat();
+
       if (!isActive) {
         _cachedPainter = null;
       }
@@ -142,12 +215,16 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
 
     if (widget.line != oldWidget.line) {
       _cachedPainter = null;
+      _pendingSeekMs = null;
+      _pendingSeekAt = null;
     }
   }
 
   @override
   void dispose() {
     _ticker?.dispose();
+    _scaleController.dispose();
+    _floatController.dispose();
     _cachedPainter = null;
     super.dispose();
   }
@@ -157,7 +234,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
     super.build(context); // AutomaticKeepAliveClientMixin 必需
 
     final dist = (widget.distance ?? 0).abs();
-    final active = widget.distance == 0;
+    final isCurrentLine = widget.distance == 0;
 
     final renderConfig = context.watch<LyricViewController>().renderConfig;
 
@@ -178,22 +255,17 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
     final scheme = Theme.of(context).colorScheme;
     final blurSigma = widget.isUserScrolling
         ? 0.0
-        : (active ? 0.0 : renderConfig.blurSigmaForDistance(dist));
+        : (isCurrentLine ? 0.0 : renderConfig.blurSigmaForDistance(dist));
 
-    final isTransitionLine = _isTransitionLine(widget.line, active);
+    final isTransitionLine = _isTransitionLine(widget.line, isCurrentLine);
     if (isTransitionLine) {
-      // 匹配 Widget 模式：短空白行在非主行时完全隐藏
-      if (!active) {
+      if (!isCurrentLine) {
         return const SizedBox.shrink();
       }
 
       final verticalPad = widget.line is SyncLyricLine
           ? renderConfig.syncVerticalPadding(isMainLine: true)
           : renderConfig.lrcVerticalPadding();
-
-      // 普通歌词遮罩在外层 12px padding 内，painter 内容再内缩 12px；间奏行保持同样结构。
-      const double outerHorizontalPad = transitionTileMargin;
-      const double innerHorizontalPad = transitionTileMargin;
 
       final transitionContent = SizedBox(
         height: transitionTileHeight,
@@ -215,14 +287,14 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
       );
 
       return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: outerHorizontalPad),
+        padding: const EdgeInsets.symmetric(horizontal: transitionTileMargin),
         child: _LocalHoverMask(
           onTap: widget.onTap,
           color: scheme.onSurface.withValues(alpha: 0.08),
           child: Padding(
             padding: EdgeInsets.only(
-                left: innerHorizontalPad,
-                right: innerHorizontalPad,
+                left: transitionTileMargin,
+                right: transitionTileMargin,
                 top: verticalPad,
                 bottom: verticalPad),
             child: Align(
@@ -234,7 +306,6 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
       );
     }
 
-    // 匹配 Widget 模式：短空白行直接隐藏
     final isShortBlank = widget.line is SyncLyricLine
         ? (widget.line as SyncLyricLine).words.isEmpty
         : widget.line is LrcLine && (widget.line as LrcLine).isBlank;
@@ -255,7 +326,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
             _cachedPainter!.currentTimeMs != _currentTimeMs ||
             _cachedPainter!.blurSigma != blurSigma ||
             _cachedPainter!.config != renderConfig ||
-            _cachedPainter!.isMainLine != active ||
+            _cachedPainter!.isMainLine != isCurrentLine ||
             _cachedPainter!.useMaterialYouColor !=
                 AppSettings.instance.useMaterialYouForLyrics ||
             _cachedPainter!.fontFamily != fontFamily ||
@@ -269,7 +340,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
             blurSigma: blurSigma,
             config: renderConfig,
             scheme: scheme,
-            isMainLine: active,
+            isMainLine: isCurrentLine,
             useMaterialYouColor: AppSettings.instance.useMaterialYouForLyrics,
             fontFamily: fontFamily,
             agent: widget.line is SyncLyricLine
@@ -292,11 +363,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
           builder: (context, sigma, child) {
             if (sigma > 0.01) {
               return ImageFiltered(
-                imageFilter: ImageFilter.blur(
-                  sigmaX: sigma,
-                  sigmaY: sigma,
-                  tileMode: TileMode.clamp,
-                ),
+                imageFilter: _getBlurFilter(sigma),
                 child: child!,
               );
             }
@@ -314,14 +381,27 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
       },
     );
 
-    // AnimatedScale/Opacity 在外层，确保 setState 时 didUpdateWidget 被调用
-    inner = AnimatedScale(
-      scale: active
-          ? _config.mainLineScale * _config.activeLineScaleMultiplier
-          : _config.subLineScale * _config.inactiveLineScaleMultiplier,
-      alignment: scaleAlignment,
-      duration: const Duration(milliseconds: 600),
-      curve: Curves.easeOutCubic,
+    inner = AnimatedBuilder(
+      animation: _scaleController,
+      builder: (context, child) {
+        return Transform.scale(
+          scale: _scaleController.value,
+          alignment: scaleAlignment,
+          child: child!,
+        );
+      },
+      child: inner,
+    );
+
+    inner = AnimatedBuilder(
+      animation: _floatController,
+      builder: (context, child) {
+        final offsetY = _floatController.value * -4.0;
+        return Transform.translate(
+          offset: Offset(0, offsetY),
+          child: child!,
+        );
+      },
       child: inner,
     );
 

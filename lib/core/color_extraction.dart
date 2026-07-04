@@ -47,6 +47,10 @@ class ColorExtractionService {
         maximumColorCount: 5,
       );
 
+      // PaletteGenerator.fromImageProvider 会在 Flutter ImageCache 中驻留原图，
+      // 大封面长期占用内存，提取完成后立即逐出。
+      PaintingBinding.instance.imageCache.evict(imageProvider);
+
       final dominantColor = palette.dominantColor?.color;
       if (dominantColor == null) return null;
 
