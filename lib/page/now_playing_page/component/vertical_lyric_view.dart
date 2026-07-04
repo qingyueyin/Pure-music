@@ -231,12 +231,12 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       interpolator: _sineOutInterpolator,
       duration: const Duration(milliseconds: 300),
     );
-    _initLyricView();
     lyricLineStreamSubscription =
         lyricService.lyricLineStream.listen(_updateNextLyricLine);
+    _initLyricView();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      lyricService.findCurrLyricLineAt(playbackService.position);
+      lyricService.forceEmitCurrentLine();
     });
 
     // 启动空闲检测
@@ -715,31 +715,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
             '  line[$i] start=${l.start.inMilliseconds}ms length=${l.length.inMilliseconds}ms type=${l.runtimeType} blank=${l is LrcLine ? l.isBlank : 'N/A'} trans=${l.translation}');
       }
     }
-    final next = lines.indexWhere(
-      (element) =>
-          element.start.inMilliseconds / 1000 > playbackService.position,
-    );
-    final nextLyricLine = next == -1 ? lines.length : next;
-    int candidate = max(nextLyricLine - 1, 0);
-    // 跳过空白行：如果当前行是空白/元数据行，跳到下一个非空白行
-    while (candidate < lines.length && _isLineBlankFiltered(lines[candidate])) {
-      candidate++;
-    }
-    _mainLine = candidate.clamp(0, lines.length - 1);
     _updateViewportRange(force: true);
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_disposed || !mounted) return;
-      _ensureCurrentLineVisible();
-    });
-  }
-
-  void _ensureCurrentLineVisible() {
-    if (_disposed || !mounted) return;
-    if (_cachedOffsets == null && _cachedMaxWidth > 0) {
-      _computeOffsets(_cachedMaxWidth);
-    }
-    _scrollToCurrent(Duration.zero);
   }
 
   void _seekToLyricLine(int i) {
