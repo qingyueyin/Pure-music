@@ -177,6 +177,76 @@ class LyricRenderConfig {
     );
   }
 
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is LyricRenderConfig &&
+        other.textAlign == textAlign &&
+        other.baseFontSize == baseFontSize &&
+        other.translationBaseFontSize == translationBaseFontSize &&
+        other.showTranslation == showTranslation &&
+        other.showRoman == showRoman &&
+        other.fontWeight == fontWeight &&
+        other.enableBlur == enableBlur &&
+        other.enableLineScale == enableLineScale &&
+        other.enableLineSpring == enableLineSpring &&
+        other.enableStaggeredAnimation == enableStaggeredAnimation &&
+        other.enableAudioReactive == enableAudioReactive &&
+        other.audioReactiveStrength == audioReactiveStrength &&
+        other.enableGlow == enableGlow &&
+        other.hasMultipleAgents == hasMultipleAgents &&
+        other.useCustomPaint == useCustomPaint &&
+        other.viewportFadeExtent == viewportFadeExtent &&
+        other.mainLineScale == mainLineScale &&
+        other.subLineScale == subLineScale &&
+        other.mainTranslationScale == mainTranslationScale &&
+        other.subTranslationScale == subTranslationScale &&
+        other.activeLineScaleMultiplier == activeLineScaleMultiplier &&
+        other.inactiveLineScaleMultiplier == inactiveLineScaleMultiplier &&
+        other.blurSigmaStep == blurSigmaStep &&
+        other.blurSigmaMax == blurSigmaMax &&
+        other.implicitAnimationDuration == implicitAnimationDuration &&
+        other.lineSpring == lineSpring &&
+        other.viewportLeadingLines == viewportLeadingLines &&
+        other.viewportTrailingLines == viewportTrailingLines &&
+        other.viewportOverscanScreens == viewportOverscanScreens &&
+        other.userScrollHoldDuration == userScrollHoldDuration;
+  }
+
+  @override
+  int get hashCode => Object.hashAll([
+        textAlign,
+        baseFontSize,
+        translationBaseFontSize,
+        showTranslation,
+        showRoman,
+        fontWeight,
+        enableBlur,
+        enableLineScale,
+        enableLineSpring,
+        enableStaggeredAnimation,
+        enableAudioReactive,
+        audioReactiveStrength,
+        enableGlow,
+        hasMultipleAgents,
+        useCustomPaint,
+        viewportFadeExtent,
+        mainLineScale,
+        subLineScale,
+        mainTranslationScale,
+        subTranslationScale,
+        activeLineScaleMultiplier,
+        inactiveLineScaleMultiplier,
+        blurSigmaStep,
+        blurSigmaMax,
+        implicitAnimationDuration,
+        lineSpring,
+        viewportLeadingLines,
+        viewportTrailingLines,
+        viewportOverscanScreens,
+        userScrollHoldDuration,
+      ]);
+
   FontWeight discreteFontWeight([int? resolvedWeight]) {
     final weight = (resolvedWeight ?? fontWeight).clamp(100, 900);
     return FontWeight.values[((weight / 100).round() - 1).clamp(0, 8)];
