@@ -46,6 +46,7 @@ class LyricsLineWidget extends StatefulWidget {
 class _LyricsLineWidgetState extends State<LyricsLineWidget>
     with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   static const int _blurFilterCacheMaxSize = 20;
+  // Dart 的 Map 按插入顺序维护，remove 后重新插入即可实现 LRU
   static final Map<double, ImageFilter> _blurFilterCache = {};
 
   static double _roundSigma(double sigma) {
@@ -54,17 +55,20 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
 
   static ImageFilter _getBlurFilter(double sigma) {
     final key = _roundSigma(sigma);
-    if (_blurFilterCache.length >= _blurFilterCacheMaxSize &&
-        !_blurFilterCache.containsKey(key)) {
+    final cached = _blurFilterCache[key];
+    if (cached != null) {
+      // 移到末尾标记为最近使用
+      _blurFilterCache.remove(key);
+      _blurFilterCache[key] = cached;
+      return cached;
+    }
+    if (_blurFilterCache.length >= _blurFilterCacheMaxSize) {
       _blurFilterCache.remove(_blurFilterCache.keys.first);
     }
-    return _blurFilterCache.putIfAbsent(
-      key,
-      () => ImageFilter.blur(
-        sigmaX: key,
-        sigmaY: key,
-        tileMode: TileMode.clamp,
-      ),
+    return _blurFilterCache[key] = ImageFilter.blur(
+      sigmaX: key,
+      sigmaY: key,
+      tileMode: TileMode.clamp,
     );
   }
 
