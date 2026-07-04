@@ -258,6 +258,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
           // 1. 完全清空对象池（而不是压缩）
           LyricsLinePainter.clearPool();
+          LyricsLineWidget.clearBlurFilterCache();
 
           // 2. 清空缓存的偏移量和高度（强制下次重新计算）
           _cachedOffsets = null;
