@@ -44,6 +44,29 @@ class LyricsLineWidget extends StatefulWidget {
 
 class _LyricsLineWidgetState extends State<LyricsLineWidget>
     with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
+  static const int _blurFilterCacheMaxSize = 20;
+  static final Map<double, ImageFilter> _blurFilterCache = {};
+
+  static double _roundSigma(double sigma) {
+    return (sigma * 2).roundToDouble() / 2;
+  }
+
+  static ImageFilter _getBlurFilter(double sigma) {
+    final key = _roundSigma(sigma);
+    if (_blurFilterCache.length >= _blurFilterCacheMaxSize &&
+        !_blurFilterCache.containsKey(key)) {
+      _blurFilterCache.remove(_blurFilterCache.keys.first);
+    }
+    return _blurFilterCache.putIfAbsent(
+      key,
+      () => ImageFilter.blur(
+        sigmaX: key,
+        sigmaY: key,
+        tileMode: TileMode.clamp,
+      ),
+    );
+  }
+
   late final LyricRenderConfig _config;
   Ticker? _ticker;
   double _currentTimeMs = 0;
@@ -58,7 +81,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
     final shouldKeep = dist <= 2;
 
     // 如果从 keepAlive 变为不 keepAlive，主动清理缓存
-      if (!shouldKeep && _cachedPainter != null) {
+    if (!shouldKeep && _cachedPainter != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           _cachedPainter = null;
@@ -138,13 +161,14 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
 
     final renderConfig = context.watch<LyricViewController>().renderConfig;
 
-    final effectiveTextAlign = renderConfig.hasMultipleAgents && widget.line is SyncLyricLine
-        ? switch ((widget.line as SyncLyricLine).agent) {
-            'v2' => LyricTextAlign.right,
-            'v1' => LyricTextAlign.left,
-            _ => renderConfig.textAlign,
-          }
-        : renderConfig.textAlign;
+    final effectiveTextAlign =
+        renderConfig.hasMultipleAgents && widget.line is SyncLyricLine
+            ? switch ((widget.line as SyncLyricLine).agent) {
+                'v2' => LyricTextAlign.right,
+                'v1' => LyricTextAlign.left,
+                _ => renderConfig.textAlign,
+              }
+            : renderConfig.textAlign;
 
     final scaleAlignment = switch (effectiveTextAlign) {
       LyricTextAlign.left => Alignment.centerLeft,
@@ -232,9 +256,13 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
             _cachedPainter!.blurSigma != blurSigma ||
             _cachedPainter!.config != renderConfig ||
             _cachedPainter!.isMainLine != active ||
-            _cachedPainter!.useMaterialYouColor != AppSettings.instance.useMaterialYouForLyrics ||
+            _cachedPainter!.useMaterialYouColor !=
+                AppSettings.instance.useMaterialYouForLyrics ||
             _cachedPainter!.fontFamily != fontFamily ||
-            _cachedPainter!.agent != (widget.line is SyncLyricLine ? (widget.line as SyncLyricLine).agent : null)) {
+            _cachedPainter!.agent !=
+                (widget.line is SyncLyricLine
+                    ? (widget.line as SyncLyricLine).agent
+                    : null)) {
           _cachedPainter = LyricsLinePainter(
             line: widget.line,
             currentTimeMs: _currentTimeMs,
@@ -244,7 +272,9 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
             isMainLine: active,
             useMaterialYouColor: AppSettings.instance.useMaterialYouForLyrics,
             fontFamily: fontFamily,
-            agent: widget.line is SyncLyricLine ? (widget.line as SyncLyricLine).agent : null,
+            agent: widget.line is SyncLyricLine
+                ? (widget.line as SyncLyricLine).agent
+                : null,
           );
         }
 
