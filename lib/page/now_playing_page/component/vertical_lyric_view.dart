@@ -222,6 +222,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   List<double>? _cachedOffsets;
   List<double>? _cachedHeights;
   double _cachedMaxWidth = 0.0;
+  bool _initialOffsetsComputed = false;
 
   @override
   void initState() {
@@ -487,6 +488,17 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
     _cachedOffsets = offsets;
     _cachedHeights = heights;
+
+    // 首次进入页面时 offsets 可能晚于行号就绪，补一次定位
+    if (!_initialOffsetsComputed) {
+      _initialOffsetsComputed = true;
+      _needsInitialScroll = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_disposed || !mounted) return;
+        _scrollToCurrent(Duration.zero);
+      });
+    }
+
     if (lines.isNotEmpty) {
       utils.logger.d(
           '_computeOffsets: ${lines.length} lines totalOffset=${currentOffset.toStringAsFixed(1)}px');
@@ -531,6 +543,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       _cachedMaxWidth = 0.0;
       _cachedOffsets = null;
       _cachedHeights = null;
+      _initialOffsetsComputed = false;
+      _needsInitialScroll = true;
       _mainLine = 0;
       _lineKeys.clear();
 
