@@ -36,9 +36,9 @@ class MemoryMonitorService {
         // 播放状态下调高阈值，避免频繁清理引起缓存重建和 GC 抖动
         final playing = _isPlaying();
         // 起始 RSS ~230MB，阈值从低到高逐级清理
-        final tier1Threshold = playing ? 300 : 260;
-        final tier2Threshold = playing ? 340 : 290;
-        final tier3Threshold = playing ? 400 : 340;
+        final tier1Threshold = playing ? 290 : 250;
+        final tier2Threshold = playing ? 330 : 280;
+        final tier3Threshold = playing ? 390 : 330;
 
         if (rssMB > tier3Threshold) {
           logger.w(
