@@ -43,6 +43,7 @@ class UniDetailPage<P, S, T> extends StatefulWidget {
     this.onSortMethodChanged,
     this.extraActions,
     this.bodyOverride,
+    this.onPrimaryPicTap,
   });
 
   final PagePreference pref;
@@ -83,6 +84,7 @@ class UniDetailPage<P, S, T> extends StatefulWidget {
   final VoidCallback? onSortMethodChanged;
   final List<Widget>? extraActions;
   final Widget? bodyOverride;
+  final VoidCallback? onPrimaryPicTap;
 
   @override
   State<UniDetailPage<P, S, T>> createState() => _UniDetailPageState<P, S, T>();
@@ -192,6 +194,7 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
               actions: actions,
               multiSelectController: multiSelectController,
               multiSelectViewActions: widget.multiSelectViewActions,
+              onPicTap: widget.onPrimaryPicTap,
             ),
             if (widget.enableTabs && widget.tertiaryContent != null) ...[
               const SizedBox(height: 16.0),
@@ -409,6 +412,7 @@ class _UniDetailPageHeader extends StatelessWidget {
     this.multiSelectController,
     required this.actions,
     this.multiSelectViewActions,
+    this.onPicTap,
   });
 
   final Future<ImageProvider?> pic;
@@ -420,6 +424,7 @@ class _UniDetailPageHeader extends StatelessWidget {
   final MultiSelectController? multiSelectController;
   final List<Widget> actions;
   final List<Widget>? multiSelectViewActions;
+  final VoidCallback? onPicTap;
 
   @override
   Widget build(BuildContext context) {
@@ -458,45 +463,16 @@ class _UniDetailPageHeader extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              FutureBuilder(
-                future: pic,
-                builder: (context, snapshot) {
-                  final placeholder = Icon(
-                    Symbols.queue_music,
-                    size: 200.0,
-                    color: scheme.onSurface,
-                  );
-                  return switch (snapshot.connectionState) {
-                    ConnectionState.done => snapshot.data == null
-                        ? placeholder
-                        : switch (picShape) {
-                            PicShape.oval => ClipOval(
-                                child: Image(
-                                  image: snapshot.data!,
-                                  width: 200.0,
-                                  height: 200.0,
-                                  errorBuilder: (_, __, ___) => placeholder,
-                                ),
-                              ),
-                            PicShape.rrect => ClipRRect(
-                                borderRadius: BorderRadius.circular(8.0),
-                                child: Image(
-                                  image: snapshot.data!,
-                                  width: 200.0,
-                                  height: 200.0,
-                                  errorBuilder: (_, __, ___) => placeholder,
-                                ),
-                              ),
-                          },
-                    _ => const SizedBox(
-                        width: 200,
-                        height: 200,
-                        child: Center(
-                          child: CircularProgressIndicator(),
-                        ),
-                      ),
-                  };
-                },
+              _HoverableCover(
+                futurePic: pic,
+                picShape: picShape,
+                scheme: scheme,
+                onTap: onPicTap,
+                placeholder: Icon(
+                  Symbols.queue_music,
+                  size: 200.0,
+                  color: scheme.onSurface,
+                ),
               ),
               const SizedBox(width: 16.0),
               Expanded(
@@ -537,6 +513,112 @@ class _UniDetailPageHeader extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _HoverableCover extends StatefulWidget {
+  final Future<ImageProvider?> futurePic;
+  final PicShape picShape;
+  final ColorScheme scheme;
+  final VoidCallback? onTap;
+  final Widget placeholder;
+  const _HoverableCover({
+    required this.futurePic,
+    required this.picShape,
+    required this.scheme,
+    this.onTap,
+    required this.placeholder,
+  });
+
+  @override
+  State<_HoverableCover> createState() => _HoverableCoverState();
+}
+
+class _HoverableCoverState extends State<_HoverableCover> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final brightness = Theme.of(context).brightness;
+    final overlayColor = (brightness == Brightness.light
+            ? Colors.black
+            : Colors.white)
+        .withValues(alpha: 0.25);
+
+    Widget cover = SizedBox(
+      width: 200,
+      height: 200,
+      child: FutureBuilder(
+        future: widget.futurePic,
+        builder: (context, snapshot) {
+          return switch (snapshot.connectionState) {
+            ConnectionState.done => snapshot.data == null
+                ? widget.placeholder
+                : switch (widget.picShape) {
+                    PicShape.oval => ClipOval(
+                        child: Image(
+                          image: snapshot.data!,
+                          width: 200.0,
+                          height: 200.0,
+                          errorBuilder: (_, __, ___) =>
+                              widget.placeholder,
+                        ),
+                      ),
+                    PicShape.rrect => ClipRRect(
+                        borderRadius: BorderRadius.circular(8.0),
+                        child: Image(
+                          image: snapshot.data!,
+                          width: 200.0,
+                          height: 200.0,
+                          errorBuilder: (_, __, ___) =>
+                              widget.placeholder,
+                        ),
+                      ),
+                  },
+            _ => const Center(
+                child: CircularProgressIndicator(),
+              ),
+          };
+        },
+      ),
+    );
+
+    if (widget.onTap == null) return cover;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: Stack(
+          children: [
+            cover,
+            if (_isHovered)
+              Positioned.fill(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: overlayColor,
+                    borderRadius: BorderRadius.circular(
+                        widget.picShape == PicShape.oval ? 100 : 8),
+                  ),
+                  child: const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Symbols.brush, size: 28, color: Colors.white),
+                        SizedBox(height: 4),
+                        Text('更换封面',
+                            style: TextStyle(
+                                color: Colors.white, fontSize: 13)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

@@ -83,29 +83,6 @@ class ControlEventMessage extends Message {
       };
 }
 
-class PreferenceChangedMessage extends Message {
-  final int primary;
-  final int surfaceContainer;
-  final int onSurface;
-
-  const PreferenceChangedMessage(this.primary, this.surfaceContainer, this.onSurface);
-
-  factory PreferenceChangedMessage.fromJson(Map<String, dynamic> json) {
-    return PreferenceChangedMessage(
-      json['primary'] as int,
-      json['surfaceContainer'] as int,
-      json['onSurface'] as int,
-    );
-  }
-
-  @override
-  Map<String, dynamic> toMessageJson() => {
-        'primary': primary,
-        'surfaceContainer': surfaceContainer,
-        'onSurface': onSurface,
-      };
-}
-
 class PlayerStateChangedMessage extends Message {
   final bool playing;
 
@@ -215,48 +192,17 @@ class LyricWord {
       };
 }
 
-class PositionMessage extends Message {
-  final int wordIndex;
-  final double progress;
-
-  const PositionMessage(this.wordIndex, this.progress);
-
-  factory PositionMessage.fromJson(Map<String, dynamic> json) {
-    return PositionMessage(
-      (json['wordIndex'] as num).toInt(),
-      (json['progress'] as num).toDouble(),
-    );
-  }
-
-  @override
-  Map<String, dynamic> toMessageJson() => {
-        'wordIndex': wordIndex,
-        'progress': progress,
-      };
-}
-
-class ThemeModeChangedMessage extends Message {
-  final bool darkMode;
-
-  const ThemeModeChangedMessage(this.darkMode);
-
-  factory ThemeModeChangedMessage.fromJson(Map<String, dynamic> json) {
-    return ThemeModeChangedMessage(json['darkMode'] as bool);
-  }
-
-  @override
-  Map<String, dynamic> toMessageJson() => {'darkMode': darkMode};
-}
-
 class ThemeChangedMessage extends Message {
+  final bool darkMode;
   final int primary;
   final int surfaceContainer;
   final int onSurface;
 
-  const ThemeChangedMessage(this.primary, this.surfaceContainer, this.onSurface);
+  const ThemeChangedMessage(this.darkMode, this.primary, this.surfaceContainer, this.onSurface);
 
   factory ThemeChangedMessage.fromJson(Map<String, dynamic> json) {
     return ThemeChangedMessage(
+      json['darkMode'] as bool,
       json['primary'] as int,
       json['surfaceContainer'] as int,
       json['onSurface'] as int,
@@ -265,6 +211,7 @@ class ThemeChangedMessage extends Message {
 
   @override
   Map<String, dynamic> toMessageJson() => {
+        'darkMode': darkMode,
         'primary': primary,
         'surfaceContainer': surfaceContainer,
         'onSurface': onSurface,
@@ -273,18 +220,6 @@ class ThemeChangedMessage extends Message {
 
 class UnlockMessage extends Message {
   const UnlockMessage();
-
-  @override
-  Map<String, dynamic> toMessageJson() => {};
-}
-
-/// 心跳消息——主程序定期发送给桌面歌词
-class HeartbeatMessage extends Message {
-  const HeartbeatMessage();
-
-  factory HeartbeatMessage.fromJson(Map<String, dynamic> json) {
-    return const HeartbeatMessage();
-  }
 
   @override
   Map<String, dynamic> toMessageJson() => {};

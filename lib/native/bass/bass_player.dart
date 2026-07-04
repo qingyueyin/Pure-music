@@ -53,6 +53,8 @@ class BassPlayer {
   int? _fstream;
   bool _streamWasapiExclusive = false;
 
+  double? replayGainDb;
+
   // Equalizer
   final List<int> _eqHandles = [];
   int _bfxEqHandle = 0;
@@ -1074,6 +1076,7 @@ class BassPlayer {
   /// if setSource has been called once,
   /// it will pause current channel and free current stream.
   void setSource(String path) {
+    replayGainDb = null;
     _logAudioState('setSource(begin)');
     if (_fstream != null) {
       _positionUpdaterVersion++;

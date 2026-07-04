@@ -44,7 +44,6 @@ CREATE TABLE IF NOT EXISTS playlists (
 CREATE TABLE IF NOT EXISTS playlist_items (
   playlist_id INTEGER NOT NULL,
   path TEXT NOT NULL,
-  audio_json TEXT NOT NULL,
   PRIMARY KEY (playlist_id, path)
 );
 
@@ -74,6 +73,17 @@ CREATE TABLE IF NOT EXISTS album_colors (
       if (version < 1) {
         db.execute('ALTER TABLE playlist_items ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0');
         db.execute('PRAGMA user_version = 1');
+      }
+      if (version < 2) {
+        try {
+          db.execute('ALTER TABLE playlist_items DROP COLUMN audio_json');
+        } catch (_) {}
+        db.execute('PRAGMA user_version = 2');
+      }
+      if (version < 3) {
+        db.execute(
+            'ALTER TABLE playlists ADD COLUMN cover_source TEXT');
+        db.execute('PRAGMA user_version = 3');
       }
       db.execute('COMMIT');
     } catch (e) {

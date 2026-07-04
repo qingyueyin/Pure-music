@@ -121,14 +121,11 @@ class DesktopLyricService extends ChangeNotifier {
   int _sendQueueSize = 0;
   Future<void> _sendQueue = Future.value();
 
-  LyricLine? _currentLyricLine;
-
   bool isLocked = false;
   bool _isKilling = false;
   bool _isRunning = false;
 
   // ── 心跳 / 位置追踪 / Job Object ────────────────────────
-  Timer? _heartbeatTimer;
   StreamSubscription<double>? _positionSub;
   Pointer<Void>? _jobHandle;
 
@@ -161,8 +158,6 @@ class DesktopLyricService extends ChangeNotifier {
     _isRunning = false;
     _isKilling = false;
     isLocked = false;
-    _heartbeatTimer?.cancel();
-    _heartbeatTimer = null;
     _positionSub?.cancel();
     _positionSub = null;
     _WinJobObject.close(_jobHandle);
@@ -259,13 +254,6 @@ class DesktopLyricService extends ChangeNotifier {
       _jobHandle = _WinJobObject.createAndAssign(process.pid);
     }
 
-    // ── 启动心跳定时器（每 5 秒发送一次） ──
-    _heartbeatTimer?.cancel();
-    _heartbeatTimer = Timer.periodic(
-      const Duration(seconds: 5),
-      (_) => sendMessage(const msg.HeartbeatMessage()),
-    );
-
     notifyListeners();
   }
 
@@ -332,88 +320,15 @@ class DesktopLyricService extends ChangeNotifier {
     notifyListeners();
   }
 
-  void sendThemeModeMessage(bool darkMode) {
-    sendMessage(msg.ThemeModeChangedMessage(darkMode));
-  }
-
-  void sendThemeMessage(ColorScheme scheme) {
+  void sendThemeMessage(ColorScheme scheme, {bool darkMode = false}) {
     final primary = scheme.primary.toARGB32();
     final surfaceContainer = scheme.surfaceContainer.toARGB32();
     final onSurface = scheme.onSurface.toARGB32();
-    sendMessage(msg.ThemeChangedMessage(primary, surfaceContainer, onSurface));
-    sendMessage(
-      msg.PreferenceChangedMessage(primary, surfaceContainer, onSurface),
-    );
+    sendMessage(msg.ThemeChangedMessage(darkMode, primary, surfaceContainer, onSurface));
   }
 
   void sendPlayerStateMessage(bool isPlaying) {
     sendMessage(msg.PlayerStateChangedMessage(isPlaying));
-
-    if (_positionSub != null) {
-      _positionSub?.cancel();
-      _positionSub = null;
-    }
-
-    if (isPlaying) {
-      _startPositionListening();
-    }
-  }
-
-  /// 订阅进度流，定期向桌面歌词发送逐词位置校准
-  /// 频率已节流至 ~100ms，避免原版 ~20ms 的 IPC 过载
-  void _startPositionListening() {
-    _positionSub?.cancel();
-    _lastPositionSendMs = 0;
-    _positionSub = _playbackService.positionStream.listen((pos) {
-      _onPositionUpdate(pos);
-    });
-  }
-
-  int _lastPositionSendMs = 0;
-
-  void _onPositionUpdate(double position) {
-    // 节流：至少间隔 100ms
-    final now = DateTime.now().millisecondsSinceEpoch;
-    if (now - _lastPositionSendMs < 100) return;
-    _lastPositionSendMs = now;
-
-    if (_currentLyricLine is! SyncLyricLine) return;
-
-    final line = _currentLyricLine as SyncLyricLine;
-    final currentMs = (position * 1000).round();
-    final lineStartMs = line.start.inMilliseconds;
-
-    if (currentMs < lineStartMs) return;
-
-    final offsetMs = currentMs - lineStartMs;
-
-    final words = line.words;
-    int wordIndex = -1;
-    double progress = 0.0;
-
-    for (int i = 0; i < words.length; i++) {
-      final wordStart = words[i].start.inMilliseconds - lineStartMs;
-      final wordLengthMs = words[i].length.inMilliseconds;
-      final wordEnd = wordStart + wordLengthMs;
-
-      if (offsetMs >= wordStart && offsetMs < wordEnd) {
-        wordIndex = i;
-        if (wordLengthMs > 0) {
-          final elapsed = offsetMs - wordStart;
-          progress = (elapsed / wordLengthMs * 100).clamp(0.0, 100.0);
-        }
-        break;
-      } else if (offsetMs >= wordEnd) {
-        wordIndex = i;
-        progress = 100.0;
-      } else {
-        break;
-      }
-    }
-
-    if (wordIndex < 0) return;
-
-    sendMessage(msg.PositionMessage(wordIndex, progress));
   }
 
   void sendNowPlayingMessage(Audio nowPlaying) {
@@ -425,8 +340,6 @@ class DesktopLyricService extends ChangeNotifier {
   }
 
   void sendLyricLineMessage(LyricLine line, {LyricLine? nextLine}) {
-    _currentLyricLine = line;
-
     List<msg.LyricWord>? words;
     if (line is SyncLyricLine) {
       final progressMs = ((_playbackService.position * 1000).round() -
@@ -578,8 +491,6 @@ class DesktopLyricService extends ChangeNotifier {
     _stderrSubscription?.cancel();
     _stderrSubscription = null;
     // 取消定时器
-    _heartbeatTimer?.cancel();
-    _heartbeatTimer = null;
     _positionSub?.cancel();
     _positionSub = null;
     // 释放 Job Object 句柄

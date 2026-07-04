@@ -3,6 +3,7 @@ import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/library/playlist.dart';
+import 'package:pure_music/page/playlist_cover_picker.dart';
 import 'package:pure_music/component/audio_tile.dart';
 import 'package:pure_music/page/uni_detail_page.dart';
 import 'package:pure_music/page/uni_page.dart';
@@ -24,6 +25,8 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
   bool _isReordering = false;
 
   Future<ImageProvider?> get _primaryPic async {
+    final custom = await widget.playlist.resolveCoverProvider();
+    if (custom != null) return custom;
     if (widget.playlist.audios.isEmpty) return null;
     return widget.playlist.audios.first.mediumCover;
   }
@@ -31,6 +34,12 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
   Future<ImageProvider?> get _backgroundPic async {
     if (widget.playlist.audios.isEmpty) return null;
     return widget.playlist.audios.first.cover;
+  }
+
+  Future<void> _changeCover() async {
+    await showCoverPicker(context, widget.playlist);
+    if (!mounted) return;
+    setState(() {});
   }
 
   void _onSortChanged() {
@@ -178,6 +187,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
       ],
       sortMethods: sortMethods,
       onSortMethodChanged: _onSortChanged,
+      onPrimaryPicTap: _changeCover,
       bodyOverride: _isReordering
           ? _buildReorderBody(contentList, scheme)
           : null,

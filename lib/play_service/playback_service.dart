@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/cache.dart';
@@ -10,6 +11,7 @@ import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
 import 'package:pure_music/play_service/equalizer_service.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/native/rust/api/smtc_flutter.dart';
+import 'package:pure_music/native/rust/api/tag_reader.dart' as rust_tag_reader;
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:flutter/foundation.dart';
@@ -82,6 +84,7 @@ class PlaybackService extends ChangeNotifier {
   final _smtc = SmtcFlutter();
   final _pref = AppPreference.instance.playbackPref;
   late final EqualizerService _eq;
+  String? _replayGainForPath;
 
   bool get isBassFxLoaded => _player.isBassFxLoaded;
   String get bassDebugStateLine => _player.debugStateLine;
@@ -102,6 +105,25 @@ class PlaybackService extends ChangeNotifier {
   void removeEqPreset(String name) => _eq.removeEqPreset(name);
   void applyEqPreset(EqPreset preset) => _eq.applyEqPreset(preset);
   void reapplyOutputGain() => _eq.reapplyOutputGain();
+
+  void _readReplayGainFor(String path) {
+    _replayGainForPath = path;
+    rust_tag_reader.readAudioExtraMetadata(path: path).then((jsonStr) {
+      if (_replayGainForPath != path) return;
+      _replayGainForPath = null;
+      try {
+        final data = jsonDecode(jsonStr) as Map<String, dynamic>;
+        final raw = data['replaygain_track_gain'] as String?;
+        if (raw == null || raw.isEmpty) return;
+        final gainDb = double.tryParse(raw.replaceAll('dB', '').trim());
+        if (gainDb == null) return;
+        _player.replayGainDb = gainDb;
+        _eq.reapplyOutputGain();
+      } catch (_) {}
+    }).catchError((_) {
+      _replayGainForPath = null;
+    });
+  }
 
   void savePreference() {
     AppPreference.instance.save();
@@ -278,6 +300,8 @@ class PlaybackService extends ChangeNotifier {
 
       // 通知所有 ListenableBuilder，确保 UI 随切歌同步刷新
       notifyListeners();
+
+      _readReplayGainFor(nowPlaying!.path);
     } catch (err) {
       logger.e('[load and play] $err');
       showTextOnSnackBar(err.toString());

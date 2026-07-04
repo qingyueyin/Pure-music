@@ -99,9 +99,36 @@ class LyricService extends ChangeNotifier {
       }
 
       final currLineIndex = _nextLyricLine - 1;
-      if (currLineIndex < 0 || currLineIndex >= lyric.lines.length) return;
-
       final activeIndices = _computeActiveLines(posMs);
+
+      // 前奏/尾奏 fallback：currLineIndex 越界时仍发射更新，UI 才知道当前位置
+      if (currLineIndex < 0) {
+        if (0 != _lastEmittedLineIndex ||
+            !listEquals(_lastEmittedActiveIndices, activeIndices)) {
+          _lastEmittedLineIndex = 0;
+          _lastEmittedLineIndexForHint = 0;
+          _lastEmittedActiveIndices = activeIndices;
+          _lyricLineStreamController.add(LyricLineUpdate(
+            primaryIndex: 0,
+            activeIndices: activeIndices,
+          ));
+        }
+        return;
+      }
+      if (currLineIndex >= lyric.lines.length) {
+        final p = lyric.lines.length - 1;
+        if (p != _lastEmittedLineIndex ||
+            !listEquals(_lastEmittedActiveIndices, activeIndices)) {
+          _lastEmittedLineIndex = p;
+          _lastEmittedLineIndexForHint = p;
+          _lastEmittedActiveIndices = activeIndices;
+          _lyricLineStreamController.add(LyricLineUpdate(
+            primaryIndex: p,
+            activeIndices: activeIndices,
+          ));
+        }
+        return;
+      }
       var primaryIndex = currLineIndex;
       if (activeIndices.isEmpty && currLineIndex + 1 < lyric.lines.length) {
         // 间奏：当前行已结束且下一行未开始，推进到下一行预览
@@ -268,10 +295,35 @@ class LyricService extends ChangeNotifier {
         time: posMs, lines: lyric.lines, hint: _lastEmittedLineIndexForHint);
     _nextLyricLine = next == -1 ? lyric.lines.length : next;
     final currLineIndex = _nextLyricLine - 1;
-    if (currLineIndex < 0) return;
-    if (currLineIndex >= lyric.lines.length) return;
-
     final activeIndices = _computeActiveLines(posMs);
+
+    if (currLineIndex < 0) {
+      if (0 != _lastEmittedLineIndex ||
+          !listEquals(_lastEmittedActiveIndices, activeIndices)) {
+        _lastEmittedLineIndex = 0;
+        _lastEmittedLineIndexForHint = 0;
+        _lastEmittedActiveIndices = activeIndices;
+        _lyricLineStreamController.add(LyricLineUpdate(
+          primaryIndex: 0,
+          activeIndices: activeIndices,
+        ));
+      }
+      return;
+    }
+    if (currLineIndex >= lyric.lines.length) {
+      final p = lyric.lines.length - 1;
+      if (p != _lastEmittedLineIndex ||
+          !listEquals(_lastEmittedActiveIndices, activeIndices)) {
+        _lastEmittedLineIndex = p;
+        _lastEmittedLineIndexForHint = p;
+        _lastEmittedActiveIndices = activeIndices;
+        _lyricLineStreamController.add(LyricLineUpdate(
+          primaryIndex: p,
+          activeIndices: activeIndices,
+        ));
+      }
+      return;
+    }
     var primaryIndex = currLineIndex;
     if (activeIndices.isEmpty && currLineIndex + 1 < lyric.lines.length) {
       final currEnd = lyric.lines[currLineIndex].start.inMilliseconds +
@@ -332,10 +384,35 @@ class LyricService extends ChangeNotifier {
     final next = _findLrcPos(time: posMs, lines: lyric.lines, hint: hint);
     _nextLyricLine = next == -1 ? lyric.lines.length : next;
     final currLineIndex = _nextLyricLine - 1;
-
-    if (currLineIndex < 0) return;
-
     final activeIndices = _computeActiveLines(posMs);
+
+    if (currLineIndex < 0) {
+      if (0 != _lastEmittedLineIndex ||
+          !listEquals(_lastEmittedActiveIndices, activeIndices)) {
+        _lastEmittedLineIndex = 0;
+        _lastEmittedLineIndexForHint = 0;
+        _lastEmittedActiveIndices = activeIndices;
+        _lyricLineStreamController.add(LyricLineUpdate(
+          primaryIndex: 0,
+          activeIndices: activeIndices,
+        ));
+      }
+      return;
+    }
+    if (currLineIndex >= lyric.lines.length) {
+      final p = lyric.lines.length - 1;
+      if (p != _lastEmittedLineIndex ||
+          !listEquals(_lastEmittedActiveIndices, activeIndices)) {
+        _lastEmittedLineIndex = p;
+        _lastEmittedLineIndexForHint = p;
+        _lastEmittedActiveIndices = activeIndices;
+        _lyricLineStreamController.add(LyricLineUpdate(
+          primaryIndex: p,
+          activeIndices: activeIndices,
+        ));
+      }
+      return;
+    }
     var primaryIndex = currLineIndex;
     if (activeIndices.isEmpty && currLineIndex + 1 < lyric.lines.length) {
       final currEnd = lyric.lines[currLineIndex].start.inMilliseconds +
