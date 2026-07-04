@@ -45,16 +45,27 @@ class LyricsLineWidget extends StatefulWidget {
 
 class _LyricsLineWidgetState extends State<LyricsLineWidget>
     with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
+  static const int _blurFilterCacheMaxSize = 20;
   static final Map<double, ImageFilter> _blurFilterCache = {};
 
+  static double _roundSigma(double sigma) {
+    return (sigma * 2).roundToDouble() / 2;
+  }
+
   static ImageFilter _getBlurFilter(double sigma) {
+    final key = _roundSigma(sigma);
+    if (_blurFilterCache.length >= _blurFilterCacheMaxSize &&
+        !_blurFilterCache.containsKey(key)) {
+      _blurFilterCache.remove(_blurFilterCache.keys.first);
+    }
     return _blurFilterCache.putIfAbsent(
-        sigma,
-        () => ImageFilter.blur(
-              sigmaX: sigma,
-              sigmaY: sigma,
-              tileMode: TileMode.clamp,
-            ));
+      key,
+      () => ImageFilter.blur(
+        sigmaX: key,
+        sigmaY: key,
+        tileMode: TileMode.clamp,
+      ),
+    );
   }
 
   late final LyricRenderConfig _config;
