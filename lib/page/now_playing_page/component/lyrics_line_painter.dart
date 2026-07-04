@@ -45,10 +45,7 @@ class _LineGroup {
 class LyricsLinePainter extends CustomPainter {
   final LyricLine line;
   final double currentTimeMs;
-  final double opacity;
   final double blurSigma;
-  final double scale;
-  final double offsetY;
   final LyricRenderConfig config;
   final ColorScheme scheme;
   final bool isMainLine;
@@ -74,10 +71,7 @@ class LyricsLinePainter extends CustomPainter {
   const LyricsLinePainter({
     required this.line,
     required this.currentTimeMs,
-    required this.opacity,
     required this.blurSigma,
-    required this.scale,
-    required this.offsetY,
     required this.config,
     required this.scheme,
     this.isMainLine = false,
@@ -144,22 +138,11 @@ class LyricsLinePainter extends CustomPainter {
     if (syncLine.words.isEmpty) return;
 
     canvas.save();
-    canvas.translate(0, offsetY);
-    // scale 以对齐点为原点，避免缩放后居中/右对齐偏移
-    final scaleOriginX = switch (_effectiveTextAlign) {
-      LyricTextAlign.left => 0.0,
-      LyricTextAlign.center => size.width / 2,
-      LyricTextAlign.right => size.width,
-    };
-    canvas.translate(scaleOriginX, 0);
-    canvas.scale(scale);
-    canvas.translate(-scaleOriginX, 0);
 
     final fontSize = config.primaryFontSize(isMainLine: isMainLine);
     final letterSpace = config.letterSpacing(fontSize: fontSize);
     final fontWeight = config.discreteFontWeight(config.fontWeight);
-    final verticalPad =
-        isMainLine ? config.syncVerticalPadding(isMainLine: true) : 12.0;
+    final verticalPad = config.syncVerticalPadding(isMainLine: true);
     final padding = EdgeInsets.only(
         left: 12.0, right: 12.0, top: verticalPad, bottom: verticalPad);
     // 行高：TextStyle.height=1.2 → fontSize*1.2，与 TextPainter.layout 结果等价
@@ -167,25 +150,23 @@ class LyricsLinePainter extends CustomPainter {
 
     final isDarkMode = scheme.brightness == Brightness.dark;
 
+    final mainPlayedColor = isDarkMode
+        ? Colors.white.withValues(alpha: 1.0)
+        : Colors.black.withValues(alpha: 1.0);
+    final playedColor = useMaterialYouColor
+        ? scheme.primary.withValues(alpha: 1.0)
+        : mainPlayedColor;
     final unplayedColor = useMaterialYouColor
         ? scheme.onSurface
-            .withValues(alpha: isDarkMode ? opacity * 0.40 : opacity * 0.50)
+            .withValues(alpha: isDarkMode ? 0.40 : 0.50)
         : scheme.onSurface
-            .withValues(alpha: isDarkMode ? opacity * 0.35 : opacity * 0.45);
-    final mainPlayedColor = isDarkMode
-        ? Colors.white.withValues(alpha: opacity)
-        : Colors.black.withValues(alpha: opacity);
-    final playedColor = useMaterialYouColor
-        ? scheme.primary.withValues(alpha: opacity)
-        : (isMainLine
-            ? mainPlayedColor
-            : scheme.onSurface.withValues(alpha: opacity * 0.85));
+            .withValues(alpha: isDarkMode ? 0.35 : 0.45);
     final secondaryColor = useMaterialYouColor
-        ? scheme.onSurface.withValues(alpha: opacity * 0.35)
-        : scheme.onSurface.withValues(alpha: opacity * 0.25);
+        ? scheme.onSurface.withValues(alpha: 0.35)
+        : scheme.onSurface.withValues(alpha: 0.25);
     final translationColor = useMaterialYouColor
-        ? scheme.onSurface.withValues(alpha: opacity * 0.60)
-        : scheme.onSurface.withValues(alpha: opacity * 0.70);
+        ? scheme.onSurface.withValues(alpha: 0.60)
+        : scheme.onSurface.withValues(alpha: 0.70);
 
     final maxWidth = size.width - padding.horizontal;
 
@@ -598,7 +579,7 @@ class LyricsLinePainter extends CustomPainter {
     // ── Translation / Roman ──────────────────────────────────────────────────
     if ((config.showTranslation && syncLine.translation != null) ||
         (config.showRoman && syncLine.romanLyric != null)) {
-      final gap = config.syncTranslationGap(isMainLine: isMainLine);
+      final gap = config.syncTranslationGap(isMainLine: true);
       final translationWeight =
           config.discreteFontWeight((config.fontWeight - 50).clamp(100, 900));
       final blockTextAlign = switch (_effectiveTextAlign) {
@@ -657,7 +638,7 @@ class LyricsLinePainter extends CustomPainter {
     final hasBg = bgText != null && bgText.isNotEmpty;
     final hasBgTranslation = bgTranslation != null && bgTranslation.isNotEmpty;
     if (hasBg || hasBgTranslation) {
-      final bgAlpha = isMainLine ? opacity : 0.0;
+      final bgAlpha = isMainLine ? 1.0 : 0.0;
       if (bgAlpha > 0.001) {
         final bgFontSize = fontSize * 0.60;
         final bgWeight = config.discreteFontWeight(
@@ -748,16 +729,6 @@ class LyricsLinePainter extends CustomPainter {
     final lrcLine = line as LrcLine;
 
     canvas.save();
-    canvas.translate(0, offsetY);
-    // scale 以对齐点为原点，避免缩放后居中/右对齐偏移
-    final scaleOriginX = switch (_effectiveTextAlign) {
-      LyricTextAlign.left => 0.0,
-      LyricTextAlign.center => size.width / 2,
-      LyricTextAlign.right => size.width,
-    };
-    canvas.translate(scaleOriginX, 0);
-    canvas.scale(scale);
-    canvas.translate(-scaleOriginX, 0);
 
     final zhMode = LyricViewController.instance.zhConversionMode;
     final fontSize = config.primaryFontSize(isMainLine: isMainLine);
@@ -769,28 +740,20 @@ class LyricsLinePainter extends CustomPainter {
 
     final isDarkMode = scheme.brightness == Brightness.dark;
 
-    final unplayedColor = useMaterialYouColor
-        ? scheme.onSurface
-            .withValues(alpha: isDarkMode ? opacity * 0.40 : opacity * 0.50)
-        : scheme.onSurface
-            .withValues(alpha: isDarkMode ? opacity * 0.35 : opacity * 0.45);
     final mainPlayedColor = isDarkMode
-        ? Colors.white.withValues(alpha: opacity)
-        : Colors.black.withValues(alpha: opacity);
-    final metadataColor = scheme.onSurface.withValues(alpha: opacity * 0.70);
+        ? Colors.white.withValues(alpha: 1.0)
+        : Colors.black.withValues(alpha: 1.0);
     final playedColor = useMaterialYouColor
-        ? scheme.primary.withValues(alpha: opacity)
-        : (isMainLine
-            ? mainPlayedColor
-            : scheme.onSurface.withValues(alpha: opacity * 0.85));
+        ? scheme.primary.withValues(alpha: 1.0)
+        : mainPlayedColor;
+    final metadataColor = scheme.onSurface.withValues(alpha: 0.70);
     final secondaryColor = useMaterialYouColor
-        ? scheme.onSurface.withValues(alpha: opacity * 0.35)
-        : scheme.onSurface.withValues(alpha: opacity * 0.25);
+        ? scheme.onSurface.withValues(alpha: 0.35)
+        : scheme.onSurface.withValues(alpha: 0.25);
     final translationColor = useMaterialYouColor
-        ? scheme.onSurface.withValues(alpha: opacity * 0.60)
-        : scheme.onSurface.withValues(alpha: opacity * 0.70);
+        ? scheme.onSurface.withValues(alpha: 0.60)
+        : scheme.onSurface.withValues(alpha: 0.70);
 
-    final displayedColor = isMainLine ? playedColor : unplayedColor;
     final maxWidth = size.width - padding.horizontal;
     final blockTextAlign = switch (_effectiveTextAlign) {
       LyricTextAlign.left => TextAlign.left,
@@ -825,7 +788,7 @@ class LyricsLinePainter extends CustomPainter {
 
     final mainTp = _buildTextPainter(
       mainText,
-      displayedColor,
+      playedColor,
       fontSize,
       fontWeight,
       letterSpace,
@@ -857,10 +820,10 @@ class LyricsLinePainter extends CustomPainter {
 
     if (config.showTranslation && transTexts.isNotEmpty) {
       final translationFontSize =
-          config.translationFontSize(isMainLine: isMainLine);
+            config.translationFontSize(isMainLine: true);
       for (final trans in transTexts) {
         cursorY += config.lrcTranslationGap(
-          isMainLine: isMainLine,
+          isMainLine: true,
           translationIndex: 0,
         ); // 原文底部与翻译之间的间隙
         final translated = ZhConverter.convert(trans, zhMode);
@@ -886,7 +849,7 @@ class LyricsLinePainter extends CustomPainter {
       }
       final romanText = ZhConverter.convert(lrcLine.romanLyric!, zhMode);
       final romanFontSize =
-          config.translationFontSize(isMainLine: isMainLine) * 0.85;
+          config.translationFontSize(isMainLine: true) * 0.85;
       final rTp = _buildTextPainter(
         romanText,
         secondaryColor,
@@ -1027,22 +990,19 @@ class LyricsLinePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant LyricsLinePainter oldDelegate) {
     return currentTimeMs != oldDelegate.currentTimeMs ||
-        opacity != oldDelegate.opacity ||
         blurSigma != oldDelegate.blurSigma ||
-        scale != oldDelegate.scale ||
-        offsetY != oldDelegate.offsetY ||
         line != oldDelegate.line ||
         config != oldDelegate.config ||
         useMaterialYouColor != oldDelegate.useMaterialYouColor ||
         fontFamily != oldDelegate.fontFamily ||
-        agent != oldDelegate.agent;
+        agent != oldDelegate.agent ||
+        isMainLine != oldDelegate.isMainLine;
   }
 
   double measureHeight(double maxWidth) {
     final double verticalPad;
     if (line is SyncLyricLine) {
-      verticalPad =
-          isMainLine ? config.syncVerticalPadding(isMainLine: true) : 12.0;
+      verticalPad = config.syncVerticalPadding(isMainLine: true);
     } else {
       verticalPad = config.lrcVerticalPadding();
     }
@@ -1099,7 +1059,7 @@ class LyricsLinePainter extends CustomPainter {
       if ((config.showTranslation && syncLine.translation != null) ||
           (config.showRoman && syncLine.romanLyric != null)) {
         final translationFontSize =
-            config.translationFontSize(isMainLine: isMainLine);
+            config.translationFontSize(isMainLine: true);
         if (config.showTranslation && syncLine.translation != null) {
           final translationWeight = config
               .discreteFontWeight((config.fontWeight - 50).clamp(100, 900));
@@ -1113,12 +1073,12 @@ class LyricsLinePainter extends CustomPainter {
           );
           tTp.layout(maxWidth: lineWidth);
           height +=
-              tTp.height + config.syncTranslationGap(isMainLine: isMainLine);
+              tTp.height + config.syncTranslationGap(isMainLine: true);
           _recycleTextPainter(tTp);
         }
         if (config.showRoman && syncLine.romanLyric != null) {
           final romanFontSize =
-              config.translationFontSize(isMainLine: isMainLine) * 0.85;
+              config.translationFontSize(isMainLine: true) * 0.85;
           final romanWeight = config
               .discreteFontWeight((config.fontWeight - 100).clamp(100, 900));
           final rTp = _buildTextPainter(
@@ -1218,7 +1178,7 @@ class LyricsLinePainter extends CustomPainter {
 
       if (config.showTranslation && transTexts.isNotEmpty) {
         final translationFontSize =
-            config.translationFontSize(isMainLine: isMainLine);
+            config.translationFontSize(isMainLine: true);
         final translationWeight =
             config.discreteFontWeight((config.fontWeight - 50).clamp(100, 900));
         for (final trans in transTexts) {
@@ -1233,13 +1193,13 @@ class LyricsLinePainter extends CustomPainter {
           tTp.layout(maxWidth: lineWidth);
           height += tTp.height +
               config.lrcTranslationGap(
-                  isMainLine: isMainLine, translationIndex: 0);
+                  isMainLine: true, translationIndex: 0);
           _recycleTextPainter(tTp);
         }
       }
       if (config.showRoman && lrcLine.romanLyric != null) {
         final romanFontSize =
-            config.translationFontSize(isMainLine: isMainLine) * 0.85;
+            config.translationFontSize(isMainLine: true) * 0.85;
         final romanWeight = config
             .discreteFontWeight((config.fontWeight - 100).clamp(100, 900));
         final rTp = _buildTextPainter(
