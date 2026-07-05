@@ -162,8 +162,7 @@ final GlobalKey<NavigatorState> routerKey = GlobalKey();
 
 final scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
 void showTextOnSnackBar(String text) {
-  scaffoldMessengerKey.currentState
-      ?.showSnackBar(SnackBar(content: Text(text)));
+  showHotkeyToast(text: text);
 }
 
 OverlayEntry? _hotkeyToastEntry;
@@ -307,7 +306,7 @@ class _BoundedMemoryOutput extends LogOutput {
 
   final LogOutput? secondOutput;
 
-  static const _maxEvents = 2000;
+  static const _maxEvents = 500;
   final _buffer = <OutputEvent>[];
 
   List<OutputEvent> get buffer => List.unmodifiable(_buffer);

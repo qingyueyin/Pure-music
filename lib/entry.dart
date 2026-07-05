@@ -26,8 +26,10 @@ import 'package:pure_music/page/updating_page.dart';
 import 'package:pure_music/page/welcoming_page.dart';
 import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
+import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/component/app_scroll_behavior.dart';
 import 'package:pure_music/core/cache.dart';
+import 'package:pure_music/core/color_extraction.dart';
 import 'package:pure_music/core/immersive.dart';
 import 'package:pure_music/core/memory_monitor.dart';
 import 'package:pure_music/core/matcher.dart' hide logger;
@@ -218,7 +220,11 @@ class _EntryState extends State<Entry>
   /// 内存不足时的统一清理入口
   void _onLowMemory() {
     CoverImageCache.instance.clear();
-    AudioLibrary.instance.evictStaleCoverBytes();
+    ColorExtractionService().clear();
+    AudioLibrary.instance.evictAllCoversExcept(
+      PlayService.instance.playbackService.nowPlaying?.path,
+      includeCollectionCovers: true,
+    );
     PaintingBinding.instance.imageCache.clear();
     PaintingBinding.instance.imageCache.clearLiveImages();
     clearLyricCaches();

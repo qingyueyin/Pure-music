@@ -277,19 +277,25 @@ class AudioLibrary {
     }
   }
 
-  /// 切歌时调用：除当前播放外，全部 Audio 封面缓存立即释放
-  void evictAllCoversExcept(String? playingPath) {
+  /// Evict retained Audio cover providers except the currently playing track.
+  void evictAllCoversExcept(
+    String? playingPath, {
+    bool includeCollectionCovers = false,
+  }) {
     int evicted = 0;
     for (final audio in audioCollection) {
-      if (audio._coverImage == null &&
-          audio._mediumCoverImage == null &&
-          audio._largeCoverImage == null &&
-          audio._smallCoverBytes == null) {
-        continue;
-      }
       if (audio.path == playingPath) continue;
-      audio.evictCoverCache();
-      evicted++;
+      if (audio.evictCoverCacheIfPresent()) evicted++;
+    }
+    if (includeCollectionCovers) {
+      for (final artist in artistCollection.values) {
+        if (artist.primaryPath == playingPath) continue;
+        if (artist.evictPictureCache()) evicted++;
+      }
+      for (final album in albumCollection.values) {
+        if (album.primaryPath == playingPath) continue;
+        if (album.evictCoverCache()) evicted++;
+      }
     }
     if (evicted > 0) {
       logger.i('[mem] evicted $evicted covers on song change');
@@ -531,13 +537,32 @@ class Audio {
   /// 用于需要立即显示封面的场景，避免异步等待导致的闪烁
   ImageProvider? get cachedMediumCover => _mediumCoverImage;
 
-  /// 释放封面缓存（用于长时间不用时释放内存）
+  /// Evict cover cache only when this Audio actually retains one.
+  bool evictCoverCacheIfPresent() {
+    if (_coverImage == null &&
+        _mediumCoverImage == null &&
+        _largeCoverImage == null &&
+        _smallCoverBytes == null) {
+      return false;
+    }
+    evictCoverCache();
+    return true;
+  }
+
   void evictCoverCache() {
+    final coverImage = _coverImage;
+    final mediumCoverImage = _mediumCoverImage;
+    final largeCoverImage = _largeCoverImage;
+
     _coverImage = null;
     _mediumCoverImage = null;
     _largeCoverImage = null;
     _smallCoverBytes = null;
     AudioLibrary.instance._smallCoverOrder.remove(path);
+
+    if (coverImage != null) unawaited(coverImage.evict());
+    if (mediumCoverImage != null) unawaited(mediumCoverImage.evict());
+    if (largeCoverImage != null) unawaited(largeCoverImage.evict());
   }
 
   /// audio detail page
@@ -600,6 +625,8 @@ class Artist {
   /// 缓存 ImageProvider 实例
   ImageProvider? _pictureCache;
 
+  String? get primaryPath => works.firstOrNull?.path;
+
   /// 只能用在artist detail page
   /// 200*200
   Future<ImageProvider?> get picture async {
@@ -609,6 +636,25 @@ class Artist {
       path: works.first.path,
       width: 200,
       height: 200,
+    );
+  }
+
+  bool evictPictureCache() {
+    final pictureCache = _pictureCache;
+    _pictureCache = null;
+    if (pictureCache == null) return false;
+    unawaited(pictureCache.evict());
+    return true;
+  }
+
+  /// Lightweight picture for lists/pickers. Do not retain it on the Artist;
+  /// CoverImageCache already has a bounded LRU.
+  Future<ImageProvider?> thumbnailPicture({int size = 48}) async {
+    if (works.isEmpty) return null;
+    return CoverImageCache.instance.get(
+      path: works.first.path,
+      width: size,
+      height: size,
     );
   }
 
@@ -627,6 +673,8 @@ class Album {
   /// 缓存 ImageProvider 实例
   ImageProvider? _coverCache;
 
+  String? get primaryPath => works.firstOrNull?.path;
+
   /// 只能用在album detail page
   /// 200*200
   Future<ImageProvider?> get cover async {
@@ -641,6 +689,28 @@ class Album {
       path: works.first.path,
       width: 200,
       height: 200,
+    );
+  }
+
+  bool evictCoverCache() {
+    final coverCache = _coverCache;
+    _coverCache = null;
+    if (coverCache == null) return false;
+    unawaited(coverCache.evict());
+    return true;
+  }
+
+  /// Lightweight cover for lists/pickers. Do not retain it on the Album;
+  /// CoverImageCache already has a bounded LRU.
+  Future<ImageProvider?> thumbnailCover({int size = 48}) async {
+    if (works.isEmpty) return null;
+    final folderCover =
+        await works.first._getFolderCover(width: size, height: size);
+    if (folderCover != null) return folderCover;
+    return CoverImageCache.instance.get(
+      path: works.first.path,
+      width: size,
+      height: size,
     );
   }
 

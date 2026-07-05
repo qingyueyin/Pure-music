@@ -1,9 +1,9 @@
-
 import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:pure_music/core/cache.dart';
+import 'package:pure_music/core/color_extraction.dart';
 import 'package:pure_music/core/matcher.dart' hide logger;
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/library/audio_library.dart';
@@ -44,29 +44,27 @@ class MemoryMonitorService {
           logger.w(
             '[mem] RSS ${rssMB}MB > $tier3Threshold, tier-3 emergency cleanup',
           );
-          // 播放中不清空 ImageCache（避免图片重解码导致帧率抖动）
+          // clear() only removes non-live decoded images, so it is safe during playback.
+          PaintingBinding.instance.imageCache.clear();
           if (!playing) {
-            PaintingBinding.instance.imageCache.clear();
             PaintingBinding.instance.imageCache.clearLiveImages();
           }
           CoverImageCache.instance.trimMemory();
+          ColorExtractionService().clear();
           AudioLibrary.instance.evictAllCoversExcept(
             PlayService.instance.playbackService.nowPlaying?.path,
+            includeCollectionCovers: true,
           );
           clearLyricCaches();
         } else if (rssMB > tier2Threshold) {
           logger.w(
             '[mem] RSS ${rssMB}MB > $tier2Threshold, tier-2 cleanup',
           );
-          if (!playing) {
-            PaintingBinding.instance.imageCache.clear();
-          }
+          PaintingBinding.instance.imageCache.clear();
           CoverImageCache.instance.trimMemory();
         } else if (rssMB > tier1Threshold) {
-          // tier-1 轻量清理：仅清 ImageCache（不碰 CoverImageCache 和歌词缓存）
-          if (!playing) {
-            PaintingBinding.instance.imageCache.clear();
-          }
+          // tier-1: trim non-live ImageCache only; keep cover and lyric caches intact.
+          PaintingBinding.instance.imageCache.clear();
         }
       } catch (e, trace) {
         logger.e('[mem] monitor error: $e\n$trace');
@@ -85,8 +83,10 @@ class MemoryMonitorService {
     PaintingBinding.instance.imageCache.clearLiveImages();
     CoverImageCache.instance.trimMemory();
     CoverImageCache.instance.clear();
+    ColorExtractionService().clear();
     AudioLibrary.instance.evictAllCoversExcept(
       PlayService.instance.playbackService.nowPlaying?.path,
+      includeCollectionCovers: true,
     );
   }
 }

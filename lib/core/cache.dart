@@ -39,7 +39,8 @@ class AlbumColorCache {
     } catch (_) {}
   }
 
-  Future<AlbumColor?> getAlbumColor(Album album, {bool forceRecompute = false}) async {
+  Future<AlbumColor?> getAlbumColor(Album album,
+      {bool forceRecompute = false}) async {
     await init();
     final keySig = _albumKeyAndSignature(album);
     final key = keySig.$1;
@@ -255,12 +256,14 @@ class AlbumColorCache {
     final cover = _findLocalCoverFile(parent);
     if (cover != null) return cover.readAsBytes();
 
-    final bytes = await getPictureFromPath(path: audio.path, width: 64, height: 64);
+    final bytes =
+        await getPictureFromPath(path: audio.path, width: 64, height: 64);
     return bytes;
   }
 
   Future<int?> _computeAverageRgb(Uint8List bytes) async {
-    final codec = await ui.instantiateImageCodec(bytes, targetWidth: 40, targetHeight: 40);
+    final codec = await ui.instantiateImageCodec(bytes,
+        targetWidth: 40, targetHeight: 40);
     final frame = await codec.getNextFrame();
     final img = frame.image;
     codec.dispose();
@@ -331,9 +334,10 @@ class _AsyncSemaphore {
 /// 通用 LRU 映射表
 class _LruMap<K, V> {
   final int maxSize;
+  final void Function(V value)? onEvict;
   final _map = <K, V>{};
 
-  _LruMap(this.maxSize);
+  _LruMap(this.maxSize, {this.onEvict});
 
   V? get(K key) {
     final value = _map.remove(key);
@@ -343,15 +347,32 @@ class _LruMap<K, V> {
   }
 
   void set(K key, V value) {
-    _map.remove(key);
-    if (_map.length >= maxSize) {
-      _map.remove(_map.keys.first);
+    final old = _map.remove(key);
+    if (old != null && !identical(old, value)) {
+      onEvict?.call(old);
+    }
+    while (_map.length >= maxSize) {
+      final oldestKey = _map.keys.first;
+      final evicted = _map.remove(oldestKey);
+      if (evicted != null) onEvict?.call(evicted);
     }
     _map[key] = value;
   }
 
-  void remove(K key) => _map.remove(key);
-  void clear() => _map.clear();
+  void remove(K key) {
+    final removed = _map.remove(key);
+    if (removed != null) onEvict?.call(removed);
+  }
+
+  void clear() {
+    if (onEvict != null) {
+      for (final value in _map.values) {
+        onEvict!(value);
+      }
+    }
+    _map.clear();
+  }
+
   int get length => _map.length;
 }
 
@@ -362,10 +383,20 @@ class CoverImageCache {
   static final instance = CoverImageCache._();
   CoverImageCache._();
 
-  final _small = _LruMap<String, ImageProvider>(12);
-  final _medium = _LruMap<String, ImageProvider>(4);
-  final _large = _LruMap<String, ImageProvider>(1);
+  final _small = _LruMap<String, ImageProvider>(
+    12,
+    onEvict: (provider) => unawaited(provider.evict()),
+  );
+  final _medium = _LruMap<String, ImageProvider>(
+    4,
+    onEvict: (provider) => unawaited(provider.evict()),
+  );
+  final _large = _LruMap<String, ImageProvider>(
+    1,
+    onEvict: (provider) => unawaited(provider.evict()),
+  );
   final _pending = <String, Future<ImageProvider?>>{};
+  int _generation = 0;
 
   _LruMap<String, ImageProvider> _tierFor(int width, int height) {
     final max = width > height ? width : height;
@@ -388,16 +419,21 @@ class CoverImageCache {
     final pending = _pending[key];
     if (pending != null) return pending;
 
+    final generation = _generation;
     final future = _fetch(path, width, height);
     _pending[key] = future;
     try {
       final result = await future;
-      if (result != null) {
+      if (result != null &&
+          generation == _generation &&
+          identical(_pending[key], future)) {
         tier.set(key, result);
       }
       return result;
     } finally {
-      _pending.remove(key);
+      if (identical(_pending[key], future)) {
+        _pending.remove(key);
+      }
     }
   }
 
@@ -418,6 +454,7 @@ class CoverImageCache {
   }
 
   void clear() {
+    _generation++;
     _small.clear();
     _medium.clear();
     _large.clear();
@@ -426,6 +463,7 @@ class CoverImageCache {
 
   /// 释放不常用的缓存层，保留小图缓存以维持列表流畅滚动
   void trimMemory() {
+    _generation++;
     _medium.clear();
     _large.clear();
     _pending.clear();
@@ -433,6 +471,7 @@ class CoverImageCache {
 
   /// 完全释放并清理所有缓存
   void dispose() {
+    _generation++;
     _small.clear();
     _medium.clear();
     _large.clear();
