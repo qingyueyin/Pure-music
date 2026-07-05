@@ -41,13 +41,8 @@ class _FoldersPageState extends State<FoldersPage> {
           .prewarmAlbums(AudioLibrary.instance.albumCollection.values)
           .ignore();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-                '已刷新，当前 ${AudioLibrary.instance.folders.length} 个文件夹'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        showTextOnSnackBar(
+            '已刷新，当前 ${AudioLibrary.instance.folders.length} 个文件夹');
       }
     } catch (e) {
       logger.e('refresh index failed: $e');
@@ -158,30 +153,27 @@ class AudioFolderTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Tooltip(
-      message: audioFolder.path,
-      child: ListTile(
-        title: Text(
-          p.basename(audioFolder.path),
-          softWrap: false,
-          maxLines: 1,
-        ),
-        subtitle: Text(
-          p.dirname(audioFolder.path),
-          softWrap: false,
-          maxLines: 1,
-        ),
-        trailing: Text(
-          '${audioFolder.audios.length} 首',
-          style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.6)),
-        ),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8.0),
-        ),
-        onTap: () => context.push(
-          app_paths.FOLDER_DETAIL_PAGE,
-          extra: audioFolder,
-        ),
+    return ListTile(
+      title: Text(
+        p.basename(audioFolder.path),
+        softWrap: false,
+        maxLines: 1,
+      ),
+      subtitle: Text(
+        p.dirname(audioFolder.path),
+        softWrap: false,
+        maxLines: 1,
+      ),
+      trailing: Text(
+        '${audioFolder.audios.length} 首',
+        style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.6)),
+      ),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8.0),
+      ),
+      onTap: () => context.push(
+        app_paths.FOLDER_DETAIL_PAGE,
+        extra: audioFolder,
       ),
     );
   }
