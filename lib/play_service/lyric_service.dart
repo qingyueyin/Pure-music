@@ -90,15 +90,14 @@ class LyricService extends ChangeNotifier {
       final lyric = _currLyric;
       if (lyric == null) return;
       if (_nextLyricLine >= lyric.lines.length) {
-        if (_lineEndMs.isEmpty || posMs >= _lineEndMs.last) return;
+        if (_lineRenderStartMs.isEmpty || posMs > _lineRenderStartMs.last) {
+          return;
+        }
         findCurrLyricLineAt(pos);
         return;
       }
-      while (_nextLyricLine < lyric.lines.length) {
-        final boundaryMs = _nextLyricLine == 0
-            ? _lineRenderStartMs.first
-            : _lineEndMs[_nextLyricLine - 1];
-        if (posMs < boundaryMs) break;
+      while (_nextLyricLine < _lineRenderStartMs.length &&
+          posMs > _lineRenderStartMs[_nextLyricLine]) {
         _nextLyricLine += 1;
       }
 
@@ -465,7 +464,7 @@ class LyricService extends ChangeNotifier {
       }
     }
 
-    return _lowerBoundGreater(_lineEndMs, time);
+    return _lowerBoundGreater(_lineRenderStartMs, time);
   }
 
   List<int> _computeActiveLines(int posMs) {
@@ -475,8 +474,12 @@ class LyricService extends ChangeNotifier {
     // 只有 TTML 有时间重叠行，用全扫描即可（行数通常 < 200）
     for (int i = 0; i < lyric.lines.length; i++) {
       final line = lyric.lines[i];
-      final start = line.start.inMilliseconds;
-      final end = start + line.length.inMilliseconds;
+      final start = i < _lineRenderStartMs.length
+          ? _lineRenderStartMs[i]
+          : line.start.inMilliseconds;
+      final end = i < _lineEndMs.length
+          ? _lineEndMs[i]
+          : line.start.inMilliseconds + line.length.inMilliseconds;
       if (posMs >= start && posMs < end) {
         active.add(i);
       }
