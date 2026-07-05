@@ -8,8 +8,6 @@ import 'package:pure_music/page/playlist_cover_picker.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/menu_styles.dart';
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -233,8 +231,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                       else ...[
                         IconButton(
                           tooltip: '编辑',
-                          onPressed: () =>
-                              editPlaylist(context, playlist),
+                          onPressed: () => editPlaylist(context, playlist),
                           icon: const Icon(Symbols.edit),
                         ),
                         const SizedBox(width: 8.0),
@@ -273,8 +270,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
           MenuAnchor(
             style: MenuStyle(
               shape: WidgetStatePropertyAll(
-                RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20)),
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
               ),
             ),
             menuChildren: [
@@ -287,26 +283,16 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
             ],
             builder: (context, controller, _) => SizedBox(
               height: 40,
-              child: FilledButton.tonal(
-                onPressed: () => controller.isOpen
-                    ? controller.close()
-                    : controller.open(),
-                style: ButtonStyle(
-                  padding:
-                      const WidgetStatePropertyAll(EdgeInsets.zero),
-                  minimumSize:
-                      const WidgetStatePropertyAll(Size(32, 40)),
-                  shape: WidgetStatePropertyAll(
-                    RoundedRectangleBorder(
-                        borderRadius:
-                            BorderRadius.circular(20)),
-                  ),
+              child: IconButton(
+                onPressed: () =>
+                    controller.isOpen ? controller.close() : controller.open(),
+                style: const ButtonStyle(
+                  fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
                 ),
-                child: AnimatedRotation(
+                icon: AnimatedRotation(
                   turns: controller.isOpen ? 0.5 : 0.0,
                   duration: const Duration(milliseconds: 150),
-                  child:
-                      const Icon(Symbols.arrow_drop_down, size: 24),
+                  child: const Icon(Symbols.arrow_drop_down, size: 24),
                 ),
               ),
             ),
@@ -584,7 +570,7 @@ class _PlaylistCover extends StatefulWidget {
 }
 
 class _PlaylistCoverState extends State<_PlaylistCover> {
-  Uint8List? _cached;
+  ImageProvider? _cached;
   bool _isHovered = false;
 
   @override
@@ -604,26 +590,25 @@ class _PlaylistCoverState extends State<_PlaylistCover> {
   }
 
   Future<void> _load() async {
-    final custom = await widget.playlist.resolveCoverBytes();
+    final custom = await widget.playlist.resolveCoverProvider(size: 48);
     if (custom != null) {
       if (mounted) setState(() => _cached = custom);
       return;
     }
     final audios = widget.playlist.audios;
     if (audios.isEmpty) return;
-    final bytes = await audios.first.loadSmallCoverBytes();
-    if (mounted && bytes != null) {
-      setState(() => _cached = bytes);
+    final cover = await audios.first.cover;
+    if (mounted && cover != null) {
+      setState(() => _cached = cover);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final brightness = Theme.of(context).brightness;
-    final overlayColor = (brightness == Brightness.light
-            ? Colors.black
-            : Colors.white)
-        .withValues(alpha: 0.25);
+    final overlayColor =
+        (brightness == Brightness.light ? Colors.black : Colors.white)
+            .withValues(alpha: 0.25);
 
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
@@ -638,8 +623,8 @@ class _PlaylistCoverState extends State<_PlaylistCover> {
             _cached != null
                 ? ClipRRect(
                     borderRadius: BorderRadius.circular(8.0),
-                    child: Image.memory(
-                      _cached!,
+                    child: Image(
+                      image: _cached!,
                       width: 48.0,
                       height: 48.0,
                       fit: BoxFit.cover,

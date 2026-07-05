@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/painting.dart';
@@ -30,7 +31,8 @@ Future<void> readPlaylists() async {
     }
 
     final playlists = <Playlist>[];
-    final rows = db.select('SELECT id, name, cover_source FROM playlists ORDER BY name');
+    final rows =
+        db.select('SELECT id, name, cover_source FROM playlists ORDER BY name');
     for (final row in rows) {
       final id = row['id'] as int;
       final name = row['name'] as String;
@@ -43,7 +45,9 @@ Future<void> readPlaylists() async {
       for (final item in items) {
         paths.add(item['path'] as String);
       }
-      playlists.add(Playlist(name, paths)..id = id..coverSource = coverSource);
+      playlists.add(Playlist(name, paths)
+        ..id = id
+        ..coverSource = coverSource);
     }
     PLAYLISTS = playlists;
   } catch (err, trace) {
@@ -95,8 +99,8 @@ void _writePlaylistsToDb(Database db, List<Playlist> playlists) {
         keptIds.add(playlistId);
         db.execute('UPDATE playlists SET cover_source = ? WHERE id = ?',
             [pl.coverSource, playlistId]);
-        db.execute('DELETE FROM playlist_items WHERE playlist_id = ?',
-            [playlistId]);
+        db.execute(
+            'DELETE FROM playlist_items WHERE playlist_id = ?', [playlistId]);
       } else {
         db.execute('INSERT INTO playlists(name, cover_source) VALUES(?, ?)',
             [pl.name, pl.coverSource]);
@@ -221,29 +225,36 @@ class Playlist {
     } else if (coverSource!.startsWith('artist:')) {
       final artist =
           AudioLibrary.instance.artistCollection[coverSource!.substring(7)];
-      if (artist != null && artist.works.isNotEmpty) target = artist.works.first;
+      if (artist != null && artist.works.isNotEmpty) {
+        target = artist.works.first;
+      }
     }
     if (target != null) return target.loadSmallCoverBytes();
     return null;
   }
 
-  Future<ImageProvider?> resolveCoverProvider() async {
+  Future<ImageProvider?> resolveCoverProvider({int size = 200}) async {
     if (coverSource == null || coverSource!.isEmpty) return null;
     if (coverSource!.startsWith('file:')) {
       final file = File(coverSource!.substring(5));
-      if (file.existsSync()) return FileImage(file);
-      return null;
+      if (!file.existsSync()) return null;
+      final ratio = PlatformDispatcher.instance.views.first.devicePixelRatio;
+      return ResizeImage(
+        FileImage(file),
+        width: (size * ratio).round(),
+        height: (size * ratio).round(),
+      );
     }
     if (coverSource!.startsWith('album:')) {
       final album =
           AudioLibrary.instance.albumCollection[coverSource!.substring(6)];
-      if (album != null) return album.cover;
+      if (album != null) return album.thumbnailCover(size: size);
       return null;
     }
     if (coverSource!.startsWith('artist:')) {
       final artist =
           AudioLibrary.instance.artistCollection[coverSource!.substring(7)];
-      if (artist != null) return artist.picture;
+      if (artist != null) return artist.thumbnailPicture(size: size);
       return null;
     }
     return null;

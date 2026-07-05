@@ -126,6 +126,7 @@ class _CoverSearchBodyState extends State<_CoverSearchBody> {
   final _results = ValueNotifier<List<Album>>(<Album>[]);
   final _artistResults = ValueNotifier<List<Artist>>(<Artist>[]);
   Timer? _debounce;
+  static const int _maxSearchResults = 100;
 
   @override
   void dispose() {
@@ -147,9 +148,11 @@ class _CoverSearchBodyState extends State<_CoverSearchBody> {
     _debounce = Timer(const Duration(milliseconds: 200), () {
       final albums = AudioLibrary.instance.albumCollection.values
           .where((a) => a.name.toLowerCase().contains(query))
+          .take(_maxSearchResults)
           .toList();
       final artists = AudioLibrary.instance.artistCollection.values
           .where((a) => a.name.toLowerCase().contains(query))
+          .take(_maxSearchResults)
           .toList();
       _results.value = albums;
       _artistResults.value = artists;
@@ -171,8 +174,8 @@ class _CoverSearchBodyState extends State<_CoverSearchBody> {
               ),
               const Expanded(
                 child: Text('搜索专辑或歌手',
-                    style: TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.bold)),
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ),
             ],
           ),
@@ -207,44 +210,65 @@ class _CoverSearchBodyState extends State<_CoverSearchBody> {
                   ),
                 );
               }
-              return ListView(
+              final albumHeaderCount = albums.isEmpty ? 0 : 1;
+              final artistHeaderCount = artists.isEmpty ? 0 : 1;
+              final itemCount = albumHeaderCount +
+                  albums.length +
+                  artistHeaderCount +
+                  artists.length;
+
+              return ListView.builder(
                 padding: const EdgeInsets.only(bottom: 16),
-                children: [
-                  if (albums.isNotEmpty) ...[
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-                      child: Text('专辑',
-                          style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: scheme.onSurfaceVariant)),
-                    ),
-                    ...albums.map((a) => _AlbumResultTile(
-                          album: a,
-                          onTap: () {
-                            widget.playlist.coverSource = 'album:${a.name}';
-                            Navigator.pop(context, true);
-                          },
-                        )),
-                  ],
-                  if (artists.isNotEmpty) ...[
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-                      child: Text('歌手',
-                          style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: scheme.onSurfaceVariant)),
-                    ),
-                    ...artists.map((a) => _ArtistResultTile(
-                          artist: a,
-                          onTap: () {
-                            widget.playlist.coverSource = 'artist:${a.name}';
-                            Navigator.pop(context, true);
-                          },
-                        )),
-                  ],
-                ],
+                itemCount: itemCount,
+                itemBuilder: (context, index) {
+                  if (albums.isNotEmpty) {
+                    if (index == 0) {
+                      return Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                        child: Text('专辑',
+                            style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: scheme.onSurfaceVariant)),
+                      );
+                    }
+                    final albumIndex = index - 1;
+                    if (albumIndex < albums.length) {
+                      final album = albums[albumIndex];
+                      return _AlbumResultTile(
+                        album: album,
+                        onTap: () {
+                          widget.playlist.coverSource = 'album:${album.name}';
+                          Navigator.pop(context, true);
+                        },
+                      );
+                    }
+                    index -= albums.length + 1;
+                  }
+
+                  if (artists.isNotEmpty) {
+                    if (index == 0) {
+                      return Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                        child: Text('歌手',
+                            style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: scheme.onSurfaceVariant)),
+                      );
+                    }
+                    final artist = artists[index - 1];
+                    return _ArtistResultTile(
+                      artist: artist,
+                      onTap: () {
+                        widget.playlist.coverSource = 'artist:${artist.name}';
+                        Navigator.pop(context, true);
+                      },
+                    );
+                  }
+
+                  return const SizedBox.shrink();
+                },
               );
             },
           ),
@@ -292,7 +316,7 @@ class _AlbumResultTile extends StatelessWidget {
           width: 40,
           height: 40,
           child: FutureBuilder<ImageProvider?>(
-            future: album.cover,
+            future: album.thumbnailCover(size: 48),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.done &&
                   snapshot.data != null) {
@@ -303,8 +327,7 @@ class _AlbumResultTile extends StatelessWidget {
               }
               return Container(
                 color: scheme.surfaceContainerHighest,
-                child:
-                    Icon(Symbols.album, color: scheme.onSurfaceVariant),
+                child: Icon(Symbols.album, color: scheme.onSurfaceVariant),
               );
             },
           ),
@@ -332,7 +355,7 @@ class _ArtistResultTile extends StatelessWidget {
           width: 40,
           height: 40,
           child: FutureBuilder<ImageProvider?>(
-            future: artist.picture,
+            future: artist.thumbnailPicture(size: 48),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.done &&
                   snapshot.data != null) {
@@ -343,8 +366,7 @@ class _ArtistResultTile extends StatelessWidget {
               }
               return Container(
                 color: scheme.surfaceContainerHighest,
-                child:
-                    Icon(Symbols.person, color: scheme.onSurfaceVariant),
+                child: Icon(Symbols.person, color: scheme.onSurfaceVariant),
               );
             },
           ),
