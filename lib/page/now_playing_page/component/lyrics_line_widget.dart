@@ -222,6 +222,12 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
       }
     }
 
+    final oldKeepAlive = (oldWidget.distance ?? 999).abs() <= 2;
+    final newKeepAlive = (widget.distance ?? 999).abs() <= 2;
+    if (oldKeepAlive != newKeepAlive) {
+      updateKeepAlive();
+    }
+
     if (widget.line != oldWidget.line) {
       _cachedPainter = null;
       _pendingSeekMs = null;

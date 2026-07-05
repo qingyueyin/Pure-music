@@ -59,7 +59,8 @@ class LyricService extends ChangeNotifier {
   late StreamSubscription _positionStreamSubscription;
   double _lastPos = 0.0;
   Lyric? _currLyric;
-  List<int> _lineStartMs = const [];
+  List<int> _lineRenderStartMs = const [];
+  List<int> _lineEndMs = const [];
   int _lastEmittedLineIndex = -1;
   int _lastDesktopLyricLineIndex = -1;
 
@@ -89,12 +90,15 @@ class LyricService extends ChangeNotifier {
       final lyric = _currLyric;
       if (lyric == null) return;
       if (_nextLyricLine >= lyric.lines.length) {
-        if (_lineStartMs.isEmpty || posMs > _lineStartMs.last) return;
+        if (_lineEndMs.isEmpty || posMs >= _lineEndMs.last) return;
         findCurrLyricLineAt(pos);
         return;
       }
-      while (_nextLyricLine < _lineStartMs.length &&
-          posMs > _lineStartMs[_nextLyricLine]) {
+      while (_nextLyricLine < lyric.lines.length) {
+        final boundaryMs = _nextLyricLine == 0
+            ? _lineRenderStartMs.first
+            : _lineEndMs[_nextLyricLine - 1];
+        if (posMs < boundaryMs) break;
         _nextLyricLine += 1;
       }
 
@@ -130,15 +134,7 @@ class LyricService extends ChangeNotifier {
         return;
       }
       var primaryIndex = currLineIndex;
-      if (activeIndices.isEmpty && currLineIndex + 1 < lyric.lines.length) {
-        // 间奏：当前行已结束且下一行未开始，推进到下一行预览
-        final currEnd = lyric.lines[currLineIndex].start.inMilliseconds +
-            lyric.lines[currLineIndex].length.inMilliseconds;
-        final nextStart = _lineStartMs[currLineIndex + 1];
-        if (posMs >= currEnd && posMs < nextStart) {
-          primaryIndex = currLineIndex + 1;
-        }
-      } else if (activeIndices.isNotEmpty) {
+      if (activeIndices.isNotEmpty) {
         // 当前行指针还未推进但下一行已激活（posMs == nextStart 的边界），
         // 取最早激活行做 primaryIndex
         final minActive = activeIndices.first;
@@ -276,7 +272,8 @@ class LyricService extends ChangeNotifier {
     forceEmitCurrentLine();
   });
 
-  Stream<LyricLineUpdate> get lyricLineStream => _lyricLineStreamController.stream;
+  Stream<LyricLineUpdate> get lyricLineStream =>
+      _lyricLineStreamController.stream;
 
   /// 强制发射当前行（绕过 _lastEmittedLineIndex 检查），
   /// 用于新创建的歌词 view 初始化时获取当前行
@@ -325,14 +322,7 @@ class LyricService extends ChangeNotifier {
       return;
     }
     var primaryIndex = currLineIndex;
-    if (activeIndices.isEmpty && currLineIndex + 1 < lyric.lines.length) {
-      final currEnd = lyric.lines[currLineIndex].start.inMilliseconds +
-          lyric.lines[currLineIndex].length.inMilliseconds;
-      final nextStart = _lineStartMs[currLineIndex + 1];
-      if (posMs >= currEnd && posMs < nextStart) {
-        primaryIndex = currLineIndex + 1;
-      }
-    } else if (activeIndices.isNotEmpty) {
+    if (activeIndices.isNotEmpty) {
       final minActive = activeIndices.first;
       if (minActive > currLineIndex) {
         primaryIndex = minActive;
@@ -341,10 +331,10 @@ class LyricService extends ChangeNotifier {
     _lastEmittedLineIndex = primaryIndex;
     _lastEmittedLineIndexForHint = primaryIndex;
     _lastEmittedActiveIndices = activeIndices;
-      _lyricLineStreamController.add(LyricLineUpdate(
-        primaryIndex: primaryIndex,
-        activeIndices: activeIndices,
-      ));
+    _lyricLineStreamController.add(LyricLineUpdate(
+      primaryIndex: primaryIndex,
+      activeIndices: activeIndices,
+    ));
 
     if (primaryIndex != _lastDesktopLyricLineIndex) {
       _lastDesktopLyricLineIndex = primaryIndex;
@@ -414,14 +404,7 @@ class LyricService extends ChangeNotifier {
       return;
     }
     var primaryIndex = currLineIndex;
-    if (activeIndices.isEmpty && currLineIndex + 1 < lyric.lines.length) {
-      final currEnd = lyric.lines[currLineIndex].start.inMilliseconds +
-          lyric.lines[currLineIndex].length.inMilliseconds;
-      final nextStart = lyric.lines[currLineIndex + 1].start.inMilliseconds;
-      if (posMs >= currEnd && posMs < nextStart) {
-        primaryIndex = currLineIndex + 1;
-      }
-    } else if (activeIndices.isNotEmpty) {
+    if (activeIndices.isNotEmpty) {
       final minActive = activeIndices.first;
       if (minActive > currLineIndex) {
         primaryIndex = minActive;
@@ -467,23 +450,22 @@ class LyricService extends ChangeNotifier {
     if (n == 0) return -1;
 
     if (hint >= 0 && hint < n) {
-      final seg = lines[hint];
-      final segEndMs = seg.start.inMilliseconds + seg.length.inMilliseconds;
-      if (time >= seg.start.inMilliseconds && time < segEndMs) {
+      final segStartMs = _lineRenderStartMs[hint];
+      final segEndMs = _lineEndMs[hint];
+      if (time >= segStartMs && time < segEndMs) {
         return hint + 1;
       }
       final nextIndex = hint + 1;
       if (nextIndex < n) {
-        final segNext = lines[nextIndex];
-        final segNextEnd =
-            segNext.start.inMilliseconds + segNext.length.inMilliseconds;
-        if (time >= segNext.start.inMilliseconds && time < segNextEnd) {
+        final segNextStart = _lineRenderStartMs[nextIndex];
+        final segNextEnd = _lineEndMs[nextIndex];
+        if (time >= segNextStart && time < segNextEnd) {
           return nextIndex + 1;
         }
       }
     }
 
-    return _lowerBoundGreater(_lineStartMs, time);
+    return _lowerBoundGreater(_lineEndMs, time);
   }
 
   List<int> _computeActiveLines(int posMs) {
@@ -524,13 +506,18 @@ class LyricService extends ChangeNotifier {
     blankMetadataLines(lyric.lines);
 
     _currLyric = lyric;
-    _lineStartMs = lyric.lines.map((line) {
-      // 逐字歌词：用第一个词的 start 作为有效行开始时间，
-      // 避免行切换先于逐词高亮触发，导致"上抬比高亮快"的视觉错位
+    _lineRenderStartMs = lyric.lines.map((line) {
       if (line is SyncLyricLine && line.words.isNotEmpty) {
         return line.words.first.start.inMilliseconds;
       }
       return line.start.inMilliseconds;
+    }).toList();
+    _lineEndMs = lyric.lines.map((line) {
+      if (line is SyncLyricLine && line.words.isNotEmpty) {
+        final lastWord = line.words.last;
+        return lastWord.start.inMilliseconds + lastWord.length.inMilliseconds;
+      }
+      return line.start.inMilliseconds + line.length.inMilliseconds;
     }).toList();
     _lastEmittedLineIndexForHint = -1;
   }
@@ -553,7 +540,8 @@ class LyricService extends ChangeNotifier {
 
     currLyricFuture.ignore();
     _currLyric = null;
-    _lineStartMs = const [];
+    _lineRenderStartMs = const [];
+    _lineEndMs = const [];
     _lastEmittedLineIndex = -1;
     _lastDesktopLyricLineIndex = -1;
     _lyricCache.remove(audioPath);
@@ -737,7 +725,8 @@ class LyricService extends ChangeNotifier {
 
     currLyricFuture.ignore();
     _currLyric = null;
-    _lineStartMs = const [];
+    _lineRenderStartMs = const [];
+    _lineEndMs = const [];
     _lastEmittedLineIndex = -1;
     _lastDesktopLyricLineIndex = -1;
 
@@ -763,7 +752,8 @@ class LyricService extends ChangeNotifier {
 
     currLyricFuture.ignore();
     _currLyric = null;
-    _lineStartMs = const [];
+    _lineRenderStartMs = const [];
+    _lineEndMs = const [];
     _lastEmittedLineIndex = -1;
     _lastDesktopLyricLineIndex = -1;
 

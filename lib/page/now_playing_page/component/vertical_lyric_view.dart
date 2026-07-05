@@ -21,7 +21,7 @@ const _opacityMinClamp = 0.30;
 const _opacityMaxClamp = 0.90;
 const _staggerBaseMs = 60;
 const _staggerMaxMs = 600;
-const _shaderFadeInWithBlur = 0.20;
+const _shaderFadeInWithBlur = 0.05;
 const _shaderFadeInWithoutBlur = 0.05;
 const _shaderFadeOutWithBlur = 0.80;
 const _shaderFadeOutWithoutBlur = 0.95;
@@ -201,6 +201,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   Timer? _sizeChangeTimer;
   Timer? _idleCleanupTimer; // 空闲清理定时器
   DateTime _lastActivityTime = DateTime.now(); // 最后活动时间
+  bool _didIdleCleanup = false;
   LyricScrollState _scrollState = LyricScrollState.idle;
   int _mainLine = 0;
 
@@ -217,6 +218,23 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   bool _needsInitialScroll = true;
 
   final Map<int, GlobalKey> _lineKeys = {};
+  static const int _lineKeyRetainRadius = 4;
+
+  GlobalKey? _keyForLine(int index) {
+    if ((index - _mainLine).abs() > _lineKeyRetainRadius &&
+        !_activeLines.contains(index) &&
+        index != _hoveredLineIndex) {
+      return null;
+    }
+    return _lineKeys[index] ??= GlobalKey();
+  }
+
+  void _pruneLineKeys() {
+    _lineKeys.removeWhere((index, _) =>
+        (index - _mainLine).abs() > _lineKeyRetainRadius &&
+        !_activeLines.contains(index) &&
+        index != _hoveredLineIndex);
+  }
 
   /// 悬停歌词行高亮遮罩
   int _hoveredLineIndex = -1;
@@ -252,7 +270,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     _idleCleanupTimer = Timer.periodic(const Duration(seconds: 3), (_) {
       if (!_disposed && mounted) {
         final idleTime = DateTime.now().difference(_lastActivityTime);
-        if (idleTime.inSeconds >= 5) {
+        if (idleTime.inSeconds >= 5 && !_didIdleCleanup) {
+          _didIdleCleanup = true;
           // 空闲 5 秒，执行深度清理
           utils.logger.d('[Memory] Idle ${idleTime.inSeconds}s, FULL cleanup');
 
@@ -279,6 +298,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   /// 标记活动时间（切歌、滚动、行变化）
   void _markActivity() {
     _lastActivityTime = DateTime.now();
+    _didIdleCleanup = false;
   }
 
   /// Sine Out 缓动函数
@@ -781,6 +801,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
         _activeLines
           ..clear()
           ..addAll(update.activeIndices);
+        _pruneLineKeys();
       });
       // 首次进入页面时即使行号未变，也可能从未滚动过，补一次定位
       if (_needsInitialScroll) {
@@ -816,6 +837,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       _activeLines
         ..clear()
         ..addAll(update.activeIndices);
+      _pruneLineKeys();
       _viewportRange = followDecision.nextRange;
       if (_hoveredLineIndex != -1) {
         _hoveredLineIndex = -1;
@@ -950,7 +972,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                           widget.enableSeekOnTap && i == _hoveredLineIndex;
 
                       Widget lineWidget = SizedBox(
-                        key: _lineKeys[i] ??= GlobalKey(),
+                        key: _keyForLine(i),
                         child: LyricsLineWidget(
                           key: ValueKey('lyric_line_$i'),
                           line: line,
