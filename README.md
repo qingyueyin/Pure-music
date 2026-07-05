@@ -13,6 +13,7 @@
   <img src="https://img.shields.io/badge/Flutter-3.3+-0x0175C2?style=flat-square" alt="Flutter">
   <img src="https://img.shields.io/badge/Rust-1.70+-000000?style=flat-square" alt="Rust">
   <img src="https://badgen.net/github/release/qingyueyin/Pure-music?icon=github" alt="Version">
+  <img src="https://img.shields.io/github/downloads/qingyueyin/Pure-music/total?style=flat-square" alt="Downloads">
   <img src="https://img.shields.io/badge/License-GPL--3.0-green?style=flat-square" alt="License">
   <img src="https://komarev.com/ghpvc/?username=qingyueyin&repo=Pure-music&style=flat-square&label=Views" alt="Views">
 </p>
@@ -81,9 +82,9 @@
 | 类别 | 功能 |
 |:---|:---|
 | 🔊 播放 | WASAPI 独占模式（缓冲+事件驱动）、交叉淡入淡出、降调/音调 ±12 半音、顺序/循环/单曲循环、随机播放、下一首播放、会话恢复 |
-| 🎛️ 音频 | 10 段均衡器（80Hz~16kHz）、EQ 预设管理（保存/加载/删除）、Wavelet AutoEq 导入（单文件+批量）、Preamp ±24dB、自动增益、DSP 音量、回声日志 |
+| 🎛️ 音频 | 10 段均衡器（80Hz~16kHz）、EQ 预设管理（保存/加载/删除）、Wavelet AutoEq 导入（单文件+批量）、Preamp ±24dB、ReplayGain 自动增益、DSP 音量、回声日志 |
 | 🎨 主题 | Material You 动态取色、封面自动取色、系统主题同步 + 手动切换、Mesh 渐变/封面模糊双背景（GLSL 渲染）、进度条/歌词/间奏莫奈取色、自定义字体、沉浸模式 |
-| 📝 歌词 | 本地+在线（QQ/网易/酷狗）、逐字 KaraOK（YRC/QRC/KRC）、逐行/逐字模式、对齐/字号/字重可调、罗马音/翻译、简繁转换、空行过滤、元数据剥离（过滤脏数据）、写入标签（延迟/自动）、来源切换/首选源设置、桌面歌词（独立窗口+主题同步）、水平歌词、间奏动画、距离模糊/行缩放/音频律动、悬停高亮 |
+| 📝 歌词 | 本地+在线（QQ/网易/酷狗）、逐字 KaraOK（YRC/QRC/KRC/TTML）、逐行/逐字模式、对齐/字号/字重可调、罗马音/翻译、简繁转换、空行过滤、元数据剥离（过滤脏数据）、写入标签（延迟/自动）、来源切换/首选源设置、桌面歌词（独立窗口+主题同步）、水平歌词、间奏动画、距离模糊/行缩放/音频律动、悬停高亮 |
 | 🎵 音乐库 | 按艺术家/专辑/文件夹/歌曲浏览、播放列表管理、扫描进度可视化、详情页、SQLite 持久化、自定义艺术家分隔符、小封面缓存、冷数据回收 |
 | 🔍 搜索 | 全局搜索对话框、分类结果展示、本地音乐库搜索 |
 | ⚙️ 系统 | SMTC 集成、系统音量、全局快捷键+UI反馈、单实例、窗口记忆、便携版、日志导出、数据库迁移、检查更新（GitHub Release）、问题反馈（自动日志脱敏）、ImageCache 优化 |
@@ -361,9 +362,9 @@ flutter_rust_bridge_codegen generate
 
 <a href="https://star-history.com/#qingyueyin/Pure-music&Date">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=qingyueyin/Pure-music&type=Date&theme=dark" />
-    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=qingyueyin/Pure-music&type=Date" />
-    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=qingyueyin/Pure-music&type=Date" width="600" />
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=qingyueyin/Pure-music&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=qingyueyin/Pure-music&type=Date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=qingyueyin/Pure-music&type=Date" width="600" />
   </picture>
 </a>
 
