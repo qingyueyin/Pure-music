@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:palette_generator/palette_generator.dart';
 
 class ColorExtractionService {
-  static final ColorExtractionService _instance = ColorExtractionService._internal();
+  static final ColorExtractionService _instance =
+      ColorExtractionService._internal();
   factory ColorExtractionService() => _instance;
   ColorExtractionService._internal();
 
   static const int _maxCacheSize = 50;
+  static const int _maxPathCacheSize = 200;
   static const Duration _cacheDuration = Duration(minutes: 10);
   final Map<String, Color> _colorCache = {};
   final Map<String, DateTime> _cacheTime = {};
@@ -16,12 +18,23 @@ class ColorExtractionService {
 
   /// 按音频路径缓存的主色，供首帧同步读取
   final Map<String, Color> _pathColorCache = {};
+  final List<String> _pathAccessOrder = [];
 
   void cacheColorForPath(String path, Color color) {
     _pathColorCache[path] = color;
+    _touchPathCacheEntry(path);
+    while (_pathColorCache.length > _maxPathCacheSize &&
+        _pathAccessOrder.isNotEmpty) {
+      final oldest = _pathAccessOrder.removeAt(0);
+      _pathColorCache.remove(oldest);
+    }
   }
 
-  Color? getCachedColorForPath(String path) => _pathColorCache[path];
+  Color? getCachedColorForPath(String path) {
+    final color = _pathColorCache[path];
+    if (color != null) _touchPathCacheEntry(path);
+    return color;
+  }
 
   Future<Color?> extractDominantColor(Uint8List? imageBytes) async {
     if (imageBytes == null || imageBytes.isEmpty) return null;
@@ -66,6 +79,11 @@ class ColorExtractionService {
   void _touchCacheEntry(String key) {
     _accessOrder.remove(key);
     _accessOrder.add(key);
+  }
+
+  void _touchPathCacheEntry(String path) {
+    _pathAccessOrder.remove(path);
+    _pathAccessOrder.add(path);
   }
 
   void _removeCacheEntry(String key) {
@@ -121,5 +139,8 @@ class ColorExtractionService {
   void clear() {
     _colorCache.clear();
     _cacheTime.clear();
+    _accessOrder.clear();
+    _pathColorCache.clear();
+    _pathAccessOrder.clear();
   }
 }

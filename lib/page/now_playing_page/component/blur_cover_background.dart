@@ -40,6 +40,8 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
   ui.Image? _blurredImage;
   bool _isLoading = false;
   bool _disposed = false;
+  int _blurRequestId = 0;
+  int? _currentCoverFingerprint;
 
   @override
   void initState() {
@@ -59,7 +61,7 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
     super.didUpdateWidget(oldWidget);
     final newBytes = widget.inputs.albumCoverBytes;
     final oldBytes = oldWidget.inputs.albumCoverBytes;
-    if (newBytes != null && !identical(newBytes, oldBytes)) {
+    if (!identical(newBytes, oldBytes)) {
       _coverBytesChanged(newBytes, oldBytes);
     }
   }
@@ -76,18 +78,35 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
   bool _isSameCoverBytes(Uint8List a, Uint8List b) {
     if (identical(a, b)) return true;
     if (a.length != b.length) return false;
-    if (a.length > 65536) return true;
-    for (int i = 0; i < a.length; i++) {
+    for (var i = 0; i < a.length; i++) {
       if (a[i] != b[i]) return false;
     }
     return true;
   }
 
+  int _coverFingerprint(Uint8List bytes) {
+    var hash = bytes.length;
+    final step = (bytes.length / 512).ceil();
+    for (var i = 0; i < bytes.length; i += step) {
+      hash = 0x1fffffff & (hash * 31 + bytes[i]);
+    }
+    return hash;
+  }
+
+  bool _isCurrentRequest(int requestId, int fingerprint) {
+    return !_disposed &&
+        mounted &&
+        requestId == _blurRequestId &&
+        _currentCoverFingerprint == fingerprint;
+  }
+
   void _clearImage() {
+    _blurRequestId++;
+    _currentCoverFingerprint = null;
     final old = _blurredImage;
     _blurredImage = null;
     old?.dispose();
-    if (!_disposed) setState(() {});
+    if (!_disposed && mounted) setState(() => _isLoading = false);
   }
 
   /// Decode the cover → apply Gaussian blur ONCE via an off‑screen
@@ -101,6 +120,10 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
       return;
     }
     if (_disposed) return;
+
+    final fingerprint = _coverFingerprint(bytes);
+    _currentCoverFingerprint = fingerprint;
+    final requestId = ++_blurRequestId;
 
     const sigma = _kBlurSigma;
 
@@ -116,7 +139,7 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
       final frame = await codec.getNextFrame();
       codec.dispose();
 
-      if (_disposed || !mounted) {
+      if (!_isCurrentRequest(requestId, fingerprint)) {
         frame.image.dispose();
         return;
       }
@@ -152,7 +175,7 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
       final blurred = await picture.toImage(_kBlurOutputSize, _kBlurOutputSize);
       picture.dispose();
 
-      if (_disposed || !mounted) {
+      if (!_isCurrentRequest(requestId, fingerprint)) {
         blurred.dispose();
         return;
       }
@@ -163,7 +186,9 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
 
       setState(() => _isLoading = false);
     } catch (_) {
-      if (!_disposed && mounted) setState(() => _isLoading = false);
+      if (_isCurrentRequest(requestId, fingerprint)) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -185,7 +210,6 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
       fit: StackFit.expand,
       children: [
         ColoredBox(color: scheme.surface),
-
         if (blurredImage != null)
           RepaintBoundary(
             child: AnimatedOpacity(
@@ -200,7 +224,6 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
           )
         else
           ColoredBox(color: widget.fallbackColor),
-
         Container(
           color: widget.fallbackColor.withValues(
             alpha: brightness == Brightness.dark ? 0.35 : 0.15,

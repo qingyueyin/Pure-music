@@ -76,6 +76,7 @@ class _MeshGradientBackgroundInternalState
       AnimatedMeshGradientController();
 
   int? _lastCoverHash;
+  int _paletteRequestId = 0;
   int _lastSpectrumUpdateMs = 0;
 
   static final _playOptions = AnimatedMeshGradientOptions(
@@ -121,7 +122,7 @@ class _MeshGradientBackgroundInternalState
     super.didUpdateWidget(oldWidget);
     final newBytes = widget.inputs.albumCoverBytes;
     final oldBytes = oldWidget.inputs.albumCoverBytes;
-    if (newBytes != null && !identical(newBytes, oldBytes)) {
+    if (!identical(newBytes, oldBytes)) {
       _coverBytesChanged(newBytes, oldBytes);
     }
 
@@ -191,21 +192,27 @@ class _MeshGradientBackgroundInternalState
   }
 
   void _coverBytesChanged(Uint8List? newBytes, Uint8List? oldBytes) {
-    if (newBytes == null || newBytes.isEmpty) return;
-    final newHash = _computeHash(newBytes);
-    if (oldBytes != null && _lastCoverHash == newHash) return;
-    _lastCoverHash = newHash;
+    if (newBytes == null || newBytes.isEmpty) {
+      _paletteRequestId++;
+      _lastCoverHash = null;
+      return;
+    }
+    if (oldBytes != null && _isSameCoverBytes(newBytes, oldBytes)) return;
 
-    // 使用父级预提取的调色板，避免重复 Rust 解码
+    final newHash = _computeHash(newBytes);
+    if (_lastCoverHash == newHash) return;
+    _lastCoverHash = newHash;
+    final requestId = ++_paletteRequestId;
+
+    // Use the palette passed by the parent to avoid duplicate Rust decoding.
     final preExtracted = widget.inputs.preExtractedColors;
     if (preExtracted != null && preExtracted.isNotEmpty) {
       _applyPaletteColors(preExtracted);
     } else {
-      _extractPaletteWithTransition();
+      _extractPaletteWithTransition(newBytes, requestId, newHash);
     }
   }
 
-  /// 直接应用预提取的调色板（跳过 Rust 调用）
   void _applyPaletteColors(List<Color> colors) {
     if (_isTransitioning) {
       _transitionController.stop();
@@ -223,13 +230,30 @@ class _MeshGradientBackgroundInternalState
     _transitionController.forward();
   }
 
+  bool _isSameCoverBytes(Uint8List a, Uint8List b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
   int _computeHash(Uint8List bytes) {
-    int hash = 0;
-    final step = (bytes.length / 256).ceil();
-    for (int i = 0; i < bytes.length; i += step) {
-      hash = hash * 31 + bytes[i];
+    var hash = bytes.length;
+    final step = (bytes.length / 512).ceil();
+    for (var i = 0; i < bytes.length; i += step) {
+      hash = 0x1fffffff & (hash * 31 + bytes[i]);
     }
     return hash;
+  }
+
+  bool _isCurrentPaletteRequest(int requestId, int coverHash) {
+    return !_disposed &&
+        mounted &&
+        widget.inputs.isVisible &&
+        requestId == _paletteRequestId &&
+        _lastCoverHash == coverHash;
   }
 
   void _listenSpectrum() {
@@ -266,19 +290,20 @@ class _MeshGradientBackgroundInternalState
     if (bytes == null || bytes.isEmpty) return;
     if (_disposed) return;
 
+    final coverHash = _computeHash(bytes);
+    _lastCoverHash = coverHash;
+    final requestId = ++_paletteRequestId;
+
     try {
       final rustColors = await extractColorsFromImage(
         imageBytes: bytes,
         numColors: 4,
       );
       if (rustColors.isEmpty ||
-          _disposed ||
-          !mounted ||
-          !widget.inputs.isVisible) {
+          !_isCurrentPaletteRequest(requestId, coverHash)) {
         return;
       }
       final target = _padToFour(rustColors.map((argb) => Color(argb)).toList());
-      _lastCoverHash ??= _computeHash(bytes);
       setState(() {
         _paletteColors = target;
       });
@@ -287,11 +312,19 @@ class _MeshGradientBackgroundInternalState
     }
   }
 
-  Future<void> _extractPaletteWithTransition() async {
+  Future<void> _extractPaletteWithTransition([
+    Uint8List? coverBytes,
+    int? activeRequestId,
+    int? activeCoverHash,
+  ]) async {
     if (!widget.inputs.isVisible) return;
-    final bytes = widget.inputs.albumCoverBytes;
+    final bytes = coverBytes ?? widget.inputs.albumCoverBytes;
     if (bytes == null || bytes.isEmpty) return;
     if (_disposed) return;
+
+    final coverHash = activeCoverHash ?? _computeHash(bytes);
+    _lastCoverHash = coverHash;
+    final requestId = activeRequestId ?? ++_paletteRequestId;
 
     try {
       final rustColors = await extractColorsFromImage(
@@ -299,14 +332,11 @@ class _MeshGradientBackgroundInternalState
         numColors: 4,
       );
       if (rustColors.isEmpty ||
-          _disposed ||
-          !mounted ||
-          !widget.inputs.isVisible) {
+          !_isCurrentPaletteRequest(requestId, coverHash)) {
         return;
       }
 
       final target = _padToFour(rustColors.map((argb) => Color(argb)).toList());
-      _lastCoverHash ??= _computeHash(bytes);
 
       if (_isTransitioning) {
         _transitionController.stop();

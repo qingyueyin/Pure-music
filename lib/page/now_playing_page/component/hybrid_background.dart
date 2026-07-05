@@ -27,7 +27,8 @@ class HybridBackground extends StatefulWidget {
 class _HybridBackgroundState extends State<HybridBackground>
     with SingleTickerProviderStateMixin {
   ui.Image? _decodedImage;
-  Uint8List? _currentCoverBytes;
+  int? _currentCoverFingerprint;
+  int _coverRequestId = 0;
   List<Color> _paletteColors = [];
   bool _isPlaying = false;
   double _breathScale = 1.0;
@@ -75,7 +76,7 @@ class _HybridBackgroundState extends State<HybridBackground>
     super.didUpdateWidget(oldWidget);
     final newBytes = widget.inputs.albumCoverBytes;
     final oldBytes = oldWidget.inputs.albumCoverBytes;
-    if (newBytes != null && !identical(newBytes, oldBytes)) {
+    if (!identical(newBytes, oldBytes)) {
       _coverBytesChanged(newBytes, oldBytes);
     }
 
@@ -121,25 +122,38 @@ class _HybridBackgroundState extends State<HybridBackground>
 
   void _coverBytesChanged(Uint8List? newBytes, Uint8List? oldBytes) {
     if (newBytes == null || newBytes.isEmpty) {
-      if (_currentCoverBytes != null) {
-        _decodedImage?.dispose();
-        _decodedImage = null;
-        setState(() => _currentCoverBytes = null);
-      }
+      _clearCover();
       return;
     }
     if (oldBytes != null && _isSameCoverBytes(newBytes, oldBytes)) return;
-    _loadCover();
+    _loadCover(newBytes);
   }
 
   bool _isSameCoverBytes(Uint8List a, Uint8List b) {
     if (identical(a, b)) return true;
     if (a.length != b.length) return false;
-    if (a.length > 65536) return true;
-    for (int i = 0; i < a.length; i++) {
+    for (var i = 0; i < a.length; i++) {
       if (a[i] != b[i]) return false;
     }
     return true;
+  }
+
+  int _coverFingerprint(Uint8List bytes) {
+    var hash = bytes.length;
+    final step = (bytes.length / 512).ceil();
+    for (var i = 0; i < bytes.length; i += step) {
+      hash = 0x1fffffff & (hash * 31 + bytes[i]);
+    }
+    return hash;
+  }
+
+  void _clearCover() {
+    _coverRequestId++;
+    _currentCoverFingerprint = null;
+    final oldImage = _decodedImage;
+    _decodedImage = null;
+    oldImage?.dispose();
+    if (!_disposed && mounted) setState(() {});
   }
 
   void _listenSpectrum() {
@@ -171,48 +185,42 @@ class _HybridBackgroundState extends State<HybridBackground>
     });
   }
 
-  void _loadCover() {
-    final bytes = widget.inputs.albumCoverBytes;
+  void _loadCover([Uint8List? coverBytes]) {
+    final bytes = coverBytes ?? widget.inputs.albumCoverBytes;
     if (bytes == null || bytes.isEmpty) {
-      if (_currentCoverBytes != null) {
-        _decodedImage?.dispose();
-        _decodedImage = null;
-        setState(() => _currentCoverBytes = null);
-      }
+      _clearCover();
       return;
     }
-
     if (_disposed) return;
 
-    if (identical(bytes, _currentCoverBytes) && _decodedImage != null) return;
+    final fingerprint = _coverFingerprint(bytes);
+    _currentCoverFingerprint = fingerprint;
+    final requestId = ++_coverRequestId;
 
-    final oldImage = _decodedImage;
-    _decodedImage = null;
-
-    setState(() {
-      _currentCoverBytes = bytes;
-    });
-
-    // 使用父级预提取的调色板，避免重复 Rust 解码
+    // Use the palette passed by the parent to avoid duplicate Rust decoding.
     final preExtracted = widget.inputs.preExtractedColors;
     if (preExtracted != null && preExtracted.isNotEmpty) {
       _applyPaletteColors(preExtracted);
     } else {
-      _extractPaletteWithTransition(bytes);
+      _extractPaletteWithTransition(bytes, requestId, fingerprint);
     }
 
     _decodeCover(bytes).then((newImage) {
-      if (_disposed || !mounted) {
+      final stillCurrent = !_disposed &&
+          mounted &&
+          requestId == _coverRequestId &&
+          _currentCoverFingerprint == fingerprint;
+      if (!stillCurrent) {
         newImage?.dispose();
         return;
       }
-      oldImage?.dispose();
+      final oldImage = _decodedImage;
       _decodedImage = newImage;
-      if (mounted) setState(() {});
+      oldImage?.dispose();
+      setState(() {});
     });
   }
 
-  /// 直接应用预提取的调色板（跳过 Rust 调用）
   void _applyPaletteColors(List<Color> colors) {
     if (_isTransitioning) {
       _transitionController.stop();
@@ -245,7 +253,11 @@ class _HybridBackgroundState extends State<HybridBackground>
     }
   }
 
-  Future<void> _extractPaletteWithTransition(Uint8List bytes) async {
+  Future<void> _extractPaletteWithTransition(
+    Uint8List bytes,
+    int requestId,
+    int fingerprint,
+  ) async {
     if (_disposed) return;
 
     try {
@@ -254,7 +266,13 @@ class _HybridBackgroundState extends State<HybridBackground>
         numColors: 4,
       );
 
-      if (rustColors.isEmpty || _disposed || !mounted) return;
+      if (rustColors.isEmpty ||
+          _disposed ||
+          !mounted ||
+          requestId != _coverRequestId ||
+          _currentCoverFingerprint != fingerprint) {
+        return;
+      }
 
       final targetColors =
           _padToFour(rustColors.map((argb) => Color(argb)).toList());
