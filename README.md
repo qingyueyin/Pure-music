@@ -362,9 +362,9 @@ flutter_rust_bridge_codegen generate
 
 <a href="https://star-history.com/#qingyueyin/Pure-music&Date">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=qingyueyin/Pure-music&type=Date&theme=dark" />
-    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=qingyueyin/Pure-music&type=Date" />
-    <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=qingyueyin/Pure-music&type=Date" width="600" />
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=qingyueyin/Pure-music&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=qingyueyin/Pure-music&type=Date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=qingyueyin/Pure-music&type=Date" width="600" />
   </picture>
 </a>
 
