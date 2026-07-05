@@ -103,7 +103,9 @@ class _AppearanceTabContent extends StatelessWidget {
         SizedBox(height: 16.0),
         _MonetProgressBarSwitch(),
         SizedBox(height: 16.0),
-        _MonetLyricsSwitch(),
+        _WavyProgressBarSwitch(),
+        SizedBox(height: 16.0),
+        _TopBarLyricAnimationSelector(),
         SizedBox(height: 16.0),
         _MonetTransitionSwitch(),
         SizedBox(height: 16.0),
@@ -174,6 +176,134 @@ class _MonetProgressBarSwitchState extends State<_MonetProgressBarSwitch> {
           settings.saveSettings();
         },
       ),
+    );
+  }
+}
+
+class _WavyProgressBarSwitch extends StatefulWidget {
+  const _WavyProgressBarSwitch();
+
+  @override
+  State<_WavyProgressBarSwitch> createState() => _WavyProgressBarSwitchState();
+}
+
+class _WavyProgressBarSwitchState extends State<_WavyProgressBarSwitch> {
+  final settings = AppSettings.instance;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8.0),
+          child: Text(
+            '波浪进度条',
+            style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurface, fontSize: 18.0),
+          ),
+        ),
+        SettingsTile(
+          description: '竖屏播放页',
+          action: Switch(
+            value:
+                settings.wavyBarEnabledModes.contains(NowPlayingMode.portrait),
+            onChanged: (v) {
+              setState(() {
+                if (v) {
+                  settings.wavyBarEnabledModes.add(NowPlayingMode.portrait);
+                } else {
+                  settings.wavyBarEnabledModes.remove(NowPlayingMode.portrait);
+                }
+              });
+              settings.saveSettings();
+            },
+          ),
+        ),
+        const SizedBox(height: 8.0),
+        SettingsTile(
+          description: '横屏沉浸模式',
+          action: Switch(
+            value:
+                settings.wavyBarEnabledModes.contains(NowPlayingMode.immersive),
+            onChanged: (v) {
+              setState(() {
+                if (v) {
+                  settings.wavyBarEnabledModes.add(NowPlayingMode.immersive);
+                } else {
+                  settings.wavyBarEnabledModes.remove(NowPlayingMode.immersive);
+                }
+              });
+              settings.saveSettings();
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TopBarLyricAnimationSelector extends StatefulWidget {
+  const _TopBarLyricAnimationSelector();
+
+  @override
+  State<_TopBarLyricAnimationSelector> createState() =>
+      _TopBarLyricAnimationSelectorState();
+}
+
+class _TopBarLyricAnimationSelectorState
+    extends State<_TopBarLyricAnimationSelector> {
+  final settings = AppSettings.instance;
+
+  @override
+  Widget build(BuildContext context) {
+    const row1 = {
+      TopBarLyricAnimation.slideUp: '上划',
+      TopBarLyricAnimation.slideDown: '下划',
+      TopBarLyricAnimation.slideLeft: '左划',
+      TopBarLyricAnimation.slideRight: '右划',
+    };
+    const row2 = {
+      TopBarLyricAnimation.fade: '淡入淡出',
+      TopBarLyricAnimation.absorb: '吸收',
+      TopBarLyricAnimation.flipX: 'X 翻转',
+      TopBarLyricAnimation.flipY: 'Y 翻转',
+    };
+
+    final current = settings.topBarLyricAnimation;
+
+    Widget segRow(Map<TopBarLyricAnimation, String> items) {
+      return SegmentedButton<TopBarLyricAnimation>(
+        segments: [
+          for (final e in items.entries)
+            ButtonSegment(value: e.key, label: Text(e.value)),
+        ],
+        selected: {current},
+        onSelectionChanged: (v) {
+          setState(() {
+            settings.topBarLyricAnimation = v.first;
+          });
+          settings.saveSettings();
+        },
+        showSelectedIcon: false,
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8.0),
+          child: Text(
+            '顶部歌词切换动画',
+            style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurface, fontSize: 18.0),
+          ),
+        ),
+        segRow(row1),
+        const SizedBox(height: 8.0),
+        segRow(row2),
+      ],
     );
   }
 }

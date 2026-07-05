@@ -35,7 +35,7 @@ class _NowPlayingPitchControlState extends State<NowPlayingPitchControl> {
           },
           tooltip: '音调',
           icon: const Icon(Symbols.music_note),
-          color: useMonet ? scheme.primary : scheme.onSecondaryContainer,
+          color: useMonet ? scheme.primary : scheme.onSurface,
         );
       },
       menuChildren: const [

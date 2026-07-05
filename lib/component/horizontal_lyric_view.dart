@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
@@ -65,7 +66,8 @@ class _LyricHorizontalScrollArea extends StatefulWidget {
 }
 
 class _LyricHorizontalScrollAreaState
-    extends State<_LyricHorizontalScrollArea> {
+    extends State<_LyricHorizontalScrollArea>
+    with SingleTickerProviderStateMixin {
   /// 停留300ms后启动，提前300ms滚动到底
   final waitFor = const Duration(milliseconds: 300);
   final scrollController = ScrollController();
@@ -74,6 +76,8 @@ class _LyricHorizontalScrollAreaState
   int _scrollToken = 0;
 
   var currContent = 'Enjoy Music';
+  String _prevContent = '';
+  AnimationController? _slideController;
   bool _isTransition = false;
   LrcLine? _transitionLrcLine;
   SyncLyricLine? _transitionSyncLine;
@@ -97,17 +101,40 @@ class _LyricHorizontalScrollAreaState
       _transitionSyncLine = line is SyncLyricLine ? line : null;
       currContent = '';
     } else {
+      final newContent = switch (line) {
+        LrcLine l => l.translation == null
+            ? l.content
+            : '${l.content}┃${l.translation}',
+        SyncLyricLine s => s.translation == null
+            ? s.content
+            : '${s.content}┃${s.translation}',
+        _ => '',
+      };
+      if (newContent == currContent && !_isTransition) return;
       _isTransition = false;
       _transitionLrcLine = null;
       _transitionSyncLine = null;
-      if (line is LrcLine) {
-        currContent = line.translation == null
-            ? line.content
-            : '${line.content}┃${line.translation}';
-      } else if (line is SyncLyricLine) {
-        currContent = line.translation == null
-            ? line.content
-            : '${line.content}┃${line.translation}';
+      if (currContent.isNotEmpty && newContent.isNotEmpty) {
+        _prevContent = currContent;
+        currContent = newContent;
+        _slideController?.dispose();
+        _slideController = AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 500),
+        );
+        _slideController!.addStatusListener((status) {
+          if (status == AnimationStatus.completed && mounted) {
+            setState(() {
+              _prevContent = '';
+              _slideController?.dispose();
+              _slideController = null;
+            });
+          }
+        });
+        _slideController!.forward();
+      } else {
+        _prevContent = '';
+        currContent = newContent;
       }
     }
   }
@@ -119,6 +146,91 @@ class _LyricHorizontalScrollAreaState
       softWrap: false,
       style: TextStyle(color: scheme.onSecondaryContainer),
     );
+  }
+
+  Widget _buildTextArea(ColorScheme scheme) {
+    final controller = _slideController;
+    if (controller != null && _prevContent.isNotEmpty) {
+      final anim = AppSettings.instance.topBarLyricAnimation;
+      return ClipRect(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final h = constraints.maxHeight;
+            final w = constraints.maxWidth;
+            return AnimatedBuilder(
+              animation: controller,
+              builder: (context, _) {
+                final t = Curves.easeOutCubic.transform(controller.value);
+                return Stack(
+                  children: [
+                    _buildAnimLayer(
+                      _prevContent, scheme, t, true, anim, h, w),
+                    _buildAnimLayer(
+                      currContent, scheme, t, false, anim, h, w),
+                  ],
+                );
+              },
+            );
+          },
+        ),
+      );
+    }
+    return _buildText(currContent, scheme);
+  }
+
+  Widget _buildAnimLayer(String content, ColorScheme scheme, double t,
+      bool isPrev, TopBarLyricAnimation anim, double h, double w) {
+    Widget child = _buildText(content, scheme);
+
+    switch (anim) {
+      case TopBarLyricAnimation.slideUp:
+        final offsetY = isPrev ? -t * h : (1 - t) * h;
+        child = Transform.translate(
+          offset: Offset(0, offsetY),
+          child: Opacity(opacity: isPrev ? 1.0 - t : t, child: child),
+        );
+      case TopBarLyricAnimation.slideDown:
+        final offsetY = isPrev ? t * h : -(1 - t) * h;
+        child = Transform.translate(
+          offset: Offset(0, offsetY),
+          child: Opacity(opacity: isPrev ? 1.0 - t : t, child: child),
+        );
+      case TopBarLyricAnimation.slideLeft:
+        final offsetX = isPrev ? -t * w : (1 - t) * w;
+        child = Transform.translate(
+          offset: Offset(offsetX, 0),
+          child: Opacity(opacity: isPrev ? 1.0 - t : t, child: child),
+        );
+      case TopBarLyricAnimation.slideRight:
+        final offsetX = isPrev ? t * w : -(1 - t) * w;
+        child = Transform.translate(
+          offset: Offset(offsetX, 0),
+          child: Opacity(opacity: isPrev ? 1.0 - t : t, child: child),
+        );
+      case TopBarLyricAnimation.fade:
+        child = Opacity(opacity: isPrev ? 1.0 - t : t, child: child);
+      case TopBarLyricAnimation.absorb:
+        final s = (isPrev ? 1.0 - t : t).clamp(0.01, 1.0);
+        child = Transform.scale(
+          scale: s,
+          child: Opacity(opacity: isPrev ? 1.0 - t : t, child: child),
+        );
+      case TopBarLyricAnimation.flipX:
+        final sx = isPrev ? 1.0 - 2.0 * t : -1.0 + 2.0 * t;
+        child = Transform(
+          alignment: Alignment.center,
+          transform: Matrix4.identity()..setEntry(0, 0, sx),
+          child: Opacity(opacity: isPrev ? 1.0 - t : t, child: child),
+        );
+      case TopBarLyricAnimation.flipY:
+        final sy = isPrev ? 1.0 - 2.0 * t : -1.0 + 2.0 * t;
+        child = Transform(
+          alignment: Alignment.center,
+          transform: Matrix4.identity()..setEntry(1, 1, sy),
+          child: Opacity(opacity: isPrev ? 1.0 - t : t, child: child),
+        );
+    }
+    return child;
   }
 
   @override
@@ -178,8 +290,10 @@ class _LyricHorizontalScrollAreaState
   void didUpdateWidget(covariant _LyricHorizontalScrollArea oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.lyric != widget.lyric) {
-      // 歌词切换时重置显示和滚动状态
       _scrollToken = 0;
+      _slideController?.dispose();
+      _slideController = null;
+      _prevContent = '';
       if (widget.lyric.lines.isNotEmpty) {
         setState(() {
           _setContent(widget.lyric.lines.first);
@@ -219,7 +333,7 @@ class _LyricHorizontalScrollAreaState
             scrollDirection: Axis.horizontal,
             child: Align(
               alignment: Alignment.centerLeft,
-              child: _buildText(currContent, scheme),
+              child: _buildTextArea(scheme),
             ),
           ),
         );
@@ -229,6 +343,7 @@ class _LyricHorizontalScrollAreaState
 
   @override
   void dispose() {
+    _slideController?.dispose();
     super.dispose();
     lyricLineStreamSubscription.cancel();
     scrollController.dispose();

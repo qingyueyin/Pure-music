@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:pure_music/native/rust/api/system_theme.dart';
+import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/core/zh_converter.dart';
 import 'package:pure_music/lyric/lyric_source.dart';
@@ -107,6 +108,8 @@ class AppSettings {
   bool useMaterialYouForProgressBar = false;
   bool useMaterialYouForTransition = false;
   bool useMaterialYouForControls = false;
+  Set<NowPlayingMode> wavyBarEnabledModes = {NowPlayingMode.portrait};
+  TopBarLyricAnimation topBarLyricAnimation = TopBarLyricAnimation.slideUp;
   bool enableCoverColorExtraction = true;
   int? customCoverColor;
   Size windowSize = const Size(1280, 756);
@@ -295,6 +298,17 @@ class AppSettings {
         _instance.useMaterialYouForControls = umyc;
       }
 
+      final wbm = settingsMap['WavyBarEnabledModes'];
+      if (wbm is List) {
+        _instance.wavyBarEnabledModes = NowPlayingMode.fromList(wbm);
+      }
+
+      final tbla = settingsMap['TopBarLyricAnimation'];
+      if (tbla != null) {
+        _instance.topBarLyricAnimation =
+            TopBarLyricAnimation.fromString(tbla) ?? TopBarLyricAnimation.slideUp;
+      }
+
       final ecce = settingsMap['EnableCoverColorExtraction'];
       if (ecce != null) {
         _instance.enableCoverColorExtraction = ecce;
@@ -349,6 +363,8 @@ class AppSettings {
         'UseMaterialYouForProgressBar': useMaterialYouForProgressBar,
         'UseMaterialYouForTransition': useMaterialYouForTransition,
         'UseMaterialYouForControls': useMaterialYouForControls,
+        'WavyBarEnabledModes': NowPlayingMode.toList(wavyBarEnabledModes),
+        'TopBarLyricAnimation': topBarLyricAnimation.name,
         'EnableCoverColorExtraction': enableCoverColorExtraction,
         'CustomCoverColor': customCoverColor,
         'IsWindowMaximized': isMaximized,

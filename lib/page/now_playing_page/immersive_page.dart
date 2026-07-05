@@ -395,7 +395,7 @@ class _ImmersiveLandscapeLayout extends StatelessWidget {
                       children: [
                         _NowPlayingInfo(),
                         SizedBox(height: 24.0),
-                        _NowPlayingSlider(),
+                        _NowPlayingSlider(mode: NowPlayingMode.immersive),
                       ],
                     ),
                   ),

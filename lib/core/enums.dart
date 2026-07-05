@@ -84,3 +84,42 @@ enum PlayMode {
     return null;
   }
 }
+
+enum TopBarLyricAnimation {
+  slideUp,
+  slideDown,
+  slideLeft,
+  slideRight,
+  fade,
+  absorb,
+  flipX,
+  flipY;
+
+  static TopBarLyricAnimation? fromString(String name) {
+    for (var value in TopBarLyricAnimation.values) {
+      if (value.name == name) return value;
+    }
+    return null;
+  }
+}
+
+enum NowPlayingMode {
+  portrait,
+  immersive;
+
+  static NowPlayingMode? fromString(String name) {
+    for (var value in NowPlayingMode.values) {
+      if (value.name == name) return value;
+    }
+    return null;
+  }
+
+  static Set<NowPlayingMode> fromList(List<dynamic>? list) {
+    if (list == null) return {};
+    return list.map((e) => NowPlayingMode.fromString(e.toString())).whereType<NowPlayingMode>().toSet();
+  }
+
+  static List<String> toList(Set<NowPlayingMode> set) {
+    return set.map((e) => e.name).toList();
+  }
+}

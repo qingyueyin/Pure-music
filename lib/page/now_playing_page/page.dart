@@ -1,6 +1,7 @@
 // ignore_for_file: camel_case_types
 
 import 'dart:async';
+import 'dart:math';
 import 'dart:ui';
 
 import 'package:pure_music/core/preference.dart';
@@ -701,7 +702,7 @@ class _DesktopLyricSwitch extends StatelessWidget {
         final isKilling = desktopLyricService.isKilling;
 
         // 关闭过程中显示 loading 并禁用按钮
-                  if (isKilling) {
+        if (isKilling) {
           return IconButton(
             tooltip: '正在关闭桌面歌词...',
             onPressed: null,
@@ -1566,29 +1567,53 @@ class _HotkeyPulseIconButtonState extends State<_HotkeyPulseIconButton> {
 
 /// glow slider
 class _NowPlayingSlider extends StatefulWidget {
-  const _NowPlayingSlider();
+  final NowPlayingMode mode;
+  const _NowPlayingSlider({required this.mode});
 
   @override
   State<_NowPlayingSlider> createState() => _NowPlayingSliderState();
 }
 
-class _NowPlayingSliderState extends State<_NowPlayingSlider> {
+class _NowPlayingSliderState extends State<_NowPlayingSlider>
+    with SingleTickerProviderStateMixin {
   final dragPosition = ValueNotifier(0.0);
   bool isDragging = false;
   double _livePosition = 0.0;
   StreamSubscription<double>? _positionSub;
+  late final PlaybackService _playbackService;
+  late final VoidCallback _playerStateListener;
   int _lastPositionMs = -1;
+  late final AnimationController _wavyController;
 
   @override
   void initState() {
     super.initState();
-    _livePosition = context.read<PlaybackService>().position;
+    _wavyController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 4),
+    );
+    _playbackService = context.read<PlaybackService>();
+    _livePosition = _playbackService.position;
     _bindPositionStream();
+    _syncWavyAnimation(_playbackService.playerState);
+    _playerStateListener =
+        () => _syncWavyAnimation(_playbackService.playerState);
+    _playbackService.playerStateNotifier.addListener(_playerStateListener);
+  }
+
+  void _syncWavyAnimation(PlayerState state) {
+    final enabled =
+        AppSettings.instance.wavyBarEnabledModes.contains(widget.mode);
+    if (enabled && state == PlayerState.playing) {
+      if (!_wavyController.isAnimating) _wavyController.repeat();
+    } else {
+      _wavyController.stop();
+    }
   }
 
   void _bindPositionStream() {
     _positionSub?.cancel();
-    _positionSub = context.read<PlaybackService>().positionStream.listen((pos) {
+    _positionSub = _playbackService.positionStream.listen((pos) {
       final nowMs = (pos * 1000).round();
       if (nowMs != _lastPositionMs && mounted) {
         _lastPositionMs = nowMs;
@@ -1602,7 +1627,9 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider> {
   @override
   void dispose() {
     _positionSub?.cancel();
+    _playbackService.playerStateNotifier.removeListener(_playerStateListener);
     dragPosition.dispose();
+    _wavyController.dispose();
     super.dispose();
   }
 
@@ -1613,6 +1640,8 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider> {
     final nowPlayingLength = playbackService.length;
     final nowPlayingPath = playbackService.nowPlaying?.path;
     final useMonetBar = AppSettings.instance.useMaterialYouForProgressBar;
+    final useWavyBar =
+        AppSettings.instance.wavyBarEnabledModes.contains(widget.mode);
     final barColor = useMonetBar ? scheme.primary : scheme.onSurface;
     final barGlow = useMonetBar
         ? scheme.primaryContainer
@@ -1689,17 +1718,35 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider> {
                                 max;
                         playbackService.seek(value);
                       },
-                      child: CustomPaint(
-                        painter: _GlowSliderPainter(
-                          fraction: fraction,
-                          color: barColor,
-                          glowColor: barGlow,
-                          inactiveColor: scheme.brightness == Brightness.dark
-                              ? scheme.surfaceContainerHighest
-                              : const Color(0x33FFFFFF),
-                        ),
-                        size: Size(width, 24),
-                      ),
+                      child: useWavyBar
+                          ? AnimatedBuilder(
+                              animation: _wavyController,
+                              builder: (context, _) => CustomPaint(
+                                painter: _WavyProgressPainter(
+                                  fraction: fraction,
+                                  color: barColor,
+                                  glowColor: barGlow,
+                                  inactiveColor:
+                                      scheme.brightness == Brightness.dark
+                                          ? scheme.surfaceContainerHighest
+                                          : const Color(0x33FFFFFF),
+                                  phase: _wavyController.value * 2 * pi,
+                                ),
+                                size: Size(width, 24),
+                              ),
+                            )
+                          : CustomPaint(
+                              painter: _GlowSliderPainter(
+                                fraction: fraction,
+                                color: barColor,
+                                glowColor: barGlow,
+                                inactiveColor:
+                                    scheme.brightness == Brightness.dark
+                                        ? scheme.surfaceContainerHighest
+                                        : const Color(0x33FFFFFF),
+                              ),
+                              size: Size(width, 24),
+                            ),
                     );
                   },
                 );
@@ -1841,6 +1888,81 @@ class _GlowSliderPainter extends CustomPainter {
   }
 }
 
+class _WavyProgressPainter extends CustomPainter {
+  final double fraction;
+  final Color color;
+  final Color glowColor;
+  final Color inactiveColor;
+  final double phase;
+
+  const _WavyProgressPainter({
+    required this.fraction,
+    required this.color,
+    required this.glowColor,
+    required this.inactiveColor,
+    required this.phase,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const double strokeWidth = 3.5;
+    final double centerY = size.height / 2;
+    final double activeWidth = size.width * fraction;
+
+    final Paint paint = Paint()
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth;
+
+    // Inactive track: straight line
+    paint.color = inactiveColor;
+    canvas.drawLine(
+      Offset(activeWidth, centerY),
+      Offset(size.width, centerY),
+      paint,
+    );
+
+    if (activeWidth <= 0) return;
+
+    // Active track: sine wave
+    const double amplitude = 2.5;
+    const double wavelength = 44.0;
+    const double freq = 2 * pi / wavelength;
+
+    final Path wavePath = Path();
+    wavePath.moveTo(0, centerY + amplitude * sin(phase));
+    for (double x = 0.0; x <= activeWidth; x += 0.5) {
+      wavePath.lineTo(x, centerY + amplitude * sin(phase + x * freq));
+    }
+
+    paint.color = color;
+    canvas.drawPath(wavePath, paint);
+
+    // Thumb glow
+    paint
+      ..style = PaintingStyle.fill
+      ..color = glowColor.withValues(alpha: 0.15)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
+    canvas.drawCircle(Offset(activeWidth, centerY), 5, paint);
+
+    // Thumb
+    paint
+      ..shader = null
+      ..maskFilter = null
+      ..color = color;
+    canvas.drawCircle(Offset(activeWidth, centerY), 6, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _WavyProgressPainter oldDelegate) {
+    return oldDelegate.fraction != fraction ||
+        oldDelegate.color != color ||
+        oldDelegate.glowColor != glowColor ||
+        oldDelegate.inactiveColor != inactiveColor ||
+        oldDelegate.phase != phase;
+  }
+}
+
 /// title, artist, album, cover
 class _NowPlayingInfo extends StatefulWidget {
   const _NowPlayingInfo();
@@ -1890,11 +2012,19 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
       return;
     }
 
-    // Evict old covers from ImageCache before loading new ones.
-    if (_loResCover != null || _hiResCover != null) {
+    // Evict old covers from ImageCache before loading new ones, and drop the
+    // state references immediately so old decoded images are not retained during
+    // the async fetch for the next track.
+    final oldLoResCover = _loResCover;
+    final oldHiResCover = _hiResCover;
+    if (oldLoResCover != null || oldHiResCover != null) {
+      _loResCover = null;
+      _loResCoverPath = null;
+      _hiResCover = null;
+      _hiResCoverPath = null;
       unawaited(Future.wait<void>([
-        if (_loResCover != null) _loResCover!.evict(),
-        if (_hiResCover != null) _hiResCover!.evict(),
+        if (oldLoResCover != null) oldLoResCover.evict(),
+        if (oldHiResCover != null) oldHiResCover.evict(),
       ]));
     }
 
@@ -1909,9 +2039,11 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
       });
     }
 
+    var shouldRefreshImmediateCover = false;
     if (nextAudio.path != _immediateCoverPath) {
       _immediateCover = nextAudio.smallCoverBytes;
       _immediateCoverPath = nextAudio.path;
+      shouldRefreshImmediateCover = true;
       if (_immediateCover == null) {
         nextAudio.loadSmallCoverBytes().then((bytes) {
           if (!mounted) return;
@@ -1921,6 +2053,13 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
           });
         });
       }
+    }
+
+    if (mounted &&
+        (oldLoResCover != null ||
+            oldHiResCover != null ||
+            shouldRefreshImmediateCover)) {
+      setState(() {});
     }
 
     nextAudio.cover.then((image) async {

@@ -108,7 +108,7 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
           const SizedBox(height: 4.0),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 16),
-            child: _NowPlayingSlider(),
+            child: _NowPlayingSlider(mode: NowPlayingMode.portrait),
           ),
           const SizedBox(height: 4.0),
           const _NowPlayingMainControls(),
@@ -130,7 +130,7 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
                   );
                 },
                 icon: const Icon(Symbols.graphic_eq),
-                color: useMonet ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSecondaryContainer,
+                color: useMonet ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface,
               ),
               const _NowPlayingMoreAction(),
             ],
@@ -190,7 +190,7 @@ class _NowPlayingSmallViewSwitchState
                 child: Center(
                   child: Icon(
                     widget.icon,
-                    color: useMonet ? scheme.primary : scheme.onSecondaryContainer,
+                    color: useMonet ? scheme.primary : scheme.onSurface,
                   ),
                 ),
               ),

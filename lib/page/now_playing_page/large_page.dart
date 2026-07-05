@@ -49,7 +49,7 @@ class _NowPlayingLargePage extends StatelessWidget {
         Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const _NowPlayingSlider(),
+            const _NowPlayingSlider(mode: NowPlayingMode.portrait),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
               child: Stack(
