@@ -503,9 +503,9 @@ void applyProfanityUncensor(Lyric lyric) {
 /// 不删除行，保留时间戳结构，前奏/间奏不受影响。
 ///
 /// 策略：
-/// 1. 强匹配（关键词+分隔符 / 正则）→ 全曲任意位置清空
-/// 2. 弱匹配（含冒号/连字符）→ 仅当在头部/尾部且与强匹配行相邻时清空
-/// 3. 真正的歌词行作为"防火墙"，阻止弱匹配蔓延
+/// 1. 只清空头部/尾部连续元数据区，降低中段歌词误伤
+/// 2. 元数据区必须包含强匹配或标题-歌手行作为锚点
+/// 3. 弱匹配只在同一个首尾元数据区内跟随清空
 
 /// 预编译的正则列表，避免每次调用都重新编译
 final List<RegExp> _cachedExcludeRegexes =
@@ -564,30 +564,42 @@ void blankMetadataLines(List<LyricLine> lines, [StripOptions? options]) {
                 _isUnbracketedTitleArtistLine(transText)));
   }
 
-  // ── 头部扫描：找元数据区截止位置 ──
-  int lastAnyInHeader = -1;
-  for (int i = 0; i < headerLimit && i < totalLines; i++) {
-    if (_isLineBlanked(lines[i])) continue;
-    if (isStrict[i] || isTitleArtist[i]) {
-      lastAnyInHeader = i;
-    } else {
-      break; // 非元数据行 → 停止
-    }
-  }
-  final headerCutoff = lastAnyInHeader + 1;
+  bool isAnchor(int index) => isStrict[index] || isTitleArtist[index];
+  bool isCandidate(int index) => isAnchor(index) || isWeak[index];
 
-  // ── 尾部扫描：找元数据区起始位置 ──
-  int firstAnyInFooter = totalLines;
+  // ── 头部扫描：找连续元数据区截止位置 ──
+  var headerCutoff = 0;
+  var headerHasAnchor = false;
+  for (int i = 0; i < headerLimit && i < totalLines; i++) {
+    if (_isLineBlanked(lines[i])) {
+      headerCutoff = i + 1;
+      continue;
+    }
+    if (!isCandidate(i)) {
+      break;
+    }
+    headerHasAnchor = headerHasAnchor || isAnchor(i);
+    headerCutoff = i + 1;
+  }
+  if (!headerHasAnchor) headerCutoff = 0;
+
+  // ── 尾部扫描：找连续元数据区起始位置 ──
+  var firstAnyInFooter = totalLines;
+  var footerHasAnchor = false;
   for (int i = totalLines - 1;
       i >= (totalLines - footerLimit).clamp(0, totalLines);
       i--) {
-    if (_isLineBlanked(lines[i])) continue;
-    if (isStrict[i] || isTitleArtist[i]) {
+    if (_isLineBlanked(lines[i])) {
       firstAnyInFooter = i;
-    } else {
+      continue;
+    }
+    if (!isCandidate(i)) {
       break;
     }
+    footerHasAnchor = footerHasAnchor || isAnchor(i);
+    firstAnyInFooter = i;
   }
+  if (!footerHasAnchor) firstAnyInFooter = totalLines;
 
   // ── 清空头部元数据（全清，含弱匹配） ──
   for (int i = 0; i < headerCutoff; i++) {
@@ -597,15 +609,6 @@ void blankMetadataLines(List<LyricLine> lines, [StripOptions? options]) {
   // ── 清空尾部元数据（全清，含弱匹配） ──
   if (firstAnyInFooter < totalLines) {
     for (int i = firstAnyInFooter; i < totalLines; i++) {
-      blankLine(lines[i]);
-    }
-  }
-
-  // ── 中间区域：仅强匹配 ──
-  for (int i = headerCutoff;
-      i < (firstAnyInFooter < totalLines ? firstAnyInFooter : totalLines);
-      i++) {
-    if (isStrict[i]) {
       blankLine(lines[i]);
     }
   }
