@@ -7,6 +7,11 @@ import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.dart';
 
+const _bgEnterMs = 500.0;
+const _bgExitMs = 500.0;
+const _bgEnterOffsetY = 8.0;
+const _bgScaleRange = 0.08;
+
 class _CharInfo {
   final String char;
   final double x;
@@ -163,6 +168,26 @@ class LyricsLinePainter extends CustomPainter {
     final hitRate =
         total > 0 ? (_poolHitCount / total * 100).toStringAsFixed(1) : '0.0';
     return 'Pool: size=${_textPainterPool.length}/$_maxPoolSize, hit=$hitRate%';
+  }
+
+  double _bgMotionValue(SyncLyricLine syncLine) {
+    if (!isMainLine) return 0.0;
+    final start = (syncLine.bgStart ?? syncLine.bg?.start ?? syncLine.start)
+        .inMilliseconds
+        .toDouble();
+    final end = (syncLine.bgEnd ??
+            syncLine.bg?.end ??
+            (syncLine.start + syncLine.length))
+        .inMilliseconds
+        .toDouble();
+    if (end <= start) return 1.0;
+    final enter =
+        Curves.easeOutCubic.transform(((currentTimeMs - start) / _bgEnterMs)
+            .clamp(0.0, 1.0));
+    final exit =
+        Curves.easeInCubic.transform(((end - currentTimeMs) / _bgExitMs)
+            .clamp(0.0, 1.0));
+    return enter * exit;
   }
 
   static TextPainter _obtainTextPainter() {
@@ -838,7 +863,8 @@ class LyricsLinePainter extends CustomPainter {
     final hasBg = bgText != null && bgText.isNotEmpty;
     final hasBgTranslation = bgTranslation != null && bgTranslation.isNotEmpty;
     if (hasBg || hasBgTranslation) {
-      final bgAlpha = isMainLine ? 1.0 : 0.0;
+      final bgMotion = _bgMotionValue(syncLine);
+      final bgAlpha = bgMotion;
       if (bgAlpha > 0.001) {
         final bgFontSize = fontSize * 0.60;
         final bgWeight = config.discreteFontWeight(
@@ -867,6 +893,17 @@ class LyricsLinePainter extends CustomPainter {
         }
 
         cursorY += bgFontSize * 0.35; // extra top gap before bg block
+        canvas.save();
+        final bgOffsetY = (1.0 - bgMotion) * _bgEnterOffsetY;
+        final bgScale = 1.0 - (1.0 - bgMotion) * _bgScaleRange;
+        final scaleX = switch (_effectiveTextAlign) {
+          LyricTextAlign.left => padding.left,
+          LyricTextAlign.center => size.width / 2,
+          LyricTextAlign.right => size.width - padding.right,
+        };
+        canvas.translate(scaleX, cursorY + bgOffsetY);
+        canvas.scale(bgScale, bgScale);
+        canvas.translate(-scaleX, -cursorY);
         if (hasBg) {
           final bgVocal = syncLine.bg;
           if (bgVocal != null && bgVocal.words.isNotEmpty) {
@@ -915,6 +952,7 @@ class LyricsLinePainter extends CustomPainter {
             secondaryColor,
           );
         }
+        canvas.restore();
       }
     }
 
