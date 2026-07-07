@@ -134,10 +134,9 @@ class LyricService extends ChangeNotifier {
       }
       var primaryIndex = currLineIndex;
       if (activeIndices.isNotEmpty) {
-        // 当前行指针还未推进但下一行已激活（posMs == nextStart 的边界），
-        // 取最早激活行做 primaryIndex
+        // 重叠时间轴里保留最早仍在唱的行做 primaryIndex
         final minActive = activeIndices.first;
-        if (minActive > currLineIndex) {
+        if (minActive != currLineIndex) {
           primaryIndex = minActive;
         }
       }
@@ -323,7 +322,7 @@ class LyricService extends ChangeNotifier {
     var primaryIndex = currLineIndex;
     if (activeIndices.isNotEmpty) {
       final minActive = activeIndices.first;
-      if (minActive > currLineIndex) {
+      if (minActive != currLineIndex) {
         primaryIndex = minActive;
       }
     }
@@ -405,7 +404,7 @@ class LyricService extends ChangeNotifier {
     var primaryIndex = currLineIndex;
     if (activeIndices.isNotEmpty) {
       final minActive = activeIndices.first;
-      if (minActive > currLineIndex) {
+      if (minActive != currLineIndex) {
         primaryIndex = minActive;
       }
     }
