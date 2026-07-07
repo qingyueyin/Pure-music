@@ -894,6 +894,8 @@ class LyricsLinePainter extends CustomPainter {
 
         cursorY += bgFontSize * 0.35; // extra top gap before bg block
         canvas.save();
+        canvas.clipRect(
+            Rect.fromLTWH(0, cursorY, size.width, size.height - cursorY));
         final bgOffsetY = (1.0 - bgMotion) * _bgEnterOffsetY;
         final bgScale = 1.0 - (1.0 - bgMotion) * _bgScaleRange;
         final scaleX = switch (_effectiveTextAlign) {
@@ -907,19 +909,15 @@ class LyricsLinePainter extends CustomPainter {
         if (hasBg) {
           final bgVocal = syncLine.bg;
           if (bgVocal != null && bgVocal.words.isNotEmpty) {
-            final baseColor = useMaterialYouColor
-                ? scheme.primary
-                : (isDarkMode ? Colors.white : Colors.black);
-            final unplayedColor = baseColor.withValues(alpha: 0.3);
             final spans = bgVocal.words.map((w) {
               final ws = w.start.inMilliseconds.toDouble();
               final we = ws + w.length.inMilliseconds.toDouble();
               final p = _calcWordProgress(currentTimeMs, ws, we);
-              final c = Color.lerp(unplayedColor, baseColor, p)!;
+              final c = Color.lerp(unplayedColor, playedColor, p)!;
               return TextSpan(
                 text: ZhConverter.convert(w.content, zhMode),
                 style: TextStyle(
-                  color: c.withValues(alpha: bgAlpha),
+                  color: c.withValues(alpha: c.a * bgAlpha),
                   fontSize: bgFontSize,
                   fontWeight: bgWeight,
                   letterSpacing: letterSpace,
@@ -1311,11 +1309,13 @@ class LyricsLinePainter extends CustomPainter {
       if ((syncLine.bgText != null && syncLine.bgText!.isNotEmpty) ||
           (syncLine.bgTranslation != null &&
               syncLine.bgTranslation!.isNotEmpty)) {
+        final bgMotion = _bgMotionValue(syncLine);
         final bgFontSize = fontSize * 0.60;
         final bgWeight = config.discreteFontWeight(
           (config.fontWeight - 150).clamp(100, 900),
         );
         final gap = bgFontSize * 0.80; // top + between gaps approx
+        var bgHeight = 0.0;
         if (syncLine.bgText != null && syncLine.bgText!.isNotEmpty) {
           final bgTp = _buildTextPainter(
             syncLine.bgText!,
@@ -1325,7 +1325,7 @@ class LyricsLinePainter extends CustomPainter {
             config.letterSpacing(fontSize: bgFontSize),
           );
           bgTp.layout(maxWidth: lineWidth);
-          height += gap + bgTp.height;
+          bgHeight += gap + bgTp.height;
           _recycleTextPainter(bgTp);
         }
         if (syncLine.bgTranslation != null &&
@@ -1338,9 +1338,10 @@ class LyricsLinePainter extends CustomPainter {
             config.letterSpacing(fontSize: bgFontSize * 0.90),
           );
           bgTransTp.layout(maxWidth: lineWidth);
-          height += bgFontSize * 0.45 + bgTransTp.height;
+          bgHeight += bgFontSize * 0.45 + bgTransTp.height;
           _recycleTextPainter(bgTransTp);
         }
+        height += bgHeight * bgMotion;
       }
 
       return height;
