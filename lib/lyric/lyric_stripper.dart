@@ -173,13 +173,22 @@ bool _isBracketedTitleArtistLine(String text) {
 
 bool _isUnbracketedTitleArtistLine(String text) {
   final cleaned = text.trim();
-  if (cleaned.length > 90) return false;
-  final match = RegExp(r'\s[-－–—]\s').firstMatch(cleaned);
-  if (match == null) return false;
+  if (cleaned.length > 140) return false;
+  final matches =
+      RegExp(r'\s*[-－–—]\s*').allMatches(cleaned).toList(growable: false);
+  if (matches.length != 1) return false;
 
+  final match = matches.first;
   final left = cleaned.substring(0, match.start).trim();
   final right = cleaned.substring(match.end).trim();
   if (left.isEmpty || right.isEmpty) return false;
+  final separator = cleaned.substring(match.start, match.end);
+  final hasSeparatorSpace = RegExp(r'\s').hasMatch(separator);
+  final hasAsian = RegExp(r'[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]')
+      .hasMatch('$left$right');
+  if (!hasSeparatorSpace && !(hasAsian && left.length + right.length >= 4)) {
+    return false;
+  }
 
   return (_looksLikeArtistList(left) && _looksLikeSongTitle(right)) ||
       (_looksLikeSongTitle(left) && _looksLikeArtistList(right));
