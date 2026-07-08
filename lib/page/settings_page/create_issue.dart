@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:logger/logger.dart';
 import 'package:pure_music/core/preference.dart';
+import 'package:pure_music/core/setting_action_state.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/component/settings_tile.dart';
 import 'package:pure_music/core/hotkeys.dart';
@@ -30,7 +31,9 @@ class CreateIssueTile extends StatelessWidget {
     return SettingsTile(
       description: '报告问题',
       action: FilledButton.icon(
-        onPressed: () => context.push(app_paths.SETTINGS_ISSUE_PAGE),
+        onPressed: enableIssueReporting
+            ? () => context.push(app_paths.SETTINGS_ISSUE_PAGE)
+            : null,
         label: const Text('创建问题'),
         icon: const Icon(Symbols.help),
       ),
@@ -50,6 +53,7 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
   final descEditingController = TextEditingController();
   final logEditingController = TextEditingController();
   bool _logExpanded = true;
+  bool _isPreparingLog = false;
 
   String _sanitizePaths(String text) {
     var t = text;
@@ -219,15 +223,23 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
   }
 
   Future<void> _fillAndCopyLogSnapshot() async {
+    if (_isPreparingLog) return;
     if (!enableIssueReporting) {
       showTextOnSnackBar('未启用 Issue 上报');
       return;
     }
-    _ensureFieldsPrepared();
-    final snapshot = _buildLogSnapshotFull();
-    logEditingController.text = snapshot;
-    await Clipboard.setData(ClipboardData(text: snapshot));
-    if (mounted) showTextOnSnackBar('已复制日志到剪贴板');
+    setState(() => _isPreparingLog = true);
+    try {
+      _ensureFieldsPrepared();
+      final snapshot = _buildLogSnapshotFull();
+      logEditingController.text = snapshot;
+      await Clipboard.setData(ClipboardData(text: snapshot));
+      if (mounted) showTextOnSnackBar('已复制日志到剪贴板');
+    } finally {
+      if (mounted) {
+        setState(() => _isPreparingLog = false);
+      }
+    }
   }
 
   (String owner, String repo) _parseRepoSlug(String raw) {
@@ -239,14 +251,18 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
     return ('qingyueyin', 'Pure-music');
   }
 
-  void _openIssueLink() {
+  Future<void> _openIssueLink() async {
     if (!enableIssueReporting) {
       showTextOnSnackBar('未启用 Issue 上报');
       return;
     }
+    final title = titleEditingController.text.trim();
+    if (title.isEmpty) {
+      showTextOnSnackBar('请先填写问题标题');
+      return;
+    }
     _ensureFieldsPrepared();
     final (owner, repo) = _parseRepoSlug(AppPreference.instance.updateRepoSlug);
-    final title = titleEditingController.text;
     final body = [
       descEditingController.text,
       '',
@@ -260,7 +276,10 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
         'body': body,
       },
     );
-    rust_utils.launchInBrowser(uri: uri.toString());
+    final opened = await rust_utils.launchInBrowser(uri: uri.toString());
+    if (!opened) {
+      showTextOnSnackBar('打开链接失败');
+    }
   }
 
   @override
@@ -283,12 +302,13 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
       color: scheme.surface,
       child: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: OrientationBuilder(
-          builder: (context, orientation) {
-            if (orientation == Orientation.landscape) {
-              return _buildLandscape(scheme);
-            }
-            return _buildPortrait(scheme);
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final wideEnough =
+                constraints.maxWidth.isFinite && constraints.maxWidth >= 760.0;
+            return wideEnough
+                ? _buildLandscape(scheme)
+                : _buildPortrait(scheme);
           },
         ),
       ),
@@ -296,29 +316,59 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
   }
 
   Widget _buildTitleRow() {
-    return Row(
-      children: [
-        Expanded(
-          child: Focus(
-            onFocusChange: HotkeysHelper.onFocusChanges,
-            child: TextField(
-              controller: titleEditingController,
-              autofocus: true,
-              decoration: const InputDecoration(
-                hintText: '标题',
-                border: OutlineInputBorder(),
-              ),
-            ),
+    Widget titleField() {
+      return Focus(
+        onFocusChange: HotkeysHelper.onFocusChanges,
+        child: TextField(
+          controller: titleEditingController,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: '标题',
+            border: OutlineInputBorder(),
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.only(left: 8.0),
-          child: FilledButton(
-            onPressed: _openIssueLink,
-            child: const Text('提交问题'),
-          ),
-        ),
-      ],
+      );
+    }
+
+    Widget submitButton({bool stretch = false}) {
+      final button = ValueListenableBuilder<TextEditingValue>(
+        valueListenable: titleEditingController,
+        builder: (context, value, _) {
+          final canSubmit =
+              enableIssueReporting && value.text.trim().isNotEmpty;
+          return FilledButton.icon(
+            onPressed: canSubmit ? _openIssueLink : null,
+            icon: const Icon(Symbols.open_in_new),
+            label: const Text('提交问题'),
+          );
+        },
+      );
+      return stretch ? SizedBox(width: double.infinity, child: button) : button;
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact =
+            constraints.maxWidth.isFinite && constraints.maxWidth < 520.0;
+        if (compact) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              titleField(),
+              const SizedBox(height: 8.0),
+              submitButton(stretch: true),
+            ],
+          );
+        }
+
+        return Row(
+          children: [
+            Expanded(child: titleField()),
+            const SizedBox(width: 8.0),
+            submitButton(),
+          ],
+        );
+      },
     );
   }
 
@@ -343,6 +393,7 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
       onFocusChange: HotkeysHelper.onFocusChanges,
       child: TextField(
         controller: logEditingController,
+        readOnly: !canEditTextValue(isBusy: _isPreparingLog),
         textAlignVertical: const TextAlignVertical(y: -1),
         expands: true,
         maxLines: null,
@@ -355,29 +406,88 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
   }
 
   Widget _buildLogHeader(ColorScheme scheme) {
-    return Row(
-      children: [
-        IconButton(
-          icon: Icon(
-            _logExpanded ? Symbols.expand_less : Symbols.expand_more,
+    Widget titleView() {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: Icon(
+              _logExpanded ? Symbols.expand_less : Symbols.expand_more,
+            ),
+            onPressed: () => setState(() => _logExpanded = !_logExpanded),
+            visualDensity: VisualDensity.compact,
           ),
-          onPressed: () => setState(() => _logExpanded = !_logExpanded),
-          visualDensity: VisualDensity.compact,
-        ),
-        Text(
-          '日志（可选）',
-          style: TextStyle(color: scheme.onSurface.withAlpha(191)),
-        ),
-        const Spacer(),
-        TextButton(
-          onPressed: _fillAndCopyLogSnapshot,
-          child: const Text('获取日志'),
-        ),
-        TextButton(
-          onPressed: () => logEditingController.clear(),
-          child: const Text('清空'),
-        ),
-      ],
+          Text(
+            '日志（可选）',
+            style: TextStyle(color: scheme.onSurface.withAlpha(191)),
+          ),
+        ],
+      );
+    }
+
+    Widget actionsView() {
+      return ValueListenableBuilder<TextEditingValue>(
+        valueListenable: logEditingController,
+        builder: (context, value, _) {
+          return Wrap(
+            spacing: 4.0,
+            runSpacing: 4.0,
+            alignment: WrapAlignment.end,
+            children: [
+              TextButton.icon(
+                onPressed: !enableIssueReporting || _isPreparingLog
+                    ? null
+                    : _fillAndCopyLogSnapshot,
+                icon: _isPreparingLog
+                    ? const SizedBox(
+                        width: 18.0,
+                        height: 18.0,
+                        child: CircularProgressIndicator(strokeWidth: 2.0),
+                      )
+                    : const Icon(Symbols.content_copy, size: 18.0),
+                label: Text(_isPreparingLog ? '获取中' : '获取日志'),
+              ),
+              TextButton.icon(
+                onPressed: !canClearTextValue(
+                  text: value.text,
+                  isBusy: _isPreparingLog,
+                )
+                    ? null
+                    : () => logEditingController.clear(),
+                icon: const Icon(Symbols.clear, size: 18.0),
+                label: const Text('清空'),
+              ),
+            ],
+          );
+        },
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact =
+            constraints.maxWidth.isFinite && constraints.maxWidth < 460.0;
+        if (compact) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              titleView(),
+              Align(
+                alignment: Alignment.centerRight,
+                child: actionsView(),
+              ),
+            ],
+          );
+        }
+
+        return Row(
+          children: [
+            titleView(),
+            const Spacer(),
+            actionsView(),
+          ],
+        );
+      },
     );
   }
 
