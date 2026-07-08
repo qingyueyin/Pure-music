@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:flutter/material.dart';
 
@@ -19,8 +20,13 @@ class RectangleProgressIndicator extends StatefulWidget {
 
 class _RectangleProgressIndicatorState
     extends State<RectangleProgressIndicator> {
-  /// [positionStream] 的订阅，在dispose取消订阅
-  late StreamSubscription<double> subscription;
+  final playbackService = PlayService.instance.playbackService;
+  Timer? _progressTimer;
+  final Stopwatch _clock = Stopwatch()..start();
+  int _lastNativeSyncMs = 0;
+  double _syncedPosition = 0.0;
+  double _syncedLength = 1.0;
+  static const _nativeSyncInterval = Duration(seconds: 1);
 
   /// position / length, [0, 1]
   final progress = ValueNotifier<double>(0);
@@ -28,18 +34,44 @@ class _RectangleProgressIndicatorState
   @override
   void initState() {
     super.initState();
-    final playbackService = PlayService.instance.playbackService;
-    final len = playbackService.length;
-    final pos = playbackService.position;
-    if (len > 0) {
-      progress.value = (pos / len).clamp(0.0, 1.0);
+    playbackService.playerStateNotifier.addListener(_syncTimer);
+    playbackService.nowPlayingNotifier.addListener(_syncNativeProgress);
+    _syncNativeProgress();
+    _syncTimer();
+  }
+
+  void _syncNativeProgress() {
+    _syncedLength = playbackService.length;
+    _syncedPosition = playbackService.position;
+    _lastNativeSyncMs = _clock.elapsedMilliseconds;
+    _emitProgressFromLocal();
+  }
+
+  void _emitProgressFromLocal() {
+    final elapsedMs = _clock.elapsedMilliseconds - _lastNativeSyncMs;
+    final isPlaying =
+        playbackService.playerStateNotifier.value == PlayerState.playing;
+    final position =
+        isPlaying ? _syncedPosition + elapsedMs / 1000.0 : _syncedPosition;
+    progress.value =
+        _syncedLength > 0 ? (position / _syncedLength).clamp(0.0, 1.0) : 0;
+  }
+
+  void _syncTimer() {
+    _syncNativeProgress();
+    final isPlaying =
+        playbackService.playerStateNotifier.value == PlayerState.playing;
+    if (!isPlaying) {
+      _progressTimer?.cancel();
+      _progressTimer = null;
+      return;
     }
-    subscription = playbackService.positionStream.listen((event) {
-      final len = playbackService.length;
-      if (len > 0) {
-        progress.value = (event / len).clamp(0.0, 1.0);
+    _progressTimer ??= Timer.periodic(const Duration(milliseconds: 200), (_) {
+      final elapsedSinceNative = _clock.elapsedMilliseconds - _lastNativeSyncMs;
+      if (elapsedSinceNative >= _nativeSyncInterval.inMilliseconds) {
+        _syncNativeProgress();
       } else {
-        progress.value = 0;
+        _emitProgressFromLocal();
       }
     });
   }
@@ -56,8 +88,11 @@ class _RectangleProgressIndicatorState
 
   @override
   void dispose() {
+    playbackService.playerStateNotifier.removeListener(_syncTimer);
+    playbackService.nowPlayingNotifier.removeListener(_syncNativeProgress);
+    _progressTimer?.cancel();
+    progress.dispose();
     super.dispose();
-    subscription.cancel();
   }
 }
 
@@ -66,29 +101,28 @@ class RectangleProgressPainter extends CustomPainter {
   final ValueNotifier<double> progress;
 
   final ColorScheme scheme;
+  final Paint _progressPainter = Paint();
+  final Paint _trackPainter = Paint();
 
   RectangleProgressPainter({required this.progress, required this.scheme})
       : super(repaint: progress);
 
   @override
   void paint(Canvas canvas, Size size) {
-    final progressPainter = Paint();
-    progressPainter.color = scheme.secondaryContainer;
-
-    final trackPainter = Paint();
-    trackPainter.color = scheme.surfaceContainer;
+    _progressPainter.color = scheme.secondaryContainer;
+    _trackPainter.color = scheme.surfaceContainer;
 
     /// 进度条背景
     canvas.drawRect(
       Rect.fromLTWH(0.0, 0.0, size.width, size.height),
-      trackPainter,
+      _trackPainter,
     );
 
     /// 进度
     if (!progress.value.isNaN && !progress.value.isInfinite) {
       canvas.drawRect(
         Rect.fromLTWH(0.0, 0.0, size.width * progress.value, size.height),
-        progressPainter,
+        _progressPainter,
       );
     }
   }
