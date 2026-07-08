@@ -184,9 +184,10 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
       _blurredImage = blurred;
       old?.dispose();
 
+      if (!mounted) return;
       setState(() => _isLoading = false);
     } catch (_) {
-      if (_isCurrentRequest(requestId, fingerprint)) {
+      if (_isCurrentRequest(requestId, fingerprint) && mounted) {
         setState(() => _isLoading = false);
       }
     }
@@ -200,11 +201,26 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
     super.dispose();
   }
 
+  /// 叠加 tint 用画面均值色，而非单个 dominant 强调色，避免背景被带偏。
+  Color _tintColor() {
+    final colors = widget.inputs.preExtractedColors;
+    if (colors == null || colors.isEmpty) return widget.fallbackColor;
+    var r = 0.0, g = 0.0, b = 0.0;
+    for (final c in colors) {
+      r += c.r;
+      g += c.g;
+      b += c.b;
+    }
+    final n = colors.length;
+    return Color.from(alpha: 1.0, red: r / n, green: g / n, blue: b / n);
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final brightness = scheme.brightness;
     final blurredImage = _blurredImage;
+    final tintColor = _tintColor();
 
     return Stack(
       fit: StackFit.expand,
@@ -223,10 +239,10 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
             ),
           )
         else
-          ColoredBox(color: widget.fallbackColor),
+          ColoredBox(color: tintColor),
         Container(
-          color: widget.fallbackColor.withValues(
-            alpha: brightness == Brightness.dark ? 0.35 : 0.15,
+          color: tintColor.withValues(
+            alpha: brightness == Brightness.dark ? 0.25 : 0.10,
           ),
         ),
       ],
