@@ -98,7 +98,7 @@ class LyricRenderConfig {
     ),
     this.viewportLeadingLines = 2,
     this.viewportTrailingLines = 3,
-    this.viewportOverscanScreens = 1.25,
+    this.viewportOverscanScreens = 0.75,
     this.userScrollHoldDuration = const Duration(seconds: 2),
   });
 
