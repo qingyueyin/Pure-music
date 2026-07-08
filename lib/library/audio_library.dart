@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui' show PlatformDispatcher;
 import 'package:path/path.dart' as p;
+import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/cache.dart';
@@ -14,6 +15,14 @@ import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:flutter/painting.dart';
 
+String _audioPathLookupKey(String value) {
+  var normalized = value.trim().replaceAll('\\', '/');
+  while (normalized.endsWith('/') && normalized.length > 1) {
+    normalized = normalized.substring(0, normalized.length - 1);
+  }
+  return normalized.toLowerCase();
+}
+
 /// from index.json
 class AudioLibrary {
   List<AudioFolder> folders;
@@ -22,6 +31,7 @@ class AudioLibrary {
 
   /// 所有音乐
   List<Audio> audioCollection = [];
+  final Map<String, Audio> _audioByPath = {};
 
   Map<String, Artist> artistCollection = {};
 
@@ -35,6 +45,7 @@ class AudioLibrary {
   /// 访问顺序追踪队列：最近访问的 path 在末尾，最旧的在开头。
   /// 仅用于 _smallCoverBytes 的 LRU 逐出，不涵盖 ImageProvider 缓存。
   final LinkedHashSet<String> _smallCoverOrder = LinkedHashSet<String>();
+  final LinkedHashSet<String> _coverCachePaths = LinkedHashSet<String>();
 
   /// must call [initFromIndex]
   static AudioLibrary get instance {
@@ -63,6 +74,8 @@ class AudioLibrary {
   static Future<void> initFromIndex() async {
     final stopwatch = Stopwatch()..start();
     try {
+      CoverImageCache.instance.clear();
+      PaintingBinding.instance.imageCache.clear();
       final supportPath = (await getAppDataDir()).path;
       final indexPath = p.join(supportPath, 'index.json');
       final sqlitePath = p.join(supportPath, 'library.sqlite');
@@ -151,16 +164,31 @@ class AudioLibrary {
   void _filterExcludedFolders() {
     final excluded = AppPreference.instance.excludedFolderPaths;
     if (excluded.isNotEmpty) {
-      folders.removeWhere((f) => excluded.contains(f.path));
+      folders.removeWhere(
+        (f) => isFolderPathExcluded(
+          excludedPaths: excluded,
+          folderPath: f.path,
+        ),
+      );
     }
   }
 
   void _buildCollections() {
+    audioCollection.clear();
+    _audioByPath.clear();
+    artistCollection.clear();
+    albumCollection.clear();
+
     for (var f in folders) {
       audioCollection.addAll(f.audios);
     }
 
     for (Audio audio in audioCollection) {
+      final pathKey = _audioPathLookupKey(audio.path);
+      if (pathKey.isNotEmpty) {
+        _audioByPath.putIfAbsent(pathKey, () => audio);
+      }
+
       final artistNames = <String>{
         ...audio.splitedArtists,
         ...audio.splitedAlbumArtists,
@@ -217,6 +245,12 @@ class AudioLibrary {
     }
   }
 
+  Audio? audioByPath(String path) {
+    final key = _audioPathLookupKey(path);
+    if (key.isEmpty) return null;
+    return _audioByPath[key];
+  }
+
   @override
   String toString() {
     return folders.toString();
@@ -224,19 +258,21 @@ class AudioLibrary {
 
   /// 注册一个小封面字节缓存到追踪队列，超出上限时逐出最旧的。
   void _registerSmallCoverBytes(Audio audio) {
+    _coverCachePaths.add(audio.path);
     _smallCoverOrder.remove(audio.path);
     _smallCoverOrder.add(audio.path);
     while (_smallCoverOrder.length > _maxCachedSmallCovers) {
       final oldest = _smallCoverOrder.first;
       _smallCoverOrder.remove(oldest);
       // 在 audioCollection 中找到对应 Audio 并逐出
-      for (final a in audioCollection) {
-        if (a.path == oldest) {
-          a._smallCoverBytes = null;
-          break;
-        }
-      }
+      final evictedAudio = audioByPath(oldest);
+      evictedAudio?._smallCoverBytes = null;
+      evictedAudio?._unregisterCoverCacheIfEmpty();
     }
+  }
+
+  void _registerCoverCache(Audio audio) {
+    _coverCachePaths.add(audio.path);
   }
 
   /// 定时清理 Audio 实例中的原始 cover bytes。
@@ -260,10 +296,16 @@ class AudioLibrary {
     const coldMs = 2 * 60 * 1000;
     final playingPath = PlayService.instance.playbackService.nowPlaying?.path;
     int evicted = 0;
-    for (final audio in audioCollection) {
-      if (audio._coverImage == null &&
-          audio._mediumCoverImage == null &&
-          audio._largeCoverImage == null &&
+    final activePaths = List<String>.from(_coverCachePaths);
+    for (final path in activePaths) {
+      final audio = audioByPath(path);
+      if (audio == null) {
+        _coverCachePaths.remove(path);
+        continue;
+      }
+      if (audio._coverImage?.target == null &&
+          audio._mediumCoverImage?.target == null &&
+          audio._largeCoverImage?.target == null &&
           audio._smallCoverBytes == null) {
         continue;
       }
@@ -283,8 +325,14 @@ class AudioLibrary {
     bool includeCollectionCovers = false,
   }) {
     int evicted = 0;
-    for (final audio in audioCollection) {
-      if (audio.path == playingPath) continue;
+    final activePaths = List<String>.from(_coverCachePaths);
+    for (final path in activePaths) {
+      if (path == playingPath) continue;
+      final audio = audioByPath(path);
+      if (audio == null) {
+        _coverCachePaths.remove(path);
+        continue;
+      }
       if (audio.evictCoverCacheIfPresent()) evicted++;
     }
     if (includeCollectionCovers) {
@@ -307,6 +355,8 @@ class AudioLibrary {
     _coverBytesEvictionTimer?.cancel();
     _coverBytesEvictionTimer = null;
     _smallCoverOrder.clear();
+    _coverCachePaths.clear();
+    _audioByPath.clear();
     audioCollection.clear();
     artistCollection.clear();
     albumCollection.clear();
@@ -381,9 +431,10 @@ class Audio {
   String? by;
 
   /// 缓存 ImageProvider 实例，避免每次创建新实例导致 Flutter ImageCache 失效
-  ImageProvider? _coverImage;
-  ImageProvider? _mediumCoverImage;
-  ImageProvider? _largeCoverImage;
+  /// 使用 WeakReference 让 CoverImageCache 的 LRU 驱逐后能被 GC 回收
+  WeakReference<ImageProvider>? _coverImage;
+  WeakReference<ImageProvider>? _mediumCoverImage;
+  WeakReference<ImageProvider>? _largeCoverImage;
 
   /// 小封面原始字节（48×48 PNG）：
   /// 列表 tile 同步检查此字段，已缓存则直接用 Image.memory 渲染，
@@ -392,6 +443,7 @@ class Audio {
 
   /// 上一次封面被访问的时间戳，用于冷数据回收
   int _coverLastAccessMs = 0;
+  int _coverCacheGeneration = 0;
 
   void _touchCoverAccess() {
     _coverLastAccessMs = DateTime.now().millisecondsSinceEpoch;
@@ -495,14 +547,22 @@ class Audio {
   /// 先检查 _coverImage，命中直接返回同一实例；永不走 FFI
   Future<ImageProvider?> get cover async {
     _touchCoverAccess();
-    if (_coverImage != null) return _coverImage;
+    final cached = _coverImage?.target;
+    if (cached != null) return cached;
+    final generation = _coverCacheGeneration;
     try {
       final data = await CoverImageCache.instance.get(
         path: path,
         width: 48,
         height: 48,
       );
-      return _coverImage = data;
+      if (generation != _coverCacheGeneration) {
+        if (data != null) unawaited(data.evict());
+        return null;
+      }
+      _coverImage = data != null ? WeakReference(data) : null;
+      if (data != null) AudioLibrary.instance._registerCoverCache(this);
+      return data;
     } catch (_) {
       return null;
     }
@@ -515,6 +575,7 @@ class Audio {
   /// 异步加载小封面字节并缓存在 [_smallCoverBytes] 中
   Future<Uint8List?> loadSmallCoverBytes() async {
     if (_smallCoverBytes != null) return _smallCoverBytes;
+    final generation = _coverCacheGeneration;
     try {
       final ratio = PlatformDispatcher.instance.views.first.devicePixelRatio;
       final bytes = await getPictureFromPath(
@@ -522,6 +583,9 @@ class Audio {
         width: (48 * ratio).round(),
         height: (48 * ratio).round(),
       );
+      if (generation != _coverCacheGeneration) {
+        return null;
+      }
       if (bytes != null) {
         _smallCoverBytes = bytes;
         _touchCoverAccess();
@@ -535,13 +599,13 @@ class Audio {
 
   /// 同步获取已缓存的封面（不触发异步加载）
   /// 用于需要立即显示封面的场景，避免异步等待导致的闪烁
-  ImageProvider? get cachedMediumCover => _mediumCoverImage;
+  ImageProvider? get cachedMediumCover => _mediumCoverImage?.target;
 
   /// Evict cover cache only when this Audio actually retains one.
   bool evictCoverCacheIfPresent() {
-    if (_coverImage == null &&
-        _mediumCoverImage == null &&
-        _largeCoverImage == null &&
+    if (_coverImage?.target == null &&
+        _mediumCoverImage?.target == null &&
+        _largeCoverImage?.target == null &&
         _smallCoverBytes == null) {
       return false;
     }
@@ -550,33 +614,53 @@ class Audio {
   }
 
   void evictCoverCache() {
-    final coverImage = _coverImage;
-    final mediumCoverImage = _mediumCoverImage;
-    final largeCoverImage = _largeCoverImage;
+    _coverCacheGeneration++;
+    final coverImage = _coverImage?.target;
+    final mediumCoverImage = _mediumCoverImage?.target;
+    final largeCoverImage = _largeCoverImage?.target;
 
     _coverImage = null;
     _mediumCoverImage = null;
     _largeCoverImage = null;
     _smallCoverBytes = null;
     AudioLibrary.instance._smallCoverOrder.remove(path);
+    AudioLibrary.instance._coverCachePaths.remove(path);
+    CoverImageCache.instance.evictPath(path);
 
     if (coverImage != null) unawaited(coverImage.evict());
     if (mediumCoverImage != null) unawaited(mediumCoverImage.evict());
     if (largeCoverImage != null) unawaited(largeCoverImage.evict());
   }
 
+  void _unregisterCoverCacheIfEmpty() {
+    if (_coverImage?.target == null &&
+        _mediumCoverImage?.target == null &&
+        _largeCoverImage?.target == null &&
+        _smallCoverBytes == null) {
+      AudioLibrary.instance._coverCachePaths.remove(path);
+    }
+  }
+
   /// audio detail page
   /// 200 * 200
   Future<ImageProvider?> get mediumCover async {
     _touchCoverAccess();
-    if (_mediumCoverImage != null) return _mediumCoverImage;
+    final cached = _mediumCoverImage?.target;
+    if (cached != null) return cached;
+    final generation = _coverCacheGeneration;
     try {
       final data = await CoverImageCache.instance.get(
         path: path,
         width: 200,
         height: 200,
       );
-      return _mediumCoverImage = data;
+      if (generation != _coverCacheGeneration) {
+        if (data != null) unawaited(data.evict());
+        return null;
+      }
+      _mediumCoverImage = data != null ? WeakReference(data) : null;
+      if (data != null) AudioLibrary.instance._registerCoverCache(this);
+      return data;
     } catch (_) {
       return null;
     }
@@ -586,14 +670,22 @@ class Audio {
   /// size: 520 * devicePixelRatio（屏幕缩放大小）
   Future<ImageProvider?> get largeCover async {
     _touchCoverAccess();
-    if (_largeCoverImage != null) return _largeCoverImage;
+    final cached = _largeCoverImage?.target;
+    if (cached != null) return cached;
+    final generation = _coverCacheGeneration;
     try {
       final data = await CoverImageCache.instance.get(
         path: path,
-        width: 520,
-        height: 520,
+        width: 420,
+        height: 420,
       );
-      return _largeCoverImage = data;
+      if (generation != _coverCacheGeneration) {
+        if (data != null) unawaited(data.evict());
+        return null;
+      }
+      _largeCoverImage = data != null ? WeakReference(data) : null;
+      if (data != null) AudioLibrary.instance._registerCoverCache(this);
+      return data;
     } catch (_) {
       return null;
     }
@@ -622,25 +714,28 @@ class Artist {
   /// 作品
   List<Audio> works = [];
 
-  /// 缓存 ImageProvider 实例
-  ImageProvider? _pictureCache;
+  /// 缓存 ImageProvider 实例，使用 WeakReference
+  WeakReference<ImageProvider>? _pictureCache;
 
   String? get primaryPath => works.firstOrNull?.path;
 
   /// 只能用在artist detail page
   /// 200*200
   Future<ImageProvider?> get picture async {
-    if (_pictureCache != null) return _pictureCache;
+    final cached = _pictureCache?.target;
+    if (cached != null) return cached;
     if (works.isEmpty) return null;
-    return _pictureCache = await CoverImageCache.instance.get(
+    final data = await CoverImageCache.instance.get(
       path: works.first.path,
       width: 200,
       height: 200,
     );
+    _pictureCache = data != null ? WeakReference(data) : null;
+    return data;
   }
 
   bool evictPictureCache() {
-    final pictureCache = _pictureCache;
+    final pictureCache = _pictureCache?.target;
     _pictureCache = null;
     if (pictureCache == null) return false;
     unawaited(pictureCache.evict());
@@ -670,30 +765,34 @@ class Album {
   /// 作品
   List<Audio> works = [];
 
-  /// 缓存 ImageProvider 实例
-  ImageProvider? _coverCache;
+  /// 缓存 ImageProvider 实例，使用 WeakReference
+  WeakReference<ImageProvider>? _coverCache;
 
   String? get primaryPath => works.firstOrNull?.path;
 
   /// 只能用在album detail page
   /// 200*200
   Future<ImageProvider?> get cover async {
-    if (_coverCache != null) return _coverCache;
+    final cached = _coverCache?.target;
+    if (cached != null) return cached;
     if (works.isEmpty) return null;
     final folderCover =
         await works.first._getFolderCover(width: 200, height: 200);
     if (folderCover != null) {
-      return _coverCache = folderCover;
+      _coverCache = WeakReference(folderCover);
+      return folderCover;
     }
-    return _coverCache = await CoverImageCache.instance.get(
+    final data = await CoverImageCache.instance.get(
       path: works.first.path,
       width: 200,
       height: 200,
     );
+    _coverCache = data != null ? WeakReference(data) : null;
+    return data;
   }
 
   bool evictCoverCache() {
-    final coverCache = _coverCache;
+    final coverCache = _coverCache?.target;
     _coverCache = null;
     if (coverCache == null) return false;
     unawaited(coverCache.evict());
