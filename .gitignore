@@ -50,6 +50,8 @@ lib/page/settings_page/cpfeedback_key.dart
 .test/
 test/
 .claude/
+.agent/
+.opencode/
 
 # Trae specific - ignore rules and skills but keep other .trae files
 .trae/rules/
@@ -95,3 +97,5 @@ release/
 
 # Generated / Local only
 AGENTS.md
+skills-lock.json
+.agents/
