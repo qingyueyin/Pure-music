@@ -27,18 +27,26 @@ class LyricSource {
 
   static LyricSource? fromMap(Map? map) {
     if (map == null) return null;
-    final source = map['source']?.toString();
+    final source = _normalizedSourceName(map['source']);
     if (source == 'qq') {
-      return LyricSource(LyricSourceType.qq, qqSongId: map['id']?.toString());
+      return LyricSource(
+        LyricSourceType.qq,
+        qqSongId: _normalizedTextSongId(map['id']),
+      );
     } else if (source == 'kugou') {
-      return LyricSource(LyricSourceType.kugou, kugouSongHash: map['id']?.toString());
+      return LyricSource(
+        LyricSourceType.kugou,
+        kugouSongHash: _normalizedTextSongId(map['id']),
+      );
     } else if (source == 'ne') {
       final rawId = map['id'];
       int? neSongId;
       if (rawId is int) {
-        neSongId = rawId;
+        neSongId = _normalizedNeSongId(rawId);
+      } else if (rawId is num) {
+        neSongId = _normalizedNeSongId(rawId);
       } else if (rawId is String) {
-        neSongId = int.tryParse(rawId);
+        neSongId = _normalizedNeSongId(rawId);
       }
       return LyricSource(LyricSourceType.ne, neSongId: neSongId);
     } else {
@@ -158,18 +166,56 @@ String? _lyricSourceId(LyricSource s) {
 }
 
 LyricSource? _lyricSourceFromDb(String source, String? id) {
-  if (source == LyricSourceType.qq.name) {
+  final normalizedSource = _normalizedSourceName(source);
+  if (normalizedSource == LyricSourceType.qq.name) {
     return LyricSource(
       LyricSourceType.qq,
       qqSongId: id,
     );
   }
-  if (source == LyricSourceType.kugou.name) {
+  if (normalizedSource == LyricSourceType.kugou.name) {
     return LyricSource(LyricSourceType.kugou, kugouSongHash: id);
   }
-  if (source == LyricSourceType.ne.name) {
-    return LyricSource(LyricSourceType.ne,
-        neSongId: id == null ? null : int.tryParse(id));
+  if (normalizedSource == LyricSourceType.ne.name) {
+    return LyricSource(
+      LyricSourceType.ne,
+      neSongId: id == null ? null : _normalizedNeSongId(id),
+    );
   }
   return LyricSource(LyricSourceType.local);
+}
+
+String? _normalizedSourceName(Object? value) {
+  final normalized = value?.toString().trim().toLowerCase();
+  if (normalized == null || normalized.isEmpty) return null;
+  final separator = normalized.lastIndexOf('.');
+  return separator < 0 ? normalized : normalized.substring(separator + 1);
+}
+
+int? _normalizedNeSongId(Object value) {
+  if (value is int) return value <= 0 ? null : value;
+  final number = switch (value) {
+    num() => value.toDouble(),
+    String() => double.tryParse(value.trim()),
+    _ => null,
+  };
+  if (number == null || !number.isFinite) return null;
+  if (number != number.truncateToDouble()) return null;
+  final id = number.toInt();
+  return id <= 0 ? null : id;
+}
+
+String? _normalizedTextSongId(Object? value) {
+  if (value == null) return null;
+  if (value is int) return value <= 0 ? null : value.toString();
+  if (value is num) {
+    if (!value.isFinite) return null;
+    if (value <= 0) return null;
+    if (value == value.truncateToDouble()) {
+      return value.toInt().toString();
+    }
+    return null;
+  }
+  final normalized = value.toString().trim();
+  return normalized.isEmpty ? null : normalized;
 }
