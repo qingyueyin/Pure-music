@@ -53,7 +53,10 @@ class _SideNavState extends State<SideNav> {
       if (selectedIndex == value) return;
 
       final index = app_paths.START_PAGES.indexOf(destinations[value].desPath);
-      if (index != -1) AppPreference.instance.startPage = index;
+      if (index != -1 && AppPreference.instance.startPage != index) {
+        AppPreference.instance.startPage = index;
+        AppPreference.instance.save();
+      }
 
       context.go(destinations[value].desPath);
 
@@ -149,10 +152,10 @@ class _SmoothLargeSideNav extends StatelessWidget {
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   color: colorScheme.surface,
-                  borderRadius: BorderRadius.circular(28.0),
+                  borderRadius: BorderRadius.circular(16.0),
                 ),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(28.0),
+                  borderRadius: BorderRadius.circular(16.0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -246,9 +249,9 @@ class _NavItem extends StatelessWidget {
       height: height,
       child: Material(
         color: bg,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(10),
         child: InkWell(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(10),
           onTap: onTap,
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 4),
