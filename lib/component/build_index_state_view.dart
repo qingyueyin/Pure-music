@@ -50,18 +50,49 @@ class _BuildIndexStateViewState extends State<BuildIndexStateView> {
           WidgetsBinding.instance
               .addPostFrameCallback((_) => widget.whenIndexBuilt());
         }
+        final progress = snapshot.data?.progress;
+        final message = snapshot.data?.message ?? '正在准备曲库索引…';
+
         return Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             LinearProgressIndicator(
-              value: snapshot.data?.progress,
+              value: progress,
               borderRadius: BorderRadius.circular(2.0),
             ),
             const SizedBox(height: 8.0),
-            Text(
-              '${snapshot.data?.message}',
-              style: TextStyle(color: scheme.onSurface),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Flexible(
+                  child: Text(
+                    message,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: scheme.onSurface),
+                  ),
+                ),
+                if (progress != null) ...[
+                  const SizedBox(width: 8.0),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8.0,
+                      vertical: 4.0,
+                    ),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(12.0),
+                    ),
+                    child: Text(
+                      '${(progress.clamp(0.0, 1.0) * 100).round()}%',
+                      style: TextStyle(
+                        color: scheme.onSurfaceVariant,
+                        fontSize: 12.0,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ],
         );
