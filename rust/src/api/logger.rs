@@ -4,7 +4,6 @@ use flutter_rust_bridge::frb;
 
 use crate::frb_generated::StreamSink;
 
-
 static LOGGER: RwLock<Option<StreamSink<String>>> = RwLock::new(None);
 
 /// initialize a stream to pass log events to dart/flutter
