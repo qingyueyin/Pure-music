@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Result};
-use rusqlite::{params, Connection, OptionalExtension, types::ToSql};
+use rusqlite::{params, types::ToSql, Connection, OptionalExtension};
 
 #[derive(Clone)]
 pub struct IndexAudio {
@@ -110,9 +110,8 @@ pub(crate) fn write_index_value_to_sqlite(
         .collect();
 
     {
-        let mut folder_stmt = tx.prepare(
-            "INSERT OR REPLACE INTO folders(path, modified, latest) VALUES(?1, ?2, ?3)",
-        )?;
+        let mut folder_stmt = tx
+            .prepare("INSERT OR REPLACE INTO folders(path, modified, latest) VALUES(?1, ?2, ?3)")?;
         let mut audio_stmt = tx.prepare(
             "INSERT OR REPLACE INTO audios(path, folder_path, title, artist, album, album_artist, track, duration, bitrate, sample_rate, modified, created, by)
              VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
@@ -184,8 +183,10 @@ pub(crate) fn write_index_value_to_sqlite(
             .map(|(i, _)| format!("?{}", i + 1))
             .collect::<Vec<_>>()
             .join(",");
-        let delete_audios_sql =
-            format!("DELETE FROM audios WHERE folder_path NOT IN ({})", placeholders);
+        let delete_audios_sql = format!(
+            "DELETE FROM audios WHERE folder_path NOT IN ({})",
+            placeholders
+        );
         let delete_folders_sql =
             format!("DELETE FROM folders WHERE path NOT IN ({})", placeholders);
         let param_refs: Vec<&dyn ToSql> = current_folder_paths
