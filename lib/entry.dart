@@ -34,6 +34,7 @@ import 'package:pure_music/core/immersive.dart';
 import 'package:pure_music/core/memory_monitor.dart';
 import 'package:pure_music/core/matcher.dart' hide logger;
 import 'package:pure_music/core/preference.dart';
+import 'package:pure_music/core/route_visibility.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/update_checker.dart';
 import 'package:pure_music/core/utils.dart';
@@ -175,12 +176,13 @@ class _EntryState extends State<Entry>
   Future<void> _handleMouseBack() async {
     final routerContext = routerKey.currentContext;
     if (routerContext == null) return;
+    final router = GoRouter.of(routerContext);
 
     if (ImmersiveModeController.instance.enabled) {
       await ImmersiveModeController.instance.exit();
       final startIndex = AppPreference.instance.startPage
           .clamp(0, app_paths.START_PAGES.length - 1);
-      GoRouter.of(routerContext).go(app_paths.START_PAGES[startIndex]);
+      router.go(app_paths.START_PAGES[startIndex]);
       return;
     }
 
@@ -263,8 +265,26 @@ class _EntryState extends State<Entry>
       applyElevationOverlayColor: isDark,
       useMaterial3: true,
       textTheme: textTheme,
-      dialogTheme: DialogThemeData(backgroundColor: colorScheme.surface),
-      tabBarTheme: TabBarThemeData(indicatorColor: onPrimarySurfaceColor),
+      dialogTheme: DialogThemeData(
+        backgroundColor: colorScheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
+      tabBarTheme: TabBarThemeData(
+        indicatorColor: onPrimarySurfaceColor,
+        labelColor: onPrimarySurfaceColor,
+        unselectedLabelColor: colorScheme.onSurfaceVariant,
+      ),
+      sliderTheme: SliderThemeData(
+        activeTrackColor: colorScheme.primary,
+        inactiveTrackColor: colorScheme.surfaceContainerHighest,
+        thumbColor: colorScheme.primary,
+      ),
+      progressIndicatorTheme: ProgressIndicatorThemeData(
+        color: colorScheme.primary,
+        linearTrackColor: colorScheme.surfaceContainerHighest,
+      ),
     );
   }
 
@@ -304,6 +324,7 @@ class _EntryState extends State<Entry>
     navigatorKey: routerKey,
     initialLocation:
         widget.welcome ? app_paths.WELCOMING_PAGE : app_paths.UPDATING_DIALOG,
+    observers: [routeVisibilityObserver],
     routes: [
       ShellRoute(
         builder: (context, state, page) => AppShell(page: page),
