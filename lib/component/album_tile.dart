@@ -33,17 +33,30 @@ class _AlbumTileState extends State<AlbumTile> {
   @override
   void initState() {
     super.initState();
-    _coverFuture = widget.album.works.first.mediumCover;
-    _albumColorFuture = AlbumColorCache.instance.getAlbumColor(widget.album);
+    _refreshFutures();
   }
 
   @override
   void didUpdateWidget(covariant AlbumTile oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.album != widget.album) {
-      _coverFuture = widget.album.works.first.mediumCover;
-      _albumColorFuture = AlbumColorCache.instance.getAlbumColor(widget.album);
+    if (oldWidget.album != widget.album || oldWidget.view != widget.view) {
+      _refreshFutures();
     }
+  }
+
+  int get _coverSize => widget.view == ContentView.list ? 48 : 160;
+
+  void _refreshFutures() {
+    if (widget.album.works.isEmpty) {
+      _coverFuture = Future<ImageProvider?>.value(null);
+      _albumColorFuture = Future<AlbumColor?>.value(null);
+      return;
+    }
+
+    _coverFuture = widget.album.thumbnailCover(size: _coverSize);
+    _albumColorFuture = widget.view == ContentView.table
+        ? AlbumColorCache.instance.getAlbumColor(widget.album)
+        : Future<AlbumColor?>.value(null);
   }
 
   @override
@@ -56,6 +69,7 @@ class _AlbumTileState extends State<AlbumTile> {
       size: 48,
       color: scheme.onSurface,
     );
+    final hasWorks = widget.album.works.isNotEmpty;
     final isSelected =
         widget.multiSelectController?.selected.contains(widget.album) == true;
     final isMultiSelectView =
@@ -68,10 +82,12 @@ class _AlbumTileState extends State<AlbumTile> {
         menuChildren: [
           MenuItemButton(
             style: menuItemStyle,
-            onPressed: () => context.push(
-              app_paths.ALBUM_DETAIL_PAGE,
-              extra: widget.album,
-            ),
+            onPressed: hasWorks
+                ? () => context.push(
+                      app_paths.ALBUM_DETAIL_PAGE,
+                      extra: widget.album,
+                    )
+                : null,
             leadingIcon: const Icon(Symbols.open_in_new),
             child: const Text('打开'),
           ),
@@ -108,10 +124,12 @@ class _AlbumTileState extends State<AlbumTile> {
                 }
 
                 if (!isMultiSelectView) {
-                  context.push(
-                    app_paths.ALBUM_DETAIL_PAGE,
-                    extra: widget.album,
-                  );
+                  if (hasWorks) {
+                    context.push(
+                      app_paths.ALBUM_DETAIL_PAGE,
+                      extra: widget.album,
+                    );
+                  }
                   return;
                 }
 
@@ -243,8 +261,7 @@ class _AlbumTileState extends State<AlbumTile> {
                                   ),
                                   decoration: BoxDecoration(
                                     color: primaryColor,
-                                    borderRadius:
-                                        const BorderRadius.vertical(
+                                    borderRadius: const BorderRadius.vertical(
                                       bottom: Radius.circular(8.0),
                                     ),
                                   ),
@@ -272,9 +289,11 @@ class _AlbumTileState extends State<AlbumTile> {
                           value: isSelected,
                           onChanged: (v) {
                             if (v == true) {
-                              widget.multiSelectController?.select(widget.album);
+                              widget.multiSelectController
+                                  ?.select(widget.album);
                             } else {
-                              widget.multiSelectController?.unselect(widget.album);
+                              widget.multiSelectController
+                                  ?.unselect(widget.album);
                             }
                           },
                         ),
