@@ -1126,6 +1126,44 @@ fn discover_new_audio_folders(
     }
 }
 
+fn add_missing_audio_files(folder_path: &str, audios: &mut Vec<serde_json::Value>, latest: u64) -> u64 {
+    let existing_audio_paths: HashSet<String> = audios
+        .iter()
+        .filter_map(|item| item["path"].as_str().map(|path| path.to_string()))
+        .collect();
+    let mut new_latest = latest;
+    let dir = match fs::read_dir(folder_path) {
+        Ok(value) => value,
+        Err(_) => return new_latest,
+    };
+    for entry in dir {
+        let entry = match entry {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let file_type = match entry.file_type() {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        if file_type.is_dir() {
+            continue;
+        }
+
+        let entry_path = entry.path().to_string_lossy().to_string();
+        if existing_audio_paths.contains(&entry_path) {
+            continue;
+        }
+
+        if let Some(new_audio) = Audio::read_from_path(entry.path()) {
+            if new_audio.created > new_latest {
+                new_latest = new_audio.created;
+            }
+            audios.push(new_audio.to_json_value());
+        }
+    }
+    new_latest
+}
+
 /// for Flutter   
 /// 读取 index_path/index.json，检查更新。不可能重新读取被修改的文件夹下所有的音乐标签，这样太耗时。  
 ///
@@ -1138,7 +1176,7 @@ fn discover_new_audio_folders(
 /// 如果文件夹被修改（再次读取到的 modified > 记录的 modified），就更新它。没有则跳过它
 /// 1. 遍历该文件夹索引，判断文件是否存在，不存在则删除记录
 /// 2. 遍历该文件夹索引，如果文件被修改（再次读取到的 modified > 记录的 modified），重新读取标签；没有则跳过它
-/// 3. 遍历该文件夹，添加新增（读取到的 created > 记录的 latest）的音乐文件
+/// 3. 遍历该文件夹，添加索引中不存在的音乐文件
 pub fn update_index(index_path: String, sink: StreamSink<IndexActionState>) -> anyhow::Result<()> {
     let index_dir = PathBuf::from(&index_path);
     let mut index_path = PathBuf::from(index_path);
@@ -1199,8 +1237,12 @@ pub fn update_index(index_path: String, sink: StreamSink<IndexActionState>) -> a
             Err(_) => continue,
         };
 
-        // 文件夹未被修改时只做删除检查，跳过更新/新增
+        // 文件夹未被修改时不重读旧标签，但仍检查新增文件
         if new_folder_modified <= old_folder_modified {
+            if let Some(audios) = folder_item["audios"].as_array_mut() {
+                let new_latest = add_missing_audio_files(&folder_path, audios, latest);
+                folder_item["latest"] = serde_json::json!(new_latest);
+            }
             updated += 1;
             continue;
         }
@@ -1244,45 +1286,7 @@ pub fn update_index(index_path: String, sink: StreamSink<IndexActionState>) -> a
         }
 
         // 添加新增的音乐文件
-        let mut new_latest: u64 = latest;
-        let dir = match fs::read_dir(folder_path) {
-            Ok(value) => value,
-            Err(_) => continue,
-        };
-        for entry in dir {
-            let entry = match entry {
-                Ok(value) => value,
-                Err(_) => continue,
-            };
-            let file_type = match entry.file_type() {
-                Ok(value) => value,
-                Err(_) => continue,
-            };
-            if file_type.is_dir() {
-                continue;
-            }
-
-            let entry_created = match entry.metadata() {
-                Ok(value) => match value.created() {
-                    Ok(value) => value
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap_or(Duration::ZERO)
-                        .as_secs(),
-                    Err(_) => continue,
-                },
-                Err(_) => continue,
-            };
-            if entry_created > latest {
-                if let Some(new_audio) = Audio::read_from_path(entry.path()) {
-                    if entry_created > new_latest {
-                        new_latest = entry_created;
-                    }
-
-                    audios.push(new_audio.to_json_value());
-                }
-            }
-        }
-
+        let new_latest = add_missing_audio_files(&folder_path, audios, latest);
         folder_item["latest"] = serde_json::json!(new_latest);
 
         updated += 1;
