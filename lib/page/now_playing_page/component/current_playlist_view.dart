@@ -1,3 +1,5 @@
+import 'package:pure_music/core/list_action_state.dart';
+import 'package:pure_music/component/danger_confirm_dialog.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:flutter/material.dart';
@@ -15,15 +17,37 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
   late final ScrollController scrollController;
   bool _isReordering = false;
 
-  void _toNowPlaying() {
+  void _toNowPlaying({required bool animate}) {
     if (!scrollController.hasClients) return;
     final target = playbackService.playlistIndex * 64.0;
     final maxScroll = scrollController.position.maxScrollExtent;
+    final offset = target.clamp(0.0, maxScroll);
+    if ((scrollController.offset - offset).abs() < 1.0) return;
+    if (!animate) {
+      scrollController.jumpTo(offset);
+      return;
+    }
     scrollController.animateTo(
-      target.clamp(0.0, maxScroll),
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.fastOutSlowIn,
+      offset,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
     );
+  }
+
+  void _scheduleToNowPlaying({bool animate = true}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _isReordering) return;
+      _toNowPlaying(animate: animate);
+    });
+  }
+
+  void _onNowPlayingChanged() {
+    if (mounted) setState(() {});
+    _scheduleToNowPlaying();
+  }
+
+  void _onPlaylistChanged() {
+    _scheduleToNowPlaying(animate: false);
   }
 
   @override
@@ -32,8 +56,15 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
     scrollController = ScrollController(
       initialScrollOffset: playbackService.playlistIndex * 64.0,
     );
-    playbackService.nowPlayingNotifier.addListener(_toNowPlaying);
-    playbackService.playlistNotifier.addListener(_toNowPlaying);
+    playbackService.nowPlayingNotifier.addListener(_onNowPlayingChanged);
+    playbackService.playlistNotifier.addListener(_onPlaylistChanged);
+    _scheduleToNowPlaying(animate: false);
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    _scheduleToNowPlaying(animate: false);
   }
 
   @override
@@ -63,20 +94,28 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
                   valueListenable: playbackService.playlistNotifier,
                   builder: (context, playlist, _) {
                     if (playlist.isEmpty) return const SizedBox.shrink();
+                    final canReorder = hasEnoughItemsToReorder(playlist.length);
                     return IconButton(
-                      tooltip: _isReordering ? '完成排序' : '排序',
+                      tooltip: canReorder
+                          ? _isReordering
+                              ? '完成排序'
+                              : '排序'
+                          : '至少两首歌曲才能排序',
                       icon: Icon(
                         _isReordering ? Symbols.check : Symbols.reorder,
                       ),
-                      style: ButtonStyle(
-                        foregroundColor: WidgetStatePropertyAll(
-                          _isReordering
-                              ? scheme.onTertiaryContainer
-                              : scheme.onSecondaryContainer,
-                        ),
+                      style: IconButton.styleFrom(
+                        foregroundColor: _isReordering
+                            ? scheme.onTertiaryContainer
+                            : scheme.onSecondaryContainer,
+                        disabledForegroundColor:
+                            scheme.onSecondaryContainer.withValues(alpha: 0.38),
+                        backgroundColor:
+                            _isReordering ? scheme.tertiaryContainer : null,
                       ),
-                      onPressed: () =>
-                          setState(() => _isReordering = !_isReordering),
+                      onPressed: canReorder
+                          ? () => setState(() => _isReordering = !_isReordering)
+                          : null,
                     );
                   },
                 ),
@@ -86,14 +125,16 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
                   builder: (context, playlist, _) {
                     if (playlist.isEmpty) return const SizedBox.shrink();
                     return IconButton(
-                      tooltip: '清除队列',
+                      tooltip: _isReordering ? '完成排序后再清空队列' : '清空播放队列',
                       icon: const Icon(Symbols.clear_all),
-                      style: ButtonStyle(
-                        foregroundColor: WidgetStatePropertyAll(
-                          scheme.error,
-                        ),
+                      style: IconButton.styleFrom(
+                        foregroundColor: scheme.error,
+                        disabledForegroundColor:
+                            scheme.onSecondaryContainer.withValues(alpha: 0.38),
                       ),
-                      onPressed: () => _confirmClearQueue(context),
+                      onPressed: _isReordering
+                          ? null
+                          : () => _confirmClearQueue(context),
                     );
                   },
                 ),
@@ -109,14 +150,39 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
                   builder: (context, playlist, _) {
                     if (playlist.isEmpty) {
                       return Center(
-                        child: Padding(
+                        child: SingleChildScrollView(
                           padding: const EdgeInsets.all(32.0),
-                          child: Text(
-                            '队列为空\n选择乐曲开始播放',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: scheme.onSecondaryContainer.withAlpha(128),
-                              fontSize: 14,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 280),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Symbols.queue_music,
+                                  color: scheme.onSecondaryContainer
+                                      .withValues(alpha: 0.62),
+                                  size: 32,
+                                ),
+                                const SizedBox(height: 14),
+                                Text(
+                                  '播放队列还是空的',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: scheme.onSecondaryContainer,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  '选择歌曲后，它们会出现在这里。',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: scheme.onSecondaryContainer
+                                        .withValues(alpha: 0.62),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
@@ -132,7 +198,15 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
                       itemCount: playlist.length,
                       itemExtent: 64.0,
                       itemBuilder: (context, index) {
-                        return _PlaylistViewItem(index: index);
+                        final audio = playlist[index];
+                        return _PlaylistViewItem(
+                          index: index,
+                          audio: audio,
+                          isNowPlaying:
+                              playbackService.nowPlaying?.path == audio.path,
+                          hasNowPlaying: playbackService.nowPlaying != null,
+                          currentIndex: playbackService.playlistIndex,
+                        );
                       },
                     );
                   },
@@ -151,22 +225,7 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
       buildDefaultDragHandles: false,
       itemCount: playlist.length,
       onReorderItem: (oldIndex, newIndex) {
-        final pb = playbackService;
-        final currentList = List<Audio>.from(pb.playlist.value);
-        final item = currentList.removeAt(oldIndex);
-        currentList.insert(newIndex, item);
-        pb.playlist.value = currentList;
-
-        // 仅更新当前播放索引，不触发重新播放
-        if (pb.playlistIndex == oldIndex) {
-          pb.setPlaylistIndex(newIndex);
-        } else if (oldIndex < pb.playlistIndex &&
-            newIndex >= pb.playlistIndex) {
-          pb.setPlaylistIndex(pb.playlistIndex - 1);
-        } else if (oldIndex > pb.playlistIndex &&
-            newIndex <= pb.playlistIndex) {
-          pb.setPlaylistIndex(pb.playlistIndex + 1);
-        }
+        playbackService.reorderPlaylist(oldIndex, newIndex);
       },
       proxyDecorator: (child, index, animation) => Material(
         elevation: 4,
@@ -175,8 +234,7 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
       ),
       itemBuilder: (context, i) {
         final audio = playlist[i];
-        final isNowPlaying =
-            playbackService.nowPlaying?.path == audio.path;
+        final isNowPlaying = playbackService.nowPlaying?.path == audio.path;
         return _ReorderItem(
           key: ValueKey(audio.path),
           audio: audio,
@@ -188,63 +246,56 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
     );
   }
 
-  void _confirmClearQueue(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    showDialog(
+  Future<void> _confirmClearQueue(BuildContext context) async {
+    final confirmed = await showDangerConfirmDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
-        title: const Text('清除播放队列'),
-        content: const Text('确定要清空当前播放队列吗？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            style: ButtonStyle(
-              backgroundColor: WidgetStatePropertyAll(scheme.error),
-              foregroundColor: WidgetStatePropertyAll(scheme.onError),
-            ),
-            onPressed: () {
-              playbackService.clearQueue();
-              Navigator.of(context).pop();
-            },
-            child: const Text('清除'),
-          ),
-        ],
-      ),
+      title: '清空播放队列？',
+      message: '只会清空当前播放队列，不会删除本地音乐文件。',
+      confirmLabel: '清空队列',
     );
+    if (!confirmed || !mounted) return;
+    playbackService.clearQueue();
+    setState(() => _isReordering = false);
   }
 
   @override
   void dispose() {
-    playbackService.nowPlayingNotifier.removeListener(_toNowPlaying);
-    playbackService.playlistNotifier.removeListener(_toNowPlaying);
+    playbackService.nowPlayingNotifier.removeListener(_onNowPlayingChanged);
+    playbackService.playlistNotifier.removeListener(_onPlaylistChanged);
     scrollController.dispose();
     super.dispose();
   }
 }
 
 class _PlaylistViewItem extends StatelessWidget {
-  const _PlaylistViewItem({required this.index});
+  const _PlaylistViewItem({
+    required this.index,
+    required this.audio,
+    required this.isNowPlaying,
+    required this.hasNowPlaying,
+    required this.currentIndex,
+  });
 
   final int index;
+  final Audio audio;
+  final bool isNowPlaying;
+  final bool hasNowPlaying;
+  final int currentIndex;
 
   @override
   Widget build(BuildContext context) {
     final playbackService = PlayService.instance.playbackService;
-    final item = playbackService.playlist.value[index];
     final scheme = Theme.of(context).colorScheme;
-    final isNowPlaying = playbackService.nowPlaying?.path == item.path;
+    final canActivate = canActivateQueueItem(
+      hasNowPlaying: hasNowPlaying,
+      currentIndex: currentIndex,
+      targetIndex: index,
+    );
 
     return InkWell(
       borderRadius: BorderRadius.circular(8.0),
-      onTap: () {
-        playbackService.playIndexOfPlaylist(index);
-      },
+      onTap:
+          canActivate ? () => playbackService.playIndexOfPlaylist(index) : null,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8.0),
         child: Row(
@@ -264,7 +315,7 @@ class _PlaylistViewItem extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      item.title,
+                      audio.title,
                       style: TextStyle(
                         fontWeight:
                             isNowPlaying ? FontWeight.w600 : FontWeight.normal,
@@ -272,7 +323,7 @@ class _PlaylistViewItem extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${item.artist} - ${item.album}',
+                      '${audio.artist} - ${audio.album}',
                       style: TextStyle(
                         fontSize: 12,
                         color: isNowPlaying
@@ -346,8 +397,7 @@ class _ReorderItem extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color:
-                        isNowPlaying ? scheme.primary : scheme.onSurface,
+                    color: isNowPlaying ? scheme.primary : scheme.onSurface,
                     fontSize: 14,
                   ),
                   child: Column(
@@ -357,8 +407,9 @@ class _ReorderItem extends StatelessWidget {
                       Text(
                         audio.title,
                         style: TextStyle(
-                          fontWeight:
-                              isNowPlaying ? FontWeight.w600 : FontWeight.normal,
+                          fontWeight: isNowPlaying
+                              ? FontWeight.w600
+                              : FontWeight.normal,
                         ),
                       ),
                       const SizedBox(height: 2),
