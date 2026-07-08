@@ -29,7 +29,8 @@ Future<Map<String, Object?>> _getAudioExtra(Audio audio) {
   final key = '${audio.path}|${audio.modified}';
   final existing = _audioExtraCache[key];
   if (existing != null) return existing;
-  final future = rust_tag_reader.readAudioExtraMetadata(path: audio.path).then((jsonStr) {
+  final future =
+      rust_tag_reader.readAudioExtraMetadata(path: audio.path).then((jsonStr) {
     final decoded = json.decode(jsonStr);
     if (decoded is Map) {
       return Map<String, Object?>.from(decoded);
@@ -40,10 +41,66 @@ Future<Map<String, Object?>> _getAudioExtra(Audio audio) {
   return future;
 }
 
-class AudioDetailPage extends StatelessWidget {
+class AudioDetailPage extends StatefulWidget {
   const AudioDetailPage({super.key, required this.audio});
 
   final Audio audio;
+
+  @override
+  State<AudioDetailPage> createState() => _AudioDetailPageState();
+}
+
+class _AudioDetailPageState extends State<AudioDetailPage> {
+  bool _isOpeningInExplorer = false;
+  bool _isCopyingPath = false;
+  bool _isCopyingTitle = false;
+
+  Audio get audio => widget.audio;
+
+  Future<void> _showCurrentAudioInExplorer() async {
+    if (_isOpeningInExplorer) return;
+    setState(() => _isOpeningInExplorer = true);
+    try {
+      final result = await showInExplorer(path: audio.path);
+      if (!result && mounted) {
+        showTextOnSnackBar('打开失败');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isOpeningInExplorer = false);
+      }
+    }
+  }
+
+  Future<void> _copyCurrentAudioPath() async {
+    if (_isCopyingPath) return;
+    setState(() => _isCopyingPath = true);
+    try {
+      await Clipboard.setData(ClipboardData(text: audio.path));
+      if (mounted) {
+        showTextOnSnackBar('已复制路径');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isCopyingPath = false);
+      }
+    }
+  }
+
+  Future<void> _copyCurrentAudioTitle() async {
+    if (_isCopyingTitle) return;
+    setState(() => _isCopyingTitle = true);
+    try {
+      await Clipboard.setData(ClipboardData(text: audio.title));
+      if (mounted) {
+        showTextOnSnackBar('已复制歌名');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isCopyingTitle = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -57,10 +114,21 @@ class AudioDetailPage extends StatelessWidget {
       color: scheme.onSurface,
     );
     final styleContent = TextStyle(fontSize: 14, color: scheme.onSurface);
-    final placeholder = Icon(
-      Symbols.queue_music,
-      color: scheme.onSurface,
-      size: 200,
+    final placeholder = SizedBox(
+      width: 156.0,
+      height: 156.0,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(12.0),
+          border: Border.all(color: scheme.outlineVariant),
+        ),
+        child: Icon(
+          Symbols.queue_music,
+          color: scheme.onSurfaceVariant,
+          size: 64.0,
+        ),
+      ),
     );
 
     return ColoredBox(
@@ -70,10 +138,13 @@ class AudioDetailPage extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                FutureBuilder(
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final narrow = constraints.maxWidth < 520.0;
+                final chipMaxWidth =
+                    (constraints.maxWidth - (narrow ? 40.0 : 220.0))
+                        .clamp(180.0, 420.0);
+                final cover = FutureBuilder(
                   future: audio.mediumCover,
                   builder: (context, snapshot) {
                     if (snapshot.connectionState != ConnectionState.done) {
@@ -87,34 +158,39 @@ class AudioDetailPage extends StatelessWidget {
                     }
                     if (snapshot.data == null) return placeholder;
                     return ClipRRect(
-                      borderRadius: BorderRadius.circular(8.0),
+                      borderRadius: BorderRadius.circular(12.0),
                       child: Image(
                         image: snapshot.data!,
                         width: 156,
                         height: 156,
+                        fit: BoxFit.cover,
                         errorBuilder: (_, __, ___) => placeholder,
                       ),
                     );
                   },
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          Text(
-                            '歌名：',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: scheme.onSurface.withValues(alpha: 0.70),
-                            ),
+                );
+                final info = Column(
+                  crossAxisAlignment: narrow
+                      ? CrossAxisAlignment.center
+                      : CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      alignment:
+                          narrow ? WrapAlignment.center : WrapAlignment.start,
+                      children: [
+                        Text(
+                          '歌名：',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: scheme.onSurface.withValues(alpha: 0.70),
                           ),
-                          ActionChip(
+                        ),
+                        ConstrainedBox(
+                          constraints: BoxConstraints(maxWidth: chipMaxWidth),
+                          child: ActionChip(
                             label: Text(
                               audio.title,
                               style: styleTitle.copyWith(fontSize: 15),
@@ -122,61 +198,77 @@ class AudioDetailPage extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                               softWrap: false,
                             ),
-                            onPressed: () async {
-                              await Clipboard.setData(
-                                ClipboardData(text: audio.title),
-                              );
-                              showTextOnSnackBar('已复制歌名');
-                            },
+                            avatar: _isCopyingTitle
+                                ? const SizedBox(
+                                    width: 18.0,
+                                    height: 18.0,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.0,
+                                    ),
+                                  )
+                                : null,
+                            onPressed:
+                                _isCopyingTitle ? null : _copyCurrentAudioTitle,
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          Text(
-                            '歌手：',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: scheme.onSurface.withValues(alpha: 0.70),
-                            ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      alignment:
+                          narrow ? WrapAlignment.center : WrapAlignment.start,
+                      children: [
+                        Text(
+                          '歌手：',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: scheme.onSurface.withValues(alpha: 0.70),
                           ),
-                          ...audio.splitedArtists.map((name) {
-                            final artist =
-                                AudioLibrary.instance.artistCollection[name];
-                            if (artist == null) return const SizedBox.shrink();
-                            return ActionChip(
+                        ),
+                        ...audio.splitedArtists.map((name) {
+                          final artist =
+                              AudioLibrary.instance.artistCollection[name];
+                          return ConstrainedBox(
+                            constraints: BoxConstraints(maxWidth: chipMaxWidth),
+                            child: ActionChip(
                               label: Text(
                                 name,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 softWrap: false,
                               ),
-                              onPressed: () => context.push(
-                                app_paths.ARTIST_DETAIL_PAGE,
-                                extra: artist,
-                              ),
-                            );
-                          }),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          Text(
-                            '专辑：',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: scheme.onSurface.withValues(alpha: 0.70),
+                              onPressed: artist == null
+                                  ? null
+                                  : () => context.push(
+                                        app_paths.ARTIST_DETAIL_PAGE,
+                                        extra: artist,
+                                      ),
                             ),
+                          );
+                        }),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      alignment:
+                          narrow ? WrapAlignment.center : WrapAlignment.start,
+                      children: [
+                        Text(
+                          '专辑：',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: scheme.onSurface.withValues(alpha: 0.70),
                           ),
-                          ActionChip(
+                        ),
+                        ConstrainedBox(
+                          constraints: BoxConstraints(maxWidth: chipMaxWidth),
+                          child: ActionChip(
                             label: Text(
                               audio.album,
                               maxLines: 1,
@@ -186,47 +278,81 @@ class AudioDetailPage extends StatelessWidget {
                             onPressed: album == null
                                 ? null
                                 : () => context.push(
-                                    app_paths.ALBUM_DETAIL_PAGE,
-                                    extra: album,
+                                      app_paths.ALBUM_DETAIL_PAGE,
+                                      extra: album,
+                                    ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      alignment:
+                          narrow ? WrapAlignment.center : WrapAlignment.start,
+                      children: [
+                        IconButton(
+                          tooltip: '在文件管理器中显示',
+                          onPressed: _isOpeningInExplorer
+                              ? null
+                              : _showCurrentAudioInExplorer,
+                          icon: _isOpeningInExplorer
+                              ? const SizedBox(
+                                  width: 20.0,
+                                  height: 20.0,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.0,
                                   ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          IconButton(
-                            tooltip: '在文件资源管理器中显示',
-                            onPressed: () async {
-                              final result = await showInExplorer(path: audio.path);
-                              if (!result && context.mounted) {
-                                showTextOnSnackBar('打开失败');
-                              }
-                            },
-                            icon: const Icon(Symbols.folder_open),
-                          ),
-                          IconButton(
-                            tooltip: '复制路径',
-                            onPressed: () async {
-                              await Clipboard.setData(ClipboardData(text: audio.path));
-                              showTextOnSnackBar('已复制');
-                            },
-                            icon: const Icon(Symbols.content_copy),
-                          ),
-                        ],
-                      ),
+                                )
+                              : const Icon(Symbols.folder_open),
+                        ),
+                        IconButton(
+                          tooltip: '复制路径',
+                          onPressed:
+                              _isCopyingPath ? null : _copyCurrentAudioPath,
+                          icon: _isCopyingPath
+                              ? const SizedBox(
+                                  width: 20.0,
+                                  height: 20.0,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.0,
+                                  ),
+                                )
+                              : const Icon(Symbols.content_copy),
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+
+                if (narrow) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Center(child: cover),
+                      const SizedBox(height: 16.0),
+                      info,
                     ],
-                  ),
-                ),
-              ],
+                  );
+                }
+
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    cover,
+                    const SizedBox(width: 16),
+                    Expanded(child: info),
+                  ],
+                );
+              },
             ),
             space,
             LayoutBuilder(
               builder: (context, constraints) {
-                final maxWidth = constraints.maxWidth > 960 ? 960.0 : constraints.maxWidth;
+                final maxWidth =
+                    constraints.maxWidth > 960 ? 960.0 : constraints.maxWidth;
                 final colCount = maxWidth > 600 ? 3 : 2;
                 final colWidth = (maxWidth - (colCount - 1) * 16) / colCount;
                 return Align(
@@ -243,7 +369,8 @@ class AudioDetailPage extends StatelessWidget {
                             width: colWidth,
                             child: _InfoTile(
                               label: '音轨',
-                              child: Text(audio.track.toString(), style: styleContent),
+                              child: Text(audio.track.toString(),
+                                  style: styleContent),
                             ),
                           ),
                           SizedBox(
@@ -262,15 +389,16 @@ class AudioDetailPage extends StatelessWidget {
                             width: colWidth,
                             child: _InfoTile(
                               label: '码率',
-                              child:
-                                  Text("${audio.bitrate ?? "-"} kbps", style: styleContent),
+                              child: Text("${audio.bitrate ?? "-"} kbps",
+                                  style: styleContent),
                             ),
                           ),
                           SizedBox(
                             width: colWidth,
                             child: _InfoTile(
                               label: '采样率',
-                              child: Text("${audio.sampleRate ?? "-"} hz", style: styleContent),
+                              child: Text("${audio.sampleRate ?? "-"} hz",
+                                  style: styleContent),
                             ),
                           ),
                           SizedBox(
@@ -278,7 +406,8 @@ class AudioDetailPage extends StatelessWidget {
                             child: _InfoTile(
                               label: '格式',
                               child: Text(
-                                p.extension(audio.path)
+                                p
+                                    .extension(audio.path)
                                     .replaceFirst('.', '')
                                     .toUpperCase(),
                                 style: styleContent,
@@ -375,7 +504,8 @@ class AudioDetailPage extends StatelessWidget {
                             child: _InfoTile(
                               label: '修改时间',
                               child: Text(
-                                DateTime.fromMillisecondsSinceEpoch(audio.modified * 1000)
+                                DateTime.fromMillisecondsSinceEpoch(
+                                        audio.modified * 1000)
                                     .toString()
                                     .substring(0, 19),
                                 style: styleContent,
@@ -387,7 +517,8 @@ class AudioDetailPage extends StatelessWidget {
                             child: _InfoTile(
                               label: '创建时间',
                               child: Text(
-                                DateTime.fromMillisecondsSinceEpoch(audio.created * 1000)
+                                DateTime.fromMillisecondsSinceEpoch(
+                                        audio.created * 1000)
                                     .toString()
                                     .substring(0, 19),
                                 style: styleContent,
@@ -439,4 +570,3 @@ class _InfoTile extends StatelessWidget {
     );
   }
 }
-
