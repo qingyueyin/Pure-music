@@ -767,17 +767,17 @@ class LyricsLinePainter extends CustomPainter {
       if (useLift) {
         final wordDurationSec = wc.first.wordDurationSec;
         final isMerged = wc.first.isMerged;
-        const rippleThreshold = 1.5;
+        const scaleThreshold = 1.0;
         final enableEffect =
-            applyScale && (isMerged || wordDurationSec >= rippleThreshold);
+            applyScale && (isMerged || wordDurationSec >= scaleThreshold);
 
         for (final info in wc) {
           final charProgress = info.charProgress;
           double scale = 1.0;
           if (enableEffect && charProgress > 0.0 && charProgress < 1.0) {
-            final effectRatio = (((wordDurationSec - rippleThreshold) /
-                    (3.0 - rippleThreshold)))
-                .clamp(0.0, 1.0);
+            final effectRatio =
+                ((wordDurationSec - scaleThreshold) / (3.0 - scaleThreshold))
+                    .clamp(0.0, 1.0);
             final ripplesScaleMax = 1.1 + 0.05 * effectRatio;
 
             double animationCurve;
@@ -1081,7 +1081,7 @@ class LyricsLinePainter extends CustomPainter {
       } else if (clippedHighlightR > left) {
         canvas.save();
         canvas.clipRect(playedClip);
-        paintPlayedLayer(gradientPlayedStyle, glow: false);
+        paintPlayedLayer(gradientPlayedStyle, glow: true);
         canvas.restore();
       }
     }

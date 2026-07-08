@@ -968,7 +968,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     _applyLyricLineUpdate(
       update,
       forceScroll: forceScroll,
-      duration: duration ?? Duration.zero,
+      duration: duration,
     );
   }
 
