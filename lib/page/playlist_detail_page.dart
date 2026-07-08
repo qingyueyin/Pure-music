@@ -1,10 +1,13 @@
 import 'package:pure_music/core/preference.dart';
+import 'package:pure_music/component/danger_confirm_dialog.dart';
 import 'package:pure_music/core/enums.dart';
+import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/page/playlist_cover_picker.dart';
 import 'package:pure_music/component/audio_tile.dart';
+import 'package:pure_music/component/quiet_empty_state.dart';
 import 'package:pure_music/page/uni_detail_page.dart';
 import 'package:pure_music/page/uni_page.dart';
 import 'package:pure_music/page/uni_page_components.dart';
@@ -23,27 +26,73 @@ class PlaylistDetailPage extends StatefulWidget {
 class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
   final multiSelectController = MultiSelectController<Audio>();
   bool _isReordering = false;
+  bool _isRemovingSelected = false;
+  bool _isPickingCover = false;
+  late Future<ImageProvider?> _primaryPicFuture;
+  late Future<ImageProvider?> _backgroundPicFuture;
 
-  Future<ImageProvider?> get _primaryPic async {
+  Future<ImageProvider?> _loadPrimaryPic() async {
     final custom = await widget.playlist.resolveCoverProvider();
     if (custom != null) return custom;
-    if (widget.playlist.audios.isEmpty) return null;
-    return widget.playlist.audios.first.mediumCover;
+    return widget.playlist.firstAudio?.mediumCover;
   }
 
-  Future<ImageProvider?> get _backgroundPic async {
-    if (widget.playlist.audios.isEmpty) return null;
-    return widget.playlist.audios.first.cover;
+  Future<ImageProvider?> _loadBackgroundPic() async {
+    final custom = await widget.playlist.resolveCoverProvider(size: 600);
+    if (custom != null) return custom;
+    return widget.playlist.firstAudio?.cover;
+  }
+
+  void _refreshCoverFutures() {
+    _primaryPicFuture = _loadPrimaryPic();
+    _backgroundPicFuture = _loadBackgroundPic();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshCoverFutures();
+  }
+
+  @override
+  void didUpdateWidget(covariant PlaylistDetailPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.playlist != widget.playlist) {
+      _refreshCoverFutures();
+    }
   }
 
   Future<void> _changeCover() async {
-    await showCoverPicker(context, widget.playlist);
-    if (!mounted) return;
-    setState(() {});
+    if (_isPickingCover) return;
+    setState(() => _isPickingCover = true);
+    try {
+      await showCoverPicker(context, widget.playlist);
+      if (!mounted) return;
+      _refreshCoverFutures();
+      setState(() {});
+    } finally {
+      if (mounted) setState(() => _isPickingCover = false);
+    }
   }
 
   void _onSortChanged() {
-    setState(() {});
+    setState(() {
+      _isReordering = false;
+    });
+  }
+
+  Future<bool> _confirmRemoveSelectedAudios(List<Audio> audios) async {
+    final count = audios.length;
+    final message = count == 1
+        ? '将从歌单“${widget.playlist.name}”移除选中歌曲，不会删除本地音乐文件。'
+        : '将从歌单“${widget.playlist.name}”移除 $count 首歌曲，不会删除本地音乐文件。';
+
+    return showDangerConfirmDialog(
+      context: context,
+      title: '从歌单移除歌曲？',
+      message: message,
+      confirmLabel: '移除',
+    );
   }
 
   @override
@@ -132,76 +181,137 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
 
     final currMethodIndex = pref.sortMethod.clamp(0, sortMethods.length - 1);
     final isCustomSort = currMethodIndex == sortMethods.length - 1;
+    final canSortSongs = hasEnoughItemsToSort(contentList.length);
+    final canReorder =
+        isCustomSort && hasEnoughItemsToReorder(contentList.length);
 
     return UniDetailPage<Playlist, Audio, Object>(
       pref: pref,
       primaryContent: widget.playlist,
-      primaryPic: _primaryPic,
-      backgroundPic: _backgroundPic,
+      primaryPic: _primaryPicFuture,
+      backgroundPic: _backgroundPicFuture,
       picShape: PicShape.rrect,
       title: widget.playlist.name,
       subtitle: '${contentList.length} 首乐曲',
       secondaryContent: contentList,
-      secondaryContentBuilder: (context, audio, i, msc, _) =>
-          AudioTile(
+      secondaryContentBuilder: (context, audio, i, msc, _) => AudioTile(
         audioIndex: i,
         playlist: contentList,
         multiSelectController: msc,
-        onRemoveFromPlaylist: (removedAudio) {
+        onRemoveFromPlaylist: (removedAudio) async {
+          final oldPaths = List<String>.from(widget.playlist.paths);
           setState(() {
             widget.playlist.removeByPath(removedAudio.path);
+            _refreshCoverFutures();
           });
-          savePlaylists();
+          final saved = await savePlaylists();
+          if (!mounted) return;
+          if (!saved) {
+            setState(() {
+              widget.playlist.replacePaths(oldPaths);
+              _refreshCoverFutures();
+            });
+            showTextOnSnackBar('保存歌单失败');
+            return;
+          }
           showTextOnSnackBar('已从歌单移除');
         },
       ),
-      enableShufflePlay: true,
-      enableSortMethod: true,
-      enableSortOrder: true,
-      enableSecondaryContentViewSwitch: true,
+      enableShufflePlay: contentList.isNotEmpty,
+      enableSortMethod: canSortSongs,
+      enableSortOrder: canSortSongs,
+      enableSecondaryContentViewSwitch: contentList.isNotEmpty,
       multiSelectController: multiSelectController,
       multiSelectViewActions: [
-        IconButton.filled(
-          tooltip: '移除选中歌曲',
-          onPressed: () async {
-            setState(() {
-              for (var item in multiSelectController.selected) {
-                widget.playlist.removeByPath(item.path);
-              }
-            });
-            await savePlaylists();
-            if (!mounted) return;
-            multiSelectController.useMultiSelectView(false);
-          },
-          style: ButtonStyle(
-            backgroundColor: WidgetStatePropertyAll(scheme.error),
-            foregroundColor: WidgetStatePropertyAll(scheme.onError),
+        ListenableBuilder(
+          listenable: multiSelectController,
+          builder: (context, _) => IconButton.filled(
+            tooltip: '移除选中歌曲',
+            onPressed:
+                multiSelectController.selected.isEmpty || _isRemovingSelected
+                    ? null
+                    : () async {
+                        if (_isRemovingSelected) return;
+                        final selected = List<Audio>.from(
+                          multiSelectController.selected,
+                        );
+                        final confirmed = await _confirmRemoveSelectedAudios(
+                          selected,
+                        );
+                        if (!confirmed || !mounted) return;
+                        setState(() => _isRemovingSelected = true);
+                        try {
+                          final oldPaths = List<String>.from(
+                            widget.playlist.paths,
+                          );
+                          setState(() {
+                            for (final item in selected) {
+                              widget.playlist.removeByPath(item.path);
+                            }
+                            _refreshCoverFutures();
+                          });
+                          final saved = await savePlaylists();
+                          if (!mounted) return;
+                          if (!saved) {
+                            setState(() {
+                              widget.playlist.replacePaths(oldPaths);
+                              _refreshCoverFutures();
+                            });
+                            showTextOnSnackBar('保存歌单失败');
+                            return;
+                          }
+                          showTextOnSnackBar(
+                            '已从歌单移除 ${selected.length} 首',
+                          );
+                          multiSelectController.useMultiSelectView(false);
+                          multiSelectController.clear();
+                        } finally {
+                          if (mounted) {
+                            setState(() => _isRemovingSelected = false);
+                          }
+                        }
+                      },
+            style: ButtonStyle(
+              backgroundColor: WidgetStatePropertyAll(scheme.error),
+              foregroundColor: WidgetStatePropertyAll(scheme.onError),
+            ),
+            icon: _isRemovingSelected
+                ? const SizedBox(
+                    width: 20.0,
+                    height: 20.0,
+                    child: CircularProgressIndicator(strokeWidth: 2.0),
+                  )
+                : const Icon(Symbols.delete),
           ),
-          icon: const Icon(Symbols.delete),
         ),
-        MultiSelectSelectOrClearAll(
-          multiSelectController: multiSelectController,
-          contentList: contentList,
-        ),
-        MultiSelectExit(multiSelectController: multiSelectController),
+        if (!_isRemovingSelected)
+          MultiSelectSelectOrClearAll(
+            multiSelectController: multiSelectController,
+            contentList: contentList,
+          ),
+        if (!_isRemovingSelected)
+          MultiSelectExit(multiSelectController: multiSelectController),
       ],
       sortMethods: sortMethods,
       onSortMethodChanged: _onSortChanged,
-      onPrimaryPicTap: _changeCover,
-      bodyOverride: _isReordering
-          ? _buildReorderBody(contentList, scheme)
-          : null,
-      extraActions: isCustomSort
+      onPrimaryPicTap: _isPickingCover ? null : _changeCover,
+      primaryPicBusy: _isPickingCover,
+      bodyOverride: contentList.isEmpty
+          ? const _EmptyPlaylistBody()
+          : _isReordering && canReorder
+              ? _buildReorderBody(contentList, scheme)
+              : null,
+      extraActions: canReorder
           ? [
               SizedBox(
                 height: 40.0,
                 child: Material(
-                  borderRadius: BorderRadius.circular(20.0),
+                  borderRadius: BorderRadius.circular(12.0),
                   color: _isReordering
                       ? scheme.tertiaryContainer
                       : scheme.primaryContainer,
                   child: InkWell(
-                    borderRadius: BorderRadius.circular(20.0),
+                    borderRadius: BorderRadius.circular(12.0),
                     onTap: () => setState(() => _isReordering = !_isReordering),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -243,14 +353,21 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
       buildDefaultDragHandles: false,
       itemCount: contentList.length,
       onReorderItem: (oldIndex, newIndex) {
+        final oldPaths = List<String>.from(widget.playlist.paths);
         setState(() {
           final item = paths.removeAt(oldIndex);
           paths.insert(newIndex, item);
-          widget.playlist.paths
-            ..clear()
-            ..addAll(paths);
+          widget.playlist.replacePaths(paths);
+          _refreshCoverFutures();
         });
-        savePlaylists();
+        savePlaylists().then((saved) {
+          if (saved || !mounted) return;
+          setState(() {
+            widget.playlist.replacePaths(oldPaths);
+            _refreshCoverFutures();
+          });
+          showTextOnSnackBar('保存歌单失败');
+        });
       },
       proxyDecorator: (child, index, animation) => Material(
         elevation: 4,
@@ -297,7 +414,8 @@ class _ReorderItem extends StatelessWidget {
                 index: index,
                 child: Padding(
                   padding: const EdgeInsets.all(12.0),
-                  child: Icon(Symbols.drag_indicator, color: scheme.onSurfaceVariant),
+                  child: Icon(Symbols.drag_indicator,
+                      color: scheme.onSurfaceVariant),
                 ),
               ),
               const SizedBox(width: 8.0),
@@ -315,7 +433,8 @@ class _ReorderItem extends StatelessWidget {
                     const SizedBox(height: 4.0),
                     Text(
                       '${audio.artist} - ${audio.album}',
-                      style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
+                      style: TextStyle(
+                          color: scheme.onSurfaceVariant, fontSize: 13),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -326,6 +445,19 @@ class _ReorderItem extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _EmptyPlaylistBody extends StatelessWidget {
+  const _EmptyPlaylistBody();
+
+  @override
+  Widget build(BuildContext context) {
+    return const QuietEmptyState(
+      icon: Symbols.playlist_add,
+      title: '这个歌单还没有歌曲',
+      message: '可以从歌曲菜单或搜索结果里把音乐加入歌单。',
     );
   }
 }
