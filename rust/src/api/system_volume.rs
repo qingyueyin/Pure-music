@@ -12,12 +12,13 @@ mod imp {
         core::{implement, GUID, PCWSTR},
         Win32::{
             Media::Audio::{
-                eMultimedia, eRender,
+                eMultimedia, eRender, EDataFlow, ERole,
                 Endpoints::{
-                    IAudioEndpointVolume, IAudioEndpointVolumeCallback, IAudioEndpointVolumeCallback_Impl,
+                    IAudioEndpointVolume, IAudioEndpointVolumeCallback,
+                    IAudioEndpointVolumeCallback_Impl,
                 },
-                IMMDeviceEnumerator, IMMNotificationClient, IMMNotificationClient_Impl, MMDeviceEnumerator,
-                AUDIO_VOLUME_NOTIFICATION_DATA, DEVICE_STATE, EDataFlow, ERole,
+                IMMDeviceEnumerator, IMMNotificationClient, IMMNotificationClient_Impl,
+                MMDeviceEnumerator, AUDIO_VOLUME_NOTIFICATION_DATA, DEVICE_STATE,
             },
             System::Com::{
                 CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_MULTITHREADED,
@@ -149,7 +150,9 @@ mod imp {
 
         fn init_volume_interface(&mut self) -> Result<()> {
             unsafe {
-                let device = self.enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia)?;
+                let device = self
+                    .enumerator
+                    .GetDefaultAudioEndpoint(eRender, eMultimedia)?;
                 let endpoint_volume: IAudioEndpointVolume = device.Activate(CLSCTX_ALL, None)?;
 
                 let callback = VolumeChangeCallback {
@@ -203,7 +206,8 @@ mod imp {
             let client = DeviceChangeCallback { manager: self_arc };
             let i_client: IMMNotificationClient = client.into();
             unsafe {
-                self.enumerator.RegisterEndpointNotificationCallback(&i_client)?;
+                self.enumerator
+                    .RegisterEndpointNotificationCallback(&i_client)?;
             }
             self.device_notification_client = Some(i_client);
             Ok(())
@@ -247,11 +251,14 @@ mod imp {
     static GLOBAL_MANAGER: Mutex<Option<Arc<Mutex<Option<VolumeManager>>>>> = Mutex::new(None);
 
     pub(super) fn system_volume_init(sink: StreamSink<f64>) -> Result<f64> {
-        let mut com_guard = COM_GUARD.lock().map_err(|e| anyhow::anyhow!("Mutex poisoned: {}", e))?;
+        let mut com_guard = COM_GUARD
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Mutex poisoned: {}", e))?;
         if com_guard.is_some() {
             return Err(anyhow::anyhow!("COM already initialized"));
         }
-        *com_guard = Some(ComGuard::new().ok_or_else(|| anyhow::anyhow!("COM initialization failed"))?);
+        *com_guard =
+            Some(ComGuard::new().ok_or_else(|| anyhow::anyhow!("COM initialization failed"))?);
         drop(com_guard);
 
         let sink_arc = Arc::new(Mutex::new(Some(sink)));
@@ -266,12 +273,18 @@ mod imp {
             }
         }
 
-        *GLOBAL_MANAGER.lock().map_err(|e| anyhow::anyhow!("Mutex poisoned: {}", e))? = Some(manager_arc);
+        *GLOBAL_MANAGER
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Mutex poisoned: {}", e))? = Some(manager_arc);
         Ok(current_vol)
     }
 
     pub(super) fn system_volume_set(val: f64) -> Result<()> {
-        if let Some(manager_arc) = GLOBAL_MANAGER.lock().map_err(|e| anyhow::anyhow!("Mutex poisoned: {}", e))?.as_ref() {
+        if let Some(manager_arc) = GLOBAL_MANAGER
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Mutex poisoned: {}", e))?
+            .as_ref()
+        {
             if let Ok(guard) = manager_arc.lock() {
                 if let Some(manager) = guard.as_ref() {
                     manager.set_volume(val as f32)?;
@@ -282,7 +295,11 @@ mod imp {
     }
 
     pub(super) fn system_volume_get() -> Result<f64> {
-        if let Some(manager_arc) = GLOBAL_MANAGER.lock().map_err(|e| anyhow::anyhow!("Mutex poisoned: {}", e))?.as_ref() {
+        if let Some(manager_arc) = GLOBAL_MANAGER
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Mutex poisoned: {}", e))?
+            .as_ref()
+        {
             if let Ok(guard) = manager_arc.lock() {
                 if let Some(manager) = guard.as_ref() {
                     return Ok(manager.get_volume().unwrap_or(0.0) as f64);
