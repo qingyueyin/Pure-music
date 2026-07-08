@@ -39,7 +39,8 @@ class PageScaffold extends StatelessWidget {
                 padding: const EdgeInsets.all(16.0),
                 child: switch (screenType) {
                   ScreenType.small => _buildSmallLayout(scheme),
-                  ScreenType.medium || ScreenType.large =>
+                  ScreenType.medium ||
+                  ScreenType.large =>
                     _buildWideLayout(scheme),
                 },
               );
@@ -88,7 +89,17 @@ class PageScaffold extends StatelessWidget {
       children: [
         Expanded(child: _titleWidget(scheme)),
         const SizedBox(width: 16.0),
-        Wrap(spacing: 8.0, children: actions),
+        Flexible(
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 8.0,
+              runSpacing: 8.0,
+              children: actions,
+            ),
+          ),
+        ),
       ],
     );
   }
