@@ -28,10 +28,10 @@ class UpdateInfo {
 
   /// 从 JSON Map 转换（用于 fallback 源）
   factory UpdateInfo.fromJson(Map<String, dynamic> json) => UpdateInfo(
-        tagName: json['tag_name'] as String? ?? '',
-        name: json['name'] as String?,
-        body: json['body'] as String?,
-        htmlUrl: json['html_url'] as String?,
+        tagName: _normalizedRequiredString(json['tag_name']),
+        name: _normalizedOptionalString(json['name']),
+        body: _normalizedOptionalString(json['body']),
+        htmlUrl: _normalizedOptionalString(json['html_url']),
       );
 
   Map<String, dynamic> toJson() => {
@@ -40,6 +40,17 @@ class UpdateInfo {
         'body': body,
         'html_url': htmlUrl,
       };
+}
+
+String _normalizedRequiredString(Object? value) {
+  if (value is! String) return '';
+  return value.trim();
+}
+
+String? _normalizedOptionalString(Object? value) {
+  if (value is! String) return null;
+  final normalized = value.trim();
+  return normalized.isEmpty ? null : normalized;
 }
 
 /// 更新检查服务
@@ -74,10 +85,10 @@ class UpdateChecker {
   /// 通过 GitHub API 检查更新
   static Future<UpdateInfo?> _checkGitHub() async {
     try {
-      final slug = gh.RepositorySlug.full(AppPreference.instance.updateRepoSlug);
-      final release = await AppSettings.github.repositories
-          .listReleases(slug)
-          .first;
+      final slug =
+          gh.RepositorySlug.full(AppPreference.instance.updateRepoSlug);
+      final release =
+          await AppSettings.github.repositories.listReleases(slug).first;
       final tagName = release.tagName ?? '';
       if (tagName.isEmpty) return null;
       return UpdateInfo.fromGitHubRelease(release);
