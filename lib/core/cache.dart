@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:pure_music/core/database.dart';
+import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart';
 import 'package:flutter/material.dart';
@@ -334,7 +335,7 @@ class _AsyncSemaphore {
 /// 通用 LRU 映射表
 class _LruMap<K, V> {
   final int maxSize;
-  final void Function(V value)? onEvict;
+  final void Function(K key, V value)? onEvict;
   final _map = <K, V>{};
 
   _LruMap(this.maxSize, {this.onEvict});
@@ -349,31 +350,69 @@ class _LruMap<K, V> {
   void set(K key, V value) {
     final old = _map.remove(key);
     if (old != null && !identical(old, value)) {
-      onEvict?.call(old);
+      onEvict?.call(key, old);
     }
     while (_map.length >= maxSize) {
       final oldestKey = _map.keys.first;
       final evicted = _map.remove(oldestKey);
-      if (evicted != null) onEvict?.call(evicted);
+      if (evicted != null) onEvict?.call(oldestKey, evicted);
     }
     _map[key] = value;
   }
 
   void remove(K key) {
     final removed = _map.remove(key);
-    if (removed != null) onEvict?.call(removed);
+    if (removed != null) onEvict?.call(key, removed);
   }
 
   void clear() {
     if (onEvict != null) {
-      for (final value in _map.values) {
-        onEvict!(value);
+      for (final entry in _map.entries) {
+        onEvict!(entry.key, entry.value);
       }
     }
     _map.clear();
   }
 
   int get length => _map.length;
+
+  void removeWhere(bool Function(K key) test) {
+    final keys = _map.keys.where(test).toList(growable: false);
+    for (final key in keys) {
+      remove(key);
+    }
+  }
+}
+
+class CacheStats {
+  final int smallEntries;
+  final int mediumEntries;
+  final int largeEntries;
+  final int pendingRequests;
+  final int hits;
+  final int misses;
+  final int smallBytes;
+  final int mediumBytes;
+  final int largeBytes;
+
+  const CacheStats({
+    required this.smallEntries,
+    required this.mediumEntries,
+    required this.largeEntries,
+    required this.pendingRequests,
+    required this.hits,
+    required this.misses,
+    required this.smallBytes,
+    required this.mediumBytes,
+    required this.largeBytes,
+  });
+
+  int get totalEntries => smallEntries + mediumEntries + largeEntries;
+  int get totalBytes => smallBytes + mediumBytes + largeBytes;
+  double? get hitRate {
+    final total = hits + misses;
+    return total > 0 ? hits / total : null;
+  }
 }
 
 /// 统一封面 ImageProvider 缓存
@@ -383,20 +422,34 @@ class CoverImageCache {
   static final instance = CoverImageCache._();
   CoverImageCache._();
 
-  final _small = _LruMap<String, ImageProvider>(
+  late final _small = _LruMap<String, ImageProvider>(
     12,
-    onEvict: (provider) => unawaited(provider.evict()),
+    onEvict: (key, provider) {
+      unawaited(provider.evict());
+      _smallBytes.remove(key);
+    },
   );
-  final _medium = _LruMap<String, ImageProvider>(
+  late final _medium = _LruMap<String, ImageProvider>(
     4,
-    onEvict: (provider) => unawaited(provider.evict()),
+    onEvict: (key, provider) {
+      unawaited(provider.evict());
+      _mediumBytes.remove(key);
+    },
   );
-  final _large = _LruMap<String, ImageProvider>(
+  late final _large = _LruMap<String, ImageProvider>(
     1,
-    onEvict: (provider) => unawaited(provider.evict()),
+    onEvict: (key, provider) {
+      unawaited(provider.evict());
+      _largeBytes.remove(key);
+    },
   );
+  final _smallBytes = <String, int>{};
+  final _mediumBytes = <String, int>{};
+  final _largeBytes = <String, int>{};
   final _pending = <String, Future<ImageProvider?>>{};
   int _generation = 0;
+  int _hitCount = 0;
+  int _missCount = 0;
 
   _LruMap<String, ImageProvider> _tierFor(int width, int height) {
     final max = width > height ? width : height;
@@ -414,11 +467,17 @@ class CoverImageCache {
     final tier = _tierFor(width, height);
 
     final cached = tier.get(key);
-    if (cached != null) return cached;
+    if (cached != null) {
+      _hitCount++;
+      return cached;
+    }
 
     final pending = _pending[key];
-    if (pending != null) return pending;
+    if (pending != null) {
+      return pending;
+    }
 
+    _missCount++;
     final generation = _generation;
     final future = _fetch(path, width, height);
     _pending[key] = future;
@@ -428,6 +487,7 @@ class CoverImageCache {
           generation == _generation &&
           identical(_pending[key], future)) {
         tier.set(key, result);
+        _trackBytes(key, tier, result);
       }
       return result;
     } finally {
@@ -435,6 +495,23 @@ class CoverImageCache {
         _pending.remove(key);
       }
     }
+  }
+
+  void _trackBytes(
+    String key,
+    _LruMap<String, ImageProvider> tier,
+    ImageProvider provider,
+  ) {
+    final bytes = provider is MemoryImage ? provider.bytes.length : 0;
+    final bytesMap = _bytesMapFor(tier);
+    bytesMap.remove(key);
+    bytesMap[key] = bytes;
+  }
+
+  Map<String, int> _bytesMapFor(_LruMap<String, ImageProvider> tier) {
+    if (identical(tier, _small)) return _smallBytes;
+    if (identical(tier, _medium)) return _mediumBytes;
+    return _largeBytes;
   }
 
   Future<ImageProvider?> _fetch(String path, int width, int height) async {
@@ -469,63 +546,46 @@ class CoverImageCache {
     _pending.clear();
   }
 
+  void evictPath(String path) {
+    _generation++;
+    final prefix = '$path|';
+    bool matches(String key) => key.startsWith(prefix);
+    _small.removeWhere(matches);
+    _medium.removeWhere(matches);
+    _large.removeWhere(matches);
+    _pending.removeWhere((key, _) => matches(key));
+  }
+
+  CacheStats get stats => CacheStats(
+        smallEntries: _small.length,
+        mediumEntries: _medium.length,
+        largeEntries: _large.length,
+        pendingRequests: _pending.length,
+        hits: _hitCount,
+        misses: _missCount,
+        smallBytes: _smallBytes.values.fold(0, (a, b) => a + b),
+        mediumBytes: _mediumBytes.values.fold(0, (a, b) => a + b),
+        largeBytes: _largeBytes.values.fold(0, (a, b) => a + b),
+      );
+
+  void logStats() {
+    final s = stats;
+    logger.d(
+      '[cache] CoverImageCache '
+      '${s.hits}h/${s.misses}m '
+      '(hit rate ${(s.hitRate! * 100).toStringAsFixed(0)}%) '
+      '| ${s.smallEntries}s/${s.mediumEntries}m/${s.largeEntries}l entries '
+      '| ${(s.smallBytes / 1024).toStringAsFixed(0)}/${(s.mediumBytes / 1024).toStringAsFixed(0)}/${(s.largeBytes / 1024).toStringAsFixed(0)} KB '
+      '| ${s.pendingRequests} pending',
+    );
+  }
+
   /// 完全释放并清理所有缓存
   void dispose() {
     _generation++;
     _small.clear();
     _medium.clear();
     _large.clear();
-    _pending.clear();
-  }
-}
-
-/// 旧的 CoverCache，保留以便 close 时清理残余
-@Deprecated('use CoverImageCache instead')
-class CoverCache {
-  static final instance = CoverCache._();
-  CoverCache._();
-
-  static const _maxSize = 2;
-  final _cache = _LruMap<String, Uint8List>(_maxSize);
-  final _pending = <String, Future<Uint8List?>>{};
-
-  Future<ImageProvider?> getCover({
-    required String path,
-    required int width,
-    required int height,
-  }) async {
-    final key = '$path|${width}x$height';
-    final cached = _cache.get(key);
-    if (cached != null) return MemoryImage(cached);
-
-    final pending = _pending[key];
-    if (pending != null) {
-      final result = await pending;
-      if (result != null) return MemoryImage(result);
-      return null;
-    }
-
-    final future = getPictureFromPath(path: path, width: width, height: height);
-    _pending[key] = future;
-    try {
-      final result = await future;
-      if (result != null) {
-        _cache.set(key, result);
-        return MemoryImage(result);
-      }
-      return null;
-    } finally {
-      _pending.remove(key);
-    }
-  }
-
-  void preloadNext(String? nextPath) {
-    if (nextPath == null) return;
-    getCover(path: nextPath, width: 48, height: 48).ignore();
-  }
-
-  void clear() {
-    _cache.clear();
     _pending.clear();
   }
 }
