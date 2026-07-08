@@ -1,4 +1,6 @@
 import 'package:pure_music/core/hotkeys.dart';
+import 'package:pure_music/core/list_action_state.dart';
+import 'package:pure_music/core/lyric_action_state.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
@@ -6,9 +8,77 @@ import 'package:pure_music/lyric/lyric_source.dart';
 import 'package:pure_music/core/matcher.dart';
 import 'package:pure_music/page/now_playing_page/component/vertical_lyric_view.dart';
 import 'package:pure_music/play_service/play_service.dart';
-import 'package:pure_music/services/online_lyric/api/net_lyric_api.dart' as net_api;
+import 'package:pure_music/services/online_lyric/api/net_lyric_api.dart'
+    as net_api;
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+
+LyricSourceType _lyricSourceTypeFromResultSource(ResultSource source) {
+  return switch (source) {
+    ResultSource.qq => LyricSourceType.qq,
+    ResultSource.kugou => LyricSourceType.kugou,
+    ResultSource.ne => LyricSourceType.ne,
+  };
+}
+
+bool _isSavedLyricResult(String audioPath, SongSearchResult result) {
+  final saved = lyricSources[audioPath];
+  if (saved == null ||
+      saved.source != _lyricSourceTypeFromResultSource(result.source)) {
+    return false;
+  }
+  return switch (result.source) {
+    ResultSource.qq =>
+      saved.qqSongId != null && saved.qqSongId == result.qqSongId,
+    ResultSource.kugou => saved.kugouSongHash != null &&
+        saved.kugouSongHash == result.kugouSongHash,
+    ResultSource.ne =>
+      saved.neSongId != null && saved.neSongId == result.neSongId,
+  };
+}
+
+void _applySavedOnlineLyricResult(Audio audio, SongSearchResult result) {
+  final source = _lyricSourceTypeFromResultSource(result.source);
+  lyricSources[audio.path] = LyricSource(
+    source,
+    qqSongId: result.qqSongId,
+    kugouSongHash: result.kugouSongHash,
+    neSongId: result.neSongId,
+  );
+  saveLyricSources();
+}
+
+Widget? _buildLyricResultTrailing(
+  BuildContext context, {
+  required bool selected,
+  String? lyricType,
+}) {
+  if (!selected && lyricType == null) return null;
+  final scheme = Theme.of(context).colorScheme;
+  return Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      if (lyricType != null)
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: scheme.secondaryContainer,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Text(
+            lyricType,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: scheme.onSecondaryContainer,
+            ),
+          ),
+        ),
+      if (lyricType != null && selected) const SizedBox(width: 8),
+      if (selected) const Icon(Symbols.check),
+    ],
+  );
+}
 
 class ManualLyricSearchDialog extends StatefulWidget {
   const ManualLyricSearchDialog({super.key, required this.audio});
@@ -16,7 +86,8 @@ class ManualLyricSearchDialog extends StatefulWidget {
   final Audio audio;
 
   @override
-  State<ManualLyricSearchDialog> createState() => _ManualLyricSearchDialogState();
+  State<ManualLyricSearchDialog> createState() =>
+      _ManualLyricSearchDialogState();
 }
 
 class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
@@ -57,12 +128,14 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
     _searchController.text = searchQuery;
     _searchActiveSource();
     // 监听切歌：歌曲切换后自动关闭弹窗
-    PlayService.instance.playbackService.nowPlayingNotifier.addListener(_onNowPlayingChanged);
+    PlayService.instance.playbackService.nowPlayingNotifier
+        .addListener(_onNowPlayingChanged);
   }
 
   @override
   void dispose() {
-    PlayService.instance.playbackService.nowPlayingNotifier.removeListener(_onNowPlayingChanged);
+    PlayService.instance.playbackService.nowPlayingNotifier
+        .removeListener(_onNowPlayingChanged);
     _searchController.dispose();
     super.dispose();
   }
@@ -76,6 +149,7 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
   }
 
   void _performSearch() {
+    if (_isSearching) return;
     _searchActiveSource();
   }
 
@@ -112,7 +186,12 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
 
   /// 批量获取网易云结果的逐字/逐行类型
   Future<void> _fillNeLyricTypes(List<SongSearchResult> results) async {
-    final neResults = results.where((r) => r.source == ResultSource.ne && r.lyricType == null && r.neSongId != null).toList();
+    final neResults = results
+        .where((r) =>
+            r.source == ResultSource.ne &&
+            r.lyricType == null &&
+            r.neSongId != null)
+        .toList();
     if (neResults.isEmpty) return;
 
     final futures = neResults.map((r) async {
@@ -148,7 +227,8 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
     setState(() => _isLoadingMore = true);
 
     try {
-      final newResults = await _searchSingleSource(searchQuery, source, page: nextApiPage);
+      final newResults =
+          await _searchSingleSource(searchQuery, source, page: nextApiPage);
       if (mounted) {
         final existing = _resultsMap[source]!;
         final newlyAdded = <SongSearchResult>[];
@@ -181,7 +261,8 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
     }
   }
 
-  bool _containsManualResult(List<SongSearchResult> list, SongSearchResult item) {
+  bool _containsManualResult(
+      List<SongSearchResult> list, SongSearchResult item) {
     for (final r in list) {
       if (r.source == item.source &&
           r.qqSongId == item.qqSongId &&
@@ -194,27 +275,34 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
   }
 
   Future<List<SongSearchResult>> _searchSingleSource(
-      String query, ResultSource source, {int page = 1}) async {
+      String query, ResultSource source,
+      {int page = 1}) async {
     List<SongSearchResult> results;
     switch (source) {
       case ResultSource.qq:
-        final raw = await net_api.qqSearchLyric(keyword: query, page: page, pageSize: _apiPageSize);
+        final raw = await net_api.qqSearchLyric(
+            keyword: query, page: page, pageSize: _apiPageSize);
         results = raw
-            .map((item) => SongSearchResult.fromQQSearchItem(item, widget.audio))
+            .map(
+                (item) => SongSearchResult.fromQQSearchItem(item, widget.audio))
             .where((r) => r != null && r.score >= 0)
             .cast<SongSearchResult>()
             .toList();
       case ResultSource.ne:
-        final raw = await net_api.neSearchLyric(keyword: query, page: page, pageSize: _apiPageSize);
+        final raw = await net_api.neSearchLyric(
+            keyword: query, page: page, pageSize: _apiPageSize);
         results = raw
-            .map((item) => SongSearchResult.fromNeSearchItem(item, widget.audio))
+            .map(
+                (item) => SongSearchResult.fromNeSearchItem(item, widget.audio))
             .where((r) => r != null && r.score >= 0)
             .cast<SongSearchResult>()
             .toList();
       case ResultSource.kugou:
-        final raw = await net_api.kgSearchLyric(keyword: query, page: page, pageSize: _apiPageSize);
+        final raw = await net_api.kgSearchLyric(
+            keyword: query, page: page, pageSize: _apiPageSize);
         results = raw
-            .map((item) => SongSearchResult.fromKugouSearchItem(item, widget.audio))
+            .map((item) =>
+                SongSearchResult.fromKugouSearchItem(item, widget.audio))
             .where((r) => r != null && r.score >= 0)
             .cast<SongSearchResult>()
             .toList();
@@ -253,15 +341,19 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
     final isActive = _activeSource == source;
     final scheme = Theme.of(context).colorScheme;
     final count = _resultsMap[source]!.length;
+    final canSwitch = canSwitchTab(
+      currentIndex: _activeSource.index,
+      targetIndex: source.index,
+    );
 
     return GestureDetector(
-      onTap: () => _switchSource(source),
+      onTap: canSwitch ? () => _switchSource(source) : null,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
           color: isActive ? scheme.primaryContainer : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(8),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -269,7 +361,9 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
             Text(
               label,
               style: TextStyle(
-                color: isActive ? scheme.onPrimaryContainer : scheme.onSurfaceVariant,
+                color: isActive
+                    ? scheme.onPrimaryContainer
+                    : scheme.onSurfaceVariant,
                 fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
               ),
             ),
@@ -278,14 +372,17 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: isActive ? scheme.primary : scheme.surfaceContainerHighest,
+                  color: isActive
+                      ? scheme.primary
+                      : scheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
                   '$count',
                   style: TextStyle(
                     fontSize: 10,
-                    color: isActive ? scheme.onPrimary : scheme.onSurfaceVariant,
+                    color:
+                        isActive ? scheme.onPrimary : scheme.onSurfaceVariant,
                   ),
                 ),
               ),
@@ -308,7 +405,38 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(32.0),
-          child: Text('该源未找到结果', style: TextStyle(color: scheme.onSurfaceVariant)),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 48.0,
+                height: 48.0,
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(16.0),
+                ),
+                child: Icon(
+                  Symbols.lyrics,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 12.0),
+              Text(
+                '该来源暂无结果',
+                style: TextStyle(
+                  color: scheme.onSurface,
+                  fontSize: 15.0,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 4.0),
+              Text(
+                '可以切换来源，或调整关键词再搜索',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: scheme.onSurfaceVariant),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -335,7 +463,8 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
                   onPressed: start > 0 ? () => _changePage(-1) : null,
                   tooltip: '上一页',
                 ),
-                Text('第 ${currentPage + 1} 页${_hasMore ? '' : '（共 ${(fullList.length / _pageSize).ceil()} 页）'}'),
+                Text(
+                    '第 ${currentPage + 1} 页${_hasMore ? '' : '（共 ${(fullList.length / _pageSize).ceil()} 页）'}'),
                 IconButton(
                   icon: _isLoadingMore
                       ? const SizedBox(
@@ -344,9 +473,10 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.chevron_right),
-                  onPressed: (end < fullList.length || _hasMore) && !_isLoadingMore
-                      ? () => _changePage(1)
-                      : null,
+                  onPressed:
+                      (end < fullList.length || _hasMore) && !_isLoadingMore
+                          ? () => _changePage(1)
+                          : null,
                   tooltip: _hasMore ? '加载更多' : '下一页',
                 ),
               ],
@@ -400,22 +530,32 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
                         decoration: const InputDecoration(
                           hintText: '输入歌曲名或歌手...',
                           border: OutlineInputBorder(),
-                          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          contentPadding:
+                              EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         ),
                         onSubmitted: (_) => _performSearch(),
                       ),
                     ),
                   ),
                   const SizedBox(width: 8),
-                  IconButton(
-                    icon: _isSearching
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.search),
-                    onPressed: _isSearching ? null : _performSearch,
+                  ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: _searchController,
+                    builder: (context, value, _) {
+                      final hasQuery = value.text.trim().isNotEmpty;
+                      return IconButton(
+                        tooltip: hasQuery ? '搜索' : '请输入关键词',
+                        icon: _isSearching
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.search),
+                        onPressed:
+                            _isSearching || !hasQuery ? null : _performSearch,
+                      );
+                    },
                   ),
                 ],
               ),
@@ -511,12 +651,18 @@ class _SetLyricSourceBtn extends StatelessWidget {
           child: const Text('指定默认歌词'),
         ),
         MenuItemButton(
-          onPressed: lyricService.useOnlineLyric,
+          onPressed:
+              canSelectLyricSource(isCurrentLocal: isLocal, targetLocal: false)
+                  ? lyricService.useOnlineLyric
+                  : null,
           leadingIcon: isLocal == false ? const Icon(Symbols.check) : null,
           child: const Text('在线'),
         ),
         MenuItemButton(
-          onPressed: lyricService.useLocalLyric,
+          onPressed:
+              canSelectLyricSource(isCurrentLocal: isLocal, targetLocal: true)
+                  ? lyricService.useLocalLyric
+                  : null,
           leadingIcon: isLocal == true ? const Icon(Symbols.check) : null,
           child: const Text('本地'),
         ),
@@ -554,27 +700,31 @@ class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
   @override
   void initState() {
     super.initState();
-    _searchFuture = uniSearch(widget.audio)
-        .timeout(const Duration(seconds: 20), onTimeout: () {
+    _searchFuture = uniSearch(widget.audio).timeout(const Duration(seconds: 20),
+        onTimeout: () {
       logger.w('SetLyricSourceDialog uniSearch timeout');
       return [];
     }).then((results) {
       _results = results;
       for (int i = 0; i < results.length; i++) {
         final r = results[i];
-        if (r.source == ResultSource.ne && r.lyricType == null && r.neSongId != null) {
+        if (r.source == ResultSource.ne &&
+            r.lyricType == null &&
+            r.neSongId != null) {
           _confirmNeLyricType(results, i);
         }
       }
       return results;
     });
     // 监听切歌：歌曲切换后自动关闭弹窗
-    PlayService.instance.playbackService.nowPlayingNotifier.addListener(_onNowPlayingChanged);
+    PlayService.instance.playbackService.nowPlayingNotifier
+        .addListener(_onNowPlayingChanged);
   }
 
   @override
   void dispose() {
-    PlayService.instance.playbackService.nowPlayingNotifier.removeListener(_onNowPlayingChanged);
+    PlayService.instance.playbackService.nowPlayingNotifier
+        .removeListener(_onNowPlayingChanged);
     super.dispose();
   }
 
@@ -613,6 +763,8 @@ class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final savedSource = lyricSources[widget.audio.path];
+    final isLocalSelected = savedSource?.source == LyricSourceType.local;
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -641,7 +793,8 @@ class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
                     onPressed: () {
                       showDialog(
                         context: context,
-                        builder: (context) => ManualLyricSearchDialog(audio: widget.audio),
+                        builder: (context) =>
+                            ManualLyricSearchDialog(audio: widget.audio),
                       );
                     },
                   ),
@@ -649,15 +802,23 @@ class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
               ),
               ListTile(
                 title: const Text('使用本地歌词'),
+                selected: isLocalSelected,
+                selectedTileColor:
+                    scheme.secondaryContainer.withValues(alpha: 0.5),
+                selectedColor: scheme.onSecondaryContainer,
+                trailing: isLocalSelected ? const Icon(Symbols.check) : null,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8.0),
                 ),
-                onTap: () {
-                  lyricSources[widget.audio.path] = LyricSource(LyricSourceType.local);
-                  saveLyricSources();
-                  PlayService.instance.lyricService.useLocalLyric();
-                  Navigator.pop(context);
-                },
+                onTap: isLocalSelected
+                    ? null
+                    : () {
+                        lyricSources[widget.audio.path] =
+                            LyricSource(LyricSourceType.local);
+                        saveLyricSources();
+                        PlayService.instance.lyricService.useLocalLyric();
+                        Navigator.pop(context);
+                      },
               ),
               const Divider(),
               Flexible(
@@ -673,7 +834,9 @@ class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
                         ),
                       );
                     }
-                    if (snapshot.hasError || snapshot.data == null || snapshot.data!.isEmpty) {
+                    if (snapshot.hasError ||
+                        snapshot.data == null ||
+                        snapshot.data!.isEmpty) {
                       return Center(
                         child: Padding(
                           padding: const EdgeInsets.all(16.0),
@@ -682,13 +845,15 @@ class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
                             children: [
                               Text(
                                 snapshot.hasError ? '搜索失败' : '未找到在线歌词',
-                                style: TextStyle(color: scheme.onSurfaceVariant),
+                                style:
+                                    TextStyle(color: scheme.onSurfaceVariant),
                               ),
                               const SizedBox(height: 8),
                               Text(
                                 '试试点击右上角 🔍 手动搜索',
                                 style: TextStyle(
-                                  color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
+                                  color: scheme.onSurfaceVariant
+                                      .withValues(alpha: 0.6),
                                   fontSize: 13,
                                 ),
                               ),
@@ -712,7 +877,8 @@ class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
                                 '试试手动搜索',
                                 style: TextStyle(
                                   fontSize: 13,
-                                  color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
+                                  color: scheme.onSurfaceVariant
+                                      .withValues(alpha: 0.6),
                                 ),
                               ),
                             ),
@@ -746,45 +912,29 @@ class _ManualSearchTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final selected = _isSavedLyricResult(audio.path, searchResult);
     return ListTile(
       title: Text(searchResult.title),
       subtitle: Text('${searchResult.artists} - ${searchResult.album}'),
-      trailing: searchResult.lyricType != null
-          ? Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.secondaryContainer,
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                searchResult.lyricType!,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: Theme.of(context).colorScheme.onSecondaryContainer,
-                ),
-              ),
-            )
-          : null,
-      onTap: () {
-        final source = switch (searchResult.source) {
-          ResultSource.qq => LyricSourceType.qq,
-          ResultSource.kugou => LyricSourceType.kugou,
-          ResultSource.ne => LyricSourceType.ne,
-        };
-        lyricSources[audio.path] = LyricSource(
-          source,
-          qqSongId: searchResult.qqSongId,
-          kugouSongHash: searchResult.kugouSongHash,
-          neSongId: searchResult.neSongId,
-        );
-        saveLyricSources();
-        Navigator.pop(context);
+      selected: selected,
+      selectedTileColor: scheme.secondaryContainer.withValues(alpha: 0.5),
+      selectedColor: scheme.onSecondaryContainer,
+      trailing: _buildLyricResultTrailing(
+        context,
+        selected: selected,
+        lyricType: searchResult.lyricType,
+      ),
+      onTap: selected
+          ? null
+          : () {
+              _applySavedOnlineLyricResult(audio, searchResult);
+              Navigator.pop(context);
 
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          PlayService.instance.lyricService.useOnlineLyric();
-        });
-      },
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                PlayService.instance.lyricService.useOnlineLyric();
+              });
+            },
     );
   }
 }
@@ -800,6 +950,8 @@ class _SearchResultItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final selected = _isSavedLyricResult(audio.path, searchResult);
     final sourceText = switch (searchResult.source) {
       ResultSource.qq => 'QQ',
       ResultSource.kugou => '酷狗',
@@ -807,24 +959,19 @@ class _SearchResultItem extends StatelessWidget {
     };
 
     return ListTile(
-      onTap: () {
-        final source = switch (searchResult.source) {
-          ResultSource.qq => LyricSourceType.qq,
-          ResultSource.kugou => LyricSourceType.kugou,
-          ResultSource.ne => LyricSourceType.ne,
-        };
-        lyricSources[audio.path] = LyricSource(
-          source,
-          qqSongId: searchResult.qqSongId,
-          kugouSongHash: searchResult.kugouSongHash,
-          neSongId: searchResult.neSongId,
-        );
-        saveLyricSources();
-        Navigator.pop(context);
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          PlayService.instance.lyricService.useOnlineLyric();
-        });
-      },
+      selected: selected,
+      selectedTileColor: scheme.secondaryContainer.withValues(alpha: 0.5),
+      selectedColor: scheme.onSecondaryContainer,
+      trailing: selected ? const Icon(Symbols.check) : null,
+      onTap: selected
+          ? null
+          : () {
+              _applySavedOnlineLyricResult(audio, searchResult);
+              Navigator.pop(context);
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                PlayService.instance.lyricService.useOnlineLyric();
+              });
+            },
       leading: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -865,7 +1012,8 @@ class _SearchResultItem extends StatelessWidget {
           ],
         ],
       ),
-      title: Text(searchResult.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+      title: Text(searchResult.title,
+          maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
         '${searchResult.artists} - ${searchResult.album}',
         maxLines: 1,
