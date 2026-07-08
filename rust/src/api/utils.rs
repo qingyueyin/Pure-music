@@ -67,5 +67,12 @@ pub fn launch_in_browser(uri: String) -> bool {
 }
 
 fn _launch_in_browser(uri: String) -> Result<bool, windows::core::Error> {
+    let uri = uri.trim();
+    let lower = uri.to_ascii_lowercase();
+    if !lower.starts_with("https://") && !lower.starts_with("http://") {
+        log_to_dart(format!("blocked unsupported browser uri: {}", uri));
+        return Ok(false);
+    }
+
     Launcher::LaunchUriAsync(&Uri::CreateUri(&HSTRING::from(uri))?)?.get()
 }
