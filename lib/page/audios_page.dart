@@ -1,5 +1,6 @@
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/enums.dart';
+import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/component/audio_tile.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/library/audio_library.dart';
@@ -16,6 +17,8 @@ class AudiosPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final contentList = List<Audio>.from(AudioLibrary.instance.audioCollection);
     final multiSelectController = MultiSelectController<Audio>();
+    final hasSongs = contentList.isNotEmpty;
+    final canSortSongs = hasEnoughItemsToSort(contentList.length);
     return UniPage<Audio>(
       pref: AppPreference.instance.audiosPagePref,
       title: '音乐',
@@ -27,10 +30,10 @@ class AudiosPage extends StatelessWidget {
         focus: item == locateTo,
         multiSelectController: multiSelectController,
       ),
-      enableShufflePlay: true,
-      enableSortMethod: true,
-      enableSortOrder: true,
-      enableContentViewSwitch: true,
+      enableShufflePlay: hasSongs,
+      enableSortMethod: canSortSongs,
+      enableSortOrder: canSortSongs,
+      enableContentViewSwitch: hasSongs,
       locateTo: locateTo,
       multiSelectController: multiSelectController,
       multiSelectViewActions: [
