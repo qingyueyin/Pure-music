@@ -24,8 +24,8 @@ fn _extract_colors_from_image(
     // 显式 drop image_bytes（已 move 进此函数，离开作用域即释放）
 
     let (width, height) = img.dimensions();
-    let resize_dim = if width.max(height) > 200 {
-        let scale = 200.0 / width.max(height) as f32;
+    let resize_dim = if width.max(height) > 150 {
+        let scale = 150.0 / width.max(height) as f32;
         (
             (width as f32 * scale) as u32,
             (height as f32 * scale) as u32,
@@ -54,12 +54,12 @@ fn _extract_colors_from_image(
         }
         let rgb = [p[0], p[1], p[2]];
         pixels.push(rgb);
+        // 边缘像素只做微弱的加权，避免 JPEG 噪点/色散被过度放大
         let near_edge = x < edge_margin
             || y < edge_margin
             || x + edge_margin >= resize_dim.0
             || y + edge_margin >= resize_dim.1;
         if near_edge {
-            pixels.push(rgb);
             pixels.push(rgb);
         }
     }
@@ -70,9 +70,7 @@ fn _extract_colors_from_image(
         return Ok(vec![]);
     }
 
-    apply_background_palette_pipeline(&mut pixels);
-
-    // 转换为 Lab 色彩空间用于 k-means
+    // k-means 用原始像素，不在聚类前做任何色彩扭曲
     let lab_pixels: Vec<Lab> = pixels
         .iter()
         .map(|[r, g, b]| {
@@ -81,13 +79,11 @@ fn _extract_colors_from_image(
             linear.into_color()
         })
         .collect();
-    // 释放 RGB 像素（Lab 已构建完成）
     drop(pixels);
 
-    // 缩减 k-means 迭代：封面取色不需要 20 轮的高精度
-    let max_iter = 10;
-    let converge = 8.0; // 放宽收敛条件
-    let runs = 2; // 减少重复运行次数
+    let max_iter = 12;
+    let converge = 5.0;
+    let runs = 2;
     let seed = 0;
 
     let mut result = Kmeans::new();
@@ -104,50 +100,48 @@ fn _extract_colors_from_image(
             result = run_result;
         }
     }
-    // 释放 Lab 像素，k-means 已收敛
     drop(lab_pixels);
 
     let sorted = Lab::sort_indexed_colors(&result.centroids, &result.indices);
 
+    // 只在最终输出色上做柔化，适配背景使用
     let colors: Vec<u32> = sorted
         .iter()
         .take(num_colors)
         .map(|cd| {
             let rgb: Srgb = cd.centroid.into_color();
             let rgb_u8: Srgb<u8> = rgb.into_format();
-            let r = rgb_u8.red as u32;
-            let g = rgb_u8.green as u32;
-            let b = rgb_u8.blue as u32;
-            (0xFF << 24) | (r << 16) | (g << 8) | b
+            soften_color_for_background(rgb_u8.red, rgb_u8.green, rgb_u8.blue)
         })
         .collect();
 
     Ok(colors)
 }
 
-fn apply_background_palette_pipeline(pixels: &mut [[u8; 3]]) {
-    for pixel in pixels.iter_mut() {
-        let mut r = pixel[0] as f32 / 255.0;
-        let mut g = pixel[1] as f32 / 255.0;
-        let mut b = pixel[2] as f32 / 255.0;
+/// 对 k-means 输出的单个颜色做柔化，使其更适合做背景色。
+/// 与旧的 per-pixel pipeline 不同：只作用在最终 4 个中心色上，
+/// k-means 本身运行在原始像素上，不会因色彩扭曲产生虚假的色团。
+fn soften_color_for_background(r: u8, g: u8, b: u8) -> u32 {
+    let rf = r as f32 / 255.0;
+    let gf = g as f32 / 255.0;
+    let bf = b as f32 / 255.0;
 
-        let (h, s, l) = rgb_to_hsl(r, g, b);
-        let saturation = if l < 0.08 {
-            s * 0.92
-        } else {
-            (s * 1.36).min(0.9)
-        };
-        let lightness = (l * 0.9).clamp(0.07, 0.68);
-        (r, g, b) = hsl_to_rgb(h, saturation, lightness);
+    let (h, s, l) = rgb_to_hsl(rf, gf, bf);
+    // 极轻微提饱和，只避免灰蒙蒙
+    let saturation = (s * 1.08).min(0.78);
+    // 防止过亮或过暗的背景色块
+    let lightness = l.clamp(0.10, 0.70);
 
-        r = contrast(r, 1.14);
-        g = contrast(g, 1.14);
-        b = contrast(b, 1.14);
+    let (mut rr, mut gg, mut bb) = hsl_to_rgb(h, saturation, lightness);
+    // 极轻微对比度
+    rr = contrast(rr, 1.03);
+    gg = contrast(gg, 1.03);
+    bb = contrast(bb, 1.03);
 
-        pixel[0] = (r * 255.0).round().clamp(0.0, 255.0) as u8;
-        pixel[1] = (g * 255.0).round().clamp(0.0, 255.0) as u8;
-        pixel[2] = (b * 255.0).round().clamp(0.0, 255.0) as u8;
-    }
+    let out_r = (rr * 255.0).round().clamp(0.0, 255.0) as u32;
+    let out_g = (gg * 255.0).round().clamp(0.0, 255.0) as u32;
+    let out_b = (bb * 255.0).round().clamp(0.0, 255.0) as u32;
+    (0xFF << 24) | (out_r << 16) | (out_g << 8) | out_b
 }
 
 fn contrast(c: f32, factor: f32) -> f32 {
