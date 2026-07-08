@@ -1,6 +1,9 @@
+import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:pure_music/component/danger_confirm_dialog.dart';
 import 'package:pure_music/component/motion.dart';
+import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/core/menu_styles.dart';
 import 'package:pure_music/library/audio_library.dart';
@@ -33,7 +36,7 @@ class AudioTile extends StatefulWidget {
   final Widget? leading;
   final Widget? action;
   final MultiSelectController? multiSelectController;
-  final void Function(Audio audio)? onRemoveFromPlaylist;
+  final FutureOr<void> Function(Audio audio)? onRemoveFromPlaylist;
 
   @override
   State<AudioTile> createState() => _AudioTileState();
@@ -41,6 +44,8 @@ class AudioTile extends StatefulWidget {
 
 class _AudioTileState extends State<AudioTile> {
   bool _hovered = false;
+  bool _isRemovingFromPlaylist = false;
+  Playlist? _addingToPlaylist;
   int? _dragStartIndex;
   int? _lastDragTargetIndex;
   final Set<Audio> _dragRange = {};
@@ -53,6 +58,66 @@ class _AudioTileState extends State<AudioTile> {
     final playbackService = PlayService.instance.playbackService;
     final menuStyle = appMenuStyle;
     final menuItemStyle = appMenuItemStyle;
+    final album = AudioLibrary.instance.albumCollection[audio.album];
+
+    Future<void> removeFromPlaylist() async {
+      if (!canStartSinglePlaylistRemoval(
+        hasRemoveAction: widget.onRemoveFromPlaylist != null,
+        isRemoving: _isRemovingFromPlaylist,
+        isAddingToPlaylist: _addingToPlaylist != null,
+      )) {
+        return;
+      }
+      final confirmed = await showDangerConfirmDialog(
+        context: context,
+        title: '从歌单移除歌曲？',
+        message: '只会从当前歌单移除这首歌曲，不会删除本地音乐文件。',
+        confirmLabel: '移除',
+        details: Text(
+          audio.title,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
+        ),
+      );
+      if (!confirmed || !mounted) return;
+      setState(() => _isRemovingFromPlaylist = true);
+      try {
+        await Future<void>.sync(() => widget.onRemoveFromPlaylist!(audio));
+      } finally {
+        if (mounted) {
+          setState(() => _isRemovingFromPlaylist = false);
+        }
+      }
+    }
+
+    Future<void> addToPlaylist(Playlist target) async {
+      if (_addingToPlaylist != null || _isRemovingFromPlaylist) {
+        return;
+      }
+      final added = target.containsPath(audio.path);
+      if (added) {
+        showTextOnSnackBar('歌曲“${audio.title}”已存在');
+        return;
+      }
+
+      setState(() => _addingToPlaylist = target);
+      try {
+        target.addPath(audio.path);
+        final saved = await savePlaylists();
+        if (!mounted) return;
+        if (!saved) {
+          target.removeByPath(audio.path);
+          showTextOnSnackBar('保存歌单失败');
+          return;
+        }
+        showTextOnSnackBar('成功将${audio.title}添加到歌单“${target.name}”');
+      } finally {
+        if (mounted) {
+          setState(() => _addingToPlaylist = null);
+        }
+      }
+    }
 
     return ListenableBuilder(
       listenable: playbackService,
@@ -72,15 +137,16 @@ class _AudioTileState extends State<AudioTile> {
               ...List.generate(audio.splitedArtists.length, (i) {
                 final name = audio.splitedArtists[i];
                 final artist = AudioLibrary.instance.artistCollection[name];
-                if (artist == null) return const SizedBox.shrink();
                 return MenuItemButton(
                   style: menuItemStyle,
-                  onPressed: () {
-                    context.push(
-                      app_paths.ARTIST_DETAIL_PAGE,
-                      extra: artist,
-                    );
-                  },
+                  onPressed: artist == null
+                      ? null
+                      : () {
+                          context.push(
+                            app_paths.ARTIST_DETAIL_PAGE,
+                            extra: artist,
+                          );
+                        },
                   leadingIcon: const Icon(Symbols.artist),
                   child: Text(name),
                 );
@@ -89,15 +155,11 @@ class _AudioTileState extends State<AudioTile> {
               /// album
               MenuItemButton(
                 style: menuItemStyle,
-                onPressed: () {
-                  final album =
-                      AudioLibrary.instance.albumCollection[audio.album];
-                  if (album == null) {
-                    showTextOnSnackBar('未找到专辑"${audio.album}"');
-                    return;
-                  }
-                  context.push(app_paths.ALBUM_DETAIL_PAGE, extra: album);
-                },
+                onPressed: album == null
+                    ? null
+                    : () {
+                        context.push(app_paths.ALBUM_DETAIL_PAGE, extra: album);
+                      },
                 leadingIcon: const Icon(Symbols.album),
                 child: Text(audio.album),
               ),
@@ -105,9 +167,15 @@ class _AudioTileState extends State<AudioTile> {
               /// 下一首播放
               MenuItemButton(
                 style: menuItemStyle,
-                onPressed: () {
-                  PlayService.instance.playbackService.addToNext(audio);
-                },
+                onPressed: canAddAudioToNext(
+                  hasNowPlaying:
+                      PlayService.instance.playbackService.nowPlaying != null,
+                  isPendingFeedback: false,
+                )
+                    ? () {
+                        PlayService.instance.playbackService.addToNext(audio);
+                      }
+                    : null,
                 leadingIcon: const Icon(Symbols.plus_one),
                 child: const Text('下一首播放'),
               ),
@@ -125,39 +193,99 @@ class _AudioTileState extends State<AudioTile> {
                 ),
 
               /// add to playlist
-              SubmenuButton(
-                style: menuItemStyle,
-                menuChildren: List.generate(
-                  PLAYLISTS.length,
-                  (i) => MenuItemButton(
-                    style: menuItemStyle,
-                    onPressed: () {
-                      final added = PLAYLISTS[i].containsPath(audio.path);
-                      if (added) {
-                        showTextOnSnackBar('歌曲${audio.title}已存在');
-                        return;
-                      }
-
-                      PLAYLISTS[i].addPath(audio.path);
-                      savePlaylists();
-                      showTextOnSnackBar(
-                        '成功将${audio.title}添加到歌单${PLAYLISTS[i].name}',
+              if (playlists.isEmpty)
+                MenuItemButton(
+                  style: menuItemStyle,
+                  onPressed: null,
+                  leadingIcon: const Icon(Symbols.queue_music),
+                  child: const Text('添加到歌单'),
+                )
+              else
+                Builder(
+                  builder: (_) {
+                    final playlistMemberships = playlists
+                        .map((playlist) => playlist.containsPath(audio.path))
+                        .toList(growable: false);
+                    final isBusy =
+                        _addingToPlaylist != null || _isRemovingFromPlaylist;
+                    final canOpenAddMenu = canOpenSingleAudioAddToPlaylistMenu(
+                      hasAudio: true,
+                      isBusy: isBusy,
+                      alreadyInPlaylists: playlistMemberships,
+                    );
+                    if (!canOpenAddMenu) {
+                      return MenuItemButton(
+                        style: menuItemStyle,
+                        onPressed: null,
+                        leadingIcon: _addingToPlaylist != null
+                            ? const SizedBox(
+                                width: 18.0,
+                                height: 18.0,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.0,
+                                ),
+                              )
+                            : Icon(
+                                playlistMemberships.every(
+                                  (alreadyIn) => alreadyIn,
+                                )
+                                    ? Symbols.check
+                                    : Symbols.queue_music,
+                              ),
+                        child: const Text('添加到歌单'),
                       );
-                    },
-                    leadingIcon: const Icon(Symbols.queue_music),
-                    child: Text(PLAYLISTS[i].name),
-                  ),
+                    }
+                    return SubmenuButton(
+                      style: menuItemStyle,
+                      menuChildren: List.generate(playlists.length, (i) {
+                        final playlist = playlists[i];
+                        final isAdding = identical(_addingToPlaylist, playlist);
+                        final alreadyInPlaylist = playlistMemberships[i];
+                        return MenuItemButton(
+                          style: menuItemStyle,
+                          onPressed: isBusy || alreadyInPlaylist
+                              ? null
+                              : () => addToPlaylist(playlist),
+                          leadingIcon: isAdding
+                              ? const SizedBox(
+                                  width: 18.0,
+                                  height: 18.0,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.0,
+                                  ),
+                                )
+                              : Icon(
+                                  alreadyInPlaylist
+                                      ? Symbols.check
+                                      : Symbols.queue_music,
+                                ),
+                          child: Text(playlist.name),
+                        );
+                      }),
+                      child: const Text('添加到歌单'),
+                    );
+                  },
                 ),
-                child: const Text('添加到歌单'),
-              ),
 
               /// remove from playlist
               if (widget.onRemoveFromPlaylist != null)
                 MenuItemButton(
                   style: menuItemStyle,
-                  onPressed: () => widget.onRemoveFromPlaylist!(audio),
-                  leadingIcon: Icon(Symbols.remove_circle, color: scheme.error),
-                  child: const Text('从歌单移除'),
+                  onPressed: canStartSinglePlaylistRemoval(
+                    hasRemoveAction: widget.onRemoveFromPlaylist != null,
+                    isRemoving: _isRemovingFromPlaylist,
+                    isAddingToPlaylist: _addingToPlaylist != null,
+                  )
+                      ? removeFromPlaylist
+                      : null,
+                  leadingIcon: _isRemovingFromPlaylist
+                      ? const SizedBox(
+                          width: 18.0,
+                          height: 18.0,
+                          child: CircularProgressIndicator(strokeWidth: 2.0),
+                        )
+                      : Icon(Symbols.remove_circle, color: scheme.error),
+                  child: Text(_isRemovingFromPlaylist ? '移除中' : '从歌单移除'),
                 ),
 
               /// to detail page
@@ -198,7 +326,8 @@ class _AudioTileState extends State<AudioTile> {
                     onLongPressStart: (details) {
                       if (widget.multiSelectController == null) return;
 
-                      if (!widget.multiSelectController!.enableMultiSelectView) {
+                      if (!widget
+                          .multiSelectController!.enableMultiSelectView) {
                         widget.multiSelectController!.useMultiSelectView(true);
                       }
 
@@ -308,76 +437,78 @@ class _AudioTileState extends State<AudioTile> {
                         }
                       },
                       child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                      child: Row(children: [
-                        if (widget.leading != null)
-                          Padding(
-                            padding: const EdgeInsets.only(right: 16.0),
-                            child: widget.leading!,
-                          ),
+                        padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                        child: Row(children: [
+                          if (widget.leading != null)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 16.0),
+                              child: widget.leading!,
+                            ),
 
-                        /// cover: 同步渲染已缓存字节，不走 FutureBuilder
-                        _SmallCoverWidget(audio: audio),
-                        const SizedBox(width: 16.0),
+                          /// cover: 同步渲染已缓存字节，不走 FutureBuilder
+                          _SmallCoverWidget(audio: audio),
+                          const SizedBox(width: 16.0),
 
-                        /// title, artist and album
-                        Expanded(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                audio.title,
-                                style:
-                                    TextStyle(color: textColor, fontSize: 16),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(width: 4.0),
-                              Text(
-                                '${audio.artist} - ${audio.album}',
-                                style: TextStyle(color: textColor),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 8.0),
-                        Text(
-                          Duration(seconds: audio.duration).toStringHMMSS(),
-                          style: TextStyle(
-                            color: effectiveFocus
-                                ? scheme.primary
-                                : scheme.onSurface,
-                          ),
-                        ),
-                        if (widget.multiSelectController != null &&
-                            widget.multiSelectController!.enableMultiSelectView)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 8.0),
-                            child: Checkbox(
-                              value: isSelected,
-                              onChanged: (v) {
-                                if (v == true) {
-                                  widget.multiSelectController!.select(audio);
-                                } else {
-                                  widget.multiSelectController!.unselect(audio);
-                                }
-                              },
+                          /// title, artist and album
+                          Expanded(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  audio.title,
+                                  style:
+                                      TextStyle(color: textColor, fontSize: 16),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(width: 4.0),
+                                Text(
+                                  '${audio.artist} - ${audio.album}',
+                                  style: TextStyle(color: textColor),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
                             ),
                           ),
-                        if (widget.action != null)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 8.0),
-                            child: widget.action!,
+                          const SizedBox(width: 8.0),
+                          Text(
+                            Duration(seconds: audio.duration).toStringHMMSS(),
+                            style: TextStyle(
+                              color: effectiveFocus
+                                  ? scheme.primary
+                                  : scheme.onSurface,
+                            ),
                           ),
-                      ]),
+                          if (widget.multiSelectController != null &&
+                              widget
+                                  .multiSelectController!.enableMultiSelectView)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 8.0),
+                              child: Checkbox(
+                                value: isSelected,
+                                onChanged: (v) {
+                                  if (v == true) {
+                                    widget.multiSelectController!.select(audio);
+                                  } else {
+                                    widget.multiSelectController!
+                                        .unselect(audio);
+                                  }
+                                },
+                              ),
+                            ),
+                          if (widget.action != null)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 8.0),
+                              child: widget.action!,
+                            ),
+                        ]),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            );
+              );
             },
           ),
         );
@@ -385,6 +516,7 @@ class _AudioTileState extends State<AudioTile> {
     );
   }
 }
+
 /// 小封面组件：
 /// 同步检查 Audio._smallCoverBytes，已缓存则用 Image.memory 直接渲染；
 /// 未缓存则显示纯色占位 + 异步加载后写回 Audio 并 setState。
