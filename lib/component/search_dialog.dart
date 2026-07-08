@@ -3,7 +3,10 @@ import 'dart:async';
 import 'package:pure_music/component/album_tile.dart';
 import 'package:pure_music/component/artist_tile.dart';
 import 'package:pure_music/component/audio_tile.dart';
+import 'package:pure_music/component/quiet_empty_state.dart';
 import 'package:pure_music/core/hotkeys.dart';
+import 'package:pure_music/core/list_action_state.dart';
+import 'package:pure_music/core/search_action_state.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/library/union_search_result.dart';
@@ -11,6 +14,49 @@ import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+
+class _SearchCountText extends StatelessWidget {
+  const _SearchCountText({required this.count, required this.selected});
+
+  final int count;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Text(
+      '$count',
+      style: TextStyle(
+        color: selected ? scheme.onPrimaryContainer : scheme.onSurfaceVariant,
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+      ),
+    );
+  }
+}
+
+class _SearchEmptyState extends StatelessWidget {
+  const _SearchEmptyState({
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return QuietEmptyState(
+      icon: icon,
+      title: title,
+      message: message,
+      maxWidth: 380.0,
+    );
+  }
+}
 
 class SearchDialog extends StatefulWidget {
   const SearchDialog({super.key});
@@ -40,6 +86,10 @@ class _SearchDialogState extends State<SearchDialog> {
   );
   late final ValueNotifier<bool> _isSearching = ValueNotifier(false);
   Timer? _debounce;
+  Timer? _queuedNextResetTimer;
+  Audio? _queuedNextAudio;
+  Audio? _addingAudioToPlaylist;
+  Playlist? _addingTargetPlaylist;
   int _currentIndex = 0;
   int _searchVersion = 0;
 
@@ -52,6 +102,7 @@ class _SearchDialogState extends State<SearchDialog> {
   @override
   void dispose() {
     _debounce?.cancel();
+    _queuedNextResetTimer?.cancel();
     _searchController.dispose();
     _result.dispose();
     _isSearching.dispose();
@@ -59,7 +110,7 @@ class _SearchDialogState extends State<SearchDialog> {
   }
 
   void _onQueryChanged(String raw) {
-    final query = raw.trim();
+    final query = normalizedSearchQuery(raw);
     _debounce?.cancel();
     if (query.isEmpty) {
       _result.value = UnionSearchResult('');
@@ -81,53 +132,150 @@ class _SearchDialogState extends State<SearchDialog> {
     _result.value = UnionSearchResult.search(query, scope: scope);
   }
 
+  void _addSearchResultToNext(Audio audio) {
+    PlayService.instance.playbackService.addToNext(audio);
+    _queuedNextResetTimer?.cancel();
+    setState(() => _queuedNextAudio = audio);
+    _queuedNextResetTimer = Timer(const Duration(milliseconds: 1200), () {
+      if (!mounted) return;
+      setState(() => _queuedNextAudio = null);
+    });
+  }
+
+  Future<void> _addSearchResultToPlaylist(
+    Audio audio,
+    Playlist playlist,
+  ) async {
+    if (_addingAudioToPlaylist != null) {
+      return;
+    }
+
+    final added = playlist.containsPath(audio.path);
+    if (added) {
+      showTextOnSnackBar('歌曲“${audio.title}”已存在');
+      return;
+    }
+
+    setState(() {
+      _addingAudioToPlaylist = audio;
+      _addingTargetPlaylist = playlist;
+    });
+    try {
+      playlist.addPath(audio.path);
+      final saved = await savePlaylists();
+      if (!mounted) return;
+      if (!saved) {
+        playlist.removeByPath(audio.path);
+        showTextOnSnackBar('保存歌单失败');
+        return;
+      }
+      showTextOnSnackBar('成功将“${audio.title}”添加到歌单“${playlist.name}”');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _addingAudioToPlaylist = null;
+          _addingTargetPlaylist = null;
+        });
+      }
+    }
+  }
+
   Widget _musicActionBar(Audio audio) {
+    final isAddingThisAudio = identical(_addingAudioToPlaylist, audio);
+    final isQueuedNext = identical(_queuedNextAudio, audio);
+    final hasNowPlaying =
+        PlayService.instance.playbackService.nowPlaying != null;
+    final canAddNext = canAddAudioToNext(
+      hasNowPlaying: hasNowPlaying,
+      isPendingFeedback: isQueuedNext,
+    );
+    final playlistMemberships = playlists
+        .map((playlist) => playlist.containsPath(audio.path))
+        .toList(growable: false);
+    final canOpenPlaylistMenu = canOpenSingleAudioAddToPlaylistMenu(
+      hasAudio: true,
+      isBusy: _addingAudioToPlaylist != null,
+      alreadyInPlaylists: playlistMemberships,
+    );
+    final alreadyInAllPlaylists =
+        playlists.isNotEmpty && playlistMemberships.every((value) => value);
+    final scheme = Theme.of(context).colorScheme;
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         IconButton(
-          tooltip: '下一首播放',
-          onPressed: () {
-            PlayService.instance.playbackService.addToNext(audio);
-          },
-          icon: const Icon(Symbols.plus_one),
+          tooltip: isQueuedNext
+              ? '已加入下一首'
+              : hasNowPlaying
+                  ? '下一首播放'
+                  : '先播放一首歌',
+          style: IconButton.styleFrom(
+            backgroundColor: isQueuedNext ? scheme.primaryContainer : null,
+            disabledBackgroundColor:
+                isQueuedNext ? scheme.primaryContainer : null,
+            disabledForegroundColor:
+                isQueuedNext ? scheme.onPrimaryContainer : null,
+          ),
+          onPressed: canAddNext ? () => _addSearchResultToNext(audio) : null,
+          icon: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            child: Icon(
+              isQueuedNext ? Symbols.check : Symbols.plus_one,
+              key: ValueKey(isQueuedNext),
+            ),
+          ),
         ),
         MenuAnchor(
           consumeOutsideTap: true,
-          menuChildren: List.generate(PLAYLISTS.length, (playlistIndex) {
-            final playlist = PLAYLISTS[playlistIndex];
+          menuChildren: List.generate(playlists.length, (playlistIndex) {
+            final playlist = playlists[playlistIndex];
+            final isAddingTarget =
+                isAddingThisAudio && identical(_addingTargetPlaylist, playlist);
+            final alreadyInPlaylist = playlist.containsPath(audio.path);
             return MenuItemButton(
-              onPressed: () {
-                final added = playlist.containsPath(audio.path);
-                if (added) {
-                  showTextOnSnackBar('歌曲${audio.title}已存在');
-                  return;
-                }
-                playlist.addPath(audio.path);
-                savePlaylists();
-                showTextOnSnackBar(
-                  '成功将${audio.title}添加到歌单${playlist.name}',
-                );
-              },
-              leadingIcon: const Icon(Symbols.queue_music),
+              onPressed: _addingAudioToPlaylist == null && !alreadyInPlaylist
+                  ? () => _addSearchResultToPlaylist(audio, playlist)
+                  : null,
+              leadingIcon: isAddingTarget
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(
+                      alreadyInPlaylist ? Symbols.check : Symbols.queue_music,
+                    ),
               child: Text(playlist.name),
             );
           }),
           builder: (context, controller, _) {
             return IconButton(
-              tooltip: '添加到歌单',
-              onPressed: () {
-                if (PLAYLISTS.isEmpty) {
-                  showTextOnSnackBar('还未创建任何歌单');
-                  return;
-                }
-                if (controller.isOpen) {
-                  controller.close();
-                } else {
-                  controller.open();
-                }
-              },
-              icon: const Icon(Symbols.queue_music),
+              tooltip: isAddingThisAudio
+                  ? '添加中'
+                  : alreadyInAllPlaylists
+                      ? '已存在于所有歌单'
+                      : '添加到歌单',
+              onPressed: canOpenPlaylistMenu
+                  ? () {
+                      if (controller.isOpen) {
+                        controller.close();
+                      } else {
+                        controller.open();
+                      }
+                    }
+                  : null,
+              icon: isAddingThisAudio
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(
+                      alreadyInAllPlaylists
+                          ? Symbols.check
+                          : Symbols.queue_music,
+                    ),
             );
           },
         ),
@@ -139,10 +287,11 @@ class _SearchDialogState extends State<SearchDialog> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final size = MediaQuery.of(context).size;
-    final width = (size.width * 0.70).clamp(520.0, 900.0);
-    final height = (size.height * 0.65).clamp(420.0, 720.0);
+    final width = (size.width - 64).clamp(280.0, 900.0).toDouble();
+    final height = (size.height - 180).clamp(300.0, 720.0).toDouble();
 
     return AlertDialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       title: const Text('搜索'),
       content: SizedBox(
         width: width,
@@ -163,7 +312,7 @@ class _SearchDialogState extends State<SearchDialog> {
                   suffixIcon: ValueListenableBuilder<TextEditingValue>(
                     valueListenable: _searchController,
                     builder: (context, value, _) {
-                      final hasText = value.text.trim().isNotEmpty;
+                      final hasText = canShowSearchClearAction(value.text);
                       if (!hasText) return const SizedBox.shrink();
                       return IconButton(
                         tooltip: '清除',
@@ -204,38 +353,74 @@ class _SearchDialogState extends State<SearchDialog> {
                     runSpacing: 8.0,
                     children: List.generate(_tabs.length, (i) {
                       final selected = _currentIndex == i;
-                      return OutlinedButton.icon(
-                        onPressed: () {
-                          setState(() => _currentIndex = i);
-                          final query = _searchController.text.trim();
-                          if (query.isNotEmpty) {
-                            _searchVersion++;
-                            _search(query);
-                          }
-                        },
-                        icon: Icon(
+                      final canSwitch = canSwitchTab(
+                          currentIndex: _currentIndex, targetIndex: i);
+                      final count = switch (i) {
+                        0 => result.audios.length,
+                        1 => result.artists.length,
+                        _ => result.album.length,
+                      };
+                      final showCount = selected &&
+                          result.query.isNotEmpty &&
+                          result.query ==
+                              normalizedSearchQuery(_searchController.text);
+                      return FilterChip(
+                        selected: selected,
+                        showCheckmark: false,
+                        avatar: Icon(
                           _tabs[i].icon,
                           size: 18,
-                          color: selected ? scheme.onPrimary : scheme.onSurface,
+                          color: selected
+                              ? scheme.onPrimaryContainer
+                              : scheme.onSurfaceVariant,
                         ),
-                        label: Text(
-                          _tabs[i].label,
-                          style: TextStyle(
-                            color:
-                                selected ? scheme.onPrimary : scheme.onSurface,
-                          ),
+                        label: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(_tabs[i].label),
+                            if (showCount) ...[
+                              const SizedBox(width: 6),
+                              _SearchCountText(
+                                count: count,
+                                selected: selected,
+                              ),
+                            ],
+                          ],
                         ),
-                        style: OutlinedButton.styleFrom(
-                          backgroundColor:
-                              selected ? scheme.primary : Colors.transparent,
-                          side: BorderSide(
-                            color: selected ? scheme.primary : scheme.outline,
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 10,
-                          ),
+                        labelStyle: TextStyle(
+                          color: selected
+                              ? scheme.onPrimaryContainer
+                              : scheme.onSurface,
+                          fontWeight: selected ? FontWeight.w600 : null,
                         ),
+                        selectedColor: scheme.primaryContainer,
+                        backgroundColor: Colors.transparent,
+                        color: WidgetStatePropertyAll(
+                          selected
+                              ? scheme.primaryContainer
+                              : Colors.transparent,
+                        ),
+                        side: BorderSide(
+                          color: selected
+                              ? scheme.primaryContainer
+                              : scheme.outlineVariant,
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        onSelected: canSwitch
+                            ? (_) {
+                                setState(() => _currentIndex = i);
+                                final query = normalizedSearchQuery(
+                                  _searchController.text,
+                                );
+                                if (query.isNotEmpty) {
+                                  _searchVersion++;
+                                  _search(query);
+                                }
+                              }
+                            : null,
                       );
                     }),
                   ),
@@ -248,34 +433,10 @@ class _SearchDialogState extends State<SearchDialog> {
                 builder: (context, value, _) {
                   final query = value.query.trim();
                   if (query.isEmpty) {
-                    return Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 520),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Symbols.search,
-                              size: 48,
-                              color: scheme.outline,
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              '输入关键词开始搜索',
-                              style: TextStyle(
-                                color: scheme.onSurface,
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '支持搜索歌曲、艺术家、专辑。',
-                              style: TextStyle(color: scheme.onSurfaceVariant),
-                            ),
-                          ],
-                        ),
-                      ),
+                    return const _SearchEmptyState(
+                      icon: Symbols.search,
+                      title: '输入关键词开始搜索',
+                      message: '支持搜索歌曲、艺术家、专辑。',
                     );
                   }
 
@@ -299,7 +460,11 @@ class _SearchDialogState extends State<SearchDialog> {
 
   Widget _buildMusicList(UnionSearchResult value) {
     if (value.audios.isEmpty) {
-      return const Center(child: Text('没有找到相关音乐'));
+      return const _SearchEmptyState(
+        icon: Symbols.music_note,
+        title: '没有找到相关音乐',
+        message: '换个关键词，或者切到艺术家、专辑再看。',
+      );
     }
     return CustomScrollView(
       slivers: [
@@ -318,7 +483,11 @@ class _SearchDialogState extends State<SearchDialog> {
 
   Widget _buildArtistList(UnionSearchResult value) {
     if (value.artists.isEmpty) {
-      return const Center(child: Text('没有找到相关艺术家'));
+      return const _SearchEmptyState(
+        icon: Symbols.person,
+        title: '没有找到相关艺术家',
+        message: '换个关键词，或者回到音乐结果里找。',
+      );
     }
     return CustomScrollView(
       slivers: [
@@ -333,7 +502,11 @@ class _SearchDialogState extends State<SearchDialog> {
 
   Widget _buildAlbumList(UnionSearchResult value) {
     if (value.album.isEmpty) {
-      return const Center(child: Text('没有找到相关专辑'));
+      return const _SearchEmptyState(
+        icon: Symbols.album,
+        title: '没有找到相关专辑',
+        message: '换个关键词，或者先从歌曲结果进入专辑。',
+      );
     }
     return CustomScrollView(
       slivers: [
