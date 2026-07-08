@@ -1,9 +1,11 @@
 import 'package:pure_music/core/preference.dart';
+import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/component/artist_tile.dart';
 import 'package:pure_music/component/audio_tile.dart';
+import 'package:pure_music/component/quiet_empty_state.dart';
 import 'package:pure_music/page/uni_detail_page.dart';
 import 'package:pure_music/page/uni_page.dart';
 import 'package:pure_music/page/uni_page_components.dart';
@@ -20,11 +22,15 @@ class AlbumDetailPage extends StatelessWidget {
     final secondaryContent = List<Audio>.from(album.works);
     final multiSelectController = MultiSelectController<Audio>();
 
+    final canSortSongs = hasEnoughItemsToSort(secondaryContent.length);
+
     return UniDetailPage<Album, Audio, Artist>(
       pref: AppPreference.instance.albumDetailPagePref,
       primaryContent: album,
       primaryPic: album.cover,
-      backgroundPic: album.works.first.cover,
+      backgroundPic: album.works.isEmpty
+          ? Future<ImageProvider?>.value(null)
+          : album.works.first.cover,
       picShape: PicShape.rrect,
       title: album.name,
       subtitle: '${album.works.length} 首作品',
@@ -38,18 +44,19 @@ class AlbumDetailPage extends StatelessWidget {
       ),
       tertiaryContentTitle: '艺术家',
       tertiaryContent: album.artistsMap.values.toList(),
-      tertiaryContentBuilder: (context, artist, i, multiSelectController, view) =>
-          ArtistTile(
+      tertiaryContentBuilder:
+          (context, artist, i, multiSelectController, view) => ArtistTile(
         artist: artist,
         view: view,
       ),
-      enableShufflePlay: true,
-      enableSortMethod: true,
-      enableSortOrder: true,
-      enableSecondaryContentViewSwitch: true,
+      enableShufflePlay: secondaryContent.isNotEmpty,
+      enableSortMethod: canSortSongs,
+      enableSortOrder: canSortSongs,
+      enableSecondaryContentViewSwitch: secondaryContent.isNotEmpty,
       enableTabs: true,
       secondaryContentTitle: '歌曲',
       tertiaryTabIcon: Symbols.artist,
+      bodyOverride: secondaryContent.isEmpty ? const _EmptyAlbumBody() : null,
       multiSelectController: multiSelectController,
       multiSelectViewActions: [
         AddAllToPlaylist(multiSelectController: multiSelectController),
@@ -131,6 +138,19 @@ class AlbumDetailPage extends StatelessWidget {
           },
         ),
       ],
+    );
+  }
+}
+
+class _EmptyAlbumBody extends StatelessWidget {
+  const _EmptyAlbumBody();
+
+  @override
+  Widget build(BuildContext context) {
+    return const QuietEmptyState(
+      icon: Symbols.album,
+      title: '这个专辑还没有歌曲',
+      message: '等扫描或索引更新后，这里会显示可播放内容。',
     );
   }
 }
