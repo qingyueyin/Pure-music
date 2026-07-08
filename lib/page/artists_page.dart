@@ -1,6 +1,7 @@
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/component/artist_tile.dart';
+import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/page/uni_page.dart';
@@ -14,6 +15,7 @@ class ArtistsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final contentList = AudioLibrary.instance.artistCollection.values.toList();
+    final canSortItems = hasEnoughItemsToSort(contentList.length);
     final multiSelectController = MultiSelectController<Artist>();
     return UniPage<Artist>(
       pref: AppPreference.instance.artistsPagePref,
@@ -26,14 +28,14 @@ class ArtistsPage extends StatelessWidget {
         view: view,
       ),
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 300,
-          mainAxisExtent: 72,
-          mainAxisSpacing: 8.0,
-          crossAxisSpacing: 8.0,
-        ),
+        maxCrossAxisExtent: 300,
+        mainAxisExtent: 72,
+        mainAxisSpacing: 8.0,
+        crossAxisSpacing: 8.0,
+      ),
       enableShufflePlay: false,
-      enableSortMethod: true,
-      enableSortOrder: true,
+      enableSortMethod: canSortItems,
+      enableSortOrder: canSortItems,
       enableContentViewSwitch: false,
       multiSelectController: multiSelectController,
       multiSelectViewActions: [
