@@ -29,6 +29,7 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
     NowPlayingViewMode.withLyric => viewWithLyric,
     NowPlayingViewMode.withPlaylist => viewWithPlaylist,
   };
+  NowPlayingViewMode? _savingViewMode;
 
   IconData viewSwitchIcon(NowPlayingViewMode viewMode) {
     return switch (viewMode) {
@@ -38,7 +39,9 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
     };
   }
 
-  void changeView(NowPlayingViewMode viewMode) {
+  Future<void> changeView(NowPlayingViewMode viewMode) async {
+    if (_savingViewMode != null) return;
+
     late final List<NowPlayingViewMode> desView;
     switch (viewMode) {
       case NowPlayingViewMode.onlyMain:
@@ -53,14 +56,21 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
     }
     setState(() {
       views = desView;
+      _savingViewMode = viewMode;
     });
     nowPlayingViewMode.value = viewMode;
     AppPreference.instance.nowPlayingPagePref.nowPlayingViewMode = viewMode;
+    try {
+      await AppPreference.instance.save();
+    } finally {
+      if (mounted) {
+        setState(() => _savingViewMode = null);
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final useMonet = AppSettings.instance.useMaterialYouForControls;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Column(
@@ -72,6 +82,8 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
                 _NowPlayingSmallViewSwitch(
                   onTap: () => changeView(views[0]),
                   icon: viewSwitchIcon(views[0]),
+                  busy: _savingViewMode == views[0],
+                  enabled: _savingViewMode == null,
                 ),
                 Expanded(
                   child: AnimatedSwitcher(
@@ -82,7 +94,8 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
                       NowPlayingViewMode.onlyMain =>
                         const Center(child: _NowPlayingInfo()),
                       NowPlayingViewMode.withLyric => Padding(
-                          padding: const EdgeInsets.only(right: 8.0),
+                          // 负 padding 抵消歌词行内部 12px 水平 padding，让歌词贴近切换按钮
+                          padding: const EdgeInsets.symmetric(horizontal: -12.0),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(12.0),
                             child: const VerticalLyricView(
@@ -101,51 +114,183 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
                 _NowPlayingSmallViewSwitch(
                   onTap: () => changeView(views[2]),
                   icon: viewSwitchIcon(views[2]),
+                  busy: _savingViewMode == views[2],
+                  enabled: _savingViewMode == null,
                 ),
               ],
             ),
           ),
           const SizedBox(height: 4.0),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            child: _NowPlayingSlider(mode: NowPlayingMode.portrait),
-          ),
-          const SizedBox(height: 4.0),
-          const _NowPlayingMainControls(),
-          const SizedBox(height: 4.0),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              const _DesktopLyricSwitch(),
-              const _NowPlayingPlaybackModeSwitch(),
-              const NowPlayingPitchControl(),
-              const _NowPlayingVolDspSlider(),
-              const _ExclusiveModeSwitch(),
-              IconButton(
-                tooltip: '均衡器',
-                onPressed: () {
-                  showDialog(
-                    context: context,
-                    builder: (context) => const EqualizerDialog(),
-                  );
-                },
-                icon: const Icon(Symbols.graphic_eq),
-                color: useMonet ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface,
-              ),
-              const _NowPlayingMoreAction(),
-            ],
-          )
+          const _NowPlayingSmallControlZone(),
         ],
       ),
     );
   }
 }
 
+/// 竖屏底部控制区：进度条 + 主控排常驻，次要功能排随鼠标离开淡出
+class _NowPlayingSmallControlZone extends StatefulWidget {
+  const _NowPlayingSmallControlZone();
+
+  @override
+  State<_NowPlayingSmallControlZone> createState() =>
+      _NowPlayingSmallControlZoneState();
+}
+
+class _NowPlayingSmallControlZoneState
+    extends State<_NowPlayingSmallControlZone> {
+  bool _isHovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final useMonet = AppSettings.instance.useMaterialYouForControls;
+    final controlColor = useMonet
+        ? Theme.of(context).colorScheme.primary
+        : Theme.of(context).colorScheme.onSurface;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovering = true),
+      onExit: (_) => setState(() => _isHovering = false),
+      hitTestBehavior: HitTestBehavior.translucent,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: _NowPlayingSlider(mode: NowPlayingMode.portrait),
+          ),
+          const SizedBox(height: 4.0),
+          const _NowPlayingSmallMainControls(),
+          const SizedBox(height: 4.0),
+          AnimatedOpacity(
+            duration: MotionDuration.base,
+            curve: MotionCurve.standard,
+            opacity: _isHovering ? 1.0 : 0.0,
+            child: IgnorePointer(
+              ignoring: !_isHovering,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    const _DesktopLyricSwitch(),
+                    const NowPlayingPitchControl(),
+                    const _ExclusiveModeSwitch(),
+                    IconButton(
+                      tooltip: '均衡器',
+                      onPressed: () {
+                        showDialog(
+                          context: context,
+                          builder: (context) => const EqualizerDialog(),
+                        );
+                      },
+                      icon: const Icon(Symbols.graphic_eq),
+                      color: controlColor,
+                    ),
+                    const _NowPlayingMoreAction(),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 竖屏主控排：播放模式 + 上一曲 / 播放 / 下一曲 + 音量，常驻显示
+class _NowPlayingSmallMainControls extends StatelessWidget {
+  const _NowPlayingSmallMainControls();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final playbackService = PlayService.instance.playbackService;
+    final useMonet = AppSettings.instance.useMaterialYouForControls;
+    final controlColor = useMonet ? scheme.primary : scheme.onSurface;
+    final disabledColor = controlColor.withValues(alpha: 0.38);
+
+    return ListenableBuilder(
+      listenable: playbackService.nowPlayingNotifier,
+      builder: (context, _) {
+        final hasNowPlaying = playbackService.nowPlaying != null;
+
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const _NowPlayingPlaybackModeSwitch(),
+            const SizedBox(width: 16),
+            IconButton(
+              tooltip: hasNowPlaying ? '上一曲' : '暂无正在播放',
+              onPressed: hasNowPlaying ? playbackService.lastAudio : null,
+              icon: const Icon(Symbols.skip_previous, fill: 1.0),
+              iconSize: 28,
+              color: controlColor,
+              disabledColor: disabledColor,
+            ),
+            const SizedBox(width: 16),
+            StreamBuilder(
+              stream: playbackService.playerStateStream,
+              initialData: playbackService.playerState,
+              builder: (context, snapshot) {
+                final playerState = snapshot.data!;
+                final isPlaying = playerState == PlayerState.playing;
+                final isCompleted = playerState == PlayerState.completed;
+
+                return IconButton(
+                  tooltip: hasNowPlaying ? (isPlaying ? '暂停' : '播放') : '暂无正在播放',
+                  onPressed: hasNowPlaying
+                      ? () {
+                          if (isPlaying) {
+                            playbackService.pause();
+                          } else if (isCompleted) {
+                            playbackService.playAgain();
+                          } else {
+                            playbackService.start();
+                          }
+                        }
+                      : null,
+                  icon: Icon(
+                    isPlaying ? Symbols.pause : Symbols.play_arrow,
+                    fill: 1.0,
+                  ),
+                  iconSize: 36,
+                  color: controlColor,
+                  disabledColor: disabledColor,
+                );
+              },
+            ),
+            const SizedBox(width: 16),
+            IconButton(
+              tooltip: hasNowPlaying ? '下一曲' : '暂无正在播放',
+              onPressed: hasNowPlaying ? playbackService.nextAudio : null,
+              icon: const Icon(Symbols.skip_next, fill: 1.0),
+              iconSize: 28,
+              color: controlColor,
+              disabledColor: disabledColor,
+            ),
+            const SizedBox(width: 16),
+            const _NowPlayingVolDspSlider(),
+          ],
+        );
+      },
+    );
+  }
+}
+
 class _NowPlayingSmallViewSwitch extends StatefulWidget {
-  const _NowPlayingSmallViewSwitch({required this.onTap, required this.icon});
+  const _NowPlayingSmallViewSwitch({
+    required this.onTap,
+    required this.icon,
+    this.busy = false,
+    this.enabled = true,
+  });
 
   final void Function() onTap;
   final IconData icon;
+  final bool busy;
+  final bool enabled;
 
   @override
   State<_NowPlayingSmallViewSwitch> createState() =>
@@ -179,19 +324,33 @@ class _NowPlayingSmallViewSwitchState
               child: InkWell(
                 borderRadius: BorderRadius.circular(16.0),
                 hoverColor: scheme.onSecondaryContainer.withValues(alpha: 0.02),
-                highlightColor: scheme.onSecondaryContainer.withValues(alpha: 0.04),
+                highlightColor:
+                    scheme.onSecondaryContainer.withValues(alpha: 0.04),
                 splashColor: Colors.transparent,
-                onTap: widget.onTap,
+                onTap: widget.enabled ? widget.onTap : null,
                 onHover: (hasEntered) {
+                  if (!widget.enabled) return;
                   setState(() {
                     visible = hasEntered;
                   });
                 },
                 child: Center(
-                  child: Icon(
-                    widget.icon,
-                    color: useMonet ? scheme.primary : scheme.onSurface,
-                  ),
+                  child: widget.busy
+                      ? SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: useMonet ? scheme.primary : scheme.onSurface,
+                          ),
+                        )
+                      : Icon(
+                          widget.icon,
+                          color: widget.enabled
+                              ? (useMonet ? scheme.primary : scheme.onSurface)
+                              : (useMonet ? scheme.primary : scheme.onSurface)
+                                  .withValues(alpha: 0.38),
+                        ),
                 ),
               ),
             ),
