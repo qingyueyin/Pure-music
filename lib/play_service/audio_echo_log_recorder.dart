@@ -149,16 +149,18 @@ class AudioEchoLogRecorder {
   void _flushLoggerMemoryDelta() {
     if (_sink == null) return;
 
-    final buffer = loggerMemoryOutput.buffer.toList(growable: false);
-    if (buffer.isEmpty) return;
+    final firstIndex = loggerMemoryOutput.firstEventIndex;
+    final nextIndex = loggerMemoryOutput.nextEventIndex;
+    if (nextIndex <= firstIndex) return;
 
-    if (_lastEventIndex > buffer.length) {
-      _lastEventIndex = 0;
+    if (_lastEventIndex < firstIndex || _lastEventIndex > nextIndex) {
+      _lastEventIndex = firstIndex;
       _lastLineIndex = 0;
     }
 
-    for (int i = _lastEventIndex; i < buffer.length; i++) {
-      final event = buffer[i];
+    for (int i = _lastEventIndex; i < nextIndex; i++) {
+      final event = loggerMemoryOutput.eventAt(i);
+      if (event == null) continue;
       final lines = event.lines;
       final startLine = (i == _lastEventIndex) ? _lastLineIndex : 0;
       for (int j = startLine; j < lines.length; j++) {
@@ -166,7 +168,7 @@ class AudioEchoLogRecorder {
       }
       _lastLineIndex = 0;
     }
-    _lastEventIndex = buffer.length;
+    _lastEventIndex = nextIndex;
   }
 
   void _writeLine(String line) {
