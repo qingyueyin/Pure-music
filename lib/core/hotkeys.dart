@@ -1,6 +1,7 @@
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/component/hotkey_ui_feedback.dart';
+import 'package:pure_music/core/hotkey_focus_state.dart';
 import 'package:pure_music/core/immersive.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
@@ -10,19 +11,17 @@ import 'package:flutter/services.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:go_router/go_router.dart';
 
-bool _isTextInputFocused() {
-  final focusManager = FocusManager.instance;
-  final focused = focusManager.primaryFocus;
-  if (focused == null) return false;
-  
-  return focused.context?.widget is EditableText;
-}
-
 class HotkeysHelper {
+  static bool _registered = false;
+
+  static bool _canHandlePlaybackHotkey() => canHandleInAppPlaybackHotkey(
+        textInputFocused: isTextInputFocusedForHotkeys(),
+      );
+
   static final Map<HotKey, void Function(HotKey)> _hotKeys = {
     HotKey(key: PhysicalKeyboardKey.space, scope: HotKeyScope.inapp): (_) {
-      if (_isTextInputFocused()) return;
-      
+      if (!_canHandlePlaybackHotkey()) return;
+
       final playbackService = PlayService.instance.playbackService;
       final state = playbackService.playerState;
       if (state == PlayerState.playing) {
@@ -63,6 +62,7 @@ class HotkeysHelper {
       modifiers: [HotKeyModifier.control],
       scope: HotKeyScope.inapp,
     ): (_) {
+      if (!_canHandlePlaybackHotkey()) return;
       PlayService.instance.playbackService.lastAudio();
       hotkeyUiFeedback.emit(HotkeyUiAction.prev);
       showHotkeyToast(text: '上一曲', icon: Icons.skip_previous);
@@ -72,6 +72,7 @@ class HotkeysHelper {
       modifiers: [HotKeyModifier.control],
       scope: HotKeyScope.inapp,
     ): (_) {
+      if (!_canHandlePlaybackHotkey()) return;
       PlayService.instance.playbackService.nextAudio();
       hotkeyUiFeedback.emit(HotkeyUiAction.next);
       showHotkeyToast(text: '下一曲', icon: Icons.skip_next);
@@ -81,6 +82,7 @@ class HotkeysHelper {
       modifiers: [HotKeyModifier.control],
       scope: HotKeyScope.inapp,
     ): (_) {
+      if (!_canHandlePlaybackHotkey()) return;
       final playbackService = PlayService.instance.playbackService;
       final next = (playbackService.volumeDsp + 0.05).clamp(0.0, 1.0);
       playbackService.setVolumeDsp(next);
@@ -95,6 +97,7 @@ class HotkeysHelper {
       modifiers: [HotKeyModifier.control],
       scope: HotKeyScope.inapp,
     ): (_) {
+      if (!_canHandlePlaybackHotkey()) return;
       final playbackService = PlayService.instance.playbackService;
       final next = (playbackService.volumeDsp - 0.05).clamp(0.0, 1.0);
       playbackService.setVolumeDsp(next);
@@ -105,6 +108,7 @@ class HotkeysHelper {
       );
     },
     HotKey(key: PhysicalKeyboardKey.f1, scope: HotKeyScope.inapp): (_) async {
+      if (!_canHandlePlaybackHotkey()) return;
       await ImmersiveModeController.instance.toggle();
       showHotkeyToast(
         text: "沉浸：${ImmersiveModeController.instance.enabled ? "开" : "关"}",
@@ -114,15 +118,22 @@ class HotkeysHelper {
   };
 
   static void registerHotKeys() {
+    if (_registered) return;
     for (var item in _hotKeys.entries) {
       hotKeyManager.register(
         item.key,
         keyDownHandler: item.value,
       );
     }
+    _registered = true;
   }
 
-  static Future<void> unregisterAll() => hotKeyManager.unregisterAll();
+  static Future<void> unregisterAll() async {
+    for (var item in _hotKeys.keys) {
+      await hotKeyManager.unregister(item);
+    }
+    _registered = false;
+  }
 
   static Future<void> onFocusChanges(bool focus) async {
     if (focus) {
