@@ -213,7 +213,7 @@ void showHotkeyToast({
                     ),
                     decoration: BoxDecoration(
                       color: scheme.secondaryContainer.withAlpha(235),
-                      borderRadius: BorderRadius.circular(20.0),
+                      borderRadius: BorderRadius.circular(12.0),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -308,19 +308,34 @@ class _BoundedMemoryOutput extends LogOutput {
 
   static const _maxEvents = 500;
   final _buffer = <OutputEvent>[];
+  int _firstEventIndex = 0;
+  int _nextEventIndex = 0;
 
   List<OutputEvent> get buffer => List.unmodifiable(_buffer);
+  int get firstEventIndex => _firstEventIndex;
+  int get nextEventIndex => _nextEventIndex;
+
+  OutputEvent? eventAt(int index) {
+    final localIndex = index - _firstEventIndex;
+    if (localIndex < 0 || localIndex >= _buffer.length) return null;
+    return _buffer[localIndex];
+  }
 
   @override
   void output(OutputEvent event) {
     _buffer.add(event);
+    _nextEventIndex++;
     while (_buffer.length > _maxEvents) {
       _buffer.removeAt(0);
+      _firstEventIndex++;
     }
     secondOutput?.output(event);
   }
 
-  void clear() => _buffer.clear();
+  void clear() {
+    _buffer.clear();
+    _firstEventIndex = _nextEventIndex;
+  }
 }
 
 final loggerMemoryOutput = _BoundedMemoryOutput(
