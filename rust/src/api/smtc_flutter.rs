@@ -6,9 +6,7 @@ use windows::{
     core::HSTRING,
     Foundation::{TimeSpan, TypedEventHandler},
     Media::{
-        Core::MediaSource,
-        MediaPlaybackStatus, MediaPlaybackType,
-        Playback::MediaPlayer,
+        Core::MediaSource, MediaPlaybackStatus, MediaPlaybackType, Playback::MediaPlayer,
         SystemMediaTransportControls, SystemMediaTransportControlsButton,
         SystemMediaTransportControlsButtonPressedEventArgs,
         SystemMediaTransportControlsTimelineProperties,
@@ -45,7 +43,7 @@ fn create_silent_wav_1s() -> Vec<u8> {
     // fmt subchunk
     wav.extend_from_slice(b"fmt ");
     wav.extend_from_slice(&16u32.to_le_bytes()); // Subchunk1Size (PCM)
-    wav.extend_from_slice(&1u16.to_le_bytes());  // AudioFormat (PCM)
+    wav.extend_from_slice(&1u16.to_le_bytes()); // AudioFormat (PCM)
     wav.extend_from_slice(&num_channels.to_le_bytes());
     wav.extend_from_slice(&sample_rate.to_le_bytes());
     let byte_rate = sample_rate * num_channels as u32 * (bits_per_sample / 8) as u32;
@@ -103,8 +101,10 @@ impl SMTCFlutter {
         let is_pause_enabled = smtc_clone.IsPauseEnabled().unwrap_or(false);
         let is_next_enabled = smtc_clone.IsNextEnabled().unwrap_or(false);
         let is_previous_enabled = smtc_clone.IsPreviousEnabled().unwrap_or(false);
-        log_to_dart(format!("SMTC: Play={}, Pause={}, Next={}, Previous={}",
-            is_playing_enabled, is_pause_enabled, is_next_enabled, is_previous_enabled));
+        log_to_dart(format!(
+            "SMTC: Play={}, Pause={}, Next={}, Previous={}",
+            is_playing_enabled, is_pause_enabled, is_next_enabled, is_previous_enabled
+        ));
 
         self._smtc
             .ButtonPressed(&TypedEventHandler::<
@@ -117,7 +117,9 @@ impl SMTCFlutter {
                             SystemMediaTransportControlsButton::Play => SMTCControlEvent::Play,
                             SystemMediaTransportControlsButton::Pause => SMTCControlEvent::Pause,
                             SystemMediaTransportControlsButton::Next => SMTCControlEvent::Next,
-                            SystemMediaTransportControlsButton::Previous => SMTCControlEvent::Previous,
+                            SystemMediaTransportControlsButton::Previous => {
+                                SMTCControlEvent::Previous
+                            }
                             _ => SMTCControlEvent::Unknown,
                         };
                         log_to_dart(format!("SMTC: Button pressed - {:?}", event));
@@ -176,7 +178,7 @@ impl SMTCFlutter {
 impl SMTCFlutter {
     fn _create_silent_media_source() -> Result<MediaSource, windows::core::Error> {
         use windows::core::Interface;
-        
+
         let wav_bytes = create_silent_wav_1s();
         let stream = InMemoryRandomAccessStream::new()?;
         let writer = DataWriter::CreateDataWriter(&stream)?;
@@ -184,7 +186,7 @@ impl SMTCFlutter {
         writer.StoreAsync()?.get()?;
         writer.DetachStream()?;
         stream.Seek(0)?;
-        
+
         // Use cast to convert InMemoryRandomAccessStream to IRandomAccessStream
         let ras = stream.cast::<windows::Storage::Streams::IRandomAccessStream>()?;
         MediaSource::CreateFromStream(&ras, &HSTRING::from("audio/wav"))
@@ -204,7 +206,7 @@ impl SMTCFlutter {
         _player.CommandManager()?.SetIsEnabled(false)?;
         _player.SetIsMuted(true)?;
         _player.SetVolume(0.0)?;
-        
+
         // 设置静默音源并循环播放，使 PlaybackSession 保持活动状态
         // SMTC 只有在 MediaPlayer 处于播放状态时才会出现在 Windows 系统中
         if let Ok(source) = Self::_create_silent_media_source() {
@@ -228,7 +230,11 @@ impl SMTCFlutter {
         updater.Update()?;
         log_to_dart("SMTC: DisplayUpdater.Update() called during init".to_string());
 
-        Ok(Self { _smtc, _player, duration_ms: Mutex::new(0) })
+        Ok(Self {
+            _smtc,
+            _player,
+            duration_ms: Mutex::new(0),
+        })
     }
 
     fn _update_state(&self, state: SMTCState) -> Result<(), windows::core::Error> {
@@ -306,11 +312,16 @@ impl SMTCFlutter {
         *self.duration_ms.lock().unwrap() = duration;
         if let Ok(time_properties) = SystemMediaTransportControlsTimelineProperties::new() {
             let _ = time_properties.SetStartTime(TimeSpan { Duration: 0 });
-            let _ = time_properties.SetEndTime(TimeSpan::from(Duration::from_millis(duration.into())));
+            let _ =
+                time_properties.SetEndTime(TimeSpan::from(Duration::from_millis(duration.into())));
             let _ = time_properties.SetMinSeekTime(TimeSpan { Duration: 0 });
-            let _ = time_properties.SetMaxSeekTime(TimeSpan::from(Duration::from_millis(duration.into())));
+            let _ = time_properties
+                .SetMaxSeekTime(TimeSpan::from(Duration::from_millis(duration.into())));
             if let Err(e) = self._smtc.UpdateTimelineProperties(&time_properties) {
-                log_to_dart(format!("SMTC: UpdateTimelineProperties err (non-fatal): {}", e));
+                log_to_dart(format!(
+                    "SMTC: UpdateTimelineProperties err (non-fatal): {}",
+                    e
+                ));
             }
         }
 
@@ -341,6 +352,8 @@ impl SMTCFlutter {
         let thumbnail = file
             .GetThumbnailAsyncOverloadDefaultSizeDefaultOptions(ThumbnailMode::MusicView)?
             .get()?;
-        Ok(Some(RandomAccessStreamReference::CreateFromStream(&thumbnail)?))
+        Ok(Some(RandomAccessStreamReference::CreateFromStream(
+            &thumbnail,
+        )?))
     }
 }
