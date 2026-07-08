@@ -120,9 +120,10 @@ class BassPlayer {
   }
 
   Timer? _positionUpdater;
+  Duration? _positionUpdaterPeriod;
   int _positionUpdaterVersion = 0;
-  final _positionStreamController = StreamController<double>.broadcast();
-  final _spectrumStreamController = StreamController<Float32List>.broadcast();
+  late final StreamController<double> _positionStreamController;
+  late final StreamController<Float32List> _spectrumStreamController;
   final _playerStateStreamController =
       StreamController<PlayerState>.broadcast();
 
@@ -149,11 +150,23 @@ class BassPlayer {
   /// audio's length in seconds
   double get length {
     if (_fstream == null) return 1.0;
+    final cached = _cachedLengthSeconds;
+    if (cached != null && cached > 0) return cached;
+    return _refreshCachedLength();
+  }
+
+  double _refreshCachedLength() {
+    if (_fstream == null) {
+      _cachedLengthSeconds = null;
+      return 1.0;
+    }
     final len = _bass.BASS_ChannelBytes2Seconds(
       _fstream!,
       _bass.BASS_ChannelGetLength(_fstream!, bass.BASS_POS_BYTE),
     );
-    return len > 0 ? len : 1.0;
+    final value = len > 0 ? len : 1.0;
+    _cachedLengthSeconds = value;
+    return value;
   }
 
   /// current position in seconds
@@ -241,13 +254,20 @@ class BassPlayer {
   int Function(int, ffi.Pointer<ffi.Void>, int)? _bassChannelGetData;
   ffi.Pointer<ffi.Float>? _fftBuffer;
   ffi.Pointer<ffi.Float>? _wasapiFftBuffer;
+  double? _cachedLengthSeconds;
   double _streamSampleRate = 44100.0;
   int _lastSpectrumUpdateUs = 0;
+  final Stopwatch _spectrumClock = Stopwatch()..start();
   Duration _spectrumTickPeriod = const Duration(milliseconds: 16);
   SpectrumUpdateMode spectrumUpdateMode = SpectrumUpdateMode.auto;
   static const int _spectrumBandCount = 8;
+  static const int _activeSpectrumBandCount = 2;
+  static final double _spectrumLogDenominator = math.log(19.0);
   final Float32List _spectrumSmoothed = Float32List(8);
   final Float32List _spectrumBands = Float32List(_spectrumBandCount);
+  final Float32List _spectrumOutputA = Float32List(_spectrumBandCount);
+  final Float32List _spectrumOutputB = Float32List(_spectrumBandCount);
+  bool _useSpectrumOutputA = true;
   final Int32List _spectrumBandStarts = Int32List(_spectrumBandCount);
   final Int32List _spectrumBandEnds = Int32List(_spectrumBandCount);
   double _spectrumBandsSampleRate = 0.0;
@@ -261,6 +281,12 @@ class BassPlayer {
   Timer _getPositionUpdater(Duration period) {
     final myVersion = _positionUpdaterVersion;
     PlayerState? lastNotifiedState;
+    var tick = 0;
+    final stateCheckEvery = math.max(
+      1,
+      (const Duration(milliseconds: 200).inMicroseconds / period.inMicroseconds)
+          .round(),
+    );
     return Timer.periodic(period, (timer) {
       // 如果版本号已变更（切歌了），立即停止此 Timer
       if (myVersion != _positionUpdaterVersion) {
@@ -274,6 +300,11 @@ class BassPlayer {
       _emitPositionSnapshot();
 
       /// check if the channel has completed
+      tick++;
+      if (tick % stateCheckEvery != 0) {
+        _maybeUpdateSpectrum();
+        return;
+      }
       final currentState = playerState;
       if (currentState == PlayerState.stopped) {
         if (lastNotifiedState != PlayerState.completed) {
@@ -287,7 +318,7 @@ class BassPlayer {
         }
       }
 
-      _maybeUpdateSpectrum();
+      _maybeUpdateSpectrum(knownState: currentState);
     });
   }
 
@@ -299,6 +330,37 @@ class BassPlayer {
 
   Duration _computePlayingTickPeriod() {
     return const Duration(milliseconds: 33);
+  }
+
+  Duration _computeIdleTickPeriod() {
+    return const Duration(milliseconds: 200);
+  }
+
+  Duration _computeActiveTickPeriod() {
+    if (_positionStreamController.hasListener) {
+      return _computePlayingTickPeriod();
+    }
+    if (_spectrumStreamController.hasListener) {
+      return _computeSpectrumTickPeriod();
+    }
+    return _computeIdleTickPeriod();
+  }
+
+  void _startPositionUpdater() {
+    if (_fstream == null) return;
+    final period = _computeActiveTickPeriod();
+    if (_positionUpdater != null && _positionUpdaterPeriod == period) return;
+    _positionUpdaterVersion++;
+    _positionUpdater?.cancel();
+    _positionUpdaterPeriod = period;
+    _positionUpdater = _getPositionUpdater(period);
+  }
+
+  void _syncPositionUpdaterPeriod() {
+    if (_positionUpdater == null || playerState != PlayerState.playing) return;
+    final period = _computeActiveTickPeriod();
+    if (_positionUpdaterPeriod == period) return;
+    _startPositionUpdater();
   }
 
   Duration _computeSpectrumTickPeriod() {
@@ -333,10 +395,11 @@ class BassPlayer {
     return 0.20;
   }
 
-  void _maybeUpdateSpectrum() {
+  void _maybeUpdateSpectrum({PlayerState? knownState}) {
     if (_fstream == null) return;
-    if (playerState != PlayerState.playing) return;
     if (!_spectrumStreamController.hasListener) return;
+    final state = knownState ?? playerState;
+    if (state != PlayerState.playing) return;
 
     // Exclusive mode uses BASS_WASAPI_GetData (separate path),
     // shared mode uses BASS_ChannelGetData. Neither is blocked now.
@@ -346,7 +409,7 @@ class BassPlayer {
       return;
     }
 
-    final nowUs = DateTime.now().microsecondsSinceEpoch;
+    final nowUs = _spectrumClock.elapsedMicroseconds;
     final intervalUs = _spectrumTickPeriod.inMicroseconds;
     if (nowUs - _lastSpectrumUpdateUs < intervalUs) return;
     _lastSpectrumUpdateUs = nowUs;
@@ -393,8 +456,9 @@ class BassPlayer {
   }
 
   void _emitSmoothedSpectrum() {
-    final out = Float32List(_spectrumBandCount);
-    for (int i = 0; i < _spectrumBandCount; i++) {
+    final out = _useSpectrumOutputA ? _spectrumOutputA : _spectrumOutputB;
+    _useSpectrumOutputA = !_useSpectrumOutputA;
+    for (int i = 0; i < _activeSpectrumBandCount; i++) {
       final target = _spectrumBands[i];
       final prev = _spectrumSmoothed[i];
       // Attack/release IIR: fast rise (0.6), slower fall (0.4)
@@ -403,7 +467,17 @@ class BassPlayer {
       _spectrumSmoothed[i] = next;
       out[i] = next;
     }
+    for (int i = _activeSpectrumBandCount; i < _spectrumBandCount; i++) {
+      _spectrumSmoothed[i] = 0.0;
+      out[i] = 0.0;
+    }
     _spectrumStreamController.add(out);
+  }
+
+  void _resetSpectrumSmoothing() {
+    _spectrumBands.fillRange(0, _spectrumBands.length, 0.0);
+    _spectrumSmoothed.fillRange(0, _spectrumSmoothed.length, 0.0);
+    _lastSpectrumUpdateUs = 0;
   }
 
   void _ensureSpectrumBandBins(double sampleRate) {
@@ -448,7 +522,7 @@ class BassPlayer {
   ) {
     _ensureSpectrumBandBins(sampleRate);
 
-    for (int i = 0; i < _spectrumBandCount; i++) {
+    for (int i = 0; i < _activeSpectrumBandCount; i++) {
       final start = _spectrumBandStarts[i];
       final end = _spectrumBandEnds[i];
       double m = 0.0;
@@ -456,7 +530,7 @@ class BassPlayer {
         final v = fft[k];
         if (v.isFinite && v > m) m = v.toDouble();
       }
-      out[i] = (math.log(1.0 + m * 18.0) / math.log(19.0))
+      out[i] = (math.log(1.0 + m * 18.0) / _spectrumLogDenominator)
           .clamp(0.0, 1.0)
           .toDouble();
     }
@@ -702,6 +776,15 @@ class BassPlayer {
   /// ensure that there's bass.dll at path of .exe\\dll\\BASS
   /// leave the device's output freq as it is
   BassPlayer() {
+    _positionStreamController = StreamController<double>.broadcast(
+      onListen: _syncPositionUpdaterPeriod,
+      onCancel: _syncPositionUpdaterPeriod,
+    );
+    _spectrumStreamController = StreamController<Float32List>.broadcast(
+      onListen: _syncPositionUpdaterPeriod,
+      onCancel: _syncPositionUpdaterPeriod,
+    );
+
     // ─── 1. 确定 BASS DLL 目录 ─────────────────────────────────────────────
     final exeBassDir =
         path.join(path.dirname(Platform.resolvedExecutable), 'dll', 'BASS');
@@ -903,7 +986,7 @@ class BassPlayer {
         _refreshStreamSampleRate();
         _spectrumTickPeriod = _computeSpectrumTickPeriod();
         _lastSpectrumUpdateUs = 0;
-        _positionUpdater = _getPositionUpdater(_computePlayingTickPeriod());
+        _startPositionUpdater();
       } else if (!exclusive && prevState) {
         _removeEQ();
         _positionUpdaterVersion++;
@@ -962,6 +1045,7 @@ class BassPlayer {
     _bass.BASS_ChannelStop(oldHandle);
     _bass.BASS_StreamFree(oldHandle);
     _fstream = null;
+    _cachedLengthSeconds = null;
 
     wasapiExclusive
         ? _createWasapiStream(path, seekTo)
@@ -990,6 +1074,7 @@ class BassPlayer {
 
     _fstream = handle;
     _streamWasapiExclusive = true;
+    _refreshCachedLength();
 
     setVolumeDsp(0.0);
     if (seekTo > 0.0) {
@@ -1063,6 +1148,7 @@ class BassPlayer {
 
     _fstream = handle;
     _streamWasapiExclusive = false;
+    _refreshCachedLength();
 
     // 恢复 EQ（只在 EQ 启用时）
     if (!_isEqFlat) {
@@ -1158,6 +1244,7 @@ class BassPlayer {
         );
       }
       _fstream = null;
+      _cachedLengthSeconds = null;
       _streamWasapiExclusive = false;
     }
     final pathPointer = path.toNativeUtf16() as ffi.Pointer<ffi.Void>;
@@ -1229,6 +1316,7 @@ class BassPlayer {
       _fPath = path;
       // 标记当前流是否为独占模式流
       _streamWasapiExclusive = wasapiExclusive;
+      _refreshCachedLength();
 
       try {
         refreshEQ();
@@ -1246,6 +1334,7 @@ class BassPlayer {
     } else {
       _fstream = null;
       _fPath = null;
+      _cachedLengthSeconds = null;
       _streamWasapiExclusive = false;
       switch (_bass.BASS_ErrorGetCode()) {
         case bass.BASS_ERROR_INIT:
@@ -1486,10 +1575,11 @@ class BassPlayer {
     _refreshStreamSampleRate();
     _spectrumTickPeriod = _computeSpectrumTickPeriod();
     _lastSpectrumUpdateUs = 0;
-    _positionUpdater = _getPositionUpdater(_computePlayingTickPeriod());
+    _startPositionUpdater();
   }
 
   void _fallbackFromExclusive() {
+    final seekPos = position;
     _bassWasapi.BASS_WASAPI_Stop(bass.TRUE);
     _bassWasapi.BASS_WASAPI_Free();
     if (_fstream != null) {
@@ -1500,7 +1590,6 @@ class BassPlayer {
     _streamWasapiExclusive = false;
     _bassInit();
     if (_fPath != null) {
-      final seekPos = position;
       _positionUpdaterVersion++;
       _positionUpdater?.cancel();
       _positionUpdater = null;
@@ -1538,6 +1627,17 @@ class BassPlayer {
       return _startWasapiExclusive();
     }
     _logAudioState('start(normal)');
+
+    // Start the channel already muted. If we mute only after
+    // BASS_ChannelStart, the first output buffer can escape at full volume,
+    // which is heard as a short click when switching tracks.
+    final fadeTargetVolume = volumeDsp;
+    _bass.BASS_ChannelSetAttribute(
+      _fstream!,
+      bass.BASS_ATTRIB_VOLDSP,
+      0.0,
+    );
+
     if (_bass.BASS_ChannelStart(_fstream!) == 0) {
       switch (_bass.BASS_ErrorGetCode()) {
         case bass.BASS_ERROR_HANDLE:
@@ -1548,20 +1648,22 @@ class BassPlayer {
           );
         case bass.BASS_ERROR_START:
           _startDevice();
-          start();
+          if (_bass.BASS_ChannelStart(_fstream!) == 0) {
+            throw const FormatException('Failed to start output device.');
+          }
           break;
       }
     }
 
-    // Crossfade: 淡入新流
-    _fadeInNewStream(_fstream!, volumeDsp);
+    // Crossfade: fade in the new stream.
+    _fadeInNewStream(_fstream!, fadeTargetVolume);
 
     _playerStateStreamController.add(playerState);
     _positionUpdater?.cancel();
     _refreshStreamSampleRate();
     _spectrumTickPeriod = _computeSpectrumTickPeriod();
     _lastSpectrumUpdateUs = 0;
-    _positionUpdater = _getPositionUpdater(_computePlayingTickPeriod());
+    _startPositionUpdater();
     _logAudioState('start(done)');
   }
 
@@ -1635,6 +1737,7 @@ class BassPlayer {
           throw const FormatException('Some other mystery problem!');
       }
     }
+    _resetSpectrumSmoothing();
     _emitPositionSnapshot();
     _logAudioState('seek(end,$position)');
   }
@@ -1671,6 +1774,7 @@ class BassPlayer {
     }
     _fstream = null;
     _fPath = null;
+    _cachedLengthSeconds = null;
     _streamWasapiExclusive = false;
     _eqHandles.clear();
   }
@@ -1697,6 +1801,9 @@ class BassPlayer {
     _stopWasapiOutputIfNeeded();
     wasapiExclusive = false;
     _streamWasapiExclusive = false;
+    _fstream = null;
+    _fPath = null;
+    _cachedLengthSeconds = null;
 
     if (_bass.BASS_Free() == 0) {
       switch (_bass.BASS_ErrorGetCode()) {
