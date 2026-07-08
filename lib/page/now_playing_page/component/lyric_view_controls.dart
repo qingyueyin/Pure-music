@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:pure_music/core/lyric_action_state.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/lyric_render_config.dart';
 import 'package:pure_music/core/enums.dart';
@@ -20,6 +21,7 @@ class LyricViewController extends ChangeNotifier {
   bool _disposed = false;
   bool _isListening = false;
   bool hasRomanLyric = false;
+  bool hasTranslation = false;
   bool hasMultipleAgents = false;
   LyricFormat lyricSource = LyricFormat.local;
 
@@ -58,9 +60,14 @@ class LyricViewController extends ChangeNotifier {
             (line) => line.romanLyric != null && line.romanLyric!.isNotEmpty,
           ) ??
           false;
+      final translationFound = lyricHasTranslation(lyric);
 
       if (found != hasRomanLyric) {
         hasRomanLyric = found;
+        needsNotify = true;
+      }
+      if (translationFound != hasTranslation) {
+        hasTranslation = translationFound;
         needsNotify = true;
       }
 
@@ -145,8 +152,9 @@ class LyricViewController extends ChangeNotifier {
   }
 
   void increaseFontSize() {
-    if (lyricFontSize >= 48) return;
-    lyricFontSize += 2;
+    final nextSize = (lyricFontSize + 2).clamp(16.0, 48.0).toDouble();
+    if (nextSize == lyricFontSize) return;
+    lyricFontSize = nextSize;
     translationFontSize = lyricFontSize - 4;
     nowPlayingPagePref.lyricFontSize = lyricFontSize;
     nowPlayingPagePref.translationFontSize = translationFontSize;
@@ -155,8 +163,9 @@ class LyricViewController extends ChangeNotifier {
   }
 
   void decreaseFontSize() {
-    if (lyricFontSize <= 16) return;
-    lyricFontSize -= 2;
+    final nextSize = (lyricFontSize - 2).clamp(16.0, 48.0).toDouble();
+    if (nextSize == lyricFontSize) return;
+    lyricFontSize = nextSize;
     translationFontSize = lyricFontSize - 4;
     nowPlayingPagePref.lyricFontSize = lyricFontSize;
     nowPlayingPagePref.translationFontSize = translationFontSize;
@@ -214,10 +223,11 @@ class LyricViewController extends ChangeNotifier {
   }
 
   void setFontWeight(int weight) {
-    if (weight < 100) weight = 100;
-    if (weight > 900) weight = 900;
-    lyricFontWeight = weight;
+    final nextWeight = weight.clamp(100, 900);
+    if (nextWeight == lyricFontWeight) return;
+    lyricFontWeight = nextWeight;
     nowPlayingPagePref.lyricFontWeight = lyricFontWeight;
+    AppPreference.instance.save();
     notifyListeners();
   }
 
@@ -239,34 +249,33 @@ class LyricViewControls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final lyricViewController = context.watch<LyricViewController>();
+    final controls = <Widget>[
+      const _LyricTranslationSwitchBtn(),
+      if (lyricViewController.hasRomanLyric) const _LyricRomanSwitchBtn(),
+      const _LyricBlurSwitchBtn(),
+      if (!lyricViewController.hasMultipleAgents) const _LyricAlignSwitchBtn(),
+      const _FontSizeBtn(),
+      const _FontWeightBtn(),
+    ];
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        const _LyricTranslationSwitchBtn(),
-        const SizedBox(height: 8.0),
-        Consumer<LyricViewController>(
-          builder: (context, c, _) => Visibility(
-            visible: c.hasRomanLyric,
-            child: const _LyricRomanSwitchBtn(),
-          ),
-        ),
-        const SizedBox(height: 8.0),
-        const _LyricBlurSwitchBtn(),
-        const SizedBox(height: 8.0),
-        Consumer<LyricViewController>(
-          builder: (context, c, _) => Visibility(
-            visible: !c.hasMultipleAgents,
-            child: const _LyricAlignSwitchBtn(),
-          ),
-        ),
-        const SizedBox(height: 8.0),
-        const _FontSizeBtn(),
-        const SizedBox(height: 8.0),
-        const _FontWeightBtn(),
-      ],
+      children: _withVerticalSpacing(controls, 8.0),
     );
   }
+}
+
+List<Widget> _withVerticalSpacing(List<Widget> children, double spacing) {
+  if (children.length < 2) return children;
+
+  return [
+    for (var index = 0; index < children.length; index++) ...[
+      if (index > 0) SizedBox(height: spacing),
+      children[index],
+    ],
+  ];
 }
 
 class _LyricAlignSwitchBtn extends StatelessWidget {
@@ -325,11 +334,19 @@ class _LyricTranslationSwitchBtn extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final lyricViewController = context.watch<LyricViewController>();
-    final enabled = lyricViewController.showLyricTranslation;
+    final available = lyricViewController.hasTranslation;
+    final enabled = available && lyricViewController.showLyricTranslation;
 
     return IconButton(
-      onPressed: lyricViewController.toggleLyricTranslation,
-      tooltip: enabled ? '歌词翻译：显示' : '歌词翻译：隐藏',
+      onPressed: available ? lyricViewController.toggleLyricTranslation : null,
+      tooltip: available
+          ? enabled
+              ? '歌词翻译：显示'
+              : '歌词翻译：隐藏'
+          : '当前歌词没有翻译',
+      style: IconButton.styleFrom(
+        backgroundColor: enabled ? scheme.secondaryContainer : null,
+      ),
       color: scheme.onSecondaryContainer,
       icon: Icon(
         Symbols.translate,
@@ -351,6 +368,9 @@ class _LyricRomanSwitchBtn extends StatelessWidget {
     return IconButton(
       onPressed: lyricViewController.toggleLyricRoman,
       tooltip: enabled ? '歌词注音：显示' : '歌词注音：隐藏',
+      style: IconButton.styleFrom(
+        backgroundColor: enabled ? scheme.secondaryContainer : null,
+      ),
       color: scheme.onSecondaryContainer,
       icon: Icon(
         Symbols.language,
@@ -372,6 +392,9 @@ class _LyricBlurSwitchBtn extends StatelessWidget {
     return IconButton(
       onPressed: lyricViewController.toggleLyricBlur,
       tooltip: enabled ? '歌词模糊：开启' : '歌词模糊：关闭',
+      style: IconButton.styleFrom(
+        backgroundColor: enabled ? scheme.secondaryContainer : null,
+      ),
       color: scheme.onSecondaryContainer,
       icon: Icon(
         Symbols.blur_on,
@@ -411,5 +434,3 @@ class _FontWeightBtn extends StatelessWidget {
     );
   }
 }
-
-
