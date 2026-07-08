@@ -55,7 +55,11 @@ class Ttml extends Lyric {
         _fillWordDurations(line.words, line.start, line.length, nextStart);
 
         if (line.bgWords.isNotEmpty) {
-          _fillWordDurations(line.bgWords, line.bgStart ?? line.start, line.length, nextStart);
+          final bgStart = line.bgStart ?? line.bgWords.first.start;
+          final bgEnd =
+              line.bgEnd ?? line.bgWords.last.start + line.bgWords.last.length;
+          final bgLength = bgEnd > bgStart ? bgEnd - bgStart : line.length;
+          _fillWordDurations(line.bgWords, bgStart, bgLength, nextStart);
         }
       }
 
