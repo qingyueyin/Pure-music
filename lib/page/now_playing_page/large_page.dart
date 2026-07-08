@@ -6,6 +6,10 @@ class _NowPlayingLargePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final useMonet = AppSettings.instance.useMaterialYouForControls;
+    final scheme = Theme.of(context).colorScheme;
+    final playbackService = PlayService.instance.playbackService;
+    final controlColor = useMonet ? scheme.primary : scheme.onSurface;
+    final disabledColor = controlColor.withValues(alpha: 0.38);
     const spacer = SizedBox(width: 8.0);
     return Column(
       children: [
@@ -15,11 +19,11 @@ class _NowPlayingLargePage extends StatelessWidget {
             child: LayoutBuilder(builder: (context, constraints) {
               return Row(
                 children: [
-                  // 左侧：封面 + 歌曲信息 (50%) - 垂直居中
+                  // 左侧：封�?+ 歌曲信息 (50%) - 垂直居中
                   const Expanded(
                     child: Center(child: _NowPlayingInfo()),
                   ),
-                  // 右侧：歌词区域 (50%)
+                  // 右侧：歌词区�?(50%)
                   Expanded(
                     child: ValueListenableBuilder(
                       valueListenable: nowPlayingViewMode,
@@ -31,12 +35,12 @@ class _NowPlayingLargePage extends StatelessWidget {
                           NowPlayingViewMode.withPlaylist =>
                             const CurrentPlaylistView(),
                           _ => const Padding(
-                                padding: EdgeInsets.only(right: 8.0),
-                                child: VerticalLyricView(
-                                  enableEdgeSpacer: true,
-                                  currentLineAlignment: 0.45,
-                                ),
+                              padding: EdgeInsets.only(right: 8.0),
+                              child: VerticalLyricView(
+                                enableEdgeSpacer: true,
+                                currentLineAlignment: 0.45,
                               ),
+                            ),
                         },
                       ),
                     ),
@@ -65,7 +69,7 @@ class _NowPlayingLargePage extends StatelessWidget {
                         const _ExclusiveModeSwitch(),
                         spacer,
                         IconButton(
-                          tooltip: '均衡器',
+                          tooltip: '均衡�?,
                           onPressed: () {
                             showDialog(
                               context: context,
@@ -73,76 +77,94 @@ class _NowPlayingLargePage extends StatelessWidget {
                             );
                           },
                           icon: const Icon(Symbols.graphic_eq),
-                          color: useMonet ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface,
+                          color: useMonet
+                              ? Theme.of(context).colorScheme.primary
+                              : Theme.of(context).colorScheme.onSurface,
                         ),
                       ],
                     ),
                   ),
                   _AutoHidingControlBar(
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const _NowPlayingPlaybackModeSwitch(),
-                        spacer,
-                        IconButton(
-                          tooltip: '上一曲',
-                          onPressed:
-                              PlayService.instance.playbackService.lastAudio,
-                          icon: const Icon(
-                            Symbols.skip_previous,
-                            fill: 1.0,
-                          ),
-                          iconSize: 28,
-                          color: useMonet ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface,
-                        ),
-                        spacer,
-                        StreamBuilder(
-                          stream: PlayService
-                              .instance.playbackService.playerStateStream,
-                          initialData:
-                              PlayService.instance.playbackService.playerState,
-                          builder: (context, snapshot) {
-                            final state = snapshot.data!;
-                            final isPlaying = state == PlayerState.playing;
-                            final isCompleted = state == PlayerState.completed;
+                    child: ListenableBuilder(
+                      listenable: playbackService.nowPlayingNotifier,
+                      builder: (context, _) {
+                        final hasNowPlaying =
+                            playbackService.nowPlaying != null;
 
-                            return IconButton(
-                              tooltip: isPlaying ? '暂停' : '播放',
-                              onPressed: () {
-                                final service =
-                                    PlayService.instance.playbackService;
-                                if (isPlaying) {
-                                  service.pause();
-                                } else if (isCompleted) {
-                                  service.playAgain();
-                                } else {
-                                  service.start();
-                                }
-                              },
-                              icon: Icon(
-                                isPlaying ? Symbols.pause : Symbols.play_arrow,
+                        return Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const _NowPlayingPlaybackModeSwitch(),
+                            spacer,
+                            IconButton(
+                              tooltip: hasNowPlaying ? '上一�? : '暂无正在播放',
+                              onPressed: hasNowPlaying
+                                  ? playbackService.lastAudio
+                                  : null,
+                              icon: const Icon(
+                                Symbols.skip_previous,
                                 fill: 1.0,
                               ),
-                              iconSize: 36,
-                              color: useMonet ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface,
-                            );
-                          },
-                        ),
-                        spacer,
-                        IconButton(
-                          tooltip: '下一曲',
-                          onPressed:
-                              PlayService.instance.playbackService.nextAudio,
-                          icon: const Icon(
-                            Symbols.skip_next,
-                            fill: 1.0,
-                          ),
-                          iconSize: 28,
-                          color: useMonet ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface,
-                        ),
-                        spacer,
-                        const _NowPlayingLargeViewSwitch(),
-                      ],
+                              iconSize: 28,
+                              color: controlColor,
+                              disabledColor: disabledColor,
+                            ),
+                            spacer,
+                            StreamBuilder(
+                              stream: playbackService.playerStateStream,
+                              initialData: playbackService.playerState,
+                              builder: (context, snapshot) {
+                                final state = snapshot.data!;
+                                final isPlaying = state == PlayerState.playing;
+                                final isCompleted =
+                                    state == PlayerState.completed;
+
+                                return IconButton(
+                                  tooltip: hasNowPlaying
+                                      ? (isPlaying ? '暂停' : '播放')
+                                      : '暂无正在播放',
+                                  onPressed: hasNowPlaying
+                                      ? () {
+                                          if (isPlaying) {
+                                            playbackService.pause();
+                                          } else if (isCompleted) {
+                                            playbackService.playAgain();
+                                          } else {
+                                            playbackService.start();
+                                          }
+                                        }
+                                      : null,
+                                  icon: Icon(
+                                    isPlaying
+                                        ? Symbols.pause
+                                        : Symbols.play_arrow,
+                                    fill: 1.0,
+                                  ),
+                                  iconSize: 36,
+                                  color: controlColor,
+                                  disabledColor: disabledColor,
+                                );
+                              },
+                            ),
+                            spacer,
+                            IconButton(
+                              tooltip: hasNowPlaying ? '下一�? : '暂无正在播放',
+                              onPressed: hasNowPlaying
+                                  ? playbackService.nextAudio
+                                  : null,
+                              icon: const Icon(
+                                Symbols.skip_next,
+                                fill: 1.0,
+                              ),
+                              iconSize: 28,
+                              color: controlColor,
+                              disabledColor: disabledColor,
+                            ),
+                            spacer,
+                            const _NowPlayingLargeViewSwitch(),
+                          ],
+                        );
+                      },
                     ),
                   ),
                   const Align(
@@ -189,7 +211,7 @@ class _AutoHidingControlBarState extends State<_AutoHidingControlBar> {
         padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
         decoration: BoxDecoration(
           color: Colors.transparent,
-          borderRadius: BorderRadius.circular(32),
+          borderRadius: BorderRadius.circular(12),
         ),
         child: AnimatedOpacity(
           duration: MotionDuration.base,
@@ -203,42 +225,76 @@ class _AutoHidingControlBarState extends State<_AutoHidingControlBar> {
 }
 
 /// 切换视图：lyric / playlist
-class _NowPlayingLargeViewSwitch extends StatelessWidget {
+class _NowPlayingLargeViewSwitch extends StatefulWidget {
   const _NowPlayingLargeViewSwitch();
+
+  @override
+  State<_NowPlayingLargeViewSwitch> createState() =>
+      _NowPlayingLargeViewSwitchState();
+}
+
+class _NowPlayingLargeViewSwitchState
+    extends State<_NowPlayingLargeViewSwitch> {
+  bool _isSaving = false;
+
+  Future<void> _changeView(NowPlayingViewMode currentViewMode) async {
+    if (_isSaving) return;
+
+    final nextViewMode = currentViewMode == NowPlayingViewMode.onlyMain ||
+            currentViewMode == NowPlayingViewMode.withLyric
+        ? NowPlayingViewMode.withPlaylist
+        : NowPlayingViewMode.withLyric;
+
+    setState(() => _isSaving = true);
+    nowPlayingViewMode.value = nextViewMode;
+    AppPreference.instance.nowPlayingPagePref.nowPlayingViewMode = nextViewMode;
+    try {
+      await AppPreference.instance.save();
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final useMonet = AppSettings.instance.useMaterialYouForControls;
+    final scheme = Theme.of(context).colorScheme;
+    final color = useMonet ? scheme.primary : scheme.onSurface;
+    final disabledColor = color.withValues(alpha: 0.38);
+
     return ValueListenableBuilder(
       valueListenable: nowPlayingViewMode,
       builder: (context, value, _) => IconButton(
-        tooltip: switch (value) {
-          NowPlayingViewMode.withPlaylist => '歌词',
-          _ => '播放列表',
-        },
-        onPressed: () {
-          if (value == NowPlayingViewMode.onlyMain ||
-              value == NowPlayingViewMode.withLyric) {
-            nowPlayingViewMode.value = NowPlayingViewMode.withPlaylist;
-            AppPreference.instance.nowPlayingPagePref.nowPlayingViewMode =
-                NowPlayingViewMode.withPlaylist;
-          } else {
-            nowPlayingViewMode.value = NowPlayingViewMode.withLyric;
-            AppPreference.instance.nowPlayingPagePref.nowPlayingViewMode =
-                NowPlayingViewMode.withLyric;
-          }
-        },
-        icon: switch (value) {
-          NowPlayingViewMode.withPlaylist => const Icon(
-              Symbols.lyrics,
-              fill: 1.0,
-            ),
-          _ => const Icon(
-              Symbols.queue_music,
-              fill: 1.0,
-            ),
-        },
-        color: useMonet ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface,
+        tooltip: _isSaving
+            ? '保存�?
+            : switch (value) {
+                NowPlayingViewMode.withPlaylist => '歌词',
+                _ => '播放列表',
+              },
+        onPressed: _isSaving ? null : () => _changeView(value),
+        icon: _isSaving
+            ? SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: color,
+                ),
+              )
+            : switch (value) {
+                NowPlayingViewMode.withPlaylist => const Icon(
+                    Symbols.lyrics,
+                    fill: 1.0,
+                  ),
+                _ => const Icon(
+                    Symbols.queue_music,
+                    fill: 1.0,
+                  ),
+              },
+        color: color,
+        disabledColor: disabledColor,
       ),
     );
   }
