@@ -96,6 +96,47 @@ class LrcLine extends UnsyncLyricLine {
     caseSensitive: false,
   );
 
+  static final Set<String> _latinMetadataPrefixes = {
+    'arranged',
+    'arranger',
+    'arrangement',
+    'artist',
+    'composer',
+    'composed',
+    'copyright',
+    'director',
+    'direction',
+    'distributed',
+    'guitar',
+    'lyrics',
+    'lyric',
+    'mastered',
+    'mastering',
+    'mixed',
+    'mixing',
+    'music',
+    'producer',
+    'produced',
+    'published',
+    'pv',
+    'recorded',
+    'recording',
+    'singer',
+    'song',
+    'vocal',
+    'vocals',
+    'written',
+    'writer',
+  };
+
+  static bool _isSinglePlainLatinLyricPrefix(String text) {
+    final match = RegExp(r'[：:]').firstMatch(text);
+    if (match == null) return false;
+    final prefix = text.substring(0, match.start).trim().toLowerCase();
+    return RegExp(r'^[a-z]+$').hasMatch(prefix) &&
+        !_latinMetadataPrefixes.contains(prefix);
+  }
+
   /// 剥离文本外层常见的括号对，如 (作曲：周杰伦) → 作曲：周杰伦
   static String _stripOuterBrackets(String text) {
     var t = text.trim();
@@ -135,15 +176,27 @@ class LrcLine extends UnsyncLyricLine {
   /// - "词：xxx" "曲：xxx" 等 CJK 元数据
   /// - "歌名 - 歌手" "标题-艺术家" 等横线分隔
   /// - 版权/出品/发行等信息
-  static bool isLyricMetadataLine(String text,
-      {bool allowLooseTitleArtist = false}) {
+  static bool isLyricMetadataLine(String text) {
     var t = text.replaceAll(RegExp(r'<[^>]*>'), '').trim();
     if (t.isEmpty) return false;
     // 剥离外层括号，如 (作曲：周杰伦) → 作曲：周杰伦
     t = _stripOuterBrackets(t);
     // 前缀 + 冒号（词/曲/编/演唱者）
-    if (_metadataPattern.hasMatch(t)) return true;
-    if (_isTitleArtistLine(t, allowLoose: allowLooseTitleArtist)) return true;
+    if (_metadataPattern.hasMatch(t)) {
+      return !_isSinglePlainLatinLyricPrefix(t);
+    }
+    // 横线分隔符（歌名 - 歌手、标题 - 艺术家）——要求整行仅被一条前后有空格的
+    // 横线分成两个短字段，避免普通歌词里的连字符复合词（如 right-side、Click-click）被误判。
+    if (t.length < 60) {
+      final dashParts = t.split(RegExp(r'\s+[-–—－]\s+'));
+      if (dashParts.length == 2 &&
+          dashParts[0].trim().isNotEmpty &&
+          dashParts[1].trim().isNotEmpty &&
+          dashParts[0].trim().length <= 40 &&
+          dashParts[1].trim().length <= 40) {
+        return true;
+      }
+    }
     // 版权/来源关键词
     if (RegExp(
           r'(?:'
@@ -156,34 +209,6 @@ class LrcLine extends UnsyncLyricLine {
       return true;
     }
     return false;
-  }
-
-  static bool _isTitleArtistLine(String text, {required bool allowLoose}) {
-    final maxTotalLength = allowLoose ? 140 : 60;
-    if (text.length >= maxTotalLength) return false;
-    final dashPattern =
-        allowLoose ? RegExp(r'\s*[-–—－]\s*') : RegExp(r'\s+[-–—－]\s+');
-    final matches = dashPattern.allMatches(text).toList(growable: false);
-    if (matches.length != 1) return false;
-
-    final match = matches.first;
-    final left = text.substring(0, match.start).trim();
-    final right = text.substring(match.end).trim();
-    if (left.isEmpty || right.isEmpty) return false;
-
-    final maxPartLength = allowLoose ? 90 : 40;
-    if (left.length > maxPartLength || right.length > maxPartLength) {
-      return false;
-    }
-    if (!allowLoose) return true;
-
-    final separator = text.substring(match.start, match.end);
-    if (RegExp(r'\s').hasMatch(separator)) return true;
-
-    final hasAsian = RegExp(
-      r'[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]',
-    ).hasMatch('$left$right');
-    return hasAsian && left.length + right.length >= 4;
   }
 
   /// line: [mm:ss.msmsms]content
@@ -811,24 +836,18 @@ class Lrc extends Lyric {
         '[lrc] fromLrcTextAuto: format=${lrcFormat.name} sep=${separator ?? 'null'}');
     if (lrcFormat == LrcFormatType.wordByWord) {
       final rawLines = parseWordByWordLrc(lrc);
-      final metadataFilteredLines = _filterWordByWordMetadataLines(rawLines);
-      if (rawLines.isNotEmpty && metadataFilteredLines.isEmpty) {
-        return null;
-      }
-      if (metadataFilteredLines.isNotEmpty) {
+      if (rawLines.isNotEmpty) {
         // Group SyncLyricLine by start time and combine same-timestamp lines
         // (original + translation + roman at same timestamp = separate lines from parser)
         final grouped = <Duration, List<SyncLyricLine>>{};
-        for (final line in metadataFilteredLines) {
+        for (final line in rawLines) {
           grouped.putIfAbsent(line.start, () => []).add(line);
         }
         final combined = <SyncLyricLine>[];
-        final totalMs = _estimateSyncLyricTotalMs(rawLines);
         for (final entry in grouped.entries) {
           final group = entry.value;
           if (group.length == 1) {
-            final line = group[0];
-            if (!_isEdgeMetadataSyncLine(line, totalMs)) combined.add(line);
+            combined.add(group[0]);
           } else {
             // 智能选择主歌词行：不再假设 group[0] 一定是原文
             // 某些内嵌歌词的顺序是「罗马音 / 日语原文 / 中文翻译」，
@@ -856,15 +875,14 @@ class Lrc extends Lyric {
             if (transParts.isNotEmpty) {
               primary.translation = transParts.join(separator ?? '\u2503');
             }
-            if (!_isEdgeMetadataSyncLine(primary, totalMs)) combined.add(primary);
+            combined.add(primary);
           }
         }
-        if (combined.isEmpty) return null;
         // 插入开头前奏和中间间奏空白行（与 enhanced/Lyricify 对齐）
         final withInterludes = _insertInterludesForWordByWord(combined);
         final result = Lyric(withInterludes, source);
         logger.i(
-            '[lrc] fromLrcTextAuto: wordByWord raw=${rawLines.length}, metadataFiltered=${metadataFilteredLines.length}, combined -> ${combined.length} lines, after interludes -> ${withInterludes.length} lines');
+            '[lrc] fromLrcTextAuto: wordByWord combined -> ${combined.length} lines, after interludes -> ${withInterludes.length} lines');
         for (int i = 0; i < (withInterludes.length > 3 ? 3 : withInterludes.length); i++) {
           logger.i(
               '[lrc]   line[$i] start=${withInterludes[i].start.inMilliseconds}ms trans=${withInterludes[i].translation ?? 'null'} roman=${withInterludes[i].romanLyric ?? 'null'}');
@@ -907,43 +925,6 @@ class Lrc extends Lyric {
       }
     }
     return result;
-  }
-
-  static const int _metadataEdgeThresholdMs = 30000;
-
-  static List<SyncLyricLine> _filterWordByWordMetadataLines(
-      List<SyncLyricLine> lines) {
-    if (lines.isEmpty) return lines;
-    final totalMs = _estimateSyncLyricTotalMs(lines);
-    return lines
-        .where((line) => !_isEdgeMetadataSyncLine(line, totalMs))
-        .toList(growable: false);
-  }
-
-  static int _estimateSyncLyricTotalMs(List<SyncLyricLine> lines) {
-    var maxTimeMs = 0;
-    for (final line in lines) {
-      final endMs = line.start.inMilliseconds + line.length.inMilliseconds;
-      if (endMs > maxTimeMs) maxTimeMs = endMs;
-      for (final word in line.words) {
-        final wordEndMs =
-            word.start.inMilliseconds + word.length.inMilliseconds;
-        if (wordEndMs > maxTimeMs) maxTimeMs = wordEndMs;
-      }
-    }
-    return maxTimeMs + 5000;
-  }
-
-  static bool _isEdgeMetadataSyncLine(SyncLyricLine line, int totalMs) {
-    final startMs = line.start.inMilliseconds;
-    final useEdgeFilter = totalMs > _metadataEdgeThresholdMs * 2;
-    final nearEdge = !useEdgeFilter ||
-        startMs <= _metadataEdgeThresholdMs ||
-        startMs >= totalMs - _metadataEdgeThresholdMs;
-    if (!nearEdge) return false;
-    final text = line.content.trim();
-    return text.isNotEmpty &&
-        LrcLine.isLyricMetadataLine(text, allowLooseTitleArtist: true);
   }
 
   /// 为 wordByWord 格式插入开头前奏和中间间奏空白行
@@ -1050,9 +1031,7 @@ class Lrc extends Lyric {
       final contentRaw = line.replaceAll(timeTagRe, '').trim();
 
       // 过滤元数据行，只在歌曲首尾附近生效，防止中间歌词被误伤
-      if (LrcLine.isLyricMetadataLine(contentRaw,
-          allowLooseTitleArtist: true)) {
-        var filteredCurrentLine = false;
+      if (LrcLine.isLyricMetadataLine(contentRaw)) {
         for (final m in timeMatches) {
           final mm = int.tryParse(m.group(1) ?? '');
           final ss = double.tryParse(m.group(2) ?? '');
@@ -1067,11 +1046,10 @@ class Lrc extends Lyric {
               if (maxMetadataTimeMs == null || ms > maxMetadataTimeMs) {
                 maxMetadataTimeMs = ms;
               }
-              filteredCurrentLine = true;
             }
           }
         }
-        if (filteredCurrentLine) continue;
+        continue;
       }
 
       for (final m in timeMatches) {
@@ -1228,8 +1206,7 @@ class Lrc extends Lyric {
           startMs >= totalMs - edgeThresholdMs;
       if (nearEdge &&
           LrcLine.isLyricMetadataLine(
-              primaryContent.replaceAll(RegExp(r'<[^>]*>'), '').trim(),
-              allowLooseTitleArtist: true)) {
+              primaryContent.replaceAll(RegExp(r'<[^>]*>'), '').trim())) {
         continue;
       }
 
@@ -1451,9 +1428,7 @@ class Lrc extends Lyric {
 
       // 过滤元数据行（"Adam Levine："、"词：xxx"、"Lyrics by："等），
       // 避免它们抢真实歌词的主位。只在歌曲首尾附近生效，防止中间歌词被误伤。
-      if (LrcLine.isLyricMetadataLine(metadataCheckText,
-          allowLooseTitleArtist: true)) {
-        var filteredCurrentLine = false;
+      if (LrcLine.isLyricMetadataLine(metadataCheckText)) {
         // 记录该行所有时间戳，以便后续过滤同组的罗马音等残留行
         for (final m in timeMatches) {
           final mm = int.tryParse(m.group(1) ?? '');
@@ -1469,11 +1444,10 @@ class Lrc extends Lyric {
               if (maxMetadataTimeMs == null || ms > maxMetadataTimeMs) {
                 maxMetadataTimeMs = ms;
               }
-              filteredCurrentLine = true;
             }
           }
         }
-        if (filteredCurrentLine) continue;
+        continue;
       }
 
       for (final m in timeMatches) {
@@ -1734,9 +1708,7 @@ class Lrc extends Lyric {
       final primaryCheckText =
           primaryWordContent.isNotEmpty ? primaryWordContent.trim() : primaryText;
       if (words.isEmpty ||
-          (nearEdge &&
-              LrcLine.isLyricMetadataLine(primaryCheckText,
-                  allowLooseTitleArtist: true))) {
+          (nearEdge && LrcLine.isLyricMetadataLine(primaryCheckText))) {
         continue;
       }
 
