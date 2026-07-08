@@ -30,22 +30,25 @@ class MiniNowPlaying extends StatelessWidget {
             8.0,
             screenType == ScreenType.small ? 8.0 : 32.0,
           ),
-          child: SizedBox(
-            height: 64.0,
-            width: 600.0,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
-                boxShadow: kElevationToShadow[4],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: LayoutBuilder(builder: (context, constraints) {
-                  return RectangleProgressIndicator(
-                    size: Size(constraints.maxWidth, constraints.maxHeight),
-                    child: const _NowPlayingForeground(),
-                  );
-                }),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 600.0),
+            child: SizedBox(
+              height: 64.0,
+              width: double.infinity,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  boxShadow: kElevationToShadow[4],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: LayoutBuilder(builder: (context, constraints) {
+                    return RectangleProgressIndicator(
+                      size: Size(constraints.maxWidth, constraints.maxHeight),
+                      child: const _NowPlayingForeground(),
+                    );
+                  }),
+                ),
               ),
             ),
           ),
@@ -183,13 +186,16 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
                   return LayoutBuilder(builder: (context, constraints) {
                     final dense = constraints.maxWidth <= 520;
                     final hideControls = !_controlsVisible;
+                    final hasNowPlaying = nowPlaying != null;
                     final controls = Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         if (!dense)
                           IconButton(
-                            tooltip: '上一曲',
-                            onPressed: playbackService.lastAudio,
+                            tooltip: hasNowPlaying ? '上一曲' : '暂无正在播放',
+                            onPressed: hasNowPlaying
+                                ? playbackService.lastAudio
+                                : null,
                             icon: const Icon(
                               Symbols.skip_previous,
                               fill: 1.0,
@@ -200,11 +206,14 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
                         _MiniPlayPauseButton(
                           dense: dense,
                           onSecondaryContainer: scheme.onSecondaryContainer,
+                          enabled: hasNowPlaying,
                         ),
                         if (!dense)
                           IconButton(
-                            tooltip: '下一曲',
-                            onPressed: playbackService.nextAudio,
+                            tooltip: hasNowPlaying ? '下一曲' : '暂无正在播放',
+                            onPressed: hasNowPlaying
+                                ? playbackService.nextAudio
+                                : null,
                             icon: const Icon(
                               Symbols.skip_next,
                               fill: 1.0,
@@ -304,10 +313,12 @@ class _MiniPlayPauseButton extends StatelessWidget {
   const _MiniPlayPauseButton({
     required this.dense,
     required this.onSecondaryContainer,
+    required this.enabled,
   });
 
   final bool dense;
   final Color onSecondaryContainer;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -315,6 +326,7 @@ class _MiniPlayPauseButton extends StatelessWidget {
     return _AnimatedPlayPauseIconButton(
       dense: dense,
       color: onSecondaryContainer,
+      enabled: enabled,
       onPlay: playbackService.start,
       onPause: playbackService.pause,
       onReplay: playbackService.playAgain,
@@ -328,6 +340,7 @@ class _AnimatedPlayPauseIconButton extends StatefulWidget {
   const _AnimatedPlayPauseIconButton({
     required this.dense,
     required this.color,
+    required this.enabled,
     required this.onPlay,
     required this.onPause,
     required this.onReplay,
@@ -337,6 +350,7 @@ class _AnimatedPlayPauseIconButton extends StatefulWidget {
 
   final bool dense;
   final Color color;
+  final bool enabled;
   final VoidCallback onPlay;
   final VoidCallback onPause;
   final VoidCallback onReplay;
@@ -354,6 +368,7 @@ class _AnimatedPlayPauseIconButtonState
   late final AnimationController _controller = AnimationController(
       vsync: this, duration: const Duration(milliseconds: 220));
   late PlayerState _state = widget.initialState;
+  StreamSubscription<PlayerState>? _playerStateSub;
 
   @override
   void initState() {
@@ -363,81 +378,186 @@ class _AnimatedPlayPauseIconButtonState
     } else {
       _controller.value = 0.0;
     }
+    _bindPlayerStateStream();
+  }
+
+  void _bindPlayerStateStream() {
+    _playerStateSub?.cancel();
+    _playerStateSub = widget.playerStateStream.listen(_syncPlayerState);
+  }
+
+  void _syncPlayerState(PlayerState nextState) {
+    if (!mounted || nextState == _state) return;
+    setState(() {
+      _state = nextState;
+    });
+    _controller.animateTo(
+      nextState == PlayerState.playing ? 1.0 : 0.0,
+      duration: const Duration(milliseconds: 240),
+      curve: const Cubic(0.2, 0.0, 0.0, 1.0),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _AnimatedPlayPauseIconButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.playerStateStream != widget.playerStateStream) {
+      _bindPlayerStateStream();
+    }
+    if (oldWidget.initialState != widget.initialState &&
+        widget.initialState != _state) {
+      _syncPlayerState(widget.initialState);
+    }
   }
 
   @override
   void dispose() {
+    _playerStateSub?.cancel();
     _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<PlayerState>(
-      stream: widget.playerStateStream,
-      initialData: _state,
-      builder: (context, snapshot) {
-        _state = snapshot.data ?? _state;
-        final isPlaying = _state == PlayerState.playing;
-        _controller.animateTo(isPlaying ? 1.0 : 0.0,
-            duration: const Duration(milliseconds: 240),
-            curve: const Cubic(0.2, 0.0, 0.0, 1.0));
+    final isPlaying = _state == PlayerState.playing;
+    VoidCallback? onPressed;
+    if (widget.enabled) {
+      if (_state == PlayerState.playing) {
+        onPressed = widget.onPause;
+      } else if (_state == PlayerState.completed) {
+        onPressed = widget.onReplay;
+      } else {
+        onPressed = widget.onPlay;
+      }
+    }
+    final iconColor =
+        widget.enabled ? widget.color : widget.color.withValues(alpha: 0.38);
 
-        late VoidCallback onPressed;
-        if (_state == PlayerState.playing) {
-          onPressed = widget.onPause;
-        } else if (_state == PlayerState.completed) {
-          onPressed = widget.onReplay;
-        } else {
-          onPressed = widget.onPlay;
-        }
+    final icon = AnimatedIcon(
+      icon: AnimatedIcons.play_pause,
+      progress: _controller,
+      color: iconColor,
+      size: widget.dense ? 24.0 : 28.0,
+    );
 
-        final icon = AnimatedIcon(
-          icon: AnimatedIcons.play_pause,
-          progress: _controller,
-          color: widget.color,
-          size: widget.dense ? 24.0 : 28.0,
-        );
-
-        return IconButton(
-          tooltip: isPlaying ? '暂停' : '播放',
-          onPressed: onPressed,
-          icon: icon,
-          color: widget.color,
-        );
-      },
+    return IconButton(
+      tooltip: widget.enabled ? (isPlaying ? '暂停' : '播放') : '暂无正在播放',
+      onPressed: onPressed,
+      icon: icon,
+      color: iconColor,
     );
   }
 }
 
-class _MiniTimeText extends StatelessWidget {
+class _MiniTimeText extends StatefulWidget {
   const _MiniTimeText({required this.color});
 
   final Color color;
 
   @override
+  State<_MiniTimeText> createState() => _MiniTimeTextState();
+}
+
+class _MiniTimeTextState extends State<_MiniTimeText> {
+  final playbackService = PlayService.instance.playbackService;
+  Timer? _positionTimer;
+  final Stopwatch _clock = Stopwatch()..start();
+  int _lastNativeSyncMs = 0;
+  int _syncedPositionSeconds = 0;
+  late int _positionSeconds;
+  late int _lengthSeconds;
+  static const _nativeSyncInterval = Duration(seconds: 5);
+
+  @override
+  void initState() {
+    super.initState();
+    _syncedPositionSeconds = playbackService.position.floor();
+    _positionSeconds = _syncedPositionSeconds;
+    _lengthSeconds = playbackService.length.floor();
+    playbackService.playerStateNotifier.addListener(_syncTimer);
+    playbackService.nowPlayingNotifier.addListener(_onNowPlayingChanged);
+    _syncTimer();
+  }
+
+  void _syncTimer() {
+    _syncNativePosition();
+    final isPlaying =
+        playbackService.playerStateNotifier.value == PlayerState.playing;
+    if (!isPlaying) {
+      _positionTimer?.cancel();
+      _positionTimer = null;
+      return;
+    }
+    _positionTimer ??= Timer.periodic(const Duration(seconds: 1), (_) {
+      final elapsedSinceNative =
+          _clock.elapsedMilliseconds - _lastNativeSyncMs;
+      if (elapsedSinceNative >= _nativeSyncInterval.inMilliseconds) {
+        _syncNativePosition();
+      } else {
+        _emitLocalPosition();
+      }
+    });
+  }
+
+  void _syncNativePosition() {
+    _syncedPositionSeconds = playbackService.position.floor();
+    _lastNativeSyncMs = _clock.elapsedMilliseconds;
+    _emitLocalPosition(forceLength: true);
+  }
+
+  void _emitLocalPosition({bool forceLength = false}) {
+    final isPlaying =
+        playbackService.playerStateNotifier.value == PlayerState.playing;
+    final elapsedSeconds = isPlaying
+        ? ((_clock.elapsedMilliseconds - _lastNativeSyncMs) / 1000).floor()
+        : 0;
+    final nextLengthSeconds = playbackService.length.floor();
+    final nextSeconds = nextLengthSeconds > 0
+        ? (_syncedPositionSeconds + elapsedSeconds)
+            .clamp(0, nextLengthSeconds)
+            .toInt()
+        : _syncedPositionSeconds + elapsedSeconds;
+    if (nextSeconds == _positionSeconds &&
+        (!forceLength || nextLengthSeconds == _lengthSeconds)) {
+      return;
+    }
+    if (!mounted) {
+      _positionSeconds = nextSeconds;
+      _lengthSeconds = nextLengthSeconds;
+      return;
+    }
+    setState(() {
+      _positionSeconds = nextSeconds;
+      _lengthSeconds = nextLengthSeconds;
+    });
+  }
+
+  void _onNowPlayingChanged() {
+    _syncNativePosition();
+  }
+
+  @override
+  void dispose() {
+    playbackService.playerStateNotifier.removeListener(_syncTimer);
+    playbackService.nowPlayingNotifier.removeListener(_onNowPlayingChanged);
+    _positionTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final playbackService = PlayService.instance.playbackService;
-    return StreamBuilder(
-      stream: playbackService.positionStream,
-      initialData: playbackService.position,
-      builder: (context, snapshot) {
-        final pos = snapshot.data!;
-        final len = playbackService.length;
-        final posText = Duration(milliseconds: (pos * 1000).toInt())
-            .toStringHMMSS()
-            .replaceFirst(RegExp(r'^0:'), '');
-        final lenText = Duration(milliseconds: (len * 1000).toInt())
-            .toStringHMMSS()
-            .replaceFirst(RegExp(r'^0:'), '');
-        return Text(
-          '$posText / $lenText',
-          style: TextStyle(
-            color: color,
-            fontFeatures: const [FontFeature.tabularFigures()],
-          ),
-        );
-      },
+    final posText = Duration(seconds: _positionSeconds)
+        .toStringHMMSS()
+        .replaceFirst(RegExp(r'^0:'), '');
+    final lenText = Duration(seconds: _lengthSeconds)
+        .toStringHMMSS()
+        .replaceFirst(RegExp(r'^0:'), '');
+    return Text(
+      '$posText / $lenText',
+      style: TextStyle(
+        color: widget.color,
+        fontFeatures: const [FontFeature.tabularFigures()],
+      ),
     );
   }
 }
