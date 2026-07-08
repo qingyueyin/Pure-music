@@ -126,7 +126,6 @@ pure-music/
 │   │   ├── color_extraction.dart     # 封面颜色提取
 │   │   ├── immersive.dart            # 沉浸模式
 │   │   ├── lyric_render_config.dart  # 歌词渲染配置
-│   │   ├── position_provider.dart    # 播放进度状态
 │   │   ├── system_volume_service.dart# 系统音量
 │   │   ├── zh_converter.dart         # 简繁转换
 │   │   └── utils.dart                # 工具函数
@@ -200,7 +199,6 @@ pure-music/
 │   │   │       ├── now_playing_background.dart# 背景渲染
 │   │   │       ├── mesh_gradient_background.dart # Mesh 背景
 │   │   │       ├── blur_cover_background.dart # 封面模糊
-│   │   │       ├── hybrid_background.dart     # 混合背景
 │   │   │       ├── collapsible_lyric_controls.dart # 折叠控制
 │   │   │       └── current_playlist_view.dart # 当前播放列表
 │   │   ├── settings_page/            # 设置页
