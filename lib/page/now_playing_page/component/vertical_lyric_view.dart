@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:math';
 
-import 'package:pure_music/core/utils.dart' as utils;
+import 'package:pure_music/core/lyric_render_config.dart';
+import 'package:pure_music/core/route_visibility.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/page/now_playing_page/component/collapsible_lyric_controls.dart';
@@ -11,6 +13,7 @@ import 'package:pure_music/page/now_playing_page/component/lyrics_line_painter.d
 import 'package:pure_music/page/now_playing_page/component/lyric_viewport_strategy.dart';
 import 'package:pure_music/page/now_playing_page/component/value_transition.dart';
 import 'package:pure_music/play_service/play_service.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
@@ -25,8 +28,42 @@ const _shaderFadeInWithBlur = 0.05;
 const _shaderFadeInWithoutBlur = 0.05;
 const _shaderFadeOutWithBlur = 0.80;
 const _shaderFadeOutWithoutBlur = 0.95;
+const _lyricOffsetCacheCapacity = 6;
 
 bool alwaysShowLyricViewControls = false;
+
+class _LyricOffsetCacheKey {
+  const _LyricOffsetCacheKey({
+    required this.lyric,
+    required this.widthPx,
+    required this.config,
+  });
+
+  final Lyric lyric;
+  final int widthPx;
+  final LyricRenderConfig config;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _LyricOffsetCacheKey &&
+        identical(other.lyric, lyric) &&
+        other.widthPx == widthPx &&
+        other.config == config;
+  }
+
+  @override
+  int get hashCode => Object.hash(identityHashCode(lyric), widthPx, config);
+}
+
+class _LyricOffsetCacheEntry {
+  const _LyricOffsetCacheEntry({
+    required this.offsets,
+    required this.heights,
+  });
+
+  final List<double> offsets;
+  final List<double> heights;
+}
 
 enum LyricScrollState {
   idle,
@@ -101,16 +138,11 @@ class _VerticalLyricViewState extends State<VerticalLyricView>
                 lyricViewController,
               ]),
               builder: (context, _) => FutureBuilder(
+                key:
+                    ValueKey(PlayService.instance.lyricService.currLyricFuture),
                 future: PlayService.instance.lyricService.currLyricFuture,
                 builder: (context, snapshot) {
                   final lyricNullable = snapshot.data;
-                  if (lyricNullable != null) {
-                    utils.logger.d(
-                        'FutureBuilder: lines=${lyricNullable.lines.length} state=${snapshot.connectionState}');
-                  } else {
-                    utils.logger.d(
-                        'FutureBuilder: data=null state=${snapshot.connectionState}');
-                  }
                   final scheme = Theme.of(context).colorScheme;
                   final noLyricWidget = Center(
                     child: Column(
@@ -189,12 +221,20 @@ class _VerticalLyricScrollView extends StatefulWidget {
 }
 
 class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, RouteAware {
+  static final LinkedHashMap<_LyricOffsetCacheKey, _LyricOffsetCacheEntry>
+      _offsetCache = LinkedHashMap();
+
   final playbackService = PlayService.instance.playbackService;
   final lyricService = PlayService.instance.lyricService;
   late StreamSubscription lyricLineStreamSubscription;
+  Timer? _positionResyncTimer;
+  Timer? _positionResyncStopTimer;
+  Timer? _playbackResyncTimer;
   final scrollController = ScrollController();
   LyricViewController? _lyricViewController;
+  PageRoute<dynamic>? _route;
+  late final VoidCallback _playbackResyncListener;
   bool _disposed = false;
   Timer? _ensureVisibleTimer;
   Timer? _userScrollHoldTimer;
@@ -209,6 +249,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   /// 唯一当前行来源是 [_mainLine]。
   final Set<int> _activeLines = {};
   int _pendingScrollRetries = 0;
+  static const int _maxPendingScrollRetries = 90;
   LyricViewportRange _viewportRange =
       const LyricViewportRange(start: 0, end: 0);
 
@@ -216,6 +257,9 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   /// forceEmitCurrentLine 与 _scrollToCurrent 不在同一时机就绪，
   /// 需要在收到歌词行更新后补一次滚动。
   bool _needsInitialScroll = true;
+  int _lastPositionResyncMs = 0;
+  int _positionResyncExtensionCount = 0;
+  static const int _maxPositionResyncExtensions = 5;
 
   final Map<int, GlobalKey> _lineKeys = {};
   static const int _lineKeyRetainRadius = 4;
@@ -248,6 +292,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   List<double>? _cachedOffsets;
   List<double>? _cachedHeights;
   double _cachedMaxWidth = 0.0;
+  double _cachedViewportHeight = 0.0;
   bool _initialOffsetsComputed = false;
 
   @override
@@ -260,10 +305,17 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     );
     lyricLineStreamSubscription =
         lyricService.lyricLineStream.listen(_updateNextLyricLine);
+    _playbackResyncListener = _queuePlaybackResync;
+    playbackService.nowPlayingNotifier.addListener(_playbackResyncListener);
+    playbackService.playerStateNotifier.addListener(_playbackResyncListener);
+    playbackService.positionSyncNotifier.addListener(_playbackResyncListener);
+    lyricService.addListener(_playbackResyncListener);
+    _startPositionResyncWindow();
     _initLyricView();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       lyricService.forceEmitCurrentLine();
+      _syncToPlaybackPosition(duration: Duration.zero);
     });
 
     // 启动空闲检测
@@ -272,26 +324,20 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
         final idleTime = DateTime.now().difference(_lastActivityTime);
         if (idleTime.inSeconds >= 5 && !_didIdleCleanup) {
           _didIdleCleanup = true;
-          // 空闲 5 秒，执行深度清理
-          utils.logger.d('[Memory] Idle ${idleTime.inSeconds}s, FULL cleanup');
-
-          // 1. 完全清空对象池（而不是压缩）
-          LyricsLinePainter.clearPool();
+          LyricsLinePainter.trimPool();
           LyricsLineWidget.clearBlurFilterCache();
-
-          // 2. 清空缓存的偏移量和高度（强制下次重新计算）
-          _cachedOffsets = null;
-          _cachedHeights = null;
-
-          // 3. 触发完整重建（改变 _cachedMaxWidth 会导致所有非当前行key变化）
-          _cachedMaxWidth = (_cachedMaxWidth == 0.0) ? 0.1 : 0.0;
-
-          // 4. 强制 setState 触发 build
-          if (mounted) {
-            setState(() {});
-          }
         }
       }
+    });
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    _startPositionResyncWindow();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_disposed || !mounted) return;
+      _syncToPlaybackPosition(duration: Duration.zero);
     });
   }
 
@@ -299,6 +345,22 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   void _markActivity() {
     _lastActivityTime = DateTime.now();
     _didIdleCleanup = false;
+  }
+
+  void _queuePlaybackResync() {
+    if (_disposed || !mounted) return;
+    _needsInitialScroll = true;
+    _pendingScrollRetries = 0;
+    _startPositionResyncWindow();
+    _playbackResyncTimer?.cancel();
+    _playbackResyncTimer = Timer(const Duration(milliseconds: 16), () {
+      if (_disposed || !mounted) return;
+      _syncToPlaybackPosition(duration: Duration.zero);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_disposed || !mounted) return;
+        _syncToPlaybackPosition(duration: Duration.zero);
+      });
+    });
   }
 
   /// Sine Out 缓动函数
@@ -353,6 +415,20 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
     final controller = context.read<LyricViewController>();
     final config = controller.renderConfig;
+    final cacheKey = _LyricOffsetCacheKey(
+      lyric: widget.lyric,
+      widthPx: maxWidth.round(),
+      config: config,
+    );
+    final cached = _offsetCache.remove(cacheKey);
+    if (cached != null) {
+      _offsetCache[cacheKey] = cached;
+      _cachedOffsets = cached.offsets;
+      _cachedHeights = cached.heights;
+      _markOffsetsComputed();
+      return;
+    }
+
     final baseSize = config.baseFontSize;
     final showTrans = config.showTranslation;
     final showRoman = config.showRoman;
@@ -366,7 +442,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     final mainSize = config.primaryFontSize(isMainLine: true);
     final mainTransSize = config.translationFontSize(isMainLine: true);
 
-    final painter = TextPainter(textDirection: TextDirection.ltr);
+    final painter = LyricsLinePainter.obtainTextPainter();
 
     double measureLine(LyricLine line, bool isMain) {
       if (isMain) {
@@ -517,30 +593,52 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
     _cachedOffsets = offsets;
     _cachedHeights = heights;
+    _offsetCache[cacheKey] = _LyricOffsetCacheEntry(
+      offsets: offsets,
+      heights: heights,
+    );
+    while (_offsetCache.length > _lyricOffsetCacheCapacity) {
+      _offsetCache.remove(_offsetCache.keys.first);
+    }
+    LyricsLinePainter.recycleTextPainter(painter);
 
     // 首次进入页面时 offsets 可能晚于行号就绪，补一次定位
     if (!_initialOffsetsComputed) {
       _initialOffsetsComputed = true;
-      _needsInitialScroll = false;
+      _pendingScrollRetries = 0;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_disposed || !mounted) return;
-        _scrollToCurrent(Duration.zero);
+        _syncToPlaybackPosition(duration: Duration.zero);
       });
     }
+  }
 
-    if (lines.isNotEmpty) {
-      utils.logger.d(
-          '_computeOffsets: ${lines.length} lines totalOffset=${currentOffset.toStringAsFixed(1)}px');
-      for (int i = 0; i < lines.length && i < 3; i++) {
-        utils.logger.d(
-            '  line[$i] hMain=${heights[i].toStringAsFixed(1)} hSub=${measureLine(lines[i], false).toStringAsFixed(1)} offset=${offsets[i].toStringAsFixed(1)}');
-      }
-    }
+  void _markOffsetsComputed() {
+    if (_initialOffsetsComputed) return;
+    _initialOffsetsComputed = true;
+    _pendingScrollRetries = 0;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_disposed || !mounted) return;
+      _syncToPlaybackPosition(duration: Duration.zero);
+    });
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (_route != route) {
+      final oldRoute = _route;
+      if (oldRoute != null) {
+        routeVisibilityObserver.unsubscribe(this);
+      }
+      _route = route is PageRoute<dynamic> ? route : null;
+      final pageRoute = _route;
+      if (pageRoute != null) {
+        routeVisibilityObserver.subscribe(this, pageRoute);
+      }
+    }
+
     final controller = context.read<LyricViewController>();
     if (_lyricViewController == controller) return;
 
@@ -549,8 +647,29 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     _lyricViewController?.addListener(_scheduleEnsureCurrentVisible);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _scrollToCurrent(Duration.zero);
+      if (mounted) _syncToPlaybackPosition(duration: Duration.zero);
     });
+  }
+
+  void _syncWhenRouteVisible() {
+    if (_disposed || !mounted) return;
+    lyricService.forceEmitCurrentLine();
+    _startPositionResyncWindow();
+    _syncToPlaybackPosition(duration: Duration.zero);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_disposed || !mounted) return;
+      _syncToPlaybackPosition(duration: Duration.zero);
+    });
+  }
+
+  @override
+  void didPush() {
+    _syncWhenRouteVisible();
+  }
+
+  @override
+  void didPopNext() {
+    _syncWhenRouteVisible();
   }
 
   @override
@@ -572,16 +691,24 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       _cachedMaxWidth = 0.0;
       _cachedOffsets = null;
       _cachedHeights = null;
+      _cachedViewportHeight = 0.0;
       _initialOffsetsComputed = false;
       _needsInitialScroll = true;
+      _pendingScrollRetries = 0;
       _mainLine = 0;
+      _activeLines.clear();
+      _hoveredLineIndex = -1;
+      _viewportRange = const LyricViewportRange(start: 0, end: 0);
       _lineKeys.clear();
+      _startPositionResyncWindow();
 
       // 延迟清空 TextPainter 对象池，避免在绘制过程中销毁正在使用的对象
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_disposed || !mounted) return;
         LyricsLinePainter.clearPool();
+        LyricsLineWidget.clearBlurFilterCache();
         _initLyricView();
+        _syncToPlaybackPosition(duration: Duration.zero);
       });
     }
   }
@@ -591,6 +718,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     _ensureVisibleTimer = Timer(const Duration(milliseconds: 150), () {
       if (_disposed || !mounted) return;
       _cachedMaxWidth = 0.0;
+      _cachedViewportHeight = 0.0;
       final oldMainLine = _mainLine;
       setState(() {});
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -598,7 +726,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
         if (_mainLine >= widget.lyric.lines.length) {
           _mainLine = oldMainLine.clamp(0, widget.lyric.lines.length - 1);
         }
-        _scrollToCurrent();
+        _syncToPlaybackPosition(duration: Duration.zero);
       });
     });
   }
@@ -617,6 +745,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       scrollController.jumpTo(to);
       _scrollTransition.jumpTo(to);
       _stopScrollTicker();
+      _needsInitialScroll = false;
+      _positionResyncExtensionCount = 0;
       if (_scrollState == LyricScrollState.programScrolling) {
         _scrollState = LyricScrollState.idle;
       }
@@ -628,6 +758,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     _scrollTransition.duration = duration ?? _scrollDurationForDistance(dist);
     _scrollTransition.start(to);
     _startScrollTicker();
+    _needsInitialScroll = false;
+    _positionResyncExtensionCount = 0;
 
     if (_scrollState != LyricScrollState.userDragging) {
       _scrollState = LyricScrollState.programScrolling;
@@ -684,7 +816,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     if (_disposed) return;
     if (_scrollState == LyricScrollState.userDragging) return;
     if (!scrollController.hasClients) {
-      if (_pendingScrollRetries < 4) {
+      if (_pendingScrollRetries < _maxPendingScrollRetries) {
         _pendingScrollRetries++;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (_disposed || !mounted) return;
@@ -736,7 +868,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       return;
     }
 
-    if (_pendingScrollRetries < 4) {
+    if (_pendingScrollRetries < _maxPendingScrollRetries) {
       _pendingScrollRetries++;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_disposed || !mounted) return;
@@ -749,15 +881,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   }
 
   void _initLyricView() {
-    final lines = widget.lyric.lines;
-    utils.logger.d('_initLyricView: lines=${lines.length} mainLine=$_mainLine');
-    if (lines.isNotEmpty) {
-      for (int i = 0; i < lines.length && i < 3; i++) {
-        final l = lines[i];
-        utils.logger.d(
-            '  line[$i] start=${l.start.inMilliseconds}ms length=${l.length.inMilliseconds}ms type=${l.runtimeType} blank=${l is LrcLine ? l.isBlank : 'N/A'} trans=${l.translation}');
-      }
-    }
     _updateViewportRange(force: true);
   }
 
@@ -792,33 +915,129 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     return false;
   }
 
-  void _updateNextLyricLine(LyricLineUpdate update) {
-    if (_disposed) return;
-    final lineChanged = _mainLine != update.primaryIndex;
+  int? _nearestRenderableLineIndex(
+    int lineIndex, {
+    bool preferForward = false,
+  }) {
+    final lines = widget.lyric.lines;
+    if (lines.isEmpty) return null;
+    final clamped = lineIndex.clamp(0, lines.length - 1).toInt();
+    if (!_isLineBlankFiltered(lines[clamped])) return clamped;
+    if (preferForward) {
+      for (int i = clamped + 1; i < lines.length; i++) {
+        if (!_isLineBlankFiltered(lines[i])) return i;
+      }
+      for (int i = clamped - 1; i >= 0; i--) {
+        if (!_isLineBlankFiltered(lines[i])) return i;
+      }
+    } else {
+      for (int i = clamped - 1; i >= 0; i--) {
+        if (!_isLineBlankFiltered(lines[i])) return i;
+      }
+      for (int i = clamped + 1; i < lines.length; i++) {
+        if (!_isLineBlankFiltered(lines[i])) return i;
+      }
+    }
+    return null;
+  }
 
-    if (!lineChanged) {
-      setState(() {
-        _activeLines
-          ..clear()
-          ..addAll(update.activeIndices);
-        _pruneLineKeys();
-      });
-      // 首次进入页面时即使行号未变，也可能从未滚动过，补一次定位
+  Set<int> _renderableActiveLines(LyricLineUpdate update) {
+    final lines = widget.lyric.lines;
+    if (lines.isEmpty || update.activeIndices.isEmpty) return const <int>{};
+    return update.activeIndices
+        .where(
+          (i) => i >= 0 && i < lines.length && !_isLineBlankFiltered(lines[i]),
+        )
+        .toSet();
+  }
+
+  void _syncToPlaybackPosition({
+    Duration? duration,
+    bool forceScroll = true,
+  }) {
+    if (_disposed || !mounted) return;
+    final update = lyricService.lineUpdateForLyric(
+      widget.lyric,
+      playbackService.position,
+      preferUpcomingInGap: forceScroll || _needsInitialScroll,
+    );
+    if (update == null) {
+      lyricService.forceEmitCurrentLine();
+      return;
+    }
+    _applyLyricLineUpdate(
+      update,
+      forceScroll: forceScroll,
+      duration: duration ?? Duration.zero,
+    );
+  }
+
+  void _startPositionResyncWindow() {
+    if (_disposed) return;
+    _positionResyncTimer ??= Timer.periodic(
+      const Duration(milliseconds: 250),
+      (_) => _resyncFromPositionTick(playbackService.position),
+    );
+    _positionResyncStopTimer?.cancel();
+    _positionResyncStopTimer = Timer(const Duration(seconds: 4), () {
+      _positionResyncTimer?.cancel();
+      _positionResyncTimer = null;
+      _positionResyncStopTimer = null;
+      if (_needsInitialScroll &&
+          mounted &&
+          !_disposed &&
+          _positionResyncExtensionCount < _maxPositionResyncExtensions) {
+        _positionResyncExtensionCount++;
+        _startPositionResyncWindow();
+      }
+    });
+  }
+
+  void _resyncFromPositionTick(double position) {
+    if (_disposed || !mounted) return;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    if (nowMs - _lastPositionResyncMs < 200) return;
+    _lastPositionResyncMs = nowMs;
+    final preferUpcoming = _needsInitialScroll;
+    final update = lyricService.lineUpdateForLyric(
+      widget.lyric,
+      position,
+      preferUpcomingInGap: preferUpcoming,
+    );
+    if (update == null) return;
+    final nextMainLine = _nearestRenderableLineIndex(
+      update.primaryIndex,
+      preferForward: preferUpcoming,
+    );
+    if (nextMainLine == null) return;
+    final nextActiveLines = _renderableActiveLines(update);
+    if (nextMainLine == _mainLine && setEquals(_activeLines, nextActiveLines)) {
       if (_needsInitialScroll) {
-        _needsInitialScroll = false;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (_disposed || !mounted) return;
-          _scrollToCurrent(Duration.zero);
-        });
+        _scrollToCurrent(Duration.zero);
       }
       return;
     }
+    _applyLyricLineUpdate(update);
+  }
 
+  void _applyLyricLineUpdate(
+    LyricLineUpdate update, {
+    bool forceScroll = false,
+    Duration? duration,
+  }) {
+    if (_disposed || !mounted) return;
     final lines = widget.lyric.lines;
-    if (update.primaryIndex < lines.length &&
-        _isLineBlankFiltered(lines[update.primaryIndex])) {
-      return;
-    }
+    if (lines.isEmpty) return;
+
+    final nextMainLine = update.primaryIndex.clamp(0, lines.length - 1).toInt();
+    final preferForward = forceScroll || _needsInitialScroll;
+    final renderableMainLine = _nearestRenderableLineIndex(
+      nextMainLine,
+      preferForward: preferForward,
+    );
+    if (renderableMainLine == null) return;
+    final nextActiveLines = _renderableActiveLines(update);
+
     final renderConfig = context.read<LyricViewController>().renderConfig;
     final viewportStrategy = LyricViewportStrategy(
       leadingLines: renderConfig.viewportLeadingLines,
@@ -828,30 +1047,48 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     );
     final followDecision = viewportStrategy.followDecision(
       currentRange: _viewportRange,
-      nextMainLine: update.primaryIndex,
+      nextMainLine: renderableMainLine,
       totalLines: lines.length,
     );
+    final shouldScroll =
+        forceScroll || _needsInitialScroll || followDecision.shouldScroll;
+
+    if (forceScroll) {
+      _pendingScrollRetries = 0;
+      _userScrollHoldTimer?.cancel();
+      _stopScrollTicker();
+    }
 
     setState(() {
-      _mainLine = update.primaryIndex;
+      _mainLine = renderableMainLine;
       _activeLines
         ..clear()
-        ..addAll(update.activeIndices);
+        ..addAll(nextActiveLines);
       _pruneLineKeys();
-      _viewportRange = followDecision.nextRange;
+      _viewportRange = forceScroll
+          ? viewportStrategy.rangeForMainLine(
+              mainLine: renderableMainLine,
+              totalLines: lines.length,
+            )
+          : followDecision.nextRange;
       if (_hoveredLineIndex != -1) {
         _hoveredLineIndex = -1;
       }
+      if (forceScroll && _scrollState == LyricScrollState.userDragging) {
+        _scrollState = LyricScrollState.idle;
+      }
     });
 
-    // 行号已变化，首次定位需求已被本次更新覆盖
-    _needsInitialScroll = false;
-
-    if (followDecision.shouldScroll) {
+    if (shouldScroll) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _scrollToCurrent();
+        if (_disposed || !mounted) return;
+        _scrollToCurrent(duration);
       });
     }
+  }
+
+  void _updateNextLyricLine(LyricLineUpdate _) {
+    _syncToPlaybackPosition(forceScroll: false);
   }
 
   @override
@@ -876,6 +1113,16 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
       final spacerHeight = constraints.maxHeight / 2.0;
       final viewportHeight = constraints.maxHeight;
+      final viewportHeightChanged = viewportHeight.isFinite &&
+          viewportHeight > 0 &&
+          (viewportHeight - _cachedViewportHeight).abs() > 0.5;
+      if (viewportHeightChanged) {
+        _cachedViewportHeight = viewportHeight;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_disposed || !mounted) return;
+          _syncToPlaybackPosition(duration: Duration.zero);
+        });
+      }
       final extraTopPadding = widget.enableEdgeSpacer ? viewportHeight : 0.0;
       final extraBottomPadding = widget.enableEdgeSpacer ? viewportHeight : 0.0;
       final alignTopPadding =
@@ -974,10 +1221,12 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                       Widget lineWidget = SizedBox(
                         key: _keyForLine(i),
                         child: LyricsLineWidget(
-                          key: ValueKey('lyric_line_$i'),
+                          key: ValueKey(
+                            'lyric_line_${identityHashCode(widget.lyric)}_$i',
+                          ),
                           line: line,
                           opacity: isHovered ? 1.0 : opacity,
-                          distance: dist,
+                          distance: _activeLines.contains(i) ? 0 : dist,
                           lineOffsetY: 0.0,
                           staggerDelay:
                               isHovered ? Duration.zero : staggerDelay,
@@ -1013,16 +1262,27 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     _disposed = true;
     _stopScrollTicker();
     _lineKeys.clear();
-    super.dispose();
     _ensureVisibleTimer?.cancel();
     _userScrollHoldTimer?.cancel();
     _sizeChangeTimer?.cancel();
+    _playbackResyncTimer?.cancel();
     _idleCleanupTimer?.cancel(); // 取消空闲检测
     _lyricViewController?.removeListener(_scheduleEnsureCurrentVisible);
+    _lyricViewController?.removeListener(_scheduleEnsureCurrentVisible);
+    routeVisibilityObserver.unsubscribe(this);
+    playbackService.nowPlayingNotifier.removeListener(_playbackResyncListener);
+    playbackService.playerStateNotifier.removeListener(_playbackResyncListener);
+    playbackService.positionSyncNotifier
+        .removeListener(_playbackResyncListener);
+    lyricService.removeListener(_playbackResyncListener);
     lyricLineStreamSubscription.cancel();
+    _positionResyncTimer?.cancel();
+    _positionResyncStopTimer?.cancel();
     scrollController.dispose();
 
     // 清空 TextPainter 对象池，释放内存
     LyricsLinePainter.clearPool();
+    LyricsLineWidget.clearBlurFilterCache();
+    super.dispose();
   }
 }
