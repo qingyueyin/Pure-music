@@ -1,10 +1,18 @@
+bool _matchesStoredEnumName(String stored, String name) {
+  final normalized = stored.trim().toLowerCase();
+  final separator = normalized.lastIndexOf('.');
+  final storedName =
+      separator < 0 ? normalized : normalized.substring(separator + 1);
+  return storedName == name.toLowerCase();
+}
+
 enum SortOrder {
   ascending,
   decending;
 
   static SortOrder? fromString(String sortOrder) {
     for (var value in SortOrder.values) {
-      if (value.name == sortOrder) return value;
+      if (_matchesStoredEnumName(sortOrder, value.name)) return value;
     }
     return null;
   }
@@ -16,7 +24,7 @@ enum ContentView {
 
   static ContentView? fromString(String contentView) {
     for (var value in ContentView.values) {
-      if (value.name == contentView) return value;
+      if (_matchesStoredEnumName(contentView, value.name)) return value;
     }
     return null;
   }
@@ -29,7 +37,7 @@ enum NowPlayingViewMode {
 
   static NowPlayingViewMode? fromString(String nowPlayingViewMode) {
     for (var value in NowPlayingViewMode.values) {
-      if (value.name == nowPlayingViewMode) return value;
+      if (_matchesStoredEnumName(nowPlayingViewMode, value.name)) return value;
     }
     return null;
   }
@@ -41,14 +49,16 @@ enum NowPlayingBackgroundMode {
 
   static NowPlayingBackgroundMode? fromString(String? backgroundMode) {
     if (backgroundMode == null) return null;
-    if (backgroundMode == 'pureColor' || backgroundMode == 'simpleFallback') {
+    if (_matchesStoredEnumName(backgroundMode, 'pureColor') ||
+        _matchesStoredEnumName(backgroundMode, 'simpleFallback')) {
       return NowPlayingBackgroundMode.blurCover;
     }
-    if (backgroundMode == 'fluidBlob' || backgroundMode == 'hybrid') {
+    if (_matchesStoredEnumName(backgroundMode, 'fluidBlob') ||
+        _matchesStoredEnumName(backgroundMode, 'hybrid')) {
       return NowPlayingBackgroundMode.blurCover;
     }
     for (var value in NowPlayingBackgroundMode.values) {
-      if (value.name == backgroundMode) return value;
+      if (_matchesStoredEnumName(backgroundMode, value.name)) return value;
     }
     return null;
   }
@@ -61,7 +71,7 @@ enum LyricTextAlign {
 
   static LyricTextAlign? fromString(String lyricTextAlign) {
     for (var value in LyricTextAlign.values) {
-      if (value.name == lyricTextAlign) return value;
+      if (_matchesStoredEnumName(lyricTextAlign, value.name)) return value;
     }
     return null;
   }
@@ -79,7 +89,7 @@ enum PlayMode {
 
   static PlayMode? fromString(String playMode) {
     for (var value in PlayMode.values) {
-      if (value.name == playMode) return value;
+      if (_matchesStoredEnumName(playMode, value.name)) return value;
     }
     return null;
   }
@@ -97,7 +107,7 @@ enum TopBarLyricAnimation {
 
   static TopBarLyricAnimation? fromString(String name) {
     for (var value in TopBarLyricAnimation.values) {
-      if (value.name == name) return value;
+      if (_matchesStoredEnumName(name, value.name)) return value;
     }
     return null;
   }
@@ -109,14 +119,35 @@ enum NowPlayingMode {
 
   static NowPlayingMode? fromString(String name) {
     for (var value in NowPlayingMode.values) {
-      if (value.name == name) return value;
+      if (_matchesStoredEnumName(name, value.name)) return value;
     }
     return null;
   }
 
+  static NowPlayingMode? fromStoredValue(Object? value) {
+    if (value is int && value >= 0 && value < NowPlayingMode.values.length) {
+      return NowPlayingMode.values[value];
+    }
+    final text = value?.toString().trim();
+    if (text == null || text.isEmpty) return null;
+    final numeric = double.tryParse(text);
+    if (numeric != null && numeric.isFinite) {
+      final index = numeric.toInt();
+      if (numeric == index &&
+          index >= 0 &&
+          index < NowPlayingMode.values.length) {
+        return NowPlayingMode.values[index];
+      }
+    }
+    return NowPlayingMode.fromString(text);
+  }
+
   static Set<NowPlayingMode> fromList(List<dynamic>? list) {
     if (list == null) return {};
-    return list.map((e) => NowPlayingMode.fromString(e.toString())).whereType<NowPlayingMode>().toSet();
+    return list
+        .map(NowPlayingMode.fromStoredValue)
+        .whereType<NowPlayingMode>()
+        .toSet();
   }
 
   static List<String> toList(Set<NowPlayingMode> set) {
