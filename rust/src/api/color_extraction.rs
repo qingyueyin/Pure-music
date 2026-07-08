@@ -46,11 +46,23 @@ fn _extract_colors_from_image(
     // 释放缩放后的图
     drop(resized);
 
-    let mut pixels: Vec<[u8; 3]> = rgba
-        .pixels()
-        .filter(|p| p[3] > 128)
-        .map(|p| [p[0], p[1], p[2]])
-        .collect();
+    let edge_margin = (resize_dim.0.min(resize_dim.1) / 8).max(1);
+    let mut pixels: Vec<[u8; 3]> = Vec::with_capacity((resize_dim.0 * resize_dim.1) as usize);
+    for (x, y, p) in rgba.enumerate_pixels() {
+        if p[3] <= 128 {
+            continue;
+        }
+        let rgb = [p[0], p[1], p[2]];
+        pixels.push(rgb);
+        let near_edge = x < edge_margin
+            || y < edge_margin
+            || x + edge_margin >= resize_dim.0
+            || y + edge_margin >= resize_dim.1;
+        if near_edge {
+            pixels.push(rgb);
+            pixels.push(rgb);
+        }
+    }
     // 释放 RGBA 缓冲
     drop(rgba);
 
@@ -58,7 +70,7 @@ fn _extract_colors_from_image(
         return Ok(vec![]);
     }
 
-    apply_apple_music_pipeline(&mut pixels);
+    apply_background_palette_pipeline(&mut pixels);
 
     // 转换为 Lab 色彩空间用于 k-means
     let lab_pixels: Vec<Lab> = pixels
@@ -75,7 +87,7 @@ fn _extract_colors_from_image(
     // 缩减 k-means 迭代：封面取色不需要 20 轮的高精度
     let max_iter = 10;
     let converge = 8.0; // 放宽收敛条件
-    let runs = 2;       // 减少重复运行次数
+    let runs = 2; // 减少重复运行次数
     let seed = 0;
 
     let mut result = Kmeans::new();
@@ -113,33 +125,25 @@ fn _extract_colors_from_image(
     Ok(colors)
 }
 
-fn apply_apple_music_pipeline(pixels: &mut [[u8; 3]]) {
+fn apply_background_palette_pipeline(pixels: &mut [[u8; 3]]) {
     for pixel in pixels.iter_mut() {
         let mut r = pixel[0] as f32 / 255.0;
         let mut g = pixel[1] as f32 / 255.0;
         let mut b = pixel[2] as f32 / 255.0;
 
-        // Contrast 0.4 (reduce contrast)
-        r = contrast(r, 0.4);
-        g = contrast(g, 0.4);
-        b = contrast(b, 0.4);
-
-        // Saturate 3.0 (boost saturation)
         let (h, s, l) = rgb_to_hsl(r, g, b);
-        let new_s = (s * 3.0).min(1.0);
-        (r, g, b) = hsl_to_rgb(h, new_s, l);
+        let saturation = if l < 0.08 {
+            s * 0.92
+        } else {
+            (s * 1.36).min(0.9)
+        };
+        let lightness = (l * 0.9).clamp(0.07, 0.68);
+        (r, g, b) = hsl_to_rgb(h, saturation, lightness);
 
-        // Contrast 1.7 (increase contrast)
-        r = contrast(r, 1.7);
-        g = contrast(g, 1.7);
-        b = contrast(b, 1.7);
+        r = contrast(r, 1.14);
+        g = contrast(g, 1.14);
+        b = contrast(b, 1.14);
 
-        // Brightness 0.75 (dim)
-        r = (r * 0.75).min(1.0);
-        g = (g * 0.75).min(1.0);
-        b = (b * 0.75).min(1.0);
-
-        // Convert back to u8
         pixel[0] = (r * 255.0).round().clamp(0.0, 255.0) as u8;
         pixel[1] = (g * 255.0).round().clamp(0.0, 255.0) as u8;
         pixel[2] = (b * 255.0).round().clamp(0.0, 255.0) as u8;
@@ -160,7 +164,11 @@ fn rgb_to_hsl(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
     }
 
     let d = max - min;
-    let s = if l > 0.5 { d / (2.0 - max - min) } else { d / (max + min) };
+    let s = if l > 0.5 {
+        d / (2.0 - max - min)
+    } else {
+        d / (max + min)
+    };
 
     let h = if max == r {
         (g - b) / d + (if g < b { 6.0 } else { 0.0 })
@@ -175,11 +183,21 @@ fn rgb_to_hsl(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
 
 fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (f32, f32, f32) {
     let hue2rgb = |p: f32, q: f32, mut t: f32| {
-        if t < 0.0 { t += 1.0; }
-        if t > 1.0 { t -= 1.0; }
-        if t < 1.0 / 6.0 { return p + (q - p) * 6.0 * t; }
-        if t < 1.0 / 2.0 { return q; }
-        if t < 2.0 / 3.0 { return p + (q - p) * (2.0 / 3.0 - t) * 6.0; }
+        if t < 0.0 {
+            t += 1.0;
+        }
+        if t > 1.0 {
+            t -= 1.0;
+        }
+        if t < 1.0 / 6.0 {
+            return p + (q - p) * 6.0 * t;
+        }
+        if t < 1.0 / 2.0 {
+            return q;
+        }
+        if t < 2.0 / 3.0 {
+            return p + (q - p) * (2.0 / 3.0 - t) * 6.0;
+        }
         p
     };
 
