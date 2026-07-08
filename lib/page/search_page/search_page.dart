@@ -10,40 +10,20 @@ class SearchPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-
     return ColoredBox(
       color: scheme.surface,
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520),
+          constraints: const BoxConstraints(maxWidth: 480),
           child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Symbols.search, size: 48, color: scheme.outline),
-                const SizedBox(height: 12),
-                Text(
-                  '请使用顶栏搜索',
-                  style: TextStyle(
-                    color: scheme.onSurface,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '右上角放大镜已经替代了旧搜索页面。',
-                  style: TextStyle(color: scheme.onSurfaceVariant),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 16),
-                FilledButton.icon(
-                  onPressed: () => SearchDialog.show(context),
-                  icon: const Icon(Symbols.search),
-                  label: const Text('打开搜索'),
-                ),
-              ],
+            padding: const EdgeInsets.symmetric(horizontal: 32.0),
+            child: SearchBar(
+              hintText: '搜索歌曲、艺术家、专辑',
+              leading: const Icon(Symbols.search),
+              onTap: () => SearchDialog.show(context),
+              padding: const WidgetStatePropertyAll(
+                EdgeInsets.symmetric(horizontal: 16),
+              ),
             ),
           ),
         ),
