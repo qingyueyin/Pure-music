@@ -31,15 +31,21 @@ class _ArtistTileState extends State<ArtistTile> {
   @override
   void initState() {
     super.initState();
-    _coverFuture = widget.artist.works.first.cover;
+    _refreshCover();
   }
 
   @override
   void didUpdateWidget(covariant ArtistTile oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.artist != widget.artist) {
-      _coverFuture = widget.artist.works.first.cover;
+    if (oldWidget.artist != widget.artist || oldWidget.view != widget.view) {
+      _refreshCover();
     }
+  }
+
+  void _refreshCover() {
+    _coverFuture = widget.artist.works.isEmpty
+        ? Future<ImageProvider?>.value(null)
+        : widget.artist.thumbnailPicture(size: 48);
   }
 
   @override
@@ -52,6 +58,7 @@ class _ArtistTileState extends State<ArtistTile> {
       color: scheme.onSurface,
       size: 48,
     );
+    final hasWorks = widget.artist.works.isNotEmpty;
     final isSelected =
         widget.multiSelectController?.selected.contains(widget.artist) == true;
     final isMultiSelectView =
@@ -64,10 +71,12 @@ class _ArtistTileState extends State<ArtistTile> {
         menuChildren: [
           MenuItemButton(
             style: menuItemStyle,
-            onPressed: () => context.push(
-              app_paths.ARTIST_DETAIL_PAGE,
-              extra: widget.artist,
-            ),
+            onPressed: hasWorks
+                ? () => context.push(
+                      app_paths.ARTIST_DETAIL_PAGE,
+                      extra: widget.artist,
+                    )
+                : null,
             leadingIcon: const Icon(Symbols.open_in_new),
             child: const Text('打开'),
           ),
@@ -104,10 +113,12 @@ class _ArtistTileState extends State<ArtistTile> {
                 }
 
                 if (!isMultiSelectView) {
-                  context.push(
-                    app_paths.ARTIST_DETAIL_PAGE,
-                    extra: widget.artist,
-                  );
+                  if (hasWorks) {
+                    context.push(
+                      app_paths.ARTIST_DETAIL_PAGE,
+                      extra: widget.artist,
+                    );
+                  }
                   return;
                 }
 
