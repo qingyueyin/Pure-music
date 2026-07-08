@@ -1,6 +1,7 @@
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/component/album_tile.dart';
+import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/page/uni_page.dart';
@@ -14,26 +15,28 @@ class AlbumsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final contentList = AudioLibrary.instance.albumCollection.values.toList();
+    final canSortItems = hasEnoughItemsToSort(contentList.length);
     final multiSelectController = MultiSelectController<Album>();
     return UniPage<Album>(
       pref: AppPreference.instance.albumsPagePref,
       title: '专辑',
       subtitle: '${contentList.length} 张专辑',
       contentList: contentList,
-      contentBuilder: (context, item, i, multiSelectController, view) => AlbumTile(
+      contentBuilder: (context, item, i, multiSelectController, view) =>
+          AlbumTile(
         album: item,
         multiSelectController: multiSelectController,
         view: view,
       ),
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 180,
-          childAspectRatio: 0.75,
-          mainAxisSpacing: 24.0,
-          crossAxisSpacing: 24.0,
-        ),
+        maxCrossAxisExtent: 180,
+        childAspectRatio: 0.75,
+        mainAxisSpacing: 24.0,
+        crossAxisSpacing: 24.0,
+      ),
       enableShufflePlay: false,
-      enableSortMethod: true,
-      enableSortOrder: true,
+      enableSortMethod: canSortItems,
+      enableSortOrder: canSortItems,
       enableContentViewSwitch: false,
       multiSelectController: multiSelectController,
       multiSelectViewActions: [
