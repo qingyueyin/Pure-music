@@ -45,7 +45,10 @@ fn aes_decrypt(data: &[u8], key: &[u8; 16]) -> Result<Vec<u8>, String> {
         return Err("empty decryption data".to_string());
     }
     if !data.len().is_multiple_of(16) {
-        return Err(format!("invalid encrypted data length: {} (not a multiple of 16)", data.len()));
+        return Err(format!(
+            "invalid encrypted data length: {} (not a multiple of 16)",
+            data.len()
+        ));
     }
     let cipher = Aes128::new(key.into());
     let mut result = Vec::new();
@@ -75,7 +78,10 @@ fn eapi_md5(url: &str, params: &str) -> String {
 /// Returns "params=UPPERCASE_HEX_STRING" format
 fn eapi_params_encrypt(encrypt_path: &str, params: &str) -> String {
     let digest = eapi_md5(encrypt_path, params);
-    let data = format!("{}-36cd479b6b5-{}-36cd479b6b5-{}", encrypt_path, params, digest);
+    let data = format!(
+        "{}-36cd479b6b5-{}-36cd479b6b5-{}",
+        encrypt_path, params, digest
+    );
     let encrypted = aes_encrypt(data.as_bytes(), EAPI_KEY);
     let hex_str: String = encrypted.iter().map(|b| format!("{:02X}", b)).collect();
     format!("params={}", hex_str)
@@ -203,7 +209,11 @@ impl NetEaseCloud {
             ("User-Agent".to_string(), "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Safari/537.36 Chrome/91.0.4472.164 NeteaseMusicDesktop/3.1.3.203419".to_string()),
             ("Referer".to_string(), "https://music.163.com/".to_string()),
         ];
-        let cookie_str: String = cookies.iter().map(|(k, v)| format!("{}={}", k, v)).collect::<Vec<_>>().join("; ");
+        let cookie_str: String = cookies
+            .iter()
+            .map(|(k, v)| format!("{}={}", k, v))
+            .collect::<Vec<_>>()
+            .join("; ");
         if !cookie_str.is_empty() {
             headers.push(("Cookie".to_string(), cookie_str));
         }
@@ -250,7 +260,10 @@ impl NetEaseCloud {
             ("channel".to_string(), "netease".to_string()),
             ("mode".to_string(), mode.to_string()),
             ("appver".to_string(), "3.1.3.203419".to_string()),
-        ].iter().cloned().collect();
+        ]
+        .iter()
+        .cloned()
+        .collect();
 
         let params = serde_json::json!({
             "username": username,
@@ -281,7 +294,8 @@ impl NetEaseCloud {
         let status = response.status();
         ne_log!("D", "init: status={}", status);
 
-        let headers_map: HashMap<String, String> = response.headers()
+        let headers_map: HashMap<String, String> = response
+            .headers()
             .iter()
             .map(|(k, v)| (k.as_str().to_string(), v.to_str().unwrap_or("").to_string()))
             .collect();
@@ -293,12 +307,24 @@ impl NetEaseCloud {
             ne_log!("E", "init: failed to read response body: {}", e);
             e.to_string()
         })?;
-        ne_log!("D", "init: response body size={} bytes", response_bytes.len());
-        ne_log!("D", "init: response hex preview: {}", hex_preview(&response_bytes, 64));
+        ne_log!(
+            "D",
+            "init: response body size={} bytes",
+            response_bytes.len()
+        );
+        ne_log!(
+            "D",
+            "init: response hex preview: {}",
+            hex_preview(&response_bytes, 64)
+        );
 
         let data = eapi_response_decrypt(response_bytes.as_ref()).map_err(|e| {
             ne_log!("E", "init: decrypt failed: {}", e);
-            ne_log!("E", "init: raw response hex: {}", hex_preview(&response_bytes, 256));
+            ne_log!(
+                "E",
+                "init: raw response hex: {}",
+                hex_preview(&response_bytes, 256)
+            );
             format!("decrypt failed: {}", e)
         })?;
 
@@ -314,11 +340,20 @@ impl NetEaseCloud {
         })?;
 
         if json["code"].as_i64().unwrap_or(-1) != 200 {
-            ne_log!("E", "init: login failed, code={}, body={}", json["code"].as_i64().unwrap_or(-1), json_str);
+            ne_log!(
+                "E",
+                "init: login failed, code={}, body={}",
+                json["code"].as_i64().unwrap_or(-1),
+                json_str
+            );
             return Err(format!("Anon login failed: {}", json_str));
         }
 
-        ne_log!("I", "init: login successful, userId={}", json["userId"].as_i64().unwrap_or(0));
+        ne_log!(
+            "I",
+            "init: login successful, userId={}",
+            json["userId"].as_i64().unwrap_or(0)
+        );
 
         let mut cookies = self.cookies.lock().map_err(|e| e.to_string())?;
         for (k, v) in &pre_cookies {
@@ -397,12 +432,24 @@ impl NetEaseCloud {
             ne_log!("E", "get_lyric: failed to read response body: {}", e);
             e.to_string()
         })?;
-        ne_log!("D", "get_lyric: response body size={} bytes", response_bytes.len());
-        ne_log!("D", "get_lyric: response hex preview: {}", hex_preview(&response_bytes, 64));
+        ne_log!(
+            "D",
+            "get_lyric: response body size={} bytes",
+            response_bytes.len()
+        );
+        ne_log!(
+            "D",
+            "get_lyric: response hex preview: {}",
+            hex_preview(&response_bytes, 64)
+        );
 
         let data = eapi_response_decrypt(response_bytes.as_ref()).map_err(|e| {
             ne_log!("E", "get_lyric: decrypt failed: {}", e);
-            ne_log!("E", "get_lyric: raw response hex: {}", hex_preview(&response_bytes, 256));
+            ne_log!(
+                "E",
+                "get_lyric: raw response hex: {}",
+                hex_preview(&response_bytes, 256)
+            );
             format!("decrypt failed: {}", e)
         })?;
 
@@ -410,7 +457,11 @@ impl NetEaseCloud {
             ne_log!("E", "get_lyric: UTF8 decode failed: {}", e);
             e.to_string()
         })?;
-        ne_log!("D", "get_lyric: decrypted (first 200 chars): {}", &json_str[..json_str.len().min(200)]);
+        ne_log!(
+            "D",
+            "get_lyric: decrypted (first 200 chars): {}",
+            &json_str[..json_str.len().min(200)]
+        );
 
         let result: LyricResult = serde_json::from_str(&json_str).map_err(|e| {
             ne_log!("E", "get_lyric: JSON parse failed: {}", e);
@@ -422,16 +473,23 @@ impl NetEaseCloud {
             return Err(format!("Get lyric failed with code: {}", result.code));
         }
 
-        ne_log!("I", "get_lyric: success, lrc={}, yrc={}, tlyric={}",
+        ne_log!(
+            "I",
+            "get_lyric: success, lrc={}, yrc={}, tlyric={}",
             result.lrc.as_ref().map(|l| l.lyric.len()).unwrap_or(0),
             result.yrc.as_ref().map(|l| l.lyric.len()).unwrap_or(0),
-            result.tlyric.as_ref().map(|l| l.lyric.len()).unwrap_or(0));
+            result.tlyric.as_ref().map(|l| l.lyric.len()).unwrap_or(0)
+        );
 
         Ok(result)
     }
 
     /// Search NeSource
-    pub fn search(&self, keyword: String, limit: i32) -> Result<Vec<HashMap<String, String>>, String> {
+    pub fn search(
+        &self,
+        keyword: String,
+        limit: i32,
+    ) -> Result<Vec<HashMap<String, String>>, String> {
         self.init()?;
         ne_log!("I", "search: keyword='{}', limit={}", keyword, limit);
 
@@ -472,8 +530,16 @@ impl NetEaseCloud {
             e.to_string()
         })?;
 
-        ne_log!("D", "search: response body size={} bytes", response_bytes.len());
-        ne_log!("D", "search: response hex preview: {}", hex_preview(&response_bytes, 128));
+        ne_log!(
+            "D",
+            "search: response body size={} bytes",
+            response_bytes.len()
+        );
+        ne_log!(
+            "D",
+            "search: response hex preview: {}",
+            hex_preview(&response_bytes, 128)
+        );
 
         if response_bytes.is_empty() {
             ne_log!("E", "search: empty response from NetEase");
@@ -482,7 +548,11 @@ impl NetEaseCloud {
 
         let data = eapi_response_decrypt(response_bytes.as_ref()).map_err(|e| {
             ne_log!("E", "search: decrypt failed: {}", e);
-            ne_log!("E", "search: raw response hex: {}", hex_preview(&response_bytes, 512));
+            ne_log!(
+                "E",
+                "search: raw response hex: {}",
+                hex_preview(&response_bytes, 512)
+            );
             format!("decrypt failed: {}", e)
         })?;
 
@@ -490,7 +560,11 @@ impl NetEaseCloud {
             ne_log!("E", "search: UTF8 decode failed: {}", e);
             e.to_string()
         })?;
-        ne_log!("D", "search: decrypted (first 500 chars): {}", &json_str[..json_str.len().min(500)]);
+        ne_log!(
+            "D",
+            "search: decrypted (first 500 chars): {}",
+            &json_str[..json_str.len().min(500)]
+        );
 
         let json: serde_json::Value = serde_json::from_str(&json_str).map_err(|e| {
             ne_log!("E", "search: JSON parse failed: {}", e);
@@ -500,7 +574,12 @@ impl NetEaseCloud {
         let code = json["code"].as_i64().unwrap_or(-1);
         ne_log!("D", "search: response code={}", code);
         if code != 200 {
-            ne_log!("W", "search: API returned code={}, body: {}", code, &json_str[..json_str.len().min(500)]);
+            ne_log!(
+                "W",
+                "search: API returned code={}, body: {}",
+                code,
+                &json_str[..json_str.len().min(500)]
+            );
             return Err(format!("Search failed with code: {}", code));
         }
 
@@ -510,20 +589,37 @@ impl NetEaseCloud {
             for (i, resource) in resources.iter().enumerate() {
                 if let Some(song) = resource["baseInfo"]["simpleSongData"].as_object() {
                     let mut map = HashMap::new();
-                    map.insert("id".to_string(), song["id"].as_i64().unwrap_or(0).to_string());
+                    map.insert(
+                        "id".to_string(),
+                        song["id"].as_i64().unwrap_or(0).to_string(),
+                    );
                     let name = song["name"].as_str().unwrap_or("").to_string();
                     map.insert("name".to_string(), name.clone());
                     if let Some(artists) = song["ar"].as_array() {
-                        let artist_names: Vec<String> = artists.iter()
+                        let artist_names: Vec<String> = artists
+                            .iter()
                             .filter_map(|a| a["name"].as_str().map(String::from))
                             .collect();
                         let artists_str = artist_names.join(", ");
                         map.insert("artists".to_string(), artists_str);
                     }
                     if let Some(album) = song["al"].as_object() {
-                        map.insert("album".to_string(), album.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string());
+                        map.insert(
+                            "album".to_string(),
+                            album
+                                .get("name")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                        );
                     }
-                    ne_log!("D", "search: [{}] {} - {}", i, name, map.get("artists").cloned().unwrap_or_default());
+                    ne_log!(
+                        "D",
+                        "search: [{}] {} - {}",
+                        i,
+                        name,
+                        map.get("artists").cloned().unwrap_or_default()
+                    );
                     results.push(map);
                 }
             }
