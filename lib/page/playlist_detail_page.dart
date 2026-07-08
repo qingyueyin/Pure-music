@@ -30,6 +30,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
   bool _isPickingCover = false;
   late Future<ImageProvider?> _primaryPicFuture;
   late Future<ImageProvider?> _backgroundPicFuture;
+  String _searchQuery = '';
 
   Future<ImageProvider?> _loadPrimaryPic() async {
     final custom = await widget.playlist.resolveCoverProvider();
@@ -59,6 +60,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.playlist != widget.playlist) {
       _refreshCoverFutures();
+      _searchQuery = '';
     }
   }
 
@@ -97,7 +99,15 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    final contentList = List<Audio>.from(widget.playlist.audios);
+    final allAudios = widget.playlist.audios;
+    final contentList = _searchQuery.isEmpty
+        ? List<Audio>.from(allAudios)
+        : allAudios.where((audio) {
+            final q = _searchQuery.toLowerCase();
+            return audio.title.toLowerCase().contains(q) ||
+                audio.artist.toLowerCase().contains(q) ||
+                audio.album.toLowerCase().contains(q);
+          }).toList();
     final scheme = Theme.of(context).colorScheme;
     final pref = AppPreference.instance.playlistDetailPagePref;
 
@@ -140,6 +150,24 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
               break;
             case SortOrder.decending:
               list.sort((a, b) => b.album.naturalCompareTo(a.album));
+              break;
+          }
+        },
+      ),
+      SortMethodDesc<Audio>(
+        icon: Symbols.add_circle,
+        name: '添加时间',
+        method: (list, order) {
+          switch (order) {
+            case SortOrder.ascending:
+              list.sort((a, b) => widget.playlist
+                  .addedAt(a.path)
+                  .compareTo(widget.playlist.addedAt(b.path)));
+              break;
+            case SortOrder.decending:
+              list.sort((a, b) => widget.playlist
+                  .addedAt(b.path)
+                  .compareTo(widget.playlist.addedAt(a.path)));
               break;
           }
         },
@@ -192,7 +220,9 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
       backgroundPic: _backgroundPicFuture,
       picShape: PicShape.rrect,
       title: widget.playlist.name,
-      subtitle: '${contentList.length} 首乐曲',
+      subtitle: _searchQuery.isEmpty
+          ? '${allAudios.length} 首乐曲'
+          : '${contentList.length} / ${allAudios.length} 首乐曲',
       secondaryContent: contentList,
       secondaryContentBuilder: (context, audio, i, msc, _) => AudioTile(
         audioIndex: i,
@@ -221,6 +251,9 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
       enableSortMethod: canSortSongs,
       enableSortOrder: canSortSongs,
       enableSecondaryContentViewSwitch: contentList.isNotEmpty,
+      enableSearch: true,
+      searchQuery: _searchQuery,
+      onSearchChanged: (v) => setState(() => _searchQuery = v),
       multiSelectController: multiSelectController,
       multiSelectViewActions: [
         ListenableBuilder(

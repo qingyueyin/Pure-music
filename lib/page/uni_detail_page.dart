@@ -46,6 +46,9 @@ class UniDetailPage<P, S, T> extends StatefulWidget {
     this.bodyOverride,
     this.onPrimaryPicTap,
     this.primaryPicBusy = false,
+    this.enableSearch = false,
+    this.searchQuery = '',
+    this.onSearchChanged,
   });
 
   final PagePreference pref;
@@ -88,6 +91,9 @@ class UniDetailPage<P, S, T> extends StatefulWidget {
   final Widget? bodyOverride;
   final VoidCallback? onPrimaryPicTap;
   final bool primaryPicBusy;
+  final bool enableSearch;
+  final String searchQuery;
+  final ValueChanged<String>? onSearchChanged;
 
   @override
   State<UniDetailPage<P, S, T>> createState() => _UniDetailPageState<P, S, T>();
@@ -99,11 +105,18 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
   late SortOrder currSortOrder = widget.pref.sortOrder;
   late ContentView currContentView = widget.pref.contentView;
   int _currentTabIndex = 0;
+  final _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     currSortMethod?.method(widget.secondaryContent, currSortOrder);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   @override
@@ -214,6 +227,10 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
               multiSelectViewActions: widget.multiSelectViewActions,
               onPicTap: widget.onPrimaryPicTap,
               picBusy: widget.primaryPicBusy,
+              searchController:
+                  widget.enableSearch ? _searchController : null,
+              searchQuery: widget.searchQuery,
+              onSearchChanged: widget.onSearchChanged,
             ),
             if (widget.enableTabs && hasTertiaryContent) ...[
               const SizedBox(height: 16.0),
@@ -431,6 +448,148 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
 
 enum PicShape { oval, rrect }
 
+class _ActionsRow extends StatelessWidget {
+  const _ActionsRow({
+    required this.actions,
+    this.searchController,
+    required this.searchQuery,
+    this.onSearchChanged,
+    required this.scheme,
+  });
+
+  final List<Widget> actions;
+  final TextEditingController? searchController;
+  final String searchQuery;
+  final ValueChanged<String>? onSearchChanged;
+  final ColorScheme scheme;
+
+  @override
+  Widget build(BuildContext context) {
+    final compact =
+        MediaQuery.sizeOf(context).width < 560;
+    final showSearch = searchController != null;
+
+    if (!showSearch) {
+      return Wrap(spacing: 8.0, runSpacing: 8.0, children: actions);
+    }
+
+    final searchField = _CompactSearchBar(
+      controller: searchController!,
+      query: searchQuery,
+      onChanged: onSearchChanged,
+      scheme: scheme,
+    );
+
+    if (compact) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Wrap(spacing: 8.0, runSpacing: 8.0, children: actions),
+          const SizedBox(height: 8.0),
+          searchField,
+        ],
+      );
+    }
+
+    return Row(
+      children: [
+        Expanded(
+          child: Wrap(spacing: 8.0, runSpacing: 8.0, children: actions),
+        ),
+        const SizedBox(width: 12.0),
+        SizedBox(width: 220, child: searchField),
+      ],
+    );
+  }
+}
+
+class _CompactSearchBar extends StatelessWidget {
+  const _CompactSearchBar({
+    required this.controller,
+    required this.query,
+    this.onChanged,
+    required this.scheme,
+  });
+
+  final TextEditingController controller;
+  final String query;
+  final ValueChanged<String>? onChanged;
+  final ColorScheme scheme;
+
+  @override
+  Widget build(BuildContext context) {
+    return SearchBar(
+      controller: controller,
+      hintText: '搜索…',
+      hintStyle: WidgetStatePropertyAll(
+        TextStyle(
+          color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
+          fontSize: 13,
+          fontWeight: FontWeight.w400,
+        ),
+      ),
+      textStyle: WidgetStatePropertyAll(
+        TextStyle(
+          color: scheme.onSurface,
+          fontSize: 13,
+          fontWeight: FontWeight.w400,
+        ),
+      ),
+      leading: Padding(
+        padding: const EdgeInsets.only(left: 8),
+        child: Icon(
+          Symbols.search,
+          size: 18,
+          color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
+        ),
+      ),
+      trailing: query.isNotEmpty
+          ? [
+              IconButton(
+                icon: Icon(
+                  Symbols.close,
+                  size: 18,
+                  color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+                ),
+                onPressed: () {
+                  controller.clear();
+                  onChanged?.call('');
+                },
+                visualDensity: VisualDensity.compact,
+                style: IconButton.styleFrom(
+                  minimumSize: const Size(28, 28),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ]
+          : null,
+      padding: const WidgetStatePropertyAll(
+        EdgeInsets.symmetric(horizontal: 4),
+      ),
+      elevation: const WidgetStatePropertyAll(0.0),
+      surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+      backgroundColor: WidgetStatePropertyAll(
+        scheme.surfaceContainerHighest.withValues(alpha: 0.55),
+      ),
+      shadowColor: const WidgetStatePropertyAll(Colors.transparent),
+      overlayColor: WidgetStatePropertyAll(
+        scheme.primary.withValues(alpha: 0.08),
+      ),
+      shape: WidgetStatePropertyAll(
+        RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(28.0),
+          side: BorderSide(
+            color: query.isNotEmpty
+                ? scheme.primary.withValues(alpha: 0.35)
+                : scheme.outlineVariant.withValues(alpha: 0.3),
+          ),
+        ),
+      ),
+      onChanged: onChanged,
+    );
+  }
+}
+
 class _UniDetailPageHeader extends StatelessWidget {
   static final _blurFilter = ImageFilter.blur(sigmaX: 100, sigmaY: 100);
   const _UniDetailPageHeader({
@@ -444,6 +603,9 @@ class _UniDetailPageHeader extends StatelessWidget {
     this.multiSelectViewActions,
     this.onPicTap,
     this.picBusy = false,
+    this.searchController,
+    this.searchQuery = '',
+    this.onSearchChanged,
   });
 
   final Future<ImageProvider?> pic;
@@ -457,6 +619,9 @@ class _UniDetailPageHeader extends StatelessWidget {
   final List<Widget>? multiSelectViewActions;
   final VoidCallback? onPicTap;
   final bool picBusy;
+  final TextEditingController? searchController;
+  final String searchQuery;
+  final ValueChanged<String>? onSearchChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -483,6 +648,7 @@ class _UniDetailPageHeader extends StatelessWidget {
                   return Image(
                     image: snapshot.data!,
                     fit: BoxFit.cover,
+                    gaplessPlayback: true,
                     errorBuilder: (_, __, ___) => const SizedBox.shrink(),
                   );
                 },
@@ -539,14 +705,16 @@ class _UniDetailPageHeader extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 8.0),
-                        Wrap(
-                          spacing: 8.0,
-                          runSpacing: 8.0,
-                          children: multiSelectController == null
+                        _ActionsRow(
+                          actions: multiSelectController == null
                               ? actions
                               : multiSelectController!.enableMultiSelectView
                                   ? multiSelectViewActions!
                                   : actions,
+                          searchController: searchController,
+                          searchQuery: searchQuery,
+                          onSearchChanged: onSearchChanged,
+                          scheme: scheme,
                         )
                       ],
                     ),
@@ -608,6 +776,7 @@ class _HoverableCoverState extends State<_HoverableCover> {
                           image: snapshot.data!,
                           width: widget.size,
                           height: widget.size,
+                          gaplessPlayback: true,
                           errorBuilder: (_, __, ___) => widget.placeholder,
                         ),
                       ),
@@ -617,6 +786,7 @@ class _HoverableCoverState extends State<_HoverableCover> {
                           image: snapshot.data!,
                           width: widget.size,
                           height: widget.size,
+                          gaplessPlayback: true,
                           errorBuilder: (_, __, ___) => widget.placeholder,
                         ),
                       ),
