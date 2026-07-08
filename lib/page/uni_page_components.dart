@@ -1,9 +1,11 @@
 import 'package:pure_music/core/enums.dart';
+import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/page/uni_page.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/core/utils.dart';
+import 'package:pure_music/core/menu_styles.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -14,10 +16,14 @@ class ShufflePlay<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final enabled = contentList.isNotEmpty;
+
     return FilledButton.icon(
-      onPressed: () => PlayService.instance.playbackService.shuffleAndPlay(
-        contentList as List<Audio>,
-      ),
+      onPressed: enabled
+          ? () => PlayService.instance.playbackService.shuffleAndPlay(
+                contentList as List<Audio>,
+              )
+          : null,
       icon: const Icon(Symbols.shuffle),
       label: const Text('随机播放'),
       style: const ButtonStyle(
@@ -45,21 +51,22 @@ class SortMethodComboBox<T> extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
 
     return MenuAnchor(
-      style: MenuStyle(
-        shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        ),
-      ),
+      style: appMenuStyle,
       menuChildren: List.generate(
         sortMethods.length,
-        (i) => MenuItemButton(
-          style: const ButtonStyle(
-            padding: WidgetStatePropertyAll(EdgeInsets.all(12)),
-          ),
-          leadingIcon: Icon(sortMethods[i].icon),
-          child: Text(sortMethods[i].name),
-          onPressed: () => setSortMethod(sortMethods[i]),
-        ),
+        (i) {
+          final sortMethod = sortMethods[i];
+          final selected = identical(sortMethod, currSortMethod);
+          return MenuItemButton(
+            style: const ButtonStyle(
+              padding: WidgetStatePropertyAll(EdgeInsets.all(12)),
+            ),
+            leadingIcon: Icon(sortMethod.icon),
+            trailingIcon: selected ? const Icon(Symbols.check) : null,
+            onPressed: selected ? null : () => setSortMethod(sortMethod),
+            child: Text(sortMethod.name),
+          );
+        },
       ),
       builder: (context, menuController, _) {
         final borderRadius = BorderRadius.circular(20.0);
@@ -178,60 +185,155 @@ class ContentViewSwitch<T> extends StatelessWidget {
   }
 }
 
-class AddAllToPlaylist extends StatelessWidget {
+List<Audio> _uniqueAudiosByPath(Iterable<Audio> audios) {
+  final map = <String, Audio>{};
+  for (final audio in audios) {
+    map[audio.path] = audio;
+  }
+  return map.values.toList();
+}
+
+int _addMissingAudiosToPlaylist(Playlist playlist, Iterable<Audio> audios) {
+  var addedCount = 0;
+  for (final audio in _uniqueAudiosByPath(audios)) {
+    if (!playlist.containsPath(audio.path)) {
+      playlist.addPath(audio.path);
+      addedCount++;
+    }
+  }
+  return addedCount;
+}
+
+int _addableAudioCount(Playlist playlist, Iterable<Audio> audios) {
+  var count = 0;
+  for (final audio in _uniqueAudiosByPath(audios)) {
+    if (!playlist.containsPath(audio.path)) count++;
+  }
+  return count;
+}
+
+class AddAllToPlaylist extends StatefulWidget {
   const AddAllToPlaylist({super.key, required this.multiSelectController});
 
   final MultiSelectController<Audio> multiSelectController;
 
   @override
+  State<AddAllToPlaylist> createState() => _AddAllToPlaylistState();
+}
+
+class _AddAllToPlaylistState extends State<AddAllToPlaylist> {
+  Playlist? _addingPlaylist;
+
+  Future<void> _addToPlaylist(Playlist playlist) async {
+    if (_addingPlaylist != null) return;
+
+    final selected = _uniqueAudiosByPath(widget.multiSelectController.selected);
+    if (selected.isEmpty) return;
+    setState(() => _addingPlaylist = playlist);
+    try {
+      final oldPaths = List<String>.from(playlist.paths);
+      final addedCount = _addMissingAudiosToPlaylist(playlist, selected);
+      if (addedCount == 0) {
+        if (!mounted) return;
+        showTextOnSnackBar('选中歌曲已在歌单“${playlist.name}”中');
+        return;
+      }
+      final saved = await savePlaylists();
+      if (!mounted) return;
+      if (!saved) {
+        playlist.replacePaths(oldPaths);
+        showTextOnSnackBar('保存歌单失败');
+        return;
+      }
+      showTextOnSnackBar(
+        '成功将$addedCount首添加到歌单“${playlist.name}”',
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _addingPlaylist = null);
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return MenuAnchor(
-      style: MenuStyle(
-        shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        ),
-      ),
-      menuChildren: List.generate(
-        PLAYLISTS.length,
-        (i) => MenuItemButton(
-          style: const ButtonStyle(
-            padding: WidgetStatePropertyAll(
-              EdgeInsets.symmetric(horizontal: 20),
-            ),
+    return ListenableBuilder(
+      listenable: widget.multiSelectController,
+      builder: (context, _) {
+        final selectedAudios =
+            _uniqueAudiosByPath(widget.multiSelectController.selected);
+        final addableCounts = playlists
+            .map((playlist) => _addableAudioCount(playlist, selectedAudios))
+            .toList(growable: false);
+        return MenuAnchor(
+          style: appMenuStyle,
+          menuChildren: List.generate(
+            playlists.length,
+            (i) {
+              final playlist = playlists[i];
+              final isAdding = identical(_addingPlaylist, playlist);
+              final addableCount = addableCounts[i];
+              final allAlreadyAdded =
+                  selectedAudios.isNotEmpty && addableCount == 0;
+              return MenuItemButton(
+                style: const ButtonStyle(
+                  padding: WidgetStatePropertyAll(
+                    EdgeInsets.symmetric(horizontal: 20),
+                  ),
+                ),
+                onPressed: _addingPlaylist == null && addableCount > 0
+                    ? () => _addToPlaylist(playlist)
+                    : null,
+                leadingIcon: isAdding
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(
+                        allAlreadyAdded ? Symbols.check : Symbols.queue_music,
+                      ),
+                child: Text(playlist.name),
+              );
+            },
           ),
-          onPressed: () {
-            for (var item in multiSelectController.selected) {
-              if (!PLAYLISTS[i].containsPath(item.path)) {
-                PLAYLISTS[i].addPath(item.path);
-              }
-            }
-            savePlaylists();
-            showTextOnSnackBar(
-              '成功将${multiSelectController.selected.length}首添加到歌单${PLAYLISTS[i].name}',
+          builder: (context, controller, _) {
+            final enabled = canOpenAddToPlaylistMenu(
+              hasSelectedAudios: selectedAudios.isNotEmpty,
+              isAdding: _addingPlaylist != null,
+              addableCounts: addableCounts,
+            );
+            final isAdding = _addingPlaylist != null;
+            return FilledButton.icon(
+              onPressed: enabled
+                  ? () {
+                      if (controller.isOpen) {
+                        controller.close();
+                      } else {
+                        controller.open();
+                      }
+                    }
+                  : null,
+              icon: isAdding
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Symbols.add),
+              label: Text(isAdding ? '添加中' : '添加到歌单'),
+              style: const ButtonStyle(
+                fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
+              ),
             );
           },
-          child: Text(PLAYLISTS[i].name),
-        ),
-      ),
-      builder: (context, controller, _) => FilledButton.icon(
-        onPressed: () {
-          if (controller.isOpen) {
-            controller.close();
-          } else {
-            controller.open();
-          }
-        },
-        icon: const Icon(Symbols.add),
-        label: const Text('添加到歌单'),
-        style: const ButtonStyle(
-          fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
-        ),
-      ),
+        );
+      },
     );
   }
 }
 
-class AddSelectedAudiosToPlaylist<T> extends StatelessWidget {
+class AddSelectedAudiosToPlaylist<T> extends StatefulWidget {
   const AddSelectedAudiosToPlaylist({
     super.key,
     required this.multiSelectController,
@@ -242,52 +344,121 @@ class AddSelectedAudiosToPlaylist<T> extends StatelessWidget {
   final List<Audio> Function(Set<T> selected) toAudios;
 
   @override
+  State<AddSelectedAudiosToPlaylist<T>> createState() =>
+      _AddSelectedAudiosToPlaylistState<T>();
+}
+
+class _AddSelectedAudiosToPlaylistState<T>
+    extends State<AddSelectedAudiosToPlaylist<T>> {
+  Playlist? _addingPlaylist;
+
+  Future<void> _addToPlaylist(Playlist playlist) async {
+    if (_addingPlaylist != null) return;
+
+    final selectedAudios = _uniqueAudiosByPath(
+        widget.toAudios(widget.multiSelectController.selected));
+    if (selectedAudios.isEmpty) return;
+    setState(() => _addingPlaylist = playlist);
+    try {
+      final oldPaths = List<String>.from(playlist.paths);
+      final addedCount = _addMissingAudiosToPlaylist(playlist, selectedAudios);
+      if (addedCount == 0) {
+        if (!mounted) return;
+        showTextOnSnackBar('选中歌曲已在歌单“${playlist.name}”中');
+        return;
+      }
+      final saved = await savePlaylists();
+      if (!mounted) return;
+      if (!saved) {
+        playlist.replacePaths(oldPaths);
+        showTextOnSnackBar('保存歌单失败');
+        return;
+      }
+      showTextOnSnackBar(
+        '成功将$addedCount首添加到歌单“${playlist.name}”',
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _addingPlaylist = null);
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return MenuAnchor(
-      style: MenuStyle(
-        shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        ),
-      ),
-      menuChildren: List.generate(
-        PLAYLISTS.length,
-        (i) => MenuItemButton(
-          style: const ButtonStyle(
-            padding: WidgetStatePropertyAll(
-              EdgeInsets.symmetric(horizontal: 20),
-            ),
+    return ListenableBuilder(
+      listenable: widget.multiSelectController,
+      builder: (context, _) {
+        final selectedAudios = _uniqueAudiosByPath(
+          widget.toAudios(widget.multiSelectController.selected),
+        );
+        final addableCounts = playlists
+            .map((playlist) => _addableAudioCount(playlist, selectedAudios))
+            .toList(growable: false);
+        return MenuAnchor(
+          style: appMenuStyle,
+          menuChildren: List.generate(
+            playlists.length,
+            (i) {
+              final playlist = playlists[i];
+              final isAdding = identical(_addingPlaylist, playlist);
+              final addableCount = addableCounts[i];
+              final allAlreadyAdded =
+                  selectedAudios.isNotEmpty && addableCount == 0;
+              return MenuItemButton(
+                style: const ButtonStyle(
+                  padding: WidgetStatePropertyAll(
+                    EdgeInsets.symmetric(horizontal: 20),
+                  ),
+                ),
+                onPressed: _addingPlaylist == null && addableCount > 0
+                    ? () => _addToPlaylist(playlist)
+                    : null,
+                leadingIcon: isAdding
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(
+                        allAlreadyAdded ? Symbols.check : Symbols.queue_music,
+                      ),
+                child: Text(playlist.name),
+              );
+            },
           ),
-          onPressed: () {
-            final selectedAudios = toAudios(multiSelectController.selected);
-            for (final audio in selectedAudios) {
-              if (!PLAYLISTS[i].containsPath(audio.path)) {
-                PLAYLISTS[i].addPath(audio.path);
-              }
-            }
-            savePlaylists();
-            showTextOnSnackBar(
-              '成功将${selectedAudios.length}首添加到歌单“${PLAYLISTS[i].name}”',
+          builder: (context, controller, _) {
+            final enabled = canOpenAddToPlaylistMenu(
+              hasSelectedAudios: selectedAudios.isNotEmpty,
+              isAdding: _addingPlaylist != null,
+              addableCounts: addableCounts,
+            );
+            final isAdding = _addingPlaylist != null;
+            return FilledButton.icon(
+              onPressed: enabled
+                  ? () {
+                      if (controller.isOpen) {
+                        controller.close();
+                      } else {
+                        controller.open();
+                      }
+                    }
+                  : null,
+              icon: isAdding
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Symbols.add),
+              label: Text(isAdding ? '添加中' : '添加到歌单'),
+              style: const ButtonStyle(
+                fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
+              ),
             );
           },
-          child: Text(PLAYLISTS[i].name),
-        ),
-      ),
-      builder: (context, controller, _) => FilledButton.icon(
-        onPressed: multiSelectController.selected.isEmpty
-            ? null
-            : () {
-                if (controller.isOpen) {
-                  controller.close();
-                } else {
-                  controller.open();
-                }
-              },
-        icon: const Icon(Symbols.add),
-        label: const Text('添加到歌单'),
-        style: const ButtonStyle(
-          fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -308,33 +479,29 @@ class MultiSelectPlaySelectedAudios<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: multiSelectController,
-      builder: (context, _) => FilledButton.icon(
-        onPressed: multiSelectController.selected.isEmpty
-            ? null
-            : () {
-                final selectedAudios = toAudios(multiSelectController.selected);
-                final map = <String, Audio>{};
-                for (final audio in selectedAudios) {
-                  map[audio.path] = audio;
-                }
-                final audios = map.values.toList();
-                if (audios.isEmpty) return;
+      builder: (context, _) {
+        final audios =
+            _uniqueAudiosByPath(toAudios(multiSelectController.selected));
+        return FilledButton.icon(
+          onPressed: audios.isEmpty
+              ? null
+              : () {
+                  if (shuffle) {
+                    PlayService.instance.playbackService.shuffleAndPlay(audios);
+                  } else {
+                    PlayService.instance.playbackService.play(0, audios);
+                  }
 
-                if (shuffle) {
-                  PlayService.instance.playbackService.shuffleAndPlay(audios);
-                } else {
-                  PlayService.instance.playbackService.play(0, audios);
-                }
-
-                multiSelectController.useMultiSelectView(false);
-                multiSelectController.clear();
-              },
-        icon: Icon(shuffle ? Symbols.shuffle : Symbols.play_arrow),
-        label: Text(shuffle ? '随机播放' : '播放'),
-        style: const ButtonStyle(
-          fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
-        ),
-      ),
+                  multiSelectController.useMultiSelectView(false);
+                  multiSelectController.clear();
+                },
+          icon: Icon(shuffle ? Symbols.shuffle : Symbols.play_arrow),
+          label: Text(shuffle ? '随机播放' : '播放'),
+          style: const ButtonStyle(
+            fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
+          ),
+        );
+      },
     );
   }
 }
@@ -353,8 +520,10 @@ class MultiSelectSelectOrClearAll<T> extends StatelessWidget {
     return ListenableBuilder(
       listenable: multiSelectController,
       builder: (context, _) {
-        final allSelected = contentList.isNotEmpty &&
-            multiSelectController.selected.length >= contentList.length;
+        final allSelected = areAllContentItemsSelected(
+          contentList: contentList,
+          selectedItems: multiSelectController.selected,
+        );
         return IconButton.filledTonal(
           tooltip: allSelected ? '取消全选' : '全选',
           onPressed: contentList.isEmpty
