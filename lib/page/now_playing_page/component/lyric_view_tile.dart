@@ -1,9 +1,9 @@
-import 'dart:async';
 import 'dart:math';
 
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
+import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -146,8 +146,8 @@ class LyricTransitionPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final progress = controller.progress.clamp(0.0, 1.0);
-    final enterOpacity =
-        Curves.easeOutCubic.transform((progress / _enterOpacityFraction).clamp(0.0, 1.0));
+    final enterOpacity = Curves.easeOutCubic
+        .transform((progress / _enterOpacityFraction).clamp(0.0, 1.0));
     final exitOpacity = Curves.easeOutCubic
         .transform(((1.0 - progress) / _exitOpacityFraction).clamp(0.0, 1.0));
     final opacityEnvelope = enterOpacity * exitOpacity;
@@ -159,12 +159,16 @@ class LyricTransitionPainter extends CustomPainter {
         .clamp(0, 255);
     final a2 = (255 *
             opacityEnvelope *
-            (_alphaBase + min(max(controller.progress - _staggerStep, 0) * 3, 1) * _alphaRange))
+            (_alphaBase +
+                min(max(controller.progress - _staggerStep, 0) * 3, 1) *
+                    _alphaRange))
         .round()
         .clamp(0, 255);
     final a3 = (255 *
             opacityEnvelope *
-            (_alphaBase + min(max(controller.progress - 2 * _staggerStep, 0) * 3, 1) * _alphaRange))
+            (_alphaBase +
+                min(max(controller.progress - 2 * _staggerStep, 0) * 3, 1) *
+                    _alphaRange))
         .round()
         .clamp(0, 255);
     final transitionColor = useMaterialYouColor
@@ -176,7 +180,8 @@ class LyricTransitionPainter extends CustomPainter {
 
     final cy = size.height / 2;
     if (compact) {
-      final r = _compactBaseRadius + controller.sizeFactor * _compactSizeFactorMultiplier;
+      final r = _compactBaseRadius +
+          controller.sizeFactor * _compactSizeFactorMultiplier;
       final gap = _circleGapMultiplier * r;
       final double x1, x2, x3;
       switch (alignment) {
@@ -228,7 +233,7 @@ class LyricTransitionPainter extends CustomPainter {
 }
 
 /// 全局共享的间奏动画控制器管理器
-/// 避免每个 LyricTransitionTile 都独立订阅 positionStream
+/// 避免间奏动画订阅 positionStream，把底层位置更新拉到高频
 class _TransitionControllerManager {
   static final _TransitionControllerManager _instance =
       _TransitionControllerManager._();
@@ -236,61 +241,127 @@ class _TransitionControllerManager {
 
   _TransitionControllerManager._();
 
-  StreamSubscription<double>? _sharedPositionSub;
+  Ticker? _progressTicker;
+  final Stopwatch _positionClock = Stopwatch();
   final Set<LyricTransitionTileController> _controllers = {};
-  int _lastUpdateMs = 0;
-  static const int _throttleMs = 50;
+  double _syncedPosition = 0.0;
+  int _lastNativeSyncMs = 0;
+  static const int _nativeSyncMs = 1000;
+  Duration _lastTickElapsed = Duration.zero;
+  late final VoidCallback _playerStateListener = _syncPlaybackState;
+
+  bool get _isPlaying =>
+      PlayService.instance.playbackService.playerState == PlayerState.playing;
+
+  double get _estimatedPosition {
+    if (!_isPlaying) return _syncedPosition;
+    return _syncedPosition +
+        _positionClock.elapsedMicroseconds / Duration.microsecondsPerSecond;
+  }
 
   void register(LyricTransitionTileController controller) {
+    if (_controllers.isEmpty) {
+      PlayService.instance.playbackService.playerStateNotifier
+          .addListener(_playerStateListener);
+    }
     _controllers.add(controller);
-    _ensureSubscribed();
+    controller._isPlaying = _isPlaying;
+    _syncNativePosition();
+    controller._updateProgress(_syncedPosition);
+    _syncProgressTicker();
   }
 
   void unregister(LyricTransitionTileController controller) {
     _controllers.remove(controller);
     if (_controllers.isEmpty) {
-      _sharedPositionSub?.cancel();
-      _sharedPositionSub = null;
+      _stopProgressTicker();
+      PlayService.instance.playbackService.playerStateNotifier
+          .removeListener(_playerStateListener);
+    } else {
+      _syncProgressTicker();
     }
   }
 
-  void _ensureSubscribed() {
-    if (_sharedPositionSub != null) return;
-    try {
-      _sharedPositionSub =
-          PlayService.instance.playbackService.positionStream.listen(
-        (position) {
-          final now = DateTime.now().millisecondsSinceEpoch;
-          if (now - _lastUpdateMs < _throttleMs) return;
-          _lastUpdateMs = now;
+  void _syncPlaybackState() {
+    final isPlaying = _isPlaying;
+    _syncNativePosition();
+    _updateControllers(_syncedPosition, isPlaying: isPlaying);
+    _syncProgressTicker();
+  }
 
-          // 遍历快照，避免并发修改
-          final controllers = List<LyricTransitionTileController>.from(
-            _controllers,
-          );
-          for (final c in controllers) {
-            if (c._disposed) {
-              _controllers.remove(c);
-            } else {
-              c._updateProgress(position);
-            }
-          }
+  void _syncNativePosition() {
+    _syncedPosition = PlayService.instance.playbackService.position;
+    _lastNativeSyncMs = DateTime.now().millisecondsSinceEpoch;
+    _positionClock
+      ..reset()
+      ..stop();
+    if (_isPlaying) {
+      _positionClock.start();
+    }
+  }
 
-          // 如果全部已 dispose，取消订阅
-          if (_controllers.isEmpty) {
-            _sharedPositionSub?.cancel();
-            _sharedPositionSub = null;
-          }
-        },
-        onError: (_) {
-          // 流错误时清理订阅，下次 register 会重新订阅
-          _sharedPositionSub?.cancel();
-          _sharedPositionSub = null;
-        },
-        cancelOnError: false,
-      );
-    } catch (_) {
-      _sharedPositionSub = null;
+  void _syncProgressTicker() {
+    if (_controllers.isEmpty || !_isPlaying) {
+      _stopProgressTicker();
+      return;
+    }
+    _progressTicker ??= Ticker(_tickProgress);
+    if (_progressTicker!.isActive) return;
+    _lastTickElapsed = Duration.zero;
+    _progressTicker!.start();
+  }
+
+  void _stopProgressTicker() {
+    _progressTicker?.stop();
+    _lastTickElapsed = Duration.zero;
+    _positionClock.stop();
+  }
+
+  void _tickProgress(Duration elapsed) {
+    if (_controllers.isEmpty || !_isPlaying) {
+      _syncProgressTicker();
+      return;
+    }
+    final tickDelta = _lastTickElapsed == Duration.zero
+        ? Duration.zero
+        : elapsed - _lastTickElapsed;
+    _lastTickElapsed = elapsed;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    if (nowMs - _lastNativeSyncMs >= _nativeSyncMs) {
+      _syncNativePosition();
+    }
+    _updateControllers(
+      _estimatedPosition,
+      breathingStepScale:
+          tickDelta.inMicroseconds / (Duration.microsecondsPerSecond / 60.0),
+    );
+  }
+
+  void _updateControllers(
+    double position, {
+    bool? isPlaying,
+    double breathingStepScale = 0.0,
+  }) {
+    final controllers = List<LyricTransitionTileController>.from(_controllers);
+    for (final c in controllers) {
+      if (c._disposed) {
+        _controllers.remove(c);
+        continue;
+      }
+      c._updateProgress(position);
+      if (c._disposed) {
+        _controllers.remove(c);
+        continue;
+      }
+      c._advanceBreathing(breathingStepScale);
+      if (isPlaying != null) {
+        c._isPlaying = isPlaying;
+      }
+    }
+    if (_controllers.isEmpty) {
+      _stopProgressTicker();
+      PlayService.instance.playbackService.playerStateNotifier
+          .removeListener(_playerStateListener);
     }
   }
 }
@@ -311,28 +382,27 @@ class LyricTransitionTileController extends ChangeNotifier {
 
   double sizeFactor = 0;
   double k = 1;
-  late final Ticker factorTicker;
+  late final bool _enableBreathing;
   bool _disposed = false;
+  bool _isPlaying = false;
 
   LyricTransitionTileController(
       [this.lrcLine, this.syncLine, bool enableBreathing = true]) {
+    _enableBreathing = enableBreathing;
     _TransitionControllerManager.instance.register(this);
-    if (enableBreathing) {
-      factorTicker = Ticker((elapsed) {
-        if (_disposed) return;
-        sizeFactor += k * _breathingStep;
-        if (sizeFactor > 1) {
-          k = -1;
-          sizeFactor = 1;
-        } else if (sizeFactor < 0) {
-          k = 1;
-          sizeFactor = 0;
-        }
-        notifyListeners();
-      });
-      factorTicker.start();
-    } else {
-      factorTicker = Ticker((_) {});
+  }
+
+  void _advanceBreathing(double stepScale) {
+    if (_disposed || !_enableBreathing || !_isPlaying || stepScale <= 0) {
+      return;
+    }
+    sizeFactor += k * _breathingStep * stepScale;
+    if (sizeFactor > 1) {
+      k = -1;
+      sizeFactor = 1;
+    } else if (sizeFactor < 0) {
+      k = 1;
+      sizeFactor = 0;
     }
   }
 
@@ -370,11 +440,6 @@ class LyricTransitionTileController extends ChangeNotifier {
     _disposed = true;
 
     _TransitionControllerManager.instance.unregister(this);
-
-    try {
-      factorTicker.stop();
-      factorTicker.dispose();
-    } catch (_) {}
 
     super.dispose();
   }
