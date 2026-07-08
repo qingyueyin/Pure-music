@@ -153,27 +153,54 @@ class AudioFolderTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return ListTile(
-      title: Text(
-        p.basename(audioFolder.path),
-        softWrap: false,
-        maxLines: 1,
-      ),
-      subtitle: Text(
-        p.dirname(audioFolder.path),
-        softWrap: false,
-        maxLines: 1,
-      ),
-      trailing: Text(
-        '${audioFolder.audios.length} 首',
-        style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.6)),
-      ),
-      shape: RoundedRectangleBorder(
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+      child: InkWell(
         borderRadius: BorderRadius.circular(8.0),
-      ),
-      onTap: () => context.push(
-        app_paths.FOLDER_DETAIL_PAGE,
-        extra: audioFolder,
+        onTap: () => context.push(
+          app_paths.FOLDER_DETAIL_PAGE,
+          extra: audioFolder,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+          child: Row(
+            children: [
+              Icon(Symbols.folder, color: scheme.onSurfaceVariant),
+              const SizedBox(width: 16.0),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      p.basename(audioFolder.path),
+                      softWrap: false,
+                      maxLines: 1,
+                      style: TextStyle(color: scheme.onSurface),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      p.dirname(audioFolder.path),
+                      softWrap: false,
+                      maxLines: 1,
+                      style: TextStyle(
+                        color: scheme.onSurfaceVariant,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                '${audioFolder.audios.length} 首',
+                style: TextStyle(
+                  color: scheme.onSurfaceVariant,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
