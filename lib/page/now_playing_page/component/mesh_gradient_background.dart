@@ -63,6 +63,7 @@ class _MeshGradientBackgroundInternalState
   double _breathScale = 1.0;
   final ValueNotifier<double> _breathScaleNotifier = ValueNotifier(1.0);
   double _targetBreathScale = 1.0;
+  double _smoothedEnergy = 0.0;
   StreamSubscription<Float32List>? _spectrumSubscription;
 
   double _transitionValue = 0.0;
@@ -336,12 +337,18 @@ class _MeshGradientBackgroundInternalState
 
       final lowFreq = spectrum.isNotEmpty ? spectrum[0] : 0.0;
       final subBass = spectrum.length > 1 ? spectrum[1] : 0.0;
-      final energy = (lowFreq * 0.7 + subBass * 0.3).clamp(0.0, 1.0);
+      final raw = (lowFreq * 0.7 + subBass * 0.3).clamp(0.0, 1.0);
 
-      _targetBreathScale = 1.0 + energy * 0.052 * widget.inputs.intensity;
+      // EMA 平滑，α=0.25：足够跟上节拍，但过滤掉高频抖动
+      _smoothedEnergy = _smoothedEnergy * 0.75 + raw * 0.25;
 
-      if ((_targetBreathScale - _breathScale).abs() > 0.003) {
-        _setBreathScale(_targetBreathScale);
+      _targetBreathScale = 1.0 +
+          _smoothedEnergy * 0.038 * widget.inputs.intensity;
+
+      if ((_targetBreathScale - _breathScale).abs() > 0.006) {
+        _setBreathScale(
+          _breathScale + (_targetBreathScale - _breathScale) * 0.45,
+        );
       }
     });
   }
@@ -429,16 +436,16 @@ class _MeshGradientBackgroundInternalState
     );
 
     final isDark = surface.computeLuminance() < 0.5;
-    final surfaceMix = isDark ? 0.02 : 0.05;
-    const maxSaturation = 0.62;
+    final surfaceMix = isDark ? 0.02 : 0.04;
+    const maxSaturation = 0.72;
     final softened = List<Color>.filled(colors.length, colors.first);
     for (var i = 0; i < colors.length; i++) {
       final color = colors[i];
-      final toward = Color.lerp(color, average, 0.30)!;
+      final toward = Color.lerp(color, average, 0.22)!;
       final hsl = HSLColor.fromColor(toward);
       final lightness = isDark
           ? (hsl.lightness * 0.86).clamp(0.12, 0.42)
-          : (hsl.lightness * 0.72 + 0.22).clamp(0.42, 0.80);
+          : (hsl.lightness * 0.75 + 0.20).clamp(0.42, 0.78);
       final ambient = hsl
           .withSaturation(hsl.saturation.clamp(0.0, maxSaturation))
           .withLightness(lightness)
