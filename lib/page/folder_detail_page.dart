@@ -1,5 +1,6 @@
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/enums.dart';
+import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/component/audio_tile.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/library/audio_library.dart';
@@ -29,6 +30,9 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
 
   @override
   Widget build(BuildContext context) {
+    final canSortSongs = hasEnoughItemsToSort(_contentList.length);
+    final canPlaySongs = canShowPlayAllAction(_contentList.length);
+    final canSwitchContentView = canShowContentViewSwitch(_contentList.length);
     return UniPage<Audio>(
       pref: AppPreference.instance.folderDetailPagePref,
       title: widget.folder.path,
@@ -39,10 +43,10 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
         playlist: _contentList,
         multiSelectController: multiSelectController,
       ),
-      enableShufflePlay: true,
-      enableSortMethod: true,
-      enableSortOrder: true,
-      enableContentViewSwitch: true,
+      enableShufflePlay: canPlaySongs,
+      enableSortMethod: canSortSongs,
+      enableSortOrder: canSortSongs,
+      enableContentViewSwitch: canSwitchContentView,
       multiSelectController: _multiSelectController,
       multiSelectViewActions: [
         AddAllToPlaylist(multiSelectController: _multiSelectController),
