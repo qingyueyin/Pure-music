@@ -1,7 +1,9 @@
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/component/motion.dart';
+import 'package:pure_music/component/quiet_empty_state.dart';
 import 'package:pure_music/component/responsive_builder.dart';
 import 'package:pure_music/core/enums.dart';
+import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/page/uni_page_components.dart';
@@ -10,12 +12,12 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 typedef ContentBuilder<T> = Widget Function(
-    BuildContext context,
-    T item,
-    int index,
-    MultiSelectController<T>? multiSelectController,
-    ContentView view,
-    );
+  BuildContext context,
+  T item,
+  int index,
+  MultiSelectController<T>? multiSelectController,
+  ContentView view,
+);
 
 typedef SortMethod<T> = void Function(List<T> list, SortOrder order);
 
@@ -29,6 +31,18 @@ class SortMethodDesc<T> {
     required this.name,
     required this.method,
   });
+}
+
+SortMethodDesc<T>? resolveSortMethod<T>(
+  PagePreference pref,
+  List<SortMethodDesc<T>>? sortMethods,
+) {
+  if (sortMethods == null || sortMethods.isEmpty) {
+    return null;
+  }
+  final index = pref.sortMethod.clamp(0, sortMethods.length - 1).toInt();
+  if (pref.sortMethod != index) pref.sortMethod = index;
+  return sortMethods[index];
 }
 
 const gridDelegate = SliverGridDelegateWithMaxCrossAxisExtent(
@@ -120,7 +134,7 @@ class UniPage<T> extends StatefulWidget {
 
   final MultiSelectController<T>? multiSelectController;
   final List<Widget>? multiSelectViewActions;
-  
+
   final SliverGridDelegate? gridDelegate;
 
   @override
@@ -129,13 +143,28 @@ class UniPage<T> extends StatefulWidget {
 
 class _UniPageState<T> extends State<UniPage<T>> {
   late SortMethodDesc<T>? currSortMethod =
-      widget.sortMethods?[widget.pref.sortMethod];
+      resolveSortMethod(widget.pref, widget.sortMethods);
   late SortOrder currSortOrder = widget.pref.sortOrder;
   late ContentView currContentView = widget.enableContentViewSwitch
       ? widget.pref.contentView
       : ContentView.table;
   late ScrollController scrollController = ScrollController();
+  Map<String, int> _audioIndexByPath = const {};
   bool _showScrollToTop = false;
+
+  void _refreshAudioIndexCache() {
+    if (widget.contentList is! List<Audio>) {
+      _audioIndexByPath = const {};
+      return;
+    }
+
+    final audios = widget.contentList as List<Audio>;
+    final next = <String, int>{};
+    for (var i = 0; i < audios.length; i++) {
+      next.putIfAbsent(audios[i].path, () => i);
+    }
+    _audioIndexByPath = next;
+  }
 
   void _scrollToIndex(int targetAt) {
     if (targetAt < 0 || targetAt >= widget.contentList.length) return;
@@ -175,10 +204,8 @@ class _UniPageState<T> extends State<UniPage<T>> {
         final nowPlaying = playbackService.nowPlaying;
         if (nowPlaying == null) return const SizedBox.shrink();
 
-        final contentList = widget.contentList as List<Audio>;
-        final targetAt =
-            contentList.indexWhere((audio) => audio.path == nowPlaying.path);
-        if (targetAt < 0) return const SizedBox.shrink();
+        final targetAt = _audioIndexByPath[nowPlaying.path];
+        if (targetAt == null) return const SizedBox.shrink();
 
         return ResponsiveBuilder(
           builder: (context, screenType) {
@@ -256,8 +283,8 @@ class _UniPageState<T> extends State<UniPage<T>> {
 
   void _onScrollUpdate() {
     if (!mounted) return;
-    final shouldShow = scrollController.hasClients &&
-        scrollController.position.pixels > 320.0;
+    final shouldShow =
+        scrollController.hasClients && scrollController.position.pixels > 320.0;
     if (shouldShow != _showScrollToTop) {
       setState(() => _showScrollToTop = shouldShow);
     }
@@ -267,10 +294,12 @@ class _UniPageState<T> extends State<UniPage<T>> {
   void initState() {
     super.initState();
     currSortMethod?.method(widget.contentList, currSortOrder);
+    _refreshAudioIndexCache();
     scrollController.addListener(_onScrollUpdate);
     if (widget.locateTo == null) return;
 
     int targetAt = widget.contentList.indexOf(widget.locateTo as T);
+    if (targetAt < 0) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!scrollController.hasClients) return;
       if (currContentView == ContentView.list) {
@@ -290,7 +319,19 @@ class _UniPageState<T> extends State<UniPage<T>> {
   @override
   void didUpdateWidget(covariant UniPage<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final resolvedSortMethod =
+        resolveSortMethod(widget.pref, widget.sortMethods);
+    if (resolvedSortMethod != null) {
+      currSortMethod = resolvedSortMethod;
+    }
+    currContentView = resolveContentViewAvailabilityChange(
+      currentView: currContentView,
+      preferredView: widget.pref.contentView,
+      wasSwitchAvailable: oldWidget.enableContentViewSwitch,
+      isSwitchAvailable: widget.enableContentViewSwitch,
+    );
     currSortMethod?.method(widget.contentList, currSortOrder);
+    _refreshAudioIndexCache();
   }
 
   @override
@@ -304,6 +345,7 @@ class _UniPageState<T> extends State<UniPage<T>> {
       currSortMethod = sortMethod;
       widget.pref.sortMethod = widget.sortMethods?.indexOf(sortMethod) ?? 0;
       currSortMethod?.method(widget.contentList, currSortOrder);
+      _refreshAudioIndexCache();
     });
   }
 
@@ -312,6 +354,7 @@ class _UniPageState<T> extends State<UniPage<T>> {
       currSortOrder = sortOrder;
       widget.pref.sortOrder = sortOrder;
       currSortMethod?.method(widget.contentList, currSortOrder);
+      _refreshAudioIndexCache();
     });
   }
 
@@ -363,6 +406,53 @@ class _UniPageState<T> extends State<UniPage<T>> {
           );
   }
 
+  Widget _buildContentArea(MultiSelectController<T>? multiSelectController) {
+    if (widget.contentList.isEmpty) {
+      return _UniPageEmptyState(title: widget.title);
+    }
+
+    return Row(
+      children: [
+        Expanded(
+          child: switch (currContentView) {
+            ContentView.list => ListView.builder(
+                controller: scrollController,
+                padding: const EdgeInsets.only(
+                  bottom: 96.0,
+                  right: 20,
+                ),
+                itemCount: widget.contentList.length,
+                itemExtent: 64,
+                itemBuilder: (context, i) => widget.contentBuilder(
+                  context,
+                  widget.contentList[i],
+                  i,
+                  multiSelectController,
+                  ContentView.list,
+                ),
+              ),
+            ContentView.table => GridView.builder(
+                controller: scrollController,
+                padding: const EdgeInsets.only(
+                  bottom: 96.0,
+                  right: 20,
+                ),
+                gridDelegate: widget.gridDelegate ?? gridDelegate,
+                itemCount: widget.contentList.length,
+                itemBuilder: (context, i) => widget.contentBuilder(
+                  context,
+                  widget.contentList[i],
+                  i,
+                  multiSelectController,
+                  ContentView.table,
+                ),
+              ),
+          },
+        ),
+      ],
+    );
+  }
+
   Widget result(
       MultiSelectController<T>? multiSelectController, List<Widget> actions) {
     final scheme = Theme.of(context).colorScheme;
@@ -379,46 +469,7 @@ class _UniPageState<T> extends State<UniPage<T>> {
         type: MaterialType.transparency,
         child: Stack(
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: switch (currContentView) {
-                    ContentView.list => ListView.builder(
-                        controller: scrollController,
-                        padding: const EdgeInsets.only(
-                          bottom: 96.0,
-                          right: 20,
-                        ),
-                        itemCount: widget.contentList.length,
-                        itemExtent: 64,
-                        itemBuilder: (context, i) => widget.contentBuilder(
-                          context,
-                          widget.contentList[i],
-                          i,
-                          multiSelectController,
-                          ContentView.list,
-                        ),
-                      ),
-                    ContentView.table => GridView.builder(
-                        controller: scrollController,
-                        padding: const EdgeInsets.only(
-                          bottom: 96.0,
-                          right: 20,
-                        ),
-                        gridDelegate: widget.gridDelegate ?? gridDelegate,
-                        itemCount: widget.contentList.length,
-                        itemBuilder: (context, i) => widget.contentBuilder(
-                          context,
-                          widget.contentList[i],
-                          i,
-                          multiSelectController,
-                          ContentView.table,
-                        ),
-                      ),
-                  },
-                ),
-              ],
-            ),
+            _buildContentArea(multiSelectController),
             Positioned(
               left: 0,
               right: 0,
@@ -444,6 +495,22 @@ class _UniPageState<T> extends State<UniPage<T>> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _UniPageEmptyState extends StatelessWidget {
+  const _UniPageEmptyState({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return QuietEmptyState(
+      icon: Symbols.library_music,
+      title: '$title 还没有内容',
+      message: '添加音乐或刷新曲库后，这里会显示对应内容。',
+      padding: const EdgeInsets.fromLTRB(24.0, 24.0, 44.0, 96.0),
     );
   }
 }
