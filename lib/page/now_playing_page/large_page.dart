@@ -19,11 +19,11 @@ class _NowPlayingLargePage extends StatelessWidget {
             child: LayoutBuilder(builder: (context, constraints) {
               return Row(
                 children: [
-                  // 左侧：封�?+ 歌曲信息 (50%) - 垂直居中
+                  // 左侧：封面+ 歌曲信息 (50%) - 垂直居中
                   const Expanded(
                     child: Center(child: _NowPlayingInfo()),
                   ),
-                  // 右侧：歌词区�?(50%)
+                  // 右侧：歌词区域(50%)
                   Expanded(
                     child: ValueListenableBuilder(
                       valueListenable: nowPlayingViewMode,
@@ -69,7 +69,7 @@ class _NowPlayingLargePage extends StatelessWidget {
                         const _ExclusiveModeSwitch(),
                         spacer,
                         IconButton(
-                          tooltip: '均衡�?,
+                          tooltip: '均衡器',
                           onPressed: () {
                             showDialog(
                               context: context,
@@ -97,7 +97,7 @@ class _NowPlayingLargePage extends StatelessWidget {
                             const _NowPlayingPlaybackModeSwitch(),
                             spacer,
                             IconButton(
-                              tooltip: hasNowPlaying ? '上一�? : '暂无正在播放',
+                              tooltip: hasNowPlaying ? '上一曲' : '暂无正在播放',
                               onPressed: hasNowPlaying
                                   ? playbackService.lastAudio
                                   : null,
@@ -148,7 +148,7 @@ class _NowPlayingLargePage extends StatelessWidget {
                             ),
                             spacer,
                             IconButton(
-                              tooltip: hasNowPlaying ? '下一�? : '暂无正在播放',
+                              tooltip: hasNowPlaying ? '下一曲' : '暂无正在播放',
                               onPressed: hasNowPlaying
                                   ? playbackService.nextAudio
                                   : null,
@@ -268,7 +268,7 @@ class _NowPlayingLargeViewSwitchState
       valueListenable: nowPlayingViewMode,
       builder: (context, value, _) => IconButton(
         tooltip: _isSaving
-            ? '保存�?
+            ? '保存中'
             : switch (value) {
                 NowPlayingViewMode.withPlaylist => '歌词',
                 _ => '播放列表',

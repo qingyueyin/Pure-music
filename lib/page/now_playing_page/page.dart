@@ -99,7 +99,9 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
         !mounted;
   }
 
-  /// �?Rust k-means 一次性提取调色板和主色�?  /// 结果同时用于背景 mesh gradient 和主题种子色�?  Future<void> _extractPaletteOnce(
+  /// 用Rust k-means 一次性提取调色板和主色。
+  /// 结果同时用于背景 mesh gradient 和主题种子色。
+  Future<void> _extractPaletteOnce(
       Uint8List bytes, int token, String path) async {
     if (_lastPaletteToken == token) return; // 已提取过
     _lastPaletteToken = token;
@@ -126,14 +128,16 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
         _preExtractedPalette = palette;
       });
 
-      // 同步更新主题种子色，仅在封面取色开启时生效�?      if (AppSettings.instance.enableCoverColorExtraction) {
+      // 同步更新主题种子色，仅在封面取色开启时生效。
+      if (AppSettings.instance.enableCoverColorExtraction) {
         ThemeProvider.instance.applySeedColorDirectly(dominant, path);
       }
     } catch (_) {
       if (!_isCoverRequestStale(token, path)) {
         _lastPaletteToken = -1;
       }
-      // Rust 提取失败时静默忽略�?    }
+      // Rust 提取失败时静默忽略。
+    }
   }
 
   void updateCover() {
@@ -157,8 +161,9 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
 
     if (path == _nowPlayingCoverPath) return;
     _nowPlayingCoverPath = path;
-    nowPlayingCover = null;
-    _nowPlayingCoverBytes = null;
+    // 不清空 nowPlayingCover / _nowPlayingCoverBytes，保留旧值作背景，等新数据到位后自然替换
+    _dominantColor = null;
+    _preExtractedPalette = null;
 
     _coverDebounceTimer?.cancel();
     _songChangeTrimTimer?.cancel();
@@ -184,7 +189,8 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
           unawaited(_extractPaletteOnce(smallBytes, token, path));
         }
       }
-      // 切歌时先用小封面做背景，再等取色结果驱动过渡�?      final smallBytes = aud.smallCoverBytes;
+      // 切歌时先用小封面做背景，再等取色结果驱动过渡。
+      final smallBytes = aud.smallCoverBytes;
       if (smallBytes != null) {
         _nowPlayingCoverBytes = smallBytes;
       }
@@ -212,7 +218,8 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
         if (_isCoverRequestStale(token, path)) return;
 
         if (bytes != null) {
-          // 同一首歌只取色一次；没有小封面结果时再用 160px 封面补上�?          await _extractPaletteOnce(bytes, token, path);
+          // 同一首歌只取色一次；没有小封面结果时再用 160px 封面补上。
+          await _extractPaletteOnce(bytes, token, path);
           _nowPlayingCoverBytes = bytes;
           if (mounted) setState(() {});
         } else {
@@ -240,9 +247,11 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   void _onViewModeChanged() {
     if (!mounted) return;
     if (nowPlayingViewMode.value == NowPlayingViewMode.withPlaylist) {
-      // 进入播放列表：取消光标隐藏计时器，标题栏�?ValueListenableBuilder 负责隐藏�?      _cursorHideTimer?.cancel();
+      // 进入播放列表：取消光标隐藏计时器，标题栏用ValueListenableBuilder 负责隐藏。
+      _cursorHideTimer?.cancel();
     } else {
-      // 退出播放列表：恢复标题栏和光标�?      _bumpCursor();
+      // 退出播放列表：恢复标题栏和光标。
+      _bumpCursor();
     }
   }
 
@@ -280,7 +289,8 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     _nowPlayingCoverBytes = null;
     _preExtractedPalette = null;
     if (cover != null) unawaited(cover.evict());
-    // 离开播放页时释放大图封面缓存，列表页不需要这些缓存�?    CoverImageCache.instance.trimMemory();
+    // 离开播放页时释放大图封面缓存，列表页不需要这些缓存。
+    CoverImageCache.instance.trimMemory();
     super.dispose();
   }
 
@@ -459,7 +469,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                                         }
                                         return Builder(
                                           builder: (context) => IconButton(
-                                            tooltip: '侧边�?,
+                                            tooltip: '侧边栏',
                                             onPressed: () {
                                               Scaffold.of(context).openDrawer();
                                             },
@@ -520,7 +530,7 @@ class _NowPlayingMoreActionState extends State<_NowPlayingMoreAction> {
     }
 
     if (playlist.containsPath(audio.path)) {
-      showTextOnSnackBar('歌曲�?{audio.title}”已存在');
+      showTextOnSnackBar('歌曲“${audio.title}”已存在');
       return;
     }
 
@@ -538,15 +548,12 @@ class _NowPlayingMoreActionState extends State<_NowPlayingMoreAction> {
         return;
       }
       showTextOnSnackBar(
-        '成功将�?{audio.title}”添加到歌单�?{playlist.name}�?,
+        '成功将“${audio.title}”添加到歌单“${playlist.name}”',
       );
     } finally {
-      if (mounted) {
-        setState(() {
-          _addingAudioToPlaylist = null;
-          _addingTargetPlaylist = null;
-        });
-      }
+      _addingAudioToPlaylist = null;
+      _addingTargetPlaylist = null;
+      if (mounted) setState(() {});
     }
   }
 
@@ -614,7 +621,7 @@ class _NowPlayingMoreActionState extends State<_NowPlayingMoreAction> {
               style: menuItemStyle,
               onPressed: null,
               leadingIcon: const Icon(Symbols.queue_music),
-              child: const Text('添加到歌�?),
+              child: const Text('添加到歌单'),
             )
           else
             Builder(
@@ -648,7 +655,7 @@ class _NowPlayingMoreActionState extends State<_NowPlayingMoreAction> {
                                 ? Symbols.check
                                 : Symbols.queue_music,
                           ),
-                    child: Text(isAddingNowPlaying ? '添加�? : '添加到歌�?),
+                    child: Text(isAddingNowPlaying ? '添加中' : '添加到歌单'),
                   );
                 }
                 return SubmenuButton(
@@ -682,7 +689,7 @@ class _NowPlayingMoreActionState extends State<_NowPlayingMoreAction> {
                       child: Text(playlist.name),
                     );
                   }),
-                  child: Text(isAddingNowPlaying ? '添加�? : '添加到歌�?),
+                  child: Text(isAddingNowPlaying ? '添加中' : '添加到歌单'),
                 );
               },
             ),
@@ -795,7 +802,7 @@ class _NowPlayingPlaybackModeSwitchState
         };
 
         return IconButton(
-          tooltip: _isSaving ? '保存�? : modeText,
+          tooltip: _isSaving ? '保存中' : modeText,
           onPressed: _isSaving
               ? null
               : () => _changeMode(shuffle: shuffle, playMode: playMode),
@@ -905,7 +912,8 @@ class _DesktopLyricSwitchState extends State<_DesktopLyricSwitch> {
           );
         }
 
-        // 关闭过程中显�?loading 并禁用按钮�?        if (isKilling) {
+        // 关闭过程中显示loading 并禁用按钮。
+        if (isKilling) {
           return IconButton(
             tooltip: '正在关闭桌面歌词...',
             onPressed: null,
@@ -1082,11 +1090,7 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
     //
 
     return MenuAnchor(
-      style: MenuStyle(
-        shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        ),
-      ),
+      style: appMenuStyle,
       onOpen: () {
         _isMenuOpen = true;
         if (!isDragging) {
@@ -1347,7 +1351,7 @@ class _CustomValueIndicator extends StatelessWidget {
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: color,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(8),
           ),
           child: Text(
             '${value.toInt()}$suffix',
@@ -2214,89 +2218,50 @@ class _NowPlayingInfo extends StatefulWidget {
 
 class __NowPlayingInfoState extends State<_NowPlayingInfo> {
   final playbackService = PlayService.instance.playbackService;
-  ImageProvider<Object>? _hiResCover;
-  String? _hiResCoverPath;
-  Timer? _hiResDebounceTimer;
-  int _coverRequestToken = 0;
-  Uint8List? _immediateCover;
-  String? _immediateCoverPath;
+  ImageProvider<Object>? _coverImage;
+  String? _coverPath;
+  int _coverToken = 0;
 
   void _onPlaybackChange() {
-    _coverRequestToken += 1;
-    final token = _coverRequestToken;
+    _coverToken++;
+    final token = _coverToken;
     final nextAudio = playbackService.nowPlaying;
     if (nextAudio == null) {
-      if (_hiResCoverPath != null || _immediateCoverPath != null) {
-        _hiResDebounceTimer?.cancel();
-        unawaited(Future.wait<void>([
-          if (_hiResCover != null) _hiResCover!.evict(),
-        ]));
-        setState(() {
-          _hiResCover = null;
-          _hiResCoverPath = null;
-          _immediateCover = null;
-          _immediateCoverPath = null;
-        });
-      }
+      setState(() {
+        _coverImage = null;
+        _coverPath = null;
+      });
       return;
     }
 
-    if (nextAudio.path == _hiResCoverPath &&
-        nextAudio.path == _immediateCoverPath) {
-      return;
-    }
+    if (nextAudio.path == _coverPath && _coverImage != null) return;
 
-    // Evict old covers from ImageCache before loading new ones, and drop the
-    // state references immediately so old decoded images are not retained during
-    // the async fetch for the next track.
-    final oldHiResCover = _hiResCover;
-    if (oldHiResCover != null) {
-      _hiResCover = null;
-      _hiResCoverPath = null;
-      unawaited(oldHiResCover.evict());
-    }
+    _coverPath = nextAudio.path;
 
-    var shouldRefreshImmediateCover = false;
-    if (nextAudio.path != _immediateCoverPath) {
-      _immediateCover = nextAudio.smallCoverBytes;
-      _immediateCoverPath = nextAudio.path;
-      shouldRefreshImmediateCover = true;
-      if (_immediateCover == null) {
-        nextAudio.loadSmallCoverBytes().then((bytes) {
-          if (!mounted) return;
-          if (playbackService.nowPlaying?.path != nextAudio.path) return;
-          setState(() {
-            _immediateCover = bytes;
-          });
-        });
-      }
-    }
+    // 切歌首帧：立即用已缓存的小封面，没有则透明（不闪占位图标）
+    final smallBytes = nextAudio.smallCoverBytes;
+    setState(() {
+      _coverImage = smallBytes != null ? MemoryImage(smallBytes) : null;
+    });
 
-    if (mounted && (oldHiResCover != null || shouldRefreshImmediateCover)) {
-      setState(() {});
-    }
-
-    _hiResDebounceTimer?.cancel();
-    _hiResDebounceTimer = Timer(const Duration(milliseconds: 260), () {
-      if (!mounted) return;
-      if (token != _coverRequestToken) return;
-
-      nextAudio.largeCover.then((image) async {
-        if (!mounted) return;
-        if (token != _coverRequestToken) return;
+    // 小封面未缓存则异步加载
+    if (smallBytes == null) {
+      nextAudio.loadSmallCoverBytes().then((bytes) {
+        if (!mounted || token != _coverToken) return;
         if (playbackService.nowPlaying?.path != nextAudio.path) return;
-
-        if (image != null) {
-          if (token != _coverRequestToken) return;
-        }
-
-        if (!mounted) return;
-        if (token != _coverRequestToken) return;
         setState(() {
-          _hiResCover = image;
-          _hiResCoverPath = nextAudio.path;
+          _coverImage ??= bytes != null ? MemoryImage(bytes) : null;
         });
       });
+    }
+
+    // 异步加载高清封面，gaplessPlayback 无缝替换
+    nextAudio.largeCover.then((hiRes) {
+      if (!mounted || token != _coverToken) return;
+      if (playbackService.nowPlaying?.path != nextAudio.path) return;
+      if (hiRes != null) {
+        setState(() => _coverImage = hiRes);
+      }
     });
   }
 
@@ -2305,40 +2270,27 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
     super.initState();
     playbackService.nowPlayingNotifier.addListener(_onPlaybackChange);
 
-    final currentPath = playbackService.nowPlaying?.path;
-
-    // grab synchronous small cover bytes immediately
-    if (currentPath != null) {
-      final audio = playbackService.nowPlaying;
-      if (audio != null) {
-        _immediateCover = audio.smallCoverBytes;
-        _immediateCoverPath = currentPath;
-        if (_immediateCover == null) {
-          audio.loadSmallCoverBytes().then((bytes) {
-            if (!mounted) return;
-            if (playbackService.nowPlaying?.path != currentPath) return;
-            setState(() => _immediateCover = bytes);
-          });
-        }
-      }
-    }
-
-    // Initial load (still needed for hi-res + fallback)
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final delay = playbackService.nowPlayingChangedRecently
-          ? const Duration(milliseconds: 200)
-          : Duration.zero;
-      if (delay == Duration.zero) {
-        _onPlaybackChange();
-      } else {
-        _hiResDebounceTimer?.cancel();
-        _hiResDebounceTimer = Timer(delay, () {
+    final audio = playbackService.nowPlaying;
+    if (audio != null) {
+      final currentPath = audio.path;
+      _coverPath = currentPath;
+      final smallBytes = audio.smallCoverBytes;
+      _coverImage = smallBytes != null ? MemoryImage(smallBytes) : null;
+      if (_coverImage == null) {
+        audio.loadSmallCoverBytes().then((bytes) {
           if (!mounted) return;
-          _onPlaybackChange();
+          if (playbackService.nowPlaying?.path != currentPath) return;
+          setState(() {
+            _coverImage = bytes != null ? MemoryImage(bytes) : null;
+          });
         });
       }
-    });
+      audio.largeCover.then((hiRes) {
+        if (!mounted) return;
+        if (playbackService.nowPlaying?.path != currentPath) return;
+        if (hiRes != null) setState(() => _coverImage = hiRes);
+      });
+    }
   }
 
   @override
@@ -2374,19 +2326,8 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
         final coverSize =
             coverWidthLimit < coverMax ? coverWidthLimit : coverMax;
 
-        final currentCover =
-            (_hiResCoverPath == nowPlayingPath && _hiResCover != null)
-                ? _hiResCover
-                : null;
-        final fallbackCover = currentCover == null &&
-                nowPlaying != null &&
-                _immediateCoverPath == nowPlayingPath &&
-                _immediateCover != null
-            ? MemoryImage(_immediateCover!)
-            : null;
-        final coverWidget = currentCover == null && fallbackCover == null
-            ? Center(child: placeholder)
-            : Container(
+        final coverWidget = _coverImage != null
+            ? Container(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12.0),
                   boxShadow: [
@@ -2401,7 +2342,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(12.0),
                   child: Image(
-                    image: currentCover ?? fallbackCover!,
+                    image: _coverImage!,
                     fit: BoxFit.cover,
                     gaplessPlayback: true,
                     filterQuality: FilterQuality.high,
@@ -2411,7 +2352,10 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
                     ),
                   ),
                 ),
-              );
+              )
+            : nowPlaying == null
+                ? Center(child: placeholder)
+                : SizedBox(width: coverSize, height: coverSize);
 
         return AnimatedSwitcher(
           duration: const Duration(milliseconds: 500),
@@ -2492,11 +2436,6 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
   @override
   void dispose() {
     playbackService.nowPlayingNotifier.removeListener(_onPlaybackChange);
-    _hiResDebounceTimer?.cancel();
-    final hiResCover = _hiResCover;
-    _hiResCover = null;
-    _immediateCover = null;
-    if (hiResCover != null) unawaited(hiResCover.evict());
     super.dispose();
   }
 }
