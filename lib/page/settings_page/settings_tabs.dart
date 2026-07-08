@@ -1,10 +1,13 @@
 import 'dart:io';
 
 import 'package:pure_music/core/enums.dart';
+import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/core/setting_action_state.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/core/zh_converter.dart';
+import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/native/rust/api/installed_font.dart';
 import 'package:pure_music/lyric/lyric_source.dart';
@@ -46,23 +49,28 @@ class _SettingsTabsState extends State<SettingsTabs> {
           runSpacing: 8.0,
           children: List.generate(_tabs.length, (i) {
             final selected = _currentIndex == i;
+            final canSwitch =
+                canSwitchTab(currentIndex: _currentIndex, targetIndex: i);
             return OutlinedButton.icon(
-              onPressed: () => setState(() => _currentIndex = i),
-              icon: Icon(_tabs[i].icon,
-                  size: 18,
-                  color: selected ? scheme.onPrimary : scheme.onSurface),
-              label: Text(
-                _tabs[i].label,
-                style: TextStyle(
-                  color: selected ? scheme.onPrimary : scheme.onSurface,
+              onPressed:
+                  canSwitch ? () => setState(() => _currentIndex = i) : null,
+              icon: Icon(_tabs[i].icon, size: 18),
+              label: Text(_tabs[i].label),
+              style: ButtonStyle(
+                foregroundColor: WidgetStatePropertyAll(
+                  selected ? scheme.onPrimary : scheme.onSurface,
                 ),
-              ),
-              style: OutlinedButton.styleFrom(
-                backgroundColor: selected ? scheme.primary : Colors.transparent,
-                side: BorderSide(
-                    color: selected ? scheme.primary : scheme.outline),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                backgroundColor: WidgetStatePropertyAll(
+                  selected ? scheme.primary : Colors.transparent,
+                ),
+                side: WidgetStatePropertyAll(
+                  BorderSide(
+                    color: selected ? scheme.primary : scheme.outline,
+                  ),
+                ),
+                padding: const WidgetStatePropertyAll(
+                  EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                ),
               ),
             );
           }),
@@ -126,26 +134,53 @@ class _ThemeOptionControl extends StatefulWidget {
 
 class _ThemeOptionControlState extends State<_ThemeOptionControl> {
   final settings = AppSettings.instance;
+  bool _isSaving = false;
+
+  Future<void> _setThemeOption(ThemeOption option) async {
+    if (_isSaving || option == settings.themeOption) return;
+    setState(() {
+      _isSaving = true;
+      settings.themeOption = option;
+    });
+    ThemeProvider.instance.applyThemeOption(option);
+    try {
+      await settings.saveSettings();
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
       description: '主题',
-      action: SegmentedButton<ThemeOption>(
-        showSelectedIcon: false,
-        segments: const [
-          ButtonSegment(value: ThemeOption.system, label: Text('跟随系统')),
-          ButtonSegment(value: ThemeOption.light, label: Text('浅色模式')),
-          ButtonSegment(value: ThemeOption.dark, label: Text('深色模式')),
+      subtitle: _isSaving ? '保存中' : null,
+      action: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_isSaving) ...[
+            const SizedBox(
+              width: 16.0,
+              height: 16.0,
+              child: CircularProgressIndicator(strokeWidth: 2.0),
+            ),
+            const SizedBox(width: 10.0),
+          ],
+          SegmentedButton<ThemeOption>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(value: ThemeOption.system, label: Text('跟随系统')),
+              ButtonSegment(value: ThemeOption.light, label: Text('浅色模式')),
+              ButtonSegment(value: ThemeOption.dark, label: Text('深色模式')),
+            ],
+            selected: {settings.themeOption},
+            onSelectionChanged: _isSaving
+                ? null
+                : (selected) => _setThemeOption(selected.first),
+          ),
         ],
-        selected: {settings.themeOption},
-        onSelectionChanged: (selected) {
-          setState(() {
-            settings.themeOption = selected.first;
-          });
-          ThemeProvider.instance.applyThemeOption(selected.first);
-          settings.saveSettings();
-        },
       ),
     );
   }
@@ -161,20 +196,44 @@ class _MonetProgressBarSwitch extends StatefulWidget {
 
 class _MonetProgressBarSwitchState extends State<_MonetProgressBarSwitch> {
   final settings = AppSettings.instance;
+  bool _isSaving = false;
+
+  Future<void> _setEnabled(bool value) async {
+    if (_isSaving) return;
+    setState(() {
+      _isSaving = true;
+      settings.useMaterialYouForProgressBar = value;
+    });
+    try {
+      await settings.saveSettings();
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
       description: '主题色进度条',
-      subtitle: '进度条使用主题色渲染',
-      action: Switch(
-        value: settings.useMaterialYouForProgressBar,
-        onChanged: (v) {
-          setState(() {
-            settings.useMaterialYouForProgressBar = v;
-          });
-          settings.saveSettings();
-        },
+      subtitle: _isSaving ? '保存中' : '进度条使用主题色渲染',
+      action: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_isSaving) ...[
+            const SizedBox(
+              width: 16.0,
+              height: 16.0,
+              child: CircularProgressIndicator(strokeWidth: 2.0),
+            ),
+            const SizedBox(width: 8.0),
+          ],
+          Switch(
+            value: settings.useMaterialYouForProgressBar,
+            onChanged: _isSaving ? null : _setEnabled,
+          ),
+        ],
       ),
     );
   }
@@ -189,9 +248,57 @@ class _WavyProgressBarSwitch extends StatefulWidget {
 
 class _WavyProgressBarSwitchState extends State<_WavyProgressBarSwitch> {
   final settings = AppSettings.instance;
+  NowPlayingMode? _savingMode;
+
+  Future<void> _setWavyBarMode(NowPlayingMode mode, bool enabled) async {
+    if (_savingMode != null) return;
+    setState(() {
+      _savingMode = mode;
+      if (enabled) {
+        settings.wavyBarEnabledModes.add(mode);
+      } else {
+        settings.wavyBarEnabledModes.remove(mode);
+      }
+    });
+    try {
+      await settings.saveSettings();
+    } finally {
+      if (mounted) {
+        setState(() => _savingMode = null);
+      }
+    }
+  }
+
+  Widget _savingSwitch({
+    required NowPlayingMode mode,
+    required bool value,
+  }) {
+    final isSavingThis = _savingMode == mode;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (isSavingThis) ...[
+          const SizedBox(
+            width: 16.0,
+            height: 16.0,
+            child: CircularProgressIndicator(strokeWidth: 2.0),
+          ),
+          const SizedBox(width: 8.0),
+        ],
+        Switch(
+          value: value,
+          onChanged:
+              _savingMode == null ? (v) => _setWavyBarMode(mode, v) : null,
+        ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final savingPortrait = _savingMode == NowPlayingMode.portrait;
+    final savingImmersive = _savingMode == NowPlayingMode.immersive;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -205,37 +312,21 @@ class _WavyProgressBarSwitchState extends State<_WavyProgressBarSwitch> {
         ),
         SettingsTile(
           description: '竖屏播放页',
-          action: Switch(
+          subtitle: savingPortrait ? '保存中' : null,
+          action: _savingSwitch(
+            mode: NowPlayingMode.portrait,
             value:
                 settings.wavyBarEnabledModes.contains(NowPlayingMode.portrait),
-            onChanged: (v) {
-              setState(() {
-                if (v) {
-                  settings.wavyBarEnabledModes.add(NowPlayingMode.portrait);
-                } else {
-                  settings.wavyBarEnabledModes.remove(NowPlayingMode.portrait);
-                }
-              });
-              settings.saveSettings();
-            },
           ),
         ),
         const SizedBox(height: 8.0),
         SettingsTile(
           description: '横屏沉浸模式',
-          action: Switch(
+          subtitle: savingImmersive ? '保存中' : null,
+          action: _savingSwitch(
+            mode: NowPlayingMode.immersive,
             value:
                 settings.wavyBarEnabledModes.contains(NowPlayingMode.immersive),
-            onChanged: (v) {
-              setState(() {
-                if (v) {
-                  settings.wavyBarEnabledModes.add(NowPlayingMode.immersive);
-                } else {
-                  settings.wavyBarEnabledModes.remove(NowPlayingMode.immersive);
-                }
-              });
-              settings.saveSettings();
-            },
           ),
         ),
       ],
@@ -254,9 +345,26 @@ class _TopBarLyricAnimationSelector extends StatefulWidget {
 class _TopBarLyricAnimationSelectorState
     extends State<_TopBarLyricAnimationSelector> {
   final settings = AppSettings.instance;
+  bool _isSaving = false;
+
+  Future<void> _setAnimation(TopBarLyricAnimation animation) async {
+    if (_isSaving || animation == settings.topBarLyricAnimation) return;
+    setState(() {
+      _isSaving = true;
+      settings.topBarLyricAnimation = animation;
+    });
+    try {
+      await settings.saveSettings();
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     const row1 = {
       TopBarLyricAnimation.slideUp: '上划',
       TopBarLyricAnimation.slideDown: '下划',
@@ -273,19 +381,21 @@ class _TopBarLyricAnimationSelectorState
     final current = settings.topBarLyricAnimation;
 
     Widget segRow(Map<TopBarLyricAnimation, String> items) {
-      return SegmentedButton<TopBarLyricAnimation>(
-        segments: [
-          for (final e in items.entries)
-            ButtonSegment(value: e.key, label: Text(e.value)),
-        ],
-        selected: {current},
-        onSelectionChanged: (v) {
-          setState(() {
-            settings.topBarLyricAnimation = v.first;
-          });
-          settings.saveSettings();
-        },
-        showSelectedIcon: false,
+      return SizedBox(
+        width: double.infinity,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SegmentedButton<TopBarLyricAnimation>(
+            segments: [
+              for (final e in items.entries)
+                ButtonSegment(value: e.key, label: Text(e.value)),
+            ],
+            selected: {current},
+            onSelectionChanged:
+                _isSaving ? null : (v) => _setAnimation(v.first),
+            showSelectedIcon: false,
+          ),
+        ),
       );
     }
 
@@ -294,10 +404,33 @@ class _TopBarLyricAnimationSelectorState
       children: [
         Padding(
           padding: const EdgeInsets.only(bottom: 8.0),
-          child: Text(
-            '顶部歌词切换动画',
-            style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurface, fontSize: 18.0),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '顶部歌词切换动画',
+                style: TextStyle(color: scheme.onSurface, fontSize: 18.0),
+              ),
+              if (_isSaving) ...[
+                const SizedBox(width: 10.0),
+                SizedBox(
+                  width: 14.0,
+                  height: 14.0,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.0,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(width: 6.0),
+                Text(
+                  '保存中',
+                  style: TextStyle(
+                    color: scheme.onSurfaceVariant,
+                    fontSize: 13.0,
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
         segRow(row1),
@@ -317,21 +450,45 @@ class _MonetLyricsSwitch extends StatefulWidget {
 
 class _MonetLyricsSwitchState extends State<_MonetLyricsSwitch> {
   final settings = AppSettings.instance;
+  bool _isSaving = false;
+
+  Future<void> _setEnabled(bool value) async {
+    if (_isSaving) return;
+    setState(() {
+      _isSaving = true;
+      settings.useMaterialYouForLyrics = value;
+    });
+    LyricViewController.instance.triggerRebuild();
+    try {
+      await settings.saveSettings();
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
       description: '主题色歌词',
-      subtitle: '歌词使用主题色渲染',
-      action: Switch(
-        value: settings.useMaterialYouForLyrics,
-        onChanged: (v) {
-          setState(() {
-            settings.useMaterialYouForLyrics = v;
-          });
-          settings.saveSettings();
-          LyricViewController.instance.triggerRebuild();
-        },
+      subtitle: _isSaving ? '保存中' : '歌词使用主题色渲染',
+      action: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_isSaving) ...[
+            const SizedBox(
+              width: 16.0,
+              height: 16.0,
+              child: CircularProgressIndicator(strokeWidth: 2.0),
+            ),
+            const SizedBox(width: 8.0),
+          ],
+          Switch(
+            value: settings.useMaterialYouForLyrics,
+            onChanged: _isSaving ? null : _setEnabled,
+          ),
+        ],
       ),
     );
   }
@@ -346,21 +503,45 @@ class _MonetTransitionSwitch extends StatefulWidget {
 
 class _MonetTransitionSwitchState extends State<_MonetTransitionSwitch> {
   final settings = AppSettings.instance;
+  bool _isSaving = false;
+
+  Future<void> _setEnabled(bool value) async {
+    if (_isSaving) return;
+    setState(() {
+      _isSaving = true;
+      settings.useMaterialYouForTransition = value;
+    });
+    LyricViewController.instance.triggerRebuild();
+    try {
+      await settings.saveSettings();
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
       description: '主题色间奏动画',
-      subtitle: '间奏动画使用主题色渲染',
-      action: Switch(
-        value: settings.useMaterialYouForTransition,
-        onChanged: (v) {
-          setState(() {
-            settings.useMaterialYouForTransition = v;
-          });
-          settings.saveSettings();
-          LyricViewController.instance.triggerRebuild();
-        },
+      subtitle: _isSaving ? '保存中' : '间奏动画使用主题色渲染',
+      action: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_isSaving) ...[
+            const SizedBox(
+              width: 16.0,
+              height: 16.0,
+              child: CircularProgressIndicator(strokeWidth: 2.0),
+            ),
+            const SizedBox(width: 8.0),
+          ],
+          Switch(
+            value: settings.useMaterialYouForTransition,
+            onChanged: _isSaving ? null : _setEnabled,
+          ),
+        ],
       ),
     );
   }
@@ -375,21 +556,45 @@ class _MonetControlsSwitch extends StatefulWidget {
 
 class _MonetControlsSwitchState extends State<_MonetControlsSwitch> {
   final settings = AppSettings.instance;
+  bool _isSaving = false;
+
+  Future<void> _setEnabled(bool value) async {
+    if (_isSaving) return;
+    setState(() {
+      _isSaving = true;
+      settings.useMaterialYouForControls = value;
+    });
+    AppSettings.rebuildNotifier.rebuild();
+    try {
+      await settings.saveSettings();
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
       description: '主题色控件',
-      subtitle: '播放页控件使用主题色渲染',
-      action: Switch(
-        value: settings.useMaterialYouForControls,
-        onChanged: (v) {
-          setState(() {
-            settings.useMaterialYouForControls = v;
-          });
-          settings.saveSettings();
-          AppSettings.rebuildNotifier.rebuild();
-        },
+      subtitle: _isSaving ? '保存中' : '播放页控件使用主题色渲染',
+      action: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_isSaving) ...[
+            const SizedBox(
+              width: 16.0,
+              height: 16.0,
+              child: CircularProgressIndicator(strokeWidth: 2.0),
+            ),
+            const SizedBox(width: 8.0),
+          ],
+          Switch(
+            value: settings.useMaterialYouForControls,
+            onChanged: _isSaving ? null : _setEnabled,
+          ),
+        ],
       ),
     );
   }
@@ -404,22 +609,46 @@ class _GlowEffectSwitch extends StatefulWidget {
 
 class _GlowEffectSwitchState extends State<_GlowEffectSwitch> {
   final nowPlayingPagePref = AppPreference.instance.nowPlayingPagePref;
+  bool _isSaving = false;
+
+  Future<void> _setEnabled(bool value) async {
+    if (_isSaving) return;
+    setState(() {
+      _isSaving = true;
+      nowPlayingPagePref.enableLyricGlow = value;
+    });
+    LyricViewController.instance.enableLyricGlow = value;
+    LyricViewController.instance.triggerRebuild();
+    try {
+      await AppPreference.instance.save();
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
       description: '辉光缩放效果（实验性）',
-      subtitle: '逐字播放时的辉光缩放动画',
-      action: Switch(
-        value: nowPlayingPagePref.enableLyricGlow,
-        onChanged: (v) {
-          setState(() {
-            nowPlayingPagePref.enableLyricGlow = v;
-          });
-          AppPreference.instance.save();
-          LyricViewController.instance.enableLyricGlow = v;
-          LyricViewController.instance.triggerRebuild();
-        },
+      subtitle: _isSaving ? '保存中' : '逐字播放时的辉光缩放动画',
+      action: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_isSaving) ...[
+            const SizedBox(
+              width: 16.0,
+              height: 16.0,
+              child: CircularProgressIndicator(strokeWidth: 2.0),
+            ),
+            const SizedBox(width: 8.0),
+          ],
+          Switch(
+            value: nowPlayingPagePref.enableLyricGlow,
+            onChanged: _isSaving ? null : _setEnabled,
+          ),
+        ],
       ),
     );
   }
@@ -436,6 +665,12 @@ class _CoverColorExtractionSwitch extends StatefulWidget {
 class _CoverColorExtractionSwitchState
     extends State<_CoverColorExtractionSwitch> {
   final settings = AppSettings.instance;
+  bool _isPickingColor = false;
+  bool _isSavingCustomColor = false;
+  bool _isSavingAutoMode = false;
+
+  bool get _isBusy =>
+      _isPickingColor || _isSavingCustomColor || _isSavingAutoMode;
 
   void _refreshTheme() {
     final audio = PlayService.instance.playbackService.nowPlaying;
@@ -453,47 +688,99 @@ class _CoverColorExtractionSwitchState
     );
   }
 
+  Future<void> _pickCustomColor() async {
+    if (_isBusy) return;
+    setState(() => _isPickingColor = true);
+    try {
+      final result = await _openColorPicker();
+      if (result == null || !mounted) return;
+      setState(() {
+        _isPickingColor = false;
+        _isSavingCustomColor = true;
+        settings.customCoverColor = result.toARGB32();
+      });
+      _refreshTheme();
+      await settings.saveSettings();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isPickingColor = false;
+          _isSavingCustomColor = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _setAutoExtraction(bool value) async {
+    if (_isBusy) return;
+    setState(() {
+      _isSavingAutoMode = true;
+      settings.enableCoverColorExtraction = value;
+    });
+    _refreshTheme();
+    try {
+      await settings.saveSettings();
+    } finally {
+      if (mounted) {
+        setState(() => _isSavingAutoMode = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isAuto = settings.enableCoverColorExtraction;
+    final subtitle = _isSavingAutoMode || _isSavingCustomColor
+        ? '保存中'
+        : isAuto
+            ? '从专辑封面自动提取'
+            : '自定义应用整体颜色';
 
     return SettingsTile(
       description: '应用主题色',
-      subtitle: isAuto ? '从专辑封面自动提取' : '自定义应用整体颜色',
+      subtitle: subtitle,
       action: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (!isAuto)
             Padding(
               padding: const EdgeInsets.only(right: 8),
-              child: OutlinedButton(
-                onPressed: () async {
-                  final result = await _openColorPicker();
-                  if (result != null && mounted) {
-                    setState(() {
-                      settings.customCoverColor = result.toARGB32();
-                    });
-                    settings.saveSettings();
-                    _refreshTheme();
-                  }
-                },
+              child: OutlinedButton.icon(
+                onPressed: _isBusy ? null : _pickCustomColor,
                 style: OutlinedButton.styleFrom(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(8),
                   ),
                 ),
-                child: const Text('自定义'),
+                icon: _isPickingColor || _isSavingCustomColor
+                    ? const SizedBox(
+                        width: 16.0,
+                        height: 16.0,
+                        child: CircularProgressIndicator(strokeWidth: 2.0),
+                      )
+                    : const Icon(Symbols.palette),
+                label: Text(
+                  _isPickingColor
+                      ? '选择中'
+                      : _isSavingCustomColor
+                          ? '保存中'
+                          : '自定义',
+                ),
               ),
             ),
+          if (_isSavingAutoMode) ...[
+            const SizedBox(
+              width: 16.0,
+              height: 16.0,
+              child: CircularProgressIndicator(strokeWidth: 2.0),
+            ),
+            const SizedBox(width: 8.0),
+          ],
           Switch(
             value: isAuto,
-            onChanged: (v) {
-              setState(() => settings.enableCoverColorExtraction = v);
-              settings.saveSettings();
-              _refreshTheme();
-            },
+            onChanged: _isBusy ? null : _setAutoExtraction,
           ),
         ],
       ),
@@ -537,6 +824,8 @@ class _ThemeColorPickerDialogState extends State<_ThemeColorPickerDialog> {
     });
   }
 
+  bool get _hasValidHex => _parseHex(_hexCtrl.text) != null;
+
   void _onHexSubmitted(String text) {
     final parsed = _parseHex(text);
     if (parsed != null) {
@@ -549,111 +838,124 @@ class _ThemeColorPickerDialogState extends State<_ThemeColorPickerDialog> {
     final scheme = Theme.of(context).colorScheme;
     final color = _hsv.toColor();
     final size = MediaQuery.of(context).size;
-    final pickerSize = (size.width * 0.65).clamp(220.0, 300.0);
+    final dialogWidth = (size.width - 64).clamp(260.0, 360.0).toDouble();
+    final pickerSize = (dialogWidth - 32).clamp(220.0, 300.0).toDouble();
 
     return AlertDialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       title: const Text('自定义主题色'),
       content: SizedBox(
-        width: pickerSize + 32,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // 2D 色域 (饱和度 × 明度)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: SizedBox(
-                width: pickerSize,
-                height: pickerSize * 0.7,
-                child: _HsvPicker(
-                  hsv: _hsv,
-                  onChanged: _updateColor,
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            // 色相条 + 预览
-            Row(
-              children: [
-                // 当前颜色预览
-                Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: color,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: scheme.outline.withValues(alpha: 0.4),
-                    ),
+        width: dialogWidth,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 2D 色域 (饱和度 × 明度)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: SizedBox(
+                  width: pickerSize,
+                  height: pickerSize * 0.7,
+                  child: _HsvPicker(
+                    hsv: _hsv,
+                    onChanged: _updateColor,
                   ),
                 ),
-                const SizedBox(width: 12),
-                // 色相条
-                Expanded(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: SizedBox(
-                      height: 20,
-                      child: _HueSlider(
-                        hue: _hsv.hue,
-                        onChanged: (hue) => _updateColor(
-                          _hsv.withHue(hue),
+              ),
+              const SizedBox(height: 12),
+              // 色相条 + 预览
+              Row(
+                children: [
+                  // 当前颜色预览
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: scheme.outline.withValues(alpha: 0.4),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // 色相条
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: SizedBox(
+                        height: 20,
+                        child: _HueSlider(
+                          hue: _hsv.hue,
+                          onChanged: (hue) => _updateColor(
+                            _hsv.withHue(hue),
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            // Hex 输入
-            Row(
-              children: [
-                Text(
-                  '#',
-                  style: TextStyle(
-                    color: scheme.onSurface,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w500,
+                ],
+              ),
+              const SizedBox(height: 16),
+              // Hex 输入
+              Row(
+                children: [
+                  Text(
+                    '#',
+                    style: TextStyle(
+                      color: scheme.onSurface,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: TextField(
-                    controller: _hexCtrl,
-                    decoration: InputDecoration(
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      hintText: 'RRGGBB',
-                      hintStyle: TextStyle(
-                        color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Focus(
+                      onFocusChange: HotkeysHelper.onFocusChanges,
+                      child: TextField(
+                        controller: _hexCtrl,
+                        decoration: InputDecoration(
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          hintText: 'RRGGBB',
+                          hintStyle: TextStyle(
+                            color:
+                                scheme.onSurfaceVariant.withValues(alpha: 0.5),
+                          ),
+                        ),
+                        style: const TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 16,
+                          letterSpacing: 1.2,
+                        ),
+                        textCapitalization: TextCapitalization.characters,
+                        inputFormatters: [
+                          UpperCaseTextFormatter(),
+                          LengthLimitingTextInputFormatter(6),
+                          FilteringTextInputFormatter.allow(
+                              RegExp(r'[0-9A-Fa-f]')),
+                        ],
+                        onSubmitted: _onHexSubmitted,
+                        onChanged: (text) {
+                          if (text.length == 6) {
+                            _onHexSubmitted(text);
+                          } else {
+                            setState(() {});
+                          }
+                        },
                       ),
                     ),
-                    style: const TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 16,
-                      letterSpacing: 1.2,
-                    ),
-                    textCapitalization: TextCapitalization.characters,
-                    inputFormatters: [
-                      UpperCaseTextFormatter(),
-                      LengthLimitingTextInputFormatter(6),
-                      FilteringTextInputFormatter.allow(RegExp(r'[0-9A-Fa-f]')),
-                    ],
-                    onSubmitted: _onHexSubmitted,
-                    onChanged: (text) {
-                      if (text.length == 6) _onHexSubmitted(text);
-                    },
                   ),
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
       actions: [
@@ -662,7 +964,8 @@ class _ThemeColorPickerDialogState extends State<_ThemeColorPickerDialog> {
           child: const Text('取消'),
         ),
         FilledButton(
-          onPressed: () => Navigator.of(context).pop(color),
+          onPressed:
+              _hasValidHex ? () => Navigator.of(context).pop(color) : null,
           child: const Text('确定'),
         ),
       ],
@@ -873,6 +1176,30 @@ class _LyricsTabContent extends StatefulWidget {
 
 class _LyricsTabContentState extends State<_LyricsTabContent> {
   final settings = AppSettings.instance;
+  bool _isSavingZhConversion = false;
+
+  Future<void> _setZhConversionMode(ZhConversionMode mode) async {
+    if (!canSaveChangedSetting(
+      current: settings.zhConversionMode,
+      next: mode,
+      isSaving: _isSavingZhConversion,
+    )) {
+      return;
+    }
+
+    setState(() {
+      _isSavingZhConversion = true;
+      settings.zhConversionMode = mode;
+    });
+    LyricViewController.instance.triggerRebuild();
+    try {
+      await settings.saveSettings();
+    } finally {
+      if (mounted) {
+        setState(() => _isSavingZhConversion = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -945,30 +1272,41 @@ class _LyricsTabContentState extends State<_LyricsTabContent> {
         // const SizedBox(height: 16.0),
         SettingsTile(
           description: '歌词转换',
-          action: SegmentedButton<ZhConversionMode>(
-            showSelectedIcon: false,
-            segments: const [
-              ButtonSegment<ZhConversionMode>(
-                value: ZhConversionMode.none,
-                label: Text('不转换'),
-              ),
-              ButtonSegment<ZhConversionMode>(
-                value: ZhConversionMode.traditionalToSimplified,
-                label: Text('繁转简'),
-              ),
-              ButtonSegment<ZhConversionMode>(
-                value: ZhConversionMode.simplifiedToTraditional,
-                label: Text('简转繁'),
+          subtitle: _isSavingZhConversion ? '保存中' : null,
+          action: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_isSavingZhConversion) ...[
+                const SizedBox(
+                  width: 16.0,
+                  height: 16.0,
+                  child: CircularProgressIndicator(strokeWidth: 2.0),
+                ),
+                const SizedBox(width: 10.0),
+              ],
+              SegmentedButton<ZhConversionMode>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment<ZhConversionMode>(
+                    value: ZhConversionMode.none,
+                    label: Text('不转换'),
+                  ),
+                  ButtonSegment<ZhConversionMode>(
+                    value: ZhConversionMode.traditionalToSimplified,
+                    label: Text('繁转简'),
+                  ),
+                  ButtonSegment<ZhConversionMode>(
+                    value: ZhConversionMode.simplifiedToTraditional,
+                    label: Text('简转繁'),
+                  ),
+                ],
+                selected: {settings.zhConversionMode},
+                onSelectionChanged: _isSavingZhConversion
+                    ? null
+                    : (newSelection) =>
+                        _setZhConversionMode(newSelection.first),
               ),
             ],
-            selected: {settings.zhConversionMode},
-            onSelectionChanged: (newSelection) {
-              setState(() {
-                settings.zhConversionMode = newSelection.first;
-              });
-              settings.saveSettings();
-              LyricViewController.instance.triggerRebuild();
-            },
           ),
         ),
         const SizedBox(height: 16.0),
@@ -1087,56 +1425,126 @@ class _AdvancedTabContent extends StatelessWidget {
   }
 }
 
-class SelectFontCombobox extends StatelessWidget {
+class SelectFontCombobox extends StatefulWidget {
   const SelectFontCombobox({super.key});
+
+  @override
+  State<SelectFontCombobox> createState() => _SelectFontComboboxState();
+}
+
+class _SelectFontComboboxState extends State<SelectFontCombobox> {
+  String? _busyLabel;
+
+  bool get _isBusy => _busyLabel != null;
+
+  void _setBusyLabel(String? label) {
+    if (mounted) {
+      setState(() => _busyLabel = label);
+    }
+  }
+
+  Future<void> _selectFont() async {
+    if (_isBusy) return;
+    _setBusyLabel('获取中');
+    try {
+      final installedFont = await getInstalledFonts();
+      if (!mounted) return;
+      if (installedFont == null || installedFont.isEmpty) {
+        showTextOnSnackBar('无法获取字体');
+        return;
+      }
+
+      final selection = await showDialog<_FontSelection>(
+        context: context,
+        builder: (context) => _FontSelector(installedFont: installedFont),
+      );
+      if (!mounted || selection == null) return;
+
+      final selectedFont = selection.font;
+      final settings = AppSettings.instance;
+      final oldFontFamily = settings.fontFamily;
+      final oldFontPath = settings.fontPath;
+      if (selectedFont == null) {
+        try {
+          _setBusyLabel('恢复默认');
+          ThemeProvider.instance.changeFontFamily(null);
+
+          _setBusyLabel('保存中');
+          settings.fontFamily = null;
+          settings.fontPath = null;
+          final saved = await settings.saveSettings();
+          if (!saved) {
+            settings.fontFamily = oldFontFamily;
+            settings.fontPath = oldFontPath;
+            ThemeProvider.instance.changeFontFamily(oldFontFamily);
+            showTextOnSnackBar('保存字体设置失败');
+          }
+        } catch (err) {
+          logger.e('[reset font] $err');
+          if (mounted) {
+            showTextOnSnackBar(err.toString());
+          }
+        }
+        return;
+      }
+
+      try {
+        _setBusyLabel('应用中');
+        final fontLoader = FontLoader(selectedFont.fullName);
+        fontLoader.addFont(
+          File(selectedFont.path).readAsBytes().then((value) {
+            return ByteData.sublistView(value);
+          }),
+        );
+        await fontLoader.load();
+        ThemeProvider.instance.changeFontFamily(selectedFont.fullName);
+
+        _setBusyLabel('保存中');
+        settings.fontFamily = selectedFont.fullName;
+        settings.fontPath = selectedFont.path;
+        final saved = await settings.saveSettings();
+        if (!saved) {
+          settings.fontFamily = oldFontFamily;
+          settings.fontPath = oldFontPath;
+          ThemeProvider.instance.changeFontFamily(oldFontFamily);
+          showTextOnSnackBar('保存字体设置失败');
+        }
+      } catch (err) {
+        ThemeProvider.instance.changeFontFamily(null);
+        logger.e('[select font] $err');
+        if (mounted) {
+          showTextOnSnackBar(err.toString());
+        }
+      }
+    } finally {
+      _setBusyLabel(null);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
       description: '自定义字体',
+      subtitle: _busyLabel,
       action: FilledButton.icon(
-        onPressed: () async {
-          final installedFont = await getInstalledFonts();
-          if (installedFont == null || installedFont.isEmpty) {
-            showTextOnSnackBar('无法获取字体');
-            return;
-          }
-
-          if (context.mounted) {
-            final selectedFont = await showDialog<InstalledFont>(
-              context: context,
-              builder: (context) => _FontSelector(installedFont: installedFont),
-            );
-            if (selectedFont == null) return;
-
-            try {
-              final fontLoader = FontLoader(selectedFont.fullName);
-              fontLoader.addFont(
-                File(selectedFont.path).readAsBytes().then((value) {
-                  return ByteData.sublistView(value);
-                }),
-              );
-              await fontLoader.load();
-              ThemeProvider.instance.changeFontFamily(selectedFont.fullName);
-
-              final settings = AppSettings.instance;
-              settings.fontFamily = selectedFont.fullName;
-              settings.fontPath = selectedFont.path;
-              await settings.saveSettings();
-            } catch (err) {
-              ThemeProvider.instance.changeFontFamily(null);
-              logger.e('[select font] $err');
-              if (context.mounted) {
-                showTextOnSnackBar(err.toString());
-              }
-            }
-          }
-        },
-        label: const Text('选择字体'),
-        icon: const Icon(Symbols.text_fields),
+        onPressed: _isBusy ? null : _selectFont,
+        label: Text(_busyLabel ?? '选择字体'),
+        icon: _isBusy
+            ? const SizedBox(
+                width: 16.0,
+                height: 16.0,
+                child: CircularProgressIndicator(strokeWidth: 2.0),
+              )
+            : const Icon(Symbols.text_fields),
       ),
     );
   }
+}
+
+class _FontSelection {
+  const _FontSelection(this.font);
+
+  final InstalledFont? font;
 }
 
 class _FontSelector extends StatelessWidget {
@@ -1147,61 +1555,163 @@ class _FontSelector extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Provider.of<ThemeProvider>(context);
     final scheme = Theme.of(context).colorScheme;
+    final size = MediaQuery.sizeOf(context);
+    final width = (size.width - 48.0).clamp(300.0, 520.0).toDouble();
+    final height = (size.height - 96.0).clamp(320.0, 560.0).toDouble();
+    final currentFont = theme.fontFamily;
+
     return Dialog(
-      insetPadding: EdgeInsets.zero,
+      insetPadding: const EdgeInsets.symmetric(
+        horizontal: 24.0,
+        vertical: 24.0,
+      ),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12.0),
       ),
       child: SizedBox(
-        width: 350.0,
-        height: 400,
+        width: width,
+        height: height,
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
-            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Padding(
                 padding: const EdgeInsets.only(bottom: 16.0),
-                child: Text(
-                  '选择字体',
-                  style: TextStyle(
-                    color: scheme.onSurface,
-                    fontSize: 18.0,
-                    fontWeight: FontWeight.bold,
-                  ),
+                child: Wrap(
+                  spacing: 8.0,
+                  runSpacing: 8.0,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      '\u9009\u62e9\u5b57\u4f53',
+                      style: TextStyle(
+                        color: scheme.onSurface,
+                        fontSize: 18.0,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    _CurrentFontPill(label: currentFont ?? '\u9ed8\u8ba4'),
+                  ],
                 ),
               ),
-              Text("当前字体：${theme.fontFamily ?? "默认"}"),
-              const SizedBox(height: 8.0),
               Expanded(
                 child: Material(
                   type: MaterialType.transparency,
                   child: ListView.builder(
-                    itemCount: installedFont.length,
-                    itemExtent: 48,
-                    itemBuilder: (context, i) => ListTile(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8.0),
-                      ),
-                      title: Text(installedFont[i].fullName),
-                      onTap: () => Navigator.pop(context, installedFont[i]),
-                    ),
+                    itemCount: installedFont.length + 1,
+                    itemExtent: 56.0,
+                    itemBuilder: (context, i) {
+                      if (i == 0) {
+                        final selected = currentFont == null;
+                        return ListTile(
+                          selected: selected,
+                          selectedTileColor:
+                              scheme.secondaryContainer.withValues(alpha: 0.45),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12.0),
+                          ),
+                          leading: Icon(
+                            selected
+                                ? Symbols.check_circle
+                                : Symbols.format_clear,
+                            color: selected
+                                ? scheme.primary
+                                : scheme.onSurfaceVariant,
+                          ),
+                          title: const Text('默认字体'),
+                          trailing: selected ? const Icon(Symbols.check) : null,
+                          onTap: !canResetOptionalSetting<String>(
+                            current: currentFont,
+                            isSaving: false,
+                          )
+                              ? null
+                              : () => Navigator.pop(
+                                    context,
+                                    const _FontSelection(null),
+                                  ),
+                        );
+                      }
+
+                      final fontIndex = i - 1;
+                      final font = installedFont[fontIndex];
+                      final selected = font.fullName == currentFont;
+                      return ListTile(
+                        selected: selected,
+                        selectedTileColor:
+                            scheme.secondaryContainer.withValues(alpha: 0.45),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12.0),
+                        ),
+                        leading: Icon(
+                          selected ? Symbols.check_circle : Symbols.text_fields,
+                          color: selected
+                              ? scheme.primary
+                              : scheme.onSurfaceVariant,
+                        ),
+                        title: Text(
+                          font.fullName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        trailing: selected ? const Icon(Symbols.check) : null,
+                        onTap: selected
+                            ? null
+                            : () => Navigator.pop(
+                                  context,
+                                  _FontSelection(font),
+                                ),
+                      );
+                    },
                   ),
                 ),
               ),
               const SizedBox(height: 16.0),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
+              OverflowBar(
+                alignment: MainAxisAlignment.end,
+                spacing: 8.0,
+                overflowSpacing: 8.0,
                 children: [
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text('取消'),
+                    child: const Text('\u53d6\u6d88'),
                   ),
                 ],
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CurrentFontPill extends StatelessWidget {
+  const _CurrentFontPill({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Container(
+      height: 28.0,
+      constraints: const BoxConstraints(maxWidth: 260.0),
+      padding: const EdgeInsets.symmetric(horizontal: 10.0),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: scheme.secondaryContainer,
+        borderRadius: BorderRadius.circular(14.0),
+      ),
+      child: Text(
+        '\u5f53\u524d\uff1a$label',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: scheme.onSecondaryContainer,
+          fontSize: 12.0,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );
@@ -1218,6 +1728,52 @@ class DefaultLyricSourceControl extends StatefulWidget {
 
 class _DefaultLyricSourceControlState extends State<DefaultLyricSourceControl> {
   final settings = AppSettings.instance;
+  bool _isSavingSourceMode = false;
+  bool _isSavingOnlineSource = false;
+
+  bool get _isSaving => _isSavingSourceMode || _isSavingOnlineSource;
+
+  Future<void> _setLocalLyricFirst(bool value) async {
+    if (_isSaving || value == settings.localLyricFirst) return;
+    setState(() {
+      _isSavingSourceMode = true;
+      settings.localLyricFirst = value;
+    });
+    try {
+      await settings.saveSettings();
+    } finally {
+      if (mounted) {
+        setState(() => _isSavingSourceMode = false);
+      }
+    }
+  }
+
+  Future<void> _setPreferredOnlineSource(LyricSourceType value) async {
+    if (_isSaving || value == settings.preferredOnlineSource) return;
+    setState(() {
+      _isSavingOnlineSource = true;
+      settings.preferredOnlineSource = value;
+    });
+    try {
+      await settings.saveSettings();
+    } finally {
+      if (mounted) {
+        setState(() => _isSavingOnlineSource = false);
+      }
+    }
+  }
+
+  Widget _savingPrefix(bool visible) {
+    if (!visible) return const SizedBox.shrink();
+    return const Padding(
+      padding: EdgeInsets.only(right: 10.0),
+      child: SizedBox(
+        width: 16.0,
+        height: 16.0,
+        child: CircularProgressIndicator(strokeWidth: 2.0),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1226,60 +1782,68 @@ class _DefaultLyricSourceControlState extends State<DefaultLyricSourceControl> {
       children: [
         SettingsTile(
           description: '首选歌词来源',
-          action: SegmentedButton<bool>(
-            showSelectedIcon: false,
-            segments: const [
-              ButtonSegment<bool>(
-                value: true,
-                icon: Icon(Symbols.cloud_off),
-                label: Text('本地'),
-              ),
-              ButtonSegment<bool>(
-                value: false,
-                icon: Icon(Symbols.cloud),
-                label: Text('在线'),
+          subtitle: _isSavingSourceMode ? '保存中' : null,
+          action: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _savingPrefix(_isSavingSourceMode),
+              SegmentedButton<bool>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment<bool>(
+                    value: true,
+                    icon: Icon(Symbols.cloud_off),
+                    label: Text('本地'),
+                  ),
+                  ButtonSegment<bool>(
+                    value: false,
+                    icon: Icon(Symbols.cloud),
+                    label: Text('在线'),
+                  ),
+                ],
+                selected: {settings.localLyricFirst},
+                onSelectionChanged: _isSaving
+                    ? null
+                    : (newSelection) => _setLocalLyricFirst(newSelection.first),
               ),
             ],
-            selected: {settings.localLyricFirst},
-            onSelectionChanged: (newSelection) async {
-              if (newSelection.first == settings.localLyricFirst) return;
-              setState(() {
-                settings.localLyricFirst = newSelection.first;
-              });
-              await settings.saveSettings();
-            },
           ),
         ),
-        // 选中"在线"时展开默认源选择
+        // 选中“在线”时展开默认源选择
         if (!settings.localLyricFirst) ...[
           const SizedBox(height: 12),
           Padding(
             padding: const EdgeInsets.only(left: 16),
             child: SettingsTile(
               description: '默认在线源',
-              action: SegmentedButton<LyricSourceType>(
-                showSelectedIcon: false,
-                segments: const [
-                  ButtonSegment(
-                    value: LyricSourceType.qq,
-                    label: Text('QQ'),
-                  ),
-                  ButtonSegment(
-                    value: LyricSourceType.kugou,
-                    label: Text('酷狗'),
-                  ),
-                  ButtonSegment(
-                    value: LyricSourceType.ne,
-                    label: Text('网易'),
+              subtitle: _isSavingOnlineSource ? '保存中' : null,
+              action: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _savingPrefix(_isSavingOnlineSource),
+                  SegmentedButton<LyricSourceType>(
+                    showSelectedIcon: false,
+                    segments: const [
+                      ButtonSegment(
+                        value: LyricSourceType.qq,
+                        label: Text('QQ'),
+                      ),
+                      ButtonSegment(
+                        value: LyricSourceType.kugou,
+                        label: Text('酷狗'),
+                      ),
+                      ButtonSegment(
+                        value: LyricSourceType.ne,
+                        label: Text('网易'),
+                      ),
+                    ],
+                    selected: {settings.preferredOnlineSource},
+                    onSelectionChanged: _isSaving
+                        ? null
+                        : (newSelection) =>
+                            _setPreferredOnlineSource(newSelection.first),
                   ),
                 ],
-                selected: {settings.preferredOnlineSource},
-                onSelectionChanged: (newSelection) {
-                  setState(() {
-                    settings.preferredOnlineSource = newSelection.first;
-                  });
-                  settings.saveSettings();
-                },
               ),
             ),
           ),
@@ -1300,6 +1864,7 @@ class NowPlayingBackgroundModeToggle extends StatefulWidget {
 class _NowPlayingBackgroundModeToggleState
     extends State<NowPlayingBackgroundModeToggle> {
   final pref = AppPreference.instance.nowPlayingPagePref;
+  bool _isSaving = false;
 
   @override
   Widget build(BuildContext context) {
@@ -1309,28 +1874,53 @@ class _NowPlayingBackgroundModeToggleState
 
     return SettingsTile(
       description: '播放页背景模式',
-      action: SegmentedButton<NowPlayingBackgroundMode>(
-        showSelectedIcon: false,
-        segments: const [
-          ButtonSegment<NowPlayingBackgroundMode>(
-            value: NowPlayingBackgroundMode.meshGradient,
-            label: Text('动态背景'),
-          ),
-          ButtonSegment<NowPlayingBackgroundMode>(
-            value: NowPlayingBackgroundMode.blurCover,
-            label: Text('封面模糊'),
+      subtitle: _isSaving ? '保存中' : null,
+      action: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_isSaving) ...[
+            const SizedBox(
+              width: 16.0,
+              height: 16.0,
+              child: CircularProgressIndicator(strokeWidth: 2.0),
+            ),
+            const SizedBox(width: 10.0),
+          ],
+          SegmentedButton<NowPlayingBackgroundMode>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment<NowPlayingBackgroundMode>(
+                value: NowPlayingBackgroundMode.meshGradient,
+                label: Text('动态背景'),
+              ),
+              ButtonSegment<NowPlayingBackgroundMode>(
+                value: NowPlayingBackgroundMode.blurCover,
+                label: Text('封面模糊'),
+              ),
+            ],
+            selected: {pref.backgroundMode},
+            onSelectionChanged: _isSaving
+                ? null
+                : (selection) async {
+                    final nextMode = selection.first;
+                    if (nextMode == pref.backgroundMode) return;
+                    setState(() {
+                      _isSaving = true;
+                      pref.backgroundMode = nextMode;
+                    });
+                    nowPlayingBackgroundModeNotifier.value = nextMode;
+                    try {
+                      await AppPreference.instance.save();
+                    } finally {
+                      if (mounted) {
+                        setState(() {
+                          _isSaving = false;
+                        });
+                      }
+                    }
+                  },
           ),
         ],
-        selected: {pref.backgroundMode},
-        onSelectionChanged: (selection) async {
-          final nextMode = selection.first;
-          if (nextMode == pref.backgroundMode) return;
-          setState(() {
-            pref.backgroundMode = nextMode;
-          });
-          nowPlayingBackgroundModeNotifier.value = nextMode;
-          await AppPreference.instance.save();
-        },
       ),
     );
   }
