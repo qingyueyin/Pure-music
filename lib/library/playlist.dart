@@ -12,10 +12,47 @@ import 'package:pure_music/core/utils.dart';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:path/path.dart' as p;
 
-List<Playlist> PLAYLISTS = [];
+List<Playlist> playlists = [];
+
+String _playlistPathKey(String value) {
+  var normalized = value.trim().replaceAll('\\', '/');
+  while (normalized.endsWith('/') && normalized.length > 1) {
+    normalized = normalized.substring(0, normalized.length - 1);
+  }
+  return normalized.toLowerCase();
+}
+
+List<String> _uniquePlaylistPaths(Iterable<String> paths) {
+  final result = <String>[];
+  final seen = <String>{};
+  for (final path in paths) {
+    final key = _playlistPathKey(path);
+    if (key.isEmpty || !seen.add(key)) continue;
+    result.add(path);
+  }
+  return result;
+}
+
+String importedPlaylistFileNameKey(String value) {
+  return p.basename(value.trim()).toLowerCase();
+}
+
+String? findImportedPlaylistLibraryPath({
+  required String rawPath,
+  required Iterable<String> libraryPaths,
+}) {
+  final fileNameKey = importedPlaylistFileNameKey(rawPath);
+  if (fileNameKey.isEmpty) return null;
+  for (final libraryPath in libraryPaths) {
+    if (importedPlaylistFileNameKey(libraryPath) == fileNameKey) {
+      return libraryPath;
+    }
+  }
+  return null;
+}
 
 Future<void> readPlaylists() async {
-  PLAYLISTS = [];
+  playlists = [];
   try {
     final dir = await getAppDataDir();
     final jsonFile = File(p.join(dir.path, 'playlists.json'));
@@ -26,11 +63,11 @@ Future<void> readPlaylists() async {
     if (playlistCount == 0 && jsonFile.existsSync()) {
       final fromJson = _readPlaylistsFromJson(jsonFile);
       _writePlaylistsToDb(db, fromJson);
-      PLAYLISTS = fromJson;
+      playlists = fromJson;
       return;
     }
 
-    final playlists = <Playlist>[];
+    final loadedPlaylists = <Playlist>[];
     final rows =
         db.select('SELECT id, name, cover_source FROM playlists ORDER BY name');
     for (final row in rows) {
@@ -45,22 +82,24 @@ Future<void> readPlaylists() async {
       for (final item in items) {
         paths.add(item['path'] as String);
       }
-      playlists.add(Playlist(name, paths)
+      loadedPlaylists.add(Playlist(name, paths)
         ..id = id
         ..coverSource = coverSource);
     }
-    PLAYLISTS = playlists;
+    playlists = loadedPlaylists;
   } catch (err, trace) {
     logger.e(err, stackTrace: trace);
   }
 }
 
-Future<void> savePlaylists() async {
+Future<bool> savePlaylists() async {
   try {
     final db = await AppDb.instance.db();
-    _writePlaylistsToDb(db, PLAYLISTS);
+    _writePlaylistsToDb(db, playlists);
+    return true;
   } catch (err, trace) {
     logger.e(err, stackTrace: trace);
+    return false;
   }
 }
 
@@ -153,23 +192,25 @@ Future<Playlist?> importPlaylistFromFile() async {
       resolved.add(raw);
       continue;
     }
-    final fileName = p.basename(raw);
-    final match = collection.where((a) => p.basename(a.path) == fileName);
-    if (match.isNotEmpty) resolved.add(match.first.path);
+    final matchedPath = findImportedPlaylistLibraryPath(
+      rawPath: raw,
+      libraryPaths: collection.map((a) => a.path),
+    );
+    if (matchedPath != null) resolved.add(matchedPath);
   }
   if (resolved.isEmpty) return null;
   final basename = p.basenameWithoutExtension(file.path);
   return Playlist(basename, resolved);
 }
 
-Future<void> exportPlaylistToFile(Playlist playlist) async {
+Future<bool> exportPlaylistToFile(Playlist playlist) async {
   final result = await FilePicker.platform.saveFile(
     dialogTitle: '导出歌单 - ${playlist.name}',
     fileName: '${playlist.name}.m3u8',
     type: FileType.custom,
     allowedExtensions: ['m3u8', 'm3u', 'txt'],
   );
-  if (result == null) return;
+  if (result == null) return false;
   final ext = p.extension(result).toLowerCase();
   final isTxt = ext == '.txt';
   final sb = StringBuffer();
@@ -177,7 +218,8 @@ Future<void> exportPlaylistToFile(Playlist playlist) async {
   for (final path in playlist.paths) {
     sb.writeln(path);
   }
-  await File(result).writeAsString(sb.toString(), encoding: utf8);
+  await writeTextFileAtomically(result, sb.toString());
+  return true;
 }
 
 List<String> _parsePathList(String content) {
@@ -207,8 +249,21 @@ class Playlist {
   String name;
   List<String> paths;
   String? coverSource;
+  Set<String>? _pathKeys;
+  List<Audio>? _audiosCache;
+  AudioLibrary? _audiosCacheLibrary;
 
-  Playlist(this.name, this.paths);
+  Playlist(this.name, List<String> paths) : paths = _uniquePlaylistPaths(paths);
+
+  Set<String> get _pathKeySet {
+    return _pathKeys ??=
+        paths.map(_playlistPathKey).where((key) => key.isNotEmpty).toSet();
+  }
+
+  void _invalidateAudioCache() {
+    _audiosCache = null;
+    _audiosCacheLibrary = null;
+  }
 
   Future<Uint8List?> resolveCoverBytes() async {
     if (coverSource == null || coverSource!.isEmpty) return null;
@@ -261,26 +316,67 @@ class Playlist {
   }
 
   List<Audio> get audios {
-    final collection = AudioLibrary.instance.audioCollection;
-    return paths
-        .map((p) {
-          final i = collection.indexWhere((a) => a.path == p);
-          return i >= 0 ? collection[i] : null;
+    final library = AudioLibrary.instance;
+    final cached = _audiosCache;
+    if (cached != null && identical(_audiosCacheLibrary, library)) {
+      return List<Audio>.from(cached);
+    }
+    final resolved = paths
+        .map((path) {
+          final key = _playlistPathKey(path);
+          if (key.isEmpty) return null;
+          return library.audioByPath(path);
         })
         .whereType<Audio>()
         .toList();
+    _audiosCache = resolved;
+    _audiosCacheLibrary = library;
+    return List<Audio>.from(resolved);
   }
 
-  bool containsPath(String path) => paths.contains(path);
+  Audio? get firstAudio {
+    final library = AudioLibrary.instance;
+    final cached = _audiosCache;
+    if (cached != null && identical(_audiosCacheLibrary, library)) {
+      return cached.isEmpty ? null : cached.first;
+    }
+    for (final path in paths) {
+      final key = _playlistPathKey(path);
+      if (key.isEmpty) continue;
+      final audio = library.audioByPath(path);
+      if (audio != null) return audio;
+    }
+    return null;
+  }
+
+  bool containsPath(String path) {
+    final key = _playlistPathKey(path);
+    if (key.isEmpty) return false;
+    return _pathKeySet.contains(key);
+  }
 
   void addPath(String path) {
-    if (!paths.contains(path)) {
+    final key = _playlistPathKey(path);
+    if (key.isEmpty) return;
+    if (_pathKeySet.add(key)) {
       paths.add(path);
+      _invalidateAudioCache();
     }
   }
 
   void removeByPath(String path) {
-    paths.remove(path);
+    final key = _playlistPathKey(path);
+    if (key.isEmpty) return;
+    if (!_pathKeySet.contains(key)) return;
+    paths.removeWhere((item) => _playlistPathKey(item) == key);
+    _pathKeys?.remove(key);
+    _invalidateAudioCache();
+  }
+
+  void replacePaths(Iterable<String> paths) {
+    this.paths = _uniquePlaylistPaths(paths);
+    _pathKeys = null;
+    _invalidateAudioCache();
   }
 
   Map toMap() => {'name': name, 'audios': paths};
