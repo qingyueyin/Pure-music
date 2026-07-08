@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:pure_music/core/setting_action_state.dart';
 import 'package:pure_music/native/rust/api/system_theme.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/utils.dart';
@@ -48,6 +49,22 @@ Future<Directory> getSettingsDir() async {
   return Directory(path.join(root.path, 'settings')).create(recursive: true);
 }
 
+Future<void> writeTextFileAtomically(String filePath, String content) async {
+  final target = File(filePath);
+  await target.parent.create(recursive: true);
+  final tmpPath = '$filePath.tmp.${DateTime.now().microsecondsSinceEpoch}.$pid';
+  final tmp = File(tmpPath);
+  try {
+    await tmp.writeAsString(content, flush: true);
+    await tmp.rename(filePath);
+  } catch (_) {
+    try {
+      if (await tmp.exists()) await tmp.delete();
+    } catch (_) {}
+    rethrow;
+  }
+}
+
 Future<Directory> getCacheDir() async {
   final root = await getAppDataDir();
   return Directory(path.join(root.path, 'cache')).create(recursive: true);
@@ -67,6 +84,77 @@ enum LyricDisplayMode {
 }
 
 enum ThemeOption { system, light, dark }
+
+Set<NowPlayingMode> defaultWavyBarEnabledModes() => {NowPlayingMode.portrait};
+
+ThemeOption normalizedThemeOption(Object? value) {
+  final index = normalizedEnumIndex(
+    value,
+    length: ThemeOption.values.length,
+    defaultIndex: -1,
+  );
+  if (index >= 0) return ThemeOption.values[index];
+
+  final name = normalizedSettingEnumName(value);
+  for (final option in ThemeOption.values) {
+    if (option.name == name) return option;
+  }
+  return ThemeOption.system;
+}
+
+Set<NowPlayingMode> normalizedWavyBarEnabledModes(Object? value) {
+  if (value is String) {
+    final mode = NowPlayingMode.fromStoredValue(value);
+    return mode == null ? defaultWavyBarEnabledModes() : {mode};
+  }
+  if (value is! List) return defaultWavyBarEnabledModes();
+  if (value.isEmpty) return {};
+  final modes = NowPlayingMode.fromList(value);
+  return modes.isEmpty ? defaultWavyBarEnabledModes() : modes;
+}
+
+String? normalizedSettingEnumName(Object? value) {
+  final normalized = normalizedStringSetting(value)?.toLowerCase();
+  if (normalized == null) return null;
+  final separator = normalized.lastIndexOf('.');
+  return separator < 0 ? normalized : normalized.substring(separator + 1);
+}
+
+String? normalizedPathSetting(Object? value) {
+  final normalized = normalizedStringSetting(value);
+  if (normalized == null) return null;
+  final uri = Uri.tryParse(normalized);
+  if (uri != null && uri.scheme.toLowerCase() == 'file') {
+    final host = uri.host.toLowerCase();
+    if ((host.isEmpty || host == 'localhost') && uri.path == '/') return null;
+    if (host == 'localhost') {
+      return uri.replace(host: '').toFilePath(windows: true);
+    }
+    return uri.toFilePath(windows: true);
+  }
+  return normalized;
+}
+
+T? normalizedSettingEnumValue<T extends Enum>(
+  Object? value,
+  List<T> values, {
+  T? fallback,
+}) {
+  final index = normalizedEnumIndex(
+    value,
+    length: values.length,
+    defaultIndex: -1,
+  );
+  if (index >= 0) return values[index];
+
+  final name = normalizedSettingEnumName(value);
+  if (name != null) {
+    for (final option in values) {
+      if (option.name.toLowerCase() == name) return option;
+    }
+  }
+  return fallback;
+}
 
 class RebuildNotifier extends ChangeNotifier {
   void rebuild() => notifyListeners();
@@ -108,7 +196,7 @@ class AppSettings {
   bool useMaterialYouForProgressBar = false;
   bool useMaterialYouForTransition = false;
   bool useMaterialYouForControls = false;
-  Set<NowPlayingMode> wavyBarEnabledModes = {NowPlayingMode.portrait};
+  Set<NowPlayingMode> wavyBarEnabledModes = defaultWavyBarEnabledModes();
   TopBarLyricAnimation topBarLyricAnimation = TopBarLyricAnimation.slideUp;
   bool enableCoverColorExtraction = true;
   int? customCoverColor;
@@ -154,38 +242,252 @@ class AppSettings {
   static Future<void> _readFromJsonOld(Map settingsMap) async {
     final to = settingsMap['ThemeOption'];
     if (to != null) {
-      _instance.themeOption = ThemeOption.values[to];
+      _instance.themeOption = normalizedThemeOption(to);
     }
     final oldSep = settingsMap['ArtistSeparator'];
     if (oldSep != null) {
-      _instance.artistSeparator = List<String>.from(oldSep);
+      _instance.artistSeparator = normalizedArtistSeparators(oldSep);
     }
     _instance.artistSplitPattern = _instance.artistSeparator.join('|');
 
     final llf = settingsMap['LocalLyricFirst'];
     if (llf != null) {
-      _instance.localLyricFirst = llf == 1;
+      _instance.localLyricFirst = normalizedBoolSetting(
+        llf,
+        defaultValue: true,
+      );
     }
 
     final st = settingsMap['ShowTranslation'];
     if (st != null) {
-      _instance.showTranslation = st is bool ? st : st == 1;
+      _instance.showTranslation = normalizedBoolSetting(
+        st,
+        defaultValue: true,
+      );
     }
     final sr = settingsMap['ShowRomanization'];
     if (sr != null) {
-      _instance.showRomanization = sr is bool ? sr : sr == 1;
+      _instance.showRomanization = normalizedBoolSetting(
+        sr,
+        defaultValue: true,
+      );
     }
 
     final sizeStr = settingsMap['WindowSize'];
     if (sizeStr != null) {
-      final sizeStrs = (sizeStr as String).split(',');
-      _instance.windowSize = Size(double.tryParse(sizeStrs[0]) ?? 1280,
-          double.tryParse(sizeStrs[1]) ?? 756);
+      final size = normalizedWindowSizeSetting(sizeStr);
+      _instance.windowSize = Size(size.width, size.height);
     }
 
     final isMaximized = settingsMap['IsWindowMaximized'];
     if (isMaximized != null) {
-      _instance.isWindowMaximized = isMaximized == 1;
+      _instance.isWindowMaximized = normalizedBoolSetting(
+        isMaximized,
+        defaultValue: false,
+      );
+    }
+  }
+
+  @visibleForTesting
+  static Future<void> readFromSettingsMapForTest(Map settingsMap) =>
+      _readFromSettingsMap(settingsMap);
+
+  static Future<void> _readFromSettingsMap(Map settingsMap) async {
+    if (settingsMap['Version'] == null) {
+      return _readFromJsonOld(settingsMap);
+    }
+
+    final to = settingsMap['ThemeOption'];
+    if (to != null) {
+      _instance.themeOption = normalizedThemeOption(to);
+    }
+
+    final sep = settingsMap['ArtistSeparator'];
+    if (sep != null) {
+      _instance.artistSeparator = normalizedArtistSeparators(sep);
+      _instance.artistSplitPattern = _instance.artistSeparator.join('|');
+    }
+
+    final llf = settingsMap['LocalLyricFirst'];
+    if (llf != null) {
+      _instance.localLyricFirst = normalizedBoolSetting(
+        llf,
+        defaultValue: true,
+      );
+    }
+
+    final pos = settingsMap['PreferredOnlineSource'];
+    if (pos != null) {
+      _instance.preferredOnlineSource = normalizedSettingEnumValue(
+        pos,
+        LyricSourceType.values,
+        fallback: LyricSourceType.qq,
+      )!;
+    }
+
+    final st = settingsMap['ShowTranslation'];
+    if (st != null) {
+      _instance.showTranslation = normalizedBoolSetting(
+        st,
+        defaultValue: true,
+      );
+    }
+    final sr = settingsMap['ShowRomanization'];
+    if (sr != null) {
+      _instance.showRomanization = normalizedBoolSetting(
+        sr,
+        defaultValue: true,
+      );
+    }
+
+    final ldm = settingsMap['LyricDisplayMode'];
+    if (ldm != null) {
+      final modeName = normalizedSettingEnumName(ldm);
+      _instance.lyricDisplayMode =
+          normalizedSettingEnumValue(ldm, LyricDisplayMode.values) ??
+              switch (modeName) {
+                'plain' => LyricDisplayMode.lineByLine,
+                'verbatim' => LyricDisplayMode.wordByWord,
+                'enhanced' => LyricDisplayMode.wordByWord,
+                _ => LyricDisplayMode.wordByWord,
+              };
+    }
+
+    final zcm = settingsMap['ZhConversionMode'];
+    if (zcm != null) {
+      final modeName = normalizedSettingEnumName(zcm);
+      _instance.zhConversionMode =
+          normalizedSettingEnumValue(zcm, ZhConversionMode.values) ??
+              switch (modeName) {
+                't2s' => ZhConversionMode.traditionalToSimplified,
+                's2t' => ZhConversionMode.simplifiedToTraditional,
+                _ => ZhConversionMode.none,
+              };
+    }
+
+    final pwt = settingsMap['PromptWriteLyricToTag'];
+    if (pwt != null) {
+      _instance.promptWriteLyricToTag = normalizedBoolSetting(
+        pwt,
+        defaultValue: true,
+      );
+    }
+
+    final pwd = settingsMap['PromptWriteLyricToTagDelay'];
+    if (pwd != null) {
+      _instance.promptWriteLyricToTagDelay = normalizedBoundedIntSetting(
+        pwd,
+        defaultValue: 15,
+        min: 5,
+        max: 60,
+      );
+    }
+
+    final awt = settingsMap['AutoWriteLyricToTag'];
+    if (awt != null) {
+      _instance.autoWriteLyricToTag = normalizedBoolSetting(
+        awt,
+        defaultValue: false,
+      );
+    }
+
+    final awd = settingsMap['AutoWriteLyricToTagDelay'];
+    if (awd != null) {
+      _instance.autoWriteLyricToTagDelay = normalizedBoundedIntSetting(
+        awd,
+        defaultValue: 30,
+        min: 10,
+        max: 120,
+      );
+    }
+
+    final umyl = settingsMap['UseMaterialYouForLyrics'];
+    if (umyl != null) {
+      _instance.useMaterialYouForLyrics = normalizedBoolSetting(
+        umyl,
+        defaultValue: false,
+      );
+    }
+
+    final umypb = settingsMap['UseMaterialYouForProgressBar'];
+    if (umypb != null) {
+      _instance.useMaterialYouForProgressBar = normalizedBoolSetting(
+        umypb,
+        defaultValue: false,
+      );
+    }
+
+    final umyt = settingsMap['UseMaterialYouForTransition'];
+    if (umyt != null) {
+      _instance.useMaterialYouForTransition = normalizedBoolSetting(
+        umyt,
+        defaultValue: false,
+      );
+    }
+
+    final umyc = settingsMap['UseMaterialYouForControls'];
+    if (umyc != null) {
+      _instance.useMaterialYouForControls = normalizedBoolSetting(
+        umyc,
+        defaultValue: false,
+      );
+    }
+
+    if (settingsMap.containsKey('WavyBarEnabledModes')) {
+      _instance.wavyBarEnabledModes = normalizedWavyBarEnabledModes(
+        settingsMap['WavyBarEnabledModes'],
+      );
+    }
+
+    final tbla = settingsMap['TopBarLyricAnimation'];
+    if (tbla != null) {
+      _instance.topBarLyricAnimation = normalizedSettingEnumValue(
+        tbla,
+        TopBarLyricAnimation.values,
+        fallback: TopBarLyricAnimation.slideUp,
+      )!;
+    }
+
+    final ecce = settingsMap['EnableCoverColorExtraction'];
+    if (ecce != null) {
+      _instance.enableCoverColorExtraction = normalizedBoolSetting(
+        ecce,
+        defaultValue: true,
+      );
+    }
+
+    if (settingsMap.containsKey('CustomCoverColor')) {
+      _instance.customCoverColor = normalizedOptionalColorSetting(
+        settingsMap['CustomCoverColor'],
+      );
+    }
+
+    final sizeStr = settingsMap['WindowSize'];
+    if (sizeStr != null) {
+      final size = normalizedWindowSizeSetting(sizeStr);
+      _instance.windowSize = Size(size.width, size.height);
+    }
+
+    final isMaximized = settingsMap['IsWindowMaximized'];
+    if (isMaximized != null) {
+      _instance.isWindowMaximized = normalizedBoolSetting(
+        isMaximized,
+        defaultValue: false,
+      );
+    }
+
+    final ff = settingsMap['FontFamily'];
+    final fp = settingsMap['FontPath'];
+    if (ff != null || fp != null) {
+      final fontFamily = normalizedStringSetting(ff);
+      final fontPath = normalizedPathSetting(fp);
+      if (fontFamily == null || fontPath == null) {
+        _instance.fontFamily = null;
+        _instance.fontPath = null;
+      } else {
+        _instance.fontFamily = fontFamily;
+        _instance.fontPath = fontPath;
+      }
     }
   }
 
@@ -196,153 +498,13 @@ class AppSettings {
 
       final settingsStr = File(settingsPath).readAsStringSync();
       Map settingsMap = json.decode(settingsStr);
-
-      if (settingsMap['Version'] == null) {
-        return _readFromJsonOld(settingsMap);
-      }
-
-      final to = settingsMap['ThemeOption'];
-      if (to != null) {
-        _instance.themeOption = ThemeOption.values[to as int];
-      }
-
-      final sep = settingsMap['ArtistSeparator'];
-      if (sep != null) {
-        _instance.artistSeparator = List<String>.from(sep);
-        _instance.artistSplitPattern = _instance.artistSeparator.join('|');
-      }
-
-      final llf = settingsMap['LocalLyricFirst'];
-      if (llf != null) {
-        _instance.localLyricFirst = llf;
-      }
-
-      final pos = settingsMap['PreferredOnlineSource'];
-      if (pos != null) {
-        _instance.preferredOnlineSource = switch (pos) {
-          'qq' => LyricSourceType.qq,
-          'kugou' => LyricSourceType.kugou,
-          'ne' => LyricSourceType.ne,
-          _ => LyricSourceType.qq,
-        };
-      }
-
-      final st = settingsMap['ShowTranslation'];
-      if (st != null) {
-        _instance.showTranslation = st;
-      }
-      final sr = settingsMap['ShowRomanization'];
-      if (sr != null) {
-        _instance.showRomanization = sr;
-      }
-
-      final ldm = settingsMap['LyricDisplayMode'];
-      if (ldm != null) {
-        _instance.lyricDisplayMode = switch (ldm) {
-          'lineByLine' => LyricDisplayMode.lineByLine,
-          'wordByWord' => LyricDisplayMode.wordByWord,
-          'plain' => LyricDisplayMode.lineByLine,
-          'verbatim' => LyricDisplayMode.wordByWord,
-          'enhanced' => LyricDisplayMode.wordByWord,
-          _ => LyricDisplayMode.wordByWord,
-        };
-      }
-
-      final zcm = settingsMap['ZhConversionMode'];
-      if (zcm != null) {
-        _instance.zhConversionMode = switch (zcm) {
-          'none' => ZhConversionMode.none,
-          't2s' => ZhConversionMode.traditionalToSimplified,
-          's2t' => ZhConversionMode.simplifiedToTraditional,
-          _ => ZhConversionMode.none,
-        };
-      }
-
-      final pwt = settingsMap['PromptWriteLyricToTag'];
-      if (pwt != null) {
-        _instance.promptWriteLyricToTag = pwt;
-      }
-
-      final pwd = settingsMap['PromptWriteLyricToTagDelay'];
-      if (pwd != null) {
-        _instance.promptWriteLyricToTagDelay = pwd;
-      }
-
-      final awt = settingsMap['AutoWriteLyricToTag'];
-      if (awt != null) {
-        _instance.autoWriteLyricToTag = awt;
-      }
-
-      final awd = settingsMap['AutoWriteLyricToTagDelay'];
-      if (awd != null) {
-        _instance.autoWriteLyricToTagDelay = awd;
-      }
-
-      final umyl = settingsMap['UseMaterialYouForLyrics'];
-      if (umyl != null) {
-        _instance.useMaterialYouForLyrics = umyl;
-      }
-
-      final umypb = settingsMap['UseMaterialYouForProgressBar'];
-      if (umypb != null) {
-        _instance.useMaterialYouForProgressBar = umypb;
-      }
-
-      final umyt = settingsMap['UseMaterialYouForTransition'];
-      if (umyt != null) {
-        _instance.useMaterialYouForTransition = umyt;
-      }
-
-      final umyc = settingsMap['UseMaterialYouForControls'];
-      if (umyc != null) {
-        _instance.useMaterialYouForControls = umyc;
-      }
-
-      final wbm = settingsMap['WavyBarEnabledModes'];
-      if (wbm is List) {
-        _instance.wavyBarEnabledModes = NowPlayingMode.fromList(wbm);
-      }
-
-      final tbla = settingsMap['TopBarLyricAnimation'];
-      if (tbla != null) {
-        _instance.topBarLyricAnimation =
-            TopBarLyricAnimation.fromString(tbla) ?? TopBarLyricAnimation.slideUp;
-      }
-
-      final ecce = settingsMap['EnableCoverColorExtraction'];
-      if (ecce != null) {
-        _instance.enableCoverColorExtraction = ecce;
-      }
-
-      final ccc = settingsMap['CustomCoverColor'];
-      if (ccc != null) {
-        _instance.customCoverColor = ccc;
-      }
-
-      final sizeStr = settingsMap['WindowSize'];
-      if (sizeStr != null) {
-        final sizeStrs = (sizeStr as String).split(',');
-        _instance.windowSize = Size(double.tryParse(sizeStrs[0]) ?? 1280,
-            double.tryParse(sizeStrs[1]) ?? 756);
-      }
-
-      final isMaximized = settingsMap['IsWindowMaximized'];
-      if (isMaximized != null) {
-        _instance.isWindowMaximized = isMaximized;
-      }
-
-      final ff = settingsMap['FontFamily'];
-      final fp = settingsMap['FontPath'];
-      if (ff != null) {
-        _instance.fontFamily = ff;
-        _instance.fontPath = fp;
-      }
+      await _readFromSettingsMap(settingsMap);
     } catch (err, trace) {
       logger.e(err, stackTrace: trace);
     }
   }
 
-  Future<void> saveSettings() async {
+  Future<bool> saveSettings() async {
     try {
       final isMaximized = await windowManager.isMaximized();
       final settingsMap = {
@@ -382,10 +544,11 @@ class AppSettings {
       final settingsStr = json.encode(settingsMap);
       final dir = await getSettingsDir();
       final settingsPath = path.join(dir.path, 'settings.json');
-      final output = await File(settingsPath).create(recursive: true);
-      output.writeAsStringSync(settingsStr);
+      await writeTextFileAtomically(settingsPath, settingsStr);
+      return true;
     } catch (err, trace) {
       logger.e(err, stackTrace: trace);
+      return false;
     }
   }
 }
