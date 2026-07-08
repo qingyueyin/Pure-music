@@ -28,21 +28,21 @@ class _ImmersivePortraitLayout extends StatelessWidget {
     return Stack(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(12.0, 16.0, 12.0, 16.0),
+          padding: const EdgeInsets.fromLTRB(12.0, 32.0, 12.0, 16.0),
           child: Column(
             children: [
               const Padding(
-                // 封面额外右移 12px，使封面左缘与歌词文字左缘对齐
-                padding: EdgeInsets.only(left: 12.0),
+                // 封面额外右移 24px，使封面左缘与歌词文字左缘对齐
+                padding: EdgeInsets.only(left: 24.0),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     SizedBox(
-                      width: 80.0,
-                      height: 80.0,
+                      width: 64.0,
+                      height: 64.0,
                       child: _ImmersiveCoverThumbnail(),
                     ),
-                    SizedBox(width: 8.0),
+                    SizedBox(width: 12.0),
                     Expanded(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
@@ -129,28 +129,56 @@ class _ImmersiveHelpOverlayState extends State<_ImmersiveHelpOverlay> {
     showDialog<void>(
       context: context,
       builder: (context) {
-        final scheme = Theme.of(context).colorScheme;
-        final textStyle = TextStyle(color: scheme.onSurface);
         return AlertDialog(
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 20.0,
+            vertical: 24.0,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8.0),
+          ),
+          titlePadding: const EdgeInsets.fromLTRB(24.0, 20.0, 24.0, 8.0),
+          contentPadding: const EdgeInsets.fromLTRB(24.0, 8.0, 24.0, 12.0),
+          actionsPadding: const EdgeInsets.fromLTRB(16.0, 0.0, 16.0, 12.0),
           title: const Text('快捷键'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Space：播放/暂停', style: textStyle),
-              const SizedBox(height: 8),
-              Text('Ctrl + ←：上一曲', style: textStyle),
-              const SizedBox(height: 8),
-              Text('Ctrl + →：下一曲', style: textStyle),
-              const SizedBox(height: 8),
-              Text('Ctrl + ↑：音量 +', style: textStyle),
-              const SizedBox(height: 8),
-              Text('Ctrl + ↓：音量 -', style: textStyle),
-              const SizedBox(height: 8),
-              Text('F1：进入/退出沉浸模式', style: textStyle),
-              const SizedBox(height: 8),
-              Text('ESC：退出沉浸并回到主界面', style: textStyle),
-            ],
+          content: SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 320.0),
+              child: const Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _ImmersiveShortcutRow(
+                    keys: 'Space',
+                    label: '播放 / 暂停',
+                  ),
+                  _ImmersiveShortcutRow(
+                    keys: 'Ctrl + ←',
+                    label: '上一曲',
+                  ),
+                  _ImmersiveShortcutRow(
+                    keys: 'Ctrl + →',
+                    label: '下一曲',
+                  ),
+                  _ImmersiveShortcutRow(
+                    keys: 'Ctrl + ↑',
+                    label: '提高音量',
+                  ),
+                  _ImmersiveShortcutRow(
+                    keys: 'Ctrl + ↓',
+                    label: '降低音量',
+                  ),
+                  _ImmersiveShortcutRow(
+                    keys: 'F1',
+                    label: '进入 / 退出沉浸模式',
+                  ),
+                  _ImmersiveShortcutRow(
+                    keys: 'ESC',
+                    label: '退出沉浸并回到主界面',
+                    isLast: true,
+                  ),
+                ],
+              ),
+            ),
           ),
           actions: [
             TextButton(
@@ -230,6 +258,49 @@ class _ImmersiveHelpOverlayState extends State<_ImmersiveHelpOverlay> {
   }
 }
 
+class _ImmersiveShortcutRow extends StatelessWidget {
+  const _ImmersiveShortcutRow({
+    required this.keys,
+    required this.label,
+    this.isLast = false,
+  });
+
+  final String keys;
+  final String label;
+  final bool isLast;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: isLast ? 0.0 : 6.0),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 82.0,
+            child: Text(
+              keys,
+              style: TextStyle(
+                color: scheme.onSurfaceVariant,
+                fontFamily: 'monospace',
+                fontSize: 13.0,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10.0),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(color: scheme.onSurface),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// 沉浸模式顶部封面缩略图
 class _ImmersiveCoverThumbnail extends StatefulWidget {
   const _ImmersiveCoverThumbnail();
@@ -300,7 +371,7 @@ class _ImmersiveCoverThumbnailState extends State<_ImmersiveCoverThumbnail> {
 
     final placeholder = Icon(
       Symbols.music_note,
-      size: 80.0,
+      size: 64.0,
       color: scheme.onSecondaryContainer,
     );
 
@@ -326,11 +397,11 @@ class _ImmersiveTitleText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<PlayerState>(
-      stream: PlayService.instance.playbackService.playerStateStream,
-      initialData: PlayService.instance.playbackService.playerState,
-      builder: (context, snapshot) {
-        final nowPlaying = PlayService.instance.playbackService.nowPlaying;
+    final playbackService = PlayService.instance.playbackService;
+
+    return ValueListenableBuilder<Audio?>(
+      valueListenable: playbackService.nowPlayingNotifier,
+      builder: (context, nowPlaying, _) {
         return Text(
           nowPlaying == null ? 'Pure Music' : nowPlaying.title,
           maxLines: 1,
@@ -338,7 +409,7 @@ class _ImmersiveTitleText extends StatelessWidget {
           style: TextStyle(
             color: Theme.of(context).colorScheme.onSurface,
             fontWeight: FontWeight.bold,
-            fontSize: 20,
+            fontSize: 16,
             height: 1.2,
           ),
         );
@@ -352,18 +423,18 @@ class _ImmersiveArtistText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<PlayerState>(
-      stream: PlayService.instance.playbackService.playerStateStream,
-      initialData: PlayService.instance.playbackService.playerState,
-      builder: (context, snapshot) {
-        final nowPlaying = PlayService.instance.playbackService.nowPlaying;
+    final playbackService = PlayService.instance.playbackService;
+
+    return ValueListenableBuilder<Audio?>(
+      valueListenable: playbackService.nowPlayingNotifier,
+      builder: (context, nowPlaying, _) {
         return Text(
           nowPlaying == null ? 'Enjoy Music' : nowPlaying.artist,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
             color: Theme.of(context).colorScheme.onSurfaceVariant,
-            fontSize: 14,
+            fontSize: 12,
             height: 1.2,
           ),
         );
