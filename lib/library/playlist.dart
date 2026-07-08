@@ -75,16 +75,24 @@ Future<void> readPlaylists() async {
       final name = row['name'] as String;
       final coverSource = row['cover_source'] as String?;
       final paths = <String>[];
+      final addedAtMap = <String, DateTime>{};
       final items = db.select(
-        'SELECT path FROM playlist_items WHERE playlist_id = ? ORDER BY sort_order, path',
+        'SELECT path, added_at FROM playlist_items WHERE playlist_id = ? ORDER BY sort_order, path',
         [id],
       );
       for (final item in items) {
-        paths.add(item['path'] as String);
+        final path = item['path'] as String;
+        paths.add(path);
+        final addedAtStr = item['added_at'] as String?;
+        if (addedAtStr != null) {
+          final dt = DateTime.tryParse(addedAtStr);
+          if (dt != null) addedAtMap[_playlistPathKey(path)] = dt;
+        }
       }
       loadedPlaylists.add(Playlist(name, paths)
         ..id = id
-        ..coverSource = coverSource);
+        ..coverSource = coverSource
+        .._addedAt.addAll(addedAtMap));
     }
     playlists = loadedPlaylists;
   } catch (err, trace) {
@@ -148,9 +156,12 @@ void _writePlaylistsToDb(Database db, List<Playlist> playlists) {
       }
       pl.id = playlistId;
       for (int i = 0; i < pl.paths.length; i++) {
+        final p = pl.paths[i];
+        final addedAt = pl._addedAt[_playlistPathKey(p)];
+        final addedAtStr = addedAt?.toIso8601String();
         db.execute(
-          'INSERT INTO playlist_items(playlist_id, path, sort_order) VALUES(?, ?, ?)',
-          [playlistId, pl.paths[i], i],
+          'INSERT INTO playlist_items(playlist_id, path, sort_order, added_at) VALUES(?, ?, ?, ?)',
+          [playlistId, p, i, addedAtStr],
         );
       }
     }
@@ -250,10 +261,16 @@ class Playlist {
   List<String> paths;
   String? coverSource;
   Set<String>? _pathKeys;
+  final Map<String, DateTime> _addedAt = {};
   List<Audio>? _audiosCache;
   AudioLibrary? _audiosCacheLibrary;
 
   Playlist(this.name, List<String> paths) : paths = _uniquePlaylistPaths(paths);
+
+  DateTime addedAt(String path) {
+    final key = _playlistPathKey(path);
+    return _addedAt[key] ?? DateTime.fromMillisecondsSinceEpoch(0);
+  }
 
   Set<String> get _pathKeySet {
     return _pathKeys ??=
@@ -360,6 +377,7 @@ class Playlist {
     if (key.isEmpty) return;
     if (_pathKeySet.add(key)) {
       paths.add(path);
+      _addedAt[key] = DateTime.now();
       _invalidateAudioCache();
     }
   }
@@ -370,6 +388,7 @@ class Playlist {
     if (!_pathKeySet.contains(key)) return;
     paths.removeWhere((item) => _playlistPathKey(item) == key);
     _pathKeys?.remove(key);
+    _addedAt.remove(key);
     _invalidateAudioCache();
   }
 
