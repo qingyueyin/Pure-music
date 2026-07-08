@@ -18,15 +18,28 @@ class ColorExtractionService {
 
   /// 按音频路径缓存的主色，供首帧同步读取
   final Map<String, Color> _pathColorCache = {};
+  final Map<String, List<Color>> _pathPaletteCache = {};
   final List<String> _pathAccessOrder = [];
 
   void cacheColorForPath(String path, Color color) {
     _pathColorCache[path] = color;
+    _trimPathCache(path);
+  }
+
+  void cachePaletteForPath(String path, List<Color> palette) {
+    if (palette.isEmpty) return;
+    _pathPaletteCache[path] = List.unmodifiable(palette);
+    _pathColorCache[path] = palette.first;
+    _trimPathCache(path);
+  }
+
+  void _trimPathCache(String path) {
     _touchPathCacheEntry(path);
-    while (_pathColorCache.length > _maxPathCacheSize &&
+    while (_pathAccessOrder.length > _maxPathCacheSize &&
         _pathAccessOrder.isNotEmpty) {
       final oldest = _pathAccessOrder.removeAt(0);
       _pathColorCache.remove(oldest);
+      _pathPaletteCache.remove(oldest);
     }
   }
 
@@ -34,6 +47,15 @@ class ColorExtractionService {
     final color = _pathColorCache[path];
     if (color != null) _touchPathCacheEntry(path);
     return color;
+  }
+
+  List<Color>? getCachedPaletteForPath(String path) {
+    final palette = _pathPaletteCache[path];
+    if (palette != null) {
+      _touchPathCacheEntry(path);
+      return List<Color>.from(palette);
+    }
+    return null;
   }
 
   Future<Color?> extractDominantColor(Uint8List? imageBytes) async {
@@ -141,6 +163,7 @@ class ColorExtractionService {
     _cacheTime.clear();
     _accessOrder.clear();
     _pathColorCache.clear();
+    _pathPaletteCache.clear();
     _pathAccessOrder.clear();
   }
 }
