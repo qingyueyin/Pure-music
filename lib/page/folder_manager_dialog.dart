@@ -1,7 +1,10 @@
 import 'package:pure_music/core/cache.dart';
+import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/preference.dart';
+import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/component/build_index_state_view.dart';
+import 'package:pure_music/component/danger_confirm_dialog.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/lyric/lyric_source.dart';
@@ -31,8 +34,48 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
 
   bool editing = true;
   bool building = false;
+  bool _isPickingFolder = false;
 
   Widget? _buildView;
+
+  List<String> _folderPathKeys(Iterable<AudioFolder> folders) {
+    return folderPathKeys(folders.map((f) => f.path));
+  }
+
+  void _appendUniqueFolders(Iterable<String> paths) {
+    final seen = folders.map((f) => pendingFolderKey(f.path)).toSet();
+    for (final path in paths) {
+      final key = pendingFolderKey(path);
+      if (key.isEmpty || !seen.add(key)) continue;
+      folders.add(AudioFolder([], path, 0, 0));
+    }
+  }
+
+  bool get _hasFolderChanges {
+    final current = _folderPathKeys(folders);
+    final original = _folderPathKeys(AudioLibrary.instance.folders);
+    if (current.length != original.length) return true;
+    for (var i = 0; i < current.length; i++) {
+      if (current[i] != original[i]) return true;
+    }
+    return false;
+  }
+
+  Future<bool> _confirmRemoveFolder(AudioFolder folder) async {
+    final scheme = Theme.of(context).colorScheme;
+    return showDangerConfirmDialog(
+      context: context,
+      title: '从曲库移除文件夹？',
+      message: '不会删除本地音乐文件，只会从 Pure Music 的曲库扫描范围中移除。',
+      confirmLabel: '移除',
+      details: Text(
+        folder.path,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
+      ),
+    );
+  }
 
   void _startBuild() {
     building = true;
@@ -76,15 +119,22 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final size = MediaQuery.sizeOf(context);
+    final width = (size.width - 48.0).clamp(320.0, 520.0).toDouble();
+    final height = (size.height - 96.0).clamp(320.0, 520.0).toDouble();
+    final canApplyChanges = !building && !_isPickingFolder && _hasFolderChanges;
 
     return Dialog(
-      insetPadding: EdgeInsets.zero,
+      insetPadding: const EdgeInsets.symmetric(
+        horizontal: 24.0,
+        vertical: 24.0,
+      ),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12.0),
       ),
       child: SizedBox(
-        height: 450.0,
-        width: 450.0,
+        height: height,
+        width: width,
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
@@ -92,112 +142,195 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
             children: [
               Padding(
                 padding: const EdgeInsets.only(bottom: 16.0),
-                child: Text(
-                  '管理文件夹',
-                  style: TextStyle(
-                    color: scheme.onSurface,
-                    fontSize: 18.0,
-                    fontWeight: FontWeight.bold,
-                  ),
+                child: Wrap(
+                  spacing: 8.0,
+                  runSpacing: 8.0,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      '管理文件夹',
+                      style: TextStyle(
+                        color: scheme.onSurface,
+                        fontSize: 18.0,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    _ManagedFolderCountPill(count: folders.length),
+                  ],
                 ),
               ),
               Expanded(
                 child: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 150),
                   child: editing
-                      ? ListView.builder(
-                          key: const ValueKey('folder_list'),
-                          itemCount: folders.length,
-                          itemBuilder: (context, i) => ListTile(
-                            title: Text(folders[i].path, maxLines: 1),
-                            subtitle: Text('${folders[i].audios.length} 首乐曲'),
-                            trailing: IconButton(
-                              tooltip: '移除',
-                              color: scheme.error,
-                              onPressed: () {
-                                setState(() {
-                                  folders.removeAt(i);
-                                });
-                              },
-                              icon: const Icon(Symbols.delete),
-                            ),
-                          ),
-                        )
+                      ? folders.isEmpty
+                          ? const _EmptyManagedFolderState()
+                          : ListView.builder(
+                              key: const ValueKey('folder_list'),
+                              itemCount: folders.length,
+                              itemBuilder: (context, i) => ListTile(
+                                title: Text(
+                                  folders[i].path,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                subtitle: Text(
+                                  '${folders[i].audios.length} 首乐曲',
+                                ),
+                                trailing: TextButton.icon(
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: scheme.error,
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                  onPressed: building || _isPickingFolder
+                                      ? null
+                                      : () async {
+                                          final folder = folders[i];
+                                          final confirmed =
+                                              await _confirmRemoveFolder(
+                                            folder,
+                                          );
+                                          if (!confirmed || !context.mounted) {
+                                            return;
+                                          }
+                                          setState(() {
+                                            folders.remove(folder);
+                                          });
+                                        },
+                                  icon: const Icon(
+                                    Symbols.remove_circle,
+                                    size: 18,
+                                  ),
+                                  label: const Text('移除'),
+                                ),
+                              ),
+                            )
                       : (_buildView ?? const SizedBox(key: ValueKey('empty'))),
                 ),
               ),
               const SizedBox(height: 16.0),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
+              OverflowBar(
+                alignment: MainAxisAlignment.end,
+                spacing: 8.0,
+                overflowSpacing: 8.0,
                 children: [
-                  TextButton(
-                    onPressed: building
+                  TextButton.icon(
+                    onPressed: building || _isPickingFolder
                         ? null
-                        : () {
-                            final paths = pickMultipleDirectories(
-                              title: '选择文件夹',
-                            );
-                            if (paths.isEmpty) return;
+                        : () async {
+                            setState(() => _isPickingFolder = true);
+                            await Future<void>.delayed(Duration.zero);
 
-                            setState(() {
-                              for (final p in paths) {
-                                final exists = folders.any(
-                                    (f) => f.path.toLowerCase() == p.toLowerCase());
-                                if (!exists) {
-                                  folders.add(AudioFolder([], p, 0, 0));
-                                }
+                            try {
+                              final paths = pickMultipleDirectories(
+                                title: '选择文件夹',
+                              );
+                              if (paths.isEmpty || !context.mounted) return;
+
+                              setState(() {
+                                _appendUniqueFolders(paths);
+                              });
+                            } finally {
+                              if (context.mounted) {
+                                setState(() => _isPickingFolder = false);
                               }
-                            });
+                            }
                           },
-                    child: const Text('添加'),
+                    icon: _isPickingFolder
+                        ? const SizedBox(
+                            width: 18.0,
+                            height: 18.0,
+                            child: CircularProgressIndicator(strokeWidth: 2.0),
+                          )
+                        : const Icon(Symbols.create_new_folder),
+                    label: Text(_isPickingFolder ? '选择中' : '添加'),
                   ),
-                  const SizedBox(width: 8.0),
                   TextButton(
-                    onPressed:
-                        building ? null : () => Navigator.pop(context),
+                    onPressed: building || _isPickingFolder
+                        ? null
+                        : () => Navigator.pop(context),
                     child: const Text('取消'),
                   ),
-                  const SizedBox(width: 8.0),
                   TextButton(
-                    onPressed: building
-                          ? null
-                          : () {
-                              final kept = folders.map((f) => f.path).toList();
-                              final original = AudioLibrary
-                                  .instance.folders
-                                  .map((f) => f.path)
-                                  .toList();
+                    onPressed: !canApplyChanges
+                        ? null
+                        : () async {
+                            final kept = folders.map((f) => f.path).toList();
+                            final original = AudioLibrary.instance.folders
+                                .map((f) => f.path)
+                                .toList();
+                            final oldUserFolders = List<String>.from(
+                              AppPreference.instance.userFolders,
+                            );
+                            final oldExcludedFolderPaths = List<String>.from(
+                              AppPreference.instance.excludedFolderPaths,
+                            );
 
-                              final added = kept
-                                  .where((f) => !original.contains(f))
-                                  .toList();
-                              final removed = original
-                                  .where((f) => !kept.contains(f))
-                                  .toList();
+                            final added = kept
+                                .where((f) => !containsEquivalentFolderPath(
+                                      paths: original,
+                                      target: f,
+                                    ))
+                                .toList();
+                            final removed = original
+                                .where((f) => !containsEquivalentFolderPath(
+                                      paths: kept,
+                                      target: f,
+                                    ))
+                                .toList();
 
-                              AppPreference.instance.userFolders.addAll(
-                                added.where(
-                                  (f) =>
-                                      !AppPreference
-                                          .instance.userFolders
-                                          .contains(f),
+                            final userFolderKeys = AppPreference
+                                .instance.userFolders
+                                .map(pendingFolderKey)
+                                .toSet();
+                            AppPreference.instance.userFolders.addAll(
+                              added.where(
+                                (f) => userFolderKeys.add(
+                                  pendingFolderKey(f),
                                 ),
-                              );
-                              AppPreference.instance.userFolders.removeWhere(
-                                (f) => !kept.contains(f),
-                              );
-                              AppPreference.instance.excludedFolderPaths
-                                  .removeWhere((f) => kept.contains(f));
-                              AppPreference.instance.excludedFolderPaths
-                                  .addAll(removed);
-                              AppPreference.instance.save();
+                              ),
+                            );
+                            AppPreference.instance.userFolders.removeWhere(
+                              (f) => !containsEquivalentFolderPath(
+                                paths: kept,
+                                target: f,
+                              ),
+                            );
+                            AppPreference.instance.excludedFolderPaths
+                                .removeWhere(
+                              (f) => containsEquivalentFolderPath(
+                                paths: kept,
+                                target: f,
+                              ),
+                            );
+                            final excludedFolderKeys = AppPreference
+                                .instance.excludedFolderPaths
+                                .map(pendingFolderKey)
+                                .toSet();
+                            AppPreference.instance.excludedFolderPaths.addAll(
+                              removed.where(
+                                (f) => excludedFolderKeys.add(
+                                  pendingFolderKey(f),
+                                ),
+                              ),
+                            );
+                            final saved = await AppPreference.instance.save();
+                            if (!saved) {
+                              AppPreference.instance.userFolders =
+                                  oldUserFolders;
+                              AppPreference.instance.excludedFolderPaths =
+                                  oldExcludedFolderPaths;
+                              if (!context.mounted) return;
+                              showTextOnSnackBar('保存文件夹设置失败');
+                              return;
+                            }
 
                             _startBuild();
                           },
                     child: const Text('确定'),
                   ),
                 ],
-              )
+              ),
             ],
           ),
         ),
@@ -206,3 +339,71 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
   }
 }
 
+class _ManagedFolderCountPill extends StatelessWidget {
+  const _ManagedFolderCountPill({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Container(
+      height: 28.0,
+      padding: const EdgeInsets.symmetric(horizontal: 10.0),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: scheme.secondaryContainer,
+        borderRadius: BorderRadius.circular(14.0),
+      ),
+      child: Text(
+        '$count 个文件夹',
+        style: TextStyle(
+          color: scheme.onSecondaryContainer,
+          fontSize: 12.0,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyManagedFolderState extends StatelessWidget {
+  const _EmptyManagedFolderState();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 28.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Symbols.folder_open,
+              size: 32.0,
+              color: scheme.onSurfaceVariant,
+            ),
+            const SizedBox(height: 12.0),
+            Text(
+              '暂时没有曲库文件夹',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: scheme.onSurface,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 4.0),
+            Text(
+              '添加文件夹后再重新构建曲库',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: scheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
