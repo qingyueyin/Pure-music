@@ -48,28 +48,69 @@ class _UpdatingPageState extends State<UpdatingPage> {
           future: _appDataDirFuture,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(color: scheme.primary),
-                  const SizedBox(height: 16),
-                  Text('加载中...', style: TextStyle(color: scheme.onSurface)),
-                ],
+              return Padding(
+                padding: const EdgeInsets.all(32.0),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(color: scheme.primary),
+                      const SizedBox(height: 16.0),
+                      Text(
+                        '正在准备应用数据...',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: scheme.onSurface),
+                      ),
+                    ],
+                  ),
+                ),
               );
             }
 
-            if (snapshot.hasError || !snapshot.hasData || snapshot.data == null) {
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text("初始化失败: ${snapshot.error ?? "超时"}",
-                      style: TextStyle(color: scheme.error)),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () => exit(1),
-                    child: const Text('退出'),
+            if (snapshot.hasError ||
+                !snapshot.hasData ||
+                snapshot.data == null) {
+              final message = snapshot.error?.toString() ?? '超时';
+
+              return Padding(
+                padding: const EdgeInsets.all(32.0),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.error_outline,
+                        color: scheme.error,
+                        size: 40.0,
+                      ),
+                      const SizedBox(height: 12.0),
+                      Text(
+                        '初始化失败',
+                        style: TextStyle(
+                          color: scheme.error,
+                          fontSize: 18.0,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 8.0),
+                      Text(
+                        message,
+                        textAlign: TextAlign.center,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: scheme.onSurfaceVariant),
+                      ),
+                      const SizedBox(height: 16.0),
+                      FilledButton.icon(
+                        onPressed: () => exit(1),
+                        icon: const Icon(Icons.close),
+                        label: const Text('退出'),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               );
             }
 
@@ -92,21 +133,30 @@ class UpdatingStateView extends StatefulWidget {
 
 class _UpdatingStateViewState extends State<UpdatingStateView> {
   late final Stream<IndexActionState> updateIndexStream;
-  StreamSubscription? _subscription;
+  StreamSubscription<IndexActionState>? _subscription;
+  String? _errorMessage;
 
   void whenIndexUpdated() async {
-    await Future.wait([
-      AudioLibrary.initFromIndex(),
-      readPlaylists(),
-      readLyricSources(),
-    ]);
-    AlbumColorCache.instance
-        .prewarmAlbums(AudioLibrary.instance.albumCollection.values)
-        .ignore();
-    _subscription?.cancel();
-    final ctx = context;
-    if (ctx.mounted) {
-      ctx.go(app_paths.AUDIOS_PAGE);
+    if (_errorMessage != null) return;
+    try {
+      await Future.wait([
+        AudioLibrary.initFromIndex(),
+        readPlaylists(),
+        readLyricSources(),
+      ]);
+      AlbumColorCache.instance
+          .prewarmAlbums(AudioLibrary.instance.albumCollection.values)
+          .ignore();
+      await _subscription?.cancel();
+      final ctx = context;
+      if (ctx.mounted) {
+        ctx.go(app_paths.AUDIOS_PAGE);
+      }
+    } catch (e) {
+      logger.e('load library after update failed: $e');
+      if (mounted) {
+        setState(() => _errorMessage = e.toString());
+      }
     }
   }
 
@@ -121,7 +171,14 @@ class _UpdatingStateViewState extends State<UpdatingStateView> {
       (action) {
         logger.i('[update index] ${action.progress}: ${action.message}');
       },
+      onError: (Object error, StackTrace stackTrace) {
+        logger.e('update index failed: $error', stackTrace: stackTrace);
+        if (mounted) {
+          setState(() => _errorMessage = error.toString());
+        }
+      },
       onDone: whenIndexUpdated,
+      cancelOnError: true,
     );
   }
 
@@ -134,41 +191,106 @@ class _UpdatingStateViewState extends State<UpdatingStateView> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final errorMessage = _errorMessage;
 
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            StreamBuilder<IndexActionState>(
-              stream: updateIndexStream,
-              builder: (context, snapshot) {
-                return Column(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420.0),
+          child: errorMessage != null
+              ? Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    LinearProgressIndicator(
-                      value: snapshot.data?.progress,
-                      backgroundColor: scheme.onSurface.withValues(alpha: 0.1),
-                      color: scheme.primary,
-                      borderRadius: BorderRadius.circular(2.0),
-                      minHeight: 8,
+                    Icon(
+                      Icons.error_outline,
+                      color: scheme.error,
+                      size: 40.0,
                     ),
-                    const SizedBox(height: 16.0),
+                    const SizedBox(height: 12.0),
                     Text(
-                      snapshot.data?.message ?? '正在初始化...',
+                      '初始化失败',
                       style: TextStyle(
-                        color: scheme.onSurface,
-                        fontSize: 14,
+                        color: scheme.error,
+                        fontSize: 18.0,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
+                    const SizedBox(height: 8.0),
+                    Text(
+                      errorMessage,
+                      textAlign: TextAlign.center,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: scheme.onSurfaceVariant),
+                    ),
+                    const SizedBox(height: 16.0),
+                    FilledButton.icon(
+                      onPressed: () => exit(1),
+                      icon: const Icon(Icons.close),
+                      label: const Text('退出'),
+                    ),
                   ],
-                );
-              },
-            ),
-          ],
+                )
+              : StreamBuilder<IndexActionState>(
+                  stream: updateIndexStream,
+                  builder: (context, snapshot) {
+                    final progress = snapshot.data?.progress;
+                    final message = snapshot.data?.message ?? '正在初始化...';
+
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        LinearProgressIndicator(
+                          value: progress,
+                          backgroundColor:
+                              scheme.onSurface.withValues(alpha: 0.1),
+                          color: scheme.primary,
+                          borderRadius: BorderRadius.circular(2.0),
+                          minHeight: 8,
+                        ),
+                        const SizedBox(height: 16.0),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                message,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: scheme.onSurface,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                            if (progress != null) ...[
+                              const SizedBox(width: 8.0),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8.0,
+                                  vertical: 4.0,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: scheme.surfaceContainerHighest,
+                                  borderRadius: BorderRadius.circular(12.0),
+                                ),
+                                child: Text(
+                                  '${(progress.clamp(0.0, 1.0) * 100).round()}%',
+                                  style: TextStyle(
+                                    color: scheme.onSurfaceVariant,
+                                    fontSize: 12.0,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    );
+                  },
+                ),
         ),
       ),
     );
