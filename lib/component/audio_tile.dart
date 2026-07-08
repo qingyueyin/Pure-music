@@ -113,9 +113,8 @@ class _AudioTileState extends State<AudioTile> {
         }
         showTextOnSnackBar('成功将${audio.title}添加到歌单“${target.name}”');
       } finally {
-        if (mounted) {
-          setState(() => _addingToPlaylist = null);
-        }
+        _addingToPlaylist = null;
+        if (mounted) setState(() {});
       }
     }
 

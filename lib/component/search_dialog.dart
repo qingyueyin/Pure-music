@@ -171,12 +171,9 @@ class _SearchDialogState extends State<SearchDialog> {
       }
       showTextOnSnackBar('成功将“${audio.title}”添加到歌单“${playlist.name}”');
     } finally {
-      if (mounted) {
-        setState(() {
-          _addingAudioToPlaylist = null;
-          _addingTargetPlaylist = null;
-        });
-      }
+      _addingAudioToPlaylist = null;
+      _addingTargetPlaylist = null;
+      if (mounted) setState(() {});
     }
   }
 
