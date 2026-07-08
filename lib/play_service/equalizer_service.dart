@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:pure_music/core/equalizer_action_state.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
@@ -53,7 +54,8 @@ class EqualizerService {
 
   void _applyOutputGain() {
     final rgDb = _player.replayGainDb ?? 0.0;
-    final totalDb = eqPreampDb + (eqAutoGainEnabled ? eqAutoGainDb : 0.0) + rgDb;
+    final totalDb =
+        eqPreampDb + (eqAutoGainEnabled ? eqAutoGainDb : 0.0) + rgDb;
     final volume = (_pref.volumeDsp * _dbToLinear(totalDb)).clamp(0.0, 8.0);
     _player.setVolumeDsp(volume.toDouble());
   }
@@ -87,29 +89,44 @@ class EqualizerService {
     _applyOutputGain();
   }
 
-  void saveEqPreset(String name) {
+  Future<bool> saveEqPreset(String name) async {
+    final presetName = normalizedEqPresetName(name);
+    if (presetName.isEmpty) return false;
+    final oldPresets = List<EqPreset>.from(_pref.eqPresets);
     final gains = List<double>.from(_player.eqGains);
-    final existingIndex = _pref.eqPresets.indexWhere((e) => e.name == name);
+    final key = eqPresetNameKey(presetName);
+    final existingIndex =
+        _pref.eqPresets.indexWhere((e) => eqPresetNameKey(e.name) == key);
     if (existingIndex >= 0) {
-      _pref.eqPresets[existingIndex] = EqPreset(name, gains);
+      _pref.eqPresets[existingIndex] = EqPreset(
+        normalizedEqPresetName(_pref.eqPresets[existingIndex].name),
+        gains,
+      );
     } else {
-      _pref.eqPresets.add(EqPreset(name, gains));
+      _pref.eqPresets.add(EqPreset(presetName, gains));
     }
-    AppPreference.instance.save();
+    final saved = await AppPreference.instance.save();
+    if (!saved) _pref.eqPresets = oldPresets;
+    return saved;
   }
 
-  void removeEqPreset(String name) {
-    _pref.eqPresets.removeWhere((e) => e.name == name);
-    AppPreference.instance.save();
+  Future<bool> removeEqPreset(String name) async {
+    final oldPresets = List<EqPreset>.from(_pref.eqPresets);
+    _pref.eqPresets.removeWhere(
+      (e) => shouldRemoveEqPresetName(storedName: e.name, targetName: name),
+    );
+    final saved = await AppPreference.instance.save();
+    if (!saved) _pref.eqPresets = oldPresets;
+    return saved;
   }
 
-  void applyEqPreset(EqPreset preset) {
+  Future<bool> applyEqPreset(EqPreset preset) async {
     for (int i = 0; i < 10; i++) {
       if (i < preset.gains.length) {
         setEQ(i, preset.gains[i]);
       }
     }
-    AppPreference.instance.save();
+    return AppPreference.instance.save();
   }
 
   /// 重新应用输出增益（当 volumeDsp 变化时调用）
