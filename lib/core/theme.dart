@@ -87,7 +87,8 @@ class ThemeProvider extends ChangeNotifier {
 
     PlayService.instance.desktopLyricService.canSendMessage.then((canSend) {
       if (!canSend) return;
-      PlayService.instance.desktopLyricService.sendThemeMessage(darkScheme, darkMode: true);
+      PlayService.instance.desktopLyricService
+          .sendThemeMessage(darkScheme, darkMode: true);
     });
   }
 
@@ -117,7 +118,8 @@ class ThemeProvider extends ChangeNotifier {
 
     PlayService.instance.desktopLyricService.canSendMessage.then((canSend) {
       if (!canSend) return;
-      PlayService.instance.desktopLyricService.sendThemeMessage(darkScheme, darkMode: true);
+      PlayService.instance.desktopLyricService
+          .sendThemeMessage(darkScheme, darkMode: true);
     });
   }
 
@@ -186,7 +188,8 @@ class ThemeProvider extends ChangeNotifier {
 
     PlayService.instance.desktopLyricService.canSendMessage.then((canSend) {
       if (!canSend) return;
-      PlayService.instance.desktopLyricService.sendThemeMessage(darkScheme, darkMode: true);
+      PlayService.instance.desktopLyricService
+          .sendThemeMessage(darkScheme, darkMode: true);
     });
 
     if (notify) notifyListeners();
@@ -217,6 +220,12 @@ class ThemeProvider extends ChangeNotifier {
 
       _applySeedColor(seedColor);
     });
+  }
+
+  void cancelPendingAudioTheme() {
+    _themeRequestToken += 1;
+    _themeDebounceTimer?.cancel();
+    _themeDebounceTimer = null;
   }
 
   void changeFontFamily(String? fontFamily) {
