@@ -3,6 +3,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:logger/logger.dart';
 import 'package:pinyin/pinyin.dart';
 
@@ -161,34 +162,43 @@ List<_NaturalToken> _tokenizeForNaturalCompare(String input) {
 final GlobalKey<NavigatorState> routerKey = GlobalKey();
 
 final scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
-void showTextOnSnackBar(String text) {
-  showHotkeyToast(text: text);
-}
 
-OverlayEntry? _hotkeyToastEntry;
-Timer? _hotkeyToastTimer;
+enum ToastVariant { info, success, error }
 
-void showHotkeyToast({
-  required String text,
+void showTextOnSnackBar(
+  String text, {
   IconData? icon,
+  ToastVariant variant = ToastVariant.info,
 }) {
   final context =
       scaffoldMessengerKey.currentContext ?? routerKey.currentContext;
-  if (context == null) return;
-  final overlay = Overlay.of(context, rootOverlay: true);
+  final overlay = routerKey.currentState?.overlay;
+  if (context == null || overlay == null) return;
 
-  _hotkeyToastTimer?.cancel();
-  _hotkeyToastEntry?.remove();
+  _toastEntry?.remove();
+  _toastTimer?.cancel();
 
   final scheme = Theme.of(context).colorScheme;
+  final bgColor = scheme.inverseSurface.withAlpha(240);
+  final txtColor = scheme.onInverseSurface;
+  final IconData effectiveIcon;
+  switch (variant) {
+    case ToastVariant.success:
+      effectiveIcon = icon ?? Icons.check_circle_outline;
+    case ToastVariant.error:
+      effectiveIcon = icon ?? Icons.error_outline;
+    case ToastVariant.info:
+      effectiveIcon = icon ?? Icons.info_outline;
+  }
+
   final visible = ValueNotifier(false);
-  _hotkeyToastEntry = OverlayEntry(
+  final entry = OverlayEntry(
     builder: (context) => Positioned.fill(
       child: IgnorePointer(
         child: SafeArea(
           minimum: const EdgeInsets.all(16.0),
           child: Padding(
-            padding: const EdgeInsets.only(bottom: 84.0),
+            padding: const EdgeInsets.only(bottom: Spacing.bottomNav),
             child: Align(
               alignment: Alignment.bottomCenter,
               child: ValueListenableBuilder(
@@ -208,29 +218,24 @@ void showHotkeyToast({
                   type: MaterialType.transparency,
                   child: Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 14.0,
-                      vertical: 10.0,
+                      horizontal: Spacing.md,
+                      vertical: Spacing.sm,
                     ),
                     decoration: BoxDecoration(
-                      color: scheme.secondaryContainer.withAlpha(235),
-                      borderRadius: BorderRadius.circular(12.0),
+                      color: bgColor,
+                      borderRadius: AppRadius.smCircular,
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (icon != null) ...[
-                          Icon(
-                            icon,
-                            size: 18,
-                            color: scheme.onSecondaryContainer,
-                          ),
-                          const SizedBox(width: 8.0),
-                        ],
+                        Icon(effectiveIcon, size: 16, color: txtColor),
+                        const SizedBox(width: Spacing.sm),
                         Text(
                           text,
                           style: TextStyle(
-                            color: scheme.onSecondaryContainer,
-                            fontWeight: FontWeight.w600,
+                            color: txtColor,
+                            fontSize: AppType.caption,
+                            fontWeight: AppType.weightMedium,
                           ),
                         ),
                       ],
@@ -245,59 +250,239 @@ void showHotkeyToast({
     ),
   );
 
-  overlay.insert(_hotkeyToastEntry!);
+  _toastEntry = entry;
+  overlay.insert(entry);
   WidgetsBinding.instance.addPostFrameCallback((_) {
-    if (_hotkeyToastEntry == null) return;
+    if (!identical(_toastEntry, entry)) return;
     visible.value = true;
   });
 
-  _hotkeyToastTimer?.cancel();
-  _hotkeyToastEntry?.remove();
-
-  _hotkeyToastTimer = Timer(const Duration(milliseconds: 1100), () {
+  _toastTimer = Timer(const Duration(seconds: 2), () {
     visible.value = false;
     Timer(const Duration(milliseconds: 160), () {
-      _hotkeyToastEntry?.remove();
-      _hotkeyToastEntry = null;
-      _hotkeyToastTimer = null;
+      entry.remove();
+      if (identical(_toastEntry, entry)) {
+        _toastEntry = null;
+        _toastTimer = null;
+      }
     });
   });
 }
 
-/// 显示网络歌词写入标签的提示（轻量级 SnackBar）
+OverlayEntry? _toastEntry;
+Timer? _toastTimer;
+
+OverlayEntry? _lyricWriteEntry;
+Timer? _lyricWriteTimer;
+
+OverlayEntry? _hotkeyToastEntry;
+Timer? _hotkeyToastTimer;
+
+void showHotkeyToast({
+  required String text,
+  IconData? icon,
+}) {
+  final context =
+      scaffoldMessengerKey.currentContext ?? routerKey.currentContext;
+  final overlay = routerKey.currentState?.overlay;
+  if (context == null || overlay == null) return;
+
+  _hotkeyToastTimer?.cancel();
+  _hotkeyToastEntry?.remove();
+
+  final scheme = Theme.of(context).colorScheme;
+  final visible = ValueNotifier(false);
+  final entry = OverlayEntry(
+    builder: (context) => Positioned.fill(
+      child: IgnorePointer(
+        child: SafeArea(
+          minimum: const EdgeInsets.all(16.0),
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: Spacing.bottomNav),
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: ValueListenableBuilder(
+                valueListenable: visible,
+                builder: (context, v, child) => AnimatedOpacity(
+                  duration: const Duration(milliseconds: 140),
+                  curve: Curves.fastOutSlowIn,
+                  opacity: v ? 1.0 : 0.0,
+                  child: AnimatedScale(
+                    duration: const Duration(milliseconds: 140),
+                    curve: Curves.fastOutSlowIn,
+                    scale: v ? 1.0 : 0.96,
+                    child: child,
+                  ),
+                ),
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: Spacing.md,
+                      vertical: Spacing.sm,
+                    ),
+                    decoration: BoxDecoration(
+                      color: scheme.inverseSurface.withAlpha(240),
+                      borderRadius: AppRadius.smCircular,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (icon != null) ...[
+                          Icon(
+                            icon,
+                            size: 16,
+                            color: scheme.onInverseSurface,
+                          ),
+                          const SizedBox(width: Spacing.sm),
+                        ],
+                        Text(
+                          text,
+                          style: TextStyle(
+                            color: scheme.onInverseSurface,
+                            fontSize: AppType.caption,
+                            fontWeight: AppType.weightMedium,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+
+  _hotkeyToastEntry = entry;
+  overlay.insert(entry);
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (!identical(_hotkeyToastEntry, entry)) return;
+    visible.value = true;
+  });
+
+  _hotkeyToastTimer = Timer(const Duration(milliseconds: 1100), () {
+    visible.value = false;
+    Timer(const Duration(milliseconds: 160), () {
+      entry.remove();
+      if (identical(_hotkeyToastEntry, entry)) {
+        _hotkeyToastEntry = null;
+        _hotkeyToastTimer = null;
+      }
+    });
+  });
+}
+
+/// 显示网络歌词写入标签的提示（Overlay bubble）
 void showLyricWritePrompt({
   required String title,
   required VoidCallback onWrite,
   required VoidCallback onDismiss,
 }) {
-  scaffoldMessengerKey.currentState?.hideCurrentSnackBar();
+  final context =
+      scaffoldMessengerKey.currentContext ?? routerKey.currentContext;
+  final overlay = routerKey.currentState?.overlay;
+  if (context == null || overlay == null) return;
 
-  final ctx = scaffoldMessengerKey.currentContext;
-  final scheme = ctx != null ? Theme.of(ctx).colorScheme : null;
+  _lyricWriteEntry?.remove();
+  _lyricWriteTimer?.cancel();
 
-  scaffoldMessengerKey.currentState?.showSnackBar(
-    SnackBar(
-      content: Text('写入标签？',
-          style: TextStyle(fontSize: 14, color: scheme?.onSecondaryContainer)),
-      backgroundColor: scheme?.secondaryContainer.withAlpha(240),
-      duration: const Duration(seconds: 30),
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      margin: const EdgeInsets.only(left: 16, right: 16, bottom: 96),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      action: SnackBarAction(
-        label: '写入',
-        textColor: scheme?.onSecondaryContainer,
-        onPressed: onWrite,
+  final scheme = Theme.of(context).colorScheme;
+
+  final visible = ValueNotifier(false);
+  OverlayEntry? entry;
+  entry = OverlayEntry(
+    builder: (context) => Positioned.fill(
+      child: IgnorePointer(
+        child: SafeArea(
+          minimum: const EdgeInsets.all(16.0),
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: Spacing.bottomNav),
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: ValueListenableBuilder(
+                valueListenable: visible,
+                builder: (context, v, child) => AnimatedOpacity(
+                  duration: const Duration(milliseconds: 140),
+                  curve: Curves.fastOutSlowIn,
+                  opacity: v ? 1.0 : 0.0,
+                  child: AnimatedScale(
+                    duration: const Duration(milliseconds: 140),
+                    curve: Curves.fastOutSlowIn,
+                    scale: v ? 1.0 : 0.96,
+                    child: child,
+                  ),
+                ),
+                child: GestureDetector(
+                  onTap: () {
+                    entry?.remove();
+                    _lyricWriteEntry = null;
+                    _lyricWriteTimer?.cancel();
+                    onWrite();
+                  },
+                  child: Material(
+                    type: MaterialType.transparency,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: Spacing.md,
+                        vertical: Spacing.sm,
+                      ),
+                      decoration: BoxDecoration(
+                        color: scheme.secondaryContainer.withAlpha(240),
+                        borderRadius: AppRadius.smCircular,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '写入标签？',
+                            style: TextStyle(
+                              fontSize: AppType.caption,
+                              color: scheme.onSecondaryContainer,
+                              fontWeight: AppType.weightMedium,
+                            ),
+                          ),
+                          const SizedBox(width: Spacing.sm),
+                          Text(
+                            '写入',
+                            style: TextStyle(
+                              fontSize: AppType.caption,
+                              color: scheme.onSecondaryContainer,
+                              fontWeight: AppType.weightBold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
-      onVisible: () {
-        // 3 秒后自动忽略（不写入标记，下次还可再提示）
-        Future.delayed(const Duration(seconds: 8), () {
-          scaffoldMessengerKey.currentState?.hideCurrentSnackBar();
-        });
-      },
     ),
   );
+
+  _lyricWriteEntry = entry;
+  overlay.insert(entry);
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (!identical(_lyricWriteEntry, entry)) return;
+    visible.value = true;
+  });
+
+  _lyricWriteTimer = Timer(const Duration(seconds: 8), () {
+    visible.value = false;
+    Timer(const Duration(milliseconds: 160), () {
+      entry?.remove();
+      if (identical(_lyricWriteEntry, entry)) {
+        _lyricWriteEntry = null;
+        _lyricWriteTimer = null;
+      }
+    });
+  });
 }
 
 /// 自定义 MemoryOutput：限制最大条目数，防止无限膨胀

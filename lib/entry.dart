@@ -35,6 +35,7 @@ import 'package:pure_music/core/memory_monitor.dart';
 import 'package:pure_music/core/matcher.dart' hide logger;
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/route_visibility.dart';
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/update_checker.dart';
 import 'package:pure_music/core/utils.dart';
@@ -265,10 +266,101 @@ class _EntryState extends State<Entry>
       applyElevationOverlayColor: isDark,
       useMaterial3: true,
       textTheme: textTheme,
+      cardTheme: CardThemeData(
+        color: colorScheme.surface,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: AppRadius.mdCircular,
+        ),
+        clipBehavior: Clip.antiAlias,
+      ),
+      chipTheme: ChipThemeData(
+        backgroundColor: colorScheme.surfaceContainerHighest,
+        labelStyle: textTheme.bodySmall?.copyWith(
+          color: colorScheme.onSurfaceVariant,
+        ),
+        side: BorderSide.none,
+        shape: RoundedRectangleBorder(
+          borderRadius: AppRadius.smCircular,
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: colorScheme.primary,
+          foregroundColor: colorScheme.onPrimary,
+          shape: RoundedRectangleBorder(
+            borderRadius: AppRadius.smCircular,
+          ),
+          padding: const EdgeInsets.symmetric(
+            horizontal: Spacing.lg,
+            vertical: Spacing.sm,
+          ),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: colorScheme.primary,
+          side: BorderSide(color: colorScheme.outline),
+          shape: RoundedRectangleBorder(
+            borderRadius: AppRadius.smCircular,
+          ),
+          padding: const EdgeInsets.symmetric(
+            horizontal: Spacing.lg,
+            vertical: Spacing.sm,
+          ),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: colorScheme.primary,
+          padding: const EdgeInsets.symmetric(
+            horizontal: Spacing.sm,
+            vertical: Spacing.sm,
+          ),
+        ),
+      ),
+      iconButtonTheme: IconButtonThemeData(
+        style: IconButton.styleFrom(
+          foregroundColor: colorScheme.onSurfaceVariant,
+          visualDensity: VisualDensity.compact,
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: colorScheme.surfaceContainerHighest,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: Spacing.md,
+          vertical: Spacing.sm,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: AppRadius.smCircular,
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: AppRadius.smCircular,
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: AppRadius.smCircular,
+          borderSide: BorderSide(color: colorScheme.primary),
+        ),
+        labelStyle: textTheme.bodySmall?.copyWith(
+          color: colorScheme.onSurfaceVariant,
+        ),
+      ),
       dialogTheme: DialogThemeData(
         backgroundColor: colorScheme.surface,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: AppRadius.mdCircular,
+        ),
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: colorScheme.surface,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.only(
+            topLeft: Radius.circular(AppRadius.md),
+            topRight: Radius.circular(AppRadius.md),
+          ),
         ),
       ),
       tabBarTheme: TabBarThemeData(
@@ -280,6 +372,40 @@ class _EntryState extends State<Entry>
         activeTrackColor: colorScheme.primary,
         inactiveTrackColor: colorScheme.surfaceContainerHighest,
         thumbColor: colorScheme.primary,
+        overlayColor: colorScheme.primary.withAlpha((255 * Alpha.hover).round()),
+      ),
+      segmentedButtonTheme: SegmentedButtonThemeData(
+        style: ButtonStyle(
+          shape: WidgetStatePropertyAll(
+            RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
+          ),
+          backgroundColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.selected)) {
+              return colorScheme.primaryContainer;
+            }
+            return colorScheme.surfaceContainerHighest;
+          }),
+          foregroundColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.selected)) {
+              return colorScheme.onPrimaryContainer;
+            }
+            return colorScheme.onSurfaceVariant;
+          }),
+        ),
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return colorScheme.onPrimaryContainer;
+          }
+          return colorScheme.outline;
+        }),
+        trackColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return colorScheme.primaryContainer;
+          }
+          return colorScheme.surfaceContainerHighest;
+        }),
       ),
       progressIndicatorTheme: ProgressIndicatorThemeData(
         color: colorScheme.primary,
