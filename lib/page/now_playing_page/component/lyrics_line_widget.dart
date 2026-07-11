@@ -3,6 +3,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/physics.dart';
 import 'package:provider/provider.dart';
 
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/lyric_render_config.dart';
 import 'package:pure_music/core/settings.dart';
@@ -46,7 +47,7 @@ class LyricsLineWidget extends StatefulWidget {
 }
 
 class _LyricsLineWidgetState extends State<LyricsLineWidget>
-    with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
+    with TickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   late final LyricRenderConfig _config;
   Ticker? _ticker;
   double _currentTimeMs = 0;
@@ -537,7 +538,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
       inner = Container(
         decoration: BoxDecoration(
           color: scheme.onSurface.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(12.0),
+          borderRadius: AppRadius.mdCircular,
         ),
         child: inner,
       );
@@ -605,7 +606,7 @@ class _LocalHoverMaskState extends State<_LocalHoverMask> {
         child: Container(
           decoration: BoxDecoration(
             color: _hovered && widget.onTap != null ? widget.color : null,
-            borderRadius: BorderRadius.circular(12.0),
+            borderRadius: AppRadius.mdCircular,
           ),
           child: widget.child,
         ),

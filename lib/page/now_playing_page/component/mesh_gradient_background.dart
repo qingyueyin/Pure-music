@@ -57,7 +57,7 @@ class MeshGradientBackgroundInternal extends StatefulWidget {
 
 class _MeshGradientBackgroundInternalState
     extends State<MeshGradientBackgroundInternal>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   List<Color> _paletteColors = [];
   bool _isPlaying = false;
   double _breathScale = 1.0;

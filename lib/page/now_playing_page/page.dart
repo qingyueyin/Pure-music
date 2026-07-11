@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:ui';
 
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/component/hotkey_ui_feedback.dart';
 import 'package:pure_music/component/motion.dart';
