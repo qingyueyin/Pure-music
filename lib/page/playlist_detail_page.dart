@@ -1,3 +1,4 @@
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/component/danger_confirm_dialog.dart';
 import 'package:pure_music/core/enums.dart';
@@ -336,40 +337,23 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
               : null,
       extraActions: canReorder
           ? [
-              SizedBox(
-                height: 40.0,
-                child: Material(
-                  borderRadius: BorderRadius.circular(12.0),
-                  color: _isReordering
-                      ? scheme.tertiaryContainer
-                      : scheme.primaryContainer,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12.0),
-                    onTap: () => setState(() => _isReordering = !_isReordering),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            _isReordering ? Symbols.check : Symbols.reorder,
-                            size: 24,
-                            color: _isReordering
-                                ? scheme.onTertiaryContainer
-                                : scheme.onPrimaryContainer,
-                          ),
-                          const SizedBox(width: 4.0),
-                          Text(
-                            _isReordering ? '完成' : '排序',
-                            style: TextStyle(
-                              color: _isReordering
-                                  ? scheme.onTertiaryContainer
-                                  : scheme.onPrimaryContainer,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+              FilledButton.tonalIcon(
+                onPressed: () => setState(() => _isReordering = !_isReordering),
+                icon: Icon(_isReordering ? Symbols.check : Symbols.reorder, size: 20),
+                label: Text(_isReordering ? '完成' : '排序'),
+                style: ButtonStyle(
+                  fixedSize: const WidgetStatePropertyAll(Size.fromHeight(40)),
+                  padding: const WidgetStatePropertyAll(
+                    EdgeInsets.symmetric(horizontal: 16),
+                  ),
+                  shape: WidgetStatePropertyAll(
+                    RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
+                  ),
+                  backgroundColor: WidgetStatePropertyAll(
+                    _isReordering ? scheme.tertiaryContainer : scheme.secondaryContainer,
+                  ),
+                  foregroundColor: WidgetStatePropertyAll(
+                    _isReordering ? scheme.onTertiaryContainer : scheme.onSecondaryContainer,
                   ),
                 ),
               ),
@@ -382,7 +366,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
     final paths = List<String>.from(widget.playlist.paths);
 
     return ReorderableListView.builder(
-      padding: const EdgeInsets.only(bottom: 80.0),
+      padding: const EdgeInsets.only(bottom: 96.0),
       buildDefaultDragHandles: false,
       itemCount: contentList.length,
       onReorderItem: (oldIndex, newIndex) {
@@ -404,7 +388,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
       },
       proxyDecorator: (child, index, animation) => Material(
         elevation: 4,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: AppRadius.smCircular,
         child: child,
       ),
       itemBuilder: (context, i) {
@@ -459,7 +443,7 @@ class _ReorderItem extends StatelessWidget {
                   children: [
                     Text(
                       audio.title,
-                      style: TextStyle(color: scheme.onSurface, fontSize: 16),
+                      style: TextStyle(color: scheme.onSurface, fontSize: AppType.subtitle),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -467,7 +451,7 @@ class _ReorderItem extends StatelessWidget {
                     Text(
                       '${audio.artist} - ${audio.album}',
                       style: TextStyle(
-                          color: scheme.onSurfaceVariant, fontSize: 13),
+                          color: scheme.onSurfaceVariant, fontSize: AppType.body),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),

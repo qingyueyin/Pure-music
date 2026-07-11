@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/core/utils.dart';
@@ -24,7 +25,9 @@ Future<void> showCoverPicker(BuildContext context, Playlist playlist) async {
     final saved = await savePlaylists();
     if (!saved) {
       playlist.coverSource = oldCoverSource;
-      showTextOnSnackBar('保存歌单失败');
+      showTextOnSnackBar('保存歌单失败', variant: ToastVariant.error);
+    } else {
+      showTextOnSnackBar('已更换封面', variant: ToastVariant.success);
     }
   }
 }
@@ -52,30 +55,22 @@ class _CoverPickerDialogState extends State<_CoverPickerDialog> {
   }
 
   Widget _buildMenu(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final viewSize = MediaQuery.sizeOf(context);
-    final dialogWidth = (viewSize.width - 64).clamp(280.0, 320.0).toDouble();
+    final dialogWidth = (viewSize.width - 64).clamp(280.0, 600.0).toDouble();
     final coverSource = widget.playlist.coverSource;
     final usingCustomImage = coverSource?.startsWith('file:') == true;
     final usingLibraryCover = coverSource?.startsWith('album:') == true ||
         coverSource?.startsWith('artist:') == true;
 
-    return Dialog(
+    return AlertDialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: SizedBox(
+      title: const Text('选择封面来源'),
+      content: SizedBox(
         width: dialogWidth,
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Text('选择封面来源',
-                  style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: scheme.onSurface)),
-            ),
             _MenuTile(
               icon: Symbols.image,
               title: '自定义图片',
@@ -103,7 +98,6 @@ class _CoverPickerDialogState extends State<_CoverPickerDialog> {
                           Navigator.pop(context, true);
                         },
             ),
-            const SizedBox(height: 8),
           ],
         ),
       ),
@@ -112,12 +106,12 @@ class _CoverPickerDialogState extends State<_CoverPickerDialog> {
 
   Widget _buildSearchDialog(BuildContext context) {
     final viewSize = MediaQuery.sizeOf(context);
-    final dialogWidth = (viewSize.width - 64).clamp(300.0, 400.0).toDouble();
-    final dialogHeight = (viewSize.height - 96).clamp(360.0, 500.0).toDouble();
+    final dialogWidth = (viewSize.width - 64).clamp(300.0, 600.0).toDouble();
+    final dialogHeight = (viewSize.height - 96).clamp(360.0, 600.0).toDouble();
 
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(borderRadius: AppRadius.mdCircular),
       child: SizedBox(
         width: dialogWidth,
         height: dialogHeight,
@@ -169,6 +163,12 @@ class _CoverSearchBodyState extends State<_CoverSearchBody> {
   final _artistResults = ValueNotifier<List<Artist>>(<Artist>[]);
   Timer? _debounce;
   static const int _maxSearchResults = 100;
+  int _currentTab = 0;
+
+  static const _tabs = [
+    ('专辑', Symbols.album),
+    ('歌手', Symbols.person),
+  ];
 
   @override
   void initState() {
@@ -216,7 +216,7 @@ class _CoverSearchBodyState extends State<_CoverSearchBody> {
     });
   }
 
-  Widget _buildSearchState(ColorScheme scheme) {
+  Widget _buildEmptyState(ColorScheme scheme) {
     final hasQuery = _searchController.text.trim().isNotEmpty;
     return Center(
       child: Padding(
@@ -229,7 +229,7 @@ class _CoverSearchBodyState extends State<_CoverSearchBody> {
               height: 48.0,
               decoration: BoxDecoration(
                 color: scheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(16.0),
+                borderRadius: AppRadius.mdCircular,
               ),
               child: Icon(
                 hasQuery ? Symbols.search_off : Symbols.image_search,
@@ -241,8 +241,8 @@ class _CoverSearchBodyState extends State<_CoverSearchBody> {
               hasQuery ? '未找到匹配结果' : '搜索封面来源',
               style: TextStyle(
                 color: scheme.onSurface,
-                fontSize: 15.0,
-                fontWeight: FontWeight.w700,
+                fontSize: AppType.subtitle,
+                fontWeight: AppType.weightBold,
               ),
             ),
             const SizedBox(height: 4.0),
@@ -273,7 +273,7 @@ class _CoverSearchBodyState extends State<_CoverSearchBody> {
               const Expanded(
                 child: Text('搜索专辑或歌手',
                     style:
-                        TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                        TextStyle(fontSize: AppType.subtitle, fontWeight: AppType.weightBold)),
               ),
             ],
           ),
@@ -287,10 +287,84 @@ class _CoverSearchBodyState extends State<_CoverSearchBody> {
             decoration: const InputDecoration(
               prefixIcon: Icon(Symbols.search),
               hintText: '输入专辑或歌手名称',
-              border: OutlineInputBorder(),
               isDense: true,
             ),
             onChanged: _onSearchChanged,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: ValueListenableBuilder(
+            valueListenable: _results,
+            builder: (context, albums, _) {
+              final artists = _artistResults.value;
+              final hasAny = albums.isNotEmpty || artists.isNotEmpty;
+              return Wrap(
+                spacing: 8.0,
+                runSpacing: 8.0,
+                children: List.generate(_tabs.length, (i) {
+                  final selected = _currentTab == i;
+                  final count = i == 0 ? albums.length : artists.length;
+                  final showCount = selected && hasAny;
+                  return FilterChip(
+                    selected: selected,
+                    showCheckmark: false,
+                    avatar: Icon(
+                      _tabs[i].$2,
+                      size: 18,
+                      color: selected
+                          ? scheme.onSecondaryContainer
+                          : scheme.onSurfaceVariant,
+                    ),
+                    label: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(_tabs[i].$1),
+                        if (showCount) ...[
+                          const SizedBox(width: 6),
+                          Text(
+                            '$count',
+                            style: TextStyle(
+                              color: selected
+                                  ? scheme.onSecondaryContainer
+                                  : scheme.onSurfaceVariant,
+                              fontSize: AppType.caption,
+                              fontWeight: AppType.weightMedium,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    labelStyle: TextStyle(
+                      color: selected
+                          ? scheme.onSecondaryContainer
+                          : scheme.onSurface,
+                      fontWeight: selected ? AppType.weightSemibold : null,
+                    ),
+                    selectedColor: scheme.secondaryContainer,
+                    backgroundColor: Colors.transparent,
+                    color: WidgetStateProperty.resolveWith((states) {
+                      if (states.contains(WidgetState.selected)) {
+                        return scheme.secondaryContainer;
+                      }
+                      return Colors.transparent;
+                    }),
+                    side: BorderSide(
+                      color: selected
+                          ? scheme.primary
+                          : scheme.outlineVariant,
+                      width: selected ? 1.5 : 1.0,
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    onSelected: (_) => setState(() => _currentTab = i),
+                  );
+                }),
+              );
+            },
           ),
         ),
         const SizedBox(height: 8),
@@ -300,82 +374,93 @@ class _CoverSearchBodyState extends State<_CoverSearchBody> {
             builder: (context, albums, _) {
               final artists = _artistResults.value;
               if (albums.isEmpty && artists.isEmpty) {
-                return _buildSearchState(scheme);
+                return _buildEmptyState(scheme);
               }
-              final albumHeaderCount = albums.isEmpty ? 0 : 1;
-              final artistHeaderCount = artists.isEmpty ? 0 : 1;
-              final itemCount = albumHeaderCount +
-                  albums.length +
-                  artistHeaderCount +
-                  artists.length;
-
-              return ListView.builder(
-                padding: const EdgeInsets.only(bottom: 16),
-                itemCount: itemCount,
-                itemBuilder: (context, index) {
-                  if (albums.isNotEmpty) {
-                    if (index == 0) {
-                      return Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-                        child: Text('专辑',
-                            style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: scheme.onSurfaceVariant)),
-                      );
-                    }
-                    final albumIndex = index - 1;
-                    if (albumIndex < albums.length) {
-                      final album = albums[albumIndex];
-                      final source = 'album:${album.name}';
-                      final selected = widget.playlist.coverSource == source;
-                      return _AlbumResultTile(
-                        album: album,
-                        selected: selected,
-                        onTap: selected
-                            ? null
-                            : () {
-                                widget.playlist.coverSource = source;
-                                Navigator.pop(context, true);
-                              },
-                      );
-                    }
-                    index -= albums.length + 1;
-                  }
-
-                  if (artists.isNotEmpty) {
-                    if (index == 0) {
-                      return Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-                        child: Text('歌手',
-                            style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: scheme.onSurfaceVariant)),
-                      );
-                    }
-                    final artist = artists[index - 1];
-                    final source = 'artist:${artist.name}';
-                    final selected = widget.playlist.coverSource == source;
-                    return _ArtistResultTile(
-                      artist: artist,
-                      selected: selected,
-                      onTap: selected
-                          ? null
-                          : () {
-                              widget.playlist.coverSource = source;
-                              Navigator.pop(context, true);
-                            },
-                    );
-                  }
-
-                  return const SizedBox.shrink();
-                },
+              return IndexedStack(
+                index: _currentTab,
+                children: [
+                  _buildAlbumList(albums),
+                  _buildArtistList(artists),
+                ],
               );
             },
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildAlbumList(List<Album> albums) {
+    if (albums.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Symbols.search_off, color: Theme.of(context).colorScheme.onSurfaceVariant),
+              const SizedBox(height: 8),
+              const Text('没有匹配的专辑'),
+            ],
+          ),
+        ),
+      );
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 16),
+      itemCount: albums.length,
+      itemBuilder: (context, index) {
+        final album = albums[index];
+        final source = 'album:${album.name}';
+        final selected = widget.playlist.coverSource == source;
+        return _AlbumResultTile(
+          album: album,
+          selected: selected,
+          onTap: selected
+              ? null
+              : () {
+                  widget.playlist.coverSource = source;
+                  Navigator.pop(context, true);
+                },
+        );
+      },
+    );
+  }
+
+  Widget _buildArtistList(List<Artist> artists) {
+    if (artists.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Symbols.search_off, color: Theme.of(context).colorScheme.onSurfaceVariant),
+              const SizedBox(height: 8),
+              const Text('没有匹配的歌手'),
+            ],
+          ),
+        ),
+      );
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 16),
+      itemCount: artists.length,
+      itemBuilder: (context, index) {
+        final artist = artists[index];
+        final source = 'artist:${artist.name}';
+        final selected = widget.playlist.coverSource == source;
+        return _ArtistResultTile(
+          artist: artist,
+          selected: selected,
+          onTap: selected
+              ? null
+              : () {
+                  widget.playlist.coverSource = source;
+                  Navigator.pop(context, true);
+                },
+        );
+      },
     );
   }
 }
@@ -399,21 +484,50 @@ class _MenuTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return ListTile(
-      leading: Icon(icon),
-      title: Text(title),
-      enabled: onTap != null,
-      selected: selected,
-      selectedTileColor: scheme.secondaryContainer.withValues(alpha: 0.5),
-      selectedColor: scheme.onSecondaryContainer,
-      trailing: busy
-          ? const SizedBox(
-              width: 20.0,
-              height: 20.0,
-              child: CircularProgressIndicator(strokeWidth: 2.0),
-            )
-          : _MenuTileTrailing(selected: selected, trailing: trailing),
-      onTap: busy ? null : onTap,
+    final effectiveFg = selected
+        ? scheme.onSecondaryContainer
+        : scheme.onSurface;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+      child: InkWell(
+        borderRadius: AppRadius.smCircular,
+        onTap: busy ? null : onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+          decoration: BoxDecoration(
+            color: selected
+                ? scheme.secondaryContainer.withValues(alpha: 0.5)
+                : Colors.transparent,
+            borderRadius: AppRadius.smCircular,
+          ),
+          child: Row(
+            children: [
+              Icon(icon,
+                  size: 20,
+                  color: selected
+                      ? scheme.onSecondaryContainer
+                      : scheme.onSurfaceVariant),
+              const SizedBox(width: 16.0),
+              Expanded(
+                child: Text(title,
+                    style: TextStyle(
+                        color: effectiveFg,
+                        fontSize: AppType.subtitle,
+                        fontWeight: AppType.weightMedium)),
+              ),
+              if (busy)
+                const SizedBox(
+                  width: 20.0,
+                  height: 20.0,
+                  child: CircularProgressIndicator(strokeWidth: 2.0),
+                )
+              else
+                _MenuTileTrailing(selected: selected, trailing: trailing),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -451,22 +565,51 @@ class _AlbumResultTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return ListTile(
-      leading: ClipRRect(
-        borderRadius: BorderRadius.circular(4),
-        child: SizedBox(
-          width: 40,
-          height: 40,
-          child: _AlbumResultCover(album: album),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+      child: InkWell(
+        borderRadius: AppRadius.smCircular,
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+          decoration: BoxDecoration(
+            color: selected
+                ? scheme.secondaryContainer.withValues(alpha: 0.5)
+                : Colors.transparent,
+            borderRadius: AppRadius.smCircular,
+          ),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: AppRadius.xsCircular,
+                child: SizedBox(
+                  width: 36,
+                  height: 36,
+                  child: _AlbumResultCover(album: album),
+                ),
+              ),
+              const SizedBox(width: 12.0),
+              Expanded(
+                child: Text(album.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: selected
+                            ? scheme.onSecondaryContainer
+                            : scheme.onSurface,
+                        fontSize: AppType.subtitle)),
+              ),
+              if (selected)
+                Padding(
+                  padding: const EdgeInsets.only(left: 8.0),
+                  child: Icon(Symbols.check,
+                      size: 18, color: scheme.onSecondaryContainer),
+                ),
+            ],
+          ),
         ),
       ),
-      title: Text(album.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-      selected: selected,
-      selectedTileColor: scheme.secondaryContainer.withValues(alpha: 0.5),
-      selectedColor: scheme.onSecondaryContainer,
-      trailing: selected ? const Icon(Symbols.check) : null,
-      dense: true,
-      onTap: onTap,
     );
   }
 }
@@ -484,22 +627,51 @@ class _ArtistResultTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return ListTile(
-      leading: ClipRRect(
-        borderRadius: BorderRadius.circular(4),
-        child: SizedBox(
-          width: 40,
-          height: 40,
-          child: _ArtistResultCover(artist: artist),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+      child: InkWell(
+        borderRadius: AppRadius.smCircular,
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+          decoration: BoxDecoration(
+            color: selected
+                ? scheme.secondaryContainer.withValues(alpha: 0.5)
+                : Colors.transparent,
+            borderRadius: AppRadius.smCircular,
+          ),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: AppRadius.xsCircular,
+                child: SizedBox(
+                  width: 36,
+                  height: 36,
+                  child: _ArtistResultCover(artist: artist),
+                ),
+              ),
+              const SizedBox(width: 12.0),
+              Expanded(
+                child: Text(artist.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: selected
+                            ? scheme.onSecondaryContainer
+                            : scheme.onSurface,
+                        fontSize: AppType.subtitle)),
+              ),
+              if (selected)
+                Padding(
+                  padding: const EdgeInsets.only(left: 8.0),
+                  child: Icon(Symbols.check,
+                      size: 18, color: scheme.onSecondaryContainer),
+                ),
+            ],
+          ),
         ),
       ),
-      title: Text(artist.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-      selected: selected,
-      selectedTileColor: scheme.secondaryContainer.withValues(alpha: 0.5),
-      selectedColor: scheme.onSecondaryContainer,
-      trailing: selected ? const Icon(Symbols.check) : null,
-      dense: true,
-      onTap: onTap,
     );
   }
 }

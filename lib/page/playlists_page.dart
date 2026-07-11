@@ -1,3 +1,4 @@
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/preference.dart';
 
 import 'package:pure_music/component/danger_confirm_dialog.dart';
@@ -7,10 +8,14 @@ import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/page/uni_page.dart';
 import 'package:pure_music/page/uni_page_components.dart';
 import 'package:pure_music/library/playlist.dart';
+import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/page/playlist_cover_picker.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
+import 'package:pure_music/native/folder_picker_windows.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/menu_styles.dart';
+import 'dart:io';
+import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -27,6 +32,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
   final Set<Playlist> _deletingPlaylists = <Playlist>{};
   final Set<Playlist> _exportingPlaylists = <Playlist>{};
   bool _isImportingPlaylist = false;
+  bool _isImportingFolder = false;
   bool _isDeletingSelected = false;
 
   void newPlaylist(BuildContext context) async {
@@ -47,7 +53,9 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
       playlists.remove(playlist);
       if (!mounted) return;
       setState(() {});
-      showTextOnSnackBar('保存歌单失败');
+      showTextOnSnackBar('保存歌单失败', variant: ToastVariant.error);
+    } else if (mounted) {
+      showTextOnSnackBar('已创建歌单', variant: ToastVariant.success);
     }
   }
 
@@ -76,7 +84,9 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
       playlist.name = oldName;
       if (!mounted) return;
       setState(() {});
-      showTextOnSnackBar('保存歌单失败');
+      showTextOnSnackBar('保存歌单失败', variant: ToastVariant.error);
+    } else if (mounted) {
+      showTextOnSnackBar('已重命名歌单', variant: ToastVariant.success);
     }
   }
 
@@ -102,17 +112,104 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
         playlists.remove(pl);
         if (!mounted) return;
         setState(() {});
-        showTextOnSnackBar('保存歌单失败');
+        showTextOnSnackBar('保存歌单失败', variant: ToastVariant.error);
         return;
       }
       if (!mounted) return;
-      showTextOnSnackBar('成功导入歌单“${pl.name}”（${pl.paths.length}首）');
+      showTextOnSnackBar('成功导入歌单"${pl.name}"（${pl.paths.length}首）', variant: ToastVariant.success);
     } catch (err) {
       if (!mounted) return;
-      showTextOnSnackBar('导入歌单失败');
+      showTextOnSnackBar('导入歌单失败', variant: ToastVariant.error);
     } finally {
       if (mounted) {
         setState(() => _isImportingPlaylist = false);
+      }
+    }
+  }
+
+  Future<void> importFolderAsPlaylist() async {
+    if (_isImportingFolder) return;
+    setState(() => _isImportingFolder = true);
+    try {
+      final paths = pickMultipleDirectories(title: '选择歌单文件夹');
+      if (paths.isEmpty) return;
+      if (!mounted) return;
+
+      final folderPath = paths.first;
+      final dir = Directory(folderPath);
+      if (!dir.existsSync()) {
+        showTextOnSnackBar('文件夹不存在', variant: ToastVariant.error);
+        return;
+      }
+
+      final audioFiles = <String>[];
+      final audioExtensions = <String>{
+        'mp3', 'flac', 'wav', 'ogg', 'ape', 'm4a', 'wma', 'opus', 'aiff', 'aac',
+      };
+
+      await for (final entity in dir.list(recursive: true)) {
+        if (entity is File) {
+          final ext = p.extension(entity.path).toLowerCase().replaceFirst('.', '');
+          if (audioExtensions.contains(ext)) {
+            audioFiles.add(entity.path);
+          }
+        }
+      }
+
+      if (audioFiles.isEmpty) {
+        showTextOnSnackBar('文件夹中没有找到音乐文件');
+        return;
+      }
+
+      final resolved = <String>[];
+      final collection = AudioLibrary.instance.audioCollection;
+      for (final raw in audioFiles) {
+        if (collection.any((a) => a.path == raw)) {
+          resolved.add(raw);
+          continue;
+        }
+        final matchedPath = findImportedPlaylistLibraryPath(
+          rawPath: raw,
+          libraryPaths: collection.map((a) => a.path),
+        );
+        if (matchedPath != null) resolved.add(matchedPath);
+      }
+
+      if (resolved.isEmpty) {
+        showTextOnSnackBar('文件夹中的音乐不在曲库中');
+        return;
+      }
+
+      final folderName = p.basename(folderPath);
+      final pl = Playlist(folderName, resolved);
+      if (hasEquivalentPlaylistName(
+        existingNames: playlists.map((p) => p.name),
+        targetName: pl.name,
+      )) {
+        showTextOnSnackBar('歌单"${pl.name}"已存在');
+        return;
+      }
+
+      setState(() => playlists.add(pl));
+      final saved = await savePlaylists();
+      if (!saved) {
+        playlists.remove(pl);
+        if (!mounted) return;
+        setState(() {});
+        showTextOnSnackBar('保存歌单失败', variant: ToastVariant.error);
+        return;
+      }
+      if (!mounted) return;
+      showTextOnSnackBar(
+        '成功导入文件夹"$folderName"（${resolved.length}首）',
+        variant: ToastVariant.success,
+      );
+    } catch (err) {
+      if (!mounted) return;
+      showTextOnSnackBar('导入文件夹歌单失败', variant: ToastVariant.error);
+    } finally {
+      if (mounted) {
+        setState(() => _isImportingFolder = false);
       }
     }
   }
@@ -127,10 +224,10 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
     try {
       final exported = await exportPlaylistToFile(playlist);
       if (!mounted || !exported) return;
-      showTextOnSnackBar('已导出歌单“${playlist.name}”');
+      showTextOnSnackBar('已导出歌单"${playlist.name}"', variant: ToastVariant.success);
     } catch (err) {
       if (!mounted) return;
-      showTextOnSnackBar('导出歌单失败');
+      showTextOnSnackBar('导出歌单失败', variant: ToastVariant.error);
     } finally {
       if (mounted) {
         setState(() => _exportingPlaylists.remove(playlist));
@@ -180,7 +277,9 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
         playlists.add(playlist);
         if (!mounted) return;
         setState(() {});
-        showTextOnSnackBar('删除歌单失败');
+        showTextOnSnackBar('删除歌单失败', variant: ToastVariant.error);
+      } else if (mounted) {
+        showTextOnSnackBar('已删除歌单', variant: ToastVariant.success);
       }
     } finally {
       if (mounted) {
@@ -210,13 +309,14 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
       if (saved) {
         multiSelectController.useMultiSelectView(false);
         multiSelectController.clear();
+        showTextOnSnackBar('已删除 ${selected.length} 个歌单', variant: ToastVariant.success);
       } else {
         for (final entry in indexed.reversed) {
           final index = entry.key.clamp(0, playlists.length).toInt();
           playlists.insert(index, entry.value);
         }
         setState(() {});
-        showTextOnSnackBar('删除歌单失败');
+        showTextOnSnackBar('删除歌单失败', variant: ToastVariant.error);
       }
     } finally {
       if (mounted) {
@@ -327,12 +427,12 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
               decoration: BoxDecoration(
                 color:
                     isSelected ? scheme.secondaryContainer : Colors.transparent,
-                borderRadius: BorderRadius.circular(8.0),
+                borderRadius: AppRadius.smCircular,
               ),
               child: Material(
                 type: MaterialType.transparency,
                 child: InkWell(
-                  borderRadius: BorderRadius.circular(8.0),
+                  borderRadius: AppRadius.smCircular,
                   onTap: isBusy
                       ? null
                       : () {
@@ -381,7 +481,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                               playlist.name,
                               softWrap: false,
                               maxLines: 1,
-                              style: const TextStyle(fontSize: 16),
+                              style: const TextStyle(fontSize: AppType.subtitle),
                             ),
                             const SizedBox(height: 4.0),
                             Text(
@@ -441,51 +541,80 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
           ),
         );
       },
-      primaryAction: Wrap(
-        spacing: 4.0,
-        runSpacing: 8.0,
-        alignment: WrapAlignment.end,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          FilledButton.icon(
-            onPressed: () => newPlaylist(context),
-            icon: const Icon(Symbols.add),
-            label: const Text('新建歌单'),
+      primaryAction: MenuAnchor(
+        style: appMenuStyle,
+        menuChildren: [
+          MenuItemButton(
             style: const ButtonStyle(
-              fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
+              padding: WidgetStatePropertyAll(EdgeInsets.all(12)),
             ),
+            leadingIcon: const Icon(Symbols.add),
+            onPressed: () => newPlaylist(context),
+            child: const Text('新建歌单'),
           ),
-          MenuAnchor(
-            style: appMenuStyle,
-            menuChildren: [
-              MenuItemButton(
-                style: menuItemStyle,
-                onPressed: _isImportingPlaylist ? null : () => importPlaylist(),
-                leadingIcon: _isImportingPlaylist
-                    ? const SizedBox(
-                        width: 18.0,
-                        height: 18.0,
-                        child: CircularProgressIndicator(strokeWidth: 2.0),
-                      )
-                    : const Icon(Symbols.file_open),
-                child: Text(_isImportingPlaylist ? '导入中' : '导入歌单'),
-              ),
-            ],
-            builder: (context, controller, _) => SizedBox(
-              height: 40,
-              child: OutlinedButton.icon(
-                onPressed: () =>
-                    controller.isOpen ? controller.close() : controller.open(),
-                icon: AnimatedRotation(
-                  turns: controller.isOpen ? 0.5 : 0.0,
-                  duration: const Duration(milliseconds: 150),
-                  child: const Icon(Symbols.arrow_drop_down, size: 20),
-                ),
-                label: const Text('更多'),
-              ),
+          MenuItemButton(
+            style: const ButtonStyle(
+              padding: WidgetStatePropertyAll(EdgeInsets.all(12)),
             ),
+            leadingIcon: _isImportingFolder
+                ? const SizedBox(
+                    width: 18.0,
+                    height: 18.0,
+                    child: CircularProgressIndicator(strokeWidth: 2.0),
+                  )
+                : const Icon(Symbols.folder_open),
+            onPressed: _isImportingFolder ? null : () => importFolderAsPlaylist(),
+            child: Text(_isImportingFolder ? '导入中' : '导入文件夹歌单'),
+          ),
+          MenuItemButton(
+            style: const ButtonStyle(
+              padding: WidgetStatePropertyAll(EdgeInsets.all(12)),
+            ),
+            leadingIcon: _isImportingPlaylist
+                ? const SizedBox(
+                    width: 18.0,
+                    height: 18.0,
+                    child: CircularProgressIndicator(strokeWidth: 2.0),
+                  )
+                : const Icon(Symbols.file_open),
+            onPressed: _isImportingPlaylist ? null : () => importPlaylist(),
+            child: Text(_isImportingPlaylist ? '导入中' : '导入歌单列表'),
           ),
         ],
+        builder: (context, menuController, _) {
+          return FilledButton.tonal(
+            onPressed: () {
+              if (menuController.isOpen) {
+                menuController.close();
+              } else {
+                menuController.open();
+              }
+            },
+            style: ButtonStyle(
+              fixedSize: const WidgetStatePropertyAll(Size.fromHeight(40)),
+              padding: const WidgetStatePropertyAll(
+                EdgeInsets.symmetric(horizontal: 16),
+              ),
+              shape: WidgetStatePropertyAll(
+                RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Symbols.queue_music, size: 20),
+                const SizedBox(width: 4.0),
+                const Text('管理歌单'),
+                const SizedBox(width: 4.0),
+                    AnimatedRotation(
+                      duration: const Duration(milliseconds: 200),
+                  turns: menuController.isOpen ? 0.5 : 0.0,
+                  child: const Icon(Symbols.arrow_drop_down, size: 20),
+                ),
+              ],
+            ),
+          );
+        },
       ),
       enableShufflePlay: false,
       enableSortMethod: canSortPlaylists,
@@ -625,7 +754,7 @@ class _NewPlaylistDialogState extends State<_NewPlaylistDialog> {
         vertical: 24.0,
       ),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12.0),
+        borderRadius: AppRadius.mdCircular,
       ),
       child: SizedBox(
         width: width,
@@ -641,8 +770,8 @@ class _NewPlaylistDialogState extends State<_NewPlaylistDialog> {
                   '新建歌单',
                   style: TextStyle(
                     color: scheme.onSurface,
-                    fontSize: 18.0,
-                    fontWeight: FontWeight.bold,
+                    fontSize: AppType.sectionTitle,
+                    fontWeight: AppType.weightBold,
                   ),
                 ),
               ),
@@ -762,7 +891,7 @@ class _EditPlaylistDialogState extends State<_EditPlaylistDialog> {
         vertical: 24.0,
       ),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12.0),
+        borderRadius: AppRadius.mdCircular,
       ),
       child: SizedBox(
         width: width,
@@ -778,8 +907,8 @@ class _EditPlaylistDialogState extends State<_EditPlaylistDialog> {
                   '修改歌单',
                   style: TextStyle(
                     color: scheme.onSurface,
-                    fontSize: 18.0,
-                    fontWeight: FontWeight.bold,
+                    fontSize: AppType.sectionTitle,
+                    fontWeight: AppType.weightBold,
                   ),
                 ),
               ),
@@ -871,10 +1000,8 @@ class _PlaylistCoverState extends State<_PlaylistCover> {
 
   @override
   Widget build(BuildContext context) {
-    final brightness = Theme.of(context).brightness;
-    final overlayColor =
-        (brightness == Brightness.light ? Colors.black : Colors.white)
-            .withValues(alpha: 0.25);
+    final scheme = Theme.of(context).colorScheme;
+    final overlayColor = scheme.onSurface.withValues(alpha: 0.25);
 
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
@@ -897,7 +1024,7 @@ class _PlaylistCoverState extends State<_PlaylistCover> {
           children: [
             _cached != null
                 ? ClipRRect(
-                    borderRadius: BorderRadius.circular(8.0),
+                    borderRadius: AppRadius.smCircular,
                     child: Image(
                       image: _cached!,
                       width: 48.0,
@@ -914,20 +1041,20 @@ class _PlaylistCoverState extends State<_PlaylistCover> {
                 height: 48.0,
                 decoration: BoxDecoration(
                   color: overlayColor,
-                  borderRadius: BorderRadius.circular(8.0),
+                  borderRadius: AppRadius.smCircular,
                 ),
                 child: _isPickingCover
-                    ? const Center(
+                    ? Center(
                         child: SizedBox(
                           width: 20.0,
                           height: 20.0,
                           child: CircularProgressIndicator(
                             strokeWidth: 2.0,
-                            color: Colors.white,
+                            color: scheme.onSurface,
                           ),
                         ),
                       )
-                    : const Icon(Symbols.brush, size: 20, color: Colors.white),
+                    : Icon(Symbols.brush, size: 20, color: scheme.onSurface),
               ),
           ],
         ),
@@ -942,7 +1069,7 @@ class _PlaylistCoverState extends State<_PlaylistCover> {
       height: 48.0,
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(8.0),
+        borderRadius: AppRadius.smCircular,
       ),
       child: Icon(Symbols.queue_music, color: scheme.onSurface.withAlpha(100)),
     );
