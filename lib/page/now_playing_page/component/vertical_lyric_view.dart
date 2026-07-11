@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:math';
 
+import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/lyric_render_config.dart';
 import 'package:pure_music/core/route_visibility.dart';
 import 'package:pure_music/lyric/lrc.dart';
@@ -430,8 +431,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     }
 
     final baseSize = config.baseFontSize;
-    final showTrans = config.showTranslation;
-    final showRoman = config.showRoman;
     final weight = config.fontWeight;
     final primaryHeight = config.primaryLineHeight(weight);
     final translationHeight = config.translationLineHeight(weight);
@@ -498,45 +497,75 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       painter.layout(maxWidth: contentWidth);
       h += painter.height;
 
-      if (showTrans) {
-        if (line is SyncLyricLine && line.translation != null) {
-          h += config.syncTranslationGap(isMainLine: true);
-          painter.text = TextSpan(
-            text: line.translation!,
-            style: TextStyle(
-              fontSize: transSize,
-              fontVariations: [
-                FontVariation('wght', (weight - 50).clamp(100, 900).toDouble())
-              ],
-              fontWeight: FontWeight.values[
-                  (((weight - 50).clamp(100, 900) / 100).round() - 1)
-                      .clamp(0, 8)],
-              height: translationHeight,
-              letterSpacing: letterSpacing,
-            ),
-          );
-          painter.layout(maxWidth: contentWidth);
-          h += painter.height;
-        } else if (line is LrcLine) {
-          final parts = line.content.split('┃');
-          for (int i = 1; i < parts.length; i++) {
-            h += config.lrcTranslationGap(
-              isMainLine: true,
-              translationIndex: i - 1,
-            );
+      final hasTranslation = line is SyncLyricLine
+          ? line.translation != null
+          : (line is LrcLine &&
+              line.translation != null &&
+              line.translation!.trim().isNotEmpty);
+      final hasRoman = line.romanLyric != null && line.romanLyric!.isNotEmpty;
+      final vvActiveTracks = config.normalizedLineOrder.where((t) {
+        switch (t) {
+          case LyricLineTrack.original: return true;
+          case LyricLineTrack.translation: return config.showTranslation && hasTranslation;
+          case LyricLineTrack.romanization: return config.showRoman && hasRoman;
+        }
+      }).toList();
+      final vvPreTracks = vvActiveTracks.takeWhile((t) => t != LyricLineTrack.original).toList();
+      final vvPostTracks = vvActiveTracks.skipWhile((t) => t != LyricLineTrack.original).skip(1).toList();
+
+      // pre-original tracks
+      double vvPreBase = h;
+      for (final track in vvPreTracks) {
+        if (h > vvPreBase) h += 2.0;
+        if (track == LyricLineTrack.translation) {
+          final translationWeight = (weight - 50).clamp(100, 900);
+          if (line is SyncLyricLine && line.translation != null) {
             painter.text = TextSpan(
-              text: parts[i],
+              text: line.translation!,
               style: TextStyle(
                 fontSize: transSize,
-                fontVariations: [
-                  FontVariation(
-                    'wght',
-                    (weight - 50).clamp(100, 900).toDouble(),
-                  )
-                ],
-                fontWeight: FontWeight.values[
-                    (((weight - 50).clamp(100, 900) / 100).round() - 1)
-                        .clamp(0, 8)],
+                fontVariations: [FontVariation('wght', translationWeight.toDouble())],
+                fontWeight: FontWeight.values[(((translationWeight / 100).round() - 1).clamp(0, 8))],
+                height: translationHeight,
+                letterSpacing: letterSpacing,
+              ),
+            );
+            painter.layout(maxWidth: contentWidth);
+            h += painter.height;
+          } else if (line is LrcLine) {
+            final parts = line.content.split('┃');
+            for (int i = 1; i < parts.length; i++) {
+              painter.text = TextSpan(
+                text: parts[i],
+                style: TextStyle(
+                  fontSize: transSize,
+                  fontVariations: [FontVariation('wght', translationWeight.toDouble())],
+                  fontWeight: FontWeight.values[(((translationWeight / 100).round() - 1).clamp(0, 8))],
+                  height: translationHeight,
+                  letterSpacing: letterSpacing,
+                ),
+              );
+              painter.layout(maxWidth: contentWidth);
+              h += painter.height;
+            }
+          }
+        } else if (track == LyricLineTrack.romanization) {
+          final String? roman;
+          if (line is SyncLyricLine) {
+            roman = line.romanLyric;
+          } else if (line is LrcLine) {
+            roman = line.romanLyric;
+          } else {
+            roman = null;
+          }
+          if (roman != null && roman.isNotEmpty) {
+            final romanWeight = (weight - 150).clamp(100, 900);
+            painter.text = TextSpan(
+              text: roman,
+              style: TextStyle(
+                fontSize: transSize * 0.85,
+                fontVariations: [FontVariation('wght', romanWeight.toDouble())],
+                fontWeight: FontWeight.values[(((romanWeight / 100).round() - 1).clamp(0, 8))],
                 height: translationHeight,
                 letterSpacing: letterSpacing,
               ),
@@ -547,31 +576,73 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
         }
       }
 
-      if (showRoman) {
-        String? roman;
-        if (line is SyncLyricLine) {
-          roman = line.romanLyric;
-        } else if (line is LrcLine) {
-          roman = line.romanLyric;
-        }
-
-        if (roman != null && roman.isNotEmpty) {
-          h += 4.0;
-
-          final romanWeight = (weight - 150).clamp(100, 900);
-          painter.text = TextSpan(
-            text: roman,
-            style: TextStyle(
-              fontSize: transSize * 0.85,
-              fontVariations: [FontVariation('wght', romanWeight.toDouble())],
-              fontWeight: FontWeight
-                  .values[(((romanWeight / 100).round() - 1).clamp(0, 8))],
-              height: translationHeight,
-              letterSpacing: letterSpacing,
-            ),
-          );
-          painter.layout(maxWidth: contentWidth);
-          h += painter.height;
+      // post-original tracks
+      if (vvPostTracks.isNotEmpty) {
+        final gap = line is SyncLyricLine
+            ? config.syncTranslationGap(isMainLine: true)
+            : config.lrcTranslationGap(isMainLine: true, translationIndex: 0);
+        h += gap;
+        var vvPostPrev = false;
+        for (final track in vvPostTracks) {
+          if (vvPostPrev) h += 4.0;
+          vvPostPrev = true;
+          if (track == LyricLineTrack.translation) {
+            final translationWeight = (weight - 50).clamp(100, 900);
+            if (line is SyncLyricLine && line.translation != null) {
+              painter.text = TextSpan(
+                text: line.translation!,
+                style: TextStyle(
+                  fontSize: transSize,
+                  fontVariations: [FontVariation('wght', translationWeight.toDouble())],
+                  fontWeight: FontWeight.values[(((translationWeight / 100).round() - 1).clamp(0, 8))],
+                  height: translationHeight,
+                  letterSpacing: letterSpacing,
+                ),
+              );
+              painter.layout(maxWidth: contentWidth);
+              h += painter.height;
+            } else if (line is LrcLine) {
+              final parts = line.content.split('┃');
+              for (int i = 1; i < parts.length; i++) {
+                painter.text = TextSpan(
+                  text: parts[i],
+                  style: TextStyle(
+                    fontSize: transSize,
+                    fontVariations: [FontVariation('wght', translationWeight.toDouble())],
+                    fontWeight: FontWeight.values[(((translationWeight / 100).round() - 1).clamp(0, 8))],
+                    height: translationHeight,
+                    letterSpacing: letterSpacing,
+                  ),
+                );
+                painter.layout(maxWidth: contentWidth);
+                h += painter.height;
+              }
+            }
+          } else if (track == LyricLineTrack.romanization) {
+            final String? roman;
+            if (line is SyncLyricLine) {
+              roman = line.romanLyric;
+            } else if (line is LrcLine) {
+              roman = line.romanLyric;
+            } else {
+              roman = null;
+            }
+            if (roman != null && roman.isNotEmpty) {
+              final romanWeight = (weight - 150).clamp(100, 900);
+              painter.text = TextSpan(
+                text: roman,
+                style: TextStyle(
+                  fontSize: transSize * 0.85,
+                  fontVariations: [FontVariation('wght', romanWeight.toDouble())],
+                  fontWeight: FontWeight.values[(((romanWeight / 100).round() - 1).clamp(0, 8))],
+                  height: translationHeight,
+                  letterSpacing: letterSpacing,
+                ),
+              );
+              painter.layout(maxWidth: contentWidth);
+              h += painter.height;
+            }
+          }
         }
       }
 
@@ -832,8 +903,11 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     final targetKey = _lineKeys[_mainLine];
     final targetContext = targetKey?.currentContext;
     if (targetContext != null && targetContext.mounted) {
-      final targetObject = targetContext.findRenderObject();
-      if (targetObject is RenderBox) {
+      RenderBox? targetObject;
+      try {
+        targetObject = targetContext.findRenderObject() as RenderBox?;
+      } catch (_) {}
+      if (targetObject != null) {
         final viewport = RenderAbstractViewport.of(targetObject);
         final alignment = widget.currentLineAlignment;
         final revealed = viewport.getOffsetToReveal(targetObject, alignment);

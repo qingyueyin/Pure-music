@@ -173,7 +173,7 @@ class LyricTransitionPainter extends CustomPainter {
         .clamp(0, 255);
     final transitionColor = useMaterialYouColor
         ? scheme.onSecondaryContainer
-        : (scheme.brightness == Brightness.dark ? Colors.white : Colors.black);
+        : scheme.onSurface;
     circlePaint1.color = transitionColor.withAlpha(a1);
     circlePaint2.color = transitionColor.withAlpha(a2);
     circlePaint3.color = transitionColor.withAlpha(a3);

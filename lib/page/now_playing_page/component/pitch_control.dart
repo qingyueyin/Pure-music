@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:flutter/material.dart';
@@ -23,7 +24,7 @@ class _NowPlayingPitchControlState extends State<NowPlayingPitchControl> {
     return MenuAnchor(
       style: MenuStyle(
         shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          RoundedRectangleBorder(borderRadius: AppRadius.mdCircular),
         ),
       ),
       builder: (context, controller, child) {
@@ -98,11 +99,11 @@ class _NowPlayingPitchPanelState extends State<NowPlayingPitchPanel> {
               padding: const EdgeInsets.all(8.0),
               decoration: BoxDecoration(
                 color: scheme.errorContainer,
-                borderRadius: BorderRadius.circular(8.0),
+                borderRadius: AppRadius.smCircular,
               ),
               child: Text(
                 'BASS_FX missing',
-                style: TextStyle(color: scheme.onErrorContainer, fontSize: 12),
+                style: TextStyle(color: scheme.onErrorContainer, fontSize: AppType.caption),
               ),
             ),
           ValueListenableBuilder(
@@ -120,7 +121,7 @@ class _NowPlayingPitchPanelState extends State<NowPlayingPitchPanel> {
                         '音调',
                         style: TextStyle(
                           color: scheme.onSurface,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: AppType.weightSemibold,
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -182,9 +183,6 @@ class _NowPlayingPitchPanelState extends State<NowPlayingPitchPanel> {
                           alignment: Alignment.centerLeft,
                           children: [
                             Slider(
-                              thumbColor: scheme.primary,
-                              activeColor: scheme.primary,
-                              inactiveColor: scheme.outline,
                               min: min,
                               max: max,
                               divisions: 24,
@@ -261,14 +259,14 @@ class _PitchValuePill extends StatelessWidget {
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: scheme.primaryContainer,
-        borderRadius: BorderRadius.circular(13),
+        borderRadius: AppRadius.mdCircular,
       ),
       child: Text(
         _formatPitchValue(value),
         style: TextStyle(
           color: scheme.onPrimaryContainer,
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
+          fontSize: AppType.caption,
+          fontWeight: AppType.weightSemibold,
         ),
       ),
     );
@@ -294,9 +292,9 @@ class _PitchResetButton extends StatelessWidget {
       foregroundColor: foreground,
       minimumSize: const Size(0, 32),
       padding: EdgeInsets.symmetric(horizontal: extended ? 10 : 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(borderRadius: AppRadius.mdCircular),
       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+      textStyle: const TextStyle(fontSize: AppType.caption, fontWeight: AppType.weightSemibold),
       visualDensity: VisualDensity.compact,
     );
 
@@ -344,14 +342,14 @@ class _CustomValueIndicator extends StatelessWidget {
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: color,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: AppRadius.smCircular,
           ),
           child: Text(
             "${value > 0 ? '+' : ''}${value.toInt()}",
             style: TextStyle(
               color: textColor,
-              fontWeight: FontWeight.bold,
-              fontSize: 14,
+              fontWeight: AppType.weightBold,
+              fontSize: AppType.body,
             ),
           ),
         ),

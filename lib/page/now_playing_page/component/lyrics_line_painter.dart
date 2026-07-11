@@ -9,10 +9,35 @@ import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.dart';
 
 const _bgEnterMs = 650.0;
-const _bgExitMs = 850.0;
-const _bgExitHoldMs = 220.0;
+const _bgExitMs = 1400.0;
+const _bgExitHoldMs = 600.0;
 const _bgEnterOffsetY = 8.0;
 const _bgScaleRange = 0.08;
+
+List<LyricLineTrack> _activeLineTracks(
+  LyricRenderConfig config, {
+  required bool hasTranslation,
+  required bool hasRoman,
+}) {
+  return config.normalizedLineOrder.where((t) {
+    switch (t) {
+      case LyricLineTrack.original:
+        return true;
+      case LyricLineTrack.translation:
+        return config.showTranslation && hasTranslation;
+      case LyricLineTrack.romanization:
+        return config.showRoman && hasRoman;
+    }
+  }).toList();
+}
+
+List<LyricLineTrack> _postOriginalTracks(List<LyricLineTrack> active) {
+  return active.skipWhile((t) => t != LyricLineTrack.original).skip(1).toList();
+}
+
+List<LyricLineTrack> _preOriginalTracks(List<LyricLineTrack> active) {
+  return active.takeWhile((t) => t != LyricLineTrack.original).toList();
+}
 
 class _CharInfo {
   final String char;
@@ -360,82 +385,6 @@ class LyricsLinePainter extends CustomPainter {
     return end;
   }
 
-  TextPainter _buildTimedBgPainter(
-    BackgroundVocal bgVocal, {
-    required double fontSize,
-    required FontWeight fontWeight,
-    required double letterSpacing,
-    required TextAlign textAlign,
-    required Color playedColor,
-    required Color unplayedColor,
-    required double alpha,
-  }) {
-    final zhMode = LyricViewController.instance.zhConversionMode;
-    final currentTimeMs = _effectiveCurrentTimeMs;
-    final spans = <InlineSpan>[];
-    for (final word in bgVocal.words) {
-      final charCount = word.obscene
-          ? word.content.runes.length
-          : word.content.characters.length;
-      if (charCount == 0) continue;
-      final wordStartMs = word.start.inMilliseconds.toDouble();
-      final wordEndMs = wordStartMs + word.length.inMilliseconds.toDouble();
-      final wordProgress = _calcWordProgress(
-        currentTimeMs,
-        wordStartMs,
-        wordEndMs,
-      );
-      const stepRatio = 0.1;
-      final waveWidth = 1.0 / (stepRatio * (charCount - 1) + 1.0);
-      double? prevNonPunctProgress;
-      var animIndex = 0;
-      void addRawChar(String rawChar) {
-        final char = ZhConverter.convert(rawChar, zhMode);
-        if (_isZeroWidth(char)) return;
-        final windowStart = animIndex * stepRatio * waveWidth;
-        final computedProgress =
-            ((wordProgress - windowStart) / waveWidth).clamp(0.0, 1.0);
-        final double charProgress;
-        final isPunctuation = _isPunctuation(char);
-        if (isPunctuation && prevNonPunctProgress != null) {
-          charProgress = prevNonPunctProgress!;
-        } else {
-          charProgress = computedProgress;
-          if (!isPunctuation) {
-            prevNonPunctProgress = computedProgress;
-          }
-        }
-        final color = Color.lerp(unplayedColor, playedColor, charProgress)!;
-        spans.add(TextSpan(
-          text: char,
-          style: _textStyle(
-            color: color.withValues(alpha: color.a * alpha),
-            fontSize: fontSize,
-            fontWeight: fontWeight,
-            letterSpacing: letterSpacing,
-            height: config.primaryLineHeight(config.fontWeight),
-          ),
-        ));
-        animIndex++;
-      }
-
-      if (word.obscene) {
-        for (var i = 0; i < charCount; i++) {
-          addRawChar('_');
-        }
-      } else {
-        for (final rawChar in word.content.characters) {
-          addRawChar(rawChar);
-        }
-      }
-    }
-    final tp = obtainTextPainter();
-    tp.text = TextSpan(children: spans);
-    tp.textDirection = TextDirection.ltr;
-    tp.textAlign = textAlign;
-    return tp;
-  }
-
   static TextPainter obtainTextPainter() {
     if (_textPainterPool.isNotEmpty) {
       _poolHitCount++;
@@ -480,9 +429,7 @@ class LyricsLinePainter extends CustomPainter {
 
     final isDarkMode = scheme.brightness == Brightness.dark;
 
-    final mainPlayedColor = _applyOpacity(isDarkMode
-        ? Colors.white.withValues(alpha: 1.0)
-        : Colors.black.withValues(alpha: 1.0));
+    final mainPlayedColor = _applyOpacity(scheme.onSurface.withValues(alpha: 1.0));
     final playedColor = useMaterialYouColor
         ? _applyOpacity(scheme.primary.withValues(alpha: 1.0))
         : mainPlayedColor;
@@ -500,6 +447,71 @@ class LyricsLinePainter extends CustomPainter {
 
     final zhMode = LyricViewController.instance.zhConversionMode;
 
+    final translationWeight =
+        config.discreteFontWeight((config.fontWeight - 50).clamp(100, 900));
+    final romanWeight =
+        config.discreteFontWeight((config.fontWeight - 100).clamp(100, 900));
+
+    // ── Determine active track display order ─────────────────────────────────
+    final activeTracks = _activeLineTracks(
+      config,
+      hasTranslation: syncLine.translation != null,
+      hasRoman: syncLine.romanLyric != null,
+    );
+    final preTracks = _preOriginalTracks(activeTracks);
+    final postTracks = _postOriginalTracks(activeTracks);
+
+    // ── Paint pre-original sub-tracks (before main text) ─────────────────────
+    double preCursorY = padding.top;
+    if (preTracks.isNotEmpty) {
+      final blockTextAlign = switch (_effectiveTextAlign) {
+        LyricTextAlign.left => TextAlign.left,
+        LyricTextAlign.center => TextAlign.center,
+        LyricTextAlign.right => TextAlign.right,
+      };
+      final translationFontSize =
+          config.translationFontSize(isMainLine: isMainLine);
+      final romanFontSize = translationFontSize * 0.85;
+      var hasPrev = false;
+      for (final track in preTracks) {
+        if (hasPrev) preCursorY += 4.0;
+        hasPrev = true;
+        if (track == LyricLineTrack.translation && syncLine.translation != null) {
+          final translated = ZhConverter.convert(syncLine.translation!, zhMode);
+          final tp = _buildTextPainter(
+            translated,
+            translationColor,
+            translationFontSize,
+            translationWeight,
+            letterSpace,
+            isTranslation: true,
+            textAlign: blockTextAlign,
+          );
+          tp.layout(minWidth: maxWidth, maxWidth: maxWidth);
+          tp.paint(canvas, Offset(padding.left, preCursorY));
+          preCursorY += tp.height;
+          recycleTextPainter(tp);
+        } else if (track == LyricLineTrack.romanization && syncLine.romanLyric != null) {
+          final romanText = ZhConverter.convert(syncLine.romanLyric!, zhMode);
+          final tp = _buildTextPainter(
+            romanText,
+            secondaryColor,
+            romanFontSize,
+            romanWeight,
+            letterSpace,
+            isTranslation: true,
+            textAlign: blockTextAlign,
+          );
+          tp.layout(minWidth: maxWidth, maxWidth: maxWidth);
+          tp.paint(canvas, Offset(padding.left, preCursorY));
+          preCursorY += tp.height;
+          recycleTextPainter(tp);
+        }
+      }
+    }
+
+
+
     // ── Shared measurer (avoids creating one TextPainter per character) ──
     final measureTp = obtainTextPainter();
     TextStyle measureStyle(double fs, FontWeight fw) => TextStyle(
@@ -516,7 +528,7 @@ class LyricsLinePainter extends CustomPainter {
     // ── Collect all character positions ─────────────────────────────────────
     final charInfos = <_CharInfo>[];
     double cursorX = padding.left;
-    double cursorY = padding.top;
+    double cursorY = preTracks.isNotEmpty ? preCursorY : padding.top;
     bool firstOnLine = true;
     final currentTimeMs = _effectiveCurrentTimeMs;
 
@@ -742,27 +754,7 @@ class LyricsLinePainter extends CustomPainter {
     void paintWord(_WordPaintInfo word, TextStyle style, bool useLift,
         {bool applyScale = false, Color? glowColor, double glowAlpha = 0.0}) {
       final wc = word.chars;
-      final bool useGlow = glowColor != null && glowAlpha > 0.02;
-      final glowStyle = useGlow
-          ? style.copyWith(
-              shadows: [
-                Shadow(
-                  color: glowColor.withValues(
-                    alpha: glowColor.a * glowAlpha * 0.6,
-                  ),
-                  blurRadius: 4,
-                  offset: Offset.zero,
-                ),
-                Shadow(
-                  color: glowColor.withValues(
-                    alpha: glowColor.a * glowAlpha,
-                  ),
-                  blurRadius: 8,
-                  offset: Offset.zero,
-                ),
-              ],
-            )
-          : null;
+      final bool hasGlow = glowColor != null && glowAlpha > 0.02;
 
       if (useLift) {
         final wordDurationSec = wc.first.wordDurationSec;
@@ -773,8 +765,9 @@ class LyricsLinePainter extends CustomPainter {
 
         for (final info in wc) {
           final charProgress = info.charProgress;
+          final isPlaying = charProgress > 0.0 && charProgress < 1.0;
           double scale = 1.0;
-          if (enableEffect && charProgress > 0.0 && charProgress < 1.0) {
+          if (enableEffect && isPlaying) {
             final effectRatio =
                 ((wordDurationSec - scaleThreshold) / (3.0 - scaleThreshold))
                     .clamp(0.0, 1.0);
@@ -790,12 +783,39 @@ class LyricsLinePainter extends CustomPainter {
             scale = 1.0 + (ripplesScaleMax - 1.0) * animationCurve;
           }
 
-          final charStyle =
-              glowStyle != null && charProgress > 0.0 && charProgress < 1.0
-                  ? glowStyle
-                  : style;
+          // ── Glow layer (rendered first, behind text) ────────────────
+          if (hasGlow && isPlaying) {
+            final glowAlphaAdjusted = glowColor.a * glowAlpha;
+            if (glowAlphaAdjusted > 0.02) {
+              final gp = Paint()
+                ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6)
+                ..color = glowColor.withValues(alpha: glowAlphaAdjusted);
+              tp.text = TextSpan(
+                text: info.char,
+                style: style.copyWith(
+                  color: gp.color,
+                  foreground: null,
+                  shadows: null,
+                ),
+              );
+              tp.layout();
+              if (scale != 1.0) {
+                canvas.save();
+                final cx = info.x + tp.width / 2;
+                final by = info.y + info.yLift + tp.height;
+                canvas.translate(cx, by);
+                canvas.scale(scale);
+                canvas.translate(-cx, -by);
+              }
+              canvas.saveLayer(null, Paint()..color = gp.color);
+              tp.paint(canvas, Offset(info.x, info.y + info.yLift));
+              canvas.restore();
+              if (scale != 1.0) canvas.restore();
+            }
+          }
 
-          tp.text = TextSpan(text: info.char, style: charStyle);
+          // ── Main text layer ─────────────────────────────────────────
+          tp.text = TextSpan(text: info.char, style: style);
           tp.layout();
 
           if (scale != 1.0) {
@@ -815,7 +835,7 @@ class LyricsLinePainter extends CustomPainter {
         }
       } else {
         var hasActiveGlowChar = false;
-        if (glowStyle != null) {
+        if (hasGlow) {
           for (final info in wc) {
             if (info.charProgress > 0.0 && info.charProgress < 1.0) {
               hasActiveGlowChar = true;
@@ -823,9 +843,31 @@ class LyricsLinePainter extends CustomPainter {
             }
           }
         }
-        if (glowStyle != null && hasActiveGlowChar) {
+        if (hasGlow && hasActiveGlowChar) {
           for (final info in wc) {
-            tp.text = TextSpan(text: info.char, style: glowStyle);
+            final isPlaying =
+                info.charProgress > 0.0 && info.charProgress < 1.0;
+            if (isPlaying) {
+              final glowAlphaAdjusted = glowColor.a * glowAlpha;
+              if (glowAlphaAdjusted > 0.02) {
+                final gp = Paint()
+                  ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6)
+                  ..color = glowColor.withValues(alpha: glowAlphaAdjusted);
+                tp.text = TextSpan(
+                  text: info.char,
+                  style: style.copyWith(
+                    color: gp.color,
+                    foreground: null,
+                    shadows: null,
+                  ),
+                );
+                tp.layout();
+                canvas.saveLayer(null, Paint()..color = gp.color);
+                tp.paint(canvas, Offset(info.x, info.y));
+                canvas.restore();
+              }
+            }
+            tp.text = TextSpan(text: info.char, style: style);
             tp.layout();
             tp.paint(canvas, Offset(info.x, info.y));
           }
@@ -1086,57 +1128,52 @@ class LyricsLinePainter extends CustomPainter {
       }
     }
 
-    // ── Translation / Roman ──────────────────────────────────────────────────
-    if ((config.showTranslation && syncLine.translation != null) ||
-        (config.showRoman && syncLine.romanLyric != null)) {
-      final gap = config.syncTranslationGap(isMainLine: true);
-      final translationWeight =
-          config.discreteFontWeight((config.fontWeight - 50).clamp(100, 900));
+    // ── Post-original sub-tracks ─────────────────────────────────────────────
+    if (postTracks.isNotEmpty) {
       final blockTextAlign = switch (_effectiveTextAlign) {
         LyricTextAlign.left => TextAlign.left,
         LyricTextAlign.center => TextAlign.center,
         LyricTextAlign.right => TextAlign.right,
       };
-      if (config.showTranslation && syncLine.translation != null) {
-        cursorY += gap; // 原文与翻译之间的间隙
-        final translated = ZhConverter.convert(syncLine.translation!, zhMode);
-        final translationFontSize =
-            config.translationFontSize(isMainLine: isMainLine);
-        final transTp = _buildTextPainter(
-          translated,
-          translationColor,
-          translationFontSize,
-          translationWeight,
-          letterSpace,
-          isTranslation: true,
-          textAlign: blockTextAlign,
-        );
-        transTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
-        transTp.paint(canvas, Offset(padding.left, cursorY));
-        cursorY += transTp.height;
-        recycleTextPainter(transTp);
-      }
-      if (config.showRoman && syncLine.romanLyric != null) {
-        if (config.showTranslation && syncLine.translation != null) {
-          cursorY += 4.0;
+      final translationFontSize =
+          config.translationFontSize(isMainLine: isMainLine);
+      final romanFontSize = translationFontSize * 0.85;
+      cursorY += config.syncTranslationGap(isMainLine: true);
+      var hasPrev = false;
+      for (final track in postTracks) {
+        if (hasPrev) cursorY += 4.0;
+        hasPrev = true;
+        if (track == LyricLineTrack.translation && syncLine.translation != null) {
+          final translated = ZhConverter.convert(syncLine.translation!, zhMode);
+          final tp = _buildTextPainter(
+            translated,
+            translationColor,
+            translationFontSize,
+            translationWeight,
+            letterSpace,
+            isTranslation: true,
+            textAlign: blockTextAlign,
+          );
+          tp.layout(minWidth: maxWidth, maxWidth: maxWidth);
+          tp.paint(canvas, Offset(padding.left, cursorY));
+          cursorY += tp.height;
+          recycleTextPainter(tp);
+        } else if (track == LyricLineTrack.romanization && syncLine.romanLyric != null) {
+          final romanText = ZhConverter.convert(syncLine.romanLyric!, zhMode);
+          final tp = _buildTextPainter(
+            romanText,
+            secondaryColor,
+            romanFontSize,
+            romanWeight,
+            letterSpace,
+            isTranslation: true,
+            textAlign: blockTextAlign,
+          );
+          tp.layout(minWidth: maxWidth, maxWidth: maxWidth);
+          tp.paint(canvas, Offset(padding.left, cursorY));
+          cursorY += tp.height;
+          recycleTextPainter(tp);
         }
-        final romanText = ZhConverter.convert(syncLine.romanLyric!, zhMode);
-        final romanFontSize =
-            config.translationFontSize(isMainLine: isMainLine) * 0.85;
-        final romanWeight = config
-            .discreteFontWeight((config.fontWeight - 100).clamp(100, 900));
-        final romanTp = _buildTextPainter(
-          romanText,
-          secondaryColor,
-          romanFontSize,
-          romanWeight,
-          letterSpace,
-          isTranslation: true,
-          textAlign: blockTextAlign,
-        );
-        romanTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
-        romanTp.paint(canvas, Offset(padding.left, cursorY));
-        recycleTextPainter(romanTp);
       }
     }
 
@@ -1190,30 +1227,11 @@ class LyricsLinePainter extends CustomPainter {
         canvas.scale(bgScale, bgScale);
         canvas.translate(-scaleX, -cursorY);
         if (hasBg) {
-          final bgVocal = syncLine.bg;
-          if (bgVocal != null && bgVocal.words.isNotEmpty) {
-            final bgTp = _buildTimedBgPainter(
-              bgVocal,
-              fontSize: bgFontSize,
-              fontWeight: bgWeight,
-              letterSpacing: letterSpace,
-              textAlign: blockTextAlign,
-              playedColor: playedColor,
-              unplayedColor: unplayedColor,
-              alpha: bgAlpha,
-            );
-            bgTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
-            cursorY += bgFontSize * 0.45;
-            bgTp.paint(canvas, Offset(padding.left, cursorY));
-            cursorY += bgTp.height;
-            recycleTextPainter(bgTp);
-          } else {
-            paintBgLine(
-              bgText,
-              bgFontSize,
-              secondaryColor,
-            );
-          }
+          paintBgLine(
+            bgText,
+            bgFontSize,
+            secondaryColor,
+          );
           // 回收 TextPainter
         }
         if (hasBgTranslation) {
@@ -1249,9 +1267,7 @@ class LyricsLinePainter extends CustomPainter {
 
     final isDarkMode = scheme.brightness == Brightness.dark;
 
-    final mainPlayedColor = _applyOpacity(isDarkMode
-        ? Colors.white.withValues(alpha: 1.0)
-        : Colors.black.withValues(alpha: 1.0));
+    final mainPlayedColor = _applyOpacity(scheme.onSurface.withValues(alpha: 1.0));
     final playedColor = useMaterialYouColor
         ? _applyOpacity(scheme.primary.withValues(alpha: 1.0))
         : mainPlayedColor;
@@ -1301,24 +1317,6 @@ class LyricsLinePainter extends CustomPainter {
     final splited = lrcLine.content.split('┃');
     final mainText = ZhConverter.convert(splited.first, zhMode);
 
-    final mainTp = _buildTextPainter(
-      mainText,
-      mainColor,
-      fontSize,
-      fontWeight,
-      letterSpace,
-      textAlign: blockTextAlign,
-    );
-    mainTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
-    mainTp.paint(canvas, Offset(padding.left, padding.top));
-
-    double cursorY = padding.top + mainTp.height;
-
-    final translationWeight =
-        config.discreteFontWeight((config.fontWeight - 50).clamp(100, 900));
-    final romanWeight =
-        config.discreteFontWeight((config.fontWeight - 100).clamp(100, 900));
-
     // ── 收集所有翻译文本（含 ┃ 分隔的额外翻译）───────────────────────────
     final transTexts = <String>[];
     if (config.showTranslation &&
@@ -1333,48 +1331,95 @@ class LyricsLinePainter extends CustomPainter {
       }
     }
 
-    if (config.showTranslation && transTexts.isNotEmpty) {
-      final translationFontSize = config.translationFontSize(isMainLine: true);
-      for (final trans in transTexts) {
-        cursorY += config.lrcTranslationGap(
-          isMainLine: true,
-          translationIndex: 0,
-        ); // 原文底部与翻译之间的间隙
-        final translated = ZhConverter.convert(trans, zhMode);
-        final tTp = _buildTextPainter(
-          translated,
-          translationColor,
-          translationFontSize,
-          translationWeight,
-          letterSpace,
-          isTranslation: true,
-          textAlign: blockTextAlign,
+    final activeTracks = _activeLineTracks(
+      config,
+      hasTranslation: transTexts.isNotEmpty,
+      hasRoman: lrcLine.romanLyric != null,
+    );
+    final preTracks = _preOriginalTracks(activeTracks);
+    final postTracks = _postOriginalTracks(activeTracks);
+
+    final translationWeight =
+        config.discreteFontWeight((config.fontWeight - 50).clamp(100, 900));
+    final romanWeight =
+        config.discreteFontWeight((config.fontWeight - 100).clamp(100, 900));
+    final translationFontSize = config.translationFontSize(isMainLine: true);
+    final romanFontSize = translationFontSize * 0.85;
+
+    // ── Paint pre-original sub-tracks (before main text) ─────────────────────
+    double lrcPreY = padding.top;
+    for (final track in preTracks) {
+      if (lrcPreY > padding.top) lrcPreY += 2.0;
+      if (track == LyricLineTrack.translation && transTexts.isNotEmpty) {
+        for (final trans in transTexts) {
+          final translated = ZhConverter.convert(trans, zhMode);
+          final tTp = _buildTextPainter(
+            translated, translationColor, translationFontSize,
+            translationWeight, letterSpace,
+            isTranslation: true, textAlign: blockTextAlign,
+          );
+          tTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
+          tTp.paint(canvas, Offset(padding.left, lrcPreY));
+          lrcPreY += tTp.height;
+          recycleTextPainter(tTp);
+        }
+      } else if (track == LyricLineTrack.romanization && lrcLine.romanLyric != null) {
+        final romanText = ZhConverter.convert(lrcLine.romanLyric!, zhMode);
+        final rTp = _buildTextPainter(
+          romanText, secondaryColor, romanFontSize,
+          romanWeight, letterSpace,
+          isTranslation: true, textAlign: blockTextAlign,
         );
-        tTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
-        tTp.paint(canvas, Offset(padding.left, cursorY));
-        cursorY += tTp.height;
-        recycleTextPainter(tTp);
+        rTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
+        rTp.paint(canvas, Offset(padding.left, lrcPreY));
+        lrcPreY += rTp.height;
+        recycleTextPainter(rTp);
       }
     }
 
-    if (config.showRoman && lrcLine.romanLyric != null) {
-      if (config.showTranslation && transTexts.isNotEmpty) {
-        cursorY += 4.0;
+    // ── Main text ───────────────────────────────────────────────────────────
+    final mainTp = _buildTextPainter(
+      mainText, mainColor, fontSize, fontWeight, letterSpace,
+      textAlign: blockTextAlign,
+    );
+    mainTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
+    mainTp.paint(canvas, Offset(padding.left, lrcPreY));
+
+    double cursorY = lrcPreY + mainTp.height;
+
+    // ── Post-original sub-tracks ─────────────────────────────────────────
+    if (postTracks.isNotEmpty) {
+      cursorY += config.lrcTranslationGap(isMainLine: true, translationIndex: 0);
+      for (final track in postTracks) {
+        if (track == LyricLineTrack.translation && transTexts.isNotEmpty) {
+          for (final trans in transTexts) {
+            final translated = ZhConverter.convert(trans, zhMode);
+            final tTp = _buildTextPainter(
+              translated, translationColor, translationFontSize,
+              translationWeight, letterSpace,
+              isTranslation: true, textAlign: blockTextAlign,
+            );
+            tTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
+            tTp.paint(canvas, Offset(padding.left, cursorY));
+            cursorY += tTp.height;
+            recycleTextPainter(tTp);
+            if (transTexts.length > 1) {
+              cursorY += config.lrcTranslationGap(isMainLine: true, translationIndex: 0);
+            }
+          }
+        } else if (track == LyricLineTrack.romanization && lrcLine.romanLyric != null) {
+          final romanText = ZhConverter.convert(lrcLine.romanLyric!, zhMode);
+          final rTp = _buildTextPainter(
+            romanText, secondaryColor, romanFontSize,
+            romanWeight, letterSpace,
+            isTranslation: true, textAlign: blockTextAlign,
+          );
+          rTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
+          rTp.paint(canvas, Offset(padding.left, cursorY));
+          cursorY += rTp.height;
+          recycleTextPainter(rTp);
+        }
       }
-      final romanText = ZhConverter.convert(lrcLine.romanLyric!, zhMode);
-      final romanFontSize = config.translationFontSize(isMainLine: true) * 0.85;
-      final rTp = _buildTextPainter(
-        romanText,
-        secondaryColor,
-        romanFontSize,
-        romanWeight,
-        letterSpace,
-        isTranslation: true,
-        textAlign: blockTextAlign,
-      );
-      rTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
-      rTp.paint(canvas, Offset(padding.left, cursorY));
-      recycleTextPainter(rTp);
     }
 
     // 回收主行 TextPainter
@@ -1392,33 +1437,27 @@ class LyricsLinePainter extends CustomPainter {
     _CharInfo info,
     TextStyle playedStyle,
   ) {
-    final baseColor = _styleColor(playedStyle, Colors.white);
-    const tailAlpha = 0.15;
+    final baseColor = _styleColor(playedStyle, scheme.onSurface);
+    const tailAlpha = 0.12;
     if (tailAlpha <= 0.02) return;
 
+    final gp = Paint()
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5)
+      ..color = baseColor.withValues(alpha: baseColor.a * tailAlpha);
     final tp = obtainTextPainter();
     tp.text = TextSpan(
       text: info.char,
       style: _copyTextStyleWithColor(
         playedStyle,
-        Colors.transparent,
+        gp.color,
         blur: false,
-        shadows: [
-          Shadow(
-            color: baseColor.withValues(alpha: baseColor.a * tailAlpha * 0.6),
-            blurRadius: 4,
-            offset: Offset.zero,
-          ),
-          Shadow(
-            color: baseColor.withValues(alpha: baseColor.a * tailAlpha),
-            blurRadius: 8,
-            offset: Offset.zero,
-          ),
-        ],
+        shadows: null,
       ),
     );
     tp.layout();
+    canvas.saveLayer(null, Paint()..color = gp.color);
     tp.paint(canvas, Offset(info.x, info.y + info.yLift));
+    canvas.restore();
     recycleTextPainter(tp);
   }
 
@@ -1545,44 +1584,82 @@ class LyricsLinePainter extends CustomPainter {
       final double mainHeight = visualLines * lineH;
       double height = padding.vertical + mainHeight;
 
-      if ((config.showTranslation && syncLine.translation != null) ||
-          (config.showRoman && syncLine.romanLyric != null)) {
+      final activeTracks = _activeLineTracks(
+        config,
+        hasTranslation: syncLine.translation != null,
+        hasRoman: syncLine.romanLyric != null,
+      );
+      final preTracks = _preOriginalTracks(activeTracks);
+      final postTracks = _postOriginalTracks(activeTracks);
+
+      if (activeTracks.length > 1 || (activeTracks.length == 1 && activeTracks.first != LyricLineTrack.original)) {
         final translationFontSize =
             config.translationFontSize(isMainLine: true);
-        if (config.showTranslation && syncLine.translation != null) {
-          final translationWeight = config
-              .discreteFontWeight((config.fontWeight - 50).clamp(100, 900));
-          final tTp = _buildTextPainter(
-            syncLine.translation!,
-            useMaterialYouColor ? scheme.primary : scheme.onSurface,
-            translationFontSize,
-            translationWeight,
-            config.letterSpacing(fontSize: translationFontSize),
-            isTranslation: true,
-          );
-          tTp.layout(maxWidth: lineWidth);
-          height += tTp.height + config.syncTranslationGap(isMainLine: true);
-          recycleTextPainter(tTp);
-        }
-        if (config.showRoman && syncLine.romanLyric != null) {
-          final romanFontSize =
-              config.translationFontSize(isMainLine: true) * 0.85;
-          final romanWeight = config
-              .discreteFontWeight((config.fontWeight - 100).clamp(100, 900));
-          final rTp = _buildTextPainter(
-            syncLine.romanLyric!,
-            useMaterialYouColor ? scheme.primary : scheme.onSurface,
-            romanFontSize,
-            romanWeight,
-            config.letterSpacing(fontSize: romanFontSize),
-            isTranslation: true,
-          );
-          rTp.layout(maxWidth: lineWidth);
-          height += rTp.height;
-          if (config.showTranslation && syncLine.translation != null) {
-            height += 4.0; // roman gap
+        final romanFontSize = translationFontSize * 0.85;
+        final translationWeight = config
+            .discreteFontWeight((config.fontWeight - 50).clamp(100, 900));
+        final romanWeight = config
+            .discreteFontWeight((config.fontWeight - 100).clamp(100, 900));
+
+        // pre-original tracks: positioned BEFORE main text
+        for (final track in preTracks) {
+          if (height > padding.vertical + mainHeight) height += 4.0;
+          if (track == LyricLineTrack.translation && syncLine.translation != null) {
+            final tTp = _buildTextPainter(
+              syncLine.translation!,
+              useMaterialYouColor ? scheme.primary : scheme.onSurface,
+              translationFontSize, translationWeight,
+              config.letterSpacing(fontSize: translationFontSize),
+              isTranslation: true,
+            );
+            tTp.layout(maxWidth: lineWidth);
+            height += tTp.height;
+            recycleTextPainter(tTp);
+          } else if (track == LyricLineTrack.romanization && syncLine.romanLyric != null) {
+            final rTp = _buildTextPainter(
+              syncLine.romanLyric!,
+              useMaterialYouColor ? scheme.primary : scheme.onSurface,
+              romanFontSize, romanWeight,
+              config.letterSpacing(fontSize: romanFontSize),
+              isTranslation: true,
+            );
+            rTp.layout(maxWidth: lineWidth);
+            height += rTp.height;
+            recycleTextPainter(rTp);
           }
-          recycleTextPainter(rTp);
+        }
+
+        // post-original tracks: positioned AFTER main text
+        if (postTracks.isNotEmpty) {
+          height += config.syncTranslationGap(isMainLine: true);
+          var postPrev = false;
+          for (final track in postTracks) {
+            if (postPrev) height += 4.0;
+            postPrev = true;
+            if (track == LyricLineTrack.translation && syncLine.translation != null) {
+              final tTp = _buildTextPainter(
+                syncLine.translation!,
+                useMaterialYouColor ? scheme.primary : scheme.onSurface,
+                translationFontSize, translationWeight,
+                config.letterSpacing(fontSize: translationFontSize),
+                isTranslation: true,
+              );
+              tTp.layout(maxWidth: lineWidth);
+              height += tTp.height;
+              recycleTextPainter(tTp);
+            } else if (track == LyricLineTrack.romanization && syncLine.romanLyric != null) {
+              final rTp = _buildTextPainter(
+                syncLine.romanLyric!,
+                useMaterialYouColor ? scheme.primary : scheme.onSurface,
+                romanFontSize, romanWeight,
+                config.letterSpacing(fontSize: romanFontSize),
+                isTranslation: true,
+              );
+              rTp.layout(maxWidth: lineWidth);
+              height += rTp.height;
+              recycleTextPainter(rTp);
+            }
+          }
         }
       }
 
@@ -1590,7 +1667,6 @@ class LyricsLinePainter extends CustomPainter {
       if ((syncLine.bgText != null && syncLine.bgText!.isNotEmpty) ||
           (syncLine.bgTranslation != null &&
               syncLine.bgTranslation!.isNotEmpty)) {
-        final bgMotion = _bgMotionValue(syncLine);
         final bgFontSize = fontSize * 0.60;
         final bgWeight = config.discreteFontWeight(
           (config.fontWeight - 150).clamp(100, 900),
@@ -1622,7 +1698,7 @@ class LyricsLinePainter extends CustomPainter {
           bgHeight += bgFontSize * 0.45 + bgTransTp.height;
           recycleTextPainter(bgTransTp);
         }
-        height += bgHeight * bgMotion;
+        height += bgHeight;
       }
 
       return height;
@@ -1667,45 +1743,78 @@ class LyricsLinePainter extends CustomPainter {
         }
       }
 
-      if (config.showTranslation && transTexts.isNotEmpty) {
+      final activeTracks = _activeLineTracks(
+        config,
+        hasTranslation: transTexts.isNotEmpty,
+        hasRoman: lrcLine.romanLyric != null,
+      );
+      final preTracks = _preOriginalTracks(activeTracks);
+      final postTracks = _postOriginalTracks(activeTracks);
+
+      if (activeTracks.length > 1 || (activeTracks.length == 1 && activeTracks.first != LyricLineTrack.original)) {
         final translationFontSize =
             config.translationFontSize(isMainLine: true);
+        final romanFontSize = translationFontSize * 0.85;
         final translationWeight =
             config.discreteFontWeight((config.fontWeight - 50).clamp(100, 900));
-        for (final trans in transTexts) {
-          final tTp = _buildTextPainter(
-            trans,
-            useMaterialYouColor ? scheme.primary : scheme.onSurface,
-            translationFontSize,
-            translationWeight,
-            config.letterSpacing(fontSize: translationFontSize),
-            isTranslation: true,
-          );
-          tTp.layout(maxWidth: lineWidth);
-          height += tTp.height +
-              config.lrcTranslationGap(isMainLine: true, translationIndex: 0);
-          recycleTextPainter(tTp);
-        }
-      }
-      if (config.showRoman && lrcLine.romanLyric != null) {
-        final romanFontSize =
-            config.translationFontSize(isMainLine: true) * 0.85;
         final romanWeight = config
             .discreteFontWeight((config.fontWeight - 100).clamp(100, 900));
-        final rTp = _buildTextPainter(
-          lrcLine.romanLyric!,
-          useMaterialYouColor ? scheme.primary : scheme.onSurface,
-          romanFontSize,
-          romanWeight,
-          config.letterSpacing(fontSize: romanFontSize),
-          isTranslation: true,
-        );
-        rTp.layout(maxWidth: lineWidth);
-        height += rTp.height;
-        if (config.showTranslation && transTexts.isNotEmpty) {
-          height += 4.0;
+
+        // pre-original tracks
+        final lrcPreBase = height;
+        for (final track in preTracks) {
+          if (height > lrcPreBase) height += 2.0;
+          if (track == LyricLineTrack.translation && transTexts.isNotEmpty) {
+            for (final trans in transTexts) {
+              final tTp = _buildTextPainter(
+                trans, scheme.onSurface, translationFontSize,
+                translationWeight, config.letterSpacing(fontSize: translationFontSize),
+                isTranslation: true,
+              );
+              tTp.layout(maxWidth: lineWidth);
+              height += tTp.height;
+              recycleTextPainter(tTp);
+            }
+          } else if (track == LyricLineTrack.romanization && lrcLine.romanLyric != null) {
+            final rTp = _buildTextPainter(
+              lrcLine.romanLyric!, scheme.onSurface, romanFontSize,
+              romanWeight, config.letterSpacing(fontSize: romanFontSize),
+              isTranslation: true,
+            );
+            rTp.layout(maxWidth: lineWidth);
+            height += rTp.height;
+            recycleTextPainter(rTp);
+          }
         }
-        recycleTextPainter(rTp);
+
+        // post-original tracks
+        if (postTracks.isNotEmpty) {
+          height += config.lrcTranslationGap(isMainLine: true, translationIndex: 0);
+          for (final track in postTracks) {
+            if (track == LyricLineTrack.translation && transTexts.isNotEmpty) {
+              for (final trans in transTexts) {
+                final tTp = _buildTextPainter(
+                  trans, scheme.onSurface, translationFontSize,
+                  translationWeight, config.letterSpacing(fontSize: translationFontSize),
+                  isTranslation: true,
+                );
+                tTp.layout(maxWidth: lineWidth);
+                height += tTp.height;
+                recycleTextPainter(tTp);
+              }
+            } else if (track == LyricLineTrack.romanization && lrcLine.romanLyric != null) {
+              final rTp = _buildTextPainter(
+                lrcLine.romanLyric!, scheme.onSurface, romanFontSize,
+                romanWeight, config.letterSpacing(fontSize: romanFontSize),
+                isTranslation: true,
+              );
+              rTp.layout(maxWidth: lineWidth);
+              height += rTp.height;
+              recycleTextPainter(rTp);
+            }
+            if (postTracks.length > 1) height += 4.0;
+          }
+        }
       }
       recycleTextPainter(mainTp);
       return height;

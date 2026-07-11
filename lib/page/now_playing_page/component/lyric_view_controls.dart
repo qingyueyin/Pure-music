@@ -33,6 +33,7 @@ class LyricViewController extends ChangeNotifier {
     lyricFontWeight = nowPlayingPagePref.lyricFontWeight;
     enableLyricBlur = nowPlayingPagePref.enableLyricBlur;
     showLyricRoman = nowPlayingPagePref.showLyricRoman;
+    rubyPosition = nowPlayingPagePref.rubyPosition;
     enableLyricScale = nowPlayingPagePref.enableLyricScale;
     enableLyricSpring = nowPlayingPagePref.enableLyricSpring;
     enableLyricGlow = nowPlayingPagePref.enableLyricGlow;
@@ -107,8 +108,9 @@ class LyricViewController extends ChangeNotifier {
   late LyricTextAlign lyricTextAlign;
   late double lyricFontSize;
   late double translationFontSize;
-  late bool showLyricTranslation;
+  late   bool showLyricTranslation;
   late bool showLyricRoman;
+  late RubyPosition rubyPosition;
   late int lyricFontWeight;
   late bool enableLyricBlur;
   late bool enableLyricScale;
@@ -122,6 +124,7 @@ class LyricViewController extends ChangeNotifier {
         translationBaseFontSize: translationFontSize,
         showTranslation: showLyricTranslation,
         showRoman: showLyricRoman,
+        lineOrder: rubyPosition.toLineOrder(),
         fontWeight: lyricFontWeight,
         enableBlur: enableLyricBlur,
         enableLineScale: enableLyricScale,
@@ -201,6 +204,24 @@ class LyricViewController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void switchRubyPosition() {
+    rubyPosition = switch (rubyPosition) {
+      RubyPosition.above => RubyPosition.below,
+      RubyPosition.below => RubyPosition.above,
+    };
+    nowPlayingPagePref.rubyPosition = rubyPosition;
+    AppPreference.instance.save();
+    notifyListeners();
+  }
+
+  void setRubyPosition(RubyPosition position) {
+    if (position == rubyPosition) return;
+    rubyPosition = position;
+    nowPlayingPagePref.rubyPosition = position;
+    AppPreference.instance.save();
+    notifyListeners();
+  }
+
   void toggleLyricBlur() {
     enableLyricBlur = !enableLyricBlur;
     nowPlayingPagePref.enableLyricBlur = enableLyricBlur;
@@ -257,6 +278,7 @@ class LyricViewControls extends StatelessWidget {
       if (!lyricViewController.hasMultipleAgents) const _LyricAlignSwitchBtn(),
       const _FontSizeBtn(),
       const _FontWeightBtn(),
+      const _RubyPositionBtn(),
     ];
 
     return Column(
@@ -430,6 +452,31 @@ class _FontWeightBtn extends StatelessWidget {
             fontSize: 16,
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _RubyPositionBtn extends StatelessWidget {
+  const _RubyPositionBtn();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final controller = context.watch<LyricViewController>();
+
+    return IconButton(
+      onPressed: controller.switchRubyPosition,
+      tooltip: controller.rubyPosition.displayName,
+      style: IconButton.styleFrom(
+        backgroundColor: controller.rubyPosition == RubyPosition.above
+            ? scheme.secondaryContainer
+            : null,
+      ),
+      color: scheme.onSecondaryContainer,
+      icon: Icon(
+        Symbols.text_fields,
+        fill: controller.rubyPosition == RubyPosition.above ? 1 : 0,
       ),
     );
   }
