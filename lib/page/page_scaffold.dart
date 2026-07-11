@@ -1,4 +1,5 @@
 import 'package:pure_music/component/responsive_builder.dart';
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:flutter/material.dart';
 
 /// title, actions, body
@@ -108,7 +109,7 @@ class PageScaffold extends StatelessWidget {
     if (subtitle == null) {
       return Text(
         title,
-        style: TextStyle(fontSize: 32.0, color: scheme.onSurface),
+        style: TextStyle(fontSize: AppType.display, color: scheme.onSurface),
         overflow: TextOverflow.ellipsis,
       );
     }
@@ -118,12 +119,12 @@ class PageScaffold extends StatelessWidget {
       children: [
         Text(
           title,
-          style: TextStyle(fontSize: 28.0, color: scheme.onSurface),
+          style: TextStyle(fontSize: AppType.display, color: scheme.onSurface),
           overflow: TextOverflow.ellipsis,
         ),
         Text(
           subtitle!,
-          style: TextStyle(fontSize: 14.0, color: scheme.onSurface),
+          style: TextStyle(fontSize: AppType.body, color: scheme.onSurface),
           overflow: TextOverflow.ellipsis,
         ),
       ],

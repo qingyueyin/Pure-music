@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/component/album_tile.dart';
 import 'package:pure_music/component/artist_tile.dart';
 import 'package:pure_music/component/audio_tile.dart';
@@ -28,9 +29,9 @@ class _SearchCountText extends StatelessWidget {
     return Text(
       '$count',
       style: TextStyle(
-        color: selected ? scheme.onPrimaryContainer : scheme.onSurfaceVariant,
-        fontSize: 12,
-        fontWeight: FontWeight.w500,
+        color: selected ? scheme.onSecondaryContainer : scheme.onSurfaceVariant,
+        fontSize: AppType.caption,
+        fontWeight: AppType.weightMedium,
       ),
     );
   }
@@ -166,7 +167,7 @@ class _SearchDialogState extends State<SearchDialog> {
       if (!mounted) return;
       if (!saved) {
         playlist.removeByPath(audio.path);
-        showTextOnSnackBar('保存歌单失败');
+        showTextOnSnackBar('保存歌单失败', variant: ToastVariant.error);
         return;
       }
       showTextOnSnackBar('成功将“${audio.title}”添加到歌单“${playlist.name}”');
@@ -305,7 +306,6 @@ class _SearchDialogState extends State<SearchDialog> {
                 decoration: InputDecoration(
                   prefixIcon: const Icon(Symbols.search),
                   hintText: '搜索歌曲、艺术家、专辑',
-                  border: const OutlineInputBorder(),
                   suffixIcon: ValueListenableBuilder<TextEditingValue>(
                     valueListenable: _searchController,
                     builder: (context, value, _) {
@@ -368,7 +368,7 @@ class _SearchDialogState extends State<SearchDialog> {
                           _tabs[i].icon,
                           size: 18,
                           color: selected
-                              ? scheme.onPrimaryContainer
+                              ? scheme.onSecondaryContainer
                               : scheme.onSurfaceVariant,
                         ),
                         label: Row(
@@ -386,21 +386,21 @@ class _SearchDialogState extends State<SearchDialog> {
                         ),
                         labelStyle: TextStyle(
                           color: selected
-                              ? scheme.onPrimaryContainer
+                              ? scheme.onSecondaryContainer
                               : scheme.onSurface,
-                          fontWeight: selected ? FontWeight.w600 : null,
+                          fontWeight: selected ? AppType.weightSemibold : null,
                         ),
-                        selectedColor: scheme.primaryContainer,
+                        selectedColor: scheme.secondaryContainer,
                         backgroundColor: Colors.transparent,
-                        color: WidgetStatePropertyAll(
-                          selected
-                              ? scheme.primaryContainer
-                              : Colors.transparent,
-                        ),
+                        color: WidgetStateProperty.resolveWith((states) {
+                          if (states.contains(WidgetState.selected)) return scheme.secondaryContainer;
+                          return Colors.transparent;
+                        }),
                         side: BorderSide(
                           color: selected
-                              ? scheme.primaryContainer
+                              ? scheme.primary
                               : scheme.outlineVariant,
+                          width: selected ? 1.5 : 1.0,
                         ),
                         padding: const EdgeInsets.symmetric(
                           horizontal: 12,

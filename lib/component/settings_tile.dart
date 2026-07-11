@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:pure_music/core/design_tokens.dart';
 
 class SettingsTile extends StatelessWidget {
   const SettingsTile({
@@ -73,7 +74,7 @@ class _SettingsTileDescription extends StatelessWidget {
       children: [
         Text(
           description,
-          style: TextStyle(color: scheme.onSurface, fontSize: 18.0),
+          style: TextStyle(color: scheme.onSurface, fontSize: AppType.sectionTitle),
         ),
         if (subtitle != null)
           Padding(
@@ -82,7 +83,7 @@ class _SettingsTileDescription extends StatelessWidget {
               subtitle!,
               style: TextStyle(
                 color: scheme.onSurfaceVariant,
-                fontSize: 13.0,
+                fontSize: AppType.body,
               ),
             ),
           ),

@@ -108,7 +108,7 @@ class _AppShell_Large extends StatelessWidget {
       ),
       body: Row(
         children: [
-          const SideNav(),
+          ClipRect(child: const SideNav()),
           Expanded(
             child: Stack(
               children: [

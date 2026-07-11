@@ -3,6 +3,7 @@
 import 'dart:ui';
 import 'dart:math' as math;
 
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/responsive_builder.dart';
@@ -152,10 +153,10 @@ class _SmoothLargeSideNav extends StatelessWidget {
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   color: colorScheme.surface,
-                  borderRadius: BorderRadius.circular(16.0),
+                  borderRadius: AppRadius.mdCircular,
                 ),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16.0),
+                  borderRadius: AppRadius.mdCircular,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -249,9 +250,9 @@ class _NavItem extends StatelessWidget {
       height: height,
       child: Material(
         color: bg,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: AppRadius.smCircular,
         child: InkWell(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: AppRadius.smCircular,
           onTap: onTap,
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 4),
@@ -278,7 +279,7 @@ class _NavItem extends StatelessWidget {
                           color: fg,
                           fontSize: 14.5,
                           fontWeight:
-                              selected ? FontWeight.w600 : FontWeight.w500,
+                              selected ? AppType.weightSemibold : AppType.weightMedium,
                         ),
                       ),
                     ),

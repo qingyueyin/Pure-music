@@ -2,6 +2,7 @@
 
 import 'dart:ui';
 
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/database.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/settings.dart';
@@ -66,7 +67,7 @@ class _TitleBar_Small extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 8.0),
                       child: Text(
                         'Pure Music',
-                        style: TextStyle(color: scheme.onSurface, fontSize: 16),
+                        style: TextStyle(color: scheme.onSurface, fontSize: AppType.subtitle),
                       ),
                     ),
                   ),
@@ -110,7 +111,7 @@ class _TitleBar_Medium extends StatelessWidget {
                     children: [
                       Text(
                         'Pure Music',
-                        style: TextStyle(color: scheme.onSurface, fontSize: 16),
+                        style: TextStyle(color: scheme.onSurface, fontSize: AppType.subtitle),
                       ),
                       const Expanded(
                         child: Padding(
@@ -172,7 +173,7 @@ class _TitleBar_Large extends StatelessWidget {
                                 'Pure Music',
                                 style: TextStyle(
                                   color: scheme.onSurface,
-                                  fontSize: 16,
+                                  fontSize: AppType.subtitle,
                                 ),
                               ),
                             ],
@@ -403,6 +404,7 @@ class _WindowControllsState extends State<WindowControlls> with WindowListener {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -410,6 +412,16 @@ class _WindowControllsState extends State<WindowControlls> with WindowListener {
           tooltip: '最小化',
           onPressed: windowManager.minimize,
           icon: const Icon(Symbols.remove),
+          style: ButtonStyle(
+            backgroundColor: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.pressed)) return scheme.onSurface.withValues(alpha: 0.15);
+              if (states.contains(WidgetState.hovered)) return scheme.onSurface.withValues(alpha: 0.10);
+              return Colors.transparent;
+            }),
+            shape: WidgetStateProperty.all(
+              RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
+            ),
+          ),
         ),
         const SizedBox(width: 8.0),
         IconButton(
@@ -418,12 +430,32 @@ class _WindowControllsState extends State<WindowControlls> with WindowListener {
           icon: Icon(
             _isMaximized ? Symbols.fullscreen_exit : Symbols.fullscreen,
           ),
+          style: ButtonStyle(
+            backgroundColor: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.pressed)) return scheme.onSurface.withValues(alpha: 0.15);
+              if (states.contains(WidgetState.hovered)) return scheme.onSurface.withValues(alpha: 0.10);
+              return Colors.transparent;
+            }),
+            shape: WidgetStateProperty.all(
+              RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
+            ),
+          ),
         ),
         const SizedBox(width: 8.0),
         IconButton(
           tooltip: '关闭',
           onPressed: _shutdownAndExit,
           icon: const Icon(Symbols.close),
+          style: ButtonStyle(
+            backgroundColor: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.pressed)) return scheme.error.withValues(alpha: 0.30);
+              if (states.contains(WidgetState.hovered)) return scheme.error.withValues(alpha: 0.20);
+              return Colors.transparent;
+            }),
+            shape: WidgetStateProperty.all(
+              RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
+            ),
+          ),
         ),
       ],
     );

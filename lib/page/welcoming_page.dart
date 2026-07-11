@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/native/folder_picker_windows.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/settings.dart';
@@ -53,8 +54,8 @@ class WelcomingPage extends StatelessWidget {
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: scheme.onSurface,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 22,
+                          fontWeight: AppType.weightBold,
+                          fontSize: AppType.hero,
                         ),
                       ),
                       const SizedBox(height: 6),
@@ -288,21 +289,11 @@ class _FolderCountPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
-    return Container(
-      height: 32,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: scheme.primaryContainer,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        '$count 个文件夹',
-        style: TextStyle(
-          color: scheme.onPrimaryContainer,
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-        ),
+    return Text(
+      '$count 个文件夹',
+      style: TextStyle(
+        color: scheme.onSurfaceVariant,
+        fontSize: AppType.caption,
       ),
     );
   }
@@ -332,7 +323,7 @@ class _EmptyFolderState extends StatelessWidget {
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: scheme.onSurface,
-                fontWeight: FontWeight.w600,
+                fontWeight: AppType.weightSemibold,
               ),
             ),
             const SizedBox(height: 4),
@@ -370,7 +361,7 @@ class _TitleBar extends StatelessWidget {
                   ),
                   Text(
                     'Pure Music',
-                    style: TextStyle(color: scheme.onSurface, fontSize: 16),
+                    style: TextStyle(color: scheme.onSurface, fontSize: AppType.subtitle),
                   ),
                 ],
               ),
