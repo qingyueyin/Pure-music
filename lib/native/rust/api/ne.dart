@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `aes_decrypt`, `aes_encrypt`, `eapi_md5`, `eapi_params_encrypt`, `eapi_response_decrypt`, `generate_device_id`, `get_anonymous_username`, `get_cache_key`, `get_current_timestamp`, `get_request_header`, `hex_preview`, `pkcs7_pad`
+// These functions are ignored because they are not marked as `pub`: `aes_decrypt`, `aes_encrypt`, `client`, `eapi_md5`, `eapi_params_encrypt`, `eapi_response_decrypt`, `generate_device_id`, `get_anonymous_username`, `get_cache_key`, `get_current_timestamp`, `get_request_header`, `hex_preview`, `pkcs7_pad`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `CloudMusicResult`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`
 

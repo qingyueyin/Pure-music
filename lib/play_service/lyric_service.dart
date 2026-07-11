@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
+import 'package:pure_music/lyric/ttml.dart' show Ttml;
 import 'package:pure_music/lyric/lyric_source.dart';
 import 'package:pure_music/lyric/lyric_stripper.dart';
 import 'package:pure_music/lyric/lyric_loader.dart';
@@ -768,7 +769,7 @@ class LyricService extends ChangeNotifier {
     _currLyric = lyric;
     _lineRenderStartMs = _buildLineStarts(lyric);
     _lineEndMs = _buildLineEnds(lyric);
-    _hasOverlappingActiveLines =
+    _hasOverlappingActiveLines = lyric is Ttml &&
         _detectOverlappingActiveLinesFor(_lineRenderStartMs, _lineEndMs);
     _lastEmittedLineIndexForHint = -1;
     _syncLineAdvanceTimer();
@@ -951,9 +952,9 @@ class LyricService extends ChangeNotifier {
   void _handlePromptWrite(String audioPath) {
     _addPromptedSong(audioPath);
     writeCurrentLyricToTag().then((_) {
-      showTextOnSnackBar('歌词已写入标签');
+      showTextOnSnackBar('歌词已写入标签', variant: ToastVariant.success);
     }).catchError((e) {
-      showTextOnSnackBar('写入标签失败: $e');
+      showTextOnSnackBar('写入标签失败: $e', variant: ToastVariant.error);
     });
   }
 

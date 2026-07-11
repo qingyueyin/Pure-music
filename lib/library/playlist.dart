@@ -265,7 +265,12 @@ class Playlist {
   List<Audio>? _audiosCache;
   AudioLibrary? _audiosCacheLibrary;
 
-  Playlist(this.name, List<String> paths) : paths = _uniquePlaylistPaths(paths);
+  Playlist(this.name, List<String> paths) : paths = _uniquePlaylistPaths(paths) {
+    var ms = DateTime.now().millisecondsSinceEpoch;
+    for (final path in this.paths) {
+      _addedAt.putIfAbsent(_playlistPathKey(path), () => DateTime.fromMillisecondsSinceEpoch(ms++));
+    }
+  }
 
   DateTime addedAt(String path) {
     final key = _playlistPathKey(path);
@@ -395,6 +400,11 @@ class Playlist {
   void replacePaths(Iterable<String> paths) {
     this.paths = _uniquePlaylistPaths(paths);
     _pathKeys = null;
+    _addedAt.clear();
+    var ms = DateTime.now().millisecondsSinceEpoch;
+    for (final path in this.paths) {
+      _addedAt[_playlistPathKey(path)] = DateTime.fromMillisecondsSinceEpoch(ms++);
+    }
     _invalidateAudioCache();
   }
 

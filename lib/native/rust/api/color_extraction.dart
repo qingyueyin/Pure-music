@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `_extract_colors_from_image`, `apply_apple_music_pipeline`, `contrast`, `hsl_to_rgb`, `rgb_to_hsl`
+// These functions are ignored because they are not marked as `pub`: `_extract_colors_from_image`, `contrast`, `hsl_to_rgb`, `rgb_to_hsl`, `soften_color_for_background`
 
 Future<Uint32List> extractColorsFromImage(
         {required List<int> imageBytes, required int numColors}) =>

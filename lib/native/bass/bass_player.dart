@@ -261,7 +261,7 @@ class BassPlayer {
   Duration _spectrumTickPeriod = const Duration(milliseconds: 16);
   SpectrumUpdateMode spectrumUpdateMode = SpectrumUpdateMode.auto;
   static const int _spectrumBandCount = 8;
-  static const int _activeSpectrumBandCount = 2;
+  static const int _activeSpectrumBandCount = 4;
   static final double _spectrumLogDenominator = math.log(19.0);
   final Float32List _spectrumSmoothed = Float32List(8);
   final Float32List _spectrumBands = Float32List(_spectrumBandCount);
@@ -935,7 +935,7 @@ class BassPlayer {
     try {
       if (exclusive && !_isEqFlat) {
         logger.w('[bass] Cannot enable exclusive mode while EQ is enabled');
-        showTextOnSnackBar('独占模式与均衡器冲突，请先关闭均衡器（全部归零）');
+        showTextOnSnackBar('独占模式与均衡器冲突，请先关闭均衡器（全部归零）', variant: ToastVariant.error);
         return false;
       }
       final lastPos = position;
@@ -964,7 +964,7 @@ class BassPlayer {
           _fstream = oldHandle;
           _streamWasapiExclusive = false;
           wasapiExclusive = false;
-          showTextOnSnackBar('独占模式初始化失败');
+          showTextOnSnackBar('独占模式初始化失败', variant: ToastVariant.error);
           return false;
         }
 
@@ -1550,7 +1550,7 @@ class BassPlayer {
       _bassWasapiInit();
     } catch (err) {
       logger.w('[bass] wasapi exclusive init failed, fallback to shared: $err');
-      showTextOnSnackBar('独占模式初始化失败，已切回共享模式');
+      showTextOnSnackBar('独占模式初始化失败，已切回共享模式', variant: ToastVariant.error);
       _fallbackFromExclusive();
       onExclusiveModeChanged?.call(false);
       return;

@@ -309,7 +309,7 @@ class PlaybackService extends ChangeNotifier {
       );
     } catch (err) {
       logger.e('[load and play] $err');
-      showTextOnSnackBar(err.toString());
+      showTextOnSnackBar(err.toString(), variant: ToastVariant.error);
     }
   }
 
@@ -778,7 +778,7 @@ class PlaybackService extends ChangeNotifier {
       });
     } catch (err) {
       logger.e('[pause] $err');
-      showTextOnSnackBar(err.toString());
+      showTextOnSnackBar(err.toString(), variant: ToastVariant.error);
     }
   }
 
@@ -797,7 +797,7 @@ class PlaybackService extends ChangeNotifier {
       });
     } catch (err) {
       logger.e('[start]: $err');
-      showTextOnSnackBar(err.toString());
+      showTextOnSnackBar(err.toString(), variant: ToastVariant.error);
     }
   }
 

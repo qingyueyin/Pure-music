@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `_get_lyric_from_lofty`, `_get_lyric_from_lrc_file`, `_get_picture_by_lofty`, `_get_picture_by_windows`, `_picture_cache_key`, `_update_index_below_1_1_0`, `join_deduped`, `new_with_path`, `read_by_lofty`, `read_by_win_music_properties`, `read_from_folder_recursively`, `read_from_folder`, `read_from_path`, `to_json_value`, `to_json_value`
+// These functions are ignored because they are not marked as `pub`: `_get_lyric_from_lofty`, `_get_lyric_from_lrc_file`, `_get_picture_by_lofty`, `_get_picture_by_windows`, `_picture_cache_key`, `_update_index_below_1_1_0`, `add_missing_audio_files`, `count_subdirs`, `discover_new_audio_folders`, `join_deduped`, `new_with_path`, `read_by_lofty`, `read_by_win_music_properties`, `read_from_folder_recursively`, `read_from_folder`, `read_from_path`, `to_json_value`, `to_json_value`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `AudioFolder`, `Audio`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `fmt`, `fmt`
 
@@ -53,7 +53,7 @@ Stream<IndexActionState> buildIndexFromFoldersRecursively(
 /// 如果文件夹被修改（再次读取到的 modified > 记录的 modified），就更新它。没有则跳过它
 /// 1. 遍历该文件夹索引，判断文件是否存在，不存在则删除记录
 /// 2. 遍历该文件夹索引，如果文件被修改（再次读取到的 modified > 记录的 modified），重新读取标签；没有则跳过它
-/// 3. 遍历该文件夹，添加新增（读取到的 created > 记录的 latest）的音乐文件
+/// 3. 遍历该文件夹，添加索引中不存在的音乐文件
 Stream<IndexActionState> updateIndex({required String indexPath}) =>
     RustLib.instance.api.crateApiTagReaderUpdateIndex(indexPath: indexPath);
 
