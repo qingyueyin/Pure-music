@@ -53,7 +53,11 @@ class _NowPlayingLargePage extends StatelessWidget {
         Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const _NowPlayingSlider(mode: NowPlayingMode.portrait),
+            _NowPlayingSlider(
+              mode: MediaQuery.of(context).orientation == Orientation.portrait
+                  ? NowPlayingMode.portrait
+                  : NowPlayingMode.landscape,
+            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
               child: Stack(
@@ -211,7 +215,7 @@ class _AutoHidingControlBarState extends State<_AutoHidingControlBar> {
         padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
         decoration: BoxDecoration(
           color: Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: AppRadius.mdCircular,
         ),
         child: AnimatedOpacity(
           duration: MotionDuration.base,
@@ -235,26 +239,15 @@ class _NowPlayingLargeViewSwitch extends StatefulWidget {
 
 class _NowPlayingLargeViewSwitchState
     extends State<_NowPlayingLargeViewSwitch> {
-  bool _isSaving = false;
-
   Future<void> _changeView(NowPlayingViewMode currentViewMode) async {
-    if (_isSaving) return;
-
     final nextViewMode = currentViewMode == NowPlayingViewMode.onlyMain ||
             currentViewMode == NowPlayingViewMode.withLyric
         ? NowPlayingViewMode.withPlaylist
         : NowPlayingViewMode.withLyric;
 
-    setState(() => _isSaving = true);
     nowPlayingViewMode.value = nextViewMode;
     AppPreference.instance.nowPlayingPagePref.nowPlayingViewMode = nextViewMode;
-    try {
-      await AppPreference.instance.save();
-    } finally {
-      if (mounted) {
-        setState(() => _isSaving = false);
-      }
-    }
+    await AppPreference.instance.save();
   }
 
   @override
@@ -267,32 +260,21 @@ class _NowPlayingLargeViewSwitchState
     return ValueListenableBuilder(
       valueListenable: nowPlayingViewMode,
       builder: (context, value, _) => IconButton(
-        tooltip: _isSaving
-            ? '保存中'
-            : switch (value) {
-                NowPlayingViewMode.withPlaylist => '歌词',
-                _ => '播放列表',
-              },
-        onPressed: _isSaving ? null : () => _changeView(value),
-        icon: _isSaving
-            ? SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: color,
-                ),
-              )
-            : switch (value) {
-                NowPlayingViewMode.withPlaylist => const Icon(
-                    Symbols.lyrics,
-                    fill: 1.0,
-                  ),
-                _ => const Icon(
-                    Symbols.queue_music,
-                    fill: 1.0,
-                  ),
-              },
+        tooltip: switch (value) {
+          NowPlayingViewMode.withPlaylist => '歌词',
+          _ => '播放列表',
+        },
+        onPressed: () => _changeView(value),
+        icon: switch (value) {
+          NowPlayingViewMode.withPlaylist => const Icon(
+            Symbols.lyrics,
+            fill: 1.0,
+          ),
+          _ => const Icon(
+            Symbols.queue_music,
+            fill: 1.0,
+          ),
+        },
         color: color,
         disabledColor: disabledColor,
       ),

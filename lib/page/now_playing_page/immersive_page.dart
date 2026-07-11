@@ -135,7 +135,7 @@ class _ImmersiveHelpOverlayState extends State<_ImmersiveHelpOverlay> {
             vertical: 24.0,
           ),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8.0),
+            borderRadius: AppRadius.smCircular,
           ),
           titlePadding: const EdgeInsets.fromLTRB(24.0, 20.0, 24.0, 8.0),
           contentPadding: const EdgeInsets.fromLTRB(24.0, 8.0, 24.0, 12.0),
@@ -230,7 +230,7 @@ class _ImmersiveHelpOverlayState extends State<_ImmersiveHelpOverlay> {
                           '快捷键说明',
                           style: TextStyle(
                             color: scheme.onSecondaryContainer,
-                            fontWeight: FontWeight.w600,
+                            fontWeight: AppType.weightSemibold,
                           ),
                         ),
                       ),
@@ -284,7 +284,7 @@ class _ImmersiveShortcutRow extends StatelessWidget {
               style: TextStyle(
                 color: scheme.onSurfaceVariant,
                 fontFamily: 'monospace',
-                fontSize: 13.0,
+                fontSize: AppType.body,
               ),
             ),
           ),
@@ -380,7 +380,7 @@ class _ImmersiveCoverThumbnailState extends State<_ImmersiveCoverThumbnail> {
     }
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(12.0),
+      borderRadius: AppRadius.mdCircular,
       child: Image(
         image: _cover!,
         fit: BoxFit.cover,
@@ -408,8 +408,8 @@ class _ImmersiveTitleText extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
             color: Theme.of(context).colorScheme.onSurface,
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
+            fontWeight: AppType.weightBold,
+            fontSize: AppType.subtitle,
             height: 1.2,
           ),
         );
@@ -434,7 +434,7 @@ class _ImmersiveArtistText extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
             color: Theme.of(context).colorScheme.onSurfaceVariant,
-            fontSize: 12,
+            fontSize: AppType.caption,
             height: 1.2,
           ),
         );

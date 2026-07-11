@@ -97,7 +97,7 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
                           // 负 padding 抵消歌词行内部 12px 水平 padding，让歌词贴近切换按钮
                           padding: const EdgeInsets.symmetric(horizontal: -12.0),
                           child: ClipRRect(
-                            borderRadius: BorderRadius.circular(12.0),
+                            borderRadius: AppRadius.mdCircular,
                             child: const VerticalLyricView(
                               showControls: true,
                               centerVertically: false,
@@ -155,9 +155,13 @@ class _NowPlayingSmallControlZoneState
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            child: _NowPlayingSlider(mode: NowPlayingMode.portrait),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: _NowPlayingSlider(
+              mode: MediaQuery.of(context).orientation == Orientation.portrait
+                  ? NowPlayingMode.portrait
+                  : NowPlayingMode.landscape,
+            ),
           ),
           const SizedBox(height: 4.0),
           const _NowPlayingSmallMainControls(),
@@ -311,7 +315,7 @@ class _NowPlayingSmallViewSwitchState
       child: SizedBox(
         width: 32,
         child: Material(
-          borderRadius: BorderRadius.circular(16.0),
+          borderRadius: AppRadius.mdCircular,
           type: MaterialType.transparency,
           child: AnimatedOpacity(
             duration: MotionDuration.fast,
@@ -322,7 +326,7 @@ class _NowPlayingSmallViewSwitchState
               curve: MotionCurve.standard,
               scale: visible ? 1.0 : 0.94,
               child: InkWell(
-                borderRadius: BorderRadius.circular(16.0),
+                borderRadius: AppRadius.mdCircular,
                 hoverColor: scheme.onSecondaryContainer.withValues(alpha: 0.02),
                 highlightColor:
                     scheme.onSecondaryContainer.withValues(alpha: 0.04),
