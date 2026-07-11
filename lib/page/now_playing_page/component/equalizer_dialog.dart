@@ -1,5 +1,6 @@
 import 'package:pure_music/component/danger_confirm_dialog.dart';
 import 'package:pure_music/core/equalizer_action_state.dart';
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/core/utils.dart';
@@ -24,14 +25,14 @@ class _EqValuePill extends StatelessWidget {
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: scheme.primaryContainer,
-        borderRadius: BorderRadius.circular(13),
+        borderRadius: AppRadius.mdCircular,
       ),
       child: Text(
         '${value.toStringAsFixed(1)} dB',
         style: TextStyle(
           color: scheme.onPrimaryContainer,
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
+          fontSize: AppType.caption,
+          fontWeight: AppType.weightSemibold,
         ),
       ),
     );
@@ -364,11 +365,14 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
                             await playbackService.saveEqPreset(presetName);
                         if (!context.mounted) return;
                         if (!saved) {
-                          showTextOnSnackBar('保存均衡器预设失败');
+                          showTextOnSnackBar('保存均衡器预设失败', variant: ToastVariant.error);
                           return;
                         }
                         Navigator.of(context).pop();
-                        if (mounted) setState(() {}); // Refresh UI
+                        if (mounted) {
+                          showTextOnSnackBar('已保存预设"$presetName"', variant: ToastVariant.success);
+                          setState(() {});
+                        }
                       },
                 child: Text(existingName == null ? '保存' : '更新'),
               );
@@ -383,7 +387,11 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
     final saved =
         await PlayService.instance.playbackService.applyEqPreset(preset);
     if (!mounted) return;
-    if (!saved) showTextOnSnackBar('保存均衡器设置失败');
+    if (!saved) {
+      showTextOnSnackBar('保存均衡器设置失败', variant: ToastVariant.error);
+      return;
+    }
+    showTextOnSnackBar('已应用预设"${preset.name}"', variant: ToastVariant.success);
     setState(() {
       _gains = List.from(preset.gains);
     });
@@ -400,7 +408,7 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
         preset.name,
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
+        style: TextStyle(color: scheme.onSurfaceVariant, fontSize: AppType.caption),
       ),
     );
     if (!confirmed || !mounted) return;
@@ -409,9 +417,10 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
     );
     if (!mounted) return;
     if (!saved) {
-      showTextOnSnackBar('删除均衡器预设失败');
+      showTextOnSnackBar('删除均衡器预设失败', variant: ToastVariant.error);
       return;
     }
+    showTextOnSnackBar('已删除预设"${preset.name}"', variant: ToastVariant.success);
     setState(() {}); // Refresh UI
   }
 
@@ -534,7 +543,7 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
                   '前级增益',
                   style: TextStyle(
                     color: scheme.onSurface,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: AppType.weightSemibold,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -574,7 +583,7 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
                           Text(
                             '${_gains[index].toInt()}',
                             style: TextStyle(
-                              fontSize: 10,
+                              fontSize: AppType.microlabel,
                               color: scheme.onSurfaceVariant,
                             ),
                           ),
@@ -615,7 +624,7 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
                           const SizedBox(height: 8),
                           Text(
                             _eqCenters[index],
-                            style: const TextStyle(fontSize: 10),
+                            style: const TextStyle(fontSize: AppType.microlabel),
                           ),
                         ],
                       );

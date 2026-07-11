@@ -20,6 +20,8 @@ const _kFadeColors = <Color>[
   Colors.transparent,
 ];
 
+const double _kNearGraySaturation = 0.08;
+
 class BlurCoverBackground extends StatefulWidget {
   final NowPlayingBackgroundInputs inputs;
   final Color fallbackColor;
@@ -202,17 +204,28 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
   }
 
   /// 叠加 tint 用画面均值色，而非单个 dominant 强调色，避免背景被带偏。
+  /// 近灰调色板强制去饱和，避免残留色相污染模糊背景。
   Color _tintColor() {
     final colors = widget.inputs.preExtractedColors;
     if (colors == null || colors.isEmpty) return widget.fallbackColor;
     var r = 0.0, g = 0.0, b = 0.0;
+    var allNearGray = true;
     for (final c in colors) {
       r += c.r;
       g += c.g;
       b += c.b;
+      if (HSLColor.fromColor(c).saturation >= _kNearGraySaturation) {
+        allNearGray = false;
+      }
     }
     final n = colors.length;
-    return Color.from(alpha: 1.0, red: r / n, green: g / n, blue: b / n);
+    final mean = Color.from(alpha: 1.0, red: r / n, green: g / n, blue: b / n);
+    if (allNearGray) {
+      final l = HSLColor.fromColor(mean).lightness;
+      final v = (l * 255.0).round().clamp(0, 255);
+      return Color.fromRGBO(v, v, v, 1.0);
+    }
+    return mean;
   }
 
   @override

@@ -1,3 +1,4 @@
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/lyric_action_state.dart';
@@ -63,13 +64,13 @@ Widget? _buildLyricResultTrailing(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
           decoration: BoxDecoration(
             color: scheme.secondaryContainer,
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: AppRadius.xsCircular,
           ),
           child: Text(
             lyricType,
             style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
+              fontSize: AppType.microlabel,
+              fontWeight: AppType.weightSemibold,
               color: scheme.onSecondaryContainer,
             ),
           ),
@@ -353,7 +354,7 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
           color: isActive ? scheme.primaryContainer : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: AppRadius.smCircular,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -364,7 +365,7 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
                 color: isActive
                     ? scheme.onPrimaryContainer
                     : scheme.onSurfaceVariant,
-                fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                fontWeight: isActive ? AppType.weightBold : FontWeight.normal,
               ),
             ),
             if (count > 0) ...[
@@ -375,12 +376,12 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
                   color: isActive
                       ? scheme.primary
                       : scheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: AppRadius.smCircular,
                 ),
                 child: Text(
                   '$count',
                   style: TextStyle(
-                    fontSize: 10,
+                    fontSize: AppType.microlabel,
                     color:
                         isActive ? scheme.onPrimary : scheme.onSurfaceVariant,
                   ),
@@ -413,7 +414,7 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
                 height: 48.0,
                 decoration: BoxDecoration(
                   color: scheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(16.0),
+                  borderRadius: AppRadius.mdCircular,
                 ),
                 child: Icon(
                   Symbols.lyrics,
@@ -425,8 +426,8 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
                 '该来源暂无结果',
                 style: TextStyle(
                   color: scheme.onSurface,
-                  fontSize: 15.0,
-                  fontWeight: FontWeight.w700,
+                  fontSize: AppType.subtitle,
+                  fontWeight: AppType.weightBold,
                 ),
               ),
               const SizedBox(height: 4.0),
@@ -491,7 +492,7 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
     final scheme = Theme.of(context).colorScheme;
 
     return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(borderRadius: AppRadius.mdCircular),
       child: ConstrainedBox(
         constraints: const BoxConstraints(minWidth: 384, maxWidth: 600),
         child: Padding(
@@ -508,8 +509,8 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
                       '搜索歌词',
                       style: TextStyle(
                         color: scheme.onSurface,
-                        fontSize: 18.0,
-                        fontWeight: FontWeight.bold,
+                        fontSize: AppType.sectionTitle,
+                        fontWeight: AppType.weightBold,
                       ),
                     ),
                     const Spacer(),
@@ -767,7 +768,7 @@ class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
     final isLocalSelected = savedSource?.source == LyricSourceType.local;
 
     return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(borderRadius: AppRadius.mdCircular),
       child: ConstrainedBox(
         constraints: const BoxConstraints(minWidth: 384, maxWidth: 600),
         child: Padding(
@@ -782,8 +783,8 @@ class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
                     '默认歌词',
                     style: TextStyle(
                       color: scheme.onSurface,
-                      fontSize: 18.0,
-                      fontWeight: FontWeight.bold,
+                      fontSize: AppType.sectionTitle,
+                      fontWeight: AppType.weightBold,
                     ),
                   ),
                   const Spacer(),
@@ -808,7 +809,7 @@ class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
                 selectedColor: scheme.onSecondaryContainer,
                 trailing: isLocalSelected ? const Icon(Symbols.check) : null,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8.0),
+                  borderRadius: AppRadius.smCircular,
                 ),
                 onTap: isLocalSelected
                     ? null
@@ -854,7 +855,7 @@ class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
                                 style: TextStyle(
                                   color: scheme.onSurfaceVariant
                                       .withValues(alpha: 0.6),
-                                  fontSize: 13,
+                                  fontSize: AppType.body,
                                 ),
                               ),
                             ],
@@ -876,7 +877,7 @@ class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
                               child: Text(
                                 '试试手动搜索',
                                 style: TextStyle(
-                                  fontSize: 13,
+                                  fontSize: AppType.body,
                                   color: scheme.onSurfaceVariant
                                       .withValues(alpha: 0.6),
                                 ),
@@ -980,14 +981,14 @@ class _SearchResultItem extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.primaryContainer,
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: AppRadius.xsCircular,
             ),
             child: Text(
               sourceText,
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
+                fontSize: AppType.microlabel,
+                fontWeight: AppType.weightSemibold,
                 color: Theme.of(context).colorScheme.onPrimaryContainer,
               ),
             ),
@@ -998,13 +999,13 @@ class _SearchResultItem extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.secondaryContainer,
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: AppRadius.xsCircular,
               ),
               child: Text(
                 searchResult.lyricType!,
                 style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
+                  fontSize: AppType.microlabel,
+                  fontWeight: AppType.weightSemibold,
                   color: Theme.of(context).colorScheme.onSecondaryContainer,
                 ),
               ),

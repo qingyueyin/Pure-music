@@ -1,3 +1,4 @@
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/component/danger_confirm_dialog.dart';
 import 'package:pure_music/play_service/play_service.dart';
@@ -84,8 +85,8 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
                   '播放列表',
                   style: TextStyle(
                     color: scheme.onSecondaryContainer,
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
+                    fontSize: AppType.hero,
+                    fontWeight: AppType.weightBold,
                   ),
                 ),
                 const Spacer(),
@@ -169,8 +170,8 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     color: scheme.onSecondaryContainer,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
+                                    fontSize: AppType.subtitle,
+                                    fontWeight: AppType.weightBold,
                                   ),
                                 ),
                                 const SizedBox(height: 6),
@@ -229,7 +230,7 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
       },
       proxyDecorator: (child, index, animation) => Material(
         elevation: 4,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: AppRadius.smCircular,
         child: child,
       ),
       itemBuilder: (context, i) {
@@ -293,7 +294,7 @@ class _PlaylistViewItem extends StatelessWidget {
     );
 
     return InkWell(
-      borderRadius: BorderRadius.circular(8.0),
+      borderRadius: AppRadius.smCircular,
       onTap:
           canActivate ? () => playbackService.playIndexOfPlaylist(index) : null,
       child: Padding(
@@ -308,7 +309,7 @@ class _PlaylistViewItem extends StatelessWidget {
                   color: isNowPlaying
                       ? scheme.primary
                       : scheme.onSecondaryContainer,
-                  fontSize: 14,
+                  fontSize: AppType.body,
                 ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -318,14 +319,14 @@ class _PlaylistViewItem extends StatelessWidget {
                       audio.title,
                       style: TextStyle(
                         fontWeight:
-                            isNowPlaying ? FontWeight.w600 : FontWeight.normal,
+                            isNowPlaying ? AppType.weightSemibold : FontWeight.normal,
                       ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       '${audio.artist} - ${audio.album}',
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: AppType.caption,
                         color: isNowPlaying
                             ? scheme.primary.withAlpha(179)
                             : scheme.onSecondaryContainer.withAlpha(179),
@@ -398,7 +399,7 @@ class _ReorderItem extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: isNowPlaying ? scheme.primary : scheme.onSurface,
-                    fontSize: 14,
+                    fontSize: AppType.body,
                   ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -416,7 +417,7 @@ class _ReorderItem extends StatelessWidget {
                       Text(
                         '${audio.artist} - ${audio.album}',
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: AppType.caption,
                           color: isNowPlaying
                               ? scheme.primary.withAlpha(179)
                               : scheme.onSurface.withAlpha(179),
