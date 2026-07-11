@@ -217,12 +217,12 @@ class _UniPageState<T> extends State<UniPage<T>> {
               child: TweenAnimationBuilder<double>(
                 key: ValueKey(nowPlaying.path),
                 tween: Tween(begin: 0.0, end: 1.0),
-                duration: MotionDuration.base,
+                duration: MotionDuration.fast,
                 curve: MotionCurve.standard,
                 builder: (context, t, child) => Opacity(
                   opacity: t,
-                  child: Transform.translate(
-                    offset: Offset(0.0, (1 - t) * 10.0),
+                  child: Transform.scale(
+                    scale: 0.7 + t * 0.3,
                     filterQuality: FilterQuality.low,
                     child: child,
                   ),
@@ -248,23 +248,23 @@ class _UniPageState<T> extends State<UniPage<T>> {
         return Positioned(
           right: right,
           bottom: bottom + 56.0,
-          child: TweenAnimationBuilder<double>(
-            tween: Tween(begin: 0.0, end: _showScrollToTop ? 1.0 : 0.0),
-            duration: MotionDuration.base,
-            curve: MotionCurve.standard,
-            builder: (context, t, child) => IgnorePointer(
-              ignoring: t <= 0.01,
-              child: Opacity(
-                opacity: t,
-                child: Transform.translate(
-                  offset: Offset(0.0, (1 - t) * 10.0),
-                  filterQuality: FilterQuality.low,
-                  child: child,
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0.0, end: _showScrollToTop ? 1.0 : 0.0),
+                duration: MotionDuration.fast,
+                curve: MotionCurve.standard,
+                builder: (context, t, child) => IgnorePointer(
+                  ignoring: t <= 0.01,
+                  child: Opacity(
+                    opacity: t,
+                    child: Transform.scale(
+                      scale: 0.7 + t * 0.3,
+                      filterQuality: FilterQuality.low,
+                      child: child,
+                    ),
+                  ),
                 ),
-              ),
-            ),
-            child: IconButton.filledTonal(
-              tooltip: '回到顶部',
+                child: IconButton.filledTonal(
+                  tooltip: '回到顶部',
               onPressed: () {
                 if (!scrollController.hasClients) return;
                 scrollController.animateTo(

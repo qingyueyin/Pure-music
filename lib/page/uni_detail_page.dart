@@ -1,5 +1,6 @@
 import 'dart:ui';
 
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/list_action_state.dart';
@@ -227,8 +228,7 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
               multiSelectViewActions: widget.multiSelectViewActions,
               onPicTap: widget.onPrimaryPicTap,
               picBusy: widget.primaryPicBusy,
-              searchController:
-                  widget.enableSearch ? _searchController : null,
+              searchController: widget.enableSearch ? _searchController : null,
               searchQuery: widget.searchQuery,
               onSearchChanged: widget.onSearchChanged,
             ),
@@ -295,9 +295,11 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
                     : scheme.outlineVariant.withValues(alpha: 0.84),
               ),
             ),
-            shape: const WidgetStatePropertyAll(StadiumBorder()),
+            shape: WidgetStatePropertyAll(
+              RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
+            ),
             padding: const WidgetStatePropertyAll(
-              EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              EdgeInsets.symmetric(horizontal: 16),
             ),
           ),
         );
@@ -308,7 +310,7 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
   Widget _buildSecondaryContent(
       MultiSelectController<S>? multiSelectController, ColorScheme scheme) {
     return Material(
-      borderRadius: BorderRadius.circular(8.0),
+      borderRadius: AppRadius.smCircular,
       type: MaterialType.transparency,
       child: CustomScrollView(
         slivers: [
@@ -349,7 +351,7 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
       return const SizedBox.shrink();
     }
     return Material(
-      borderRadius: BorderRadius.circular(8.0),
+      borderRadius: AppRadius.smCircular,
       type: MaterialType.transparency,
       child: CustomScrollView(
         slivers: [
@@ -378,7 +380,7 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
   Widget _buildCombinedContent(
       MultiSelectController<S>? multiSelectController, ColorScheme scheme) {
     return Material(
-      borderRadius: BorderRadius.circular(8.0),
+      borderRadius: AppRadius.smCircular,
       type: MaterialType.transparency,
       child: CustomScrollView(
         slivers: [
@@ -416,8 +418,8 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
                   widget.tertiaryContentTitle!,
                   style: TextStyle(
                     color: scheme.onSurface,
-                    fontSize: 18.0,
-                    fontWeight: FontWeight.bold,
+                    fontSize: AppType.sectionTitle,
+                    fontWeight: AppType.weightBold,
                   ),
                 ),
               ),
@@ -465,8 +467,7 @@ class _ActionsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final compact =
-        MediaQuery.sizeOf(context).width < 560;
+    final compact = MediaQuery.sizeOf(context).width < 560;
     final showSearch = searchController != null;
 
     if (!showSearch) {
@@ -503,7 +504,7 @@ class _ActionsRow extends StatelessWidget {
   }
 }
 
-class _CompactSearchBar extends StatelessWidget {
+class _CompactSearchBar extends StatefulWidget {
   const _CompactSearchBar({
     required this.controller,
     required this.query,
@@ -517,75 +518,109 @@ class _CompactSearchBar extends StatelessWidget {
   final ColorScheme scheme;
 
   @override
+  State<_CompactSearchBar> createState() => _CompactSearchBarState();
+}
+
+class _CompactSearchBarState extends State<_CompactSearchBar> {
+  late final FocusNode _focusNode;
+  bool _isFocused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode = FocusNode();
+    _focusNode.addListener(() {
+      setState(() => _isFocused = _focusNode.hasFocus);
+    });
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return SearchBar(
-      controller: controller,
-      hintText: '搜索…',
-      hintStyle: WidgetStatePropertyAll(
-        TextStyle(
-          color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
-          fontSize: 13,
-          fontWeight: FontWeight.w400,
+    final bgColor = _isFocused
+        ? widget.scheme.secondaryContainer.withValues(alpha: 0.7)
+        : widget.scheme.surfaceContainerHighest.withValues(alpha: 0.5);
+
+    return SizedBox(
+      height: 40.0,
+      child: TextField(
+        controller: widget.controller,
+        focusNode: _focusNode,
+        style: TextStyle(
+          color: widget.scheme.onSurface,
+          fontSize: AppType.body,
+          fontWeight: AppType.weightRegular,
         ),
-      ),
-      textStyle: WidgetStatePropertyAll(
-        TextStyle(
-          color: scheme.onSurface,
-          fontSize: 13,
-          fontWeight: FontWeight.w400,
-        ),
-      ),
-      leading: Padding(
-        padding: const EdgeInsets.only(left: 8),
-        child: Icon(
-          Symbols.search,
-          size: 18,
-          color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
-        ),
-      ),
-      trailing: query.isNotEmpty
-          ? [
-              IconButton(
-                icon: Icon(
-                  Symbols.close,
-                  size: 18,
-                  color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
-                ),
-                onPressed: () {
-                  controller.clear();
-                  onChanged?.call('');
-                },
-                visualDensity: VisualDensity.compact,
-                style: IconButton.styleFrom(
-                  minimumSize: const Size(28, 28),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-              ),
-            ]
-          : null,
-      padding: const WidgetStatePropertyAll(
-        EdgeInsets.symmetric(horizontal: 4),
-      ),
-      elevation: const WidgetStatePropertyAll(0.0),
-      surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
-      backgroundColor: WidgetStatePropertyAll(
-        scheme.surfaceContainerHighest.withValues(alpha: 0.55),
-      ),
-      shadowColor: const WidgetStatePropertyAll(Colors.transparent),
-      overlayColor: WidgetStatePropertyAll(
-        scheme.primary.withValues(alpha: 0.08),
-      ),
-      shape: WidgetStatePropertyAll(
-        RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(28.0),
-          side: BorderSide(
-            color: query.isNotEmpty
-                ? scheme.primary.withValues(alpha: 0.35)
-                : scheme.outlineVariant.withValues(alpha: 0.3),
+        decoration: InputDecoration(
+          isDense: true,
+          filled: true,
+          fillColor: bgColor,
+          hintText: '搜索…',
+          hintStyle: TextStyle(
+            color: widget.scheme.onSurfaceVariant.withValues(alpha: 0.5),
+            fontSize: AppType.body,
+            fontWeight: AppType.weightRegular,
+          ),
+          prefixIcon: Padding(
+            padding: const EdgeInsets.only(left: 10),
+            child: Icon(
+              Symbols.search,
+              size: 18,
+              color: widget.scheme.onSurfaceVariant.withValues(alpha: 0.6),
+            ),
+          ),
+          prefixIconConstraints:
+              const BoxConstraints(minWidth: 34, maxHeight: 40),
+          suffixIcon: widget.query.isNotEmpty
+              ? IconButton(
+                  icon: Icon(
+                    Symbols.close,
+                    size: 16,
+                    color:
+                        widget.scheme.onSurfaceVariant.withValues(alpha: 0.6),
+                  ),
+                  onPressed: () {
+                    widget.controller.clear();
+                    widget.onChanged?.call('');
+                  },
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 30,
+                    maxWidth: 30,
+                    minHeight: 40,
+                    maxHeight: 40,
+                  ),
+                )
+              : null,
+          suffixIconConstraints:
+              const BoxConstraints(maxHeight: 40),
+          border: OutlineInputBorder(
+            borderRadius: AppRadius.mdCircular,
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: AppRadius.mdCircular,
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: AppRadius.mdCircular,
+            borderSide: BorderSide(
+              color: widget.scheme.primary.withValues(alpha: 0.5),
+              width: 1.5,
+            ),
+          ),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 8,
           ),
         ),
+        onChanged: widget.onChanged,
       ),
-      onChanged: onChanged,
     );
   }
 }
@@ -691,16 +726,16 @@ class _UniDetailPageHeader extends StatelessWidget {
                           child: Text(
                             title,
                             style: TextStyle(
-                              fontSize: compact ? 20.0 : 22.0,
+                              fontSize: compact ? AppType.pageTitle : AppType.hero,
                               color: scheme.onSurface,
-                              fontWeight: FontWeight.bold,
+                              fontWeight: AppType.weightBold,
                             ),
                           ),
                         ),
                         Text(
                           subtitle,
                           style: TextStyle(
-                            fontSize: 14.0,
+                            fontSize: AppType.body,
                             color: scheme.onSurface,
                           ),
                         ),
@@ -756,10 +791,8 @@ class _HoverableCoverState extends State<_HoverableCover> {
 
   @override
   Widget build(BuildContext context) {
-    final brightness = Theme.of(context).brightness;
-    final overlayColor =
-        (brightness == Brightness.light ? Colors.black : Colors.white)
-            .withValues(alpha: 0.25);
+    final scheme = Theme.of(context).colorScheme;
+    final overlayColor = scheme.onSurface.withValues(alpha: 0.25);
 
     Widget cover = SizedBox(
       width: widget.size,
@@ -781,7 +814,7 @@ class _HoverableCoverState extends State<_HoverableCover> {
                         ),
                       ),
                     PicShape.rrect => ClipRRect(
-                        borderRadius: BorderRadius.circular(8.0),
+                        borderRadius: AppRadius.smCircular,
                         child: Image(
                           image: snapshot.data!,
                           width: widget.size,
@@ -817,7 +850,7 @@ class _HoverableCoverState extends State<_HoverableCover> {
                   decoration: BoxDecoration(
                     color: overlayColor,
                     borderRadius: BorderRadius.circular(
-                      widget.picShape == PicShape.oval ? widget.size / 2 : 8,
+                      widget.picShape == PicShape.oval ? widget.size / 2 : AppRadius.sm,
                     ),
                   ),
                   child: Center(
@@ -825,25 +858,25 @@ class _HoverableCoverState extends State<_HoverableCover> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         widget.busy
-                            ? const SizedBox(
+                            ? SizedBox(
                                 width: 28,
                                 height: 28,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2.4,
-                                  color: Colors.white,
+                                  color: scheme.onSurface,
                                 ),
                               )
-                            : const Icon(
+                            : Icon(
                                 Symbols.brush,
                                 size: 28,
-                                color: Colors.white,
+                                color: scheme.onSurface,
                               ),
                         const SizedBox(height: 4),
                         Text(
                           widget.busy ? '选择中' : '更换封面',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
+                          style: TextStyle(
+                            color: scheme.onSurface,
+                            fontSize: AppType.body,
                           ),
                         ),
                       ],

@@ -1,3 +1,4 @@
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/library/audio_library.dart';
@@ -20,14 +21,20 @@ class ShufflePlay<T> extends StatelessWidget {
 
     return FilledButton.icon(
       onPressed: enabled
-          ? () => PlayService.instance.playbackService.shuffleAndPlay(
+          ? () {
+              PlayService.instance.playbackService.shuffleAndPlay(
                 contentList as List<Audio>,
-              )
+              );
+              showTextOnSnackBar('随机播放 ${contentList.length} 首', variant: ToastVariant.success);
+            }
           : null,
-      icon: const Icon(Symbols.shuffle),
+      icon: const Icon(Symbols.shuffle, size: 20),
       label: const Text('随机播放'),
       style: const ButtonStyle(
         fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
+        padding: WidgetStatePropertyAll(
+          EdgeInsets.symmetric(horizontal: 16),
+        ),
       ),
     );
   }
@@ -48,8 +55,6 @@ class SortMethodComboBox<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
     return MenuAnchor(
       style: appMenuStyle,
       menuChildren: List.generate(
@@ -69,53 +74,42 @@ class SortMethodComboBox<T> extends StatelessWidget {
         },
       ),
       builder: (context, menuController, _) {
-        final borderRadius = BorderRadius.circular(20.0);
-
-        return SizedBox(
-          height: 40.0,
-          child: Material(
-            borderRadius: borderRadius,
-            color: scheme.secondaryContainer,
-            child: InkWell(
-              hoverColor: scheme.onSecondaryContainer.withAlpha(20),
-              borderRadius: borderRadius,
-              onTap: () {
-                if (menuController.isOpen) {
-                  menuController.close();
-                } else {
-                  menuController.open();
-                }
-              },
-              child: Padding(
-                padding: const EdgeInsets.only(left: 16.0, right: 12.0),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Symbols.sort,
-                      size: 24,
-                      color: scheme.onSecondaryContainer,
-                    ),
-                    const SizedBox(width: 4.0),
-                    Text(
-                      currSortMethod.name,
-                      style: TextStyle(color: scheme.onSecondaryContainer),
-                    ),
-                    const SizedBox(width: 4.0),
-                    AnimatedRotation(
-                      duration: MotionDuration.fast,
-                      curve: MotionCurve.standard,
-                      turns: menuController.isOpen ? 0.5 : 0.0,
-                      child: Icon(
-                        Symbols.arrow_drop_down,
-                        size: 24,
-                        color: scheme.onSecondaryContainer,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+        final scheme = Theme.of(context).colorScheme;
+        return FilledButton.tonal(
+          onPressed: () {
+            if (menuController.isOpen) {
+              menuController.close();
+            } else {
+              menuController.open();
+            }
+          },
+          style: ButtonStyle(
+            backgroundColor:
+                WidgetStatePropertyAll(scheme.secondaryContainer),
+            foregroundColor:
+                WidgetStatePropertyAll(scheme.onSecondaryContainer),
+            fixedSize: const WidgetStatePropertyAll(Size.fromHeight(40)),
+            padding: const WidgetStatePropertyAll(
+              EdgeInsets.symmetric(horizontal: 16),
             ),
+            shape: WidgetStatePropertyAll(
+              RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Symbols.sort, size: 20),
+              const SizedBox(width: 4.0),
+              Text(currSortMethod.name),
+              const SizedBox(width: 4.0),
+              AnimatedRotation(
+                duration: MotionDuration.fast,
+                curve: MotionCurve.standard,
+                turns: menuController.isOpen ? 0.5 : 0.0,
+                child: const Icon(Symbols.arrow_drop_down, size: 20),
+              ),
+            ],
           ),
         );
       },
@@ -136,6 +130,14 @@ class SortOrderSwitch<T> extends StatelessWidget {
       tooltip: "切换排序顺序（${isAscending ? "升序" : "降序"}）",
       onPressed: () => setSortOrder(
         isAscending ? SortOrder.decending : SortOrder.ascending,
+      ),
+      iconSize: 20,
+      style: ButtonStyle(
+        fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
+        padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
+        ),
       ),
       icon: AnimatedSwitcher(
         duration: MotionDuration.fast,
@@ -167,6 +169,14 @@ class ContentViewSwitch<T> extends StatelessWidget {
       tooltip: "切换页面视图（${isListView ? "列表" : "表格"}）",
       onPressed: () => setContentView(
         isListView ? ContentView.table : ContentView.list,
+      ),
+      iconSize: 20,
+      style: ButtonStyle(
+        fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
+        padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
+        ),
       ),
       icon: AnimatedSwitcher(
         duration: MotionDuration.fast,
@@ -246,8 +256,7 @@ class _AddAllToPlaylistState extends State<AddAllToPlaylist> {
         return;
       }
       showTextOnSnackBar(
-        '成功将$addedCount首添加到歌单“${playlist.name}”',
-      );
+        '成功将$addedCount首添加到歌单“${playlist.name}”',        variant: ToastVariant.success,      );
     } finally {
       if (mounted) {
         setState(() => _addingPlaylist = null);
@@ -320,10 +329,13 @@ class _AddAllToPlaylistState extends State<AddAllToPlaylist> {
                       height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Symbols.add),
+                  : const Icon(Symbols.add, size: 20),
               label: Text(isAdding ? '添加中' : '添加到歌单'),
               style: const ButtonStyle(
                 fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
+                padding: WidgetStatePropertyAll(
+                  EdgeInsets.symmetric(horizontal: 16),
+                ),
               ),
             );
           },
@@ -450,10 +462,13 @@ class _AddSelectedAudiosToPlaylistState<T>
                       height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Symbols.add),
+                  : const Icon(Symbols.add, size: 20),
               label: Text(isAdding ? '添加中' : '添加到歌单'),
               style: const ButtonStyle(
                 fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
+                padding: WidgetStatePropertyAll(
+                  EdgeInsets.symmetric(horizontal: 16),
+                ),
               ),
             );
           },
@@ -488,17 +503,22 @@ class MultiSelectPlaySelectedAudios<T> extends StatelessWidget {
               : () {
                   if (shuffle) {
                     PlayService.instance.playbackService.shuffleAndPlay(audios);
+                    showTextOnSnackBar('随机播放 ${audios.length} 首', variant: ToastVariant.success);
                   } else {
                     PlayService.instance.playbackService.play(0, audios);
+                    showTextOnSnackBar('已开始播放', variant: ToastVariant.success);
                   }
 
                   multiSelectController.useMultiSelectView(false);
                   multiSelectController.clear();
                 },
-          icon: Icon(shuffle ? Symbols.shuffle : Symbols.play_arrow),
+          icon: Icon(shuffle ? Symbols.shuffle : Symbols.play_arrow, size: 20),
           label: Text(shuffle ? '随机播放' : '播放'),
           style: const ButtonStyle(
             fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
+            padding: WidgetStatePropertyAll(
+              EdgeInsets.symmetric(horizontal: 16),
+            ),
           ),
         );
       },
