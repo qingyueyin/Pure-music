@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/settings.dart';
@@ -68,8 +69,11 @@ class _SettingsTabsState extends State<SettingsTabs> {
                     color: selected ? scheme.primary : scheme.outline,
                   ),
                 ),
+                shape: WidgetStatePropertyAll(
+                  RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
+                ),
                 padding: const WidgetStatePropertyAll(
-                  EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  EdgeInsets.symmetric(horizontal: 16),
                 ),
               ),
             );
@@ -109,17 +113,19 @@ class _AppearanceTabContent extends StatelessWidget {
         SizedBox(height: 16.0),
         NowPlayingBackgroundModeToggle(),
         SizedBox(height: 16.0),
+        _CoverColorExtractionSwitch(),
+        SizedBox(height: 16.0),
         _MonetProgressBarSwitch(),
         SizedBox(height: 16.0),
-        _WavyProgressBarSwitch(),
-        SizedBox(height: 16.0),
-        _TopBarLyricAnimationSelector(),
+        _MonetLyricsSwitch(),
         SizedBox(height: 16.0),
         _MonetTransitionSwitch(),
         SizedBox(height: 16.0),
         _MonetControlsSwitch(),
         SizedBox(height: 16.0),
-        _CoverColorExtractionSwitch(),
+        _WavyProgressBarSwitch(),
+        SizedBox(height: 16.0),
+        _TopBarLyricAnimationSelector(),
       ],
     );
   }
@@ -134,40 +140,20 @@ class _ThemeOptionControl extends StatefulWidget {
 
 class _ThemeOptionControlState extends State<_ThemeOptionControl> {
   final settings = AppSettings.instance;
-  bool _isSaving = false;
-
   Future<void> _setThemeOption(ThemeOption option) async {
-    if (_isSaving || option == settings.themeOption) return;
-    setState(() {
-      _isSaving = true;
-      settings.themeOption = option;
-    });
+    if (option == settings.themeOption) return;
+    setState(() => settings.themeOption = option);
     ThemeProvider.instance.applyThemeOption(option);
-    try {
-      await settings.saveSettings();
-    } finally {
-      if (mounted) {
-        setState(() => _isSaving = false);
-      }
-    }
+    await settings.saveSettings();
   }
 
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
       description: '主题',
-      subtitle: _isSaving ? '保存中' : null,
       action: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (_isSaving) ...[
-            const SizedBox(
-              width: 16.0,
-              height: 16.0,
-              child: CircularProgressIndicator(strokeWidth: 2.0),
-            ),
-            const SizedBox(width: 10.0),
-          ],
           SegmentedButton<ThemeOption>(
             showSelectedIcon: false,
             segments: const [
@@ -176,9 +162,7 @@ class _ThemeOptionControlState extends State<_ThemeOptionControl> {
               ButtonSegment(value: ThemeOption.dark, label: Text('深色模式')),
             ],
             selected: {settings.themeOption},
-            onSelectionChanged: _isSaving
-                ? null
-                : (selected) => _setThemeOption(selected.first),
+            onSelectionChanged: (selected) => _setThemeOption(selected.first),
           ),
         ],
       ),
@@ -196,42 +180,23 @@ class _MonetProgressBarSwitch extends StatefulWidget {
 
 class _MonetProgressBarSwitchState extends State<_MonetProgressBarSwitch> {
   final settings = AppSettings.instance;
-  bool _isSaving = false;
 
   Future<void> _setEnabled(bool value) async {
-    if (_isSaving) return;
-    setState(() {
-      _isSaving = true;
-      settings.useMaterialYouForProgressBar = value;
-    });
-    try {
-      await settings.saveSettings();
-    } finally {
-      if (mounted) {
-        setState(() => _isSaving = false);
-      }
-    }
+    setState(() => settings.useMaterialYouForProgressBar = value);
+    await settings.saveSettings();
   }
 
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
       description: '主题色进度条',
-      subtitle: _isSaving ? '保存中' : '进度条使用主题色渲染',
+      subtitle: '进度条使用主题色渲染',
       action: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (_isSaving) ...[
-            const SizedBox(
-              width: 16.0,
-              height: 16.0,
-              child: CircularProgressIndicator(strokeWidth: 2.0),
-            ),
-            const SizedBox(width: 8.0),
-          ],
           Switch(
             value: settings.useMaterialYouForProgressBar,
-            onChanged: _isSaving ? null : _setEnabled,
+            onChanged: _setEnabled,
           ),
         ],
       ),
@@ -248,88 +213,52 @@ class _WavyProgressBarSwitch extends StatefulWidget {
 
 class _WavyProgressBarSwitchState extends State<_WavyProgressBarSwitch> {
   final settings = AppSettings.instance;
-  NowPlayingMode? _savingMode;
-
-  Future<void> _setWavyBarMode(NowPlayingMode mode, bool enabled) async {
-    if (_savingMode != null) return;
-    setState(() {
-      _savingMode = mode;
-      if (enabled) {
-        settings.wavyBarEnabledModes.add(mode);
-      } else {
-        settings.wavyBarEnabledModes.remove(mode);
-      }
-    });
-    try {
-      await settings.saveSettings();
-    } finally {
-      if (mounted) {
-        setState(() => _savingMode = null);
-      }
-    }
-  }
-
-  Widget _savingSwitch({
-    required NowPlayingMode mode,
-    required bool value,
-  }) {
-    final isSavingThis = _savingMode == mode;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (isSavingThis) ...[
-          const SizedBox(
-            width: 16.0,
-            height: 16.0,
-            child: CircularProgressIndicator(strokeWidth: 2.0),
-          ),
-          const SizedBox(width: 8.0),
-        ],
-        Switch(
-          value: value,
-          onChanged:
-              _savingMode == null ? (v) => _setWavyBarMode(mode, v) : null,
-        ),
-      ],
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
-    final savingPortrait = _savingMode == NowPlayingMode.portrait;
-    final savingImmersive = _savingMode == NowPlayingMode.immersive;
+    final scheme = Theme.of(context).colorScheme;
+    final enabledModes = settings.wavyBarEnabledModes;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8.0),
-          child: Text(
-            '波浪进度条',
-            style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurface, fontSize: 18.0),
-          ),
+    return SettingsTile(
+      description: '波浪进度条',
+      action: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: AppRadius.smCircular,
+          border: Border.all(color: scheme.outline),
         ),
-        SettingsTile(
-          description: '竖屏播放页',
-          subtitle: savingPortrait ? '保存中' : null,
-          action: _savingSwitch(
-            mode: NowPlayingMode.portrait,
-            value:
-                settings.wavyBarEnabledModes.contains(NowPlayingMode.portrait),
+        child: ToggleButtons(
+          isSelected: NowPlayingMode.values
+              .map((m) => enabledModes.contains(m))
+              .toList(),
+          onPressed: (i) {
+            setState(() {
+              final mode = NowPlayingMode.values[i];
+              if (enabledModes.contains(mode)) {
+                enabledModes.remove(mode);
+              } else {
+                enabledModes.add(mode);
+              }
+            });
+            settings.saveSettings();
+          },
+          borderRadius: AppRadius.smCircular,
+          fillColor: scheme.primaryContainer,
+          selectedColor: scheme.onPrimaryContainer,
+          color: scheme.onSurface,
+          borderColor: Colors.transparent,
+          selectedBorderColor: Colors.transparent,
+          constraints: const BoxConstraints(minHeight: 40, minWidth: 56),
+          textStyle: const TextStyle(
+            fontSize: AppType.body,
+            fontWeight: AppType.weightMedium,
           ),
+          children: const [
+            Text('竖屏'),
+            Text('横屏'),
+            Text('横屏沉浸'),
+          ],
         ),
-        const SizedBox(height: 8.0),
-        SettingsTile(
-          description: '横屏沉浸模式',
-          subtitle: savingImmersive ? '保存中' : null,
-          action: _savingSwitch(
-            mode: NowPlayingMode.immersive,
-            value:
-                settings.wavyBarEnabledModes.contains(NowPlayingMode.immersive),
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -345,33 +274,18 @@ class _TopBarLyricAnimationSelector extends StatefulWidget {
 class _TopBarLyricAnimationSelectorState
     extends State<_TopBarLyricAnimationSelector> {
   final settings = AppSettings.instance;
-  bool _isSaving = false;
 
   Future<void> _setAnimation(TopBarLyricAnimation animation) async {
-    if (_isSaving || animation == settings.topBarLyricAnimation) return;
-    setState(() {
-      _isSaving = true;
-      settings.topBarLyricAnimation = animation;
-    });
-    try {
-      await settings.saveSettings();
-    } finally {
-      if (mounted) {
-        setState(() => _isSaving = false);
-      }
-    }
+    if (animation == settings.topBarLyricAnimation) return;
+    setState(() => settings.topBarLyricAnimation = animation);
+    await settings.saveSettings();
   }
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    const row1 = {
+    const animationItems = {
       TopBarLyricAnimation.slideUp: '上划',
       TopBarLyricAnimation.slideDown: '下划',
-      TopBarLyricAnimation.slideLeft: '左划',
-      TopBarLyricAnimation.slideRight: '右划',
-    };
-    const row2 = {
       TopBarLyricAnimation.fade: '淡入淡出',
       TopBarLyricAnimation.absorb: '吸收',
       TopBarLyricAnimation.flipX: 'X 翻转',
@@ -380,63 +294,20 @@ class _TopBarLyricAnimationSelectorState
 
     final current = settings.topBarLyricAnimation;
 
-    Widget segRow(Map<TopBarLyricAnimation, String> items) {
-      return SizedBox(
-        width: double.infinity,
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: SegmentedButton<TopBarLyricAnimation>(
-            segments: [
-              for (final e in items.entries)
-                ButtonSegment(value: e.key, label: Text(e.value)),
-            ],
-            selected: {current},
-            onSelectionChanged:
-                _isSaving ? null : (v) => _setAnimation(v.first),
-            showSelectedIcon: false,
-          ),
+    return SettingsTile(
+      description: '顶部歌词切换动画',
+      action: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: SegmentedButton<TopBarLyricAnimation>(
+          segments: [
+            for (final e in animationItems.entries)
+              ButtonSegment(value: e.key, label: Text(e.value)),
+          ],
+          selected: {current},
+          onSelectionChanged: (v) => _setAnimation(v.first),
+          showSelectedIcon: false,
         ),
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8.0),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                '顶部歌词切换动画',
-                style: TextStyle(color: scheme.onSurface, fontSize: 18.0),
-              ),
-              if (_isSaving) ...[
-                const SizedBox(width: 10.0),
-                SizedBox(
-                  width: 14.0,
-                  height: 14.0,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.0,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(width: 6.0),
-                Text(
-                  '保存中',
-                  style: TextStyle(
-                    color: scheme.onSurfaceVariant,
-                    fontSize: 13.0,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        segRow(row1),
-        const SizedBox(height: 8.0),
-        segRow(row2),
-      ],
+      ),
     );
   }
 }
@@ -450,45 +321,21 @@ class _MonetLyricsSwitch extends StatefulWidget {
 
 class _MonetLyricsSwitchState extends State<_MonetLyricsSwitch> {
   final settings = AppSettings.instance;
-  bool _isSaving = false;
 
   Future<void> _setEnabled(bool value) async {
-    if (_isSaving) return;
-    setState(() {
-      _isSaving = true;
-      settings.useMaterialYouForLyrics = value;
-    });
+    setState(() => settings.useMaterialYouForLyrics = value);
     LyricViewController.instance.triggerRebuild();
-    try {
-      await settings.saveSettings();
-    } finally {
-      if (mounted) {
-        setState(() => _isSaving = false);
-      }
-    }
+    await settings.saveSettings();
   }
 
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
       description: '主题色歌词',
-      subtitle: _isSaving ? '保存中' : '歌词使用主题色渲染',
-      action: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (_isSaving) ...[
-            const SizedBox(
-              width: 16.0,
-              height: 16.0,
-              child: CircularProgressIndicator(strokeWidth: 2.0),
-            ),
-            const SizedBox(width: 8.0),
-          ],
-          Switch(
-            value: settings.useMaterialYouForLyrics,
-            onChanged: _isSaving ? null : _setEnabled,
-          ),
-        ],
+      subtitle: '歌词使用主题色渲染',
+      action: Switch(
+        value: settings.useMaterialYouForLyrics,
+        onChanged: _setEnabled,
       ),
     );
   }
@@ -503,45 +350,21 @@ class _MonetTransitionSwitch extends StatefulWidget {
 
 class _MonetTransitionSwitchState extends State<_MonetTransitionSwitch> {
   final settings = AppSettings.instance;
-  bool _isSaving = false;
 
   Future<void> _setEnabled(bool value) async {
-    if (_isSaving) return;
-    setState(() {
-      _isSaving = true;
-      settings.useMaterialYouForTransition = value;
-    });
+    setState(() => settings.useMaterialYouForTransition = value);
     LyricViewController.instance.triggerRebuild();
-    try {
-      await settings.saveSettings();
-    } finally {
-      if (mounted) {
-        setState(() => _isSaving = false);
-      }
-    }
+    await settings.saveSettings();
   }
 
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
       description: '主题色间奏动画',
-      subtitle: _isSaving ? '保存中' : '间奏动画使用主题色渲染',
-      action: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (_isSaving) ...[
-            const SizedBox(
-              width: 16.0,
-              height: 16.0,
-              child: CircularProgressIndicator(strokeWidth: 2.0),
-            ),
-            const SizedBox(width: 8.0),
-          ],
-          Switch(
-            value: settings.useMaterialYouForTransition,
-            onChanged: _isSaving ? null : _setEnabled,
-          ),
-        ],
+      subtitle: '间奏动画使用主题色渲染',
+      action: Switch(
+        value: settings.useMaterialYouForTransition,
+        onChanged: _setEnabled,
       ),
     );
   }
@@ -556,45 +379,21 @@ class _MonetControlsSwitch extends StatefulWidget {
 
 class _MonetControlsSwitchState extends State<_MonetControlsSwitch> {
   final settings = AppSettings.instance;
-  bool _isSaving = false;
 
   Future<void> _setEnabled(bool value) async {
-    if (_isSaving) return;
-    setState(() {
-      _isSaving = true;
-      settings.useMaterialYouForControls = value;
-    });
+    setState(() => settings.useMaterialYouForControls = value);
     AppSettings.rebuildNotifier.rebuild();
-    try {
-      await settings.saveSettings();
-    } finally {
-      if (mounted) {
-        setState(() => _isSaving = false);
-      }
-    }
+    await settings.saveSettings();
   }
 
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
       description: '主题色控件',
-      subtitle: _isSaving ? '保存中' : '播放页控件使用主题色渲染',
-      action: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (_isSaving) ...[
-            const SizedBox(
-              width: 16.0,
-              height: 16.0,
-              child: CircularProgressIndicator(strokeWidth: 2.0),
-            ),
-            const SizedBox(width: 8.0),
-          ],
-          Switch(
-            value: settings.useMaterialYouForControls,
-            onChanged: _isSaving ? null : _setEnabled,
-          ),
-        ],
+      subtitle: '播放页控件使用主题色渲染',
+      action: Switch(
+        value: settings.useMaterialYouForControls,
+        onChanged: _setEnabled,
       ),
     );
   }
@@ -609,46 +408,62 @@ class _GlowEffectSwitch extends StatefulWidget {
 
 class _GlowEffectSwitchState extends State<_GlowEffectSwitch> {
   final nowPlayingPagePref = AppPreference.instance.nowPlayingPagePref;
-  bool _isSaving = false;
 
   Future<void> _setEnabled(bool value) async {
-    if (_isSaving) return;
-    setState(() {
-      _isSaving = true;
-      nowPlayingPagePref.enableLyricGlow = value;
-    });
+    setState(() => nowPlayingPagePref.enableLyricGlow = value);
     LyricViewController.instance.enableLyricGlow = value;
     LyricViewController.instance.triggerRebuild();
-    try {
-      await AppPreference.instance.save();
-    } finally {
-      if (mounted) {
-        setState(() => _isSaving = false);
-      }
-    }
+    await AppPreference.instance.save();
   }
 
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
       description: '辉光缩放效果（实验性）',
-      subtitle: _isSaving ? '保存中' : '逐字播放时的辉光缩放动画',
-      action: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (_isSaving) ...[
-            const SizedBox(
-              width: 16.0,
-              height: 16.0,
-              child: CircularProgressIndicator(strokeWidth: 2.0),
-            ),
-            const SizedBox(width: 8.0),
-          ],
-          Switch(
-            value: nowPlayingPagePref.enableLyricGlow,
-            onChanged: _isSaving ? null : _setEnabled,
+      subtitle: '逐字播放时的辉光缩放动画',
+      action: Switch(
+        value: nowPlayingPagePref.enableLyricGlow,
+        onChanged: _setEnabled,
+      ),
+    );
+  }
+}
+
+class _RubyPositionSetting extends StatefulWidget {
+  const _RubyPositionSetting();
+
+  @override
+  State<_RubyPositionSetting> createState() => _RubyPositionSettingState();
+}
+
+class _RubyPositionSettingState extends State<_RubyPositionSetting> {
+  @override
+  Widget build(BuildContext context) {
+    final rubyPosition = AppPreference.instance.nowPlayingPagePref.rubyPosition;
+
+    return SettingsTile(
+      description: '注音在原文的位置',
+      subtitle: '当前：${rubyPosition.displayName}',
+      action: SegmentedButton<RubyPosition>(
+        showSelectedIcon: false,
+        segments: const [
+          ButtonSegment<RubyPosition>(
+            value: RubyPosition.above,
+            label: Text('注音在上'),
+          ),
+          ButtonSegment<RubyPosition>(
+            value: RubyPosition.below,
+            label: Text('注音在下'),
           ),
         ],
+        selected: {rubyPosition},
+        onSelectionChanged: (newSelection) {
+          final newPos = newSelection.first;
+          AppPreference.instance.nowPlayingPagePref.rubyPosition = newPos;
+          LyricViewController.instance.setRubyPosition(newPos);
+          AppPreference.instance.save();
+          setState(() {});
+        },
       ),
     );
   }
@@ -666,11 +481,6 @@ class _CoverColorExtractionSwitchState
     extends State<_CoverColorExtractionSwitch> {
   final settings = AppSettings.instance;
   bool _isPickingColor = false;
-  bool _isSavingCustomColor = false;
-  bool _isSavingAutoMode = false;
-
-  bool get _isBusy =>
-      _isPickingColor || _isSavingCustomColor || _isSavingAutoMode;
 
   void _refreshTheme() {
     final audio = PlayService.instance.playbackService.nowPlaying;
@@ -689,52 +499,31 @@ class _CoverColorExtractionSwitchState
   }
 
   Future<void> _pickCustomColor() async {
-    if (_isBusy) return;
+    if (_isPickingColor) return;
     setState(() => _isPickingColor = true);
     try {
       final result = await _openColorPicker();
       if (result == null || !mounted) return;
-      setState(() {
-        _isPickingColor = false;
-        _isSavingCustomColor = true;
-        settings.customCoverColor = result.toARGB32();
-      });
+      setState(() => settings.customCoverColor = result.toARGB32());
       _refreshTheme();
       await settings.saveSettings();
     } finally {
       if (mounted) {
-        setState(() {
-          _isPickingColor = false;
-          _isSavingCustomColor = false;
-        });
+        setState(() => _isPickingColor = false);
       }
     }
   }
 
   Future<void> _setAutoExtraction(bool value) async {
-    if (_isBusy) return;
-    setState(() {
-      _isSavingAutoMode = true;
-      settings.enableCoverColorExtraction = value;
-    });
+    setState(() => settings.enableCoverColorExtraction = value);
     _refreshTheme();
-    try {
-      await settings.saveSettings();
-    } finally {
-      if (mounted) {
-        setState(() => _isSavingAutoMode = false);
-      }
-    }
+    await settings.saveSettings();
   }
 
   @override
   Widget build(BuildContext context) {
     final isAuto = settings.enableCoverColorExtraction;
-    final subtitle = _isSavingAutoMode || _isSavingCustomColor
-        ? '保存中'
-        : isAuto
-            ? '从专辑封面自动提取'
-            : '自定义应用整体颜色';
+    final subtitle = isAuto ? '从专辑封面自动提取' : '自定义应用整体颜色';
 
     return SettingsTile(
       description: '应用主题色',
@@ -746,15 +535,15 @@ class _CoverColorExtractionSwitchState
             Padding(
               padding: const EdgeInsets.only(right: 8),
               child: OutlinedButton.icon(
-                onPressed: _isBusy ? null : _pickCustomColor,
+                onPressed: _isPickingColor ? null : _pickCustomColor,
                 style: OutlinedButton.styleFrom(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: AppRadius.smCircular,
                   ),
                 ),
-                icon: _isPickingColor || _isSavingCustomColor
+                icon: _isPickingColor
                     ? const SizedBox(
                         width: 16.0,
                         height: 16.0,
@@ -762,25 +551,13 @@ class _CoverColorExtractionSwitchState
                       )
                     : const Icon(Symbols.palette),
                 label: Text(
-                  _isPickingColor
-                      ? '选择中'
-                      : _isSavingCustomColor
-                          ? '保存中'
-                          : '自定义',
+                  _isPickingColor ? '选择中' : '自定义',
                 ),
               ),
             ),
-          if (_isSavingAutoMode) ...[
-            const SizedBox(
-              width: 16.0,
-              height: 16.0,
-              child: CircularProgressIndicator(strokeWidth: 2.0),
-            ),
-            const SizedBox(width: 8.0),
-          ],
           Switch(
             value: isAuto,
-            onChanged: _isBusy ? null : _setAutoExtraction,
+            onChanged: _isPickingColor ? null : _setAutoExtraction,
           ),
         ],
       ),
@@ -852,7 +629,7 @@ class _ThemeColorPickerDialogState extends State<_ThemeColorPickerDialog> {
             children: [
               // 2D 色域 (饱和度 × 明度)
               ClipRRect(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: AppRadius.smCircular,
                 child: SizedBox(
                   width: pickerSize,
                   height: pickerSize * 0.7,
@@ -882,7 +659,7 @@ class _ThemeColorPickerDialogState extends State<_ThemeColorPickerDialog> {
                   // 色相条
                   Expanded(
                     child: ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
+                      borderRadius: AppRadius.smCircular,
                       child: SizedBox(
                         height: 20,
                         child: _HueSlider(
@@ -904,8 +681,8 @@ class _ThemeColorPickerDialogState extends State<_ThemeColorPickerDialog> {
                     '#',
                     style: TextStyle(
                       color: scheme.onSurface,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w500,
+                      fontSize: AppType.sectionTitle,
+                      fontWeight: AppType.weightMedium,
                     ),
                   ),
                   const SizedBox(width: 4),
@@ -921,7 +698,7 @@ class _ThemeColorPickerDialogState extends State<_ThemeColorPickerDialog> {
                             vertical: 8,
                           ),
                           border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: AppRadius.smCircular,
                           ),
                           hintText: 'RRGGBB',
                           hintStyle: TextStyle(
@@ -931,7 +708,7 @@ class _ThemeColorPickerDialogState extends State<_ThemeColorPickerDialog> {
                         ),
                         style: const TextStyle(
                           fontFamily: 'monospace',
-                          fontSize: 16,
+                          fontSize: AppType.subtitle,
                           letterSpacing: 1.2,
                         ),
                         textCapitalization: TextCapitalization.characters,
@@ -1176,29 +953,12 @@ class _LyricsTabContent extends StatefulWidget {
 
 class _LyricsTabContentState extends State<_LyricsTabContent> {
   final settings = AppSettings.instance;
-  bool _isSavingZhConversion = false;
 
   Future<void> _setZhConversionMode(ZhConversionMode mode) async {
-    if (!canSaveChangedSetting(
-      current: settings.zhConversionMode,
-      next: mode,
-      isSaving: _isSavingZhConversion,
-    )) {
-      return;
-    }
-
-    setState(() {
-      _isSavingZhConversion = true;
-      settings.zhConversionMode = mode;
-    });
+    if (mode == settings.zhConversionMode) return;
+    setState(() => settings.zhConversionMode = mode);
     LyricViewController.instance.triggerRebuild();
-    try {
-      await settings.saveSettings();
-    } finally {
-      if (mounted) {
-        setState(() => _isSavingZhConversion = false);
-      }
-    }
+    await settings.saveSettings();
   }
 
   @override
@@ -1272,45 +1032,31 @@ class _LyricsTabContentState extends State<_LyricsTabContent> {
         // const SizedBox(height: 16.0),
         SettingsTile(
           description: '歌词转换',
-          subtitle: _isSavingZhConversion ? '保存中' : null,
-          action: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (_isSavingZhConversion) ...[
-                const SizedBox(
-                  width: 16.0,
-                  height: 16.0,
-                  child: CircularProgressIndicator(strokeWidth: 2.0),
-                ),
-                const SizedBox(width: 10.0),
-              ],
-              SegmentedButton<ZhConversionMode>(
-                showSelectedIcon: false,
-                segments: const [
-                  ButtonSegment<ZhConversionMode>(
-                    value: ZhConversionMode.none,
-                    label: Text('不转换'),
-                  ),
-                  ButtonSegment<ZhConversionMode>(
-                    value: ZhConversionMode.traditionalToSimplified,
-                    label: Text('繁转简'),
-                  ),
-                  ButtonSegment<ZhConversionMode>(
-                    value: ZhConversionMode.simplifiedToTraditional,
-                    label: Text('简转繁'),
-                  ),
-                ],
-                selected: {settings.zhConversionMode},
-                onSelectionChanged: _isSavingZhConversion
-                    ? null
-                    : (newSelection) =>
-                        _setZhConversionMode(newSelection.first),
+          action: SegmentedButton<ZhConversionMode>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment<ZhConversionMode>(
+                value: ZhConversionMode.none,
+                label: Text('不转换'),
+              ),
+              ButtonSegment<ZhConversionMode>(
+                value: ZhConversionMode.traditionalToSimplified,
+                label: Text('繁转简'),
+              ),
+              ButtonSegment<ZhConversionMode>(
+                value: ZhConversionMode.simplifiedToTraditional,
+                label: Text('简转繁'),
               ),
             ],
+            selected: {settings.zhConversionMode},
+            onSelectionChanged: (newSelection) =>
+                _setZhConversionMode(newSelection.first),
           ),
         ),
         const SizedBox(height: 16.0),
         const _GlowEffectSwitch(),
+        const SizedBox(height: 16.0),
+        const _RubyPositionSetting(),
         const SizedBox(height: 16.0),
         // 注释：歌词写入标签功能暂时隐藏，功能未完全实现
         // TODO: 完善歌词写入标签功能后重新启用
@@ -1417,9 +1163,9 @@ class _AdvancedTabContent extends StatelessWidget {
         SizedBox(height: 16.0),
         CreateIssueTile(),
         SizedBox(height: 16.0),
-        AutoUpdateToggle(),
-        SizedBox(height: 16.0),
         CheckForUpdate(),
+        SizedBox(height: 16.0),
+        AutoUpdateToggle(),
       ],
     );
   }
@@ -1450,7 +1196,7 @@ class _SelectFontComboboxState extends State<SelectFontCombobox> {
       final installedFont = await getInstalledFonts();
       if (!mounted) return;
       if (installedFont == null || installedFont.isEmpty) {
-        showTextOnSnackBar('无法获取字体');
+        showTextOnSnackBar('无法获取字体', variant: ToastVariant.error);
         return;
       }
 
@@ -1477,7 +1223,9 @@ class _SelectFontComboboxState extends State<SelectFontCombobox> {
             settings.fontFamily = oldFontFamily;
             settings.fontPath = oldFontPath;
             ThemeProvider.instance.changeFontFamily(oldFontFamily);
-            showTextOnSnackBar('保存字体设置失败');
+            showTextOnSnackBar('保存字体设置失败', variant: ToastVariant.error);
+          } else if (mounted) {
+            showTextOnSnackBar('已恢复默认字体', variant: ToastVariant.success);
           }
         } catch (err) {
           logger.e('[reset font] $err');
@@ -1508,6 +1256,8 @@ class _SelectFontComboboxState extends State<SelectFontCombobox> {
           settings.fontPath = oldFontPath;
           ThemeProvider.instance.changeFontFamily(oldFontFamily);
           showTextOnSnackBar('保存字体设置失败');
+        } else if (mounted) {
+          showTextOnSnackBar('已应用字体“${selectedFont.fullName}”');
         }
       } catch (err) {
         ThemeProvider.instance.changeFontFamily(null);
@@ -1566,7 +1316,7 @@ class _FontSelector extends StatelessWidget {
         vertical: 24.0,
       ),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12.0),
+        borderRadius: AppRadius.mdCircular,
       ),
       child: SizedBox(
         width: width,
@@ -1587,8 +1337,8 @@ class _FontSelector extends StatelessWidget {
                       '\u9009\u62e9\u5b57\u4f53',
                       style: TextStyle(
                         color: scheme.onSurface,
-                        fontSize: 18.0,
-                        fontWeight: FontWeight.bold,
+                        fontSize: AppType.sectionTitle,
+                        fontWeight: AppType.weightBold,
                       ),
                     ),
                     _CurrentFontPill(label: currentFont ?? '\u9ed8\u8ba4'),
@@ -1609,7 +1359,7 @@ class _FontSelector extends StatelessWidget {
                           selectedTileColor:
                               scheme.secondaryContainer.withValues(alpha: 0.45),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12.0),
+                            borderRadius: AppRadius.mdCircular,
                           ),
                           leading: Icon(
                             selected
@@ -1641,7 +1391,7 @@ class _FontSelector extends StatelessWidget {
                         selectedTileColor:
                             scheme.secondaryContainer.withValues(alpha: 0.45),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12.0),
+                          borderRadius: AppRadius.mdCircular,
                         ),
                         leading: Icon(
                           selected ? Symbols.check_circle : Symbols.text_fields,
@@ -1695,24 +1445,13 @@ class _CurrentFontPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
-    return Container(
-      height: 28.0,
-      constraints: const BoxConstraints(maxWidth: 260.0),
-      padding: const EdgeInsets.symmetric(horizontal: 10.0),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: scheme.secondaryContainer,
-        borderRadius: BorderRadius.circular(14.0),
-      ),
-      child: Text(
-        '\u5f53\u524d\uff1a$label',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          color: scheme.onSecondaryContainer,
-          fontSize: 12.0,
-          fontWeight: FontWeight.w600,
-        ),
+    return Text(
+      '\u5f53\u524d\uff1a$label',
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        color: scheme.onSurfaceVariant,
+        fontSize: AppType.caption,
       ),
     );
   }
@@ -1728,51 +1467,17 @@ class DefaultLyricSourceControl extends StatefulWidget {
 
 class _DefaultLyricSourceControlState extends State<DefaultLyricSourceControl> {
   final settings = AppSettings.instance;
-  bool _isSavingSourceMode = false;
-  bool _isSavingOnlineSource = false;
-
-  bool get _isSaving => _isSavingSourceMode || _isSavingOnlineSource;
 
   Future<void> _setLocalLyricFirst(bool value) async {
-    if (_isSaving || value == settings.localLyricFirst) return;
-    setState(() {
-      _isSavingSourceMode = true;
-      settings.localLyricFirst = value;
-    });
-    try {
-      await settings.saveSettings();
-    } finally {
-      if (mounted) {
-        setState(() => _isSavingSourceMode = false);
-      }
-    }
+    if (value == settings.localLyricFirst) return;
+    setState(() => settings.localLyricFirst = value);
+    await settings.saveSettings();
   }
 
   Future<void> _setPreferredOnlineSource(LyricSourceType value) async {
-    if (_isSaving || value == settings.preferredOnlineSource) return;
-    setState(() {
-      _isSavingOnlineSource = true;
-      settings.preferredOnlineSource = value;
-    });
-    try {
-      await settings.saveSettings();
-    } finally {
-      if (mounted) {
-        setState(() => _isSavingOnlineSource = false);
-      }
-    }
-  }
-
-  Widget _savingPrefix(bool visible) {
-    if (!visible) return const SizedBox.shrink();
-    return const Padding(
-      padding: EdgeInsets.only(right: 10.0),
-      child: SizedBox(
-        width: 16.0,
-        height: 16.0,
-        child: CircularProgressIndicator(strokeWidth: 2.0),
-      ),
-    );
+    if (value == settings.preferredOnlineSource) return;
+    setState(() => settings.preferredOnlineSource = value);
+    await settings.saveSettings();
   }
 
   @override
@@ -1782,68 +1487,50 @@ class _DefaultLyricSourceControlState extends State<DefaultLyricSourceControl> {
       children: [
         SettingsTile(
           description: '首选歌词来源',
-          subtitle: _isSavingSourceMode ? '保存中' : null,
-          action: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _savingPrefix(_isSavingSourceMode),
-              SegmentedButton<bool>(
-                showSelectedIcon: false,
-                segments: const [
-                  ButtonSegment<bool>(
-                    value: true,
-                    icon: Icon(Symbols.cloud_off),
-                    label: Text('本地'),
-                  ),
-                  ButtonSegment<bool>(
-                    value: false,
-                    icon: Icon(Symbols.cloud),
-                    label: Text('在线'),
-                  ),
-                ],
-                selected: {settings.localLyricFirst},
-                onSelectionChanged: _isSaving
-                    ? null
-                    : (newSelection) => _setLocalLyricFirst(newSelection.first),
+          action: SegmentedButton<bool>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment<bool>(
+                value: true,
+                icon: Icon(Symbols.cloud_off),
+                label: Text('本地'),
+              ),
+              ButtonSegment<bool>(
+                value: false,
+                icon: Icon(Symbols.cloud),
+                label: Text('在线'),
               ),
             ],
+            selected: {settings.localLyricFirst},
+            onSelectionChanged: (newSelection) =>
+                _setLocalLyricFirst(newSelection.first),
           ),
         ),
-        // 选中“在线”时展开默认源选择
         if (!settings.localLyricFirst) ...[
           const SizedBox(height: 12),
           Padding(
             padding: const EdgeInsets.only(left: 16),
             child: SettingsTile(
               description: '默认在线源',
-              subtitle: _isSavingOnlineSource ? '保存中' : null,
-              action: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _savingPrefix(_isSavingOnlineSource),
-                  SegmentedButton<LyricSourceType>(
-                    showSelectedIcon: false,
-                    segments: const [
-                      ButtonSegment(
-                        value: LyricSourceType.qq,
-                        label: Text('QQ'),
-                      ),
-                      ButtonSegment(
-                        value: LyricSourceType.kugou,
-                        label: Text('酷狗'),
-                      ),
-                      ButtonSegment(
-                        value: LyricSourceType.ne,
-                        label: Text('网易'),
-                      ),
-                    ],
-                    selected: {settings.preferredOnlineSource},
-                    onSelectionChanged: _isSaving
-                        ? null
-                        : (newSelection) =>
-                            _setPreferredOnlineSource(newSelection.first),
+              action: SegmentedButton<LyricSourceType>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(
+                    value: LyricSourceType.qq,
+                    label: Text('QQ'),
+                  ),
+                  ButtonSegment(
+                    value: LyricSourceType.kugou,
+                    label: Text('酷狗'),
+                  ),
+                  ButtonSegment(
+                    value: LyricSourceType.ne,
+                    label: Text('网易'),
                   ),
                 ],
+                selected: {settings.preferredOnlineSource},
+                onSelectionChanged: (newSelection) =>
+                    _setPreferredOnlineSource(newSelection.first),
               ),
             ),
           ),
@@ -1864,7 +1551,6 @@ class NowPlayingBackgroundModeToggle extends StatefulWidget {
 class _NowPlayingBackgroundModeToggleState
     extends State<NowPlayingBackgroundModeToggle> {
   final pref = AppPreference.instance.nowPlayingPagePref;
-  bool _isSaving = false;
 
   @override
   Widget build(BuildContext context) {
@@ -1874,53 +1560,26 @@ class _NowPlayingBackgroundModeToggleState
 
     return SettingsTile(
       description: '播放页背景模式',
-      subtitle: _isSaving ? '保存中' : null,
-      action: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (_isSaving) ...[
-            const SizedBox(
-              width: 16.0,
-              height: 16.0,
-              child: CircularProgressIndicator(strokeWidth: 2.0),
-            ),
-            const SizedBox(width: 10.0),
-          ],
-          SegmentedButton<NowPlayingBackgroundMode>(
-            showSelectedIcon: false,
-            segments: const [
-              ButtonSegment<NowPlayingBackgroundMode>(
-                value: NowPlayingBackgroundMode.meshGradient,
-                label: Text('动态背景'),
-              ),
-              ButtonSegment<NowPlayingBackgroundMode>(
-                value: NowPlayingBackgroundMode.blurCover,
-                label: Text('封面模糊'),
-              ),
-            ],
-            selected: {pref.backgroundMode},
-            onSelectionChanged: _isSaving
-                ? null
-                : (selection) async {
-                    final nextMode = selection.first;
-                    if (nextMode == pref.backgroundMode) return;
-                    setState(() {
-                      _isSaving = true;
-                      pref.backgroundMode = nextMode;
-                    });
-                    nowPlayingBackgroundModeNotifier.value = nextMode;
-                    try {
-                      await AppPreference.instance.save();
-                    } finally {
-                      if (mounted) {
-                        setState(() {
-                          _isSaving = false;
-                        });
-                      }
-                    }
-                  },
+      action: SegmentedButton<NowPlayingBackgroundMode>(
+        showSelectedIcon: false,
+        segments: const [
+          ButtonSegment<NowPlayingBackgroundMode>(
+            value: NowPlayingBackgroundMode.meshGradient,
+            label: Text('动态背景'),
+          ),
+          ButtonSegment<NowPlayingBackgroundMode>(
+            value: NowPlayingBackgroundMode.blurCover,
+            label: Text('封面模糊'),
           ),
         ],
+        selected: {pref.backgroundMode},
+        onSelectionChanged: (selection) {
+          final nextMode = selection.first;
+          if (nextMode == pref.backgroundMode) return;
+          setState(() => pref.backgroundMode = nextMode);
+          nowPlayingBackgroundModeNotifier.value = nextMode;
+          AppPreference.instance.save();
+        },
       ),
     );
   }

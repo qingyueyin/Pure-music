@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/settings.dart';
-import 'package:pure_music/core/setting_action_state.dart';
 import 'package:pure_music/core/update_checker.dart';
 import 'package:pure_music/component/settings_tile.dart';
 import 'package:pure_music/native/rust/api/utils.dart' as rust_utils;
@@ -94,118 +94,70 @@ class NewestUpdateView extends StatelessWidget {
         horizontal: 24.0,
         vertical: 24.0,
       ),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(borderRadius: AppRadius.mdCircular),
       child: SizedBox(
         width: width,
         height: height,
         child: Padding(
-          padding: const EdgeInsets.all(16.0),
+          padding: const EdgeInsets.all(Spacing.lg),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Padding(
-                padding: const EdgeInsets.only(bottom: 16.0),
-                child: Wrap(
-                  spacing: 8.0,
-                  runSpacing: 8.0,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    Text(
-                      info.name ?? '\u65b0\u7248\u672c',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: scheme.onSurface,
-                        fontSize: 18.0,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    _VersionPill(version: info.tagName),
-                  ],
+              Text(
+                '有新更新',
+                style: TextStyle(
+                  color: scheme.onSurface,
+                  fontSize: AppType.hero,
+                  fontWeight: AppType.weightBold,
+                  letterSpacing: -0.3,
                 ),
               ),
+              const SizedBox(height: Spacing.md),
               Expanded(
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: scheme.surfaceContainerHighest.withValues(
-                      alpha: 0.3,
-                    ),
-                    borderRadius: BorderRadius.circular(12.0),
+                    color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                    borderRadius: AppRadius.mdCircular,
                     border: Border.all(color: scheme.outlineVariant),
                   ),
                   child: Markdown(
                     data: info.body?.trim().isNotEmpty == true
                         ? info.body!
-                        : '\u8fd9\u4e2a\u7248\u672c\u6682\u65f6\u6ca1\u6709\u66f4\u65b0\u8bf4\u660e\u3002',
+                        : '这个版本暂时没有更新说明。',
                     onTapLink: (text, href, title) {
                       if (href != null) {
                         _launchBrowserUrl(href);
                       }
                     },
-                    padding: const EdgeInsets.all(12.0),
+                    padding: const EdgeInsets.all(Spacing.md),
                     styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)),
                   ),
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.only(top: 16.0),
-                child: OverflowBar(
-                  alignment: MainAxisAlignment.end,
-                  spacing: 8.0,
-                  overflowSpacing: 8.0,
-                  children: [
-                    TextButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                      },
-                      child: const Text('\u53d6\u6d88'),
-                    ),
-                    FilledButton.icon(
-                      onPressed: !hasUpdateUrl
-                          ? null
-                          : () {
-                              _launchBrowserUrl(updateUrl!);
-                              Navigator.pop(context);
-                            },
-                      icon: const Icon(Symbols.arrow_outward),
-                      label: const Text('\u83b7\u53d6\u66f4\u65b0'),
-                    ),
-                  ],
-                ),
+              const SizedBox(height: Spacing.lg),
+              OverflowBar(
+                alignment: MainAxisAlignment.end,
+                spacing: Spacing.sm,
+                overflowSpacing: Spacing.sm,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('取消'),
+                  ),
+                  FilledButton.icon(
+                    onPressed: !hasUpdateUrl
+                        ? null
+                        : () {
+                            _launchBrowserUrl(updateUrl!);
+                            Navigator.pop(context);
+                          },
+                    icon: const Icon(Symbols.arrow_outward),
+                    label: const Text('获取更新'),
+                  ),
+                ],
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _VersionPill extends StatelessWidget {
-  const _VersionPill({required this.version});
-
-  final String version;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return Container(
-      height: 28.0,
-      padding: const EdgeInsets.symmetric(horizontal: 10.0),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: scheme.primaryContainer,
-        borderRadius: BorderRadius.circular(14.0),
-      ),
-      child: Text(
-        version,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          color: scheme.onPrimaryContainer,
-          fontSize: 12.0,
-          fontWeight: FontWeight.w700,
         ),
       ),
     );
@@ -220,47 +172,18 @@ class AutoUpdateToggle extends StatefulWidget {
 }
 
 class _AutoUpdateToggleState extends State<AutoUpdateToggle> {
-  bool _isSaving = false;
-
   @override
   Widget build(BuildContext context) {
     final enabled = AppPreference.instance.autoCheckUpdate;
-    final canChange = canChangeSetting(isSaving: _isSaving);
     return SettingsTile(
       description: '启动时自动检查更新',
-      subtitle: _isSaving
-          ? '保存中'
-          : enabled
-              ? '已开启'
-              : '已关闭',
-      action: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (_isSaving) ...[
-            const SizedBox(
-              width: 16.0,
-              height: 16.0,
-              child: CircularProgressIndicator(strokeWidth: 2.0),
-            ),
-            const SizedBox(width: 8.0),
-          ],
-          Switch(
-            value: enabled,
-            onChanged: !canChange
-                ? null
-                : (value) async {
-                    setState(() {
-                      _isSaving = true;
-                      AppPreference.instance.autoCheckUpdate = value;
-                    });
-                    try {
-                      await AppPreference.instance.save();
-                    } finally {
-                      if (mounted) setState(() => _isSaving = false);
-                    }
-                  },
-          ),
-        ],
+      subtitle: enabled ? '已开启' : '已关闭',
+      action: Switch(
+        value: enabled,
+        onChanged: (value) async {
+          setState(() => AppPreference.instance.autoCheckUpdate = value);
+          await AppPreference.instance.save();
+        },
       ),
     );
   }

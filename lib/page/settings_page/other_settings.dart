@@ -1,8 +1,5 @@
-import 'dart:io';
-
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/settings.dart';
-import 'package:pure_music/core/setting_action_state.dart';
-import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/zh_converter.dart';
 import 'package:pure_music/core/utils.dart';
@@ -20,20 +17,12 @@ class OnlineLyricSettings extends StatefulWidget {
 
 class _OnlineLyricSettingsState extends State<OnlineLyricSettings> {
   final settings = AppSettings.instance;
-  bool _isSaving = false;
 
-  Future<void> _saveChangedSetting(VoidCallback update) async {
-    if (_isSaving) return;
+  void _updateSetting(VoidCallback update) {
     setState(() {
-      _isSaving = true;
       update();
     });
-    try {
-      final saved = await settings.saveSettings();
-      if (!saved && mounted) showTextOnSnackBar('保存设置失败');
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
-    }
+    settings.saveSettings();
   }
 
   @override
@@ -41,23 +30,12 @@ class _OnlineLyricSettingsState extends State<OnlineLyricSettings> {
     final scheme = Theme.of(context).colorScheme;
     return SettingsTile(
       description: '在线歌词设置',
-      subtitle: _isSaving ? '保存中' : null,
       action: MenuAnchor(
         builder: (context, controller, _) {
           return FilledButton.icon(
-            onPressed: _isSaving
-                ? null
-                : controller.isOpen
-                    ? controller.close
-                    : controller.open,
-            icon: _isSaving
-                ? const SizedBox(
-                    width: 16.0,
-                    height: 16.0,
-                    child: CircularProgressIndicator(strokeWidth: 2.0),
-                  )
-                : const Icon(Symbols.tune),
-            label: Text(_isSaving ? '保存中' : '打开'),
+            onPressed: controller.isOpen ? controller.close : controller.open,
+            icon: const Icon(Symbols.tune),
+            label: const Text('打开'),
           );
         },
         menuChildren: [
@@ -85,12 +63,9 @@ class _OnlineLyricSettingsState extends State<OnlineLyricSettings> {
                     ),
                   ],
                   selected: {settings.lyricDisplayMode},
-                  onSelectionChanged: _isSaving
-                      ? null
-                      : (newSelection) => _saveChangedSetting(
-                            () =>
-                                settings.lyricDisplayMode = newSelection.first,
-                          ),
+                  onSelectionChanged: (newSelection) => _updateSetting(
+                        () => settings.lyricDisplayMode = newSelection.first,
+                      ),
                 ),
                 const SizedBox(height: 16.0),
                 Text(
@@ -115,12 +90,9 @@ class _OnlineLyricSettingsState extends State<OnlineLyricSettings> {
                     ),
                   ],
                   selected: {settings.zhConversionMode},
-                  onSelectionChanged: _isSaving
-                      ? null
-                      : (newSelection) => _saveChangedSetting(
-                            () =>
-                                settings.zhConversionMode = newSelection.first,
-                          ),
+                  onSelectionChanged: (newSelection) => _updateSetting(
+                        () => settings.zhConversionMode = newSelection.first,
+                      ),
                 ),
               ],
             ),
@@ -141,58 +113,31 @@ class DefaultLyricSourceControl extends StatefulWidget {
 
 class _DefaultLyricSourceControlState extends State<DefaultLyricSourceControl> {
   final settings = AppSettings.instance;
-  bool _isSaving = false;
 
   @override
   Widget build(BuildContext context) {
-    final canChange = canChangeSetting(isSaving: _isSaving);
     return SettingsTile(
       description: '首选歌词来源',
-      subtitle: _isSaving ? '保存中' : null,
-      action: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (_isSaving) ...[
-            const SizedBox(
-              width: 16.0,
-              height: 16.0,
-              child: CircularProgressIndicator(strokeWidth: 2.0),
-            ),
-            const SizedBox(width: 8.0),
-          ],
-          SegmentedButton<bool>(
-            showSelectedIcon: false,
-            segments: const [
-              ButtonSegment<bool>(
-                value: true,
-                icon: Icon(Symbols.cloud_off),
-                label: Text('本地'),
-              ),
-              ButtonSegment<bool>(
-                value: false,
-                icon: Icon(Symbols.cloud),
-                label: Text('在线'),
-              ),
-            ],
-            selected: {settings.localLyricFirst},
-            onSelectionChanged: !canChange
-                ? null
-                : (newSelection) async {
-                    if (newSelection.first == settings.localLyricFirst) return;
-
-                    setState(() {
-                      _isSaving = true;
-                      settings.localLyricFirst = newSelection.first;
-                    });
-                    try {
-                      final saved = await settings.saveSettings();
-                      if (!saved && mounted) showTextOnSnackBar('保存设置失败');
-                    } finally {
-                      if (mounted) setState(() => _isSaving = false);
-                    }
-                  },
+      action: SegmentedButton<bool>(
+        showSelectedIcon: false,
+        segments: const [
+          ButtonSegment<bool>(
+            value: true,
+            icon: Icon(Symbols.cloud_off),
+            label: Text('本地'),
+          ),
+          ButtonSegment<bool>(
+            value: false,
+            icon: Icon(Symbols.cloud),
+            label: Text('在线'),
           ),
         ],
+        selected: {settings.localLyricFirst},
+        onSelectionChanged: (newSelection) async {
+          if (newSelection.first == settings.localLyricFirst) return;
+          setState(() => settings.localLyricFirst = newSelection.first);
+          await settings.saveSettings();
+        },
       ),
     );
   }
@@ -252,7 +197,7 @@ class AdvancedPlaybackSettingsTile extends StatelessWidget {
                           ),
                           decoration: BoxDecoration(
                             color: scheme.surfaceContainerHighest,
-                            borderRadius: BorderRadius.circular(14.0),
+                            borderRadius: AppRadius.mdCircular,
                           ),
                           child: Text(
                             '${pref.wasapiBufferSec.toStringAsFixed(2)}s',
@@ -292,14 +237,20 @@ class AdvancedPlaybackSettingsTile extends StatelessWidget {
                       IconButton(
                         tooltip: '写入快照',
                         onPressed: AudioEchoLogRecorder.instance.isRecording
-                            ? () => AudioEchoLogRecorder.instance
-                                .snapshot(tag: 'manual')
+                            ? () {
+                                AudioEchoLogRecorder.instance
+                                    .snapshot(tag: 'manual');
+                                showTextOnSnackBar('已写入快照');
+                              }
                             : null,
                         icon: const Icon(Symbols.bookmark),
                       ),
                       IconButton(
                         tooltip: '打开日志目录',
-                        onPressed: AudioEchoLogRecorder.instance.openLogDir,
+                        onPressed: () {
+                          AudioEchoLogRecorder.instance.openLogDir();
+                          showTextOnSnackBar('已打开日志目录');
+                        },
                         icon: const Icon(Symbols.folder),
                       ),
                       Switch(
@@ -372,7 +323,7 @@ class _AudioEchoLogRecordControlState extends State<AudioEchoLogRecordControl> {
               color: isRecording
                   ? scheme.tertiaryContainer
                   : scheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(16.0),
+              borderRadius: AppRadius.mdCircular,
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -411,13 +362,19 @@ class _AudioEchoLogRecordControlState extends State<AudioEchoLogRecordControl> {
           IconButton(
             tooltip: '写入快照',
             onPressed: isRecording && !isBusy
-                ? () => recorder.snapshot(tag: 'manual')
+                ? () {
+                    recorder.snapshot(tag: 'manual');
+                    showTextOnSnackBar('已写入快照');
+                  }
                 : null,
             icon: const Icon(Symbols.bookmark),
           ),
           IconButton(
             tooltip: '打开日志目录',
-            onPressed: recorder.openLogDir,
+            onPressed: () {
+              recorder.openLogDir();
+              showTextOnSnackBar('已打开日志目录');
+            },
             icon: const Icon(Symbols.folder),
           ),
           Switch(
@@ -448,33 +405,19 @@ class _AudioEchoLogRecordControlState extends State<AudioEchoLogRecordControl> {
 class _WasapiBufferControlState extends State<WasapiBufferControl> {
   final pref = AppPreference.instance.playbackPref;
   late double _lastSavedValue = pref.wasapiBufferSec;
-  bool _isSaving = false;
 
   Future<void> _saveBufferSec(double value) async {
     final next = value.clamp(0.05, 0.30).toDouble();
-    if (!canSaveChangedDoubleSetting(
-      current: _lastSavedValue,
-      next: next,
-      isSaving: _isSaving,
-    )) {
-      return;
-    }
+    if ((_lastSavedValue - next).abs() <= 0.000001) return;
 
     final previous = _lastSavedValue;
-    setState(() {
-      _isSaving = true;
-      pref.wasapiBufferSec = next;
-    });
-    try {
-      final saved = await AppPreference.instance.save();
-      if (saved) {
-        _lastSavedValue = next;
-      } else {
-        pref.wasapiBufferSec = previous;
-        if (mounted) showTextOnSnackBar('保存播放设置失败');
-      }
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
+    pref.wasapiBufferSec = next;
+    final saved = await AppPreference.instance.save();
+    if (saved) {
+      _lastSavedValue = next;
+    } else {
+      pref.wasapiBufferSec = previous;
+      if (mounted) showTextOnSnackBar('保存播放设置失败', variant: ToastVariant.error);
     }
   }
 
@@ -484,33 +427,22 @@ class _WasapiBufferControlState extends State<WasapiBufferControl> {
     final v = pref.wasapiBufferSec.clamp(0.05, 0.30).toDouble();
     return SettingsTile(
       description: 'WASAPI 缓冲时长',
-      subtitle: _isSaving ? '保存中' : null,
       action: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 320.0),
         child: Row(
           children: [
-            if (_isSaving) ...[
-              const SizedBox(
-                width: 16.0,
-                height: 16.0,
-                child: CircularProgressIndicator(strokeWidth: 2.0),
-              ),
-              const SizedBox(width: 8.0),
-            ],
             Expanded(
               child: Slider(
                 min: 0.05,
                 max: 0.30,
                 divisions: 25,
                 value: v,
-                onChanged: _isSaving
-                    ? null
-                    : (nv) {
-                        setState(() {
-                          pref.wasapiBufferSec = nv;
-                        });
-                      },
-                onChangeEnd: _isSaving ? null : _saveBufferSec,
+                onChanged: (nv) {
+                  setState(() {
+                    pref.wasapiBufferSec = nv;
+                  });
+                },
+                onChangeEnd: _saveBufferSec,
               ),
             ),
             const SizedBox(width: 8.0),
@@ -521,7 +453,7 @@ class _WasapiBufferControlState extends State<WasapiBufferControl> {
               ),
               decoration: BoxDecoration(
                 color: scheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(14.0),
+                borderRadius: AppRadius.mdCircular,
               ),
               child: Text(
                 '${v.toStringAsFixed(2)}s',
@@ -530,87 +462,6 @@ class _WasapiBufferControlState extends State<WasapiBufferControl> {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// 播放页背景模式（Windows only）
-class NowPlayingBackgroundModeToggle extends StatefulWidget {
-  const NowPlayingBackgroundModeToggle({super.key});
-
-  @override
-  State<NowPlayingBackgroundModeToggle> createState() =>
-      _NowPlayingBackgroundModeToggleState();
-}
-
-class _NowPlayingBackgroundModeToggleState
-    extends State<NowPlayingBackgroundModeToggle> {
-  final pref = AppPreference.instance.nowPlayingPagePref;
-  bool _isSaving = false;
-
-  @override
-  Widget build(BuildContext context) {
-    /// Only show on Windows platform
-    if (!Platform.isWindows) {
-      return const SizedBox.shrink();
-    }
-
-    return SettingsTile(
-      description: '播放页背景模式',
-      subtitle: _isSaving ? '保存中' : null,
-      action: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (_isSaving) ...[
-            const SizedBox(
-              width: 16.0,
-              height: 16.0,
-              child: CircularProgressIndicator(strokeWidth: 2.0),
-            ),
-            const SizedBox(width: 10.0),
-          ],
-          SegmentedButton<NowPlayingBackgroundMode>(
-            showSelectedIcon: false,
-            segments: const [
-              ButtonSegment<NowPlayingBackgroundMode>(
-                value: NowPlayingBackgroundMode.meshGradient,
-                label: Text('动态'),
-              ),
-              ButtonSegment<NowPlayingBackgroundMode>(
-                value: NowPlayingBackgroundMode.blurCover,
-                label: Text('封面模糊'),
-              ),
-            ],
-            selected: {pref.backgroundMode},
-            onSelectionChanged: _isSaving
-                ? null
-                : (selection) async {
-                    final nextMode = selection.first;
-                    if (nextMode == pref.backgroundMode) return;
-                    final previousMode = pref.backgroundMode;
-                    setState(() {
-                      _isSaving = true;
-                      pref.backgroundMode = nextMode;
-                    });
-                    nowPlayingBackgroundModeNotifier.value = nextMode;
-                    try {
-                      final saved = await AppPreference.instance.save();
-                      if (!saved) {
-                        pref.backgroundMode = previousMode;
-                        nowPlayingBackgroundModeNotifier.value = previousMode;
-                        if (mounted) showTextOnSnackBar('保存播放页背景失败');
-                      }
-                    } finally {
-                      if (mounted) {
-                        setState(() {
-                          _isSaving = false;
-                        });
-                      }
-                    }
-                  },
-          ),
-        ],
       ),
     );
   }
