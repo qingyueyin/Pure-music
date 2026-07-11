@@ -1,3 +1,4 @@
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/native/rust/api/utils.dart';
@@ -109,18 +110,18 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
     const space = SizedBox(height: 16.0);
 
     final styleTitle = TextStyle(
-      fontSize: 18,
-      fontWeight: FontWeight.w600,
+      fontSize: AppType.sectionTitle,
+      fontWeight: AppType.weightSemibold,
       color: scheme.onSurface,
     );
-    final styleContent = TextStyle(fontSize: 14, color: scheme.onSurface);
+    final styleContent = TextStyle(fontSize: AppType.body, color: scheme.onSurface);
     final placeholder = SizedBox(
       width: 156.0,
       height: 156.0,
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(12.0),
+          borderRadius: AppRadius.mdCircular,
           border: Border.all(color: scheme.outlineVariant),
         ),
         child: Icon(
@@ -158,7 +159,7 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
                     }
                     if (snapshot.data == null) return placeholder;
                     return ClipRRect(
-                      borderRadius: BorderRadius.circular(12.0),
+                      borderRadius: AppRadius.mdCircular,
                       child: Image(
                         image: snapshot.data!,
                         width: 156,
@@ -184,7 +185,7 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
                         Text(
                           '歌名：',
                           style: TextStyle(
-                            fontSize: 13,
+                            fontSize: AppType.body,
                             color: scheme.onSurface.withValues(alpha: 0.70),
                           ),
                         ),
@@ -193,7 +194,7 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
                           child: ActionChip(
                             label: Text(
                               audio.title,
-                              style: styleTitle.copyWith(fontSize: 15),
+                              style: styleTitle.copyWith(fontSize: AppType.subtitle),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               softWrap: false,
@@ -224,7 +225,7 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
                         Text(
                           '歌手：',
                           style: TextStyle(
-                            fontSize: 13,
+                            fontSize: AppType.body,
                             color: scheme.onSurface.withValues(alpha: 0.70),
                           ),
                         ),
@@ -262,7 +263,7 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
                         Text(
                           '专辑：',
                           style: TextStyle(
-                            fontSize: 13,
+                            fontSize: AppType.body,
                             color: scheme.onSurface.withValues(alpha: 0.70),
                           ),
                         ),
@@ -560,7 +561,7 @@ class _InfoTile extends StatelessWidget {
         Text(
           label,
           style: TextStyle(
-            fontSize: 13,
+            fontSize: AppType.body,
             color: scheme.onSurface.withValues(alpha: 0.70),
           ),
         ),

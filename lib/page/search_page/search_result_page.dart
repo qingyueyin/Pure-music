@@ -2,6 +2,7 @@ import 'package:pure_music/component/album_tile.dart';
 import 'package:pure_music/component/artist_tile.dart';
 import 'package:pure_music/component/audio_tile.dart';
 import 'package:pure_music/component/quiet_empty_state.dart';
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/core/search_action_state.dart';
 import 'package:pure_music/library/union_search_result.dart';
@@ -167,8 +168,8 @@ class _SearchResultPageBody extends StatelessWidget {
                       contentType.name,
                       style: TextStyle(
                         color: scheme.onSurface,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
+                        fontSize: AppType.pageTitle,
+                        fontWeight: AppType.weightBold,
                       ),
                     ),
                   ),
@@ -323,7 +324,7 @@ class _ResultCount extends StatelessWidget {
       '$count',
       style: TextStyle(
         color: scheme.onSurfaceVariant,
-        fontSize: 14,
+        fontSize: AppType.body,
       ),
     );
   }

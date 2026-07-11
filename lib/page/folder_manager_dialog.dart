@@ -1,3 +1,4 @@
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/settings.dart';
@@ -72,7 +73,7 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
         folder.path,
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
+        style: TextStyle(color: scheme.onSurfaceVariant, fontSize: AppType.caption),
       ),
     );
   }
@@ -130,7 +131,7 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
         vertical: 24.0,
       ),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12.0),
+        borderRadius: AppRadius.mdCircular,
       ),
       child: SizedBox(
         height: height,
@@ -142,20 +143,24 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
             children: [
               Padding(
                 padding: const EdgeInsets.only(bottom: 16.0),
-                child: Wrap(
-                  spacing: 8.0,
-                  runSpacing: 8.0,
-                  crossAxisAlignment: WrapCrossAlignment.center,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       '管理文件夹',
                       style: TextStyle(
                         color: scheme.onSurface,
-                        fontSize: 18.0,
-                        fontWeight: FontWeight.bold,
+                        fontSize: AppType.sectionTitle,
+                        fontWeight: AppType.weightBold,
                       ),
                     ),
-                    _ManagedFolderCountPill(count: folders.length),
+                    Text(
+                      '${folders.length} 个文件夹',
+                      style: TextStyle(
+                        color: scheme.onSurfaceVariant,
+                        fontSize: AppType.caption,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -339,35 +344,6 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
   }
 }
 
-class _ManagedFolderCountPill extends StatelessWidget {
-  const _ManagedFolderCountPill({required this.count});
-
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return Container(
-      height: 28.0,
-      padding: const EdgeInsets.symmetric(horizontal: 10.0),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: scheme.secondaryContainer,
-        borderRadius: BorderRadius.circular(14.0),
-      ),
-      child: Text(
-        '$count 个文件夹',
-        style: TextStyle(
-          color: scheme.onSecondaryContainer,
-          fontSize: 12.0,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-}
-
 class _EmptyManagedFolderState extends StatelessWidget {
   const _EmptyManagedFolderState();
 
@@ -392,7 +368,7 @@ class _EmptyManagedFolderState extends StatelessWidget {
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: scheme.onSurface,
-                fontWeight: FontWeight.w600,
+                fontWeight: AppType.weightSemibold,
               ),
             ),
             const SizedBox(height: 4.0),

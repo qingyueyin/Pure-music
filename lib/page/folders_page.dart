@@ -1,3 +1,4 @@
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/utils.dart';
@@ -156,13 +157,13 @@ class AudioFolderTile extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8.0),
       child: InkWell(
-        borderRadius: BorderRadius.circular(8.0),
+        borderRadius: AppRadius.smCircular,
         onTap: () => context.push(
           app_paths.FOLDER_DETAIL_PAGE,
           extra: audioFolder,
         ),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
           child: Row(
             children: [
               Icon(Symbols.folder, color: scheme.onSurfaceVariant),
@@ -184,7 +185,7 @@ class AudioFolderTile extends StatelessWidget {
                       maxLines: 1,
                       style: TextStyle(
                         color: scheme.onSurfaceVariant,
-                        fontSize: 13,
+                        fontSize: AppType.body,
                       ),
                     ),
                   ],
@@ -195,7 +196,7 @@ class AudioFolderTile extends StatelessWidget {
                 '${audioFolder.audios.length} 首',
                 style: TextStyle(
                   color: scheme.onSurfaceVariant,
-                  fontSize: 13,
+                  fontSize: AppType.body,
                 ),
               ),
             ],
