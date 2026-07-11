@@ -5,6 +5,7 @@ import 'package:pure_music/component/danger_confirm_dialog.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/utils.dart';
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/menu_styles.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/page/uni_page.dart';
@@ -77,7 +78,7 @@ class _AudioTileState extends State<AudioTile> {
           audio.title,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
+          style: TextStyle(color: scheme.onSurfaceVariant, fontSize: AppType.caption),
         ),
       );
       if (!confirmed || !mounted) return;
@@ -108,10 +109,10 @@ class _AudioTileState extends State<AudioTile> {
         if (!mounted) return;
         if (!saved) {
           target.removeByPath(audio.path);
-          showTextOnSnackBar('保存歌单失败');
+          showTextOnSnackBar('保存歌单失败', variant: ToastVariant.error);
           return;
         }
-        showTextOnSnackBar('成功将${audio.title}添加到歌单“${target.name}”');
+        showTextOnSnackBar('成功将${audio.title}添加到歌单"${target.name}"', variant: ToastVariant.success);
       } finally {
         _addingToPlaylist = null;
         if (mounted) setState(() {});
@@ -173,6 +174,7 @@ class _AudioTileState extends State<AudioTile> {
                 )
                     ? () {
                         PlayService.instance.playbackService.addToNext(audio);
+                        showTextOnSnackBar('已加入下一首', variant: ToastVariant.success);
                       }
                     : null,
                 leadingIcon: const Icon(Symbols.plus_one),
@@ -314,7 +316,7 @@ class _AudioTileState extends State<AudioTile> {
                 height: 64.0,
                 decoration: BoxDecoration(
                   color: backgroundColor,
-                  borderRadius: BorderRadius.circular(8.0),
+                  borderRadius: AppRadius.smCircular,
                   border: effectiveFocus && !isSelected
                       ? Border.all(color: scheme.primary.withAlpha(89))
                       : null,
@@ -413,7 +415,7 @@ class _AudioTileState extends State<AudioTile> {
                     },
                     child: InkWell(
                       focusColor: Colors.transparent,
-                      borderRadius: BorderRadius.circular(8.0),
+                      borderRadius: AppRadius.smCircular,
                       onHover: (v) => setState(() => _hovered = v),
                       onTap: () {
                         if (controller.isOpen) {
@@ -457,7 +459,7 @@ class _AudioTileState extends State<AudioTile> {
                                 Text(
                                   audio.title,
                                   style:
-                                      TextStyle(color: textColor, fontSize: 16),
+                                      TextStyle(color: textColor, fontSize: AppType.subtitle),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -566,7 +568,7 @@ class _SmallCoverWidgetState extends State<_SmallCoverWidget> {
   Widget build(BuildContext context) {
     if (_cached != null) {
       return ClipRRect(
-        borderRadius: BorderRadius.circular(8.0),
+        borderRadius: AppRadius.smCircular,
         child: Image.memory(
           _cached!,
           width: 48.0,
@@ -589,7 +591,7 @@ class _SmallCoverWidgetState extends State<_SmallCoverWidget> {
             .colorScheme
             .surfaceContainerHighest
             .withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(8.0),
+        borderRadius: AppRadius.smCircular,
       ),
     );
   }

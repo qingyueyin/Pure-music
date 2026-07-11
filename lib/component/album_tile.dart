@@ -1,6 +1,7 @@
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/page/uni_page.dart';
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/core/menu_styles.dart';
@@ -109,9 +110,9 @@ class _AlbumTileState extends State<AlbumTile> {
             color: isSelected
                 ? scheme.secondaryContainer
                 : widget.view == ContentView.list && _hovered
-                    ? scheme.onSurface.withValues(alpha: 0.04)
+                    ? scheme.onSurface.withValues(alpha: Alpha.hover)
                     : Colors.transparent,
-            borderRadius: BorderRadius.circular(8.0),
+            borderRadius: AppRadius.smCircular,
           ),
           child: Material(
             type: MaterialType.transparency,
@@ -151,7 +152,7 @@ class _AlbumTileState extends State<AlbumTile> {
                   position: details.localPosition.translate(0, -140),
                 );
               },
-              borderRadius: BorderRadius.circular(8.0),
+              borderRadius: AppRadius.smCircular,
               child: Stack(
                 children: [
                   widget.view == ContentView.list
@@ -166,7 +167,7 @@ class _AlbumTileState extends State<AlbumTile> {
                                     return placeholder;
                                   }
                                   return ClipRRect(
-                                    borderRadius: BorderRadius.circular(8.0),
+                                    borderRadius: AppRadius.smCircular,
                                     child: Image(
                                       image: snapshot.data!,
                                       width: 48.0,
@@ -245,7 +246,7 @@ class _AlbumTileState extends State<AlbumTile> {
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
                                         color: scheme.onSurface,
-                                        fontWeight: FontWeight.bold,
+                                        fontWeight: AppType.weightBold,
                                       ),
                                     ),
                                   );
@@ -271,7 +272,7 @@ class _AlbumTileState extends State<AlbumTile> {
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
                                       color: onPrimaryColor,
-                                      fontWeight: FontWeight.bold,
+                                      fontWeight: AppType.weightBold,
                                     ),
                                   ),
                                 );

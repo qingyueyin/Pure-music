@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:pure_music/native/rust/api/tag_reader.dart';
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:flutter/material.dart';
 
@@ -59,7 +60,7 @@ class _BuildIndexStateViewState extends State<BuildIndexStateView> {
           children: [
             LinearProgressIndicator(
               value: progress,
-              borderRadius: BorderRadius.circular(2.0),
+              borderRadius: AppRadius.xsCircular,
             ),
             const SizedBox(height: 8.0),
             Row(
@@ -81,13 +82,13 @@ class _BuildIndexStateViewState extends State<BuildIndexStateView> {
                     ),
                     decoration: BoxDecoration(
                       color: scheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(12.0),
+                      borderRadius: AppRadius.mdCircular,
                     ),
                     child: Text(
                       '${(progress.clamp(0.0, 1.0) * 100).round()}%',
                       style: TextStyle(
                         color: scheme.onSurfaceVariant,
-                        fontSize: 12.0,
+                        fontSize: AppType.caption,
                       ),
                     ),
                   ),

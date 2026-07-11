@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:pure_music/core/design_tokens.dart';
+
 class QuietEmptyState extends StatelessWidget {
   const QuietEmptyState({
     super.key,
@@ -47,7 +49,7 @@ class QuietEmptyState extends StatelessWidget {
                       title,
                       style: textTheme.titleMedium?.copyWith(
                         color: scheme.onSurface,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: AppType.weightSemibold,
                       ),
                     ),
                     const SizedBox(height: 4.0),

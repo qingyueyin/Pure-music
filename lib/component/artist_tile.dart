@@ -1,6 +1,7 @@
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/page/uni_page.dart';
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/menu_styles.dart';
 import 'package:flutter/material.dart';
@@ -98,9 +99,9 @@ class _ArtistTileState extends State<ArtistTile> {
             color: isSelected
                 ? scheme.secondaryContainer
                 : widget.view == ContentView.list && _hovered
-                    ? scheme.onSurface.withValues(alpha: 0.04)
+                    ? scheme.onSurface.withValues(alpha: Alpha.hover)
                     : Colors.transparent,
-            borderRadius: BorderRadius.circular(8.0),
+            borderRadius: AppRadius.smCircular,
           ),
           child: Material(
             type: MaterialType.transparency,
@@ -140,7 +141,7 @@ class _ArtistTileState extends State<ArtistTile> {
                   position: details.localPosition.translate(0, -140),
                 );
               },
-              borderRadius: BorderRadius.circular(8.0),
+              borderRadius: AppRadius.smCircular,
               child: Padding(
                 padding: const EdgeInsets.all(8.0),
                 child: Row(

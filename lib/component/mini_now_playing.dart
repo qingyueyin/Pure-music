@@ -7,6 +7,7 @@ import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:flutter/material.dart';
@@ -37,11 +38,11 @@ class MiniNowPlaying extends StatelessWidget {
               width: double.infinity,
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: AppRadius.smCircular,
                   boxShadow: kElevationToShadow[4],
                 ),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: AppRadius.smCircular,
                   child: LayoutBuilder(builder: (context, constraints) {
                     return RectangleProgressIndicator(
                       size: Size(constraints.maxWidth, constraints.maxHeight),
@@ -95,7 +96,7 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
           backgroundColor: const WidgetStatePropertyAll(Colors.transparent),
           overlayColor: WidgetStateProperty.resolveWith((states) {
             if (states.contains(WidgetState.pressed)) {
-              return scheme.onSecondaryContainer.withValues(alpha: 0.04);
+              return scheme.onSecondaryContainer.withValues(alpha: Alpha.hover);
             }
             if (states.contains(WidgetState.hovered) ||
                 states.contains(WidgetState.focused)) {
@@ -112,11 +113,11 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
           color: _hovered
               ? scheme.onSecondaryContainer.withValues(alpha: 0.06)
               : null,
-          borderRadius: BorderRadius.circular(8.0),
+          borderRadius: AppRadius.smCircular,
         ),
         child: Material(
           type: MaterialType.transparency,
-          borderRadius: BorderRadius.circular(8.0),
+          borderRadius: AppRadius.smCircular,
           child: InkWell(
             onHover: (v) {
               _controlsHideTimer?.cancel();
@@ -166,7 +167,7 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
               }
               context.push(app_paths.NOW_PLAYING_PAGE);
             },
-            borderRadius: BorderRadius.circular(8.0),
+            borderRadius: AppRadius.smCircular,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8.0),
               child: ListenableBuilder(
@@ -231,7 +232,7 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
                         nowPlaying != null
                             ? Builder(builder: (context) {
                                 final cover = ClipRRect(
-                                  borderRadius: BorderRadius.circular(8.0),
+                                  borderRadius: AppRadius.smCircular,
                                   child: SizedBox(
                                     width: 48.0,
                                     height: 48.0,
@@ -612,7 +613,7 @@ class _MiniCoverWidgetState extends State<_MiniCoverWidget> {
   Widget build(BuildContext context) {
     if (_cached != null) {
       return ClipRRect(
-        borderRadius: BorderRadius.circular(8.0),
+        borderRadius: AppRadius.smCircular,
         child: Image.memory(
           _cached!,
           width: 48.0,
@@ -635,7 +636,7 @@ class _MiniCoverWidgetState extends State<_MiniCoverWidget> {
             .colorScheme
             .surfaceContainerHighest
             .withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(8.0),
+        borderRadius: AppRadius.smCircular,
       ),
     );
   }

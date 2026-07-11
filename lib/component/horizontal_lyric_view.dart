@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/route_visibility.dart';
 import 'package:pure_music/core/settings.dart';
@@ -24,7 +25,7 @@ class HorizontalLyricView extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: scheme.secondaryContainer,
-        borderRadius: BorderRadius.circular(16.0),
+        borderRadius: AppRadius.mdCircular,
       ),
       child: ListenableBuilder(
         listenable: Listenable.merge([
@@ -201,18 +202,6 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
         final offsetY = isPrev ? t * h : -(1 - t) * h;
         child = Transform.translate(
           offset: Offset(0, offsetY),
-          child: Opacity(opacity: isPrev ? 1.0 - t : t, child: child),
-        );
-      case TopBarLyricAnimation.slideLeft:
-        final offsetX = isPrev ? -t * w : (1 - t) * w;
-        child = Transform.translate(
-          offset: Offset(offsetX, 0),
-          child: Opacity(opacity: isPrev ? 1.0 - t : t, child: child),
-        );
-      case TopBarLyricAnimation.slideRight:
-        final offsetX = isPrev ? t * w : -(1 - t) * w;
-        child = Transform.translate(
-          offset: Offset(offsetX, 0),
           child: Opacity(opacity: isPrev ? 1.0 - t : t, child: child),
         );
       case TopBarLyricAnimation.fade:
