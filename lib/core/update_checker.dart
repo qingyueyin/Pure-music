@@ -87,8 +87,10 @@ class UpdateChecker {
     try {
       final slug =
           gh.RepositorySlug.full(AppPreference.instance.updateRepoSlug);
-      final release =
-          await AppSettings.github.repositories.listReleases(slug).first;
+      final release = await AppSettings.github.repositories
+          .listReleases(slug)
+          .first
+          .timeout(const Duration(seconds: 15));
       final tagName = release.tagName ?? '';
       if (tagName.isEmpty) return null;
       return UpdateInfo.fromGitHubRelease(release);

@@ -211,7 +211,6 @@ class ThemeProvider extends ChangeNotifier {
     _themeDebounceTimer = Timer(const Duration(milliseconds: 200), () async {
       if (token != _themeRequestToken) return;
 
-      // 用小封面字节直接调 Rust k-means，跳过 PaletteGenerator 的重复解码
       final bytes = audio.smallCoverBytes;
       if (bytes == null || token != _themeRequestToken) return;
 

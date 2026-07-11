@@ -98,8 +98,6 @@ enum PlayMode {
 enum TopBarLyricAnimation {
   slideUp,
   slideDown,
-  slideLeft,
-  slideRight,
   fade,
   absorb,
   flipX,
@@ -113,8 +111,77 @@ enum TopBarLyricAnimation {
   }
 }
 
+enum LyricLineTrack {
+  original,
+  romanization,
+  translation;
+
+  static LyricLineTrack? fromString(String name) {
+    for (var value in LyricLineTrack.values) {
+      if (_matchesStoredEnumName(name, value.name)) return value;
+    }
+    return null;
+  }
+
+  static List<LyricLineTrack> listFromStringList(List<String> names) {
+    return names
+        .map((e) => LyricLineTrack.fromString(e) ?? LyricLineTrack.original)
+        .toList();
+  }
+
+  static List<String> stringListFromList(List<LyricLineTrack> tracks) {
+    return tracks.map((e) => e.name).toList();
+  }
+}
+
+const defaultLyricLineOrder = [
+  LyricLineTrack.original,
+  LyricLineTrack.romanization,
+  LyricLineTrack.translation
+];
+
+List<LyricLineTrack> normalizedLyricLineOrder(List<LyricLineTrack> order) {
+  final result = <LyricLineTrack>[];
+  final seen = <LyricLineTrack>{};
+  for (final t in [...order, ...defaultLyricLineOrder]) {
+    if (seen.add(t)) result.add(t);
+  }
+  return result;
+}
+
+enum RubyPosition {
+  above,
+  below;
+
+  static RubyPosition? fromString(String name) {
+    for (var value in RubyPosition.values) {
+      if (_matchesStoredEnumName(name, value.name)) return value;
+    }
+    return null;
+  }
+
+  String get displayName => switch (this) {
+        RubyPosition.above => '在原文上',
+        RubyPosition.below => '在原文下',
+      };
+
+  List<LyricLineTrack> toLineOrder() => switch (this) {
+        RubyPosition.above => [
+            LyricLineTrack.romanization,
+            LyricLineTrack.original,
+            LyricLineTrack.translation,
+          ],
+        RubyPosition.below => [
+            LyricLineTrack.original,
+            LyricLineTrack.romanization,
+            LyricLineTrack.translation,
+          ],
+      };
+}
+
 enum NowPlayingMode {
   portrait,
+  landscape,
   immersive;
 
   static NowPlayingMode? fromString(String name) {

@@ -42,6 +42,7 @@ class NowPlayingPagePreference {
   double translationFontSize;
   bool showLyricTranslation;
   bool showLyricRoman;
+  RubyPosition rubyPosition;
   int lyricFontWeight;
   bool enableLyricBlur;
   bool enableLyricScale;
@@ -58,6 +59,7 @@ class NowPlayingPagePreference {
     this.lyricFontWeight,
     this.enableLyricBlur, {
     this.showLyricRoman = true,
+    this.rubyPosition = RubyPosition.below,
     this.enableLyricScale = true,
     this.enableLyricSpring = true,
     this.enableLyricGlow = false,
@@ -70,6 +72,7 @@ class NowPlayingPagePreference {
         translationBaseFontSize: translationFontSize,
         showTranslation: showLyricTranslation,
         showRoman: showLyricRoman,
+        lineOrder: rubyPosition.toLineOrder(),
         fontWeight: lyricFontWeight,
         enableBlur: enableLyricBlur,
         enableLineScale: enableLyricScale,
@@ -84,6 +87,7 @@ class NowPlayingPagePreference {
         'translationFontSize': translationFontSize,
         'showLyricTranslation': showLyricTranslation,
         'showLyricRoman': showLyricRoman,
+        'rubyPosition': rubyPosition.name,
         'lyricFontWeight': lyricFontWeight,
         'enableLyricBlur': enableLyricBlur,
         'enableLyricScale': enableLyricScale,
@@ -124,6 +128,10 @@ class NowPlayingPagePreference {
       _normalizedBool(map['enableLyricBlur'], defaultValue: true),
       showLyricRoman:
           _normalizedBool(map['showLyricRoman'], defaultValue: true),
+      rubyPosition: RubyPosition.fromString(
+            (map['rubyPosition'] as String?) ?? '',
+          ) ??
+          RubyPosition.below,
       enableLyricScale:
           _normalizedBool(map['enableLyricScale'], defaultValue: true),
       enableLyricSpring:

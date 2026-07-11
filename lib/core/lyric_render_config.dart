@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import 'package:pure_music/core/enums.dart';
+import 'package:flutter/foundation.dart';
 
 @immutable
 class LyricSpringDescription {
@@ -36,6 +37,7 @@ class LyricRenderConfig {
   final double translationBaseFontSize;
   final bool showTranslation;
   final bool showRoman;
+  final List<LyricLineTrack> lineOrder;
   final int fontWeight;
   final bool enableBlur;
   final bool enableLineScale;
@@ -73,6 +75,7 @@ class LyricRenderConfig {
     required this.showRoman,
     required this.fontWeight,
     required this.enableBlur,
+    this.lineOrder = defaultLyricLineOrder,
     this.enableLineScale = true,
     this.enableLineSpring = true,
     this.enableStaggeredAnimation = true,
@@ -102,12 +105,16 @@ class LyricRenderConfig {
     this.userScrollHoldDuration = const Duration(seconds: 2),
   });
 
+  List<LyricLineTrack> get normalizedLineOrder =>
+      normalizedLyricLineOrder(lineOrder);
+
   LyricRenderConfig copyWith({
     LyricTextAlign? textAlign,
     double? baseFontSize,
     double? translationBaseFontSize,
     bool? showTranslation,
     bool? showRoman,
+    List<LyricLineTrack>? lineOrder,
     int? fontWeight,
     bool? enableBlur,
     bool? enableLineScale,
@@ -141,6 +148,7 @@ class LyricRenderConfig {
           translationBaseFontSize ?? this.translationBaseFontSize,
       showTranslation: showTranslation ?? this.showTranslation,
       showRoman: showRoman ?? this.showRoman,
+      lineOrder: lineOrder ?? this.lineOrder,
       fontWeight: fontWeight ?? this.fontWeight,
       enableBlur: enableBlur ?? this.enableBlur,
       enableLineScale: enableLineScale ?? this.enableLineScale,
@@ -186,6 +194,7 @@ class LyricRenderConfig {
         other.translationBaseFontSize == translationBaseFontSize &&
         other.showTranslation == showTranslation &&
         other.showRoman == showRoman &&
+        listEquals(other.lineOrder, lineOrder) &&
         other.fontWeight == fontWeight &&
         other.enableBlur == enableBlur &&
         other.enableLineScale == enableLineScale &&
@@ -220,6 +229,7 @@ class LyricRenderConfig {
         translationBaseFontSize,
         showTranslation,
         showRoman,
+        Object.hashAll(lineOrder),
         fontWeight,
         enableBlur,
         enableLineScale,
