@@ -29,7 +29,7 @@ class FolderManagerDialog extends StatefulWidget {
 }
 
 class _FolderManagerDialogState extends State<FolderManagerDialog> {
-  List<AudioFolder> folders = List.from(AudioLibrary.instance.folders);
+  List<AudioFolder> folders = [];
 
   final applicationSupportDirectory = getAppDataDir();
 
@@ -38,6 +38,12 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
   bool _isPickingFolder = false;
 
   Widget? _buildView;
+
+  @override
+  void initState() {
+    super.initState();
+    folders = AudioLibrary.aggregatedRootFolders();
+  }
 
   List<String> _folderPathKeys(Iterable<AudioFolder> folders) {
     return folderPathKeys(folders.map((f) => f.path));
@@ -54,7 +60,7 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
 
   bool get _hasFolderChanges {
     final current = _folderPathKeys(folders);
-    final original = _folderPathKeys(AudioLibrary.instance.folders);
+    final original = folderPathKeys(AppPreference.instance.userFolders);
     if (current.length != original.length) return true;
     for (var i = 0; i < current.length; i++) {
       if (current[i] != original[i]) return true;
@@ -261,9 +267,9 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
                         ? null
                         : () async {
                             final kept = folders.map((f) => f.path).toList();
-                            final original = AudioLibrary.instance.folders
-                                .map((f) => f.path)
-                                .toList();
+                            final original = List<String>.from(
+                              AppPreference.instance.userFolders,
+                            );
                             final oldUserFolders = List<String>.from(
                               AppPreference.instance.userFolders,
                             );

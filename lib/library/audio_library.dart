@@ -362,6 +362,55 @@ class AudioLibrary {
     albumCollection.clear();
     folders.clear();
   }
+
+  /// 只返回用户手动添加的根文件夹，每项聚合该根下所有子文件夹的音频。
+  static List<AudioFolder> aggregatedRootFolders() {
+    if (instance.folders.isEmpty) return [];
+    final userFolders = AppPreference.instance.userFolders;
+    // 从 instance.folders 反推出根目录（没有其他文件夹以它为前缀）
+    List<String> inferRoots() {
+      final keys = instance.folders
+          .map((f) => pendingFolderKey(f.path))
+          .toList();
+      final roots = <int>[];
+      for (var i = 0; i < keys.length; i++) {
+        var isChild = false;
+        for (var j = 0; j < keys.length; j++) {
+          if (i == j) continue;
+          if (keys[i].startsWith('${keys[j]}/')) {
+            isChild = true;
+            break;
+          }
+        }
+        if (!isChild) roots.add(i);
+      }
+      return roots.map((i) => instance.folders[i].path).toList();
+    }
+    final targetRoots = userFolders.isNotEmpty ? userFolders : inferRoots();
+    if (targetRoots.isEmpty) return List.from(instance.folders);
+
+    final result = <AudioFolder>[];
+    for (final rootPath in targetRoots) {
+      final rootKey = pendingFolderKey(rootPath);
+      AudioFolder? matchingFolder;
+      final allAudios = <Audio>[];
+      for (final f in instance.folders) {
+        final fKey = pendingFolderKey(f.path);
+        if (fKey == rootKey) matchingFolder = f;
+        if (fKey == rootKey || fKey.startsWith('$rootKey/')) {
+          allAudios.addAll(f.audios);
+        }
+      }
+      if (allAudios.isEmpty) continue;
+      result.add(AudioFolder(
+        allAudios,
+        matchingFolder?.path ?? rootPath,
+        matchingFolder?.modified ?? 0,
+        matchingFolder?.latest ?? 0,
+      ));
+    }
+    return result;
+  }
 }
 
 class AudioFolder {

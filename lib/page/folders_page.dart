@@ -43,7 +43,7 @@ class _FoldersPageState extends State<FoldersPage> {
           .ignore();
       if (mounted) {
         showTextOnSnackBar(
-            '已刷新，当前 ${AudioLibrary.instance.folders.length} 个文件夹');
+            '已刷新，当前 ${AudioLibrary.aggregatedRootFolders().length} 个文件夹');
       }
     } catch (e) {
       logger.e('refresh index failed: $e');
@@ -53,7 +53,7 @@ class _FoldersPageState extends State<FoldersPage> {
 
   @override
   Widget build(BuildContext context) {
-    final contentList = List<AudioFolder>.from(AudioLibrary.instance.folders);
+    final contentList = AudioLibrary.aggregatedRootFolders();
     return UniPage<AudioFolder>(
       pref: AppPreference.instance.foldersPagePref,
       title: '文件夹',
