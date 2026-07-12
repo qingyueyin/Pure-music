@@ -442,7 +442,7 @@ class _RubyPositionSettingState extends State<_RubyPositionSetting> {
     final rubyPosition = AppPreference.instance.nowPlayingPagePref.rubyPosition;
 
     return SettingsTile(
-      description: '注音在原文的位置',
+      description: '注音位置',
       subtitle: '当前：${rubyPosition.displayName}',
       action: SegmentedButton<RubyPosition>(
         showSelectedIcon: false,
@@ -454,6 +454,10 @@ class _RubyPositionSettingState extends State<_RubyPositionSetting> {
           ButtonSegment<RubyPosition>(
             value: RubyPosition.below,
             label: Text('注音在下'),
+          ),
+          ButtonSegment<RubyPosition>(
+            value: RubyPosition.belowTranslation,
+            label: Text('注音在翻译下'),
           ),
         ],
         selected: {rubyPosition},

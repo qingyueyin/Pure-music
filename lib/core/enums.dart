@@ -151,7 +151,8 @@ List<LyricLineTrack> normalizedLyricLineOrder(List<LyricLineTrack> order) {
 
 enum RubyPosition {
   above,
-  below;
+  below,
+  belowTranslation;
 
   static RubyPosition? fromString(String name) {
     for (var value in RubyPosition.values) {
@@ -163,6 +164,7 @@ enum RubyPosition {
   String get displayName => switch (this) {
         RubyPosition.above => '在原文上',
         RubyPosition.below => '在原文下',
+        RubyPosition.belowTranslation => '在翻译下',
       };
 
   List<LyricLineTrack> toLineOrder() => switch (this) {
@@ -175,6 +177,11 @@ enum RubyPosition {
             LyricLineTrack.original,
             LyricLineTrack.romanization,
             LyricLineTrack.translation,
+          ],
+        RubyPosition.belowTranslation => [
+            LyricLineTrack.original,
+            LyricLineTrack.translation,
+            LyricLineTrack.romanization,
           ],
       };
 }

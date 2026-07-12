@@ -207,7 +207,8 @@ class LyricViewController extends ChangeNotifier {
   void switchRubyPosition() {
     rubyPosition = switch (rubyPosition) {
       RubyPosition.above => RubyPosition.below,
-      RubyPosition.below => RubyPosition.above,
+      RubyPosition.below => RubyPosition.belowTranslation,
+      RubyPosition.belowTranslation => RubyPosition.above,
     };
     nowPlayingPagePref.rubyPosition = rubyPosition;
     AppPreference.instance.save();
@@ -464,19 +465,19 @@ class _RubyPositionBtn extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final controller = context.watch<LyricViewController>();
+    final isDefault = controller.rubyPosition == RubyPosition.below;
 
     return IconButton(
       onPressed: controller.switchRubyPosition,
       tooltip: controller.rubyPosition.displayName,
       style: IconButton.styleFrom(
-        backgroundColor: controller.rubyPosition == RubyPosition.above
-            ? scheme.secondaryContainer
-            : null,
+        backgroundColor:
+            isDefault ? null : scheme.secondaryContainer,
       ),
       color: scheme.onSecondaryContainer,
       icon: Icon(
         Symbols.text_fields,
-        fill: controller.rubyPosition == RubyPosition.above ? 1 : 0,
+        fill: isDefault ? 0 : 1,
       ),
     );
   }
