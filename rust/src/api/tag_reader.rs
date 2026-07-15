@@ -71,8 +71,6 @@ pub fn read_audio_extra_metadata(path: String) -> AudioExtraMetadata {
         .unwrap_or("")
         .to_string();
 
-    let mut channels: Option<u8> = None;
-    let mut bit_depth: Option<u8> = None;
     let mut items: Vec<AudioExtraItem> = vec![];
     let mut replaygain_track_gain: Option<String> = None;
     let mut replaygain_track_peak: Option<String> = None;
@@ -106,8 +104,8 @@ pub fn read_audio_extra_metadata(path: String) -> AudioExtraMetadata {
     };
 
     let props = tagged_file.properties();
-    channels = props.channels();
-    bit_depth = props.bit_depth();
+    let channels = props.channels();
+    let bit_depth = props.bit_depth();
 
     if let Some(tag) = tagged_file.primary_tag().or_else(|| tagged_file.first_tag()) {
         let mut push_kv = |key: &str, val: Option<&str>| {

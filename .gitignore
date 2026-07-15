@@ -51,7 +51,11 @@ lib/page/settings_page/cpfeedback_key.dart
 test/
 .claude/
 .agent/
-.opencode/
+.opencode/*
+!.opencode/skills/
+.opencode/skills/*
+!.opencode/skills/1pure-music/
+!.opencode/skills/1pure-music/**
 
 # Trae specific - ignore rules and skills but keep other .trae files
 .trae/rules/
@@ -98,4 +102,8 @@ release/
 # Generated / Local only
 AGENTS.md
 skills-lock.json
-.agents/
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/puremusic-dev/
+!.agents/skills/puremusic-dev/**
