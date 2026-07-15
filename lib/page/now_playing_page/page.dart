@@ -35,7 +35,6 @@ import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/playback_service.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
-import 'package:pure_music/native/rust/api/color_extraction.dart' as rust_color;
 import 'package:pure_music/native/rust/api/tag_reader.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -75,7 +74,6 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   final ColorExtractionService _colorService = ColorExtractionService();
 
   /// 用于防重复：同一次切歌内只提取一次调色板
-  int _lastPaletteToken = -1;
 
   void _bumpCursor() {
     _cursorHideTimer?.cancel();
@@ -98,47 +96,6 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     return token != _coverRequestToken ||
         playbackService.nowPlaying?.path != expectedPath ||
         !mounted;
-  }
-
-  /// 用Rust k-means 一次性提取调色板和主色。
-  /// 结果同时用于背景 mesh gradient 和主题种子色。
-  Future<void> _extractPaletteOnce(
-      Uint8List bytes, int token, String path) async {
-    if (_lastPaletteToken == token) return; // 已提取过
-    _lastPaletteToken = token;
-
-    try {
-      final rustColors = await rust_color.extractColorsFromImage(
-        imageBytes: bytes,
-        numColors: 4,
-      );
-      if (_isCoverRequestStale(token, path)) return;
-      if (rustColors.isEmpty) {
-        _lastPaletteToken = -1;
-        return;
-      }
-
-      final palette = rustColors.map((argb) => Color(argb)).toList();
-      final dominant = palette.first;
-
-      // 缓存调色板（供后续同步读取）
-      _colorService.cachePaletteForPath(path, palette);
-
-      setState(() {
-        _dominantColor = dominant;
-        _preExtractedPalette = palette;
-      });
-
-      // 同步更新主题种子色，仅在封面取色开启时生效。
-      if (AppSettings.instance.enableCoverColorExtraction) {
-        ThemeProvider.instance.applySeedColorDirectly(dominant, path);
-      }
-    } catch (_) {
-      if (!_isCoverRequestStale(token, path)) {
-        _lastPaletteToken = -1;
-      }
-      // Rust 提取失败时静默忽略。
-    }
   }
 
   void updateCover() {
@@ -170,7 +127,6 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     _songChangeTrimTimer?.cancel();
     _coverRequestToken++;
     final token = _coverRequestToken;
-    _lastPaletteToken = -1; // 新歌重置 token
 
     // 首帧即用：从同步缓存读主色，用小封面当背景，零等待零跳变
     final aud = playbackService.nowPlaying;
@@ -179,15 +135,10 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
       if (cachedPalette != null && cachedPalette.isNotEmpty) {
         _dominantColor = cachedPalette.first;
         _preExtractedPalette = cachedPalette;
-        _lastPaletteToken = token;
       } else {
         final cached = _colorService.getCachedColorForPath(path);
         if (cached != null) {
           _dominantColor = cached;
-        }
-        final smallBytes = aud.smallCoverBytes;
-        if (smallBytes != null) {
-          unawaited(_extractPaletteOnce(smallBytes, token, path));
         }
       }
       // 切歌时先用小封面做背景，再等取色结果驱动过渡。
@@ -204,6 +155,10 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     });
 
     _coverDebounceTimer = Timer(MotionDuration.base, () async {
+      if (!mounted) return;
+      final route = ModalRoute.of(context);
+      if (route == null || !route.isCurrent) return;
+
       final audio = playbackService.nowPlaying;
       if (audio == null || _isCoverRequestStale(token, path)) return;
 
@@ -220,6 +175,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
         final palette = rustColors.map((argb) => Color(argb)).toList();
         _dominantColor = palette.first;
         _preExtractedPalette = palette;
+        _colorService.cachePaletteForPath(path, palette);
         ThemeProvider.instance.applySeedColorDirectly(palette.first, path);
         cover = MemoryImage(bytes);
       }
@@ -227,7 +183,8 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
         if (mounted) precacheImage(cover, context);
         nowPlayingCover = cover;
       }
-      if (mounted) setState(() {});
+      if (!mounted) return;
+      setState(() {});
     });
   }
 
@@ -271,7 +228,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     _coverDebounceTimer?.cancel();
     _songChangeTrimTimer?.cancel();
     _cursorHideTimer?.cancel();
-    CoverImageCache.instance.trimMemory();
+    CoverImageCache.instance.trimMemory(keepPath: _nowPlayingCoverPath);
     super.dispose();
   }
 
@@ -511,7 +468,7 @@ class _NowPlayingMoreActionState extends State<_NowPlayingMoreAction> {
     }
 
     if (playlist.containsPath(audio.path)) {
-      showTextOnSnackBar('歌曲“${audio.title}”已存在');
+      showTextOnSnackBar('歌曲已在歌单中');
       return;
     }
 
@@ -528,9 +485,7 @@ class _NowPlayingMoreActionState extends State<_NowPlayingMoreAction> {
         showTextOnSnackBar('保存歌单失败');
         return;
       }
-      showTextOnSnackBar(
-        '成功将“${audio.title}”添加到歌单“${playlist.name}”',
-      );
+      showTextOnSnackBar('已添加到歌单');
     } finally {
       _addingAudioToPlaylist = null;
       _addingTargetPlaylist = null;
@@ -822,9 +777,6 @@ class _ExclusiveModeSwitch extends StatelessWidget {
 
         return IconButton(
           tooltip: exclusive ? '关闭独占' : '打开独占',
-          style: IconButton.styleFrom(
-            backgroundColor: exclusive ? scheme.primaryContainer : null,
-          ),
           onPressed: () {
             PlayService.instance.playbackService.useExclusiveMode(!exclusive);
           },
@@ -917,9 +869,6 @@ class _DesktopLyricSwitchState extends State<_DesktopLyricSwitch> {
               : desktopLyricService.isLocked
                   ? '解锁桌面歌词'
                   : '关闭桌面歌词',
-          style: IconButton.styleFrom(
-            backgroundColor: isRunning ? scheme.primaryContainer : null,
-          ),
           onPressed: !isRunning
               ? _startDesktopLyric
               : desktopLyricService.isLocked

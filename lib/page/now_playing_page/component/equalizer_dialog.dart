@@ -234,7 +234,7 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
     final folderPath = selected;
     final dir = Directory(folderPath);
     if (!dir.existsSync()) {
-      if (mounted) showTextOnSnackBar('未找到文件夹：$folderPath');
+      if (mounted) showTextOnSnackBar('未找到文件夹');
       if (mounted) {
         setState(() {
           _isImportingFolder = false;
@@ -252,7 +252,7 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
 
     if (files.isEmpty) {
       if (mounted) {
-        showTextOnSnackBar('该文件夹没有可导入的 .txt：$folderPath');
+        showTextOnSnackBar('该文件夹没有可导入的预设');
         setState(() {
           _isImportingFolder = false;
         });
@@ -260,8 +260,6 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
       return;
     }
 
-    int ok = 0;
-    int failed = 0;
     String? lastImportedName;
     String? lastImportedContent;
 
@@ -275,14 +273,11 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
           updateState: false,
         );
         if (!saved) {
-          failed += 1;
           continue;
         }
-        ok += 1;
         lastImportedName = name;
         lastImportedContent = content;
       } catch (_) {
-        failed += 1;
       }
     }
 
@@ -296,7 +291,7 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
     }
 
     if (mounted) {
-      showTextOnSnackBar('已从文件夹导入 $ok 个，失败 $failed 个');
+      showTextOnSnackBar('已导入预设');
     }
 
     if (mounted) {
@@ -370,7 +365,7 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
                         }
                         Navigator.of(context).pop();
                         if (mounted) {
-                          showTextOnSnackBar('已保存预设"$presetName"', variant: ToastVariant.success);
+                          showTextOnSnackBar('已保存预设', variant: ToastVariant.success);
                           setState(() {});
                         }
                       },
@@ -391,7 +386,7 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
       showTextOnSnackBar('保存均衡器设置失败', variant: ToastVariant.error);
       return;
     }
-    showTextOnSnackBar('已应用预设"${preset.name}"', variant: ToastVariant.success);
+    showTextOnSnackBar('已应用预设', variant: ToastVariant.success);
     setState(() {
       _gains = List.from(preset.gains);
     });
@@ -420,7 +415,7 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
       showTextOnSnackBar('删除均衡器预设失败', variant: ToastVariant.error);
       return;
     }
-    showTextOnSnackBar('已删除预设"${preset.name}"', variant: ToastVariant.success);
+    showTextOnSnackBar('已删除预设', variant: ToastVariant.success);
     setState(() {}); // Refresh UI
   }
 

@@ -44,6 +44,7 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
   bool _disposed = false;
   int _blurRequestId = 0;
   int? _currentCoverFingerprint;
+  Color? _prevTintColor;
 
   @override
   void initState() {
@@ -234,6 +235,10 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
     final brightness = scheme.brightness;
     final blurredImage = _blurredImage;
     final tintColor = _tintColor();
+    final prevTint = _prevTintColor;
+    _prevTintColor = tintColor;
+
+    final tintAlpha = brightness == Brightness.dark ? 0.25 : 0.10;
 
     return Stack(
       fit: StackFit.expand,
@@ -252,11 +257,29 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
             ),
           )
         else
-          ColoredBox(color: tintColor),
-        Container(
-          color: tintColor.withValues(
-            alpha: brightness == Brightness.dark ? 0.25 : 0.10,
+          TweenAnimationBuilder<Color?>(
+            tween: ColorTween(
+              begin: prevTint ?? tintColor,
+              end: tintColor,
+            ),
+            duration: const Duration(milliseconds: 600),
+            curve: Curves.easeInOut,
+            builder: (context, color, _) {
+              return ColoredBox(color: color ?? tintColor);
+            },
           ),
+        TweenAnimationBuilder<Color?>(
+          tween: ColorTween(
+            begin: prevTint ?? tintColor,
+            end: tintColor,
+          ),
+          duration: const Duration(milliseconds: 600),
+          curve: Curves.easeInOut,
+          builder: (context, color, _) {
+            return Container(
+              color: (color ?? tintColor).withValues(alpha: tintAlpha),
+            );
+          },
         ),
       ],
     );
