@@ -9,6 +9,7 @@ import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/playback_service.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
+import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:flutter/material.dart';
@@ -248,6 +249,7 @@ class DesktopLyricService extends ChangeNotifier {
     _stdoutBuffer = '';
     _monitorProcessExit(process);
     _sendInitialState();
+    _sendInitialConfig();
 
     // ── 创建 Windows Job Object（崩溃保护） ──
     if (Platform.isWindows) {
@@ -314,6 +316,32 @@ class DesktopLyricService extends ChangeNotifier {
     _cleanupAfterExit();
   }
 
+  void sendConfig({
+    double? lyricFontSize,
+    double? translationFontSize,
+    int? lyricFontWeight,
+    bool? showLyricTranslation,
+    bool? showRoman,
+    int? romanPosition,
+    bool? showNowPlayingInfo,
+    int? lyricTextAlign,
+    bool? enableStroke,
+    double? backgroundOpacity,
+  }) {
+    sendMessage(msg.DesktopLyricConfigMessage(
+      lyricFontSize: lyricFontSize,
+      translationFontSize: translationFontSize,
+      lyricFontWeight: lyricFontWeight,
+      showLyricTranslation: showLyricTranslation,
+      showRoman: showRoman,
+      romanPosition: romanPosition,
+      showNowPlayingInfo: showNowPlayingInfo,
+      lyricTextAlign: lyricTextAlign,
+      enableStroke: enableStroke,
+      backgroundOpacity: backgroundOpacity,
+    ));
+  }
+
   void sendUnlockMessage() {
     sendMessage(const msg.UnlockMessage());
     isLocked = false;
@@ -366,11 +394,13 @@ class DesktopLyricService extends ChangeNotifier {
 
     String? nextContent;
     String? nextTranslation;
+    String? nextRomanLyric;
     List<msg.LyricWord>? nextWords;
     if (nextLine != null) {
       if (nextLine is SyncLyricLine) {
         nextContent = nextLine.content;
         nextTranslation = nextLine.translation;
+        nextRomanLyric = nextLine.romanLyric;
         nextWords = nextLine.words
             .map((w) => msg.LyricWord(
                   w.start.inMilliseconds,
@@ -381,6 +411,7 @@ class DesktopLyricService extends ChangeNotifier {
       } else if (nextLine is UnsyncLyricLine) {
         nextContent = nextLine.content;
         nextTranslation = nextLine.translation;
+        nextRomanLyric = nextLine.romanLyric;
       }
     }
 
@@ -397,23 +428,24 @@ class DesktopLyricService extends ChangeNotifier {
         nextContent,
         nextTranslation,
         nextWords,
+        line.romanLyric,
+        nextRomanLyric,
       ));
     } else if (line is LrcLine) {
-      final splitted = line.content.split('┃');
-      final content = splitted.first;
-      final translation = splitted.length > 1 ? splitted[1] : null;
       final progressMs = ((_playbackService.position * 1000).round() -
               line.start.inMilliseconds)
           .clamp(0, line.length.inMilliseconds);
       sendMessage(msg.LyricLineChangedMessage(
-        content,
+        line.content,
         line.length,
-        translation,
+        line.translation,
         words,
         progressMs,
         nextContent,
         nextTranslation,
         nextWords,
+        line.romanLyric,
+        nextRomanLyric,
       ));
     }
   }
@@ -476,6 +508,14 @@ class DesktopLyricService extends ChangeNotifier {
           idx + 1 < lyric.lines.length ? lyric.lines[idx + 1] : null;
       sendLyricLineMessage(lyric.lines[idx], nextLine: nextLine);
     });
+  }
+
+  void _sendInitialConfig() {
+    final settings = AppSettings.instance;
+    sendConfig(
+      showRoman: settings.showDesktopLyricRoman,
+      romanPosition: settings.desktopLyricRomanPosition,
+    );
   }
 
   @override

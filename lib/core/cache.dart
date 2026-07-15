@@ -71,6 +71,20 @@ class AlbumColorCache {
     return fut;
   }
 
+  AlbumColor? getAlbumColorSync(Album album) {
+    final keySig = _albumKeyAndSignature(album);
+    final key = keySig.$1;
+    final signature = keySig.$2;
+    final cached = _entries[key];
+    if (cached == null || cached['sig'] != signature) return null;
+    final p = cached['p'];
+    final on = cached['on'];
+    if (p is! int || on is! int) return null;
+    _entries.remove(key);
+    _entries[key] = cached;
+    return AlbumColor(primary: Color(p), onPrimary: Color(on));
+  }
+
   Future<void> prewarmAlbums(
     Iterable<Album> albums, {
     int concurrency = 2,

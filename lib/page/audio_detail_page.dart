@@ -4,7 +4,6 @@ import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/native/rust/api/utils.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart' as rust_tag_reader;
 import 'dart:io';
-import 'dart:convert';
 import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -24,20 +23,24 @@ String _formatBytes(int bytes) {
   return '${size.toStringAsFixed(size >= 10 ? 1 : 2)} ${units[unitIndex]}';
 }
 
-final Map<String, Future<Map<String, Object?>>> _audioExtraCache = {};
+final Map<String, Future<rust_tag_reader.AudioExtraMetadata>> _audioExtraCache = {};
 
-Future<Map<String, Object?>> _getAudioExtra(Audio audio) {
+Future<rust_tag_reader.AudioExtraMetadata> _getAudioExtra(Audio audio) {
   final key = '${audio.path}|${audio.modified}';
   final existing = _audioExtraCache[key];
   if (existing != null) return existing;
-  final future =
-      rust_tag_reader.readAudioExtraMetadata(path: audio.path).then((jsonStr) {
-    final decoded = json.decode(jsonStr);
-    if (decoded is Map) {
-      return Map<String, Object?>.from(decoded);
-    }
-    return <String, Object?>{};
-  }).catchError((_) => <String, Object?>{});
+  final future = rust_tag_reader
+      .readAudioExtraMetadata(path: audio.path)
+      .catchError((_) => rust_tag_reader.AudioExtraMetadata(
+          extension_: '',
+          fileSize: BigInt.zero,
+          channels: null,
+          bitDepth: null,
+          items: [],
+          replaygainTrackGain: null,
+          replaygainTrackPeak: null,
+          replaygainAlbumGain: null,
+          replaygainAlbumPeak: null));
   _audioExtraCache[key] = future;
   return future;
 }
@@ -360,10 +363,10 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
                   alignment: Alignment.topLeft,
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 960),
-                    child: FutureBuilder<Map<String, Object?>>(
+                    child: FutureBuilder<rust_tag_reader.AudioExtraMetadata>(
                       future: _getAudioExtra(audio),
                       builder: (context, snapshot) {
-                        final data = snapshot.data ?? const <String, Object?>{};
+                        final data = snapshot.data;
 
                         final children = <Widget>[
                           SizedBox(
@@ -421,8 +424,8 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
                               label: '文件大小',
                               child: Builder(
                                 builder: (context) {
-                                  final fileSize = data['file_size'];
-                                  if (fileSize is num && fileSize.toInt() > 0) {
+                                  final fileSize = data?.fileSize;
+                                  if (fileSize != null && fileSize > BigInt.zero) {
                                     return Text(
                                       _formatBytes(fileSize.toInt()),
                                       style: styleContent,
@@ -444,8 +447,8 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
                           ),
                         ];
 
-                        final bd = data['bit_depth'];
-                        final ch = data['channels'];
+                        final bd = data?.bitDepth;
+                        final ch = data?.channels;
                         if (bd != null) {
                           children.add(
                             SizedBox(
@@ -469,12 +472,10 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
                           );
                         }
 
-                        final List items = (data['items'] as List?) ?? const [];
+                        final items = data?.items ?? [];
                         for (final item in items) {
-                          if (item is! Map) continue;
-                          final k = item['key'];
-                          final v = item['value'];
-                          if (k is! String || v is! String) continue;
+                          final k = item.key;
+                          final v = item.value;
                           final lk = k.trim().toLowerCase();
                           if (lk == 'artist' || lk == 'encoder') continue;
                           children.add(

@@ -8,11 +8,21 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `_get_lyric_from_lofty`, `_get_lyric_from_lrc_file`, `_get_picture_by_lofty`, `_get_picture_by_windows`, `_picture_cache_key`, `_update_index_below_1_1_0`, `add_missing_audio_files`, `count_subdirs`, `discover_new_audio_folders`, `join_deduped`, `new_with_path`, `read_by_lofty`, `read_by_win_music_properties`, `read_from_folder_recursively`, `read_from_folder`, `read_from_path`, `to_json_value`, `to_json_value`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `AudioFolder`, `Audio`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `fmt`, `fmt`
 
 /// for Flutter
-Future<String> readAudioExtraMetadata({required String path}) =>
+Future<AudioExtraMetadata> readAudioExtraMetadata({required String path}) =>
     RustLib.instance.api.crateApiTagReaderReadAudioExtraMetadata(path: path);
+
+/// for Flutter
+/// 一次调用完成封面读取+颜色提取，避免 image bytes 穿越 FFI 两次
+Future<(Uint8List?, Uint32List)> getPictureAndColors(
+        {required String path,
+        required int width,
+        required int height,
+        required int numColors}) =>
+    RustLib.instance.api.crateApiTagReaderGetPictureAndColors(
+        path: path, width: width, height: height, numColors: numColors);
 
 /// for Flutter
 /// 如果无法通过 Lofty 获取则通过 Windows 获取
@@ -56,6 +66,78 @@ Stream<IndexActionState> buildIndexFromFoldersRecursively(
 /// 3. 遍历该文件夹，添加索引中不存在的音乐文件
 Stream<IndexActionState> updateIndex({required String indexPath}) =>
     RustLib.instance.api.crateApiTagReaderUpdateIndex(indexPath: indexPath);
+
+class AudioExtraItem {
+  final String key;
+  final String value;
+
+  const AudioExtraItem({
+    required this.key,
+    required this.value,
+  });
+
+  @override
+  int get hashCode => key.hashCode ^ value.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AudioExtraItem &&
+          runtimeType == other.runtimeType &&
+          key == other.key &&
+          value == other.value;
+}
+
+class AudioExtraMetadata {
+  final String extension_;
+  final BigInt fileSize;
+  final int? channels;
+  final int? bitDepth;
+  final List<AudioExtraItem> items;
+  final String? replaygainTrackGain;
+  final String? replaygainTrackPeak;
+  final String? replaygainAlbumGain;
+  final String? replaygainAlbumPeak;
+
+  const AudioExtraMetadata({
+    required this.extension_,
+    required this.fileSize,
+    this.channels,
+    this.bitDepth,
+    required this.items,
+    this.replaygainTrackGain,
+    this.replaygainTrackPeak,
+    this.replaygainAlbumGain,
+    this.replaygainAlbumPeak,
+  });
+
+  @override
+  int get hashCode =>
+      extension_.hashCode ^
+      fileSize.hashCode ^
+      channels.hashCode ^
+      bitDepth.hashCode ^
+      items.hashCode ^
+      replaygainTrackGain.hashCode ^
+      replaygainTrackPeak.hashCode ^
+      replaygainAlbumGain.hashCode ^
+      replaygainAlbumPeak.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AudioExtraMetadata &&
+          runtimeType == other.runtimeType &&
+          extension_ == other.extension_ &&
+          fileSize == other.fileSize &&
+          channels == other.channels &&
+          bitDepth == other.bitDepth &&
+          items == other.items &&
+          replaygainTrackGain == other.replaygainTrackGain &&
+          replaygainTrackPeak == other.replaygainTrackPeak &&
+          replaygainAlbumGain == other.replaygainAlbumGain &&
+          replaygainAlbumPeak == other.replaygainAlbumPeak;
+}
 
 class IndexActionState {
   /// completed / total

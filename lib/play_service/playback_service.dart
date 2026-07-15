@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/cache.dart';
@@ -104,18 +103,15 @@ class PlaybackService extends ChangeNotifier {
 
   void _readReplayGainFor(String path) {
     _replayGainForPath = path;
-    rust_tag_reader.readAudioExtraMetadata(path: path).then((jsonStr) {
+    rust_tag_reader.readAudioExtraMetadata(path: path).then((meta) {
       if (_replayGainForPath != path) return;
       _replayGainForPath = null;
-      try {
-        final data = jsonDecode(jsonStr) as Map<String, dynamic>;
-        final raw = data['replaygain_track_gain'] as String?;
-        if (raw == null || raw.isEmpty) return;
-        final gainDb = double.tryParse(raw.replaceAll('dB', '').trim());
-        if (gainDb == null) return;
-        _player.replayGainDb = gainDb;
-        _eq.reapplyOutputGain();
-      } catch (_) {}
+      final raw = meta.replaygainTrackGain;
+      if (raw == null || raw.isEmpty) return;
+      final gainDb = double.tryParse(raw.replaceAll('dB', '').trim());
+      if (gainDb == null) return;
+      _player.replayGainDb = gainDb;
+      _eq.reapplyOutputGain();
     }).catchError((_) {
       if (_replayGainForPath != path) return;
       _replayGainForPath = null;
@@ -338,7 +334,6 @@ class PlaybackService extends ChangeNotifier {
       _songChangeMetadataTimer = null;
       if (!_isCurrentSongChangeTask(token, audio)) return;
 
-      _smtc.updateState(state: SMTCState.playing);
       _smtc.updateDisplay(
         title: audio.title,
         artist: audio.artist,
@@ -346,6 +341,7 @@ class PlaybackService extends ChangeNotifier {
         duration: audio.duration * 1000,
         path: audio.path,
       );
+      _smtc.updateState(state: SMTCState.playing);
       _syncSmtcPositionTimer();
 
       playService.desktopLyricService.canSendMessage.then((canSend) {
@@ -690,7 +686,6 @@ class PlaybackService extends ChangeNotifier {
       playService.lyricService.updateLyric();
       ThemeProvider.instance.applyThemeFromAudio(nowPlaying!);
 
-      _smtc.updateState(state: SMTCState.paused);
       _smtc.updateDisplay(
         title: nowPlaying!.title,
         artist: nowPlaying!.artist,
@@ -698,6 +693,7 @@ class PlaybackService extends ChangeNotifier {
         duration: nowPlaying!.duration * 1000,
         path: nowPlaying!.path,
       );
+      _smtc.updateState(state: SMTCState.paused);
       _syncSmtcPositionTimer();
     } catch (err) {
       logger.e('[restore last session] $err');

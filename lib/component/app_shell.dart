@@ -8,18 +8,20 @@ import 'package:pure_music/component/side_nav.dart';
 import 'package:pure_music/component/title_bar.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 class AppShell extends StatelessWidget {
-  const AppShell({super.key, required this.page});
+  const AppShell({super.key, required this.navigationShell});
 
-  final Widget page;
+  final StatefulNavigationShell navigationShell;
 
   @override
   Widget build(BuildContext context) {
-    final playbackService = PlayService.instance.playbackService;
     return ListenableBuilder(
-      listenable: playbackService,
+      listenable:
+          PlayService.instance.playbackService.nowPlayingNotifier,
       builder: (context, _) {
+        final playbackService = PlayService.instance.playbackService;
         final nowPlaying = playbackService.nowPlaying;
         final scheme = Theme.of(context).colorScheme;
 
@@ -27,50 +29,48 @@ class AppShell extends StatelessWidget {
             ? null
             : AudioLibrary.instance.albumCollection[nowPlaying.album];
 
-        final albumColorFuture = album == null
-            ? null
-            : AlbumColorCache.instance.getAlbumColor(album);
+        final dynamicColor = _resolveDynamicColor(album, scheme);
+        if (album != null && dynamicColor == scheme.surfaceContainerLow) {
+          AlbumColorCache.instance.getAlbumColor(album).ignore();
+        }
 
-        return FutureBuilder<AlbumColor?>(
-          future: albumColorFuture,
-          builder: (context, snapshot) {
-            final dynamicColor = snapshot.data?.primary;
-            final backgroundColor = dynamicColor != null
-                ? Color.alphaBlend(
-                    dynamicColor.withAlpha(20), scheme.surfaceContainerLow)
-                : scheme.surfaceContainerLow;
-
-            return ResponsiveBuilder(
-              builder: (context, screenType) {
-                switch (screenType) {
-                  case ScreenType.small:
-                    return _AppShell_Small(
-                      page: page,
-                      backgroundColor: backgroundColor,
-                    );
-                  case ScreenType.medium:
-                  case ScreenType.large:
-                    return _AppShell_Large(
-                      page: page,
-                      backgroundColor: backgroundColor,
-                    );
-                }
-              },
-            );
+        return ResponsiveBuilder(
+          builder: (context, screenType) {
+            switch (screenType) {
+              case ScreenType.small:
+                return _AppShell_Small(
+                  navigationShell: navigationShell,
+                  backgroundColor: dynamicColor,
+                );
+              case ScreenType.medium:
+              case ScreenType.large:
+                return _AppShell_Large(
+                  navigationShell: navigationShell,
+                  backgroundColor: dynamicColor,
+                );
+            }
           },
         );
       },
     );
   }
+
+  static Color _resolveDynamicColor(Album? album, ColorScheme scheme) {
+    if (album == null) return scheme.surfaceContainerLow;
+    final cached = AlbumColorCache.instance.getAlbumColorSync(album);
+    if (cached == null) return scheme.surfaceContainerLow;
+    return Color.alphaBlend(
+        cached.primary.withAlpha(20), scheme.surfaceContainerLow);
+  }
 }
 
 class _AppShell_Small extends StatelessWidget {
   const _AppShell_Small({
-    required this.page,
+    required this.navigationShell,
     required this.backgroundColor,
   });
 
-  final Widget page;
+  final StatefulNavigationShell navigationShell;
   final Color backgroundColor;
 
   @override
@@ -83,19 +83,21 @@ class _AppShell_Small extends StatelessWidget {
         preferredSize: Size.fromHeight(48.0),
         child: TitleBar(),
       ),
-      drawer: SizedBox(width: drawerWidth, child: const SideNav()),
-      body: Stack(children: [page, const MiniNowPlaying()]),
+      drawer: SizedBox(
+          width: drawerWidth,
+          child: SideNav(navigationShell: navigationShell)),
+      body: Stack(children: [navigationShell, const MiniNowPlaying()]),
     );
   }
 }
 
 class _AppShell_Large extends StatelessWidget {
   const _AppShell_Large({
-    required this.page,
+    required this.navigationShell,
     required this.backgroundColor,
   });
 
-  final Widget page;
+  final StatefulNavigationShell navigationShell;
   final Color backgroundColor;
 
   @override
@@ -108,11 +110,11 @@ class _AppShell_Large extends StatelessWidget {
       ),
       body: Row(
         children: [
-          const ClipRect(child: SideNav()),
+          ClipRect(child: SideNav(navigationShell: navigationShell)),
           Expanded(
             child: Stack(
               children: [
-                page,
+                navigationShell,
                 const MiniNowPlaying(),
               ],
             ),

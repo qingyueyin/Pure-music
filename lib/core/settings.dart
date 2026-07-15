@@ -186,6 +186,8 @@ class AppSettings {
   LyricSourceType preferredOnlineSource = LyricSourceType.qq;
   bool showTranslation = true;
   bool showRomanization = true;
+  bool showDesktopLyricRoman = true;
+  int desktopLyricRomanPosition = 1;
   LyricDisplayMode lyricDisplayMode = LyricDisplayMode.wordByWord;
   ZhConversionMode zhConversionMode = ZhConversionMode.none;
   bool promptWriteLyricToTag = true;
@@ -476,6 +478,24 @@ class AppSettings {
       );
     }
 
+    final sdlr = settingsMap['ShowDesktopLyricRoman'];
+    if (sdlr != null) {
+      _instance.showDesktopLyricRoman = normalizedBoolSetting(
+        sdlr,
+        defaultValue: true,
+      );
+    }
+
+    final dlrp = settingsMap['DesktopLyricRomanPosition'];
+    if (dlrp != null) {
+      _instance.desktopLyricRomanPosition = normalizedBoundedIntSetting(
+        dlrp,
+        defaultValue: 1,
+        min: 0,
+        max: 2,
+      );
+    }
+
     final ff = settingsMap['FontFamily'];
     final fp = settingsMap['FontPath'];
     if (ff != null || fp != null) {
@@ -515,6 +535,8 @@ class AppSettings {
         'PreferredOnlineSource': preferredOnlineSource.name,
         'ShowTranslation': showTranslation,
         'ShowRomanization': showRomanization,
+        'ShowDesktopLyricRoman': showDesktopLyricRoman,
+        'DesktopLyricRomanPosition': desktopLyricRomanPosition,
         'LyricDisplayMode': lyricDisplayMode.name,
         'ZhConversionMode': zhConversionMode.name,
         'PromptWriteLyricToTag': promptWriteLyricToTag,

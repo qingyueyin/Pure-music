@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:ui';
 
+import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/component/hotkey_ui_feedback.dart';
@@ -11,7 +12,6 @@ import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/side_nav.dart';
 import 'package:pure_music/component/title_bar.dart';
 import 'package:pure_music/core/menu_styles.dart';
-import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/core/color_extraction.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/memory_monitor.dart';
@@ -207,41 +207,27 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
       final audio = playbackService.nowPlaying;
       if (audio == null || _isCoverRequestStale(token, path)) return;
 
-      final cover = await audio.cover;
+      final (bytes, rustColors) = await getPictureAndColors(
+        path: path,
+        width: 160,
+        height: 160,
+        numColors: 4,
+      );
       if (_isCoverRequestStale(token, path)) return;
 
-      if (cover != null) {
-        final bytes = await getPictureFromPath(
-          path: path,
-          width: 160,
-          height: 160,
-        );
-        if (_isCoverRequestStale(token, path)) return;
-
-        if (bytes != null) {
-          // 同一首歌只取色一次；没有小封面结果时再用 160px 封面补上。
-          await _extractPaletteOnce(bytes, token, path);
-          _nowPlayingCoverBytes = bytes;
-          if (mounted) setState(() {});
-        } else {
-          setState(() {
-            _nowPlayingCoverBytes = null;
-            _dominantColor = null;
-            _preExtractedPalette = null;
-          });
-        }
-      } else {
-        setState(() {
-          _nowPlayingCoverBytes = null;
-          _dominantColor = null;
-          _preExtractedPalette = null;
-        });
+      ImageProvider<Object>? cover;
+      if (bytes != null && rustColors.isNotEmpty) {
+        final palette = rustColors.map((argb) => Color(argb)).toList();
+        _dominantColor = palette.first;
+        _preExtractedPalette = palette;
+        ThemeProvider.instance.applySeedColorDirectly(palette.first, path);
+        cover = MemoryImage(bytes);
       }
-
-      if (nowPlayingCover == cover) return;
-      setState(() {
+      if (cover != null) {
+        if (mounted) precacheImage(cover, context);
         nowPlayingCover = cover;
-      });
+      }
+      if (mounted) setState(() {});
     });
   }
 
@@ -285,12 +271,6 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     _coverDebounceTimer?.cancel();
     _songChangeTrimTimer?.cancel();
     _cursorHideTimer?.cancel();
-    final cover = nowPlayingCover;
-    nowPlayingCover = null;
-    _nowPlayingCoverBytes = null;
-    _preExtractedPalette = null;
-    if (cover != null) unawaited(cover.evict());
-    // 离开播放页时释放大图封面缓存，列表页不需要这些缓存。
     CoverImageCache.instance.trimMemory();
     super.dispose();
   }
@@ -2219,50 +2199,117 @@ class _NowPlayingInfo extends StatefulWidget {
 
 class __NowPlayingInfoState extends State<_NowPlayingInfo> {
   final playbackService = PlayService.instance.playbackService;
-  ImageProvider<Object>? _coverImage;
-  String? _coverPath;
-  int _coverToken = 0;
+  ImageProvider<Object>? _loResCover;
+  String? _loResCoverPath;
+  ImageProvider<Object>? _hiResCover;
+  String? _hiResCoverPath;
+  Timer? _hiResDebounceTimer;
+  int _coverRequestToken = 0;
+  Uint8List? _immediateCover;
+  String? _immediateCoverPath;
 
   void _onPlaybackChange() {
-    _coverToken++;
-    final token = _coverToken;
+    _coverRequestToken += 1;
+    final token = _coverRequestToken;
     final nextAudio = playbackService.nowPlaying;
     if (nextAudio == null) {
-      setState(() {
-        _coverImage = null;
-        _coverPath = null;
-      });
+      if (_loResCoverPath != null ||
+          _hiResCoverPath != null ||
+          _immediateCoverPath != null) {
+        _hiResDebounceTimer?.cancel();
+        unawaited(Future.wait<void>([
+          if (_loResCover != null) _loResCover!.evict(),
+          if (_hiResCover != null) _hiResCover!.evict(),
+        ]));
+        setState(() {
+          _loResCover = null;
+          _loResCoverPath = null;
+          _hiResCover = null;
+          _hiResCoverPath = null;
+          _immediateCover = null;
+          _immediateCoverPath = null;
+        });
+      }
       return;
     }
 
-    if (nextAudio.path == _coverPath && _coverImage != null) return;
+    if (nextAudio.path == _loResCoverPath &&
+        nextAudio.path == _hiResCoverPath) {
+      return;
+    }
 
-    _coverPath = nextAudio.path;
+    if (_loResCover != null || _hiResCover != null) {
+      unawaited(Future.wait<void>([
+        if (_loResCover != null) _loResCover!.evict(),
+        if (_hiResCover != null) _hiResCover!.evict(),
+      ]));
+    }
 
-    // 切歌首帧：立即用已缓存的小封面，没有则透明（不闪占位图标）
-    final smallBytes = nextAudio.smallCoverBytes;
-    setState(() {
-      _coverImage = smallBytes != null ? MemoryImage(smallBytes) : null;
-    });
-
-    // 小封面未缓存则异步加载
-    if (smallBytes == null) {
-      nextAudio.loadSmallCoverBytes().then((bytes) {
-        if (!mounted || token != _coverToken) return;
-        if (playbackService.nowPlaying?.path != nextAudio.path) return;
-        setState(() {
-          _coverImage ??= bytes != null ? MemoryImage(bytes) : null;
-        });
+    final parentState =
+        context.findAncestorStateOfType<_NowPlayingPageState>();
+    final preloadedCover = parentState?.nowPlayingCover;
+    if (preloadedCover != null &&
+        nextAudio.path == parentState?._nowPlayingCoverPath) {
+      setState(() {
+        _loResCover = preloadedCover;
+        _loResCoverPath = nextAudio.path;
       });
     }
 
-    // 异步加载高清封面，gaplessPlayback 无缝替换
-    nextAudio.largeCover.then((hiRes) {
-      if (!mounted || token != _coverToken) return;
-      if (playbackService.nowPlaying?.path != nextAudio.path) return;
-      if (hiRes != null) {
-        setState(() => _coverImage = hiRes);
+    if (nextAudio.path != _immediateCoverPath) {
+      _immediateCover = nextAudio.smallCoverBytes;
+      _immediateCoverPath = nextAudio.path;
+      if (_immediateCover == null) {
+        nextAudio.loadSmallCoverBytes().then((bytes) {
+          if (!mounted) return;
+          if (playbackService.nowPlaying?.path != nextAudio.path) return;
+          setState(() {
+            _immediateCover = bytes;
+          });
+        });
       }
+    }
+
+    nextAudio.cover.then((image) async {
+      if (!mounted) return;
+      if (token != _coverRequestToken) return;
+      if (playbackService.nowPlaying?.path != nextAudio.path) return;
+
+      if (image != null) {
+        if (token != _coverRequestToken) return;
+        await precacheImage(image, context);
+      }
+
+      if (!mounted) return;
+      if (token != _coverRequestToken) return;
+      setState(() {
+        _loResCover = image;
+        _loResCoverPath = nextAudio.path;
+      });
+    });
+
+    _hiResDebounceTimer?.cancel();
+    _hiResDebounceTimer = Timer(const Duration(milliseconds: 260), () {
+      if (!mounted) return;
+      if (token != _coverRequestToken) return;
+
+      nextAudio.largeCover.then((image) async {
+        if (!mounted) return;
+        if (token != _coverRequestToken) return;
+        if (playbackService.nowPlaying?.path != nextAudio.path) return;
+
+        if (image != null) {
+          if (token != _coverRequestToken) return;
+          await precacheImage(image, context);
+        }
+
+        if (!mounted) return;
+        if (token != _coverRequestToken) return;
+        setState(() {
+          _hiResCover = image;
+          _hiResCoverPath = nextAudio.path;
+        });
+      });
     });
   }
 
@@ -2271,27 +2318,47 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
     super.initState();
     playbackService.nowPlayingNotifier.addListener(_onPlaybackChange);
 
-    final audio = playbackService.nowPlaying;
-    if (audio != null) {
-      final currentPath = audio.path;
-      _coverPath = currentPath;
-      final smallBytes = audio.smallCoverBytes;
-      _coverImage = smallBytes != null ? MemoryImage(smallBytes) : null;
-      if (_coverImage == null) {
-        audio.loadSmallCoverBytes().then((bytes) {
-          if (!mounted) return;
-          if (playbackService.nowPlaying?.path != currentPath) return;
-          setState(() {
-            _coverImage = bytes != null ? MemoryImage(bytes) : null;
+    final parentState =
+        context.findAncestorStateOfType<_NowPlayingPageState>();
+    final preloadedCover = parentState?.nowPlayingCover;
+    final currentPath = playbackService.nowPlaying?.path;
+    if (preloadedCover != null &&
+        currentPath != null &&
+        currentPath == parentState?._nowPlayingCoverPath) {
+      _loResCover = preloadedCover;
+      _loResCoverPath = currentPath;
+    }
+
+    if (currentPath != null) {
+      final audio = playbackService.nowPlaying;
+      if (audio != null) {
+        _immediateCover = audio.smallCoverBytes;
+        _immediateCoverPath = currentPath;
+        if (_immediateCover == null) {
+          audio.loadSmallCoverBytes().then((bytes) {
+            if (!mounted) return;
+            if (playbackService.nowPlaying?.path != currentPath) return;
+            setState(() => _immediateCover = bytes);
           });
+        }
+      }
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final delay = playbackService.nowPlayingChangedRecently
+          ? const Duration(milliseconds: 200)
+          : Duration.zero;
+      if (delay == Duration.zero) {
+        _onPlaybackChange();
+      } else {
+        _hiResDebounceTimer?.cancel();
+        _hiResDebounceTimer = Timer(delay, () {
+          if (!mounted) return;
+          _onPlaybackChange();
         });
       }
-      audio.largeCover.then((hiRes) {
-        if (!mounted) return;
-        if (playbackService.nowPlaying?.path != currentPath) return;
-        if (hiRes != null) setState(() => _coverImage = hiRes);
-      });
-    }
+    });
   }
 
   @override
@@ -2327,8 +2394,19 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
         final coverSize =
             coverWidthLimit < coverMax ? coverWidthLimit : coverMax;
 
-        final coverWidget = _coverImage != null
-            ? Container(
+        final currentCover =
+            (_hiResCoverPath == nowPlayingPath && _hiResCover != null)
+                ? _hiResCover
+                : (_loResCoverPath == nowPlayingPath ? _loResCover : null);
+        final fallbackCover = currentCover == null &&
+                nowPlaying != null &&
+                _immediateCoverPath == nowPlayingPath &&
+                _immediateCover != null
+            ? MemoryImage(_immediateCover!)
+            : null;
+        final coverWidget = currentCover == null && fallbackCover == null
+            ? Center(child: placeholder)
+            : Container(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12.0),
                   boxShadow: [
@@ -2343,7 +2421,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(12.0),
                   child: Image(
-                    image: _coverImage!,
+                    image: currentCover ?? fallbackCover!,
                     fit: BoxFit.cover,
                     gaplessPlayback: true,
                     filterQuality: FilterQuality.high,
@@ -2353,10 +2431,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
                     ),
                   ),
                 ),
-              )
-            : nowPlaying == null
-                ? Center(child: placeholder)
-                : SizedBox(width: coverSize, height: coverSize);
+              );
 
         return AnimatedSwitcher(
           duration: const Duration(milliseconds: 500),
@@ -2437,6 +2512,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
   @override
   void dispose() {
     playbackService.nowPlayingNotifier.removeListener(_onPlaybackChange);
+    _hiResDebounceTimer?.cancel();
     super.dispose();
   }
 }

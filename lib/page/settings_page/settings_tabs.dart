@@ -14,6 +14,7 @@ import 'package:pure_music/native/rust/api/installed_font.dart';
 import 'package:pure_music/lyric/lyric_source.dart';
 import 'package:pure_music/component/settings_tile.dart';
 import 'package:pure_music/play_service/play_service.dart';
+import 'package:pure_music/play_service/desktop_lyric_service.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.dart';
 import 'package:pure_music/page/settings_page/check_update.dart';
 import 'package:pure_music/page/settings_page/create_issue.dart';
@@ -1148,7 +1149,119 @@ class _LyricsTabContentState extends State<_LyricsTabContent> {
         //     ),
         //   ),
         // ],
+        const SizedBox(height: 16.0),
+        const DesktopLyricSettingsSection(),
       ],
+    );
+  }
+}
+
+const _romanPositionLabels = ['歌词上方', '歌词下方', '翻译下方'];
+
+class DesktopLyricSettingsSection extends StatefulWidget {
+  const DesktopLyricSettingsSection({super.key});
+
+  @override
+  State<DesktopLyricSettingsSection> createState() =>
+      _DesktopLyricSettingsSectionState();
+}
+
+class _DesktopLyricSettingsSectionState
+    extends State<DesktopLyricSettingsSection> {
+  final settings = AppSettings.instance;
+
+  DesktopLyricService get _service =>
+      PlayService.instance.desktopLyricService;
+
+  void _sendRoman(bool showRoman) {
+    if (_service.isRunning) {
+      _service.sendConfig(showRoman: showRoman);
+    }
+  }
+
+  void _sendRomanPosition(int pos) {
+    if (_service.isRunning) {
+      _service.sendConfig(romanPosition: pos);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final running = _service.isRunning;
+    return ListenableBuilder(
+      listenable: _service,
+      builder: (context, _) {
+        final running = _service.isRunning;
+        return SettingsTile(
+          description: '桌面歌词注音设置',
+          subtitle: running ? null : '桌面歌词未启动',
+          action: MenuAnchor(
+            builder: (context, controller, _) {
+              return FilledButton.icon(
+                onPressed: running
+                    ? (controller.isOpen
+                        ? controller.close
+                        : controller.open)
+                    : null,
+                icon: const Icon(Symbols.lyrics),
+                label: const Text('设置'),
+              );
+            },
+            menuChildren: [
+              Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('注音显示',
+                        style: TextStyle(color: scheme.onSurface)),
+                    const SizedBox(height: 8),
+                    Switch(
+                      value: settings.showDesktopLyricRoman,
+                      onChanged: (v) {
+                        setState(() => settings.showDesktopLyricRoman = v);
+                        settings.saveSettings();
+                        _sendRoman(v);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    Text('注音位置',
+                        style: TextStyle(color: scheme.onSurface)),
+                    const SizedBox(height: 8),
+                    SegmentedButton<int>(
+                      showSelectedIcon: false,
+                      segments: const [
+                        ButtonSegment(
+                          value: 0,
+                          label: Text('歌词上方'),
+                        ),
+                        ButtonSegment(
+                          value: 1,
+                          label: Text('歌词下方'),
+                        ),
+                        ButtonSegment(
+                          value: 2,
+                          label: Text('翻译下方'),
+                        ),
+                      ],
+                      selected: {settings.desktopLyricRomanPosition},
+                      onSelectionChanged: (v) {
+                        final pos = v.first;
+                        setState(
+                            () => settings.desktopLyricRomanPosition = pos);
+                        settings.saveSettings();
+                        _sendRomanPosition(pos);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

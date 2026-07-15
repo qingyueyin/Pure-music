@@ -15,9 +15,6 @@ const String FOLDER_DETAIL_PAGE = '/folders/detail';
 const String PLAYLISTS_PAGE = '/playlists';
 const String PLAYLIST_DETAIL_PAGE = '/playlists/detail';
 
-const String SEARCH_PAGE = '/search';
-const String SEARCH_RESULT_PAGE = '/search/result';
-
 const String NOW_PLAYING_PAGE = '/nowplaying';
 
 const String SETTINGS_PAGE = '/settings';

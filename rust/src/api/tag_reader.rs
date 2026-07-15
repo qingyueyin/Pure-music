@@ -43,8 +43,27 @@ fn join_deduped<'a>(items: impl IntoIterator<Item = &'a str>) -> String {
     result
 }
 
+#[derive(Clone)]
+pub struct AudioExtraItem {
+    pub key: String,
+    pub value: String,
+}
+
+#[derive(Clone)]
+pub struct AudioExtraMetadata {
+    pub extension: String,
+    pub file_size: u64,
+    pub channels: Option<u8>,
+    pub bit_depth: Option<u8>,
+    pub items: Vec<AudioExtraItem>,
+    pub replaygain_track_gain: Option<String>,
+    pub replaygain_track_peak: Option<String>,
+    pub replaygain_album_gain: Option<String>,
+    pub replaygain_album_peak: Option<String>,
+}
+
 /// for Flutter
-pub fn read_audio_extra_metadata(path: String) -> String {
+pub fn read_audio_extra_metadata(path: String) -> AudioExtraMetadata {
     let file_size = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
     let extension = Path::new(&path)
         .extension()
@@ -52,14 +71,13 @@ pub fn read_audio_extra_metadata(path: String) -> String {
         .unwrap_or("")
         .to_string();
 
-    let mut root = serde_json::Map::new();
-    root.insert("extension".to_string(), serde_json::Value::String(extension));
-    root.insert(
-        "file_size".to_string(),
-        serde_json::Value::Number(file_size.into()),
-    );
-
-    let mut items: Vec<serde_json::Value> = vec![];
+    let mut channels: Option<u8> = None;
+    let mut bit_depth: Option<u8> = None;
+    let mut items: Vec<AudioExtraItem> = vec![];
+    let mut replaygain_track_gain: Option<String> = None;
+    let mut replaygain_track_peak: Option<String> = None;
+    let mut replaygain_album_gain: Option<String> = None;
+    let mut replaygain_album_peak: Option<String> = None;
 
     let options = ParseOptions::new()
         .parsing_mode(ParsingMode::Relaxed)
@@ -73,40 +91,32 @@ pub fn read_audio_extra_metadata(path: String) -> String {
         Ok(val) => val,
         Err(err) => {
             log_to_dart(format!("{:?}: {}", path, err));
-            // still return the root with items collected so far (empty)
-            root.insert("items".to_string(), serde_json::Value::Array(items));
-            return serde_json::Value::Object(root).to_string();
+            return AudioExtraMetadata {
+                extension,
+                file_size,
+                channels: None,
+                bit_depth: None,
+                items: vec![],
+                replaygain_track_gain: None,
+                replaygain_track_peak: None,
+                replaygain_album_gain: None,
+                replaygain_album_peak: None,
+            };
         }
     };
 
     let props = tagged_file.properties();
-    if let Some(ch) = props.channels() {
-        root.insert(
-            "channels".to_string(),
-            serde_json::Value::Number((ch as u64).into()),
-        );
-    }
-    if let Some(bd) = props.bit_depth() {
-        root.insert(
-            "bit_depth".to_string(),
-            serde_json::Value::Number((bd as u64).into()),
-        );
-    }
+    channels = props.channels();
+    bit_depth = props.bit_depth();
 
     if let Some(tag) = tagged_file.primary_tag().or_else(|| tagged_file.first_tag()) {
         let mut push_kv = |key: &str, val: Option<&str>| {
             if let Some(v) = val {
                 if !v.trim().is_empty() {
-                    let mut m = serde_json::Map::new();
-                    m.insert(
-                        "key".to_string(),
-                        serde_json::Value::String(key.to_string()),
-                    );
-                    m.insert(
-                        "value".to_string(),
-                        serde_json::Value::String(v.to_string()),
-                    );
-                    items.push(serde_json::Value::Object(m));
+                    items.push(AudioExtraItem {
+                        key: key.to_string(),
+                        value: v.to_string(),
+                    });
                 }
             }
         };
@@ -188,26 +198,22 @@ pub fn read_audio_extra_metadata(path: String) -> String {
             "encoder_settings",
             tag.get(&ItemKey::EncoderSettings).and_then(|v| v.value().text()),
         );
-        push_kv(
-            "replaygain_track_gain",
-            tag.get(&ItemKey::ReplayGainTrackGain)
-                .and_then(|v| v.value().text()),
-        );
-        push_kv(
-            "replaygain_track_peak",
-            tag.get(&ItemKey::ReplayGainTrackPeak)
-                .and_then(|v| v.value().text()),
-        );
-        push_kv(
-            "replaygain_album_gain",
-            tag.get(&ItemKey::ReplayGainAlbumGain)
-                .and_then(|v| v.value().text()),
-        );
-        push_kv(
-            "replaygain_album_peak",
-            tag.get(&ItemKey::ReplayGainAlbumPeak)
-                .and_then(|v| v.value().text()),
-        );
+        replaygain_track_gain = tag
+            .get(&ItemKey::ReplayGainTrackGain)
+            .and_then(|v| v.value().text())
+            .map(|s| s.to_string());
+        replaygain_track_peak = tag
+            .get(&ItemKey::ReplayGainTrackPeak)
+            .and_then(|v| v.value().text())
+            .map(|s| s.to_string());
+        replaygain_album_gain = tag
+            .get(&ItemKey::ReplayGainAlbumGain)
+            .and_then(|v| v.value().text())
+            .map(|s| s.to_string());
+        replaygain_album_peak = tag
+            .get(&ItemKey::ReplayGainAlbumPeak)
+            .and_then(|v| v.value().text())
+            .map(|s| s.to_string());
         push_kv(
             "bpm",
             tag.get(&ItemKey::Bpm)
@@ -229,8 +235,17 @@ pub fn read_audio_extra_metadata(path: String) -> String {
         );
     }
 
-    root.insert("items".to_string(), serde_json::Value::Array(items));
-    serde_json::Value::Object(root).to_string()
+    AudioExtraMetadata {
+        extension,
+        file_size,
+        channels,
+        bit_depth,
+        items,
+        replaygain_track_gain,
+        replaygain_track_peak,
+        replaygain_album_gain,
+        replaygain_album_peak,
+    }
 }
 
 /// K: extension, V: can read tags by using Lofty
@@ -766,6 +781,48 @@ fn _picture_cache_key(path: &str, width: u32, height: u32) -> String {
         .map(|d| d.as_secs())
         .unwrap_or(0);
     format!("{path}|{modified_secs}|{width}x{height}")
+}
+
+/// for Flutter  
+/// 一次调用完成封面读取+颜色提取，避免 image bytes 穿越 FFI 两次
+pub fn get_picture_and_colors(
+    path: String,
+    width: u32,
+    height: u32,
+    num_colors: i32,
+) -> (Option<Vec<u8>>, Vec<u32>) {
+    let pic = match _get_picture_by_lofty(&path) {
+        Some(p) => p,
+        None => match _get_picture_by_windows(&path) {
+            Ok(val) => val,
+            Err(err) => {
+                log_to_dart(format!("fail to get pic: {}", err));
+                return (None, vec![]);
+            }
+        },
+    };
+    let colors = super::color_extraction::extract_colors_from_image(pic.clone(), num_colors);
+
+    let resized_png = match image::load_from_memory(&pic) {
+        Ok(loaded) => {
+            let ratio = loaded.width() as f32 / loaded.height() as f32;
+            let (rw, rh) = if ratio > 1.0 {
+                (width, (width as f32 / ratio).round() as u32)
+            } else {
+                ((height as f32 * ratio).round() as u32, height)
+            };
+            let resized = image::imageops::resize(&loaded, rw, rh, image::imageops::FilterType::Triangle);
+            let mut buf = std::io::Cursor::new(Vec::new());
+            if resized.write_to(&mut buf, image::ImageFormat::Png).is_ok() {
+                Some(buf.into_inner())
+            } else {
+                None
+            }
+        }
+        Err(_) => None,
+    };
+
+    (resized_png, colors)
 }
 
 /// for Flutter  

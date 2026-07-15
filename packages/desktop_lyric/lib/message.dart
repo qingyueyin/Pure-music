@@ -122,11 +122,13 @@ class NowPlayingChangedMessage extends Message {
 class LyricLineChangedMessage extends Message {
   final String content;
   final String? translation;
+  final String? romanLyric;
   final Duration length;
   final List<LyricWord>? words;
   final int? progressMs;
   final String? nextContent;
   final String? nextTranslation;
+  final String? nextRomanLyric;
   final List<LyricWord>? nextWords;
 
   const LyricLineChangedMessage(
@@ -138,6 +140,8 @@ class LyricLineChangedMessage extends Message {
     this.nextContent,
     this.nextTranslation,
     this.nextWords,
+    this.romanLyric,
+    this.nextRomanLyric,
   ]);
 
   factory LyricLineChangedMessage.fromJson(Map<String, dynamic> json) {
@@ -154,6 +158,8 @@ class LyricLineChangedMessage extends Message {
       (json['nextWords'] as List?)
           ?.map((e) => LyricWord.fromJson(e as Map<String, dynamic>))
           .toList(growable: false),
+      json['romanLyric'] as String?,
+      json['nextRomanLyric'] as String?,
     );
   }
 
@@ -161,11 +167,13 @@ class LyricLineChangedMessage extends Message {
   Map<String, dynamic> toMessageJson() => {
         'content': content,
         'translation': translation,
+        'romanLyric': romanLyric,
         'length': length.inMicroseconds,
         'words': words?.map((e) => e.toJson()).toList(growable: false),
         'progressMs': progressMs,
         'nextContent': nextContent,
         'nextTranslation': nextTranslation,
+        'nextRomanLyric': nextRomanLyric,
         'nextWords': nextWords?.map((e) => e.toJson()).toList(growable: false),
       };
 }
@@ -223,4 +231,44 @@ class UnlockMessage extends Message {
 
   @override
   Map<String, dynamic> toMessageJson() => {};
+}
+
+class DesktopLyricConfigMessage extends Message {
+  final double? lyricFontSize;
+  final double? translationFontSize;
+  final int? lyricFontWeight;
+  final bool? showLyricTranslation;
+  final bool? showRoman;
+  final int? romanPosition;
+  final bool? showNowPlayingInfo;
+  final int? lyricTextAlign;
+  final bool? enableStroke;
+  final double? backgroundOpacity;
+
+  const DesktopLyricConfigMessage({
+    this.lyricFontSize,
+    this.translationFontSize,
+    this.lyricFontWeight,
+    this.showLyricTranslation,
+    this.showRoman,
+    this.romanPosition,
+    this.showNowPlayingInfo,
+    this.lyricTextAlign,
+    this.enableStroke,
+    this.backgroundOpacity,
+  });
+
+  @override
+  Map<String, dynamic> toMessageJson() => {
+        if (lyricFontSize != null) 'lyricFontSize': lyricFontSize,
+        if (translationFontSize != null) 'translationFontSize': translationFontSize,
+        if (lyricFontWeight != null) 'lyricFontWeight': lyricFontWeight,
+        if (showLyricTranslation != null) 'showLyricTranslation': showLyricTranslation,
+        if (showRoman != null) 'showRoman': showRoman,
+        if (romanPosition != null) 'romanPosition': romanPosition,
+        if (showNowPlayingInfo != null) 'showNowPlayingInfo': showNowPlayingInfo,
+        if (lyricTextAlign != null) 'lyricTextAlign': lyricTextAlign,
+        if (enableStroke != null) 'enableStroke': enableStroke,
+        if (backgroundOpacity != null) 'backgroundOpacity': backgroundOpacity,
+      };
 }

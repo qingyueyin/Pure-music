@@ -29,7 +29,9 @@ final destinations = <DestinationDesc>[
 ];
 
 class SideNav extends StatefulWidget {
-  const SideNav({super.key});
+  const SideNav({super.key, this.navigationShell});
+
+  final StatefulNavigationShell? navigationShell;
 
   @override
   State<SideNav> createState() => _SideNavState();
@@ -44,22 +46,27 @@ class _SideNavState extends State<SideNav> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final location = GoRouterState.of(context).uri.toString();
-    final matchedIndex = destinations.indexWhere(
-      (desc) => location.startsWith(desc.desPath),
-    );
-    final int? selectedIndex = matchedIndex == -1 ? null : matchedIndex;
+    final navShell = widget.navigationShell;
+    final selectedIndex = navShell?.currentIndex ??
+        destinations.indexWhere(
+          (d) => GoRouterState.of(context).uri.toString().startsWith(d.desPath),
+        );
 
     void onDestinationSelected(int value) {
-      if (selectedIndex == value) return;
+      final currentIndex = navShell?.currentIndex;
+      if (currentIndex == value) return;
 
-      final index = app_paths.START_PAGES.indexOf(destinations[value].desPath);
-      if (index != -1 && AppPreference.instance.startPage != index) {
-        AppPreference.instance.startPage = index;
+      if (value < app_paths.START_PAGES.length &&
+          AppPreference.instance.startPage != value) {
+        AppPreference.instance.startPage = value;
         AppPreference.instance.save();
       }
 
-      context.go(destinations[value].desPath);
+      if (navShell != null) {
+        navShell.goBranch(value);
+      } else {
+        context.go(destinations[value].desPath);
+      }
 
       var scaffold = Scaffold.of(context);
       if (scaffold.hasDrawer) scaffold.closeDrawer();
