@@ -153,7 +153,7 @@ class _SearchDialogState extends State<SearchDialog> {
 
     final added = playlist.containsPath(audio.path);
     if (added) {
-      showTextOnSnackBar('歌曲“${audio.title}”已存在');
+      showTextOnSnackBar('歌曲已在歌单中');
       return;
     }
 
@@ -170,7 +170,7 @@ class _SearchDialogState extends State<SearchDialog> {
         showTextOnSnackBar('保存歌单失败', variant: ToastVariant.error);
         return;
       }
-      showTextOnSnackBar('成功将“${audio.title}”添加到歌单“${playlist.name}”');
+      showTextOnSnackBar('已添加到歌单');
     } finally {
       _addingAudioToPlaylist = null;
       _addingTargetPlaylist = null;
@@ -361,16 +361,20 @@ class _SearchDialogState extends State<SearchDialog> {
                           result.query.isNotEmpty &&
                           result.query ==
                               normalizedSearchQuery(_searchController.text);
-                      return FilterChip(
-                        selected: selected,
-                        showCheckmark: false,
-                        avatar: Icon(
-                          _tabs[i].icon,
-                          size: 18,
-                          color: selected
-                              ? scheme.onSecondaryContainer
-                              : scheme.onSurfaceVariant,
-                        ),
+                      return OutlinedButton.icon(
+                        onPressed: canSwitch
+                            ? () {
+                                setState(() => _currentIndex = i);
+                                final query = normalizedSearchQuery(
+                                  _searchController.text,
+                                );
+                                if (query.isNotEmpty) {
+                                  _searchVersion++;
+                                  _search(query);
+                                }
+                              }
+                            : null,
+                        icon: Icon(_tabs[i].icon, size: 18),
                         label: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -384,40 +388,31 @@ class _SearchDialogState extends State<SearchDialog> {
                             ],
                           ],
                         ),
-                        labelStyle: TextStyle(
-                          color: selected
-                              ? scheme.onSecondaryContainer
-                              : scheme.onSurface,
-                          fontWeight: selected ? AppType.weightSemibold : null,
+                        style: ButtonStyle(
+                          foregroundColor: WidgetStatePropertyAll(
+                            selected
+                                ? scheme.onSecondaryContainer
+                                : scheme.onSurface,
+                          ),
+                          backgroundColor: WidgetStatePropertyAll(
+                            selected
+                                ? scheme.secondaryContainer
+                                : scheme.surfaceContainerHighest,
+                          ),
+                          side: WidgetStatePropertyAll(
+                            BorderSide(
+                              color:
+                                  selected ? scheme.primary : scheme.outline,
+                            ),
+                          ),
+                          shape: WidgetStatePropertyAll(
+                            RoundedRectangleBorder(
+                                borderRadius: AppRadius.smCircular),
+                          ),
+                          padding: const WidgetStatePropertyAll(
+                            EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          ),
                         ),
-                        selectedColor: scheme.secondaryContainer,
-                        backgroundColor: Colors.transparent,
-                        color: WidgetStateProperty.resolveWith((states) {
-                          if (states.contains(WidgetState.selected)) return scheme.secondaryContainer;
-                          return Colors.transparent;
-                        }),
-                        side: BorderSide(
-                          color: selected
-                              ? scheme.primary
-                              : scheme.outlineVariant,
-                          width: selected ? 1.5 : 1.0,
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
-                        ),
-                        onSelected: canSwitch
-                            ? (_) {
-                                setState(() => _currentIndex = i);
-                                final query = normalizedSearchQuery(
-                                  _searchController.text,
-                                );
-                                if (query.isNotEmpty) {
-                                  _searchVersion++;
-                                  _search(query);
-                                }
-                              }
-                            : null,
                       );
                     }),
                   ),

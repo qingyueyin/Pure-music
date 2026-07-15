@@ -98,7 +98,7 @@ class _AudioTileState extends State<AudioTile> {
       }
       final added = target.containsPath(audio.path);
       if (added) {
-        showTextOnSnackBar('歌曲“${audio.title}”已存在');
+        showTextOnSnackBar('歌曲已在歌单中');
         return;
       }
 
@@ -112,7 +112,7 @@ class _AudioTileState extends State<AudioTile> {
           showTextOnSnackBar('保存歌单失败', variant: ToastVariant.error);
           return;
         }
-        showTextOnSnackBar('成功将${audio.title}添加到歌单"${target.name}"', variant: ToastVariant.success);
+        showTextOnSnackBar('已添加到歌单', variant: ToastVariant.success);
       } finally {
         _addingToPlaylist = null;
         if (mounted) setState(() {});
