@@ -327,9 +327,8 @@ class DesktopLyricService extends ChangeNotifier {
     int? lyricTextAlign,
     bool? enableStroke,
     double? backgroundOpacity,
-    bool? enablePinTop,
-    int? textColor,
-    bool? useThemeColor,
+    int? playedColor,
+    int? unplayedColor,
   }) {
     sendMessage(msg.DesktopLyricConfigMessage(
       lyricFontSize: lyricFontSize,
@@ -342,9 +341,8 @@ class DesktopLyricService extends ChangeNotifier {
       lyricTextAlign: lyricTextAlign,
       enableStroke: enableStroke,
       backgroundOpacity: backgroundOpacity,
-      enablePinTop: enablePinTop,
-      textColor: textColor,
-      useThemeColor: useThemeColor,
+      playedColor: playedColor,
+      unplayedColor: unplayedColor,
     ));
   }
 
@@ -359,6 +357,9 @@ class DesktopLyricService extends ChangeNotifier {
     final surfaceContainer = scheme.surfaceContainer.toARGB32();
     final onSurface = scheme.onSurface.toARGB32();
     sendMessage(msg.ThemeChangedMessage(darkMode, primary, surfaceContainer, onSurface));
+    if (AppSettings.instance.desktopFollowThemeColor) {
+      sendConfig(playedColor: primary, unplayedColor: onSurface);
+    }
   }
 
   void sendPlayerStateMessage(bool isPlaying) {
@@ -518,9 +519,21 @@ class DesktopLyricService extends ChangeNotifier {
 
   void _sendInitialConfig() {
     final settings = AppSettings.instance;
+    final scheme = ThemeProvider.instance.currScheme;
+    final int? playedColor;
+    final int? unplayedColor;
+    if (settings.desktopFollowThemeColor) {
+      playedColor = scheme.primary.toARGB32();
+      unplayedColor = scheme.onSurface.toARGB32();
+    } else {
+      playedColor = settings.desktopPlayedColor;
+      unplayedColor = settings.desktopUnplayedColor;
+    }
     sendConfig(
       showRoman: settings.showDesktopLyricRoman,
       romanPosition: settings.desktopLyricRomanPosition,
+      playedColor: playedColor,
+      unplayedColor: unplayedColor,
     );
   }
 

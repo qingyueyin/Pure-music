@@ -197,7 +197,9 @@ class AppSettings {
   int desktopLyricFontWeight = 700;
   double desktopBackgroundOpacity = 0.0;
   int desktopLyricTextAlign = 1;
-  int? desktopTextColor;
+  int? desktopPlayedColor;
+  int? desktopUnplayedColor;
+  bool desktopFollowThemeColor = true;
   LyricDisplayMode lyricDisplayMode = LyricDisplayMode.wordByWord;
   ZhConversionMode zhConversionMode = ZhConversionMode.none;
   bool promptWriteLyricToTag = true;
@@ -560,7 +562,18 @@ class AppSettings {
     }
 
     if (settingsMap.containsKey('DesktopTextColor')) {
-      _instance.desktopTextColor = settingsMap['DesktopTextColor'] as int?;
+      _instance.desktopPlayedColor = settingsMap['DesktopTextColor'] as int?;
+    }
+    if (settingsMap.containsKey('DesktopPlayedColor')) {
+      _instance.desktopPlayedColor = settingsMap['DesktopPlayedColor'] as int?;
+    }
+    if (settingsMap.containsKey('DesktopUnplayedColor')) {
+      _instance.desktopUnplayedColor = settingsMap['DesktopUnplayedColor'] as int?;
+    }
+
+    final dftc = settingsMap['DesktopFollowThemeColor'];
+    if (dftc != null) {
+      _instance.desktopFollowThemeColor = normalizedBoolSetting(dftc, defaultValue: true);
     }
 
     final ff = settingsMap['FontFamily'];
@@ -613,7 +626,9 @@ class AppSettings {
         'DesktopLyricFontWeight': desktopLyricFontWeight,
         'DesktopBackgroundOpacity': desktopBackgroundOpacity,
         'DesktopLyricTextAlign': desktopLyricTextAlign,
-        'DesktopTextColor': desktopTextColor,
+        'DesktopPlayedColor': desktopPlayedColor,
+        'DesktopUnplayedColor': desktopUnplayedColor,
+        'DesktopFollowThemeColor': desktopFollowThemeColor,
         'LyricDisplayMode': lyricDisplayMode.name,
         'ZhConversionMode': zhConversionMode.name,
         'PromptWriteLyricToTag': promptWriteLyricToTag,
