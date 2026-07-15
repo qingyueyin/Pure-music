@@ -66,6 +66,7 @@ class LyricService extends ChangeNotifier {
   bool _hasOverlappingActiveLines = false;
   int _lastEmittedLineIndex = -1;
   int _lastDesktopLyricLineIndex = -1;
+  bool _desktopGapShown = false;
   int _lyricRequestToken = 0;
   int _prefetchGeneration = 0;
   String? _activeLyricPath;
@@ -217,6 +218,7 @@ class LyricService extends ChangeNotifier {
 
     if (primaryIndex != _lastDesktopLyricLineIndex) {
       _lastDesktopLyricLineIndex = primaryIndex;
+      _desktopGapShown = false;
       if (primaryIndex >= 0 && primaryIndex < lyric.lines.length) {
         final nextLine = primaryIndex + 1 < lyric.lines.length
             ? lyric.lines[primaryIndex + 1]
@@ -230,6 +232,41 @@ class LyricService extends ChangeNotifier {
         });
       }
     }
+    _sendDesktopGapIfNeeded(currLineIndex, posMs);
+  }
+
+  void _sendDesktopGapIfNeeded(int currLineIndex, int posMs) {
+    final lyric = _currLyric;
+    if (lyric == null) return;
+    if (currLineIndex < 0 || currLineIndex >= lyric.lines.length) return;
+    final line = lyric.lines[currLineIndex];
+    if (line is! SyncLyricLine) return;
+    final lineEnd = currLineIndex < _lineEndMs.length
+        ? _lineEndMs[currLineIndex]
+        : line.start.inMilliseconds + line.length.inMilliseconds;
+    if (posMs < lineEnd) {
+      _desktopGapShown = false;
+      return;
+    }
+    if (_desktopGapShown) return;
+    _desktopGapShown = true;
+    final nextLine = currLineIndex + 1 < lyric.lines.length
+        ? lyric.lines[currLineIndex + 1]
+        : null;
+    final gapDuration = nextLine != null
+        ? nextLine.start.inMilliseconds - lineEnd
+        : 6000;
+    playService.desktopLyricService.canSendMessage.then((canSend) {
+      if (!canSend) return;
+      playService.desktopLyricService.sendLyricLineMessage(
+        SyncLyricLine(
+          Duration(milliseconds: lineEnd),
+          Duration(milliseconds: gapDuration > 0 ? gapDuration : 6000),
+          const [],
+        ),
+        nextLine: nextLine,
+      );
+    });
   }
 
   Audio? _getNowPlaying() => playService.playbackService.nowPlaying;
@@ -507,6 +544,7 @@ class LyricService extends ChangeNotifier {
 
     if (primaryIndex != _lastDesktopLyricLineIndex) {
       _lastDesktopLyricLineIndex = primaryIndex;
+      _desktopGapShown = false;
       if (primaryIndex >= 0 && primaryIndex < lyric.lines.length) {
         final nextLine = primaryIndex + 1 < lyric.lines.length
             ? lyric.lines[primaryIndex + 1]
@@ -520,11 +558,7 @@ class LyricService extends ChangeNotifier {
         });
       }
     }
-  }
-
-  /// 重新计算歌词进行到第几行
-  void findCurrLyricLine() {
-    findCurrLyricLineAt(playService.playbackService.position);
+    _sendDesktopGapIfNeeded(currLineIndex, posMs);
   }
 
   void findCurrLyricLineAt(double positionSeconds) {
@@ -539,7 +573,7 @@ class LyricService extends ChangeNotifier {
         }
         if (value == null) return;
         _setCurrLyric(value);
-        findCurrLyricLine();
+        findCurrLyricLineAt(positionSeconds);
       });
       return;
     }
@@ -604,6 +638,7 @@ class LyricService extends ChangeNotifier {
     }
     if (primaryIndex != _lastDesktopLyricLineIndex) {
       _lastDesktopLyricLineIndex = primaryIndex;
+      _desktopGapShown = false;
       if (primaryIndex >= 0 && primaryIndex < lyric.lines.length) {
         final nextLine = primaryIndex + 1 < lyric.lines.length
             ? lyric.lines[primaryIndex + 1]
@@ -617,6 +652,7 @@ class LyricService extends ChangeNotifier {
         });
       }
     }
+    _sendDesktopGapIfNeeded(currLineIndex, posMs);
     _restartLineAdvanceTimer();
   }
 
@@ -808,6 +844,7 @@ class LyricService extends ChangeNotifier {
     _hasOverlappingActiveLines = false;
     _lastEmittedLineIndex = -1;
     _lastDesktopLyricLineIndex = -1;
+    _desktopGapShown = false;
     _nextLyricLine = 0;
     _lastEmittedActiveIndices = const [];
     return _lyricRequestToken;
@@ -1017,7 +1054,7 @@ class LyricService extends ChangeNotifier {
       } else {
         _currLyric = null;
       }
-      findCurrLyricLine();
+      findCurrLyricLineAt(playService.playbackService.position);
       _notifyLyricChangeListeners();
     });
 
@@ -1063,7 +1100,7 @@ class LyricService extends ChangeNotifier {
       } else {
         _currLyric = null;
       }
-      findCurrLyricLine();
+      findCurrLyricLineAt(playService.playbackService.position);
       _notifyLyricChangeListeners();
     });
 
@@ -1085,7 +1122,7 @@ class LyricService extends ChangeNotifier {
       } else {
         _currLyric = null;
       }
-      findCurrLyricLine();
+      findCurrLyricLineAt(playService.playbackService.position);
       _notifyLyricChangeListeners();
     });
 
