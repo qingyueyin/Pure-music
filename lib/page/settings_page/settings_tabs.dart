@@ -37,6 +37,7 @@ class _SettingsTabsState extends State<SettingsTabs> {
   static const _tabs = [
     _SettingsTab('外观', Symbols.palette),
     _SettingsTab('歌词', Symbols.lyrics),
+    _SettingsTab('桌面歌词', Symbols.desktop_windows),
     _SettingsTab('高级', Symbols.settings),
   ];
 
@@ -87,6 +88,7 @@ class _SettingsTabsState extends State<SettingsTabs> {
             children: const [
               _AppearanceTabContent(),
               _LyricsTabContent(),
+              _DesktopLyricTabContent(),
               _AdvancedTabContent(),
             ],
           ),
@@ -1149,119 +1151,380 @@ class _LyricsTabContentState extends State<_LyricsTabContent> {
         //     ),
         //   ),
         // ],
-        const SizedBox(height: 16.0),
-        const DesktopLyricSettingsSection(),
       ],
     );
   }
 }
 
-const _romanPositionLabels = ['歌词上方', '歌词下方', '翻译下方'];
-
-class DesktopLyricSettingsSection extends StatefulWidget {
-  const DesktopLyricSettingsSection({super.key});
+class _DesktopLyricTabContent extends StatefulWidget {
+  const _DesktopLyricTabContent();
 
   @override
-  State<DesktopLyricSettingsSection> createState() =>
-      _DesktopLyricSettingsSectionState();
+  State<_DesktopLyricTabContent> createState() =>
+      _DesktopLyricTabContentState();
 }
 
-class _DesktopLyricSettingsSectionState
-    extends State<DesktopLyricSettingsSection> {
+class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
   final settings = AppSettings.instance;
+  final _colorController = MenuController();
 
   DesktopLyricService get _service =>
       PlayService.instance.desktopLyricService;
 
-  void _sendRoman(bool showRoman) {
-    if (_service.isRunning) {
-      _service.sendConfig(showRoman: showRoman);
-    }
+  void _sendAll() {
+    if (!_service.isRunning) return;
+    _service.sendConfig(
+      lyricFontSize: settings.desktopLyricFontSize,
+      translationFontSize: settings.desktopTranslationFontSize,
+      lyricFontWeight: settings.desktopLyricFontWeight,
+      showLyricTranslation: settings.desktopShowTranslation,
+      showRoman: settings.showDesktopLyricRoman,
+      romanPosition: settings.desktopLyricRomanPosition,
+      showNowPlayingInfo: settings.desktopShowNowPlayingInfo,
+      lyricTextAlign: settings.desktopLyricTextAlign,
+      enableStroke: settings.desktopEnableStroke,
+      enablePinTop: settings.desktopEnablePinTop,
+      backgroundOpacity: settings.desktopBackgroundOpacity,
+      textColor: settings.desktopTextColor,
+      useThemeColor: settings.desktopTextColor == null ? true : null,
+    );
   }
 
-  void _sendRomanPosition(int pos) {
-    if (_service.isRunning) {
-      _service.sendConfig(romanPosition: pos);
-    }
+  void _update(VoidCallback fn) {
+    setState(fn);
+    settings.saveSettings();
+    _sendAll();
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final running = _service.isRunning;
     return ListenableBuilder(
       listenable: _service,
       builder: (context, _) {
         final running = _service.isRunning;
-        return SettingsTile(
-          description: '桌面歌词注音设置',
-          subtitle: running ? null : '桌面歌词未启动',
-          action: MenuAnchor(
-            builder: (context, controller, _) {
-              return FilledButton.icon(
-                onPressed: running
-                    ? (controller.isOpen
-                        ? controller.close
-                        : controller.open)
-                    : null,
-                icon: const Icon(Symbols.lyrics),
-                label: const Text('设置'),
-              );
-            },
-            menuChildren: [
+        return ListView(
+          padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+          children: [
+            if (!running)
               Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('注音显示',
-                        style: TextStyle(color: scheme.onSurface)),
-                    const SizedBox(height: 8),
-                    Switch(
-                      value: settings.showDesktopLyricRoman,
-                      onChanged: (v) {
-                        setState(() => settings.showDesktopLyricRoman = v);
-                        settings.saveSettings();
-                        _sendRoman(v);
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    Text('注音位置',
-                        style: TextStyle(color: scheme.onSurface)),
-                    const SizedBox(height: 8),
-                    SegmentedButton<int>(
-                      showSelectedIcon: false,
-                      segments: const [
-                        ButtonSegment(
-                          value: 0,
-                          label: Text('歌词上方'),
-                        ),
-                        ButtonSegment(
-                          value: 1,
-                          label: Text('歌词下方'),
-                        ),
-                        ButtonSegment(
-                          value: 2,
-                          label: Text('翻译下方'),
-                        ),
-                      ],
-                      selected: {settings.desktopLyricRomanPosition},
-                      onSelectionChanged: (v) {
-                        final pos = v.first;
-                        setState(
-                            () => settings.desktopLyricRomanPosition = pos);
-                        settings.saveSettings();
-                        _sendRomanPosition(pos);
-                      },
-                    ),
-                  ],
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Text(
+                  '桌面歌词未启动，修改将在下次启动时生效',
+                  style: TextStyle(
+                    color: scheme.onSurfaceVariant,
+                    fontSize: AppType.caption,
+                  ),
                 ),
               ),
-            ],
-          ),
+
+            // ── 显示设置 ──
+            SettingsTile(
+              description: '歌词翻译',
+              action: Switch(
+                value: settings.desktopShowTranslation,
+                onChanged: (v) => _update(
+                  () => settings.desktopShowTranslation = v,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SettingsTile(
+              description: '注音',
+              action: Switch(
+                value: settings.showDesktopLyricRoman,
+                onChanged: (v) => _update(
+                  () => settings.showDesktopLyricRoman = v,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SettingsTile(
+              description: '注音位置',
+              action: SegmentedButton<int>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(value: 0, label: Text('歌词上方')),
+                  ButtonSegment(value: 1, label: Text('歌词下方')),
+                  ButtonSegment(value: 2, label: Text('翻译下方')),
+                ],
+                selected: {settings.desktopLyricRomanPosition},
+                onSelectionChanged: (v) => _update(
+                  () => settings.desktopLyricRomanPosition = v.first,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SettingsTile(
+              description: '歌曲信息',
+              subtitle: settings.desktopShowNowPlayingInfo
+                  ? '显示歌曲标题和艺人'
+                  : '隐藏',
+              action: Switch(
+                value: settings.desktopShowNowPlayingInfo,
+                onChanged: (v) => _update(
+                  () => settings.desktopShowNowPlayingInfo = v,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SettingsTile(
+              description: '文字对齐',
+              action: SegmentedButton<int>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(value: 0, label: Text('左')),
+                  ButtonSegment(value: 1, label: Text('中')),
+                  ButtonSegment(value: 2, label: Text('右')),
+                ],
+                selected: {settings.desktopLyricTextAlign},
+                onSelectionChanged: (v) => _update(
+                  () => settings.desktopLyricTextAlign = v.first,
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // ── 文字样式 ──
+            Text(
+              '文字样式',
+              style: TextStyle(
+                color: scheme.onSurfaceVariant,
+                fontSize: AppType.caption,
+              ),
+            ),
+            const SizedBox(height: 8),
+            SettingsTile(
+              description: '歌词字号',
+              subtitle: '${settings.desktopLyricFontSize.toStringAsFixed(0)}px',
+              action: SizedBox(
+                width: 160,
+                child: Slider(
+                  value: settings.desktopLyricFontSize,
+                  min: 14,
+                  max: 48,
+                  divisions: 34,
+                  label: '${settings.desktopLyricFontSize.toStringAsFixed(0)}px',
+                  onChanged: (v) => _update(() {
+                    settings.desktopLyricFontSize = v;
+                    settings.desktopTranslationFontSize =
+                        (v - 4).clamp(10, 44);
+                  }),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SettingsTile(
+              description: '翻译/注音字号',
+              subtitle:
+                  '${settings.desktopTranslationFontSize.toStringAsFixed(0)}px',
+              action: SizedBox(
+                width: 160,
+                child: Slider(
+                  value: settings.desktopTranslationFontSize,
+                  min: 10,
+                  max: 44,
+                  divisions: 34,
+                  label:
+                      '${settings.desktopTranslationFontSize.toStringAsFixed(0)}px',
+                  onChanged: (v) => _update(
+                    () => settings.desktopTranslationFontSize = v,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SettingsTile(
+              description: '字重',
+              subtitle: '${settings.desktopLyricFontWeight}',
+              action: SizedBox(
+                width: 160,
+                child: Slider(
+                  value: settings.desktopLyricFontWeight.toDouble(),
+                  min: 100,
+                  max: 900,
+                  divisions: 8,
+                  label: '${settings.desktopLyricFontWeight}',
+                  onChanged: (v) => _update(
+                    () => settings.desktopLyricFontWeight = v.round(),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SettingsTile(
+              description: '描边',
+              action: Switch(
+                value: settings.desktopEnableStroke,
+                onChanged: (v) => _update(
+                  () => settings.desktopEnableStroke = v,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SettingsTile(
+              description: '文字颜色',
+              subtitle: settings.desktopTextColor == null
+                  ? '跟随主题'
+                  : '自定义',
+              action: MenuAnchor(
+                controller: _colorController,
+                builder: (context, _, __) => FilledButton.icon(
+                  onPressed: running
+                      ? (_colorController.isOpen
+                          ? _colorController.close
+                          : _colorController.open)
+                      : null,
+                  icon: Icon(
+                    Symbols.palette,
+                    color: settings.desktopTextColor != null
+                        ? Color(settings.desktopTextColor!)
+                        : null,
+                  ),
+                  label: Text(
+                    settings.desktopTextColor == null ? '跟随主题' : '自定义',
+                  ),
+                ),
+                menuChildren: [
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '选择颜色',
+                          style: TextStyle(color: scheme.onSurface),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 4,
+                          runSpacing: 4,
+                          children: [
+                            ...Colors.primaries.map((c) => _DesktopColorTile(
+                                  color: c,
+                                  selected:
+                                      settings.desktopTextColor == c.toARGB32(),
+                                  onTap: () {
+                                    _update(
+                                      () => settings.desktopTextColor =
+                                          c.toARGB32(),
+                                    );
+                                    _colorController.close();
+                                  },
+                                )),
+                            _DesktopColorTile(
+                              color: null,
+                              selected: settings.desktopTextColor == null,
+                              onTap: () {
+                                _update(
+                                  () => settings.desktopTextColor = null,
+                                );
+                                _colorController.close();
+                              },
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // ── 背景与窗口 ──
+            Text(
+              '背景与窗口',
+              style: TextStyle(
+                color: scheme.onSurfaceVariant,
+                fontSize: AppType.caption,
+              ),
+            ),
+            const SizedBox(height: 8),
+            SettingsTile(
+              description: '背景不透明度',
+              subtitle:
+                  '${(settings.desktopBackgroundOpacity * 100).round()}%',
+              action: SizedBox(
+                width: 160,
+                child: Slider(
+                  value: settings.desktopBackgroundOpacity,
+                  min: 0,
+                  max: 1,
+                  divisions: 20,
+                  label:
+                      '${(settings.desktopBackgroundOpacity * 100).round()}%',
+                  onChanged: (v) => _update(
+                    () => settings.desktopBackgroundOpacity = v,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SettingsTile(
+              description: '窗口置顶',
+              action: Switch(
+                value: settings.desktopEnablePinTop,
+                onChanged: (v) => _update(
+                  () => settings.desktopEnablePinTop = v,
+                ),
+              ),
+            ),
+          ],
         );
       },
+    );
+  }
+}
+
+class _DesktopColorTile extends StatelessWidget {
+  final Color? color;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _DesktopColorTile({
+    required this.color,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Ink(
+      width: 28,
+      height: 28,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: AppRadius.xsCircular,
+        border: color == null
+            ? Border.all(color: scheme.outline)
+            : null,
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: AppRadius.xsCircular,
+        child: Center(
+          child: selected
+              ? Icon(
+                  Icons.check,
+                  size: 16,
+                  color: color != null
+                      ? color!.computeLuminance() > 0.5
+                          ? Colors.black
+                          : Colors.white
+                      : scheme.onSurface,
+                )
+              : color == null
+                  ? Icon(
+                      Icons.not_interested,
+                      size: 14,
+                      color: scheme.onSurfaceVariant,
+                    )
+                  : null,
+        ),
+      ),
     );
   }
 }

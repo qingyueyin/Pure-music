@@ -188,6 +188,16 @@ class AppSettings {
   bool showRomanization = true;
   bool showDesktopLyricRoman = true;
   int desktopLyricRomanPosition = 1;
+  bool desktopShowTranslation = true;
+  bool desktopShowNowPlayingInfo = true;
+  bool desktopEnableStroke = true;
+  bool desktopEnablePinTop = true;
+  double desktopLyricFontSize = 22.0;
+  double desktopTranslationFontSize = 18.0;
+  int desktopLyricFontWeight = 700;
+  double desktopBackgroundOpacity = 0.0;
+  int desktopLyricTextAlign = 1;
+  int? desktopTextColor;
   LyricDisplayMode lyricDisplayMode = LyricDisplayMode.wordByWord;
   ZhConversionMode zhConversionMode = ZhConversionMode.none;
   bool promptWriteLyricToTag = true;
@@ -496,6 +506,63 @@ class AppSettings {
       );
     }
 
+    final dst = settingsMap['DesktopShowTranslation'];
+    if (dst != null) {
+      _instance.desktopShowTranslation = normalizedBoolSetting(
+        dst, defaultValue: true,
+      );
+    }
+
+    final dsnp = settingsMap['DesktopShowNowPlayingInfo'];
+    if (dsnp != null) {
+      _instance.desktopShowNowPlayingInfo = normalizedBoolSetting(
+        dsnp, defaultValue: true,
+      );
+    }
+
+    final des = settingsMap['DesktopEnableStroke'];
+    if (des != null) {
+      _instance.desktopEnableStroke = normalizedBoolSetting(
+        des, defaultValue: true,
+      );
+    }
+
+    final dept = settingsMap['DesktopEnablePinTop'];
+    if (dept != null) {
+      _instance.desktopEnablePinTop = normalizedBoolSetting(
+        dept, defaultValue: true,
+      );
+    }
+
+    final dls = settingsMap['DesktopLyricFontSize'];
+    if (dls != null) {
+      _instance.desktopLyricFontSize = (dls as num).clamp(12, 60).toDouble();
+    }
+
+    final dts = settingsMap['DesktopTranslationFontSize'];
+    if (dts != null) {
+      _instance.desktopTranslationFontSize = (dts as num).clamp(8, 48).toDouble();
+    }
+
+    final dlfw = settingsMap['DesktopLyricFontWeight'];
+    if (dlfw != null) {
+      _instance.desktopLyricFontWeight = ((dlfw as num).toInt()).clamp(100, 900);
+    }
+
+    final dbo = settingsMap['DesktopBackgroundOpacity'];
+    if (dbo != null) {
+      _instance.desktopBackgroundOpacity = (dbo as num).clamp(0.0, 1.0).toDouble();
+    }
+
+    final dlta = settingsMap['DesktopLyricTextAlign'];
+    if (dlta != null) {
+      _instance.desktopLyricTextAlign = ((dlta as num).toInt()).clamp(0, 2);
+    }
+
+    if (settingsMap.containsKey('DesktopTextColor')) {
+      _instance.desktopTextColor = settingsMap['DesktopTextColor'] as int?;
+    }
+
     final ff = settingsMap['FontFamily'];
     final fp = settingsMap['FontPath'];
     if (ff != null || fp != null) {
@@ -537,6 +604,16 @@ class AppSettings {
         'ShowRomanization': showRomanization,
         'ShowDesktopLyricRoman': showDesktopLyricRoman,
         'DesktopLyricRomanPosition': desktopLyricRomanPosition,
+        'DesktopShowTranslation': desktopShowTranslation,
+        'DesktopShowNowPlayingInfo': desktopShowNowPlayingInfo,
+        'DesktopEnableStroke': desktopEnableStroke,
+        'DesktopEnablePinTop': desktopEnablePinTop,
+        'DesktopLyricFontSize': desktopLyricFontSize,
+        'DesktopTranslationFontSize': desktopTranslationFontSize,
+        'DesktopLyricFontWeight': desktopLyricFontWeight,
+        'DesktopBackgroundOpacity': desktopBackgroundOpacity,
+        'DesktopLyricTextAlign': desktopLyricTextAlign,
+        'DesktopTextColor': desktopTextColor,
         'LyricDisplayMode': lyricDisplayMode.name,
         'ZhConversionMode': zhConversionMode.name,
         'PromptWriteLyricToTag': promptWriteLyricToTag,

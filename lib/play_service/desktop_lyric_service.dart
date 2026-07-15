@@ -327,6 +327,9 @@ class DesktopLyricService extends ChangeNotifier {
     int? lyricTextAlign,
     bool? enableStroke,
     double? backgroundOpacity,
+    bool? enablePinTop,
+    int? textColor,
+    bool? useThemeColor,
   }) {
     sendMessage(msg.DesktopLyricConfigMessage(
       lyricFontSize: lyricFontSize,
@@ -339,6 +342,9 @@ class DesktopLyricService extends ChangeNotifier {
       lyricTextAlign: lyricTextAlign,
       enableStroke: enableStroke,
       backgroundOpacity: backgroundOpacity,
+      enablePinTop: enablePinTop,
+      textColor: textColor,
+      useThemeColor: useThemeColor,
     ));
   }
 

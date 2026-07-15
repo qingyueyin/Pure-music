@@ -244,6 +244,9 @@ class DesktopLyricConfigMessage extends Message {
   final int? lyricTextAlign;
   final bool? enableStroke;
   final double? backgroundOpacity;
+  final bool? enablePinTop;
+  final int? textColor;
+  final bool? useThemeColor;
 
   const DesktopLyricConfigMessage({
     this.lyricFontSize,
@@ -256,6 +259,9 @@ class DesktopLyricConfigMessage extends Message {
     this.lyricTextAlign,
     this.enableStroke,
     this.backgroundOpacity,
+    this.enablePinTop,
+    this.textColor,
+    this.useThemeColor,
   });
 
   @override
@@ -270,5 +276,8 @@ class DesktopLyricConfigMessage extends Message {
         if (lyricTextAlign != null) 'lyricTextAlign': lyricTextAlign,
         if (enableStroke != null) 'enableStroke': enableStroke,
         if (backgroundOpacity != null) 'backgroundOpacity': backgroundOpacity,
+        if (enablePinTop != null) 'enablePinTop': enablePinTop,
+        if (textColor != null) 'textColor': textColor,
+        if (useThemeColor != null) 'useThemeColor': useThemeColor,
       };
 }
