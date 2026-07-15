@@ -179,8 +179,8 @@ void showTextOnSnackBar(
   _toastTimer?.cancel();
 
   final scheme = Theme.of(context).colorScheme;
-  final bgColor = scheme.inverseSurface.withAlpha(240);
   final txtColor = scheme.onInverseSurface;
+  final textTheme = Theme.of(context).textTheme;
   final IconData effectiveIcon;
   switch (variant) {
     case ToastVariant.success:
@@ -214,16 +214,22 @@ void showTextOnSnackBar(
                     child: child,
                   ),
                 ),
-                child: Material(
-                  type: MaterialType.transparency,
-                  child: Container(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: scheme.inverseSurface,
+                    borderRadius: const BorderRadius.all(Radius.circular(4)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: scheme.shadow.withAlpha(40),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: Spacing.md,
                       vertical: Spacing.sm,
-                    ),
-                    decoration: BoxDecoration(
-                      color: bgColor,
-                      borderRadius: AppRadius.smCircular,
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -232,10 +238,8 @@ void showTextOnSnackBar(
                         const SizedBox(width: Spacing.sm),
                         Text(
                           text,
-                          style: TextStyle(
+                          style: textTheme.labelLarge?.copyWith(
                             color: txtColor,
-                            fontSize: AppType.caption,
-                            fontWeight: AppType.weightMedium,
                           ),
                         ),
                       ],
@@ -291,6 +295,7 @@ void showHotkeyToast({
   _hotkeyToastEntry?.remove();
 
   final scheme = Theme.of(context).colorScheme;
+  final textTheme = Theme.of(context).textTheme;
   final visible = ValueNotifier(false);
   final entry = OverlayEntry(
     builder: (context) => Positioned.fill(
@@ -314,34 +319,34 @@ void showHotkeyToast({
                     child: child,
                   ),
                 ),
-                child: Material(
-                  type: MaterialType.transparency,
-                  child: Container(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: scheme.inverseSurface,
+                    borderRadius: const BorderRadius.all(Radius.circular(4)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: scheme.shadow.withAlpha(40),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: Spacing.md,
                       vertical: Spacing.sm,
-                    ),
-                    decoration: BoxDecoration(
-                      color: scheme.inverseSurface.withAlpha(240),
-                      borderRadius: AppRadius.smCircular,
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         if (icon != null) ...[
-                          Icon(
-                            icon,
-                            size: 16,
-                            color: scheme.onInverseSurface,
-                          ),
+                          Icon(icon, size: 16, color: scheme.onInverseSurface),
                           const SizedBox(width: Spacing.sm),
                         ],
                         Text(
                           text,
-                          style: TextStyle(
+                          style: textTheme.labelLarge?.copyWith(
                             color: scheme.onInverseSurface,
-                            fontSize: AppType.caption,
-                            fontWeight: AppType.weightMedium,
                           ),
                         ),
                       ],
