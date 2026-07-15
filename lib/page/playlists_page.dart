@@ -101,7 +101,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
         existingNames: playlists.map((p) => p.name),
         targetName: pl.name,
       )) {
-        showTextOnSnackBar('歌单“${pl.name}”已存在');
+        showTextOnSnackBar('歌单已存在');
         return;
       }
       setState(() {
@@ -116,7 +116,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
         return;
       }
       if (!mounted) return;
-      showTextOnSnackBar('成功导入歌单"${pl.name}"（${pl.paths.length}首）', variant: ToastVariant.success);
+      showTextOnSnackBar('已导入歌单', variant: ToastVariant.success);
     } catch (err) {
       if (!mounted) return;
       showTextOnSnackBar('导入歌单失败', variant: ToastVariant.error);
@@ -186,7 +186,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
         existingNames: playlists.map((p) => p.name),
         targetName: pl.name,
       )) {
-        showTextOnSnackBar('歌单"${pl.name}"已存在');
+        showTextOnSnackBar('歌单已存在');
         return;
       }
 
@@ -200,10 +200,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
         return;
       }
       if (!mounted) return;
-      showTextOnSnackBar(
-        '成功导入文件夹"$folderName"（${resolved.length}首）',
-        variant: ToastVariant.success,
-      );
+      showTextOnSnackBar('已导入歌单', variant: ToastVariant.success);
     } catch (err) {
       if (!mounted) return;
       showTextOnSnackBar('导入文件夹歌单失败', variant: ToastVariant.error);
@@ -224,7 +221,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
     try {
       final exported = await exportPlaylistToFile(playlist);
       if (!mounted || !exported) return;
-      showTextOnSnackBar('已导出歌单"${playlist.name}"', variant: ToastVariant.success);
+      showTextOnSnackBar('已导出歌单', variant: ToastVariant.success);
     } catch (err) {
       if (!mounted) return;
       showTextOnSnackBar('导出歌单失败', variant: ToastVariant.error);
@@ -309,7 +306,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
       if (saved) {
         multiSelectController.useMultiSelectView(false);
         multiSelectController.clear();
-        showTextOnSnackBar('已删除 ${selected.length} 个歌单', variant: ToastVariant.success);
+        showTextOnSnackBar('已删除', variant: ToastVariant.success);
       } else {
         for (final entry in indexed.reversed) {
           final index = entry.key.clamp(0, playlists.length).toInt();

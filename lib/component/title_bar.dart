@@ -75,6 +75,13 @@ class _TitleBar_Small extends StatelessWidget {
                 IconButton(
                   tooltip: '搜索',
                   onPressed: () => SearchDialog.show(context),
+                  style: ButtonStyle(
+                    shape: WidgetStatePropertyAll(
+                      RoundedRectangleBorder(
+                        borderRadius: AppRadius.smCircular,
+                      ),
+                    ),
+                  ),
                   icon: const Icon(Symbols.search),
                 ),
                 const WindowControlls(),
@@ -129,6 +136,13 @@ class _TitleBar_Medium extends StatelessWidget {
               IconButton(
                 tooltip: '搜索',
                 onPressed: () => SearchDialog.show(context),
+                style: ButtonStyle(
+                  shape: WidgetStatePropertyAll(
+                    RoundedRectangleBorder(
+                      borderRadius: AppRadius.smCircular,
+                    ),
+                  ),
+                ),
                 icon: const Icon(Symbols.search),
               ),
               const WindowControlls(),
@@ -192,6 +206,13 @@ class _TitleBar_Large extends StatelessWidget {
                 IconButton(
                   tooltip: '搜索',
                   onPressed: () => SearchDialog.show(context),
+                  style: ButtonStyle(
+                    shape: WidgetStatePropertyAll(
+                      RoundedRectangleBorder(
+                        borderRadius: AppRadius.smCircular,
+                      ),
+                    ),
+                  ),
                   icon: const Icon(Symbols.search),
                 ),
                 const WindowControlls(),
@@ -229,6 +250,11 @@ class NavBackBtn extends StatelessWidget {
           context.pop();
         }
       },
+      style: ButtonStyle(
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
+        ),
+      ),
       icon: const Icon(Symbols.navigate_before),
     );
   }
@@ -412,6 +438,8 @@ class _WindowControllsState extends State<WindowControlls> with WindowListener {
           tooltip: '最小化',
           onPressed: windowManager.minimize,
           icon: const Icon(Symbols.remove),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 46, minHeight: 40),
           style: ButtonStyle(
             backgroundColor: WidgetStateProperty.resolveWith((states) {
               if (states.contains(WidgetState.pressed)) return scheme.onSurface.withValues(alpha: 0.15);
@@ -423,13 +451,15 @@ class _WindowControllsState extends State<WindowControlls> with WindowListener {
             ),
           ),
         ),
-        const SizedBox(width: 8.0),
+        const SizedBox(width: 12.0),
         IconButton(
           tooltip: _isMaximized ? '还原' : '最大化',
           onPressed: _isProcessing ? null : _toggleMaximized,
           icon: Icon(
             _isMaximized ? Symbols.fullscreen_exit : Symbols.fullscreen,
           ),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 46, minHeight: 40),
           style: ButtonStyle(
             backgroundColor: WidgetStateProperty.resolveWith((states) {
               if (states.contains(WidgetState.pressed)) return scheme.onSurface.withValues(alpha: 0.15);
@@ -441,11 +471,13 @@ class _WindowControllsState extends State<WindowControlls> with WindowListener {
             ),
           ),
         ),
-        const SizedBox(width: 8.0),
+        const SizedBox(width: 12.0),
         IconButton(
           tooltip: '关闭',
           onPressed: _shutdownAndExit,
           icon: const Icon(Symbols.close),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 46, minHeight: 40),
           style: ButtonStyle(
             backgroundColor: WidgetStateProperty.resolveWith((states) {
               if (states.contains(WidgetState.pressed)) return scheme.error.withValues(alpha: 0.30);

@@ -294,9 +294,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
                             showTextOnSnackBar('保存歌单失败');
                             return;
                           }
-                          showTextOnSnackBar(
-                            '已从歌单移除 ${selected.length} 首',
-                          );
+                          showTextOnSnackBar('已从歌单移除');
                           multiSelectController.useMultiSelectView(false);
                           multiSelectController.clear();
                         } finally {

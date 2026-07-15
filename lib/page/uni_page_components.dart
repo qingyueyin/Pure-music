@@ -25,7 +25,7 @@ class ShufflePlay<T> extends StatelessWidget {
               PlayService.instance.playbackService.shuffleAndPlay(
                 contentList as List<Audio>,
               );
-              showTextOnSnackBar('随机播放 ${contentList.length} 首', variant: ToastVariant.success);
+              showTextOnSnackBar('已随机播放', variant: ToastVariant.success);
             }
           : null,
       icon: const Icon(Symbols.shuffle, size: 20),
@@ -245,7 +245,7 @@ class _AddAllToPlaylistState extends State<AddAllToPlaylist> {
       final addedCount = _addMissingAudiosToPlaylist(playlist, selected);
       if (addedCount == 0) {
         if (!mounted) return;
-        showTextOnSnackBar('选中歌曲已在歌单“${playlist.name}”中');
+        showTextOnSnackBar('已在歌单中');
         return;
       }
       final saved = await savePlaylists();
@@ -255,8 +255,7 @@ class _AddAllToPlaylistState extends State<AddAllToPlaylist> {
         showTextOnSnackBar('保存歌单失败');
         return;
       }
-      showTextOnSnackBar(
-        '成功将$addedCount首添加到歌单“${playlist.name}”',        variant: ToastVariant.success,      );
+      showTextOnSnackBar('已添加到歌单', variant: ToastVariant.success);
     } finally {
       if (mounted) {
         setState(() => _addingPlaylist = null);
@@ -376,7 +375,7 @@ class _AddSelectedAudiosToPlaylistState<T>
       final addedCount = _addMissingAudiosToPlaylist(playlist, selectedAudios);
       if (addedCount == 0) {
         if (!mounted) return;
-        showTextOnSnackBar('选中歌曲已在歌单“${playlist.name}”中');
+        showTextOnSnackBar('已在歌单中');
         return;
       }
       final saved = await savePlaylists();
@@ -386,9 +385,7 @@ class _AddSelectedAudiosToPlaylistState<T>
         showTextOnSnackBar('保存歌单失败');
         return;
       }
-      showTextOnSnackBar(
-        '成功将$addedCount首添加到歌单“${playlist.name}”',
-      );
+      showTextOnSnackBar('已添加到歌单');
     } finally {
       if (mounted) {
         setState(() => _addingPlaylist = null);
@@ -503,7 +500,7 @@ class MultiSelectPlaySelectedAudios<T> extends StatelessWidget {
               : () {
                   if (shuffle) {
                     PlayService.instance.playbackService.shuffleAndPlay(audios);
-                    showTextOnSnackBar('随机播放 ${audios.length} 首', variant: ToastVariant.success);
+                    showTextOnSnackBar('已随机播放', variant: ToastVariant.success);
                   } else {
                     PlayService.instance.playbackService.play(0, audios);
                     showTextOnSnackBar('已开始播放', variant: ToastVariant.success);

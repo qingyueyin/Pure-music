@@ -42,8 +42,7 @@ class _FoldersPageState extends State<FoldersPage> {
           .prewarmAlbums(AudioLibrary.instance.albumCollection.values)
           .ignore();
       if (mounted) {
-        showTextOnSnackBar(
-            '已刷新，当前 ${AudioLibrary.aggregatedRootFolders().length} 个文件夹');
+        showTextOnSnackBar('已刷新');
       }
     } catch (e) {
       logger.e('refresh index failed: $e');

@@ -343,18 +343,8 @@ class _CoverSearchBodyState extends State<_CoverSearchBody> {
                       fontWeight: selected ? AppType.weightSemibold : null,
                     ),
                     selectedColor: scheme.secondaryContainer,
-                    backgroundColor: Colors.transparent,
-                    color: WidgetStateProperty.resolveWith((states) {
-                      if (states.contains(WidgetState.selected)) {
-                        return scheme.secondaryContainer;
-                      }
-                      return Colors.transparent;
-                    }),
                     side: BorderSide(
-                      color: selected
-                          ? scheme.primary
-                          : scheme.outlineVariant,
-                      width: selected ? 1.5 : 1.0,
+                      color: selected ? scheme.primary : scheme.outline,
                     ),
                     padding: const EdgeInsets.symmetric(
                       horizontal: 12,

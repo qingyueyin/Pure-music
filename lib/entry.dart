@@ -243,11 +243,15 @@ class _EntryState extends State<Entry>
       chipTheme: ChipThemeData(
         backgroundColor: colorScheme.surfaceContainerHighest,
         labelStyle: textTheme.bodySmall?.copyWith(
-          color: colorScheme.onSurfaceVariant,
+          color: colorScheme.onSurface,
         ),
-        side: BorderSide.none,
+        side: BorderSide(color: colorScheme.outline),
         shape: RoundedRectangleBorder(
           borderRadius: AppRadius.smCircular,
+        ),
+        padding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 10,
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(

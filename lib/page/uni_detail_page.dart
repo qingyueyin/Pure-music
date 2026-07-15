@@ -286,20 +286,18 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
               selected ? scheme.onSecondaryContainer : scheme.onSurfaceVariant,
             ),
             backgroundColor: WidgetStatePropertyAll(
-              selected ? scheme.secondaryContainer : Colors.transparent,
+              selected ? scheme.secondaryContainer : scheme.surfaceContainerHighest,
             ),
             side: WidgetStatePropertyAll(
               BorderSide(
-                color: selected
-                    ? scheme.secondaryContainer
-                    : scheme.outlineVariant.withValues(alpha: 0.84),
+                color: selected ? scheme.primary : scheme.outline,
               ),
             ),
             shape: WidgetStatePropertyAll(
               RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
             ),
             padding: const WidgetStatePropertyAll(
-              EdgeInsets.symmetric(horizontal: 16),
+              EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             ),
           ),
         );

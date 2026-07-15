@@ -1,3 +1,4 @@
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/quiet_empty_state.dart';
@@ -230,6 +231,13 @@ class _UniPageState<T> extends State<UniPage<T>> {
                 child: IconButton.filledTonal(
                   tooltip: '定位正在播放',
                   onPressed: () => _scrollToIndex(targetAt),
+                  style: ButtonStyle(
+                    fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
+                    padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+                    shape: WidgetStatePropertyAll(
+                      RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
+                    ),
+                  ),
                   icon: const Icon(Symbols.my_location),
                 ),
               ),
@@ -265,16 +273,23 @@ class _UniPageState<T> extends State<UniPage<T>> {
                 ),
                 child: IconButton.filledTonal(
                   tooltip: '回到顶部',
-              onPressed: () {
-                if (!scrollController.hasClients) return;
-                scrollController.animateTo(
-                  0.0,
-                  duration: const Duration(milliseconds: 250),
-                  curve: Curves.fastOutSlowIn,
-                );
-              },
-              icon: const Icon(Symbols.vertical_align_top),
-            ),
+                  onPressed: () {
+                    if (!scrollController.hasClients) return;
+                    scrollController.animateTo(
+                      0.0,
+                      duration: const Duration(milliseconds: 250),
+                      curve: Curves.fastOutSlowIn,
+                    );
+                  },
+                  style: ButtonStyle(
+                    fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
+                    padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+                    shape: WidgetStatePropertyAll(
+                      RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
+                    ),
+                  ),
+                  icon: const Icon(Symbols.vertical_align_top),
+                ),
           ),
         );
       },
