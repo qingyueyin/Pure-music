@@ -553,10 +553,18 @@ class CoverImageCache {
   }
 
   /// 释放不常用的缓存层，保留小图缓存以维持列表流畅滚动
-  void trimMemory() {
+  /// [keepPath] 指定保留当前播放曲目的缓存，避免回退时重新 FFI 加载
+  void trimMemory({String? keepPath}) {
     _generation++;
-    _medium.clear();
-    _large.clear();
+    if (keepPath != null) {
+      final prefix = '$keepPath|';
+      bool notKeep(String key) => !key.startsWith(prefix);
+      _medium.removeWhere(notKeep);
+      _large.removeWhere(notKeep);
+    } else {
+      _medium.clear();
+      _large.clear();
+    }
     _pending.clear();
   }
 
