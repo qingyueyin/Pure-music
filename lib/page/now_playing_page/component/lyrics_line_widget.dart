@@ -153,7 +153,8 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
   bool get _needsProgressTicker =>
       widget.distance == 0 &&
       widget.line is SyncLyricLine &&
-      (widget.line as SyncLyricLine).words.isNotEmpty;
+      (widget.line as SyncLyricLine).words.isNotEmpty &&
+      _config.displayMode == LyricDisplayMode.wordByWord;
 
   void _syncProgressTicker() {
     if (_needsProgressTicker) {

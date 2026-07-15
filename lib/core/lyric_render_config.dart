@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import 'package:pure_music/core/enums.dart';
+import 'package:pure_music/core/settings.dart';
 import 'package:flutter/foundation.dart';
 
 @immutable
@@ -47,6 +48,7 @@ class LyricRenderConfig {
   final double audioReactiveStrength;
   final bool enableGlow;
   final bool hasMultipleAgents; // 多声部 TTML 时对齐由 agent 决定
+  final LyricDisplayMode displayMode;
 
   /// true → CustomPaint (LyricsLineWidget), 零 GC 压力
   /// false → Widget 方案 (LyricViewTile), 逐字动画更丰富
@@ -83,6 +85,7 @@ class LyricRenderConfig {
     this.audioReactiveStrength = 0.5,
     this.enableGlow = false,
     this.hasMultipleAgents = false,
+    this.displayMode = LyricDisplayMode.wordByWord,
     this.useCustomPaint = true,
     this.viewportFadeExtent = 0.04,
     this.mainLineScale = 1.0,
@@ -124,6 +127,7 @@ class LyricRenderConfig {
     double? audioReactiveStrength,
     bool? enableGlow,
     bool? hasMultipleAgents,
+    LyricDisplayMode? displayMode,
     bool? useCustomPaint,
     double? viewportFadeExtent,
     double? mainLineScale,
@@ -160,6 +164,7 @@ class LyricRenderConfig {
           audioReactiveStrength ?? this.audioReactiveStrength,
       enableGlow: enableGlow ?? this.enableGlow,
       hasMultipleAgents: hasMultipleAgents ?? this.hasMultipleAgents,
+      displayMode: displayMode ?? this.displayMode,
       useCustomPaint: useCustomPaint ?? this.useCustomPaint,
       viewportFadeExtent: viewportFadeExtent ?? this.viewportFadeExtent,
       mainLineScale: mainLineScale ?? this.mainLineScale,
@@ -204,6 +209,7 @@ class LyricRenderConfig {
         other.audioReactiveStrength == audioReactiveStrength &&
         other.enableGlow == enableGlow &&
         other.hasMultipleAgents == hasMultipleAgents &&
+        other.displayMode == displayMode &&
         other.useCustomPaint == useCustomPaint &&
         other.viewportFadeExtent == viewportFadeExtent &&
         other.mainLineScale == mainLineScale &&
@@ -239,6 +245,7 @@ class LyricRenderConfig {
         audioReactiveStrength,
         enableGlow,
         hasMultipleAgents,
+        displayMode,
         useCustomPaint,
         viewportFadeExtent,
         mainLineScale,

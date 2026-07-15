@@ -4,6 +4,7 @@ import 'dart:math';
 
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/lyric_render_config.dart';
+import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/route_visibility.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
@@ -444,8 +445,10 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     final painter = LyricsLinePainter.obtainTextPainter();
 
     double measureLine(LyricLine line, bool isMain) {
+      final isLineByLine = line is SyncLyricLine &&
+          config.displayMode == LyricDisplayMode.lineByLine;
       if (isMain) {
-        if (line is SyncLyricLine) {
+        if (line is SyncLyricLine && !isLineByLine) {
           if (line.words.isEmpty && line.length > const Duration(seconds: 3)) {
             return 40.0;
           }
@@ -458,7 +461,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
         }
       }
 
-      if (line is SyncLyricLine) {
+      if (line is SyncLyricLine && !isLineByLine) {
         if (line.words.isEmpty) return 0.0;
       } else if (line is LrcLine) {
         if (line.isBlank) return 0.0;
@@ -471,7 +474,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       double h = 0.0;
 
       final double vertPad;
-      if (line is SyncLyricLine) {
+      if (line is SyncLyricLine && !isLineByLine) {
         vertPad = config.syncVerticalPadding(isMainLine: true);
       } else {
         vertPad = config.lrcVerticalPadding();
@@ -497,11 +500,11 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       painter.layout(maxWidth: contentWidth);
       h += painter.height;
 
-      final hasTranslation = line is SyncLyricLine
+      final hasTranslation = line is SyncLyricLine && !isLineByLine
           ? line.translation != null
-          : (line is LrcLine &&
+          : (line is LrcLine || (line is SyncLyricLine && isLineByLine)) &&
               line.translation != null &&
-              line.translation!.trim().isNotEmpty);
+              line.translation!.trim().isNotEmpty;
       final hasRoman = line.romanLyric != null && line.romanLyric!.isNotEmpty;
       final vvActiveTracks = config.normalizedLineOrder.where((t) {
         switch (t) {
@@ -519,7 +522,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
         if (h > vvPreBase) h += 2.0;
         if (track == LyricLineTrack.translation) {
           final translationWeight = (weight - 50).clamp(100, 900);
-          if (line is SyncLyricLine && line.translation != null) {
+          if (line is SyncLyricLine && !isLineByLine && line.translation != null) {
             painter.text = TextSpan(
               text: line.translation!,
               style: TextStyle(
@@ -578,7 +581,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
       // post-original tracks
       if (vvPostTracks.isNotEmpty) {
-        final gap = line is SyncLyricLine
+        final gap = line is SyncLyricLine && !isLineByLine
             ? config.syncTranslationGap(isMainLine: true)
             : config.lrcTranslationGap(isMainLine: true, translationIndex: 0);
         h += gap;
@@ -588,7 +591,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
           vvPostPrev = true;
           if (track == LyricLineTrack.translation) {
             final translationWeight = (weight - 50).clamp(100, 900);
-            if (line is SyncLyricLine && line.translation != null) {
+            if (line is SyncLyricLine && !isLineByLine && line.translation != null) {
               painter.text = TextSpan(
                 text: line.translation!,
                 style: TextStyle(
@@ -601,9 +604,16 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
               );
               painter.layout(maxWidth: contentWidth);
               h += painter.height;
-            } else if (line is LrcLine) {
-              final parts = line.content.split('┃');
-              for (int i = 1; i < parts.length; i++) {
+          } else if (line is LrcLine || (line is SyncLyricLine && isLineByLine)) {
+            final parts = line is LrcLine
+                ? line.content.split('┃')
+                : <String>[];
+            if (line.translation != null &&
+                line.translation!.trim().isNotEmpty &&
+                !parts.contains(line.translation!)) {
+              parts.add(line.translation!);
+            }
+            for (int i = 1; i < parts.length; i++) {
                 painter.text = TextSpan(
                   text: parts[i],
                   style: TextStyle(
@@ -724,6 +734,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
   void _syncWhenRouteVisible() {
     if (_disposed || !mounted) return;
+    _needsInitialScroll = true;
     lyricService.forceEmitCurrentLine();
     _startPositionResyncWindow();
     _syncToPlaybackPosition(duration: Duration.zero);
@@ -1033,7 +1044,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     final update = lyricService.lineUpdateForLyric(
       widget.lyric,
       playbackService.position,
-      preferUpcomingInGap: forceScroll || _needsInitialScroll,
+      preferUpcomingInGap: _needsInitialScroll,
     );
     if (update == null) {
       lyricService.forceEmitCurrentLine();

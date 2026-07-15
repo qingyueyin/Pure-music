@@ -513,12 +513,15 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
 
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12.0),
-          child: SingleChildScrollView(
-            controller: scrollController,
-            scrollDirection: Axis.horizontal,
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: _buildTextArea(scheme),
+          child: ScrollConfiguration(
+            behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+            child: SingleChildScrollView(
+              controller: scrollController,
+              scrollDirection: Axis.horizontal,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: _buildTextArea(scheme),
+              ),
             ),
           ),
         );

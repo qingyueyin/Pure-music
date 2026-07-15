@@ -131,6 +131,7 @@ class LyricViewController extends ChangeNotifier {
         enableLineSpring: enableLyricSpring,
         enableGlow: enableLyricGlow,
         hasMultipleAgents: hasMultipleAgents,
+        displayMode: lyricDisplayMode,
       );
 
   void triggerRebuild() {
@@ -204,17 +205,6 @@ class LyricViewController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void switchRubyPosition() {
-    rubyPosition = switch (rubyPosition) {
-      RubyPosition.above => RubyPosition.below,
-      RubyPosition.below => RubyPosition.belowTranslation,
-      RubyPosition.belowTranslation => RubyPosition.above,
-    };
-    nowPlayingPagePref.rubyPosition = rubyPosition;
-    AppPreference.instance.save();
-    notifyListeners();
-  }
-
   void setRubyPosition(RubyPosition position) {
     if (position == rubyPosition) return;
     rubyPosition = position;
@@ -279,7 +269,6 @@ class LyricViewControls extends StatelessWidget {
       if (!lyricViewController.hasMultipleAgents) const _LyricAlignSwitchBtn(),
       const _FontSizeBtn(),
       const _FontWeightBtn(),
-      const _RubyPositionBtn(),
     ];
 
     return Column(
@@ -458,27 +447,4 @@ class _FontWeightBtn extends StatelessWidget {
   }
 }
 
-class _RubyPositionBtn extends StatelessWidget {
-  const _RubyPositionBtn();
 
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final controller = context.watch<LyricViewController>();
-    final isDefault = controller.rubyPosition == RubyPosition.below;
-
-    return IconButton(
-      onPressed: controller.switchRubyPosition,
-      tooltip: controller.rubyPosition.displayName,
-      style: IconButton.styleFrom(
-        backgroundColor:
-            isDefault ? null : scheme.secondaryContainer,
-      ),
-      color: scheme.onSecondaryContainer,
-      icon: Icon(
-        Symbols.text_fields,
-        fill: isDefault ? 0 : 1,
-      ),
-    );
-  }
-}
