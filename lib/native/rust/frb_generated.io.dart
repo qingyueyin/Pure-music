@@ -149,6 +149,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<InstalledFont> dco_decode_list_installed_font(dynamic raw);
 
   @protected
+  List<PlayCountEntry> dco_decode_list_play_count_entry(dynamic raw);
+
+  @protected
   Uint32List dco_decode_list_prim_u_32_strict(dynamic raw);
 
   @protected
@@ -189,6 +192,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Uint8List? dco_decode_opt_list_prim_u_8_strict(dynamic raw);
+
+  @protected
+  PlayCountEntry dco_decode_play_count_entry(dynamic raw);
 
   @protected
   (Uint8List?, Uint32List)
@@ -347,6 +353,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       SseDeserializer deserializer);
 
   @protected
+  List<PlayCountEntry> sse_decode_list_play_count_entry(
+      SseDeserializer deserializer);
+
+  @protected
   Uint32List sse_decode_list_prim_u_32_strict(SseDeserializer deserializer);
 
   @protected
@@ -391,6 +401,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Uint8List? sse_decode_opt_list_prim_u_8_strict(SseDeserializer deserializer);
+
+  @protected
+  PlayCountEntry sse_decode_play_count_entry(SseDeserializer deserializer);
 
   @protected
   (Uint8List?, Uint32List)
@@ -557,6 +570,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       List<InstalledFont> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_play_count_entry(
+      List<PlayCountEntry> self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_prim_u_32_strict(
       Uint32List self, SseSerializer serializer);
 
@@ -604,6 +621,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_list_prim_u_8_strict(
       Uint8List? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_play_count_entry(
+      PlayCountEntry self, SseSerializer serializer);
 
   @protected
   void sse_encode_record_opt_list_prim_u_8_strict_list_prim_u_32_strict(
