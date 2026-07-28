@@ -178,6 +178,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
         _colorService.cachePaletteForPath(path, palette);
         ThemeProvider.instance.applySeedColorDirectly(palette.first, path);
         cover = MemoryImage(bytes);
+        _nowPlayingCoverBytes = bytes;
       }
       if (cover != null) {
         if (mounted) precacheImage(cover, context);
