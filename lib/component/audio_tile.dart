@@ -310,20 +310,33 @@ class _AudioTileState extends State<AudioTile> {
                           ? scheme.onSurface.withAlpha(10)
                           : Colors.transparent;
 
-              return AnimatedContainer(
+              return TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0.0, end: 1.0),
                 duration: MotionDuration.base,
                 curve: MotionCurve.standard,
-                height: 64.0,
-                decoration: BoxDecoration(
-                  color: backgroundColor,
-                  borderRadius: AppRadius.smCircular,
-                  border: effectiveFocus && !isSelected
-                      ? Border.all(color: scheme.primary.withAlpha(89))
-                      : null,
-                ),
-                child: Material(
-                  type: MaterialType.transparency,
-                  child: GestureDetector(
+                builder: (context, t, child) {
+                  return Opacity(
+                    opacity: t,
+                    child: Transform.translate(
+                      offset: Offset(0, (1 - t) * 20),
+                      child: child,
+                    ),
+                  );
+                },
+                child: AnimatedContainer(
+                  duration: MotionDuration.base,
+                  curve: MotionCurve.standard,
+                  height: 64.0,
+                  decoration: BoxDecoration(
+                    color: backgroundColor,
+                    borderRadius: AppRadius.smCircular,
+                    border: effectiveFocus && !isSelected
+                        ? Border.all(color: scheme.primary.withAlpha(89))
+                        : null,
+                  ),
+                  child: Material(
+                    type: MaterialType.transparency,
+                    child: GestureDetector(
                     onLongPressStart: (details) {
                       if (widget.multiSelectController == null) return;
 
@@ -509,12 +522,13 @@ class _AudioTileState extends State<AudioTile> {
                     ),
                   ),
                 ),
-              );
-            },
-          ),
-        );
-      },
-    );
+              ),
+            );
+          },
+        ),
+      );
+    },
+  );
   }
 }
 
