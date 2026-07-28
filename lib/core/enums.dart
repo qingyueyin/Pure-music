@@ -45,7 +45,8 @@ enum NowPlayingViewMode {
 
 enum NowPlayingBackgroundMode {
   meshGradient,
-  blurCover;
+  blurCover,
+  coverBlurTest;
 
   static NowPlayingBackgroundMode? fromString(String? backgroundMode) {
     if (backgroundMode == null) return null;
@@ -147,6 +148,30 @@ List<LyricLineTrack> normalizedLyricLineOrder(List<LyricLineTrack> order) {
     if (seen.add(t)) result.add(t);
   }
   return result;
+}
+
+enum LyricLiftStyle {
+  vertical,
+  cosine;
+
+  static LyricLiftStyle? fromString(String name) {
+    for (var value in LyricLiftStyle.values) {
+      if (_matchesStoredEnumName(name, value.name)) return value;
+    }
+    return null;
+  }
+}
+
+enum LyricStaggerStyle {
+  classic,
+  salt;
+
+  static LyricStaggerStyle? fromString(String name) {
+    for (var value in LyricStaggerStyle.values) {
+      if (_matchesStoredEnumName(name, value.name)) return value;
+    }
+    return null;
+  }
 }
 
 enum RubyPosition {
