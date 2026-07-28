@@ -64,7 +64,9 @@ class _SettingsTabsState extends State<SettingsTabs> {
                   selected ? scheme.onSecondaryContainer : scheme.onSurface,
                 ),
                 backgroundColor: WidgetStatePropertyAll(
-                  selected ? scheme.secondaryContainer : scheme.surfaceContainerHighest,
+                  selected
+                      ? scheme.secondaryContainer
+                      : scheme.surfaceContainerHighest,
                 ),
                 side: WidgetStatePropertyAll(
                   BorderSide(
@@ -250,7 +252,7 @@ class _WavyProgressBarSwitchState extends State<_WavyProgressBarSwitch> {
           color: scheme.onSurface,
           borderColor: Colors.transparent,
           selectedBorderColor: Colors.transparent,
-          constraints: const BoxConstraints(minHeight: 48, minWidth: 72),
+          constraints: const BoxConstraints(minHeight: 32, minWidth: 72),
           textStyle: const TextStyle(
             fontSize: AppType.body,
             fontWeight: AppType.weightMedium,
@@ -481,6 +483,134 @@ class _RubyPositionSettingState extends State<_RubyPositionSetting> {
             },
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _LiftStyleSelector extends StatefulWidget {
+  const _LiftStyleSelector();
+
+  @override
+  State<_LiftStyleSelector> createState() => _LiftStyleSelectorState();
+}
+
+class _LiftStyleSelectorState extends State<_LiftStyleSelector> {
+  final nowPlayingPagePref = AppPreference.instance.nowPlayingPagePref;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = nowPlayingPagePref.liftStyle;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SettingsTile(
+          description: '逐字歌词上抬方式',
+          action: SegmentedButton<LyricLiftStyle>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment<LyricLiftStyle>(
+                value: LyricLiftStyle.vertical,
+                label: Text('垂直'),
+              ),
+              ButtonSegment<LyricLiftStyle>(
+                value: LyricLiftStyle.cosine,
+                label: Text('余弦'),
+              ),
+            ],
+            selected: {style},
+            onSelectionChanged: (newSelection) {
+              setState(() => nowPlayingPagePref.liftStyle = newSelection.first);
+              LyricViewController.instance.triggerRebuild();
+              AppPreference.instance.save();
+            },
+          ),
+        ),
+        if (style == LyricLiftStyle.vertical) ...[
+          const SizedBox(height: 16.0),
+          SettingsTile(
+            description: '上抬持续时间',
+            subtitle: '${nowPlayingPagePref.liftDurationMs} ms',
+            action: SizedBox(
+              width: 140,
+              child: Slider(
+                value: nowPlayingPagePref.liftDurationMs.toDouble(),
+                min: 50,
+                max: 2000,
+                divisions: 39,
+                label: '${nowPlayingPagePref.liftDurationMs} ms',
+                onChanged: (v) {
+                  setState(() => nowPlayingPagePref.liftDurationMs = v.round());
+                  LyricViewController.instance.triggerRebuild();
+                  AppPreference.instance.save();
+                },
+              ),
+            ),
+          ),
+        ],
+        if (style == LyricLiftStyle.vertical ||
+            style == LyricLiftStyle.cosine) ...[
+          const SizedBox(height: 16.0),
+          SettingsTile(
+            description: '上抬幅度',
+            subtitle: '${nowPlayingPagePref.liftPeak.toStringAsFixed(1)}x',
+            action: SizedBox(
+              width: 140,
+              child: Slider(
+                value: nowPlayingPagePref.liftPeak,
+                min: 0.5,
+                max: 6.0,
+                divisions: 55,
+                label: '${nowPlayingPagePref.liftPeak.toStringAsFixed(1)}x',
+                onChanged: (v) {
+                  setState(() => nowPlayingPagePref.liftPeak = v);
+                  LyricViewController.instance.triggerRebuild();
+                  AppPreference.instance.save();
+                },
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _StaggerStyleSelector extends StatefulWidget {
+  const _StaggerStyleSelector();
+
+  @override
+  State<_StaggerStyleSelector> createState() => _StaggerStyleSelectorState();
+}
+
+class _StaggerStyleSelectorState extends State<_StaggerStyleSelector> {
+  final nowPlayingPagePref = AppPreference.instance.nowPlayingPagePref;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = nowPlayingPagePref.staggerStyle;
+
+    return SettingsTile(
+      description: '歌词行动效',
+      action: SegmentedButton<LyricStaggerStyle>(
+        showSelectedIcon: false,
+        segments: const [
+          ButtonSegment<LyricStaggerStyle>(
+            value: LyricStaggerStyle.classic,
+            label: Text('默认'),
+          ),
+          ButtonSegment<LyricStaggerStyle>(
+            value: LyricStaggerStyle.salt,
+            label: Text('测试'),
+          ),
+        ],
+        selected: {style},
+        onSelectionChanged: (newSelection) {
+          setState(() => nowPlayingPagePref.staggerStyle = newSelection.first);
+          LyricViewController.instance.triggerRebuild();
+          AppPreference.instance.save();
+        },
       ),
     );
   }
@@ -1080,6 +1210,10 @@ class _LyricsTabContentState extends State<_LyricsTabContent> {
         const SizedBox(height: 16.0),
         const _RubyPositionSetting(),
         const SizedBox(height: 16.0),
+        const _StaggerStyleSelector(),
+        const SizedBox(height: 16.0),
+        const _LiftStyleSelector(),
+        const SizedBox(height: 16.0),
         // 注释：歌词写入标签功能暂时隐藏，功能未完全实现
         // TODO: 完善歌词写入标签功能后重新启用
         // SettingsTile(
@@ -1224,8 +1358,7 @@ class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
     }
   }
 
-  DesktopLyricService get _service =>
-      PlayService.instance.desktopLyricService;
+  DesktopLyricService get _service => PlayService.instance.desktopLyricService;
 
   void _sendAll() {
     if (!_service.isRunning) return;
@@ -1331,9 +1464,7 @@ class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
             const SizedBox(height: 16),
             SettingsTile(
               description: '歌曲信息',
-              subtitle: settings.desktopShowNowPlayingInfo
-                  ? '显示歌曲标题和艺人'
-                  : '隐藏',
+              subtitle: settings.desktopShowNowPlayingInfo ? '显示歌曲标题和艺人' : '隐藏',
               action: Switch(
                 value: settings.desktopShowNowPlayingInfo,
                 onChanged: (v) => _update(
@@ -1378,11 +1509,11 @@ class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
                   min: 14,
                   max: 48,
                   divisions: 34,
-                  label: '${settings.desktopLyricFontSize.toStringAsFixed(0)}px',
+                  label:
+                      '${settings.desktopLyricFontSize.toStringAsFixed(0)}px',
                   onChanged: (v) => setState(() {
                     settings.desktopLyricFontSize = v;
-                    settings.desktopTranslationFontSize =
-                        (v - 4).clamp(10, 44);
+                    settings.desktopTranslationFontSize = (v - 4).clamp(10, 44);
                   }),
                   onChangeEnd: (_) => _saveAndSend(),
                 ),
@@ -1511,15 +1642,12 @@ class _DesktopColorSetting extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final displayColor = color != null
-        ? Color((color! | 0xFF000000).toUnsigned(32))
-        : null;
+    final displayColor =
+        color != null ? Color((color! | 0xFF000000).toUnsigned(32)) : null;
 
     return SettingsTile(
       description: label,
-      subtitle: color == null
-          ? '跟随主题'
-          : '自定义 · ${(opacity * 100).round()}%',
+      subtitle: color == null ? '跟随主题' : '自定义 · ${(opacity * 100).round()}%',
       action: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1530,12 +1658,11 @@ class _DesktopColorSetting extends StatelessWidget {
               width: 32,
               height: 32,
               decoration: BoxDecoration(
-                color: (displayColor ?? scheme.primary)
-                    .withValues(alpha: opacity),
+                color:
+                    (displayColor ?? scheme.primary).withValues(alpha: opacity),
                 borderRadius: AppRadius.xsCircular,
                 border: displayColor == null
-                    ? Border.all(
-                        color: scheme.outline.withValues(alpha: 0.4))
+                    ? Border.all(color: scheme.outline.withValues(alpha: 0.4))
                     : null,
               ),
               child: displayColor == null
@@ -1551,8 +1678,7 @@ class _DesktopColorSetting extends StatelessWidget {
           OutlinedButton(
             onPressed: onPickColor,
             style: OutlinedButton.styleFrom(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               shape: RoundedRectangleBorder(
                 borderRadius: AppRadius.smCircular,
               ),
@@ -1587,8 +1713,7 @@ class _DesktopColorPickerDialog extends StatefulWidget {
       _DesktopColorPickerDialogState();
 }
 
-class _DesktopColorPickerDialogState
-    extends State<_DesktopColorPickerDialog> {
+class _DesktopColorPickerDialogState extends State<_DesktopColorPickerDialog> {
   late HSVColor _hsv;
   late TextEditingController _hexCtrl;
   late double _opacity;
@@ -1712,8 +1837,8 @@ class _DesktopColorPickerDialogState
                           ),
                           hintText: 'RRGGBB',
                           hintStyle: TextStyle(
-                            color: scheme.onSurfaceVariant
-                                .withValues(alpha: 0.5),
+                            color:
+                                scheme.onSurfaceVariant.withValues(alpha: 0.5),
                           ),
                         ),
                         style: const TextStyle(
@@ -2214,6 +2339,10 @@ class _NowPlayingBackgroundModeToggleState
           ButtonSegment<NowPlayingBackgroundMode>(
             value: NowPlayingBackgroundMode.blurCover,
             label: Text('封面模糊'),
+          ),
+          ButtonSegment<NowPlayingBackgroundMode>(
+            value: NowPlayingBackgroundMode.coverBlurTest,
+            label: Text('流光背景'),
           ),
         ],
         selected: {pref.backgroundMode},
