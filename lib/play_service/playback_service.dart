@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/cache.dart';
@@ -10,8 +11,10 @@ import 'package:pure_music/play_service/equalizer_service.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/native/rust/api/smtc_flutter.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart' as rust_tag_reader;
+import 'package:pure_music/native/rust/api/library_db.dart' as rust_library_db;
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/core/theme.dart';
+import 'package:pure_music/core/settings.dart';
 import 'package:flutter/foundation.dart';
 
 /// 只通知 now playing 变更
@@ -27,6 +30,12 @@ class PlaybackService extends ChangeNotifier {
   Timer? _songChangePrefetchTimer;
   Timer? _songChangePersistTimer;
   Timer? _songChangeCleanupTimer;
+  double _listenAccumulatedSec = 0;
+  double _listenLastPositionSec = 0;
+  double _thresholdSec = 0;
+  bool _listenRecorded = false;
+  StreamSubscription<double>? _listenStreamSub;
+  String? _supportPath;
   bool _closed = false;
 
   PlaybackService(this.playService) {
@@ -66,9 +75,12 @@ class PlaybackService extends ChangeNotifier {
 
     _eq = EqualizerService(_player, _pref);
 
+    _listenStreamSub = _player.positionStream.listen(_onPositionUpdate);
+
     Future.microtask(() async {
       try {
         await _restoreLastSession();
+        _supportPath = (await getAppDataDir()).path;
       } catch (err, trace) {
         logger.e('[restoreLastSession] $err\n$trace');
       }
@@ -284,6 +296,7 @@ class PlaybackService extends ChangeNotifier {
       _playlistIndex = audioIndex;
       _nowPlaying.value = audio;
       _lastNowPlayingChangedMs = DateTime.now().millisecondsSinceEpoch;
+      _resetListenAccumulator(audio.duration.toDouble());
       unawaited(audio.loadSmallCoverBytes());
 
       _player.setSource(audio.path);
@@ -322,6 +335,38 @@ class PlaybackService extends ChangeNotifier {
     _songChangePersistTimer = null;
     _songChangeCleanupTimer?.cancel();
     _songChangeCleanupTimer = null;
+  }
+
+  void _resetListenAccumulator(double durationSec) {
+    _listenAccumulatedSec = 0;
+    _listenLastPositionSec = 0;
+    _listenRecorded = false;
+    _thresholdSec = durationSec > 0 ? math.min(60.0, 0.9 * durationSec) : 0;
+  }
+
+  void _onPositionUpdate(double positionSec) {
+    if (_closed || _listenRecorded || playerState != PlayerState.playing) {
+      _listenLastPositionSec = positionSec;
+      return;
+    }
+    if (_thresholdSec <= 0) return;
+
+    final delta = positionSec - _listenLastPositionSec;
+    _listenLastPositionSec = positionSec;
+    if (delta <= 0 || delta > 2.0) return;
+
+    _listenAccumulatedSec += delta;
+    if (_listenAccumulatedSec >= _thresholdSec) {
+      _recordListen();
+    }
+  }
+
+  void _recordListen() {
+    if (_listenRecorded) return;
+    _listenRecorded = true;
+    final audioPath = nowPlaying?.path;
+    if (_supportPath == null || audioPath == null) return;
+    rust_library_db.incrementPlayCount(indexPath: _supportPath!, path: audioPath);
   }
 
   void _schedulePostSongChangeTasks({
@@ -826,6 +871,9 @@ class PlaybackService extends ChangeNotifier {
     } catch (_) {}
     try {
       await _smtcEventStreamSub.cancel();
+    } catch (_) {}
+    try {
+      await _listenStreamSub?.cancel();
     } catch (_) {}
     _smtcPositionTimer?.cancel();
     _smtcPositionTimer = null;
