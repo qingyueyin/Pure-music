@@ -9,6 +9,7 @@ import 'package:pure_music/core/route_visibility.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/page/now_playing_page/component/collapsible_lyric_controls.dart';
+import 'package:pure_music/page/now_playing_page/component/lyric_stagger_motion.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.dart';
 import 'package:pure_music/page/now_playing_page/component/lyrics_line_widget.dart';
 import 'package:pure_music/page/now_playing_page/component/lyrics_line_painter.dart';
@@ -26,23 +27,11 @@ const _opacityMinClamp = 0.30;
 const _opacityMaxClamp = 0.90;
 const _staggerBaseMs = 60;
 const _staggerMaxMs = 600;
-const _staggerSaltBaseMs = 50;
-const _staggerSaltDecay = 1.05;
 const _shaderFadeInWithBlur = 0.05;
 const _shaderFadeInWithoutBlur = 0.05;
 const _shaderFadeOutWithBlur = 0.80;
 const _shaderFadeOutWithoutBlur = 0.95;
 const _lyricOffsetCacheCapacity = 6;
-
-int _geometricDelayMs(int dist) {
-  double total = 0;
-  double step = _staggerSaltBaseMs.toDouble();
-  for (int i = 0; i < dist; i++) {
-    total += step;
-    step /= _staggerSaltDecay;
-  }
-  return total.round();
-}
 
 bool alwaysShowLyricViewControls = false;
 
@@ -260,6 +249,9 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   int _mainLine = 0;
   int _jumpTriggerId = 0;
   double _jumpDeltaY = 0.0;
+  int _staggerVisibleStartIndex = 0;
+  bool _pendingStaggerScroll = false;
+  bool _postDragSkipPending = false;
 
   /// TTML 重叠行的额外透明度 boost，不决定“当前高亮行”。
   /// 唯一当前行来源是 [_mainLine]。
@@ -273,7 +265,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   /// forceEmitCurrentLine 与 _scrollToCurrent 不在同一时机就绪，
   /// 需要在收到歌词行更新后补一次滚动。
   bool _needsInitialScroll = true;
-  bool _suppressSaltSpring = false;
   int _lastPositionResyncMs = 0;
   int _positionResyncExtensionCount = 0;
   static const int _maxPositionResyncExtensions = 5;
@@ -750,17 +741,17 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   void _syncWhenRouteVisible() {
     if (_disposed || !mounted) return;
     _needsInitialScroll = true;
-    _suppressSaltSpring = true;
+    setState(() {
+      _pendingStaggerScroll = false;
+      _jumpDeltaY = 0;
+      _jumpTriggerId++;
+    });
     lyricService.forceEmitCurrentLine();
     _startPositionResyncWindow();
     _syncToPlaybackPosition(duration: Duration.zero);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_disposed || !mounted) return;
       _syncToPlaybackPosition(duration: Duration.zero);
-    });
-    // 延迟清除压制，覆盖后续 _queuePlaybackResync 的回调
-    Future.delayed(const Duration(milliseconds: 100), () {
-      if (mounted) _suppressSaltSpring = false;
     });
   }
 
@@ -798,6 +789,10 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       _needsInitialScroll = true;
       _pendingScrollRetries = 0;
       _mainLine = 0;
+      _pendingStaggerScroll = false;
+      _postDragSkipPending = false;
+      _jumpDeltaY = 0;
+      _jumpTriggerId++;
       _activeLines.clear();
       _hoveredLineIndex = -1;
       _viewportRange = const LyricViewportRange(start: 0, end: 0);
@@ -822,7 +817,11 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       _cachedMaxWidth = 0.0;
       _cachedViewportHeight = 0.0;
       final oldMainLine = _mainLine;
-      setState(() {});
+      setState(() {
+        _pendingStaggerScroll = false;
+        _jumpDeltaY = 0;
+        _jumpTriggerId++;
+      });
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_disposed || !mounted) return;
         if (_mainLine >= widget.lyric.lines.length) {
@@ -833,12 +832,35 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     });
   }
 
-  bool get _saltSpringEnabled =>
-      _lyricViewController?.renderConfig.staggerStyle ==
-      LyricStaggerStyle.salt;
+  int _firstVisibleLineIndex() {
+    if (!scrollController.hasClients) return _viewportRange.start;
+    final viewportContext =
+        scrollController.position.context.notificationContext;
+    final viewportBox = viewportContext?.findRenderObject() as RenderBox?;
+    if (viewportBox == null || !viewportBox.hasSize) {
+      return _viewportRange.start;
+    }
 
-  void _springScrollTo(double targetOffset) {
+    final viewportTop = viewportBox.localToGlobal(Offset.zero).dy;
+    final viewportBottom = viewportTop + viewportBox.size.height;
+    int? firstVisible;
+    for (final entry in _lineKeys.entries) {
+      final lineContext = entry.value.currentContext;
+      final lineBox = lineContext?.findRenderObject() as RenderBox?;
+      if (lineBox == null || !lineBox.hasSize) continue;
+      final lineTop = lineBox.localToGlobal(Offset.zero).dy;
+      final lineBottom = lineTop + lineBox.size.height;
+      if (lineBottom > viewportTop && lineTop < viewportBottom) {
+        firstVisible =
+            firstVisible == null ? entry.key : min(firstVisible, entry.key);
+      }
+    }
+    return firstVisible ?? _viewportRange.start;
+  }
+
+  void _staggerScrollTo(double targetOffset) {
     if (!scrollController.hasClients) return;
+    _pendingStaggerScroll = false;
     final from = scrollController.offset;
     final to = targetOffset.clamp(
       scrollController.position.minScrollExtent,
@@ -855,6 +877,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       _stopScrollTicker();
       _needsInitialScroll = false;
       _positionResyncExtensionCount = 0;
+    } else {
+      _jumpDeltaY = 0;
     }
   }
 
@@ -902,6 +926,10 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       _stopScrollTicker();
       setState(() {
         _scrollState = LyricScrollState.userDragging;
+        _pendingStaggerScroll = false;
+        _postDragSkipPending = true;
+        _jumpDeltaY = 0;
+        _jumpTriggerId++;
       });
     }
     final renderConfig = context.read<LyricViewController>().renderConfig;
@@ -919,6 +947,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       if (!mounted) return;
       setState(() {
         _scrollState = LyricScrollState.idle;
+        _pendingStaggerScroll = false;
+        _postDragSkipPending = false;
       });
       _updateViewportRange(force: true);
       _scrollToCurrent();
@@ -970,8 +1000,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
         final viewport = RenderAbstractViewport.of(targetObject);
         final alignment = widget.currentLineAlignment;
         final revealed = viewport.getOffsetToReveal(targetObject, alignment);
-        if (_saltSpringEnabled && !_suppressSaltSpring) {
-          _springScrollTo(revealed.offset);
+        if (_pendingStaggerScroll) {
+          _staggerScrollTo(revealed.offset);
           _scrollState = LyricScrollState.idle;
         } else {
           _animateTo(revealed.offset, duration: duration);
@@ -1002,8 +1032,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       final targetScrollOffset =
           (topPadding + lineTop + lineHeight / 2) - (viewport * alignment);
 
-      if (_saltSpringEnabled && !_suppressSaltSpring) {
-        _springScrollTo(targetScrollOffset);
+      if (_pendingStaggerScroll) {
+        _staggerScrollTo(targetScrollOffset);
         _scrollState = LyricScrollState.idle;
       } else {
         _animateTo(targetScrollOffset, duration: duration);
@@ -1182,6 +1212,18 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     final nextActiveLines = _renderableActiveLines(update);
 
     final renderConfig = context.read<LyricViewController>().renderConfig;
+    final shouldStagger = canStartLyricStagger(
+      enabled: !forceScroll &&
+          renderConfig.enableStaggeredAnimation &&
+          renderConfig.staggerStyle == LyricStaggerStyle.salt,
+      previousIndex: _mainLine,
+      nextIndex: renderableMainLine,
+      isUserDragging: _scrollState == LyricScrollState.userDragging,
+      skipNextAfterDrag: _postDragSkipPending,
+    );
+    if (shouldStagger) {
+      _staggerVisibleStartIndex = _firstVisibleLineIndex();
+    }
     final viewportStrategy = LyricViewportStrategy(
       leadingLines: renderConfig.viewportLeadingLines,
       trailingLines: renderConfig.viewportTrailingLines,
@@ -1195,11 +1237,13 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     );
     final shouldScroll =
         forceScroll || _needsInitialScroll || followDecision.shouldScroll;
+    _pendingStaggerScroll = shouldScroll && shouldStagger;
 
     if (forceScroll) {
       _pendingScrollRetries = 0;
       _userScrollHoldTimer?.cancel();
       _stopScrollTicker();
+      _postDragSkipPending = false;
     }
 
     setState(() {
@@ -1227,6 +1271,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
         if (_disposed || !mounted) return;
         _scrollToCurrent(duration);
       });
+    } else {
+      _pendingStaggerScroll = false;
     }
   }
 
@@ -1358,7 +1404,11 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                               ? _lyricViewController?.renderConfig
                                           .staggerStyle ==
                                       LyricStaggerStyle.salt
-                                  ? _geometricDelayMs(dist)
+                                  ? lyricStaggerDelayMs(
+                                      itemIndex: i,
+                                      visibleStartIndex:
+                                          _staggerVisibleStartIndex,
+                                    )
                                   : ((dist + 1) * _staggerBaseMs)
                                       .clamp(0, _staggerMaxMs)
                               : 0);
