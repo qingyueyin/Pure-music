@@ -14,10 +14,14 @@ class ArtistsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final contentList = AudioLibrary.instance.artistCollection.values.toList();
-    final canSortItems = hasEnoughItemsToSort(contentList.length);
-    final multiSelectController = MultiSelectController<Artist>();
-    return UniPage<Artist>(
+    return ValueListenableBuilder<int>(
+      valueListenable: AudioLibrary.libraryVersion,
+      builder: (context, _, __) {
+        final contentList =
+            AudioLibrary.instance.artistCollection.values.toList();
+        final canSortItems = hasEnoughItemsToSort(contentList.length);
+        final multiSelectController = MultiSelectController<Artist>();
+        return UniPage<Artist>(
       pref: AppPreference.instance.artistsPagePref,
       title: '艺术家',
       subtitle: '${contentList.length} 位艺术家',
@@ -85,6 +89,8 @@ class ArtistsPage extends StatelessWidget {
           },
         ),
       ],
+    );
+      },
     );
   }
 }
