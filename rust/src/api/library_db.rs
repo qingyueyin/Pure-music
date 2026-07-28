@@ -18,6 +18,16 @@ pub struct IndexAudio {
     pub modified: u64,
     pub created: u64,
     pub by: Option<String>,
+    pub play_count: i64,
+}
+
+#[derive(Clone)]
+pub struct PlayCountEntry {
+    pub path: String,
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub play_count: i64,
 }
 
 #[derive(Clone)]
@@ -80,7 +90,69 @@ fn init_schema(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_audios_album ON audios(album);
         "#,
     )?;
+    let play_count_col = conn
+        .prepare("SELECT play_count FROM audios LIMIT 1")
+        .is_ok();
+    if !play_count_col {
+        conn.execute_batch(
+            "ALTER TABLE audios ADD COLUMN play_count INTEGER NOT NULL DEFAULT 0;",
+        )?;
+    }
     Ok(())
+}
+
+pub fn increment_play_count(index_path: String, path: String) -> Result<(), String> {
+    let index_dir = PathBuf::from(index_path);
+    let conn = open_connection(&index_dir).map_err(|e| e.to_string())?;
+    init_schema(&conn).map_err(|e| e.to_string())?;
+    let affected = conn
+        .execute("UPDATE audios SET play_count = play_count + 1 WHERE path = ?1", params![path])
+        .map_err(|e| e.to_string())?;
+    if affected == 0 {
+        return Err("audio not found in library".to_string());
+    }
+    Ok(())
+}
+
+pub fn get_top_played(index_path: String, limit: i32) -> Result<Vec<PlayCountEntry>, String> {
+    let index_dir = PathBuf::from(index_path);
+    let conn = open_connection(&index_dir).map_err(|e| e.to_string())?;
+    init_schema(&conn).map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT path, title, artist, album, play_count FROM audios WHERE play_count > 0 ORDER BY play_count DESC LIMIT ?1",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(params![limit], |row| {
+            Ok(PlayCountEntry {
+                path: row.get(0)?,
+                title: row.get(1)?,
+                artist: row.get(2)?,
+                album: row.get(3)?,
+                play_count: row.get(4)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    let mut result = Vec::new();
+    for row in rows {
+        result.push(row.map_err(|e| e.to_string())?);
+    }
+    Ok(result)
+}
+
+pub fn get_play_count(index_path: String, path: String) -> Result<i64, String> {
+    let index_dir = PathBuf::from(index_path);
+    let conn = open_connection(&index_dir).map_err(|e| e.to_string())?;
+    init_schema(&conn).map_err(|e| e.to_string())?;
+    let count: i64 = conn
+        .query_row(
+            "SELECT COALESCE(play_count, 0) FROM audios WHERE path = ?1",
+            params![path],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(count)
 }
 
 pub(crate) fn write_index_value_to_sqlite(
@@ -113,8 +185,8 @@ pub(crate) fn write_index_value_to_sqlite(
         let mut folder_stmt = tx
             .prepare("INSERT OR REPLACE INTO folders(path, modified, latest) VALUES(?1, ?2, ?3)")?;
         let mut audio_stmt = tx.prepare(
-            "INSERT OR REPLACE INTO audios(path, folder_path, title, artist, album, album_artist, track, duration, bitrate, sample_rate, modified, created, by)
-             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            "INSERT OR REPLACE INTO audios(path, folder_path, title, artist, album, album_artist, track, duration, bitrate, sample_rate, modified, created, by, play_count)
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, COALESCE((SELECT play_count FROM audios WHERE path = ?1), 0))",
         )?;
 
         for folder in folders {
@@ -241,7 +313,7 @@ pub fn read_index_from_sqlite(index_path: String) -> Result<Vec<IndexFolder>> {
     let mut audios_by_folder: HashMap<String, Vec<IndexAudio>> = HashMap::new();
     {
         let mut stmt = conn.prepare(
-            "SELECT folder_path, title, artist, album, album_artist, track, duration, bitrate, sample_rate, path, modified, created, by
+            "SELECT folder_path, title, artist, album, album_artist, track, duration, bitrate, sample_rate, path, modified, created, by, play_count
              FROM audios ORDER BY folder_path, path",
         )?;
         let mut rows = stmt.query([])?;
@@ -259,6 +331,7 @@ pub fn read_index_from_sqlite(index_path: String) -> Result<Vec<IndexFolder>> {
             let modified: i64 = row.get(10)?;
             let created: i64 = row.get(11)?;
             let by: Option<String> = row.get(12)?;
+            let play_count: i64 = row.get(13)?;
 
             let audio = IndexAudio {
                 title,
@@ -273,6 +346,7 @@ pub fn read_index_from_sqlite(index_path: String) -> Result<Vec<IndexFolder>> {
                 modified: modified.max(0) as u64,
                 created: created.max(0) as u64,
                 by,
+                play_count,
             };
 
             audios_by_folder.entry(folder_path).or_default().push(audio);
