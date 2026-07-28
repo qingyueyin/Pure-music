@@ -87,7 +87,6 @@ class _ImmersivePortraitLayout extends StatelessWidget {
             ],
           ),
         ),
-        const _ImmersiveHelpOverlay(),
       ],
     );
   }
@@ -501,7 +500,6 @@ class _ImmersiveLandscapeLayout extends StatelessWidget {
             ],
           ),
         ),
-        const _ImmersiveHelpOverlay(),
       ],
     );
   }
