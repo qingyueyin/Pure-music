@@ -47,6 +47,12 @@ class LyricRenderConfig {
   final bool enableAudioReactive;
   final double audioReactiveStrength;
   final bool enableGlow;
+  final double karaokeGradientWidthFraction;
+  final double unplayedAlpha;
+  final LyricLiftStyle liftStyle;
+  final double liftPeak;
+  final int liftDurationMs;
+  final LyricStaggerStyle staggerStyle;
   final bool hasMultipleAgents; // 多声部 TTML 时对齐由 agent 决定
   final LyricDisplayMode displayMode;
 
@@ -84,6 +90,12 @@ class LyricRenderConfig {
     this.enableAudioReactive = false,
     this.audioReactiveStrength = 0.5,
     this.enableGlow = false,
+    this.karaokeGradientWidthFraction = 0.25,
+    this.unplayedAlpha = 0.30,
+    this.liftStyle = LyricLiftStyle.vertical,
+    this.liftPeak = 2.0,
+    this.liftDurationMs = 300,
+    this.staggerStyle = LyricStaggerStyle.classic,
     this.hasMultipleAgents = false,
     this.displayMode = LyricDisplayMode.wordByWord,
     this.useCustomPaint = true,
@@ -126,6 +138,12 @@ class LyricRenderConfig {
     bool? enableAudioReactive,
     double? audioReactiveStrength,
     bool? enableGlow,
+    double? karaokeGradientWidthFraction,
+    double? unplayedAlpha,
+    LyricLiftStyle? liftStyle,
+    double? liftPeak,
+    int? liftDurationMs,
+    LyricStaggerStyle? staggerStyle,
     bool? hasMultipleAgents,
     LyricDisplayMode? displayMode,
     bool? useCustomPaint,
@@ -163,6 +181,13 @@ class LyricRenderConfig {
       audioReactiveStrength:
           audioReactiveStrength ?? this.audioReactiveStrength,
       enableGlow: enableGlow ?? this.enableGlow,
+      karaokeGradientWidthFraction:
+          karaokeGradientWidthFraction ?? this.karaokeGradientWidthFraction,
+      unplayedAlpha: unplayedAlpha ?? this.unplayedAlpha,
+      liftStyle: liftStyle ?? this.liftStyle,
+      liftPeak: liftPeak ?? this.liftPeak,
+      liftDurationMs: liftDurationMs ?? this.liftDurationMs,
+      staggerStyle: staggerStyle ?? this.staggerStyle,
       hasMultipleAgents: hasMultipleAgents ?? this.hasMultipleAgents,
       displayMode: displayMode ?? this.displayMode,
       useCustomPaint: useCustomPaint ?? this.useCustomPaint,
@@ -208,6 +233,12 @@ class LyricRenderConfig {
         other.enableAudioReactive == enableAudioReactive &&
         other.audioReactiveStrength == audioReactiveStrength &&
         other.enableGlow == enableGlow &&
+        other.karaokeGradientWidthFraction == karaokeGradientWidthFraction &&
+        other.unplayedAlpha == unplayedAlpha &&
+        other.liftStyle == liftStyle &&
+        other.liftPeak == liftPeak &&
+        other.liftDurationMs == liftDurationMs &&
+        other.staggerStyle == staggerStyle &&
         other.hasMultipleAgents == hasMultipleAgents &&
         other.displayMode == displayMode &&
         other.useCustomPaint == useCustomPaint &&
@@ -244,6 +275,12 @@ class LyricRenderConfig {
         enableAudioReactive,
         audioReactiveStrength,
         enableGlow,
+        karaokeGradientWidthFraction,
+        unplayedAlpha,
+        liftStyle,
+        liftPeak,
+        liftDurationMs,
+        staggerStyle,
         hasMultipleAgents,
         displayMode,
         useCustomPaint,
