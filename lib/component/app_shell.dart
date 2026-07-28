@@ -17,104 +17,164 @@ class AppShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable:
-          PlayService.instance.playbackService.nowPlayingNotifier,
-      builder: (context, _) {
-        final playbackService = PlayService.instance.playbackService;
-        final nowPlaying = playbackService.nowPlaying;
-        final scheme = Theme.of(context).colorScheme;
-
-        final album = nowPlaying == null
-            ? null
-            : AudioLibrary.instance.albumCollection[nowPlaying.album];
-
-        final dynamicColor = _resolveDynamicColor(album, scheme);
-        if (album != null && dynamicColor == scheme.surfaceContainerLow) {
-          AlbumColorCache.instance.getAlbumColor(album).ignore();
+    return ResponsiveBuilder(
+      builder: (context, screenType) {
+        switch (screenType) {
+          case ScreenType.small:
+            return _AppShell_Small(
+              navigationShell: navigationShell,
+            );
+          case ScreenType.medium:
+          case ScreenType.large:
+            return _AppShell_Large(
+              navigationShell: navigationShell,
+            );
         }
-
-        return ResponsiveBuilder(
-          builder: (context, screenType) {
-            switch (screenType) {
-              case ScreenType.small:
-                return _AppShell_Small(
-                  navigationShell: navigationShell,
-                  backgroundColor: dynamicColor,
-                );
-              case ScreenType.medium:
-              case ScreenType.large:
-                return _AppShell_Large(
-                  navigationShell: navigationShell,
-                  backgroundColor: dynamicColor,
-                );
-            }
-          },
-        );
       },
     );
   }
-
-  static Color _resolveDynamicColor(Album? album, ColorScheme scheme) {
-    if (album == null) return scheme.surfaceContainerLow;
-    final cached = AlbumColorCache.instance.getAlbumColorSync(album);
-    if (cached == null) return scheme.surfaceContainerLow;
-    return Color.alphaBlend(
-        cached.primary.withAlpha(20), scheme.surfaceContainerLow);
-  }
 }
 
-class _AppShell_Small extends StatelessWidget {
-  const _AppShell_Small({
-    required this.navigationShell,
-    required this.backgroundColor,
-  });
+Color _resolveDynamicColor(ColorScheme scheme) {
+  final playbackService = PlayService.instance.playbackService;
+  final nowPlaying = playbackService.nowPlaying;
+  final album = nowPlaying == null
+      ? null
+      : AudioLibrary.instance.albumCollection[nowPlaying.album];
+  if (album == null) return scheme.surfaceContainerLow;
+  final cached = AlbumColorCache.instance.getAlbumColorSync(album);
+  if (cached == null) {
+    AlbumColorCache.instance.getAlbumColor(album).ignore();
+    return scheme.surfaceContainerLow;
+  }
+  return Color.alphaBlend(
+      cached.primary.withAlpha(20), scheme.surfaceContainerLow);
+}
+
+class _AppShell_Small extends StatefulWidget {
+  const _AppShell_Small({required this.navigationShell});
 
   final StatefulNavigationShell navigationShell;
-  final Color backgroundColor;
+
+  @override
+  State<_AppShell_Small> createState() => _AppShell_SmallState();
+}
+
+class _AppShell_SmallState extends State<_AppShell_Small> {
+  late final Color _backgroundColor;
+  late final VoidCallback _onNowPlayingChanged;
+
+  @override
+  void initState() {
+    super.initState();
+    _backgroundColor = _resolveDynamicColor(Theme.of(context).colorScheme);
+    _onNowPlayingChanged = () {
+      final newColor = _resolveDynamicColor(Theme.of(context).colorScheme);
+      if (newColor != _backgroundColor) {
+        setState(() => _backgroundColor = newColor);
+      }
+    };
+    PlayService.instance.playbackService.nowPlayingNotifier
+        .addListener(_onNowPlayingChanged);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final newColor = _resolveDynamicColor(Theme.of(context).colorScheme);
+    if (newColor != _backgroundColor) {
+      setState(() => _backgroundColor = newColor);
+    }
+  }
+
+  @override
+  void dispose() {
+    PlayService.instance.playbackService.nowPlayingNotifier
+        .removeListener(_onNowPlayingChanged);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
     final drawerWidth = (size.width * 0.78).clamp(240.0, 288.0);
     return Scaffold(
-      backgroundColor: backgroundColor,
+      backgroundColor: _backgroundColor,
       appBar: const PreferredSize(
         preferredSize: Size.fromHeight(48.0),
         child: TitleBar(),
       ),
       drawer: SizedBox(
           width: drawerWidth,
-          child: SideNav(navigationShell: navigationShell)),
-      body: Stack(children: [navigationShell, const MiniNowPlaying()]),
+          child: SideNav(navigationShell: widget.navigationShell)),
+      body: Stack(
+          children: [
+            widget.navigationShell,
+            const MiniNowPlaying()
+          ],
+        ),
     );
   }
 }
 
-class _AppShell_Large extends StatelessWidget {
-  const _AppShell_Large({
-    required this.navigationShell,
-    required this.backgroundColor,
-  });
+class _AppShell_Large extends StatefulWidget {
+  const _AppShell_Large({required this.navigationShell});
 
   final StatefulNavigationShell navigationShell;
-  final Color backgroundColor;
+
+  @override
+  State<_AppShell_Large> createState() => _AppShell_LargeState();
+}
+
+class _AppShell_LargeState extends State<_AppShell_Large> {
+  late final Color _backgroundColor;
+  late final VoidCallback _onNowPlayingChanged;
+
+  @override
+  void initState() {
+    super.initState();
+    _backgroundColor = _resolveDynamicColor(Theme.of(context).colorScheme);
+    _onNowPlayingChanged = () {
+      final newColor = _resolveDynamicColor(Theme.of(context).colorScheme);
+      if (newColor != _backgroundColor) {
+        setState(() => _backgroundColor = newColor);
+      }
+    };
+    PlayService.instance.playbackService.nowPlayingNotifier
+        .addListener(_onNowPlayingChanged);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final newColor = _resolveDynamicColor(Theme.of(context).colorScheme);
+    if (newColor != _backgroundColor) {
+      setState(() => _backgroundColor = newColor);
+    }
+  }
+
+  @override
+  void dispose() {
+    PlayService.instance.playbackService.nowPlayingNotifier
+        .removeListener(_onNowPlayingChanged);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: backgroundColor,
+      backgroundColor: _backgroundColor,
       appBar: const PreferredSize(
         preferredSize: Size.fromHeight(48.0),
         child: TitleBar(),
       ),
       body: Row(
         children: [
-          ClipRect(child: SideNav(navigationShell: navigationShell)),
+          ClipRect(child: SideNav(navigationShell: widget.navigationShell)),
           Expanded(
             child: Stack(
               children: [
-                navigationShell,
+                widget.navigationShell,
                 const MiniNowPlaying(),
               ],
             ),

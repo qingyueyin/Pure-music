@@ -330,26 +330,31 @@ class _WindowControllsState extends State<WindowControlls> with WindowListener {
     _isClosing = true;
 
     try {
-      // 1. 先隐藏窗口，给用户即时反馈
+      // 1. 先保存窗口状态（窗口必须可见才能获取正确尺寸）
+      try {
+        await _withTimeout(AppSettings.instance.saveSettings(), const Duration(seconds: 1), 'saveSettings');
+      } catch (e) {
+        logger.w('saveSettings error: $e');
+      }
+
+      // 2. 隐藏窗口，给用户即时反馈
       try {
         await windowManager.hide().timeout(const Duration(milliseconds: 500));
       } catch (_) {}
 
-      // 2. 快速取消快捷键注册（轻量操作）
+      // 3. 快速取消快捷键注册（轻量操作）
       try {
         await HotkeysHelper.unregisterAll().timeout(const Duration(milliseconds: 300));
       } catch (_) {}
 
-      // 3. 先关闭播放服务（释放音频资源、销毁 AudioLibrary、清除缓存等）
-      // 必须在保存操作之前完成，避免保存时访问已释放的资源导致内存访问错误
+      // 4. 关闭播放服务（释放音频资源、销毁 AudioLibrary、清除缓存等）
       try {
         await _withTimeout(PlayService.instance.close(), const Duration(seconds: 3), 'PlayService.close');
       } catch (e) {
         logger.w('PlayService.close error: $e');
       }
 
-      // 4. 执行保存操作（此时 PlayService 已关闭，不会访问已释放的服务）
-      // 串行执行确保每个保存操作完成后再执行下一个
+      // 5. 执行剩余保存操作（此时 PlayService 已关闭，不会访问已释放的资源）
       try {
         await _withTimeout(savePlaylists(), const Duration(seconds: 2), 'savePlaylists');
       } catch (e) {
@@ -360,12 +365,6 @@ class _WindowControllsState extends State<WindowControlls> with WindowListener {
         await _withTimeout(saveLyricSources(), const Duration(seconds: 2), 'saveLyricSources');
       } catch (e) {
         logger.w('saveLyricSources error: $e');
-      }
-
-      try {
-        await _withTimeout(AppSettings.instance.saveSettings(), const Duration(seconds: 1), 'saveSettings');
-      } catch (e) {
-        logger.w('saveSettings error: $e');
       }
 
       try {

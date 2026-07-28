@@ -261,6 +261,7 @@ class _CoverSearchBodyState extends State<_CoverSearchBody> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),

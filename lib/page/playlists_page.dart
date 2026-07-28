@@ -1022,13 +1022,16 @@ class _PlaylistCoverState extends State<_PlaylistCover> {
             _cached != null
                 ? ClipRRect(
                     borderRadius: AppRadius.smCircular,
-                    child: Image(
-                      image: _cached!,
-                      width: 48.0,
-                      height: 48.0,
-                      fit: BoxFit.cover,
-                      gaplessPlayback: true,
-                      errorBuilder: (_, __, ___) => _placeholder(context),
+                    child: RepaintBoundary(
+                      child: Image(
+                        key: ValueKey(_cached),
+                        image: _cached!,
+                        width: 48.0,
+                        height: 48.0,
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
+                        errorBuilder: (_, __, ___) => _placeholder(context),
+                      ),
                     ),
                   )
                 : _placeholder(context),

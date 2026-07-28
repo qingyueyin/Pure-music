@@ -261,6 +261,13 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
           listenable: multiSelectController,
           builder: (context, _) => IconButton.filled(
             tooltip: '移除选中歌曲',
+            style: IconButton.styleFrom(
+              shape: RoundedRectangleBorder(
+                borderRadius: AppRadius.smCircular,
+              ),
+              backgroundColor: scheme.error,
+              foregroundColor: scheme.onError,
+            ),
             onPressed:
                 multiSelectController.selected.isEmpty || _isRemovingSelected
                     ? null
@@ -303,10 +310,6 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
                           }
                         }
                       },
-            style: ButtonStyle(
-              backgroundColor: WidgetStatePropertyAll(scheme.error),
-              foregroundColor: WidgetStatePropertyAll(scheme.onError),
-            ),
             icon: _isRemovingSelected
                 ? const SizedBox(
                     width: 20.0,

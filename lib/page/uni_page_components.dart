@@ -555,6 +555,11 @@ class MultiSelectSelectOrClearAll<T> extends StatelessWidget {
           icon: Icon(
             allSelected ? Symbols.deselect : Symbols.select_all,
           ),
+          style: IconButton.styleFrom(
+            shape: RoundedRectangleBorder(
+              borderRadius: AppRadius.smCircular,
+            ),
+          ),
         );
       },
     );
@@ -575,6 +580,11 @@ class MultiSelectExit<T> extends StatelessWidget {
         multiSelectController.clear();
       },
       icon: const Icon(Symbols.cancel),
+      style: IconButton.styleFrom(
+        shape: RoundedRectangleBorder(
+          borderRadius: AppRadius.smCircular,
+        ),
+      ),
     );
   }
 }

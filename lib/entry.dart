@@ -571,17 +571,22 @@ class _EntryState extends State<Entry>
           transitionDuration: MotionDuration.medium,
           reverseTransitionDuration: MotionDuration.medium,
           transitionsBuilder: (context, animation, _, child) {
-            final position = Tween<Offset>(
-              begin: const Offset(0.0, 0.025),
-              end: Offset.zero,
-            ).animate(CurvedAnimation(
+            final curved = CurvedAnimation(
               parent: animation,
               curve: Curves.easeOutCubic,
               reverseCurve: Curves.easeInCubic,
-            ));
-            return SlideTransition(
-              position: position,
-              child: child,
+            );
+            final slide = Tween<Offset>(
+              begin: const Offset(0.0, 0.06),
+              end: Offset.zero,
+            ).animate(curved);
+            final fade = Tween<double>(begin: 0.0, end: 1.0).animate(curved);
+            return FadeTransition(
+              opacity: fade,
+              child: SlideTransition(
+                position: slide,
+                child: child,
+              ),
             );
           },
           child: const NowPlayingPage(),
