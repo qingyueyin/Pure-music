@@ -60,15 +60,18 @@ class NowPlayingPage extends StatefulWidget {
 
 class _NowPlayingPageState extends State<NowPlayingPage> {
   final playbackService = PlayService.instance.playbackService;
-  ImageProvider<Object>? nowPlayingCover;
   Uint8List? _nowPlayingCoverBytes;
   String? _nowPlayingCoverPath;
   Timer? _coverDebounceTimer;
   Timer? _songChangeTrimTimer;
   Timer? _cursorHideTimer;
+  Animation<double>? _routeAnimation;
   int _coverRequestToken = 0;
   bool _cursorHidden = false;
   bool _lastImmersive = false;
+  bool _routeReady = false;
+  bool _routeHasCompleted = false;
+  bool _backgroundUsesCachedLargeCover = false;
   Color? _dominantColor;
   List<Color>? _preExtractedPalette;
   final ColorExtractionService _colorService = ColorExtractionService();
@@ -95,23 +98,70 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   bool _isCoverRequestStale(int token, String expectedPath) {
     return token != _coverRequestToken ||
         playbackService.nowPlaying?.path != expectedPath ||
+        !_routeReady ||
         !mounted;
+  }
+
+  void _onRouteAnimationStatus(AnimationStatus status) {
+    final ready = status == AnimationStatus.completed;
+    if (_routeReady == ready) return;
+    _routeReady = ready;
+    if (ready) {
+      _routeHasCompleted = true;
+      _scheduleCoverDetails();
+    } else {
+      _coverDebounceTimer?.cancel();
+    }
+    if (mounted) setState(() {});
+  }
+
+  void _scheduleCoverDetails() {
+    _coverDebounceTimer?.cancel();
+    final path = _nowPlayingCoverPath;
+    if (!_routeReady || path == null) return;
+    if (_backgroundUsesCachedLargeCover && _preExtractedPalette != null) return;
+    final token = _coverRequestToken;
+
+    _coverDebounceTimer = Timer(MotionDuration.xFast, () async {
+      final audio = playbackService.nowPlaying;
+      if (audio == null || _isCoverRequestStale(token, path)) return;
+
+      final (bytes, rustColors) = await getPictureAndColors(
+        path: path,
+        width: 160,
+        height: 160,
+        numColors: 4,
+      );
+      if (_isCoverRequestStale(token, path)) return;
+
+      if (bytes != null) {
+        _nowPlayingCoverBytes = bytes;
+      }
+      if (rustColors.isNotEmpty) {
+        final palette = rustColors.map((argb) => Color(argb)).toList();
+        _dominantColor = palette.first;
+        _preExtractedPalette = palette;
+        _colorService.cachePaletteForPath(path, palette);
+        ThemeProvider.instance.applySeedColorDirectly(palette.first, path);
+      }
+      if (mounted) setState(() {});
+    });
   }
 
   void updateCover() {
     final path = playbackService.nowPlaying?.path;
     if (path == null) {
-      if (_nowPlayingCoverPath != null || nowPlayingCover != null) {
+      if (_nowPlayingCoverPath != null || _nowPlayingCoverBytes != null) {
         _coverDebounceTimer?.cancel();
         _songChangeTrimTimer?.cancel();
         _coverRequestToken++;
         PaintingBinding.instance.imageCache.clear();
         setState(() {
           _nowPlayingCoverPath = null;
-          nowPlayingCover = null;
           _nowPlayingCoverBytes = null;
           _dominantColor = null;
           _preExtractedPalette = null;
+          _backgroundUsesCachedLargeCover = false;
         });
       }
       return;
@@ -119,16 +169,15 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
 
     if (path == _nowPlayingCoverPath) return;
     _nowPlayingCoverPath = path;
-    // 不清空 nowPlayingCover / _nowPlayingCoverBytes，保留旧值作背景，等新数据到位后自然替换
+    // 保留旧背景，等新封面数据到位后自然替换。
     _dominantColor = null;
     _preExtractedPalette = null;
+    _backgroundUsesCachedLargeCover = false;
 
     _coverDebounceTimer?.cancel();
     _songChangeTrimTimer?.cancel();
     _coverRequestToken++;
-    final token = _coverRequestToken;
-
-    // 首帧即用：从同步缓存读主色，用小封面当背景，零等待零跳变
+    // 首帧优先复用已解码的大封面，否则沿用小封面。
     final aud = playbackService.nowPlaying;
     if (aud != null) {
       final cachedPalette = _colorService.getCachedPaletteForPath(path);
@@ -141,10 +190,15 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
           _dominantColor = cached;
         }
       }
-      // 切歌时先用小封面做背景，再等取色结果驱动过渡。
-      final smallBytes = aud.smallCoverBytes;
-      if (smallBytes != null) {
-        _nowPlayingCoverBytes = smallBytes;
+      final cachedLargeCover = aud.cachedLargeCover;
+      if (cachedLargeCover is MemoryImage) {
+        _nowPlayingCoverBytes = cachedLargeCover.bytes;
+        _backgroundUsesCachedLargeCover = true;
+      } else {
+        final smallBytes = aud.smallCoverBytes;
+        if (smallBytes != null) {
+          _nowPlayingCoverBytes = smallBytes;
+        }
       }
     }
     if (mounted) setState(() {});
@@ -154,39 +208,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
       MemoryMonitorService.instance.trimAfterSongChange();
     });
 
-    _coverDebounceTimer = Timer(MotionDuration.base, () async {
-      if (!mounted) return;
-      final route = ModalRoute.of(context);
-      if (route == null || !route.isCurrent) return;
-
-      final audio = playbackService.nowPlaying;
-      if (audio == null || _isCoverRequestStale(token, path)) return;
-
-      final (bytes, rustColors) = await getPictureAndColors(
-        path: path,
-        width: 160,
-        height: 160,
-        numColors: 4,
-      );
-      if (_isCoverRequestStale(token, path)) return;
-
-      ImageProvider<Object>? cover;
-      if (bytes != null && rustColors.isNotEmpty) {
-        final palette = rustColors.map((argb) => Color(argb)).toList();
-        _dominantColor = palette.first;
-        _preExtractedPalette = palette;
-        _colorService.cachePaletteForPath(path, palette);
-        ThemeProvider.instance.applySeedColorDirectly(palette.first, path);
-        cover = MemoryImage(bytes);
-        _nowPlayingCoverBytes = bytes;
-      }
-      if (cover != null) {
-        if (mounted) precacheImage(cover, context);
-        nowPlayingCover = cover;
-      }
-      if (!mounted) return;
-      setState(() {});
-    });
+    _scheduleCoverDetails();
   }
 
   void _onViewModeChanged() {
@@ -214,6 +236,21 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     });
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final animation = ModalRoute.of(context)?.animation;
+    if (identical(animation, _routeAnimation)) return;
+    _routeAnimation?.removeStatusListener(_onRouteAnimationStatus);
+    _routeAnimation = animation;
+    _routeAnimation?.addStatusListener(_onRouteAnimationStatus);
+    _routeReady = animation == null || animation.status == AnimationStatus.completed;
+    if (_routeReady) {
+      _routeHasCompleted = true;
+      _scheduleCoverDetails();
+    }
+  }
+
   void _updatePlayPauseState() {
     // Trigger rebuild when play/pause state changes
     if (mounted) {
@@ -229,6 +266,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     _coverDebounceTimer?.cancel();
     _songChangeTrimTimer?.cancel();
     _cursorHideTimer?.cancel();
+    _routeAnimation?.removeStatusListener(_onRouteAnimationStatus);
     CoverImageCache.instance.trimMemory(keepPath: _nowPlayingCoverPath);
     super.dispose();
   }
@@ -292,18 +330,13 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                             builder: (context, snapshot) {
                               final playerState =
                                   snapshot.data ?? playbackService.playerState;
-                              final route = ModalRoute.of(context);
-                              final isVisible = route == null ||
-                                  route.isCurrent ||
-                                  route.animation?.status ==
-                                      AnimationStatus.reverse;
                               final backgroundInputs =
                                   NowPlayingBackgroundInputs(
                                 albumCoverBytes: _nowPlayingCoverBytes,
                                 dominantColor: _dominantColor,
                                 spectrumStream: playbackService.spectrumStream,
                                 enableAnimation: true,
-                                isVisible: isVisible,
+                                isVisible: _routeReady,
                                 playerState: playerState,
                                 flowSpeed: 1.0,
                                 intensity:
@@ -315,6 +348,9 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                                       isDark: brightness == Brightness.dark)
                                   : _softenColor(scheme.primary,
                                       isDark: brightness == Brightness.dark);
+                              if (!_routeHasCompleted) {
+                                return ColoredBox(color: softBg);
+                              }
                               return NowPlayingBackground(
                                 mode: backgroundMode,
                                 inputs: backgroundInputs,
@@ -332,47 +368,50 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                   builder: (context, _) {
                     final useMonet =
                         AppSettings.instance.useMaterialYouForControls;
-                    return IconButtonTheme(
-                      data: IconButtonThemeData(
-                        style: ButtonStyle(
-                          foregroundColor: useMonet
-                              ? WidgetStatePropertyAll(scheme.primary)
-                              : null,
-                          backgroundColor: const WidgetStatePropertyAll(
-                            Colors.transparent,
+                    return TickerMode(
+                      enabled: _routeReady,
+                      child: IconButtonTheme(
+                        data: IconButtonThemeData(
+                          style: ButtonStyle(
+                            foregroundColor: useMonet
+                                ? WidgetStatePropertyAll(scheme.primary)
+                                : null,
+                            backgroundColor: const WidgetStatePropertyAll(
+                              Colors.transparent,
+                            ),
+                            overlayColor:
+                                WidgetStateProperty.resolveWith((states) {
+                              if (states.contains(WidgetState.pressed)) {
+                                return scheme.onSecondaryContainer.withValues(
+                                  alpha: 0.04,
+                                );
+                              }
+                              if (states.contains(WidgetState.hovered) ||
+                                  states.contains(WidgetState.focused)) {
+                                return scheme.onSecondaryContainer.withValues(
+                                  alpha: 0.02,
+                                );
+                              }
+                              return Colors.transparent;
+                            }),
                           ),
-                          overlayColor:
-                              WidgetStateProperty.resolveWith((states) {
-                            if (states.contains(WidgetState.pressed)) {
-                              return scheme.onSecondaryContainer.withValues(
-                                alpha: 0.04,
-                              );
-                            }
-                            if (states.contains(WidgetState.hovered) ||
-                                states.contains(WidgetState.focused)) {
-                              return scheme.onSecondaryContainer.withValues(
-                                alpha: 0.02,
-                              );
-                            }
-                            return Colors.transparent;
-                          }),
                         ),
-                      ),
-                      child: ChangeNotifierProvider.value(
-                        value: PlayService.instance.playbackService,
-                        builder: (context, _) => immersive
-                            ? const _NowPlayingImmersivePage()
-                            : ResponsiveBuilder2(
-                                builder: (context, screenType) {
-                                  switch (screenType) {
-                                    case ScreenType.small:
-                                      return const _NowPlayingSmallPage();
-                                    case ScreenType.medium:
-                                    case ScreenType.large:
-                                      return const _NowPlayingLargePage();
-                                  }
-                                },
-                              ),
+                        child: ChangeNotifierProvider.value(
+                          value: PlayService.instance.playbackService,
+                          builder: (context, _) => immersive
+                              ? const _NowPlayingImmersivePage()
+                              : ResponsiveBuilder2(
+                                  builder: (context, screenType) {
+                                    switch (screenType) {
+                                      case ScreenType.small:
+                                        return const _NowPlayingSmallPage();
+                                      case ScreenType.medium:
+                                      case ScreenType.large:
+                                        return const _NowPlayingLargePage();
+                                    }
+                                  },
+                                ),
+                        ),
                       ),
                     );
                   },
@@ -2149,31 +2188,52 @@ class _NowPlayingInfo extends StatefulWidget {
 
 class __NowPlayingInfoState extends State<_NowPlayingInfo> {
   final playbackService = PlayService.instance.playbackService;
-  ImageProvider<Object>? _loResCover;
-  String? _loResCoverPath;
   ImageProvider<Object>? _hiResCover;
   String? _hiResCoverPath;
   Timer? _hiResDebounceTimer;
+  Animation<double>? _routeAnimation;
   int _coverRequestToken = 0;
   Uint8List? _immediateCover;
   String? _immediateCoverPath;
 
+  bool get _routeReady {
+    final animation = ModalRoute.of(context)?.animation;
+    return animation == null || animation.status == AnimationStatus.completed;
+  }
+
+  void _removeRouteAnimationListener() {
+    _routeAnimation?.removeStatusListener(_onRouteAnimationStatus);
+    _routeAnimation = null;
+  }
+
+  void _onRouteAnimationStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed) return;
+    _removeRouteAnimationListener();
+    if (mounted) _onPlaybackChange();
+  }
+
+  void _waitForRouteReady() {
+    final animation = ModalRoute.of(context)?.animation;
+    if (animation == null || animation.status == AnimationStatus.completed) {
+      _removeRouteAnimationListener();
+      _onPlaybackChange();
+      return;
+    }
+    if (identical(animation, _routeAnimation)) return;
+    _removeRouteAnimationListener();
+    _routeAnimation = animation;
+    animation.addStatusListener(_onRouteAnimationStatus);
+  }
+
   void _onPlaybackChange() {
     _coverRequestToken += 1;
     final token = _coverRequestToken;
+    _hiResDebounceTimer?.cancel();
     final nextAudio = playbackService.nowPlaying;
     if (nextAudio == null) {
-      if (_loResCoverPath != null ||
-          _hiResCoverPath != null ||
-          _immediateCoverPath != null) {
-        _hiResDebounceTimer?.cancel();
-        unawaited(Future.wait<void>([
-          if (_loResCover != null) _loResCover!.evict(),
-          if (_hiResCover != null) _hiResCover!.evict(),
-        ]));
+      _removeRouteAnimationListener();
+      if (_hiResCoverPath != null || _immediateCoverPath != null) {
         setState(() {
-          _loResCover = null;
-          _loResCoverPath = null;
           _hiResCover = null;
           _hiResCoverPath = null;
           _immediateCover = null;
@@ -2183,73 +2243,40 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
       return;
     }
 
-    if (nextAudio.path == _loResCoverPath &&
-        nextAudio.path == _hiResCoverPath) {
-      return;
-    }
-
-    if (_loResCover != null || _hiResCover != null) {
-      unawaited(Future.wait<void>([
-        if (_loResCover != null) _loResCover!.evict(),
-        if (_hiResCover != null) _hiResCover!.evict(),
-      ]));
-    }
-
-    final parentState =
-        context.findAncestorStateOfType<_NowPlayingPageState>();
-    final preloadedCover = parentState?.nowPlayingCover;
-    if (preloadedCover != null &&
-        nextAudio.path == parentState?._nowPlayingCoverPath) {
-      setState(() {
-        _loResCover = preloadedCover;
-        _loResCoverPath = nextAudio.path;
-      });
-    }
-
-    if (nextAudio.path != _immediateCoverPath) {
+    final path = nextAudio.path;
+    final cachedLargeCover = nextAudio.cachedLargeCover;
+    setState(() {
       _immediateCover = nextAudio.smallCoverBytes;
-      _immediateCoverPath = nextAudio.path;
-      if (_immediateCover == null) {
-        nextAudio.loadSmallCoverBytes().then((bytes) {
-          if (!mounted) return;
-          if (playbackService.nowPlaying?.path != nextAudio.path) return;
-          setState(() {
-            _immediateCover = bytes;
-          });
-        });
-      }
-    }
-
-    nextAudio.cover.then((image) async {
-      if (!mounted) return;
-      if (token != _coverRequestToken) return;
-      if (playbackService.nowPlaying?.path != nextAudio.path) return;
-
-      if (image != null) {
-        if (token != _coverRequestToken) return;
-        await precacheImage(image, context);
-      }
-
-      if (!mounted) return;
-      if (token != _coverRequestToken) return;
-      setState(() {
-        _loResCover = image;
-        _loResCoverPath = nextAudio.path;
-      });
+      _immediateCoverPath = path;
+      _hiResCover = cachedLargeCover;
+      _hiResCoverPath = cachedLargeCover == null ? null : path;
     });
 
-    _hiResDebounceTimer?.cancel();
-    _hiResDebounceTimer = Timer(const Duration(milliseconds: 260), () {
+    if (_immediateCover == null) {
+      nextAudio.loadSmallCoverBytes().then((bytes) {
+        if (!mounted || token != _coverRequestToken) return;
+        if (playbackService.nowPlaying?.path != path) return;
+        setState(() => _immediateCover = bytes);
+      });
+    }
+
+    if (!_routeReady) {
+      _waitForRouteReady();
+      return;
+    }
+    _removeRouteAnimationListener();
+    if (cachedLargeCover != null) return;
+
+    _hiResDebounceTimer = Timer(MotionDuration.xFast, () {
       if (!mounted) return;
       if (token != _coverRequestToken) return;
 
       nextAudio.largeCover.then((image) async {
         if (!mounted) return;
         if (token != _coverRequestToken) return;
-        if (playbackService.nowPlaying?.path != nextAudio.path) return;
+        if (playbackService.nowPlaying?.path != path) return;
 
         if (image != null) {
-          if (token != _coverRequestToken) return;
           await precacheImage(image, context);
         }
 
@@ -2257,7 +2284,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
         if (token != _coverRequestToken) return;
         setState(() {
           _hiResCover = image;
-          _hiResCoverPath = nextAudio.path;
+          _hiResCoverPath = image == null ? null : path;
         });
       });
     });
@@ -2268,46 +2295,17 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
     super.initState();
     playbackService.nowPlayingNotifier.addListener(_onPlaybackChange);
 
-    final parentState =
-        context.findAncestorStateOfType<_NowPlayingPageState>();
-    final preloadedCover = parentState?.nowPlayingCover;
-    final currentPath = playbackService.nowPlaying?.path;
-    if (preloadedCover != null &&
-        currentPath != null &&
-        currentPath == parentState?._nowPlayingCoverPath) {
-      _loResCover = preloadedCover;
-      _loResCoverPath = currentPath;
-    }
-
-    if (currentPath != null) {
-      final audio = playbackService.nowPlaying;
-      if (audio != null) {
-        _immediateCover = audio.smallCoverBytes;
-        _immediateCoverPath = currentPath;
-        if (_immediateCover == null) {
-          audio.loadSmallCoverBytes().then((bytes) {
-            if (!mounted) return;
-            if (playbackService.nowPlaying?.path != currentPath) return;
-            setState(() => _immediateCover = bytes);
-          });
-        }
-      }
+    final audio = playbackService.nowPlaying;
+    if (audio != null) {
+      _immediateCover = audio.smallCoverBytes;
+      _immediateCoverPath = audio.path;
+      _hiResCover = audio.cachedLargeCover;
+      _hiResCoverPath = _hiResCover == null ? null : audio.path;
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final delay = playbackService.nowPlayingChangedRecently
-          ? const Duration(milliseconds: 200)
-          : Duration.zero;
-      if (delay == Duration.zero) {
-        _onPlaybackChange();
-      } else {
-        _hiResDebounceTimer?.cancel();
-        _hiResDebounceTimer = Timer(delay, () {
-          if (!mounted) return;
-          _onPlaybackChange();
-        });
-      }
+      _onPlaybackChange();
     });
   }
 
@@ -2345,9 +2343,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
             coverWidthLimit < coverMax ? coverWidthLimit : coverMax;
 
         final currentCover =
-            (_hiResCoverPath == nowPlayingPath && _hiResCover != null)
-                ? _hiResCover
-                : (_loResCoverPath == nowPlayingPath ? _loResCover : null);
+            _hiResCoverPath == nowPlayingPath ? _hiResCover : null;
         final fallbackCover = currentCover == null &&
                 nowPlaying != null &&
                 _immediateCoverPath == nowPlayingPath &&
@@ -2463,6 +2459,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
   void dispose() {
     playbackService.nowPlayingNotifier.removeListener(_onPlaybackChange);
     _hiResDebounceTimer?.cancel();
+    _removeRouteAnimationListener();
     super.dispose();
   }
 }
