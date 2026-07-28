@@ -110,7 +110,9 @@ class LyricService extends ChangeNotifier {
     final posMs = (playService.playbackService.position * 1000).round();
     final nextBoundaryMs = _nextLyricBoundaryAfter(posMs);
     if (nextBoundaryMs == null) return;
-    final delayMs = (nextBoundaryMs - posMs).clamp(16, 1000).toInt();
+    final speed = playService.playbackService.rate.value;
+    if (speed <= 0) return;
+    final delayMs = ((nextBoundaryMs - posMs) / speed).clamp(16, 1000).toInt();
     _lineAdvanceTimer?.cancel();
     _lineAdvanceTimer = Timer(Duration(milliseconds: delayMs), () {
       _lineAdvanceTimer = null;
@@ -239,6 +241,7 @@ class LyricService extends ChangeNotifier {
     final lyric = _currLyric;
     if (lyric == null) return;
     if (currLineIndex < 0 || currLineIndex >= lyric.lines.length) return;
+    if (currLineIndex >= lyric.lines.length - 1) return;
     final line = lyric.lines[currLineIndex];
     if (line is! SyncLyricLine) return;
     final lineEnd = currLineIndex < _lineEndMs.length
@@ -740,7 +743,7 @@ class LyricService extends ChangeNotifier {
         active.add(i);
       }
     }
-    return active;
+    return active.take(2).toList();
   }
 
   int _lowerBoundGreater(List<int> arr, int x) {
@@ -891,11 +894,12 @@ class LyricService extends ChangeNotifier {
           LyricSourceType.qq => ResultSource.qq,
           LyricSourceType.kugou => ResultSource.kugou,
           LyricSourceType.ne => ResultSource.ne,
+          LyricSourceType.amll => ResultSource.amll,
           LyricSourceType.local =>
             ResultSource.qq, // unreachable in online mode
         };
         logger.i('[updateLyric] online mode: preferred=$rs');
-        currLyricFuture = getLyricFromPreferredSource(nowPlaying, rs);
+        currLyricFuture = getAutomaticOnlineLyric(nowPlaying, rs);
       }
     } else {
       if (lyricSource.source == LyricSourceType.local) {
@@ -908,6 +912,7 @@ class LyricService extends ChangeNotifier {
           qqSongId: lyricSource.qqSongId,
           kugouSongHash: lyricSource.kugouSongHash,
           neSongId: lyricSource.neSongId,
+          amllTtmlFile: lyricSource.amllTtmlFile,
         );
       }
     }
@@ -1078,6 +1083,7 @@ class LyricService extends ChangeNotifier {
         qqSongId: savedSource.qqSongId,
         kugouSongHash: savedSource.kugouSongHash,
         neSongId: savedSource.neSongId,
+        amllTtmlFile: savedSource.amllTtmlFile,
       );
     } else {
       // 无指定来源 → 使用首选在线源（单源搜索，不三源并行）
@@ -1085,10 +1091,11 @@ class LyricService extends ChangeNotifier {
         LyricSourceType.qq => ResultSource.qq,
         LyricSourceType.kugou => ResultSource.kugou,
         LyricSourceType.ne => ResultSource.ne,
+        LyricSourceType.amll => ResultSource.amll,
         LyricSourceType.local => ResultSource.qq,
       };
       logger.i('[useOnlineLyric] no saved source, searching preferred: $rs');
-      currLyricFuture = getLyricFromPreferredSource(nowPlaying, rs);
+      currLyricFuture = getAutomaticOnlineLyric(nowPlaying, rs);
     }
 
     final future = currLyricFuture;
