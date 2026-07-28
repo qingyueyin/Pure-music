@@ -48,6 +48,12 @@ class NowPlayingPagePreference {
   bool enableLyricScale;
   bool enableLyricSpring;
   bool enableLyricGlow;
+  LyricLiftStyle liftStyle;
+  double liftPeak;
+  int liftDurationMs;
+  LyricStaggerStyle staggerStyle;
+  double karaokeGradientWidthFraction;
+  double unplayedAlpha;
   NowPlayingBackgroundMode backgroundMode;
 
   NowPlayingPagePreference(
@@ -63,6 +69,12 @@ class NowPlayingPagePreference {
     this.enableLyricScale = true,
     this.enableLyricSpring = true,
     this.enableLyricGlow = false,
+    this.liftStyle = LyricLiftStyle.vertical,
+    this.liftPeak = 2.0,
+    this.liftDurationMs = 300,
+    this.staggerStyle = LyricStaggerStyle.classic,
+    this.karaokeGradientWidthFraction = 0.25,
+    this.unplayedAlpha = 0.30,
     this.backgroundMode = NowPlayingBackgroundMode.meshGradient,
   });
 
@@ -78,6 +90,12 @@ class NowPlayingPagePreference {
         enableLineScale: enableLyricScale,
         enableLineSpring: enableLyricSpring,
         enableGlow: enableLyricGlow,
+        liftStyle: liftStyle,
+        liftPeak: liftPeak,
+        liftDurationMs: liftDurationMs,
+        staggerStyle: staggerStyle,
+        karaokeGradientWidthFraction: karaokeGradientWidthFraction,
+        unplayedAlpha: unplayedAlpha,
       );
 
   Map<String, dynamic> toMap() => {
@@ -93,6 +111,12 @@ class NowPlayingPagePreference {
         'enableLyricScale': enableLyricScale,
         'enableLyricSpring': enableLyricSpring,
         'enableLyricGlow': enableLyricGlow,
+        'liftStyle': liftStyle.name,
+        'liftPeak': liftPeak,
+        'liftDurationMs': liftDurationMs,
+        'staggerStyle': staggerStyle.name,
+        'karaokeGradientWidthFraction': karaokeGradientWidthFraction,
+        'unplayedAlpha': unplayedAlpha,
         'backgroundMode': backgroundMode.name,
       };
 
@@ -138,6 +162,38 @@ class NowPlayingPagePreference {
           _normalizedBool(map['enableLyricSpring'], defaultValue: true),
       enableLyricGlow:
           _normalizedBool(map['enableLyricGlow'], defaultValue: false),
+      liftStyle: LyricLiftStyle.fromString(
+            (map['liftStyle'] as String?) ?? '',
+          ) ??
+          LyricLiftStyle.vertical,
+      liftPeak: _normalizedBoundedDouble(
+        map['liftPeak'],
+        defaultValue: 2.0,
+        min: 0.5,
+        max: 6.0,
+      ),
+      liftDurationMs: _normalizedBoundedInt(
+        map['liftDurationMs'],
+        defaultValue: 300,
+        min: 50,
+        max: 2000,
+      ),
+      staggerStyle: LyricStaggerStyle.fromString(
+            (map['staggerStyle'] as String?) ?? '',
+          ) ??
+          LyricStaggerStyle.classic,
+      karaokeGradientWidthFraction: _normalizedBoundedDouble(
+        map['karaokeGradientWidthFraction'],
+        defaultValue: 0.25,
+        min: 0.05,
+        max: 0.8,
+      ),
+      unplayedAlpha: _normalizedBoundedDouble(
+        map['unplayedAlpha'],
+        defaultValue: 0.30,
+        min: 0.0,
+        max: 1.0,
+      ),
       backgroundMode: backgroundMode,
     );
   }
