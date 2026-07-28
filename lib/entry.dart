@@ -18,7 +18,9 @@ import 'package:pure_music/page/playlist_detail_page.dart';
 import 'package:pure_music/page/playlists_page.dart';
 import 'package:pure_music/page/settings_page/check_update.dart';
 import 'package:pure_music/page/settings_page/create_issue.dart';
+import 'package:pure_music/page/stats_page/page.dart';
 import 'package:pure_music/page/settings_page/page.dart';
+import 'package:pure_music/test/static_cover_background_test_page.dart';
 import 'package:pure_music/page/updating_page.dart';
 import 'package:pure_music/page/welcoming_page.dart';
 import 'package:pure_music/library/playlist.dart';
@@ -537,6 +539,14 @@ class _EntryState extends State<Entry>
           StatefulShellBranch(
             routes: [
               GoRoute(
+                path: app_paths.STATS_PAGE,
+                builder: (context, state) => const StatsPage(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
                   path: app_paths.SETTINGS_PAGE,
                   builder: (context, state) => const SettingsPage(),
                   routes: [
@@ -572,6 +582,14 @@ class _EntryState extends State<Entry>
             );
           },
           child: const NowPlayingPage(),
+        ),
+      ),
+
+      GoRoute(
+        path: app_paths.TEST_BACKGROUND,
+        pageBuilder: (context, state) => SlideTransitionPage(
+          key: state.pageKey,
+          child: const StaticCoverBackgroundTestPage(),
         ),
       ),
 
