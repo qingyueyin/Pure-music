@@ -257,7 +257,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
             .toDouble();
         final bgEnd = _bgEndMs(syncLine);
         if (_currentTimeMs >= bgStart - 400 && _currentTimeMs < bgEnd + 5000) {
-          if ((_currentTimeMs - _lastBgHeightUpdateMs).abs() > 30) {
+          if ((_currentTimeMs - _lastBgHeightUpdateMs).abs() > 8) {
             _lastBgHeightUpdateMs = _currentTimeMs;
             if (_cachedPainter != null && _cachedLineWidth > 0) {
               final h = _cachedPainter!.measureHeight(_cachedLineWidth);

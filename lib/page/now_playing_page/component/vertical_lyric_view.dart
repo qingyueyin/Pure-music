@@ -241,8 +241,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   Timer? _ensureVisibleTimer;
   Timer? _userScrollHoldTimer;
   Timer? _sizeChangeTimer;
-  Timer? _idleCleanupTimer; // 空闲清理定时器
-  DateTime _lastActivityTime = DateTime.now(); // 最后活动时间
+  Timer? _idleCleanupTimer;
   bool _didIdleCleanup = false;
   LyricScrollState _scrollState = LyricScrollState.idle;
   int _mainLine = 0;
@@ -320,17 +319,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       _syncToPlaybackPosition(duration: Duration.zero);
     });
 
-    // 启动空闲检测
-    _idleCleanupTimer = Timer.periodic(const Duration(seconds: 3), (_) {
-      if (!_disposed && mounted) {
-        final idleTime = DateTime.now().difference(_lastActivityTime);
-        if (idleTime.inSeconds >= 5 && !_didIdleCleanup) {
-          _didIdleCleanup = true;
-          LyricsLinePainter.trimPool();
-          LyricsLineWidget.clearBlurFilterCache();
-        }
-      }
-    });
+    // 启动空闲检测（一次性定时器，活动时重置）
+    _scheduleIdleCleanup();
   }
 
   @override
@@ -343,10 +333,21 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     });
   }
 
-  /// 标记活动时间（切歌、滚动、行变化）
+  /// 标记活动时间（切歌、滚动、行变化），重置空闲检测
   void _markActivity() {
-    _lastActivityTime = DateTime.now();
     _didIdleCleanup = false;
+    _scheduleIdleCleanup();
+  }
+
+  void _scheduleIdleCleanup() {
+    _idleCleanupTimer?.cancel();
+    _idleCleanupTimer = Timer(const Duration(seconds: 5), () {
+      if (!_disposed && mounted && !_didIdleCleanup) {
+        _didIdleCleanup = true;
+        LyricsLinePainter.trimPool();
+        LyricsLineWidget.clearBlurFilterCache();
+      }
+    });
   }
 
   void _queuePlaybackResync() {

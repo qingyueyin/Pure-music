@@ -12,11 +12,8 @@ import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/lyric/ttml.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.dart';
 
-const _bgEnterMs = 650.0;
-const _bgExitMs = 1400.0;
-const _bgExitHoldMs = 600.0;
-const _bgEnterOffsetY = 8.0;
-const _bgScaleRange = 0.08;
+const _bgEntryDuration = 400.0;
+const _bgExitDuration = 400.0;
 
 enum LyricWordEffect { none, scale, scaleAndGlow }
 
@@ -356,22 +353,36 @@ class LyricsLinePainter extends CustomPainter {
     return 'Pool: size=${_textPainterPool.length}/$_maxPoolSize, hit=$hitRate%';
   }
 
-  double _bgMotionValue(SyncLyricLine syncLine) {
+  double _bgOpacity(SyncLyricLine syncLine) {
+    return _bgHeightFactor(syncLine);
+  }
+
+  double _bgHeightFactor(SyncLyricLine syncLine) {
     if (!isMainLine) return 0.0;
     final currentTimeMs = _effectiveCurrentTimeMs;
     final start = (syncLine.bgStart ?? syncLine.bg?.start ?? syncLine.start)
         .inMilliseconds
         .toDouble();
     final end = _bgEndMs(syncLine);
-    if (end <= start) return 1.0;
-    final enter = Curves.easeOutCubic
-        .transform(((currentTimeMs - start) / _bgEnterMs).clamp(0.0, 1.0));
-    if (currentTimeMs <= end) return enter;
-    final exit = Curves.easeInCubic.transform(
-      ((end + _bgExitHoldMs + _bgExitMs - currentTimeMs) / _bgExitMs)
-          .clamp(0.0, 1.0),
-    );
-    return enter * exit;
+    if (end <= start) return 0.0;
+
+    if (currentTimeMs < start) return 0.0;
+
+    if (currentTimeMs < start + _bgEntryDuration) {
+      // 进入：从 0 到 1，带弹性
+      final t = ((currentTimeMs - start) / _bgEntryDuration).clamp(0.0, 1.0);
+      return Curves.easeOutBack.transform(t);
+    }
+
+    if (currentTimeMs <= end) return 1.0;
+
+    if (currentTimeMs < end + _bgExitDuration) {
+      // 退出：向上收起，从 1 到 0
+      final t = ((currentTimeMs - end) / _bgExitDuration).clamp(0.0, 1.0);
+      return 1.0 - Curves.easeInCubic.transform(t);
+    }
+
+    return 0.0;
   }
 
   double _bgEndMs(SyncLyricLine syncLine) {
@@ -387,6 +398,14 @@ class LyricsLinePainter extends CustomPainter {
       if (lastEnd > end) end = lastEnd;
     }
     return end;
+  }
+
+  bool _isBgInActiveWindow(SyncLyricLine syncLine) {
+    final hasBg = syncLine.bgText != null && syncLine.bgText!.isNotEmpty;
+    final hasBgTranslation =
+        syncLine.bgTranslation != null && syncLine.bgTranslation!.isNotEmpty;
+    if (!hasBg && !hasBgTranslation && syncLine.bgWords.isEmpty) return false;
+    return _bgHeightFactor(syncLine) > 0.001;
   }
 
   static TextPainter obtainTextPainter() {
@@ -450,20 +469,21 @@ class LyricsLinePainter extends CustomPainter {
     final lineHeight = fontSize * config.primaryLineHeight();
 
     final isDarkMode = scheme.brightness == Brightness.dark;
+    final neutralBase = isDarkMode ? Colors.white : Colors.black;
 
-    final mainPlayedColor = _applyOpacity(scheme.onSurface.withValues(alpha: 1.0));
+    final mainPlayedColor = _applyOpacity(neutralBase.withValues(alpha: 1.0));
     final playedColor = useMaterialYouColor
         ? _applyOpacity(scheme.primary.withValues(alpha: 1.0))
         : mainPlayedColor;
     final unplayedColor = _applyOpacity(useMaterialYouColor
         ? scheme.onSurface.withValues(alpha: isDarkMode ? 0.40 : 0.50)
-        : scheme.onSurface.withValues(alpha: isDarkMode ? 0.35 : 0.45));
+        : neutralBase.withValues(alpha: isDarkMode ? 0.35 : 0.45));
     final secondaryColor = _applyOpacity(useMaterialYouColor
         ? scheme.onSurface.withValues(alpha: 0.35)
-        : scheme.onSurface.withValues(alpha: 0.25));
+        : neutralBase.withValues(alpha: 0.25));
     final translationColor = _applyOpacity(useMaterialYouColor
         ? scheme.onSurface.withValues(alpha: 0.60)
-        : scheme.onSurface.withValues(alpha: 0.70));
+        : neutralBase.withValues(alpha: 0.70));
 
     final maxWidth = size.width - padding.horizontal;
 
@@ -804,7 +824,21 @@ class LyricsLinePainter extends CustomPainter {
             scale = 1.0 + (ripplesScaleMax - 1.0) * animationCurve;
           }
 
-          // ── Glow layer (rendered first, behind text) ────────────────
+          // 先 layout 主文本，再用真实尺寸做缩放中心，避免用到上一个字的宽高
+          tp.text = TextSpan(text: info.char, style: style);
+          tp.layout();
+          final needsScale = scale != 1.0;
+          final paintX = info.x;
+          final paintY = info.y + info.yLift;
+          if (needsScale) {
+            canvas.save();
+            final cx = paintX + tp.width / 2;
+            final by = paintY + tp.height;
+            canvas.translate(cx, by);
+            canvas.scale(scale);
+            canvas.translate(-cx, -by);
+          }
+
           if (hasGlow && isPlaying) {
             final glowAlphaAdjusted = glowColor.a * glowAlpha;
             if (glowAlphaAdjusted > 0.02) {
@@ -820,35 +854,15 @@ class LyricsLinePainter extends CustomPainter {
                 ),
               );
               tp.layout();
-              if (scale != 1.0) {
-                canvas.save();
-                final cx = info.x + tp.width / 2;
-                final by = info.y + info.yLift + tp.height;
-                canvas.translate(cx, by);
-                canvas.scale(scale);
-                canvas.translate(-cx, -by);
-              }
-              tp.paint(canvas, Offset(info.x, info.y + info.yLift));
-              if (scale != 1.0) canvas.restore();
+              tp.paint(canvas, Offset(paintX, paintY));
+              // 主文本 style 需要重新 layout
+              tp.text = TextSpan(text: info.char, style: style);
+              tp.layout();
             }
           }
 
-          // ── Main text layer ─────────────────────────────────────────
-          tp.text = TextSpan(text: info.char, style: style);
-          tp.layout();
-
-          if (scale != 1.0) {
-            canvas.save();
-            final centerX = info.x + tp.width / 2;
-            final bottomY = info.y + info.yLift + tp.height;
-            canvas.translate(centerX, bottomY);
-            canvas.scale(scale);
-            canvas.translate(-centerX, -bottomY);
-          }
-
-          tp.paint(canvas, Offset(info.x, info.y + info.yLift));
-
-          if (scale != 1.0) {
+          tp.paint(canvas, Offset(paintX, paintY));
+          if (needsScale) {
             canvas.restore();
           }
         }
@@ -1201,17 +1215,15 @@ class LyricsLinePainter extends CustomPainter {
       }
     }
 
-    // ── Background vocal (和声) ─────────────────────────────────────────────
-    // 顺序：原文 -> 翻译 -> 和声 -> 和声翻译
-    // 和声默认不显示，当前行激活时随整体透明度平滑切入
+    // ── Background vocal (和声) with word-by-word highlight ──
     final bgText = syncLine.bgText;
     final bgTranslation = syncLine.bgTranslation;
     final hasBg = bgText != null && bgText.isNotEmpty;
     final hasBgTranslation = bgTranslation != null && bgTranslation.isNotEmpty;
+    final hasBgWords = syncLine.bgWords.isNotEmpty;
     if (hasBg || hasBgTranslation) {
-      final bgMotion = _bgMotionValue(syncLine);
-      final bgAlpha = bgMotion;
-      if (bgAlpha > 0.001) {
+      final bgOpacity = _bgOpacity(syncLine);
+      if (bgOpacity > 0.001) {
         final bgFontSize = fontSize * 0.60;
         final bgWeight = config.discreteFontWeight(
           (config.fontWeight - 150).clamp(100, 900),
@@ -1222,47 +1234,145 @@ class LyricsLinePainter extends CustomPainter {
           LyricTextAlign.right => TextAlign.right,
         };
 
+        final bgUnplayedColor = _applyOpacity(
+          useMaterialYouColor
+              ? scheme.onSurface.withValues(alpha: 0.20)
+              : neutralBase.withValues(alpha: 0.15),
+        );
+        final bgPlayedColor = _applyOpacity(
+          useMaterialYouColor
+              ? scheme.primary.withValues(alpha: 0.80)
+              : neutralBase.withValues(alpha: 0.55),
+        );
+
         void paintBgLine(String text, double size, Color color) {
           final tp = _buildTextPainter(
             ZhConverter.convert(text, zhMode),
-            color.withValues(alpha: color.a * bgAlpha * _opacityFactor),
+            color.withValues(alpha: color.a * bgOpacity * _opacityFactor),
             size,
             bgWeight,
             letterSpace,
             textAlign: blockTextAlign,
           );
           tp.layout(minWidth: maxWidth, maxWidth: maxWidth);
-          cursorY += bgFontSize * 0.45; // gap
+          cursorY += bgFontSize * 0.45;
           tp.paint(canvas, Offset(padding.left, cursorY));
           cursorY += tp.height;
           recycleTextPainter(tp);
         }
 
-        cursorY += bgFontSize * 0.35; // extra top gap before bg block
+        cursorY += bgFontSize * 0.35;
         canvas.save();
-        final bgOffsetY = (1.0 - bgMotion) * _bgEnterOffsetY;
-        final bgScale = 1.0 - (1.0 - bgMotion) * _bgScaleRange;
-        final scaleX = switch (_effectiveTextAlign) {
-          LyricTextAlign.left => padding.left,
-          LyricTextAlign.center => size.width / 2,
-          LyricTextAlign.right => size.width - padding.right,
-        };
-        canvas.translate(scaleX, cursorY + bgOffsetY);
-        canvas.scale(bgScale, bgScale);
-        canvas.translate(-scaleX, -cursorY);
-        if (hasBg) {
-          paintBgLine(
-            bgText,
-            bgFontSize,
-            secondaryColor,
-          );
-          // 回收 TextPainter
+        // 高度由 _bgHeightFactor 在 measureHeight 中控制，画布自然 clip
+
+        if (hasBg && hasBgWords && isMainLine) {
+          cursorY += bgFontSize * 0.45;
+          final bgWordY = cursorY;
+          final currentMs = _effectiveCurrentTimeMs;
+          final bgWordWidths = <double>[];
+          double bgTotalWidth = 0.0;
+          final bgWordGap = bgFontSize * 0.12;
+          for (final word in syncLine.bgWords) {
+            final char = ZhConverter.convert(
+              word.obscene ? String.fromCharCodes(
+                Iterable.generate(word.content.runes.length, (_) => 0x5F),
+              ) : word.content,
+              zhMode,
+            );
+            final tp = _buildTextPainter(
+              char, bgUnplayedColor, bgFontSize, bgWeight, letterSpace,
+            );
+            tp.layout();
+            bgWordWidths.add(tp.width);
+            bgTotalWidth += tp.width;
+            recycleTextPainter(tp);
+          }
+          bgTotalWidth += bgWordGap * (syncLine.bgWords.length - 1);
+          final startX = switch (_effectiveTextAlign) {
+            LyricTextAlign.left => padding.left,
+            LyricTextAlign.center =>
+                padding.left + (maxWidth - bgTotalWidth) / 2,
+            LyricTextAlign.right =>
+                padding.left + maxWidth - bgTotalWidth,
+          };
+
+          double reveal = 0.0;
+          for (int i = 0; i < syncLine.bgWords.length; i++) {
+            final word = syncLine.bgWords[i];
+            final wordStartMs = word.start.inMilliseconds.toDouble();
+            final wordEndMs = (wordStartMs + word.length.inMilliseconds)
+                .toDouble();
+            final progress = _calcWordProgress(
+              currentMs, wordStartMs, wordEndMs,
+            );
+            if (progress <= 0.0) break;
+            reveal += bgWordWidths[i] * progress;
+            if (i < syncLine.bgWords.length - 1) reveal += bgWordGap;
+          }
+
+          void paintBgDim() {
+            double cx = startX;
+            for (int i = 0; i < syncLine.bgWords.length; i++) {
+              final char = ZhConverter.convert(
+                syncLine.bgWords[i].obscene ? String.fromCharCodes(
+                  Iterable.generate(syncLine.bgWords[i].content.runes.length, (_) => 0x5F),
+                ) : syncLine.bgWords[i].content,
+                zhMode,
+              );
+              final dimColor = bgUnplayedColor.withValues(
+                alpha: bgUnplayedColor.a * bgOpacity * _opacityFactor,
+              );
+              final tp = _buildTextPainter(
+                char, dimColor, bgFontSize, bgWeight, letterSpace,
+              );
+              tp.layout();
+              tp.paint(canvas, Offset(cx, bgWordY));
+              cx += bgWordWidths[i] + bgWordGap;
+              recycleTextPainter(tp);
+            }
+          }
+
+          void paintBgBright() {
+            double cx = startX;
+            for (int i = 0; i < syncLine.bgWords.length; i++) {
+              final char = ZhConverter.convert(
+                syncLine.bgWords[i].obscene ? String.fromCharCodes(
+                  Iterable.generate(syncLine.bgWords[i].content.runes.length, (_) => 0x5F),
+                ) : syncLine.bgWords[i].content,
+                zhMode,
+              );
+              final brightColor = bgPlayedColor.withValues(
+                alpha: bgPlayedColor.a * bgOpacity * _opacityFactor,
+              );
+              final tp = _buildTextPainter(
+                char, brightColor, bgFontSize, bgWeight, letterSpace,
+              );
+              tp.layout();
+              tp.paint(canvas, Offset(cx, bgWordY));
+              cx += bgWordWidths[i] + bgWordGap;
+              recycleTextPainter(tp);
+            }
+          }
+
+          paintBgDim();
+          if (reveal > 0.5) {
+            canvas.save();
+            canvas.clipRect(Rect.fromLTRB(
+              -1, bgWordY - 5, startX + reveal + 2, bgWordY + bgFontSize * 2,
+            ));
+            paintBgBright();
+            canvas.restore();
+          }
+          cursorY = bgWordY + bgFontSize * config.primaryLineHeight();
+        } else if (hasBg) {
+          paintBgLine(bgText, bgFontSize, bgUnplayedColor);
         }
+
         if (hasBgTranslation) {
           paintBgLine(
             bgTranslation,
             bgFontSize * 0.90,
-            secondaryColor,
+            bgUnplayedColor,
           );
         }
         canvas.restore();
@@ -1290,24 +1400,27 @@ class LyricsLinePainter extends CustomPainter {
         left: 12.0, right: 12.0, top: verticalPad, bottom: verticalPad);
 
     final isDarkMode = scheme.brightness == Brightness.dark;
+    final neutralBase = isDarkMode ? Colors.white : Colors.black;
 
-    final mainPlayedColor = _applyOpacity(scheme.onSurface.withValues(alpha: 1.0));
+    final mainPlayedColor = _applyOpacity(neutralBase.withValues(alpha: 1.0));
     final playedColor = useMaterialYouColor
         ? _applyOpacity(scheme.primary.withValues(alpha: 1.0))
         : mainPlayedColor;
     final unplayedColor = _applyOpacity(useMaterialYouColor
         ? scheme.onSurface.withValues(alpha: isDarkMode ? 0.40 : 0.50)
-        : scheme.onSurface.withValues(alpha: isDarkMode ? 0.35 : 0.45));
+        : neutralBase.withValues(alpha: isDarkMode ? 0.35 : 0.45));
     final dimColor = unplayedColor;
     final mainColor = isMainLine ? playedColor : dimColor;
-    final metadataColor =
-        _applyOpacity(scheme.onSurface.withValues(alpha: 0.70));
+    final metadataColor = _applyOpacity(
+        useMaterialYouColor
+            ? scheme.onSurface.withValues(alpha: 0.70)
+            : neutralBase.withValues(alpha: 0.70));
     final secondaryColor = _applyOpacity(useMaterialYouColor
         ? scheme.onSurface.withValues(alpha: 0.35)
-        : scheme.onSurface.withValues(alpha: 0.25));
+        : neutralBase.withValues(alpha: 0.25));
     final translationColor = _applyOpacity(useMaterialYouColor
         ? scheme.onSurface.withValues(alpha: 0.60)
-        : scheme.onSurface.withValues(alpha: 0.70));
+        : neutralBase.withValues(alpha: 0.70));
 
     final maxWidth = size.width - padding.horizontal;
     final blockTextAlign = switch (_effectiveTextAlign) {
@@ -1467,21 +1580,23 @@ class LyricsLinePainter extends CustomPainter {
         left: 12.0, right: 12.0, top: verticalPad, bottom: verticalPad);
 
     final isDarkMode = scheme.brightness == Brightness.dark;
-    final mainPlayedColor = _applyOpacity(scheme.onSurface.withValues(alpha: 1.0));
+    final neutralBase = isDarkMode ? Colors.white : Colors.black;
+
+    final mainPlayedColor = _applyOpacity(neutralBase.withValues(alpha: 1.0));
     final playedColor = useMaterialYouColor
         ? _applyOpacity(scheme.primary.withValues(alpha: 1.0))
         : mainPlayedColor;
     final unplayedColor = _applyOpacity(useMaterialYouColor
         ? scheme.onSurface.withValues(alpha: isDarkMode ? 0.40 : 0.50)
-        : scheme.onSurface.withValues(alpha: isDarkMode ? 0.35 : 0.45));
+        : neutralBase.withValues(alpha: isDarkMode ? 0.35 : 0.45));
     final dimColor = unplayedColor;
     final mainColor = isMainLine ? playedColor : dimColor;
     final secondaryColor = _applyOpacity(useMaterialYouColor
         ? scheme.onSurface.withValues(alpha: 0.35)
-        : scheme.onSurface.withValues(alpha: 0.25));
+        : neutralBase.withValues(alpha: 0.25));
     final translationColor = _applyOpacity(useMaterialYouColor
         ? scheme.onSurface.withValues(alpha: 0.60)
-        : scheme.onSurface.withValues(alpha: 0.70));
+        : neutralBase.withValues(alpha: 0.70));
 
     final maxWidth = size.width - padding.horizontal;
     final blockTextAlign = switch (_effectiveTextAlign) {
@@ -1856,10 +1971,8 @@ class LyricsLinePainter extends CustomPainter {
         }
       }
 
-      // 和声 + 和声翻译高度（始终预留，避免行激活时布局跳动；绘制时才按透明度隐藏）
-      if ((syncLine.bgText != null && syncLine.bgText!.isNotEmpty) ||
-          (syncLine.bgTranslation != null &&
-              syncLine.bgTranslation!.isNotEmpty)) {
+      // 和声 + 和声翻译高度（仅在活跃时间窗口内计入，不提前占位）
+      if (_isBgInActiveWindow(syncLine)) {
         final bgFontSize = fontSize * 0.60;
         final bgWeight = config.discreteFontWeight(
           (config.fontWeight - 150).clamp(100, 900),
@@ -1891,7 +2004,7 @@ class LyricsLinePainter extends CustomPainter {
           bgHeight += bgFontSize * 0.45 + bgTransTp.height;
           recycleTextPainter(bgTransTp);
         }
-        height += bgHeight;
+        height += bgHeight * _bgHeightFactor(syncLine);
       }
 
       return height;

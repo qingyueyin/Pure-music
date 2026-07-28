@@ -19,6 +19,7 @@ LyricSourceType _lyricSourceTypeFromResultSource(ResultSource source) {
     ResultSource.qq => LyricSourceType.qq,
     ResultSource.kugou => LyricSourceType.kugou,
     ResultSource.ne => LyricSourceType.ne,
+    ResultSource.amll => LyricSourceType.amll,
   };
 }
 
@@ -35,6 +36,8 @@ bool _isSavedLyricResult(String audioPath, SongSearchResult result) {
         saved.kugouSongHash == result.kugouSongHash,
     ResultSource.ne =>
       saved.neSongId != null && saved.neSongId == result.neSongId,
+    ResultSource.amll => saved.amllTtmlFile != null &&
+        saved.amllTtmlFile == result.amllTtmlFile,
   };
 }
 
@@ -98,12 +101,14 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
     ResultSource.qq: [],
     ResultSource.ne: [],
     ResultSource.kugou: [],
+    ResultSource.amll: [],
   };
 
   final Map<ResultSource, int> _pageMap = {
     ResultSource.qq: 0,
     ResultSource.ne: 0,
     ResultSource.kugou: 0,
+    ResultSource.amll: 0,
   };
 
   // API 级别分页：记录每个源已经请求到第几页
@@ -111,6 +116,7 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
     ResultSource.qq: 1,
     ResultSource.ne: 1,
     ResultSource.kugou: 1,
+    ResultSource.amll: 1,
   };
 
   ResultSource _activeSource = ResultSource.qq;
@@ -304,6 +310,16 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
         results = raw
             .map((item) =>
                 SongSearchResult.fromKugouSearchItem(item, widget.audio))
+            .where((r) => r != null && r.score >= 0)
+            .cast<SongSearchResult>()
+            .toList();
+      case ResultSource.amll:
+        final raw = await net_api
+            .amllSearchSingle(keyword: query, pageSize: _apiPageSize)
+            .timeout(const Duration(seconds: 8));
+        results = raw
+            .map((item) =>
+                SongSearchResult.fromAmllSearchItem(item, widget.audio))
             .where((r) => r != null && r.score >= 0)
             .cast<SongSearchResult>()
             .toList();
@@ -568,6 +584,8 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
                   _buildTab(ResultSource.ne, '网易'),
                   const SizedBox(width: 8),
                   _buildTab(ResultSource.kugou, '酷狗'),
+                  const SizedBox(width: 8),
+                  _buildTab(ResultSource.amll, 'AMLL'),
                 ],
               ),
               const SizedBox(height: 8),
@@ -957,6 +975,7 @@ class _SearchResultItem extends StatelessWidget {
       ResultSource.qq => 'QQ',
       ResultSource.kugou => '酷狗',
       ResultSource.ne => '网易',
+      ResultSource.amll => 'AMLL',
     };
 
     return ListTile(
