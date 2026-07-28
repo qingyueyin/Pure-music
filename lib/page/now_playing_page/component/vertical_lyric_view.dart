@@ -25,7 +25,6 @@ import 'package:provider/provider.dart';
 const _opacityBase = 0.88;
 const _opacityMinClamp = 0.30;
 const _opacityMaxClamp = 0.90;
-const _staggerBaseMs = 60;
 const _staggerMaxMs = 600;
 const _shaderFadeInWithBlur = 0.05;
 const _shaderFadeInWithoutBlur = 0.05;
@@ -939,7 +938,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       overscanScreens: renderConfig.viewportOverscanScreens,
       userScrollHoldDuration: renderConfig.userScrollHoldDuration,
     );
-    final holdDuration = renderConfig.staggerStyle == LyricStaggerStyle.salt
+    final holdDuration = renderConfig.staggerStyle == LyricStaggerStyle.spring
         ? const Duration(seconds: 3)
         : viewportStrategy.userScrollHoldDuration;
     _userScrollHoldTimer?.cancel();
@@ -1215,7 +1214,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     final shouldStagger = canStartLyricStagger(
       enabled: !forceScroll &&
           renderConfig.enableStaggeredAnimation &&
-          renderConfig.staggerStyle == LyricStaggerStyle.salt,
+          renderConfig.staggerStyle == LyricStaggerStyle.spring,
       previousIndex: _mainLine,
       nextIndex: renderableMainLine,
       isUserDragging: _scrollState == LyricScrollState.userDragging,
@@ -1403,14 +1402,14 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                                   true
                               ? _lyricViewController?.renderConfig
                                           .staggerStyle ==
-                                      LyricStaggerStyle.salt
+                                      LyricStaggerStyle.spring
                                   ? lyricStaggerDelayMs(
                                       itemIndex: i,
                                       visibleStartIndex:
                                           _staggerVisibleStartIndex,
                                     )
-                                  : ((dist + 1) * _staggerBaseMs)
-                                      .clamp(0, _staggerMaxMs)
+                                  : ((30 * (dist + 1) * (5 + dist) ~/ 5)
+                                      .clamp(0, _staggerMaxMs))
                               : 0);
                       final isHovered =
                           widget.enableSeekOnTap && i == _hoveredLineIndex;

@@ -163,10 +163,13 @@ enum LyricLiftStyle {
 }
 
 enum LyricStaggerStyle {
-  classic,
-  salt;
+  smooth,
+  spring;
 
   static LyricStaggerStyle? fromString(String name) {
+    if (_matchesStoredEnumName(name, 'classic')) {
+      return LyricStaggerStyle.smooth;
+    }
     for (var value in LyricStaggerStyle.values) {
       if (_matchesStoredEnumName(name, value.name)) return value;
     }

@@ -259,12 +259,13 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
             .inMilliseconds
             .toDouble();
         final bgEnd = _bgEndMs(syncLine);
-        if (_currentTimeMs >= bgStart - 100 && _currentTimeMs < bgEnd + 1500) {
+        if (_currentTimeMs >= bgStart - 650 && _currentTimeMs < bgEnd + 2000) {
           if ((_currentTimeMs - _lastBgHeightUpdateMs).abs() > 30) {
             _lastBgHeightUpdateMs = _currentTimeMs;
             if (_cachedPainter != null && _cachedLineWidth > 0) {
-              _heightNotifier.value =
-                  _cachedPainter!.measureHeight(_cachedLineWidth);
+              final h = _cachedPainter!.measureHeight(_cachedLineWidth);
+              _heightNotifier.value = h;
+              _cachedLineHeight = h;
             }
           }
         }
@@ -550,15 +551,17 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
       );
     }
 
-    inner = LyricStaggerTransition(
-      key: ValueKey('stagger_${widget.jumpTriggerId}'),
-      enabled: renderConfig.enableStaggeredAnimation &&
-          renderConfig.staggerStyle == LyricStaggerStyle.spring,
-      generation: widget.jumpTriggerId,
-      shiftY: widget.jumpDeltaY,
-      delay: widget.staggerDelay,
-      child: inner,
-    );
+    if (widget.jumpDeltaY.abs() >= 0.5) {
+      inner = LyricStaggerTransition(
+        key: ValueKey('stagger_${widget.jumpTriggerId}'),
+        enabled: renderConfig.enableStaggeredAnimation &&
+            renderConfig.staggerStyle == LyricStaggerStyle.spring,
+        generation: widget.jumpTriggerId,
+        shiftY: widget.jumpDeltaY,
+        delay: widget.staggerDelay,
+        child: inner,
+      );
+    }
 
     inner = GestureDetector(
       onTap: widget.onTap,

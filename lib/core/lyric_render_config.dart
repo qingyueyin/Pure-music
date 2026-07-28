@@ -95,7 +95,7 @@ class LyricRenderConfig {
     this.liftStyle = LyricLiftStyle.vertical,
     this.liftPeak = 2.0,
     this.liftDurationMs = 300,
-    this.staggerStyle = LyricStaggerStyle.classic,
+    this.staggerStyle = LyricStaggerStyle.smooth,
     this.hasMultipleAgents = false,
     this.displayMode = LyricDisplayMode.wordByWord,
     this.useCustomPaint = true,

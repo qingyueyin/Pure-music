@@ -6,6 +6,7 @@ import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/setting_action_state.dart';
 import 'package:pure_music/core/theme.dart';
+import 'package:pure_music/core/update_checker.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/core/zh_converter.dart';
 import 'package:pure_music/core/hotkeys.dart';
@@ -19,6 +20,7 @@ import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.d
 import 'package:pure_music/page/settings_page/check_update.dart';
 import 'package:pure_music/page/settings_page/create_issue.dart';
 import 'package:pure_music/page/settings_page/artist_separator_editor.dart';
+import 'package:pure_music/native/rust/api/utils.dart' as rust_utils;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -39,6 +41,7 @@ class _SettingsTabsState extends State<SettingsTabs> {
     _SettingsTab('歌词', Symbols.lyrics),
     _SettingsTab('桌面歌词', Symbols.desktop_windows),
     _SettingsTab('高级', Symbols.settings),
+    _SettingsTab('关于', Symbols.info),
   ];
 
   @override
@@ -92,6 +95,7 @@ class _SettingsTabsState extends State<SettingsTabs> {
               _LyricsTabContent(),
               _DesktopLyricTabContent(),
               _AdvancedTabContent(),
+              _AboutTabContent(),
             ],
           ),
         ),
@@ -117,6 +121,8 @@ class _AppearanceTabContent extends StatelessWidget {
         _ThemeOptionControl(),
         SizedBox(height: 16.0),
         NowPlayingBackgroundModeToggle(),
+        SizedBox(height: 16.0),
+        _AudioReactiveFlowSwitch(),
         SizedBox(height: 16.0),
         _CoverColorExtractionSwitch(),
         SizedBox(height: 16.0),
@@ -597,12 +603,12 @@ class _StaggerStyleSelectorState extends State<_StaggerStyleSelector> {
         showSelectedIcon: false,
         segments: const [
           ButtonSegment<LyricStaggerStyle>(
-            value: LyricStaggerStyle.classic,
-            label: Text('默认'),
+            value: LyricStaggerStyle.smooth,
+            label: Text('平滑'),
           ),
           ButtonSegment<LyricStaggerStyle>(
-            value: LyricStaggerStyle.salt,
-            label: Text('测试'),
+            value: LyricStaggerStyle.spring,
+            label: Text('弹簧'),
           ),
         ],
         selected: {style},
@@ -2296,6 +2302,10 @@ class _DefaultLyricSourceControlState extends State<DefaultLyricSourceControl> {
                     value: LyricSourceType.ne,
                     label: Text('网易'),
                   ),
+                  ButtonSegment(
+                    value: LyricSourceType.amll,
+                    label: Text('AMLL'),
+                  ),
                 ],
                 selected: {settings.preferredOnlineSource},
                 onSelectionChanged: (newSelection) =>
@@ -2353,6 +2363,286 @@ class _NowPlayingBackgroundModeToggleState
           nowPlayingBackgroundModeNotifier.value = nextMode;
           AppPreference.instance.save();
         },
+      ),
+    );
+  }
+}
+
+class _AudioReactiveFlowSwitch extends StatefulWidget {
+  const _AudioReactiveFlowSwitch();
+
+  @override
+  State<_AudioReactiveFlowSwitch> createState() =>
+      _AudioReactiveFlowSwitchState();
+}
+
+class _AudioReactiveFlowSwitchState extends State<_AudioReactiveFlowSwitch> {
+  final pref = AppPreference.instance.nowPlayingPagePref;
+
+  @override
+  Widget build(BuildContext context) {
+    if (pref.backgroundMode != NowPlayingBackgroundMode.coverBlurTest) {
+      return const SizedBox.shrink();
+    }
+
+    return SettingsTile(
+      description: '音频律动',
+      subtitle: '流光背景随音乐频率动态变化',
+      action: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Switch(
+            value: pref.audioReactiveFlow,
+            onChanged: (value) {
+              setState(() => pref.audioReactiveFlow = value);
+              AppPreference.instance.save();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AboutTabContent extends StatelessWidget {
+  const _AboutTabContent();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+      children: const [
+        _AboutAppIdentity(),
+        SizedBox(height: 24.0),
+        _AboutSectionHeader('更新'),
+        SizedBox(height: 4.0),
+        _AboutVersionItem(),
+        SizedBox(height: 16.0),
+        _AboutAutoUpdateItem(),
+        SizedBox(height: 24.0),
+        _AboutSectionHeader('项目'),
+        SizedBox(height: 4.0),
+        _AboutLinkItem(
+          icon: Symbols.code,
+          title: '项目主页',
+          subtitle: 'qingyueyin/Pure-music',
+          url: 'https://github.com/qingyueyin/Pure-music',
+        ),
+        SizedBox(height: 16.0),
+        _AboutLinkItem(
+          icon: Symbols.lightbulb,
+          title: '反馈与建议',
+          subtitle: '在 GitHub 提交 Issue',
+          url: 'https://github.com/qingyueyin/Pure-music/issues/new/choose',
+        ),
+      ],
+    );
+  }
+}
+
+class _AboutSectionHeader extends StatelessWidget {
+  final String label;
+  const _AboutSectionHeader(this.label);
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: scheme.onSurfaceVariant,
+          fontSize: AppType.caption,
+          fontWeight: AppType.weightSemibold,
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
+  }
+}
+
+class _AboutAppIdentity extends StatelessWidget {
+  const _AboutAppIdentity();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: Image.asset('app_icon.ico', width: 48, height: 48),
+        ),
+        const SizedBox(width: 16),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Pure Music',
+              style: TextStyle(
+                color: scheme.onSurface,
+                fontSize: AppType.pageTitle,
+                fontWeight: AppType.weightSemibold,
+                letterSpacing: -0.3,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              '版本 ${AppSettings.version}',
+              style: TextStyle(
+                color: scheme.onSurfaceVariant,
+                fontSize: AppType.subtitle,
+                letterSpacing: 0.15,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _AboutVersionItem extends StatefulWidget {
+  const _AboutVersionItem();
+
+  @override
+  State<_AboutVersionItem> createState() => _AboutVersionItemState();
+}
+
+class _AboutVersionItemState extends State<_AboutVersionItem> {
+  bool _isChecking = false;
+
+  Future<void> _check() async {
+    if (_isChecking) return;
+    setState(() => _isChecking = true);
+
+    try {
+      final newest = await UpdateChecker.checkForUpdate();
+      if (!mounted) return;
+
+      if (newest != null &&
+          UpdateChecker.hasNewVersion(newest.tagName, AppSettings.version)) {
+        showDialog(
+          context: context,
+          builder: (context) => NewestUpdateView(info: newest),
+        );
+      } else {
+        showTextOnSnackBar('无新版本');
+      }
+    } catch (err, trace) {
+      logger.e(err, stackTrace: trace);
+      if (mounted) showTextOnSnackBar('网络异常');
+    }
+
+    if (mounted) setState(() => _isChecking = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SettingsTile(
+      description: '当前版本',
+      subtitle: AppSettings.version,
+      action: FilledButton.tonalIcon(
+        onPressed: _isChecking ? null : _check,
+        icon: _isChecking
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Symbols.update, size: 18),
+        label: Text(_isChecking ? '检查中' : '检查更新'),
+      ),
+    );
+  }
+}
+
+class _AboutAutoUpdateItem extends StatefulWidget {
+  const _AboutAutoUpdateItem();
+
+  @override
+  State<_AboutAutoUpdateItem> createState() => _AboutAutoUpdateItemState();
+}
+
+class _AboutAutoUpdateItemState extends State<_AboutAutoUpdateItem> {
+  @override
+  Widget build(BuildContext context) {
+    final enabled = AppPreference.instance.autoCheckUpdate;
+    return SettingsTile(
+      description: '启动时自动检查更新',
+      subtitle: enabled ? '已开启' : '已关闭',
+      action: Switch(
+        value: enabled,
+        onChanged: (value) async {
+          setState(() => AppPreference.instance.autoCheckUpdate = value);
+          await AppPreference.instance.save();
+        },
+      ),
+    );
+  }
+}
+
+class _AboutLinkItem extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String url;
+
+  const _AboutLinkItem({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.url,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      height: 48,
+      child: InkWell(
+        onTap: () async {
+          final opened = await rust_utils.launchInBrowser(uri: url);
+          if (!opened) {
+            showTextOnSnackBar('打开链接失败');
+          }
+        },
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: scheme.onSurface,
+                      fontSize: AppType.body,
+                      fontWeight: AppType.weightMedium,
+                    ),
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: scheme.onSurfaceVariant,
+                      fontSize: AppType.caption,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Symbols.open_in_new,
+              size: 16,
+              color: scheme.onSurfaceVariant,
+            ),
+          ],
+        ),
       ),
     );
   }

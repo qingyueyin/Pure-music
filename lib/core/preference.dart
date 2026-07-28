@@ -55,6 +55,7 @@ class NowPlayingPagePreference {
   double karaokeGradientWidthFraction;
   double unplayedAlpha;
   NowPlayingBackgroundMode backgroundMode;
+  bool audioReactiveFlow;
 
   NowPlayingPagePreference(
     this.nowPlayingViewMode,
@@ -72,10 +73,11 @@ class NowPlayingPagePreference {
     this.liftStyle = LyricLiftStyle.vertical,
     this.liftPeak = 2.0,
     this.liftDurationMs = 300,
-    this.staggerStyle = LyricStaggerStyle.classic,
+    this.staggerStyle = LyricStaggerStyle.smooth,
     this.karaokeGradientWidthFraction = 0.25,
     this.unplayedAlpha = 0.30,
     this.backgroundMode = NowPlayingBackgroundMode.meshGradient,
+    this.audioReactiveFlow = false,
   });
 
   LyricRenderConfig get lyricRenderConfig => LyricRenderConfig(
@@ -118,6 +120,7 @@ class NowPlayingPagePreference {
         'karaokeGradientWidthFraction': karaokeGradientWidthFraction,
         'unplayedAlpha': unplayedAlpha,
         'backgroundMode': backgroundMode.name,
+        'audioReactiveFlow': audioReactiveFlow,
       };
 
   factory NowPlayingPagePreference.fromMap(Object? value) {
@@ -181,7 +184,7 @@ class NowPlayingPagePreference {
       staggerStyle: LyricStaggerStyle.fromString(
             (map['staggerStyle'] as String?) ?? '',
           ) ??
-          LyricStaggerStyle.classic,
+          LyricStaggerStyle.smooth,
       karaokeGradientWidthFraction: _normalizedBoundedDouble(
         map['karaokeGradientWidthFraction'],
         defaultValue: 0.25,
@@ -195,6 +198,8 @@ class NowPlayingPagePreference {
         max: 1.0,
       ),
       backgroundMode: backgroundMode,
+      audioReactiveFlow:
+          _normalizedBool(map['audioReactiveFlow'], defaultValue: false),
     );
   }
 }
