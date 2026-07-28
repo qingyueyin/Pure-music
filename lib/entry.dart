@@ -568,15 +568,19 @@ class _EntryState extends State<Entry>
         pageBuilder: (context, state) => CustomTransitionPage(
           key: state.pageKey,
           maintainState: false,
-          transitionDuration: const Duration(milliseconds: 400),
-          reverseTransitionDuration: const Duration(milliseconds: 400),
+          transitionDuration: MotionDuration.medium,
+          reverseTransitionDuration: MotionDuration.medium,
           transitionsBuilder: (context, animation, _, child) {
-            return FadeTransition(
-              opacity: CurvedAnimation(
-                parent: animation,
-                curve: Curves.easeInOutCubic,
-                reverseCurve: Curves.easeInOutCubic,
-              ),
+            final position = Tween<Offset>(
+              begin: const Offset(0.0, 0.025),
+              end: Offset.zero,
+            ).animate(CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutCubic,
+              reverseCurve: Curves.easeInCubic,
+            ));
+            return SlideTransition(
+              position: position,
               child: child,
             );
           },
