@@ -27,8 +27,6 @@ class LyricsLineWidget extends StatefulWidget {
     this.jumpTriggerId = 0,
     this.jumpDeltaY = 0.0,
     this.isUserScrolling = false,
-    this.isHovered = false,
-    this.onHoverChanged,
     this.onTap,
   });
 
@@ -40,8 +38,6 @@ class LyricsLineWidget extends StatefulWidget {
   final int jumpTriggerId;
   final double jumpDeltaY;
   final bool isUserScrolling;
-  final bool isHovered;
-  final void Function(bool)? onHoverChanged;
   final VoidCallback? onTap;
 
   /// 保留给内存监控调用；歌词模糊已改为 painter 内绘制。
@@ -54,6 +50,7 @@ class LyricsLineWidget extends StatefulWidget {
 class _LyricsLineWidgetState extends State<LyricsLineWidget>
     with TickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   late final LyricRenderConfig _config;
+  bool _isHovered = false;
   Ticker? _ticker;
   double _currentTimeMs = 0;
   final ValueNotifier<double> _currentTimeNotifier = ValueNotifier(0);
@@ -259,7 +256,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
             .inMilliseconds
             .toDouble();
         final bgEnd = _bgEndMs(syncLine);
-        if (_currentTimeMs >= bgStart - 650 && _currentTimeMs < bgEnd + 2000) {
+        if (_currentTimeMs >= bgStart - 400 && _currentTimeMs < bgEnd + 5000) {
           if ((_currentTimeMs - _lastBgHeightUpdateMs).abs() > 30) {
             _lastBgHeightUpdateMs = _currentTimeMs;
             if (_cachedPainter != null && _cachedLineWidth > 0) {
@@ -421,7 +418,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
       return const SizedBox.shrink();
     }
 
-    final effectiveOpacity = widget.isHovered ? 1.0 : _targetOpacity();
+    final effectiveOpacity = _isHovered ? 1.0 : _targetOpacity();
 
     Widget inner = TweenAnimationBuilder<double>(
       tween: Tween<double>(end: effectiveOpacity),
@@ -541,7 +538,17 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
       child: inner,
     );
 
-    if (widget.isHovered && widget.onTap != null) {
+    inner = LyricStaggerTransition(
+      key: ValueKey('stagger_${widget.jumpTriggerId}'),
+      enabled: renderConfig.enableStaggeredAnimation &&
+          renderConfig.staggerStyle == LyricStaggerStyle.spring,
+      generation: widget.jumpTriggerId,
+      shiftY: widget.jumpDeltaY,
+      delay: widget.staggerDelay,
+      child: inner,
+    );
+
+    if (_isHovered && widget.onTap != null) {
       inner = Container(
         decoration: BoxDecoration(
           color: scheme.onSurface.withValues(alpha: 0.08),
@@ -551,27 +558,15 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
       );
     }
 
-    if (widget.jumpDeltaY.abs() >= 0.5) {
-      inner = LyricStaggerTransition(
-        key: ValueKey('stagger_${widget.jumpTriggerId}'),
-        enabled: renderConfig.enableStaggeredAnimation &&
-            renderConfig.staggerStyle == LyricStaggerStyle.spring,
-        generation: widget.jumpTriggerId,
-        shiftY: widget.jumpDeltaY,
-        delay: widget.staggerDelay,
-        child: inner,
-      );
-    }
-
     inner = GestureDetector(
       onTap: widget.onTap,
       child: inner,
     );
 
-    if (widget.onHoverChanged != null) {
+    if (widget.onTap != null) {
       inner = MouseRegion(
-        onEnter: (_) => widget.onHoverChanged!(true),
-        onExit: (_) => widget.onHoverChanged!(false),
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
         child: inner,
       );
     }

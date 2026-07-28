@@ -273,8 +273,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
   GlobalKey? _keyForLine(int index) {
     if ((index - _mainLine).abs() > _lineKeyRetainRadius &&
-        !_activeLines.contains(index) &&
-        index != _hoveredLineIndex) {
+        !_activeLines.contains(index)) {
       return null;
     }
     return _lineKeys[index] ??= GlobalKey();
@@ -283,12 +282,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   void _pruneLineKeys() {
     _lineKeys.removeWhere((index, _) =>
         (index - _mainLine).abs() > _lineKeyRetainRadius &&
-        !_activeLines.contains(index) &&
-        index != _hoveredLineIndex);
+        !_activeLines.contains(index));
   }
-
-  /// 悬停歌词行高亮遮罩
-  int _hoveredLineIndex = -1;
 
   /// ValueTransition 驱动的平滑滚动
   late ValueTransition<double> _scrollTransition;
@@ -793,7 +788,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       _jumpDeltaY = 0;
       _jumpTriggerId++;
       _activeLines.clear();
-      _hoveredLineIndex = -1;
       _viewportRange = const LyricViewportRange(start: 0, end: 0);
       _lineKeys.clear();
       _startPositionResyncWindow();
@@ -918,9 +912,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
   void _markUserScrolling() {
     _markActivity(); // 标记活动
-    if (_hoveredLineIndex != -1) {
-      _hoveredLineIndex = -1;
-    }
     if (_scrollState != LyricScrollState.userDragging) {
       _stopScrollTicker();
       setState(() {
@@ -1257,9 +1248,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
               totalLines: lines.length,
             )
           : followDecision.nextRange;
-      if (_hoveredLineIndex != -1) {
-        _hoveredLineIndex = -1;
-      }
       if (forceScroll && _scrollState == LyricScrollState.userDragging) {
         _scrollState = LyricScrollState.idle;
       }
@@ -1411,9 +1399,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                                   : ((30 * (dist + 1) * (5 + dist) ~/ 5)
                                       .clamp(0, _staggerMaxMs))
                               : 0);
-                      final isHovered =
-                          widget.enableSeekOnTap && i == _hoveredLineIndex;
-
                       Widget lineWidget = SizedBox(
                         key: _keyForLine(i),
                         child: LyricsLineWidget(
@@ -1421,22 +1406,13 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                             'lyric_line_${identityHashCode(widget.lyric)}_$i',
                           ),
                           line: line,
-                          opacity: isHovered ? 1.0 : opacity,
+                          opacity: opacity,
                           distance: _activeLines.contains(i) ? 0 : dist,
                           lineOffsetY: 0.0,
-                          staggerDelay:
-                              isHovered ? Duration.zero : staggerDelay,
+                          staggerDelay: staggerDelay,
                           jumpTriggerId: _jumpTriggerId,
                           jumpDeltaY: _jumpDeltaY,
                           isUserScrolling: userIsDragging,
-                          isHovered: isHovered,
-                          onHoverChanged: widget.enableSeekOnTap
-                              ? (v) {
-                                  setState(() {
-                                    _hoveredLineIndex = v ? i : -1;
-                                  });
-                                }
-                              : null,
                           onTap: widget.enableSeekOnTap
                               ? () => _seekToLyricLineWithOriginalIndex(line)
                               : null,
