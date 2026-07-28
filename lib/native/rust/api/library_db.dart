@@ -7,7 +7,22 @@ import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `init_schema`, `open_connection`, `sqlite_path`, `write_index_value_to_sqlite`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`
+
+Future<void> incrementPlayCount(
+        {required String indexPath, required String path}) =>
+    RustLib.instance.api
+        .crateApiLibraryDbIncrementPlayCount(indexPath: indexPath, path: path);
+
+Future<List<PlayCountEntry>> getTopPlayed(
+        {required String indexPath, required int limit}) =>
+    RustLib.instance.api
+        .crateApiLibraryDbGetTopPlayed(indexPath: indexPath, limit: limit);
+
+Future<PlatformInt64> getPlayCount(
+        {required String indexPath, required String path}) =>
+    RustLib.instance.api
+        .crateApiLibraryDbGetPlayCount(indexPath: indexPath, path: path);
 
 Future<void> migrateIndexJsonToSqlite({required String indexPath}) =>
     RustLib.instance.api
@@ -30,6 +45,7 @@ class IndexAudio {
   final BigInt modified;
   final BigInt created;
   final String? by;
+  final PlatformInt64 playCount;
 
   const IndexAudio({
     required this.title,
@@ -44,6 +60,7 @@ class IndexAudio {
     required this.modified,
     required this.created,
     this.by,
+    required this.playCount,
   });
 
   @override
@@ -59,7 +76,8 @@ class IndexAudio {
       path.hashCode ^
       modified.hashCode ^
       created.hashCode ^
-      by.hashCode;
+      by.hashCode ^
+      playCount.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -77,7 +95,8 @@ class IndexAudio {
           path == other.path &&
           modified == other.modified &&
           created == other.created &&
-          by == other.by;
+          by == other.by &&
+          playCount == other.playCount;
 }
 
 class IndexFolder {
@@ -106,4 +125,39 @@ class IndexFolder {
           modified == other.modified &&
           latest == other.latest &&
           audios == other.audios;
+}
+
+class PlayCountEntry {
+  final String path;
+  final String title;
+  final String artist;
+  final String album;
+  final PlatformInt64 playCount;
+
+  const PlayCountEntry({
+    required this.path,
+    required this.title,
+    required this.artist,
+    required this.album,
+    required this.playCount,
+  });
+
+  @override
+  int get hashCode =>
+      path.hashCode ^
+      title.hashCode ^
+      artist.hashCode ^
+      album.hashCode ^
+      playCount.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PlayCountEntry &&
+          runtimeType == other.runtimeType &&
+          path == other.path &&
+          title == other.title &&
+          artist == other.artist &&
+          album == other.album &&
+          playCount == other.playCount;
 }
