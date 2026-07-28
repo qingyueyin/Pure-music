@@ -53,7 +53,7 @@ class EqualizerService {
   }
 
   void _applyOutputGain() {
-    final rgDb = _player.replayGainDb ?? 0.0;
+    final rgDb = _pref.replayGainEnabled ? (_player.replayGainDb ?? 0.0) : 0.0;
     final totalDb =
         eqPreampDb + (eqAutoGainEnabled ? eqAutoGainDb : 0.0) + rgDb;
     final volume = (_pref.volumeDsp * _dbToLinear(totalDb)).clamp(0.0, 8.0);

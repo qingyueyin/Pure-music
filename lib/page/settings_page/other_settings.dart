@@ -5,6 +5,7 @@ import 'package:pure_music/core/zh_converter.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/component/settings_tile.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
+import 'package:pure_music/play_service/play_service.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
@@ -221,6 +222,26 @@ class AdvancedPlaybackSettingsTile extends StatelessWidget {
                         onChanged: (v) async {
                           menuSetState(() => pref.wasapiEventDriven = v);
                           await AppPreference.instance.save();
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12.0),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'ReplayGain',
+                          style: TextStyle(color: scheme.onSurface),
+                        ),
+                      ),
+                      Switch(
+                        value: pref.replayGainEnabled,
+                        onChanged: (v) async {
+                          menuSetState(() => pref.replayGainEnabled = v);
+                          await AppPreference.instance.save();
+                          PlayService.instance.playbackService
+                              .setReplayGainEnabled(v);
                         },
                       ),
                     ],

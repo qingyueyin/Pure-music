@@ -108,12 +108,28 @@ class PlaybackService extends ChangeNotifier {
   void setEQ(int band, double gain) => _eq.setEQ(band, gain);
   void setEqPreampDb(double value) => _eq.setEqPreampDb(value);
   void setEqAutoGainEnabled(bool enabled) => _eq.setEqAutoGainEnabled(enabled);
+  ValueNotifier<bool> get replayGainEnabled => _replayGainEnabled;
+  late final _replayGainEnabled = ValueNotifier(_pref.replayGainEnabled);
+
+  void setReplayGainEnabled(bool enabled) {
+    _pref.replayGainEnabled = enabled;
+    _replayGainEnabled.value = enabled;
+    if (enabled) {
+      final curr = nowPlaying;
+      if (curr != null) _readReplayGainFor(curr.path);
+    } else {
+      _player.replayGainDb = null;
+      _eq.reapplyOutputGain();
+    }
+  }
+
   Future<bool> saveEqPreset(String name) => _eq.saveEqPreset(name);
   Future<bool> removeEqPreset(String name) => _eq.removeEqPreset(name);
   Future<bool> applyEqPreset(EqPreset preset) => _eq.applyEqPreset(preset);
   void reapplyOutputGain() => _eq.reapplyOutputGain();
 
   void _readReplayGainFor(String path) {
+    if (!_pref.replayGainEnabled) return;
     _replayGainForPath = path;
     rust_tag_reader.readAudioExtraMetadata(path: path).then((meta) {
       if (_replayGainForPath != path) return;
