@@ -705,6 +705,11 @@ class BassPlayer {
     // 先释放旧设备，确保可以使用 -1 (默认设备) 重新初始化
     _bass.BASS_Free();
 
+    // BASS_Free() 会释放所有 BASS 对象，包括 bass_fx.dll 创建的 tempo 流
+    // 需要重新加载 bass_fx.dll 以确保后续 tempo/pitch 操作正常
+    _bassFx = null;
+    _loadBassFx();
+
     if (_bass.BASS_Init(
           -1,
           44100,
@@ -1572,6 +1577,7 @@ class BassPlayer {
 
     _playerStateStreamController.add(playerState);
     _positionUpdater?.cancel();
+    _positionUpdater = null;
     _refreshStreamSampleRate();
     _spectrumTickPeriod = _computeSpectrumTickPeriod();
     _lastSpectrumUpdateUs = 0;
@@ -1660,6 +1666,7 @@ class BassPlayer {
 
     _playerStateStreamController.add(playerState);
     _positionUpdater?.cancel();
+    _positionUpdater = null;
     _refreshStreamSampleRate();
     _spectrumTickPeriod = _computeSpectrumTickPeriod();
     _lastSpectrumUpdateUs = 0;
