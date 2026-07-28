@@ -67,10 +67,9 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   Timer? _cursorHideTimer;
   Animation<double>? _routeAnimation;
   int _coverRequestToken = 0;
-  bool _cursorHidden = false;
+  final ValueNotifier<bool> _cursorHiddenNotifier = ValueNotifier(false);
   bool _lastImmersive = false;
   bool _routeReady = false;
-  bool _routeHasCompleted = false;
   bool _backgroundUsesCachedLargeCover = false;
   Color? _dominantColor;
   List<Color>? _preExtractedPalette;
@@ -80,16 +79,10 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
 
   void _bumpCursor() {
     _cursorHideTimer?.cancel();
-    if (_cursorHidden) {
-      setState(() {
-        _cursorHidden = false;
-      });
-    }
+    _cursorHiddenNotifier.value = false;
     _cursorHideTimer = Timer(const Duration(milliseconds: 1200), () {
       if (!mounted) return;
-      setState(() {
-        _cursorHidden = true;
-      });
+      _cursorHiddenNotifier.value = true;
     });
   }
 
@@ -107,7 +100,6 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     if (_routeReady == ready) return;
     _routeReady = ready;
     if (ready) {
-      _routeHasCompleted = true;
       _scheduleCoverDetails();
     } else {
       _coverDebounceTimer?.cancel();
@@ -226,7 +218,6 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   void initState() {
     super.initState();
     playbackService.nowPlayingNotifier.addListener(updateCover);
-    playbackService.playerStateNotifier.addListener(_updatePlayPauseState);
     nowPlayingViewMode.addListener(_onViewModeChanged);
     updateCover();
     _bumpCursor();
@@ -246,29 +237,64 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     _routeAnimation?.addStatusListener(_onRouteAnimationStatus);
     _routeReady = animation == null || animation.status == AnimationStatus.completed;
     if (_routeReady) {
-      _routeHasCompleted = true;
       _scheduleCoverDetails();
-    }
-  }
-
-  void _updatePlayPauseState() {
-    // Trigger rebuild when play/pause state changes
-    if (mounted) {
-      setState(() {});
     }
   }
 
   @override
   void dispose() {
     playbackService.nowPlayingNotifier.removeListener(updateCover);
-    playbackService.playerStateNotifier.removeListener(_updatePlayPauseState);
     nowPlayingViewMode.removeListener(_onViewModeChanged);
     _coverDebounceTimer?.cancel();
     _songChangeTrimTimer?.cancel();
     _cursorHideTimer?.cancel();
+    _cursorHiddenNotifier.dispose();
     _routeAnimation?.removeStatusListener(_onRouteAnimationStatus);
     CoverImageCache.instance.trimMemory(keepPath: _nowPlayingCoverPath);
     super.dispose();
+  }
+
+  Widget _buildBackground(ColorScheme scheme, Brightness brightness) {
+    return RepaintBoundary(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          ColoredBox(color: scheme.surface),
+          ValueListenableBuilder<NowPlayingBackgroundMode>(
+            valueListenable: nowPlayingBackgroundModeNotifier,
+            builder: (context, backgroundMode, _) {
+              return StreamBuilder<PlayerState>(
+                stream: playbackService.playerStateStream,
+                initialData: playbackService.playerState,
+                builder: (context, snapshot) {
+                  final playerState = snapshot.data ?? playbackService.playerState;
+                  final backgroundInputs = NowPlayingBackgroundInputs(
+                    albumCoverBytes: _nowPlayingCoverBytes,
+                    dominantColor: _dominantColor,
+                    spectrumStream: playbackService.spectrumStream,
+                    enableAnimation: true,
+                    isVisible: _routeReady,
+                    playerState: playerState,
+                    flowSpeed: 3.0,
+                    intensity: brightness == Brightness.dark ? 1.0 : 0.9,
+                    audioReactiveFlow: AppPreference.instance.nowPlayingPagePref.audioReactiveFlow,
+                    preExtractedColors: _preExtractedPalette,
+                  );
+                  final softBg = _dominantColor != null
+                      ? _softenColor(_dominantColor!, isDark: brightness == Brightness.dark)
+                      : _softenColor(scheme.primary, isDark: brightness == Brightness.dark);
+                  return NowPlayingBackground(
+                    mode: backgroundMode,
+                    inputs: backgroundInputs,
+                    fallbackColor: softBg,
+                  );
+                },
+              );
+            },
+          ),
+        ],
+      ),
+    );
   }
 
   static Color _softenColor(Color color, {required bool isDark}) {
@@ -316,53 +342,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
               fit: StackFit.expand,
               alignment: AlignmentDirectional.center,
               children: [
-                RepaintBoundary(
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      ColoredBox(color: scheme.surface),
-                      ValueListenableBuilder<NowPlayingBackgroundMode>(
-                        valueListenable: nowPlayingBackgroundModeNotifier,
-                        builder: (context, backgroundMode, _) {
-                          return StreamBuilder<PlayerState>(
-                            stream: playbackService.playerStateStream,
-                            initialData: playbackService.playerState,
-                            builder: (context, snapshot) {
-                              final playerState =
-                                  snapshot.data ?? playbackService.playerState;
-                              final backgroundInputs =
-                                  NowPlayingBackgroundInputs(
-                                albumCoverBytes: _nowPlayingCoverBytes,
-                                dominantColor: _dominantColor,
-                                spectrumStream: playbackService.spectrumStream,
-                                enableAnimation: true,
-                                isVisible: _routeReady,
-                                playerState: playerState,
-                                flowSpeed: 1.0,
-                                intensity:
-                                    brightness == Brightness.dark ? 1.0 : 0.9,
-                                preExtractedColors: _preExtractedPalette,
-                              );
-                              final softBg = _dominantColor != null
-                                  ? _softenColor(_dominantColor!,
-                                      isDark: brightness == Brightness.dark)
-                                  : _softenColor(scheme.primary,
-                                      isDark: brightness == Brightness.dark);
-                              if (!_routeHasCompleted) {
-                                return ColoredBox(color: softBg);
-                              }
-                              return NowPlayingBackground(
-                                mode: backgroundMode,
-                                inputs: backgroundInputs,
-                                fallbackColor: softBg,
-                              );
-                            },
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ),
+                _buildBackground(scheme, brightness),
                 ListenableBuilder(
                   listenable: AppSettings.rebuildNotifier,
                   builder: (context, _) {
@@ -428,57 +408,68 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 12.0),
                         child: ValueListenableBuilder(
-                          valueListenable: nowPlayingViewMode,
-                          builder: (context, viewMode, _) {
-                            final inPlaylist =
-                                viewMode == NowPlayingViewMode.withPlaylist;
-                            final shouldHide = _cursorHidden || inPlaylist;
-                            return AnimatedOpacity(
-                              duration: const Duration(milliseconds: 150),
-                              opacity: shouldHide ? 0.0 : 1.0,
-                              child: IgnorePointer(
-                                ignoring: shouldHide,
-                                child: Row(
-                                  children: [
-                                    ResponsiveBuilder2(
-                                      builder: (context, screenType) {
-                                        if (screenType != ScreenType.small) {
-                                          return const SizedBox.shrink();
-                                        }
-                                        return Builder(
-                                          builder: (context) => IconButton(
-                                            tooltip: '侧边栏',
-                                            onPressed: () {
-                                              Scaffold.of(context).openDrawer();
-                                            },
-                                            icon: const Icon(Symbols.menu),
+                          valueListenable: _cursorHiddenNotifier,
+                          builder: (context, cursorHidden, _) {
+                            return ValueListenableBuilder(
+                              valueListenable: nowPlayingViewMode,
+                              builder: (context, viewMode, _) {
+                                final inPlaylist =
+                                    viewMode == NowPlayingViewMode.withPlaylist;
+                                final shouldHide = cursorHidden || inPlaylist;
+                                return AnimatedOpacity(
+                                  duration: const Duration(milliseconds: 150),
+                                  opacity: shouldHide ? 0.0 : 1.0,
+                                  child: IgnorePointer(
+                                    ignoring: shouldHide,
+                                    child: Row(
+                                      children: [
+                                        ResponsiveBuilder2(
+                                          builder: (context, screenType) {
+                                            if (screenType != ScreenType.small) {
+                                              return const SizedBox.shrink();
+                                            }
+                                            return Builder(
+                                              builder: (context) => IconButton(
+                                                tooltip: '侧边栏',
+                                                onPressed: () {
+                                                  Scaffold.of(context).openDrawer();
+                                                },
+                                                icon: const Icon(Symbols.menu),
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                        const NavBackBtn(),
+                                        const Expanded(
+                                          child: DragToMoveArea(
+                                            child: SizedBox.expand(),
                                           ),
-                                        );
-                                      },
+                                        ),
+                                        const WindowControlls(),
+                                      ],
                                     ),
-                                    const NavBackBtn(),
-                                    const Expanded(
-                                      child: DragToMoveArea(
-                                        child: SizedBox.expand(),
-                                      ),
-                                    ),
-                                    const WindowControlls(),
-                                  ],
-                                ),
-                              ),
+                                  ),
+                                );
+                              },
                             );
                           },
                         ),
                       ),
                     ),
                   ),
-                if (_cursorHidden)
-                  const Positioned.fill(
-                    child: MouseRegion(
-                      cursor: SystemMouseCursors.none,
-                      child: SizedBox.expand(),
-                    ),
+                // Positioned 必须是 Stack 直接子节点，不能包在 Builder 里
+                Positioned.fill(
+                  child: ValueListenableBuilder<bool>(
+                    valueListenable: _cursorHiddenNotifier,
+                    builder: (context, cursorHidden, _) {
+                      if (!cursorHidden) return const SizedBox.shrink();
+                      return const MouseRegion(
+                        cursor: SystemMouseCursors.none,
+                        child: SizedBox.expand(),
+                      );
+                    },
                   ),
+                ),
               ],
             ),
           ),
@@ -1728,6 +1719,8 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
   Timer? _positionSyncTimer;
   Ticker? _progressTicker;
   Duration _lastProgressTickElapsed = Duration.zero;
+  Duration _lastProcessedElapsed = Duration.zero;
+  static const _progressTickInterval = Duration(milliseconds: 33); // ~30fps
   int _lastPositionMs = -1;
   bool _isPlaying = false;
   double _trackLength = 1.0;
@@ -1792,6 +1785,7 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
   void _startProgressTicker() {
     if (_progressTicker?.isActive == true) return;
     _lastProgressTickElapsed = Duration.zero;
+    _lastProcessedElapsed = Duration.zero;
     _progressTicker ??= createTicker(_onProgressTick);
     _progressTicker!.start();
   }
@@ -1800,8 +1794,12 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
     if (!_isPlaying) return;
     if (_lastProgressTickElapsed == Duration.zero) {
       _lastProgressTickElapsed = elapsed;
+      _lastProcessedElapsed = elapsed;
       return;
     }
+    // ~30fps 节流，跳过间隔过短的帧
+    if (elapsed - _lastProcessedElapsed < _progressTickInterval) return;
+    _lastProcessedElapsed = elapsed;
     final delta = elapsed - _lastProgressTickElapsed;
     _lastProgressTickElapsed = elapsed;
     if (delta <= Duration.zero) return;
@@ -2195,6 +2193,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
   int _coverRequestToken = 0;
   Uint8List? _immediateCover;
   String? _immediateCoverPath;
+  MemoryImage? _cachedImmediateCoverImage;
 
   bool get _routeReady {
     final animation = ModalRoute.of(context)?.animation;
@@ -2238,6 +2237,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
           _hiResCoverPath = null;
           _immediateCover = null;
           _immediateCoverPath = null;
+          _cachedImmediateCoverImage = null;
         });
       }
       return;
@@ -2250,13 +2250,21 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
       _immediateCoverPath = path;
       _hiResCover = cachedLargeCover;
       _hiResCoverPath = cachedLargeCover == null ? null : path;
+      _cachedImmediateCoverImage = _immediateCover != null
+          ? MemoryImage(_immediateCover!)
+          : null;
     });
 
     if (_immediateCover == null) {
       nextAudio.loadSmallCoverBytes().then((bytes) {
         if (!mounted || token != _coverRequestToken) return;
         if (playbackService.nowPlaying?.path != path) return;
-        setState(() => _immediateCover = bytes);
+        setState(() {
+          _immediateCover = bytes;
+          _cachedImmediateCoverImage = bytes != null
+              ? MemoryImage(bytes)
+              : null;
+        });
       });
     }
 
@@ -2301,6 +2309,9 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
       _immediateCoverPath = audio.path;
       _hiResCover = audio.cachedLargeCover;
       _hiResCoverPath = _hiResCover == null ? null : audio.path;
+      _cachedImmediateCoverImage = _immediateCover != null
+          ? MemoryImage(_immediateCover!)
+          : null;
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2346,9 +2357,8 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
             _hiResCoverPath == nowPlayingPath ? _hiResCover : null;
         final fallbackCover = currentCover == null &&
                 nowPlaying != null &&
-                _immediateCoverPath == nowPlayingPath &&
-                _immediateCover != null
-            ? MemoryImage(_immediateCover!)
+                _immediateCoverPath == nowPlayingPath
+            ? _cachedImmediateCoverImage
             : null;
         final coverWidget = currentCover == null && fallbackCover == null
             ? Center(child: placeholder)
@@ -2419,7 +2429,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
                   child: heroEnabled && nowPlayingPath != null
                       ? Hero(
                           tag: nowPlayingPath,
-                          child: RepaintBoundary(child: coverWidget),
+                          child: coverWidget,
                         )
                       : RepaintBoundary(child: coverWidget),
                 ),
