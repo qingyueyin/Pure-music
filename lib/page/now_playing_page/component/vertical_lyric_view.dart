@@ -26,11 +26,23 @@ const _opacityMinClamp = 0.30;
 const _opacityMaxClamp = 0.90;
 const _staggerBaseMs = 60;
 const _staggerMaxMs = 600;
+const _staggerSaltBaseMs = 50;
+const _staggerSaltDecay = 1.05;
 const _shaderFadeInWithBlur = 0.05;
 const _shaderFadeInWithoutBlur = 0.05;
 const _shaderFadeOutWithBlur = 0.80;
 const _shaderFadeOutWithoutBlur = 0.95;
 const _lyricOffsetCacheCapacity = 6;
+
+int _geometricDelayMs(int dist) {
+  double total = 0;
+  double step = _staggerSaltBaseMs.toDouble();
+  for (int i = 0; i < dist; i++) {
+    total += step;
+    step /= _staggerSaltDecay;
+  }
+  return total.round();
+}
 
 bool alwaysShowLyricViewControls = false;
 
@@ -246,6 +258,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   bool _didIdleCleanup = false;
   LyricScrollState _scrollState = LyricScrollState.idle;
   int _mainLine = 0;
+  int _jumpTriggerId = 0;
+  double _jumpDeltaY = 0.0;
 
   /// TTML 重叠行的额外透明度 boost，不决定“当前高亮行”。
   /// 唯一当前行来源是 [_mainLine]。
@@ -259,6 +273,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   /// forceEmitCurrentLine 与 _scrollToCurrent 不在同一时机就绪，
   /// 需要在收到歌词行更新后补一次滚动。
   bool _needsInitialScroll = true;
+  bool _suppressSaltSpring = false;
   int _lastPositionResyncMs = 0;
   int _positionResyncExtensionCount = 0;
   static const int _maxPositionResyncExtensions = 5;
@@ -735,12 +750,17 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   void _syncWhenRouteVisible() {
     if (_disposed || !mounted) return;
     _needsInitialScroll = true;
+    _suppressSaltSpring = true;
     lyricService.forceEmitCurrentLine();
     _startPositionResyncWindow();
     _syncToPlaybackPosition(duration: Duration.zero);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_disposed || !mounted) return;
       _syncToPlaybackPosition(duration: Duration.zero);
+    });
+    // 延迟清除压制，覆盖后续 _queuePlaybackResync 的回调
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (mounted) _suppressSaltSpring = false;
     });
   }
 
@@ -813,6 +833,31 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     });
   }
 
+  bool get _saltSpringEnabled =>
+      _lyricViewController?.renderConfig.staggerStyle ==
+      LyricStaggerStyle.salt;
+
+  void _springScrollTo(double targetOffset) {
+    if (!scrollController.hasClients) return;
+    final from = scrollController.offset;
+    final to = targetOffset.clamp(
+      scrollController.position.minScrollExtent,
+      scrollController.position.maxScrollExtent,
+    );
+    _jumpDeltaY = to - from;
+    if (_jumpDeltaY.abs() > 0.5) {
+      _jumpTriggerId++;
+      setState(() {});
+      scrollController.jumpTo(to);
+      _userScrollHoldTimer?.cancel();
+      _userScrollHoldTimer = null;
+      _scrollTransition.jumpTo(to);
+      _stopScrollTicker();
+      _needsInitialScroll = false;
+      _positionResyncExtensionCount = 0;
+    }
+  }
+
   /// ValueTransition 驱动的丝滑滚动
   void _animateTo(double targetOffset, {Duration? duration}) {
     if (!scrollController.hasClients) return;
@@ -866,8 +911,11 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       overscanScreens: renderConfig.viewportOverscanScreens,
       userScrollHoldDuration: renderConfig.userScrollHoldDuration,
     );
+    final holdDuration = renderConfig.staggerStyle == LyricStaggerStyle.salt
+        ? const Duration(seconds: 3)
+        : viewportStrategy.userScrollHoldDuration;
     _userScrollHoldTimer?.cancel();
-    _userScrollHoldTimer = Timer(viewportStrategy.userScrollHoldDuration, () {
+    _userScrollHoldTimer = Timer(holdDuration, () {
       if (!mounted) return;
       setState(() {
         _scrollState = LyricScrollState.idle;
@@ -922,7 +970,12 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
         final viewport = RenderAbstractViewport.of(targetObject);
         final alignment = widget.currentLineAlignment;
         final revealed = viewport.getOffsetToReveal(targetObject, alignment);
-        _animateTo(revealed.offset, duration: duration);
+        if (_saltSpringEnabled && !_suppressSaltSpring) {
+          _springScrollTo(revealed.offset);
+          _scrollState = LyricScrollState.idle;
+        } else {
+          _animateTo(revealed.offset, duration: duration);
+        }
         return;
       }
     }
@@ -949,7 +1002,12 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       final targetScrollOffset =
           (topPadding + lineTop + lineHeight / 2) - (viewport * alignment);
 
-      _animateTo(targetScrollOffset, duration: duration);
+      if (_saltSpringEnabled && !_suppressSaltSpring) {
+        _springScrollTo(targetScrollOffset);
+        _scrollState = LyricScrollState.idle;
+      } else {
+        _animateTo(targetScrollOffset, duration: duration);
+      }
       return;
     }
 
@@ -1297,8 +1355,12 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                           milliseconds: _lyricViewController
                                       ?.renderConfig.enableStaggeredAnimation ==
                                   true
-                              ? ((dist + 1) * _staggerBaseMs)
-                                  .clamp(0, _staggerMaxMs)
+                              ? _lyricViewController?.renderConfig
+                                          .staggerStyle ==
+                                      LyricStaggerStyle.salt
+                                  ? _geometricDelayMs(dist)
+                                  : ((dist + 1) * _staggerBaseMs)
+                                      .clamp(0, _staggerMaxMs)
                               : 0);
                       final isHovered =
                           widget.enableSeekOnTap && i == _hoveredLineIndex;
@@ -1315,6 +1377,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                           lineOffsetY: 0.0,
                           staggerDelay:
                               isHovered ? Duration.zero : staggerDelay,
+                          jumpTriggerId: _jumpTriggerId,
+                          jumpDeltaY: _jumpDeltaY,
                           isUserScrolling: userIsDragging,
                           isHovered: isHovered,
                           onHoverChanged: widget.enableSeekOnTap
