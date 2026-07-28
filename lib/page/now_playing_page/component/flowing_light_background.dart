@@ -16,6 +16,17 @@ const _kPeriod1 = 100.0;
 const _kPeriod2 = 70.0;
 const _kPeriod3 = 40.0;
 
+const _kPrimaryLayerScale = 1.38;
+const _kSecondaryLayerScale = 1.58;
+const _kLightLayerScale = 1.78;
+const _kPrimaryLayerPhase = 0.08 * pi;
+const _kSecondaryLayerPhase = -0.38 * pi;
+const _kLightLayerPhase = 0.62 * pi;
+
+const _kPrimaryLayerColor = Color(0xEBFFFFFF);
+const _kSecondaryLayerColor = Color(0xA3FFFFFF);
+const _kLightLayerColor = Color(0x85FFFFFF);
+
 const _kSaturationMatrix = <double>[
   2.18,
   -1.07,
@@ -391,7 +402,18 @@ class _FlowingLightPainter extends CustomPainter {
   );
 
   final ui.Paint _blurPaint = ui.Paint()..imageFilter = _blurFilter;
-  final ui.Paint _coverPaint = ui.Paint()..colorFilter = _saturationFilter;
+  final ui.Paint _primaryCoverPaint = ui.Paint()
+    ..colorFilter = _saturationFilter
+    ..color = _kPrimaryLayerColor
+    ..blendMode = BlendMode.srcOver;
+  final ui.Paint _secondaryCoverPaint = ui.Paint()
+    ..colorFilter = _saturationFilter
+    ..color = _kSecondaryLayerColor
+    ..blendMode = BlendMode.overlay;
+  final ui.Paint _lightCoverPaint = ui.Paint()
+    ..colorFilter = _saturationFilter
+    ..color = _kLightLayerColor
+    ..blendMode = BlendMode.softLight;
 
   double get _motionTime =>
       motionClock.elapsedMicroseconds /
@@ -443,29 +465,39 @@ class _FlowingLightPainter extends CustomPainter {
     canvas.saveLayer(null, _blurPaint);
     canvas.drawColor(fillColor, BlendMode.src);
 
-    final scale = 1.5 *
-        max(
-          size.width / image.width,
-          size.height / image.height,
-        );
-    _drawLayer(canvas, size, image, scale, time / _kPeriod1 * 2 * pi, 0, 0);
-    _drawLayer(
-      canvas,
-      size,
-      image,
-      scale,
-      -time / _kPeriod2 * 2 * pi,
-      -0.95,
-      -0.70,
+    final baseScale = max(
+      size.width / image.width,
+      size.height / image.height,
     );
     _drawLayer(
       canvas,
       size,
       image,
-      scale,
-      -time / _kPeriod3 * 2 * pi,
+      baseScale * _kPrimaryLayerScale,
+      time / _kPeriod1 * 2 * pi + _kPrimaryLayerPhase,
+      0,
+      0,
+      _primaryCoverPaint,
+    );
+    _drawLayer(
+      canvas,
+      size,
+      image,
+      baseScale * _kSecondaryLayerScale,
+      -time / _kPeriod2 * 2 * pi + _kSecondaryLayerPhase,
+      -0.95,
+      -0.70,
+      _secondaryCoverPaint,
+    );
+    _drawLayer(
+      canvas,
+      size,
+      image,
+      baseScale * _kLightLayerScale,
+      -time / _kPeriod3 * 2 * pi + _kLightLayerPhase,
       -0.50,
       0.70,
+      _lightCoverPaint,
       rotateAroundOutputCenter: true,
     );
 
@@ -482,7 +514,8 @@ class _FlowingLightPainter extends CustomPainter {
     double scale,
     double angle,
     double offsetX,
-    double offsetY, {
+    double offsetY,
+    ui.Paint paint, {
     bool rotateAroundOutputCenter = false,
   }) {
     canvas.save();
@@ -502,7 +535,7 @@ class _FlowingLightPainter extends CustomPainter {
     final height = image.height * scale;
     canvas.translate(-width / 2, -height / 2);
     canvas.scale(scale, scale);
-    canvas.drawImage(image, Offset.zero, _coverPaint);
+    canvas.drawImage(image, Offset.zero, paint);
     canvas.restore();
   }
 
