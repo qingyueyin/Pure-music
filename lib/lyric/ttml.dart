@@ -37,6 +37,42 @@ class Ttml extends Lyric {
 
       lines.sort((a, b) => a.start.compareTo(b.start));
 
+      // 合并 bg 独占行（无主词）到最近的同时间主行中
+      final merges = <int, int>{};
+      for (int i = 0; i < lines.length; i++) {
+        final l = lines[i];
+        if (l.words.isEmpty && l.bgText != null) {
+          final bgEnd = l.bgEnd ??
+              (l.bgWords.isNotEmpty
+                  ? l.bgWords.last.start + l.bgWords.last.length
+                  : l.start + l.length);
+          for (int j = i + 1; j < lines.length; j++) {
+            final target = lines[j];
+            if (target.words.isNotEmpty && target.start <= bgEnd) {
+              merges[i] = j;
+              break;
+            }
+          }
+        }
+      }
+      for (final e in merges.entries) {
+        final src = lines[e.key];
+        final dst = lines[e.value];
+        if (dst.bgText == null) {
+          dst.bgText = src.bgText;
+          dst.bgWords = src.bgWords;
+          dst.bgStart = src.bgStart;
+          dst.bgEnd = src.bgEnd;
+          dst.bgTranslation = src.bgTranslation;
+          dst.bg = src.bg;
+        } else if (dst.bgWords.isEmpty && src.bgWords.isNotEmpty) {
+          dst.bgWords = src.bgWords;
+          dst.bgStart ??= src.bgStart;
+          dst.bgEnd ??= src.bgEnd;
+        }
+      }
+      lines.removeWhere((l) => l.words.isEmpty && l.bgText != null);
+
       for (int i = 0; i < lines.length; i++) {
         final line = lines[i];
         final nextStart = i < lines.length - 1 ? lines[i + 1].start : null;

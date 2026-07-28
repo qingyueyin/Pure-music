@@ -1,5 +1,7 @@
 import 'dart:isolate';
 
+import 'package:pure_music/native/rust/api/amll_ttml.dart' as frb_amll;
+
 import 'package:pure_music/services/online_lyric/models/lyric_entry.dart';
 import 'package:pure_music/services/online_lyric/parsers/lrc_tool.dart';
 import 'package:pure_music/services/online_lyric/api/krc_decryptor.dart';
@@ -261,3 +263,25 @@ Future<NetLyricResult?> kgGetLyric({required String hash}) async {
     format: LyricFormat.krc,
   );
 }
+
+// ──────────────────────────────────────────────
+// AMLL TTML 歌词库 (Rust FRB)
+// ──────────────────────────────────────────────
+
+typedef AmllSearchItem = frb_amll.AmllSearchItem;
+
+Future<List<AmllSearchItem>> amllSearchSingle({
+  required String keyword,
+  int page = 1,
+  int pageSize = 15,
+}) =>
+    frb_amll.amllSearchLyrics(
+      keyword: keyword,
+      page: page,
+      pageSize: pageSize,
+    );
+
+Future<String?> amllGetTtml(String id) =>
+    frb_amll.amllGetTtml(id: id);
+
+void amllClearCache() => frb_amll.amllClearCache();

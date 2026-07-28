@@ -10,20 +10,21 @@ enum LyricSourceType {
   qq('qq'),
   kugou('kugou'),
   ne('ne'),
+  amll('amll'),
   local('local');
 
   final String name;
   const LyricSourceType(this.name);
 }
 
-/// 默认歌词来源
 class LyricSource {
   LyricSourceType source;
   String? qqSongId;
   String? kugouSongHash;
   int? neSongId;
+  String? amllTtmlFile;
 
-  LyricSource(this.source, {this.qqSongId, this.kugouSongHash, this.neSongId});
+  LyricSource(this.source, {this.qqSongId, this.kugouSongHash, this.neSongId, this.amllTtmlFile});
 
   static LyricSource? fromMap(Map? map) {
     if (map == null) return null;
@@ -49,6 +50,11 @@ class LyricSource {
         neSongId = _normalizedNeSongId(rawId);
       }
       return LyricSource(LyricSourceType.ne, neSongId: neSongId);
+    } else if (source == 'amll') {
+      return LyricSource(
+        LyricSourceType.amll,
+        amllTtmlFile: _normalizedTextSongId(map['id']),
+      );
     } else {
       return LyricSource(LyricSourceType.local);
     }
@@ -62,6 +68,8 @@ class LyricSource {
         return {'source': source.name, 'id': kugouSongHash};
       case LyricSourceType.ne:
         return {'source': source.name, 'id': neSongId};
+      case LyricSourceType.amll:
+        return {'source': source.name, 'id': amllTtmlFile};
       case LyricSourceType.local:
         return {'source': source.name, 'id': null};
     }
@@ -160,6 +168,8 @@ String? _lyricSourceId(LyricSource s) {
       return s.kugouSongHash;
     case LyricSourceType.ne:
       return s.neSongId?.toString();
+    case LyricSourceType.amll:
+      return s.amllTtmlFile;
     case LyricSourceType.local:
       return null;
   }
@@ -180,6 +190,12 @@ LyricSource? _lyricSourceFromDb(String source, String? id) {
     return LyricSource(
       LyricSourceType.ne,
       neSongId: id == null ? null : _normalizedNeSongId(id),
+    );
+  }
+  if (normalizedSource == LyricSourceType.amll.name) {
+    return LyricSource(
+      LyricSourceType.amll,
+      amllTtmlFile: id,
     );
   }
   return LyricSource(LyricSourceType.local);

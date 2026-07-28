@@ -9,6 +9,7 @@ import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/lyric/krc.dart';
 import 'package:pure_music/lyric/qrc.dart';
+import 'package:pure_music/lyric/ttml.dart';
 import 'package:pure_music/services/online_lyric/api/net_lyric_api.dart'
     as net_api;
 import 'package:pure_music/core/utils.dart' as utils;
@@ -17,30 +18,38 @@ import 'package:pure_music/lyric/exclude_data.dart';
 
 final logger = utils.logger;
 
-enum ResultSource { qq, kugou, ne }
+enum ResultSource { qq, kugou, ne, amll }
 
 const int _lyricCacheMaxSize = 64;
 final Map<String, Future<Lyric?>> _lyricFetchCache = {};
 final Map<String, Lyric> _lyricResultCache = {};
 final List<String> _lyricCacheAccessOrder = [];
 
-String _cacheKey({String? qqSongId, String? kugouSongHash, int? neSongId}) {
+String _cacheKey({String? qqSongId, String? kugouSongHash, int? neSongId, String? amllTtmlFile}) {
   return qqSongId != null
       ? 'qq:$qqSongId'
       : kugouSongHash != null
           ? 'kg:$kugouSongHash'
           : neSongId != null
               ? 'ne:$neSongId'
-              : '';
+              : amllTtmlFile != null
+                  ? 'amll:$amllTtmlFile'
+                  : '';
 }
 
-void cacheLyric(
-    {String? qqSongId,
-    String? kugouSongHash,
-    int? neSongId,
-    required Lyric lyric}) {
+void cacheLyric({
+  String? qqSongId,
+  String? kugouSongHash,
+  int? neSongId,
+  String? amllTtmlFile,
+  required Lyric lyric,
+}) {
   final key = _cacheKey(
-      qqSongId: qqSongId, kugouSongHash: kugouSongHash, neSongId: neSongId);
+    qqSongId: qqSongId,
+    kugouSongHash: kugouSongHash,
+    neSongId: neSongId,
+    amllTtmlFile: amllTtmlFile,
+  );
   if (key.isEmpty) return;
 
   _lyricResultCache[key] = lyric;
@@ -54,10 +63,18 @@ void cacheLyric(
   }
 }
 
-Lyric? getCachedLyric(
-    {String? qqSongId, String? kugouSongHash, int? neSongId}) {
+Lyric? getCachedLyric({
+  String? qqSongId,
+  String? kugouSongHash,
+  int? neSongId,
+  String? amllTtmlFile,
+}) {
   final key = _cacheKey(
-      qqSongId: qqSongId, kugouSongHash: kugouSongHash, neSongId: neSongId);
+    qqSongId: qqSongId,
+    kugouSongHash: kugouSongHash,
+    neSongId: neSongId,
+    amllTtmlFile: amllTtmlFile,
+  );
   if (key.isEmpty) return null;
 
   final lyric = _lyricResultCache[key];
@@ -113,6 +130,16 @@ Future<Lyric?> getLyricFromPreferredSource(
             .cast<SongSearchResult>()
             .toList();
         break;
+      case ResultSource.amll:
+        final raw = await net_api
+            .amllSearchSingle(keyword: query, pageSize: 3)
+            .timeout(const Duration(seconds: 8));
+        results = raw
+            .map((item) => SongSearchResult.fromAmllSearchItem(item, audio))
+            .where((r) => r != null && r.score >= 0)
+            .cast<SongSearchResult>()
+            .toList();
+        break;
     }
 
     if (results.isEmpty) {
@@ -123,12 +150,13 @@ Future<Lyric?> getLyricFromPreferredSource(
     results.sort((a, b) => b.score.compareTo(a.score));
     final best = results.first;
     logger.i(
-        '[preferred] best from $source: score=${best.score} id=${best.qqSongId ?? best.kugouSongHash ?? best.neSongId}');
+        '[preferred] best from $source: score=${best.score} id=${best.qqSongId ?? best.kugouSongHash ?? best.neSongId ?? best.amllTtmlFile}');
 
     return getOnlineLyric(
       qqSongId: best.qqSongId,
       kugouSongHash: best.kugouSongHash,
       neSongId: best.neSongId,
+      amllTtmlFile: best.amllTtmlFile,
     );
   } catch (e) {
     logger.e('[preferred] $source search failed: $e');
@@ -140,11 +168,13 @@ Future<Lyric?> getOnlineLyric({
   String? qqSongId,
   String? kugouSongHash,
   int? neSongId,
+  String? amllTtmlFile,
 }) {
   final cached = getCachedLyric(
     qqSongId: qqSongId,
     kugouSongHash: kugouSongHash,
     neSongId: neSongId,
+    amllTtmlFile: amllTtmlFile,
   );
   if (cached != null) {
     logger.d('[getOnlineLyric] cache hit');
@@ -152,7 +182,11 @@ Future<Lyric?> getOnlineLyric({
   }
 
   final key = _cacheKey(
-      qqSongId: qqSongId, kugouSongHash: kugouSongHash, neSongId: neSongId);
+    qqSongId: qqSongId,
+    kugouSongHash: kugouSongHash,
+    neSongId: neSongId,
+    amllTtmlFile: amllTtmlFile,
+  );
 
   if (key.isNotEmpty && _lyricFetchCache.containsKey(key)) {
     logger.d('[getOnlineLyric] request dedup: $key');
@@ -163,6 +197,7 @@ Future<Lyric?> getOnlineLyric({
     qqSongId: qqSongId,
     kugouSongHash: kugouSongHash,
     neSongId: neSongId,
+    amllTtmlFile: amllTtmlFile,
   );
 
   if (key.isNotEmpty) {
@@ -175,6 +210,7 @@ Future<Lyric?> getOnlineLyric({
           qqSongId: qqSongId,
           kugouSongHash: kugouSongHash,
           neSongId: neSongId,
+          amllTtmlFile: amllTtmlFile,
           lyric: lyric,
         );
       }
@@ -188,6 +224,7 @@ Future<Lyric?> _fetchLyricInternal({
   String? qqSongId,
   String? kugouSongHash,
   int? neSongId,
+  String? amllTtmlFile,
 }) async {
   final futures = <Future<Lyric?>>[];
 
@@ -201,6 +238,10 @@ Future<Lyric?> _fetchLyricInternal({
 
   if (kugouSongHash != null) {
     futures.add(_getKugouSyncLyric(kugouSongHash));
+  }
+
+  if (amllTtmlFile != null) {
+    futures.add(_getAmllTtmlLyric(amllTtmlFile));
   }
 
   if (futures.isEmpty) return null;
@@ -332,12 +373,14 @@ class SongSearchResult {
   String? qqSongId;
   String? kugouSongHash;
   int? neSongId;
+  String? amllTtmlFile;
 
   SongSearchResult(
       this.source, this.title, this.artists, this.album, this.score,
       {this.qqSongId,
       this.kugouSongHash,
       this.neSongId,
+      this.amllTtmlFile,
       this.duration,
       this.lyricType});
 
@@ -394,6 +437,23 @@ class SongSearchResult {
       neSongId: int.tryParse(item.id),
       duration: item.durationMs ~/ 1000,
       lyricType: null,
+    );
+  }
+
+  static SongSearchResult? fromAmllSearchItem(
+      net_api.AmllSearchItem item, Audio audio) {
+    final apiScore = item.score / 1000;
+    final computeScore = _computeScore(audio, item.title, item.artist,
+        item.album);
+    final blended = apiScore * 60 + computeScore * 40;
+    return SongSearchResult(
+      ResultSource.amll,
+      item.title,
+      item.artist,
+      item.album,
+      blended,
+      amllTtmlFile: item.id,
+      lyricType: '逐字',
     );
   }
 }
@@ -470,12 +530,14 @@ Future<List<SongSearchResult>> uniSearch(Audio audio) async {
         _searchQQWithTimeout(searchQuery, audio, 6, perSourceLimit);
     final neFuture =
         _searchNEWithTimeout(searchQuery, audio, 6, perSourceLimit);
+    final amllFuture =
+        _searchAMLLWithTimeout(searchQuery, audio, 6, perSourceLimit);
 
     final results =
-        await Future.wait([kgFuture, qqFuture, neFuture], eagerError: false)
+        await Future.wait([kgFuture, qqFuture, neFuture, amllFuture], eagerError: false)
             .timeout(const Duration(seconds: 18), onTimeout: () {
       logger.w('uniSearch timeout for query: $searchQuery');
-      return <List<SongSearchResult>>[[], [], []];
+      return <List<SongSearchResult>>[[], [], [], []];
     });
 
     // 取各来源分数最高的结果
@@ -589,6 +651,30 @@ Future<List<SongSearchResult>> _searchNEWithTimeout(
   }
 }
 
+Future<List<SongSearchResult>> _searchAMLLWithTimeout(
+    String query, Audio audio, int seconds, int limit) async {
+  try {
+    logger.d('[AMLL] searching: "$query"');
+    final amllResults = await net_api
+        .amllSearchSingle(keyword: query, pageSize: limit)
+        .timeout(Duration(seconds: seconds),
+            onTimeout: () => throw TimeoutException('AMLL search timeout'));
+    logger.d('[AMLL] got ${amllResults.length} raw results');
+    final List<SongSearchResult> results = [];
+    for (final item in amllResults) {
+      final searchResult = SongSearchResult.fromAmllSearchItem(item, audio);
+      if (searchResult != null && searchResult.score >= 0) {
+        results.add(searchResult);
+      }
+    }
+    logger.d('[AMLL] accepted ${results.length}');
+    return results;
+  } catch (err, trace) {
+    logger.w('AMLL search failed: $err', stackTrace: trace);
+    return [];
+  }
+}
+
 bool _containsResult(List<SongSearchResult> list, SongSearchResult item) {
   for (final r in list) {
     if (r.qqSongId != null && r.qqSongId == item.qqSongId) return true;
@@ -596,6 +682,7 @@ bool _containsResult(List<SongSearchResult> list, SongSearchResult item) {
       return true;
     }
     if (r.neSongId != null && r.neSongId == item.neSongId) return true;
+    if (r.amllTtmlFile != null && r.amllTtmlFile == item.amllTtmlFile) return true;
   }
   return false;
 }
@@ -689,6 +776,28 @@ Future<Lyric?> _getNeSyncLyric(int neSongId) async {
     logger.e('Failed to get NetEase lyric: $err', stackTrace: trace);
   }
   return null;
+}
+
+Future<Lyric?> _getAmllTtmlLyric(String amllTtmlFile) async {
+  try {
+    final raw = await net_api.amllGetTtml(amllTtmlFile);
+    if (raw == null || raw.isEmpty) return null;
+
+    final ttml = Ttml.fromTtmlText(raw);
+    if (ttml == null || ttml.lines.isEmpty) return null;
+
+    logger.i('[AMLL lyric] parsed ${ttml.lines.length} lines');
+    return ttml;
+  } catch (err, trace) {
+    logger.e('Failed to get AMLL lyric: $err', stackTrace: trace);
+  }
+  return null;
+}
+
+Future<Lyric?> getAmllLyric(String id) async {
+  final cached = getCachedLyric(amllTtmlFile: id);
+  if (cached != null) return cached;
+  return getOnlineLyric(amllTtmlFile: id);
 }
 
 Lyric? _parsedToLyric(ParsedLyricResult parsed, {String? rawText}) {

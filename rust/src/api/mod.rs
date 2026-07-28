@@ -2,6 +2,7 @@
 // Do not put code in `mod.rs`, but put in e.g. `simple.rs`.
 //
 
+pub mod amll_ttml;
 pub mod color_extraction;
 pub mod installed_font;
 pub mod library_db;

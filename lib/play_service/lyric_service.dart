@@ -67,6 +67,7 @@ class LyricService extends ChangeNotifier {
   int _lastEmittedLineIndex = -1;
   int _lastDesktopLyricLineIndex = -1;
   bool _desktopGapShown = false;
+  bool _desktopPreludeShown = false;
   int _lyricRequestToken = 0;
   int _prefetchGeneration = 0;
   String? _activeLyricPath;
@@ -182,6 +183,7 @@ class LyricService extends ChangeNotifier {
           activeIndices: activeIndices,
         ));
       }
+      _sendDesktopPreludeIfNeeded(posMs);
       return;
     }
     if (currLineIndex >= lyric.lines.length) {
@@ -268,6 +270,35 @@ class LyricService extends ChangeNotifier {
           const [],
         ),
         nextLine: nextLine,
+      );
+    });
+  }
+
+  /// 第一行歌词开始前的前奏/加载阶段，给桌面歌词发一个间奏行，
+  /// 让桌面歌词能显示三点动画（时长超过 5 秒时）。
+  void _sendDesktopPreludeIfNeeded(int posMs) {
+    final lyric = _currLyric;
+    if (lyric == null || lyric.lines.isEmpty) return;
+    final firstLine = lyric.lines[0];
+    final firstStartMs = _lineRenderStartMs.isNotEmpty
+        ? _lineRenderStartMs[0]
+        : firstLine.start.inMilliseconds;
+    if (posMs >= firstStartMs) {
+      _desktopPreludeShown = false;
+      return;
+    }
+    if (_desktopPreludeShown) return;
+    _desktopPreludeShown = true;
+    final preludeDuration = firstStartMs - posMs;
+    playService.desktopLyricService.canSendMessage.then((canSend) {
+      if (!canSend) return;
+      playService.desktopLyricService.sendLyricLineMessage(
+        SyncLyricLine(
+          Duration(milliseconds: posMs),
+          Duration(milliseconds: preludeDuration > 0 ? preludeDuration : 6000),
+          const [],
+        ),
+        nextLine: firstLine,
       );
     });
   }
@@ -512,6 +543,7 @@ class LyricService extends ChangeNotifier {
           activeIndices: activeIndices,
         ));
       }
+      _sendDesktopPreludeIfNeeded(posMs);
       _restartLineAdvanceTimer();
       return;
     }
@@ -599,6 +631,7 @@ class LyricService extends ChangeNotifier {
           activeIndices: activeIndices,
         ));
       }
+      _sendDesktopPreludeIfNeeded(posMs);
       _restartLineAdvanceTimer();
       return;
     }
@@ -764,17 +797,7 @@ class LyricService extends ChangeNotifier {
   List<int> _buildLineStarts(Lyric lyric) {
     return lyric.lines.map((line) {
       if (line is SyncLyricLine && line.words.isNotEmpty) {
-        final wordStart = line.words.first.start.inMilliseconds;
-        final bgStart = line.bgStart?.inMilliseconds ??
-            line.bg?.start.inMilliseconds ??
-            (line.bgWords.isNotEmpty
-                ? line.bgWords.first.start.inMilliseconds
-                : null);
-        return bgStart == null
-            ? wordStart
-            : wordStart < bgStart
-                ? wordStart
-                : bgStart;
+        return line.words.first.start.inMilliseconds;
       }
       return line.start.inMilliseconds;
     }).toList();
@@ -894,6 +917,7 @@ class LyricService extends ChangeNotifier {
           LyricSourceType.qq => ResultSource.qq,
           LyricSourceType.kugou => ResultSource.kugou,
           LyricSourceType.ne => ResultSource.ne,
+          LyricSourceType.amll => ResultSource.amll,
           LyricSourceType.local =>
             ResultSource.qq, // unreachable in online mode
         };
@@ -911,6 +935,7 @@ class LyricService extends ChangeNotifier {
           qqSongId: lyricSource.qqSongId,
           kugouSongHash: lyricSource.kugouSongHash,
           neSongId: lyricSource.neSongId,
+          amllTtmlFile: lyricSource.amllTtmlFile,
         );
       }
     }
@@ -1081,6 +1106,7 @@ class LyricService extends ChangeNotifier {
         qqSongId: savedSource.qqSongId,
         kugouSongHash: savedSource.kugouSongHash,
         neSongId: savedSource.neSongId,
+        amllTtmlFile: savedSource.amllTtmlFile,
       );
     } else {
       // 无指定来源 → 使用首选在线源（单源搜索，不三源并行）
@@ -1088,6 +1114,7 @@ class LyricService extends ChangeNotifier {
         LyricSourceType.qq => ResultSource.qq,
         LyricSourceType.kugou => ResultSource.kugou,
         LyricSourceType.ne => ResultSource.ne,
+        LyricSourceType.amll => ResultSource.amll,
         LyricSourceType.local => ResultSource.qq,
       };
       logger.i('[useOnlineLyric] no saved source, searching preferred: $rs');
