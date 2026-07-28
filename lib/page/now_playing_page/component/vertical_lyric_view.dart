@@ -1467,7 +1467,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     _playbackResyncTimer?.cancel();
     _idleCleanupTimer?.cancel(); // 取消空闲检测
     _lyricViewController?.removeListener(_scheduleEnsureCurrentVisible);
-    _lyricViewController?.removeListener(_scheduleEnsureCurrentVisible);
     routeVisibilityObserver.unsubscribe(this);
     playbackService.nowPlayingNotifier.removeListener(_playbackResyncListener);
     playbackService.playerStateNotifier.removeListener(_playbackResyncListener);
