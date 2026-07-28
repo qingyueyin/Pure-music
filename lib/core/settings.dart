@@ -210,6 +210,7 @@ class AppSettings {
   bool useMaterialYouForProgressBar = false;
   bool useMaterialYouForTransition = false;
   bool useMaterialYouForControls = false;
+  bool keepPitch = true;
   Set<NowPlayingMode> wavyBarEnabledModes = defaultWavyBarEnabledModes();
   TopBarLyricAnimation topBarLyricAnimation = TopBarLyricAnimation.slideUp;
   bool enableCoverColorExtraction = true;
@@ -447,6 +448,14 @@ class AppSettings {
       );
     }
 
+    final kp = settingsMap['KeepPitch'];
+    if (kp != null) {
+      _instance.keepPitch = normalizedBoolSetting(
+        kp,
+        defaultValue: true,
+      );
+    }
+
     if (settingsMap.containsKey('WavyBarEnabledModes')) {
       _instance.wavyBarEnabledModes = normalizedWavyBarEnabledModes(
         settingsMap['WavyBarEnabledModes'],
@@ -639,6 +648,7 @@ class AppSettings {
         'UseMaterialYouForProgressBar': useMaterialYouForProgressBar,
         'UseMaterialYouForTransition': useMaterialYouForTransition,
         'UseMaterialYouForControls': useMaterialYouForControls,
+        'KeepPitch': keepPitch,
         'WavyBarEnabledModes': NowPlayingMode.toList(wavyBarEnabledModes),
         'TopBarLyricAnimation': topBarLyricAnimation.name,
         'EnableCoverColorExtraction': enableCoverColorExtraction,
