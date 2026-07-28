@@ -17,12 +17,16 @@ const String PLAYLIST_DETAIL_PAGE = '/playlists/detail';
 
 const String NOW_PLAYING_PAGE = '/nowplaying';
 
+const String STATS_PAGE = '/stats';
+
 const String SETTINGS_PAGE = '/settings';
 const String SETTINGS_ISSUE_PAGE = '/settings/issue';
 
 const String WELCOMING_PAGE = '/welcoming';
 
 const String UPDATING_DIALOG = '/updating';
+
+const String TEST_BACKGROUND = '/test/background';
 
 /// 可以作为 start page 的 pages
 const List<String> START_PAGES = [
