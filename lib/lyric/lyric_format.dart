@@ -9,9 +9,9 @@ enum LrcFormatType { line, wordByWord, enhanced }
 // ── 正则 ──
 
 final _metaTagRe = RegExp(r'^\[[a-z]+:', caseSensitive: false);
-final _timeTagRe = RegExp(r'\[(\d{2}):(\d{2})\.(\d{1,3})\]', caseSensitive: false);
-final _enhTimeTagRe = RegExp(r'<(\d{2}):(\d{2})\.(\d{1,3})>', caseSensitive: false);
-final _lineTimeRe = RegExp(r'^\[(\d{2}):(\d{2})\.(\d{1,3})\]', caseSensitive: false);
+final _timeTagRe = RegExp(r'\[(\d{1,3}):(\d{2})\.(\d{1,3})\]', caseSensitive: false);
+final _enhTimeTagRe = RegExp(r'<(\d{1,3}):(\d{2})\.(\d{1,3})>', caseSensitive: false);
+final _lineTimeRe = RegExp(r'^\[(\d{1,3}):(\d{2})\.(\d{1,3})\]', caseSensitive: false);
 
 const _defaultWordDurationMs = 1000;
 const _alignToleranceMs = 300;
@@ -65,7 +65,7 @@ LrcFormatType detectLrcFormat(String content) {
 List<SyncLyricLine> parseWordByWordLrc(String content) {
   final result = <SyncLyricLine>[];
   SyncLyricLine? prevLine;
-  final wordByWordRe = RegExp(r'\[(\d{2}):(\d{2})\.(\d{1,3})\]([^\[\]]*)');
+  final wordByWordRe = RegExp(r'\[(\d{1,3}):(\d{2})\.(\d{1,3})\]([^\[\]]*)');
 
   for (final raw in content.split(RegExp(r'\r?\n'))) {
     final line = raw.trim();
@@ -136,7 +136,7 @@ List<SyncLyricLine> parseWordByWordLrc(String content) {
 List<SyncLyricLine> parseEnhancedLrc(String content) {
   final result = <SyncLyricLine>[];
   SyncLyricLine? prevLine;
-  final enhWordRe = RegExp(r'<(\d{2}):(\d{2})\.(\d{1,3})>([^<]*)');
+  final enhWordRe = RegExp(r'<(\d{1,3}):(\d{2})\.(\d{1,3})>([^<]*)');
 
   for (final raw in content.split(RegExp(r'\r?\n'))) {
     final line = raw.trim();
