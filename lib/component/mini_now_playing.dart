@@ -70,7 +70,6 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
   bool _hovered = false;
   bool _controlsVisible = false;
   Timer? _controlsHideTimer;
-  int _precacheToken = 0;
 
   void _setControlsVisible(bool visible) {
     if (_controlsVisible == visible) return;
@@ -129,42 +128,6 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
               }
             },
             onTap: () {
-              final playbackService = PlayService.instance.playbackService;
-              final nowPlaying = playbackService.nowPlaying;
-              if (nowPlaying != null &&
-                  !playbackService.nowPlayingChangedRecently) {
-                _precacheToken += 1;
-                final token = _precacheToken;
-                final config = createLocalImageConfiguration(context);
-                Future<void> precacheProvider(ImageProvider provider) {
-                  final completer = Completer<void>();
-                  final stream = provider.resolve(config);
-                  late final ImageStreamListener listener;
-                  listener = ImageStreamListener(
-                    (_, __) {
-                      stream.removeListener(listener);
-                      if (!completer.isCompleted) completer.complete();
-                    },
-                    onError: (_, __) {
-                      stream.removeListener(listener);
-                      if (!completer.isCompleted) completer.complete();
-                    },
-                  );
-                  stream.addListener(listener);
-                  return completer.future;
-                }
-
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (!mounted) return;
-                  () async {
-                    final image = await nowPlaying.mediumCover;
-                    if (!mounted) return;
-                    if (token != _precacheToken) return;
-                    if (image == null) return;
-                    await precacheProvider(image);
-                  }();
-                });
-              }
               context.push(app_paths.NOW_PLAYING_PAGE);
             },
             borderRadius: AppRadius.smCircular,
