@@ -9,7 +9,6 @@ import 'package:mesh_gradient/mesh_gradient.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/page/now_playing_page/component/now_playing_background_inputs.dart';
-import 'package:pure_music/page/now_playing_page/component/blur_cover_background.dart';
 
 class MeshGradientBackground extends StatelessWidget {
   final NowPlayingBackgroundMode mode;
@@ -30,15 +29,10 @@ class MeshGradientBackground extends StatelessWidget {
           inputs: inputs,
           fallbackColor: fallbackColor,
         ),
-      NowPlayingBackgroundMode.blurCover => BlurCoverBackground(
-          inputs: inputs,
-          fallbackColor: fallbackColor,
-        ),
       _ => MeshGradientBackgroundInternal(
           inputs: inputs,
           fallbackColor: fallbackColor,
         ),
-
     };
   }
 }

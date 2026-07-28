@@ -1391,6 +1391,7 @@ class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
       backgroundOpacity: settings.desktopBackgroundOpacity,
       playedColor: playedColor,
       unplayedColor: unplayedColor,
+      followThemeColor: settings.desktopFollowThemeColor,
     );
   }
 
@@ -2345,10 +2346,6 @@ class _NowPlayingBackgroundModeToggleState
           ButtonSegment<NowPlayingBackgroundMode>(
             value: NowPlayingBackgroundMode.meshGradient,
             label: Text('动态背景'),
-          ),
-          ButtonSegment<NowPlayingBackgroundMode>(
-            value: NowPlayingBackgroundMode.blurCover,
-            label: Text('封面模糊'),
           ),
           ButtonSegment<NowPlayingBackgroundMode>(
             value: NowPlayingBackgroundMode.coverBlurTest,

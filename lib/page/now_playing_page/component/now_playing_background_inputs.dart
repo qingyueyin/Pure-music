@@ -13,6 +13,7 @@ class NowPlayingBackgroundInputs {
   final PlayerState playerState;
   final double flowSpeed;
   final double intensity;
+  final bool audioReactiveFlow;
 
   /// Pre-extracted palette colors from Rust k-means.
   /// When non-null, backgrounds MUST use these instead of calling
@@ -28,6 +29,7 @@ class NowPlayingBackgroundInputs {
     required this.playerState,
     this.flowSpeed = 1.0,
     this.intensity = 1.0,
+    this.audioReactiveFlow = false,
     this.preExtractedColors,
   });
 
@@ -43,6 +45,7 @@ class NowPlayingBackgroundInputs {
     PlayerState? playerState,
     double? flowSpeed,
     double? intensity,
+    bool? audioReactiveFlow,
     List<Color>? preExtractedColors,
   }) {
     return NowPlayingBackgroundInputs(
@@ -54,6 +57,7 @@ class NowPlayingBackgroundInputs {
       playerState: playerState ?? this.playerState,
       flowSpeed: flowSpeed ?? this.flowSpeed,
       intensity: intensity ?? this.intensity,
+      audioReactiveFlow: audioReactiveFlow ?? this.audioReactiveFlow,
       preExtractedColors: preExtractedColors ?? this.preExtractedColors,
     );
   }

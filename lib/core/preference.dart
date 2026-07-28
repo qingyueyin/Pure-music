@@ -76,7 +76,7 @@ class NowPlayingPagePreference {
     this.staggerStyle = LyricStaggerStyle.smooth,
     this.karaokeGradientWidthFraction = 0.25,
     this.unplayedAlpha = 0.30,
-    this.backgroundMode = NowPlayingBackgroundMode.meshGradient,
+    this.backgroundMode = NowPlayingBackgroundMode.coverBlurTest,
     this.audioReactiveFlow = false,
   });
 
@@ -127,7 +127,7 @@ class NowPlayingPagePreference {
     final map = value is Map ? value : const <String, dynamic>{};
     final backgroundMode =
         _nowPlayingBackgroundModeFromStoredValue(map['backgroundMode']) ??
-            NowPlayingBackgroundMode.blurCover;
+            NowPlayingBackgroundMode.coverBlurTest;
     return NowPlayingPagePreference(
       _nowPlayingViewModeFromStoredValue(map['nowPlayingViewMode']) ??
           NowPlayingViewMode.withLyric,
@@ -534,6 +534,7 @@ class PlaybackPreference {
   double wasapiBufferSec;
   bool wasapiEventDriven;
   bool reinitOnSetSource;
+  bool replayGainEnabled;
   PlaybackOutputBackend outputBackend;
   int asioDeviceIndex;
 
@@ -542,6 +543,7 @@ class PlaybackPreference {
     this.volumeDsp,
     this.eqGains,
     this.eqPresets, {
+    this.replayGainEnabled = false,
     this.eqPreampDb = 0.0,
     this.eqAutoGainEnabled = true,
     this.eqAutoHeadroomDb = 1.0,
@@ -575,6 +577,7 @@ class PlaybackPreference {
         'reinitOnSetSource': reinitOnSetSource,
         'outputBackend': outputBackend.name,
         'asioDeviceIndex': asioDeviceIndex,
+        'replayGainEnabled': replayGainEnabled,
       };
 
   factory PlaybackPreference.fromMap(Object? value) {
@@ -627,6 +630,8 @@ class PlaybackPreference {
         map['outputBackend'],
       ),
       asioDeviceIndex: _normalizedNonNegativeInt(map['asioDeviceIndex']),
+      replayGainEnabled:
+          _normalizedBool(map['replayGainEnabled'], defaultValue: false),
     );
   }
 }

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import 'package:pure_music/page/now_playing_page/component/now_playing_background_inputs.dart';
 
@@ -33,7 +34,8 @@ class StaticCoverBackground extends StatefulWidget {
   State<StaticCoverBackground> createState() => _StaticCoverBackgroundState();
 }
 
-class _StaticCoverBackgroundState extends State<StaticCoverBackground> {
+class _StaticCoverBackgroundState extends State<StaticCoverBackground>
+    with TickerProviderStateMixin {
   ui.Image? _coverTexture;
   ui.Image? _previousCoverTexture;
   ui.FragmentShader? _shader;
@@ -43,7 +45,7 @@ class _StaticCoverBackgroundState extends State<StaticCoverBackground> {
   int? _currentCoverFingerprint;
   double _coverMix = 1.0;
   bool _disposed = false;
-  Timer? _transitionTimer;
+  Ticker? _transitionTicker;
 
   @override
   void initState() {
@@ -209,27 +211,27 @@ class _StaticCoverBackgroundState extends State<StaticCoverBackground> {
   }
 
   void _beginCoverTransition() {
-    _transitionTimer?.cancel();
+    _transitionTicker?.stop();
+    _transitionTicker?.dispose();
     final start = DateTime.now();
-    _transitionTimer = Timer.periodic(
-      const Duration(milliseconds: 1),
-      (_) {
-        if (!mounted || _disposed) {
-          _transitionTimer?.cancel();
-          return;
-        }
-        final elapsed =
-            DateTime.now().difference(start).inMilliseconds.toDouble();
-        final raw = elapsed / _coverTransitionMs;
-        _coverMix = raw >= 1.0 ? 1.0 : raw;
-        if (_coverMix >= 1.0) {
-          _transitionTimer?.cancel();
-          _transitionTimer = null;
-          _finishCoverTransition();
-        }
-        setState(() {});
-      },
-    );
+    _transitionTicker = createTicker((Duration elapsed) {
+      if (!mounted || _disposed) {
+        _transitionTicker?.stop();
+        return;
+      }
+      final ms = DateTime.now().difference(start).inMilliseconds.toDouble();
+      final raw = ms / _coverTransitionMs;
+      _coverMix = raw >= 1.0 ? 1.0 : raw;
+      if (_coverMix >= 1.0) {
+        _transitionTicker?.stop();
+        _transitionTicker?.dispose();
+        _transitionTicker = null;
+        _finishCoverTransition();
+        return;
+      }
+      setState(() {});
+    });
+    _transitionTicker!.start();
   }
 
   void _finishCoverTransition() {
@@ -257,8 +259,9 @@ class _StaticCoverBackgroundState extends State<StaticCoverBackground> {
   void _clearCover() {
     _coverRequestId++;
     _currentCoverFingerprint = null;
-    _transitionTimer?.cancel();
-    _transitionTimer = null;
+    _transitionTicker?.stop();
+    _transitionTicker?.dispose();
+    _transitionTicker = null;
     final previous = _coverTexture;
     final transitionSource = _previousCoverTexture;
     _coverTexture = null;
@@ -277,7 +280,9 @@ class _StaticCoverBackgroundState extends State<StaticCoverBackground> {
   void dispose() {
     _disposed = true;
     _coverRequestId++;
-    _transitionTimer?.cancel();
+    _transitionTicker?.stop();
+    _transitionTicker?.dispose();
+    _transitionTicker = null;
     _shader?.dispose();
     _shader = null;
     _gaussianHorizontal?.dispose();
