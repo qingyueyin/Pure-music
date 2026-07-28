@@ -1,3 +1,5 @@
+import 'dart:math' show cos, pi;
+
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 
@@ -66,7 +68,7 @@ class _CharInfo {
   final double x;
   final double y;
   final double width;
-  final double yLift;
+  double yLift;
   final double charProgress;
   final double wordProgress;
   final int wordIndex;
@@ -99,7 +101,7 @@ class _LineGroup {
 class _WordPaintInfo {
   final List<_CharInfo> chars;
   final String text;
-  final bool hasLift;
+  bool hasLift;
   final double maxCharProgress;
   final bool isPlayingMerged;
   final bool isMerged;
@@ -564,10 +566,6 @@ class LyricsLinePainter extends CustomPainter {
       final wordDurationSec = word.length.inMilliseconds / 1000.0;
 
       // 单词级别的上抬动画：高亮与上抬同源
-      // - 使用 _calcCharProgress 同一个进度值，永远同步
-      // - 波浪感由各字不同的 charProgress 自然产生
-      // - easeOutCubic 让抬升有加速收尾的丝滑感
-      const liftPeak = -2.0;
 
       final convertedChars = <String>[];
       final charWidths = <double>[];
@@ -656,8 +654,15 @@ class LyricsLinePainter extends CustomPainter {
             currentTimeMs >= wordStartMs && currentTimeMs < wordEndMs;
 
         final double yLift;
-        if (isMainLine && liftProgress > 0.0) {
-          yLift = Curves.easeOutCubic.transform(liftProgress) * liftPeak;
+        if (isMainLine && config.liftStyle == LyricLiftStyle.cosine) {
+          yLift = 0.0;
+        } else if (isMainLine && liftProgress > 0.0) {
+          final elapsedMs = currentTimeMs - wordStartMs;
+          final durationProgress =
+              (elapsedMs / config.liftDurationMs).clamp(0.0, 1.0).toDouble();
+          final blended =
+              _calcLiftProgress(charProgress, durationProgress);
+          yLift = Curves.easeOutCubic.transform(blended) * -config.liftPeak;
         } else {
           yLift = 0.0;
         }
@@ -794,13 +799,8 @@ class LyricsLinePainter extends CustomPainter {
                     .clamp(0.0, 1.0);
             final ripplesScaleMax = 1.1 + 0.05 * effectRatio;
 
-            double animationCurve;
-            if (charProgress < 0.6) {
-              animationCurve = Curves.easeOut.transform(charProgress / 0.6);
-            } else {
-              animationCurve =
-                  1.0 - Curves.easeIn.transform((charProgress - 0.6) / 0.4);
-            }
+            final animationCurve = _liftEffectCurve(
+              charProgress, config.liftStyle);
             scale = 1.0 + (ripplesScaleMax - 1.0) * animationCurve;
           }
 
@@ -1076,6 +1076,17 @@ class LyricsLinePainter extends CustomPainter {
         gradientPaint,
       );
 
+      // ── Cosine lift recomputation (needs final X + highlightR) ──
+      if (config.liftStyle == LyricLiftStyle.cosine && isMainLine) {
+        for (final wc in words) {
+          for (final info in wc.chars) {
+    info.yLift = _calcCosineLift(
+      info.x + info.width / 2, highlightR, right, fontSize);
+            if (info.yLift != 0.0) wc.hasLift = true;
+          }
+        }
+      }
+
       // ── Pass 1: dim（与 played 共用 scale，避免分层）────────────
       for (final wc in words) {
         paintWord(wc, dimStyle, wc.hasLift, applyScale: config.enableGlow);
@@ -1095,9 +1106,7 @@ class LyricsLinePainter extends CustomPainter {
         if (progress <= 0.0 || progress >= 1.0) return 0.0;
         final maxProgress = word.maxCharProgress;
         if (maxProgress <= 0.0) return 0.0;
-        final curve = maxProgress < 0.6
-            ? Curves.easeOut.transform(maxProgress / 0.6)
-            : 1.0 - Curves.easeIn.transform((maxProgress - 0.6) / 0.4);
+        final curve = _liftEffectCurve(maxProgress, config.liftStyle);
         return (0.5 * curve).clamp(0.0, 1.0);
       }
 
@@ -1615,10 +1624,50 @@ class LyricsLinePainter extends CustomPainter {
     return ((currentMs - wordStartMs) / wordDuration).clamp(0.0, 1.0);
   }
 
-  double _calcLiftProgress(double charProgress, double wordProgress) {
+  double _calcLiftProgress(double charProgress, double baseProgress) {
     const wordBlend = 0.65;
-    return (charProgress * (1.0 - wordBlend) + wordProgress * wordBlend)
+    return (charProgress * (1.0 - wordBlend) + baseProgress * wordBlend)
         .clamp(0.0, 1.0);
+  }
+
+  static double _liftEffectCurve(
+    double charProgress,
+    LyricLiftStyle liftStyle,
+  ) {
+    if (liftStyle == LyricLiftStyle.cosine) {
+      if (charProgress <= 0.0 || charProgress >= 1.0) return 0.0;
+      if (charProgress < 0.6) {
+        return Curves.easeOut.transform(charProgress / 0.6) * 0.6;
+      }
+      return 0.6 * (1.0 - Curves.easeIn.transform((charProgress - 0.6) / 0.4));
+    }
+    if (charProgress < 0.6) {
+      return Curves.easeOut.transform(charProgress / 0.6);
+    }
+    return 1.0 - Curves.easeIn.transform((charProgress - 0.6) / 0.4);
+  }
+
+  double _calcCosineLift(
+    double charCenter,
+    double cursorX,
+    double lineEndX,
+    double fontSize,
+  ) {
+    const window = 3.0;
+    final windowPx = window * fontSize;
+    final u = (charCenter - cursorX + windowPx / 2) / windowPx;
+    final remaining = lineEndX - cursorX;
+    final q = remaining < windowPx / 2
+        ? (1.0 - remaining / (windowPx / 2)).clamp(0.0, 1.0)
+        : 0.0;
+    final q2 = q * q;
+    final factor = switch (u) {
+      <= 0.0 => 1.0,
+      >= 1.0 => 0.0,
+      _ => cos(pi * u) * (1 - q2) / 2 + (1 + q2) / 2,
+    };
+    final maxLift = (config.liftPeak / 2.0 * 0.10 * fontSize).roundToDouble();
+    return -(factor * maxLift);
   }
 
   TextPainter _buildTextPainter(
