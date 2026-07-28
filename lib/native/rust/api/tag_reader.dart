@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `_get_lyric_from_lofty`, `_get_lyric_from_lrc_file`, `_get_picture_by_lofty`, `_get_picture_by_windows`, `_picture_cache_key`, `_update_index_below_1_1_0`, `add_missing_audio_files`, `count_subdirs`, `discover_new_audio_folders`, `join_deduped`, `new_with_path`, `read_by_lofty`, `read_by_win_music_properties`, `read_from_folder_recursively`, `read_from_folder`, `read_from_path`, `to_json_value`, `to_json_value`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `AudioFolder`, `Audio`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `fmt`, `fmt`
 
 /// for Flutter
 Future<AudioExtraMetadata> readAudioExtraMetadata({required String path}) =>
@@ -36,6 +36,15 @@ Future<Uint8List?> getPictureFromPath(
 /// 以及相同目录相同文件名的 .lrc 外挂歌词（utf-8 or utf-16）
 Future<String?> getLyricFromPath({required String path}) =>
     RustLib.instance.api.crateApiTagReaderGetLyricFromPath(path: path);
+
+/// for Flutter
+/// 通用标签写入函数。only_changed=true 时只写非 None 字段
+Future<void> writeAudioTags(
+        {required String path,
+        required WriteTagPayload payload,
+        required bool onlyChanged}) =>
+    RustLib.instance.api.crateApiTagReaderWriteAudioTags(
+        path: path, payload: payload, onlyChanged: onlyChanged);
 
 /// for Flutter
 /// 写入歌词到音频文件标签（ID3/VorbisComment/MP4 等），使用 Lofty 的 `ItemKey::Lyrics` 映射
@@ -161,4 +170,91 @@ class IndexActionState {
           runtimeType == other.runtimeType &&
           progress == other.progress &&
           message == other.message;
+}
+
+class WriteTagPayload {
+  final String? title;
+  final String? artist;
+  final String? album;
+  final String? albumArtist;
+  final String? genre;
+  final String? year;
+  final String? track;
+  final String? trackTotal;
+  final String? disc;
+  final String? discTotal;
+  final String? composer;
+  final String? lyricist;
+  final String? label;
+  final String? comment;
+  final String? bpm;
+  final String? language;
+  final String? copyright;
+  final String? license;
+
+  const WriteTagPayload({
+    this.title,
+    this.artist,
+    this.album,
+    this.albumArtist,
+    this.genre,
+    this.year,
+    this.track,
+    this.trackTotal,
+    this.disc,
+    this.discTotal,
+    this.composer,
+    this.lyricist,
+    this.label,
+    this.comment,
+    this.bpm,
+    this.language,
+    this.copyright,
+    this.license,
+  });
+
+  @override
+  int get hashCode =>
+      title.hashCode ^
+      artist.hashCode ^
+      album.hashCode ^
+      albumArtist.hashCode ^
+      genre.hashCode ^
+      year.hashCode ^
+      track.hashCode ^
+      trackTotal.hashCode ^
+      disc.hashCode ^
+      discTotal.hashCode ^
+      composer.hashCode ^
+      lyricist.hashCode ^
+      label.hashCode ^
+      comment.hashCode ^
+      bpm.hashCode ^
+      language.hashCode ^
+      copyright.hashCode ^
+      license.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is WriteTagPayload &&
+          runtimeType == other.runtimeType &&
+          title == other.title &&
+          artist == other.artist &&
+          album == other.album &&
+          albumArtist == other.albumArtist &&
+          genre == other.genre &&
+          year == other.year &&
+          track == other.track &&
+          trackTotal == other.trackTotal &&
+          disc == other.disc &&
+          discTotal == other.discTotal &&
+          composer == other.composer &&
+          lyricist == other.lyricist &&
+          label == other.label &&
+          comment == other.comment &&
+          bpm == other.bpm &&
+          language == other.language &&
+          copyright == other.copyright &&
+          license == other.license;
 }

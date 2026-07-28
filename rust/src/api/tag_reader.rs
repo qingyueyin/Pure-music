@@ -1001,6 +1001,121 @@ pub fn get_lyric_from_path(path: String) -> Option<String> {
     })
 }
 
+#[derive(Clone)]
+pub struct WriteTagPayload {
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub album_artist: Option<String>,
+    pub genre: Option<String>,
+    pub year: Option<String>,
+    pub track: Option<String>,
+    pub track_total: Option<String>,
+    pub disc: Option<String>,
+    pub disc_total: Option<String>,
+    pub composer: Option<String>,
+    pub lyricist: Option<String>,
+    pub label: Option<String>,
+    pub comment: Option<String>,
+    pub bpm: Option<String>,
+    pub language: Option<String>,
+    pub copyright: Option<String>,
+    pub license: Option<String>,
+}
+
+/// for Flutter
+/// 通用标签写入函数。only_changed=true 时只写非 None 字段
+pub fn write_audio_tags(path: String, payload: WriteTagPayload, only_changed: bool) -> Result<(), String> {
+    let path_ref = Path::new(&path);
+    let options = ParseOptions::new()
+        .parsing_mode(ParsingMode::Relaxed)
+        .read_cover_art(false)
+        .read_properties(false)
+        .read_tags(true);
+
+    let mut tagged_file = match Probe::open(path_ref) {
+        Ok(v) => match v.options(options).read() {
+            Ok(f) => f,
+            Err(err) => return Err(format!("Error reading file: {:?}", err.kind())),
+        },
+        Err(err) => return Err(format!("Error opening file: {:?}", err.kind())),
+    };
+
+    let tag = if let Some(tag) = tagged_file.primary_tag_mut() {
+        tag
+    } else if let Some(tag) = tagged_file.first_tag_mut() {
+        tag
+    } else {
+        let tag_type = tagged_file.primary_tag_type();
+        tagged_file.insert_tag(Tag::new(tag_type));
+        if let Some(tag) = tagged_file.primary_tag_mut() {
+            tag
+        } else if let Some(tag) = tagged_file.first_tag_mut() {
+            tag
+        } else {
+            return Err("failed to create tag".to_string());
+        }
+    };
+
+    macro_rules! write_field {
+        ($val:expr, $key:expr) => {
+            if let Some(v) = &$val {
+                let trimmed = v.trim().to_string();
+                if trimmed.is_empty() {
+                    let _ = tag.remove_key(&$key);
+                } else {
+                    tag.insert_text($key, trimmed);
+                }
+            }
+        };
+    }
+
+    if !only_changed {
+        let _ = tag.remove_key(&ItemKey::TrackTitle);
+        let _ = tag.remove_key(&ItemKey::TrackArtist);
+        let _ = tag.remove_key(&ItemKey::AlbumTitle);
+        let _ = tag.remove_key(&ItemKey::AlbumArtist);
+        let _ = tag.remove_key(&ItemKey::Genre);
+        let _ = tag.remove_key(&ItemKey::Year);
+        let _ = tag.remove_key(&ItemKey::TrackNumber);
+        let _ = tag.remove_key(&ItemKey::TrackTotal);
+        let _ = tag.remove_key(&ItemKey::DiscNumber);
+        let _ = tag.remove_key(&ItemKey::DiscTotal);
+        let _ = tag.remove_key(&ItemKey::Composer);
+        let _ = tag.remove_key(&ItemKey::Lyricist);
+        let _ = tag.remove_key(&ItemKey::Label);
+        let _ = tag.remove_key(&ItemKey::Comment);
+        let _ = tag.remove_key(&ItemKey::Bpm);
+        let _ = tag.remove_key(&ItemKey::Language);
+        let _ = tag.remove_key(&ItemKey::CopyrightMessage);
+        let _ = tag.remove_key(&ItemKey::License);
+    }
+
+    write_field!(payload.title, ItemKey::TrackTitle);
+    write_field!(payload.artist, ItemKey::TrackArtist);
+    write_field!(payload.album, ItemKey::AlbumTitle);
+    write_field!(payload.album_artist, ItemKey::AlbumArtist);
+    write_field!(payload.genre, ItemKey::Genre);
+    write_field!(payload.year, ItemKey::Year);
+    write_field!(payload.track, ItemKey::TrackNumber);
+    write_field!(payload.track_total, ItemKey::TrackTotal);
+    write_field!(payload.disc, ItemKey::DiscNumber);
+    write_field!(payload.disc_total, ItemKey::DiscTotal);
+    write_field!(payload.composer, ItemKey::Composer);
+    write_field!(payload.lyricist, ItemKey::Lyricist);
+    write_field!(payload.label, ItemKey::Label);
+    write_field!(payload.comment, ItemKey::Comment);
+    write_field!(payload.bpm, ItemKey::Bpm);
+    write_field!(payload.language, ItemKey::Language);
+    write_field!(payload.copyright, ItemKey::CopyrightMessage);
+    write_field!(payload.license, ItemKey::License);
+
+    tagged_file
+        .save_to_path(&path, WriteOptions::default())
+        .map_err(|e| format!("Error saving tags: {:?}", e.kind()))?;
+    Ok(())
+}
+
 /// for Flutter
 /// 写入歌词到音频文件标签（ID3/VorbisComment/MP4 等），使用 Lofty 的 `ItemKey::Lyrics` 映射
 /// 使用 ParsingMode::Relaxed 兼容更多有问题的标签文件
