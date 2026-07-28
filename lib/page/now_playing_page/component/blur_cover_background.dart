@@ -38,9 +38,8 @@ class BlurCoverBackground extends StatefulWidget {
 
 class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
   /// Pre‑rendered blurred snapshot — computed ONCE per cover / theme change,
-  /// then drawn as a static texture with zero per‑frame GPU compositor work.
+  /// then drawn as a static texture with zero per-frame GPU compositor work.
   ui.Image? _blurredImage;
-  bool _isLoading = false;
   bool _disposed = false;
   int _blurRequestId = 0;
   int? _currentCoverFingerprint;
@@ -109,7 +108,7 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
     final old = _blurredImage;
     _blurredImage = null;
     old?.dispose();
-    if (!_disposed && mounted) setState(() => _isLoading = false);
+    if (!_disposed && mounted) setState(() {});
   }
 
   /// Decode the cover → apply Gaussian blur ONCE via an off‑screen
@@ -129,8 +128,6 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
     final requestId = ++_blurRequestId;
 
     const sigma = _kBlurSigma;
-
-    setState(() => _isLoading = true);
 
     try {
       // 1. Decode at a moderate size.
@@ -188,12 +185,8 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
       old?.dispose();
 
       if (!mounted) return;
-      setState(() => _isLoading = false);
-    } catch (_) {
-      if (_isCurrentRequest(requestId, fingerprint) && mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
+      setState(() {});
+    } catch (_) {}
   }
 
   @override
@@ -246,14 +239,9 @@ class _BlurCoverBackgroundState extends State<BlurCoverBackground> {
         ColoredBox(color: scheme.surface),
         if (blurredImage != null)
           RepaintBoundary(
-            child: AnimatedOpacity(
-              opacity: _isLoading ? 0.0 : 1.0,
-              duration: const Duration(milliseconds: 600),
-              curve: Curves.easeInOut,
-              child: _BlurredCover(
-                image: blurredImage,
-                brightness: brightness,
-              ),
+            child: _BlurredCover(
+              image: blurredImage,
+              brightness: brightness,
             ),
           )
         else
