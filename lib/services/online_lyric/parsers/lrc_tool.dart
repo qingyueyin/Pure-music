@@ -6,7 +6,7 @@ import 'package:pure_music/services/online_lyric/models/lyric_entry.dart';
 /// 综合 lrc/yrc/qrc/krc 解析器
 class LrcTool {
   static final _lrcLineRegex =
-      RegExp(r'\[(\d{2}):(\d{2}\.\d{2,3})](.*?)(\r?\n|$)');
+      RegExp(r'\[(\d{1,3}):(\d{2}\.\d{2,3})](.*?)(\r?\n|$)');
   static final _karaOkLineRegex = RegExp(r'\[(\d+),(\d+)](.*?)(\r?\n|$)');
   static final _yrcWordRegex =
       RegExp(r'\((\d+),(\d+),\d+\)[^(]*?((?:.(?!\(\d+,))*.)');
@@ -15,9 +15,9 @@ class LrcTool {
   static final _krcWordRegex =
       RegExp(r'<(\d+),(\d+),\d+>[^<]*?((?:.(?!<\d+,))*.)');
   static final _enhancedLrcWordRegex =
-      RegExp(r'<(\d{2}):(\d{2}\.\d{2,3})>([^<]*)');
+      RegExp(r'<(\d{1,3}):(\d{2}\.\d{2,3})>([^<]*)');
   static final _wordByWordLrcWordRegex =
-      RegExp(r'\[(\d{2}):(\d{2}\.\d{2,3})]([^\[]*)');
+      RegExp(r'\[(\d{1,3}):(\d{2}\.\d{2,3})]([^\[]*)');
 
   static double _parseTime(String m, String s) {
     final minutes = int.tryParse(m) ?? 0;
