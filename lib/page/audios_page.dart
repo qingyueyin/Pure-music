@@ -15,11 +15,15 @@ class AudiosPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final contentList = List<Audio>.from(AudioLibrary.instance.audioCollection);
-    final multiSelectController = MultiSelectController<Audio>();
-    final hasSongs = contentList.isNotEmpty;
-    final canSortSongs = hasEnoughItemsToSort(contentList.length);
-    return UniPage<Audio>(
+    return ValueListenableBuilder<int>(
+      valueListenable: AudioLibrary.libraryVersion,
+      builder: (context, _, __) {
+        final contentList =
+            List<Audio>.from(AudioLibrary.instance.audioCollection);
+        final multiSelectController = MultiSelectController<Audio>();
+        final hasSongs = contentList.isNotEmpty;
+        final canSortSongs = hasEnoughItemsToSort(contentList.length);
+        return UniPage<Audio>(
       pref: AppPreference.instance.audiosPagePref,
       title: '音乐',
       subtitle: '${contentList.length} 首乐曲',
@@ -116,6 +120,8 @@ class AudiosPage extends StatelessWidget {
           },
         ),
       ],
+    );
+      },
     );
   }
 }
