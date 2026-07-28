@@ -538,16 +538,6 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
       child: inner,
     );
 
-    inner = LyricStaggerTransition(
-      key: ValueKey('stagger_${widget.jumpTriggerId}'),
-      enabled: renderConfig.enableStaggeredAnimation &&
-          renderConfig.staggerStyle == LyricStaggerStyle.spring,
-      generation: widget.jumpTriggerId,
-      shiftY: widget.jumpDeltaY,
-      delay: widget.staggerDelay,
-      child: inner,
-    );
-
     if (_isHovered && widget.onTap != null) {
       inner = Container(
         decoration: BoxDecoration(
@@ -557,6 +547,16 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
         child: inner,
       );
     }
+
+    inner = LyricStaggerTransition(
+      key: ValueKey('stagger_${widget.jumpTriggerId}'),
+      enabled: renderConfig.enableStaggeredAnimation &&
+          renderConfig.staggerStyle == LyricStaggerStyle.spring,
+      generation: widget.jumpTriggerId,
+      shiftY: widget.jumpDeltaY,
+      delay: widget.staggerDelay,
+      child: inner,
+    );
 
     inner = GestureDetector(
       onTap: widget.onTap,
