@@ -2,8 +2,6 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
 import 'dart:convert';
-import 'dart:typed_data';
-import 'dart:ui' show PlatformDispatcher;
 import 'package:path/path.dart' as p;
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/settings.dart';
@@ -13,6 +11,7 @@ import 'package:pure_music/native/rust/api/library_db.dart' as library_db;
 import 'package:pure_music/native/rust/api/tag_reader.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/play_service/play_service.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 
 String _audioPathLookupKey(String value) {
@@ -54,6 +53,10 @@ class AudioLibrary {
   }
 
   static AudioLibrary? _instance;
+
+  /// Incremented on every initFromIndex call to notify pages
+  /// (e.g. AudiosPage) that library content has changed.
+  static final libraryVersion = ValueNotifier<int>(0);
 
   /// 目前 index 结构：
   /// ```json
@@ -108,6 +111,7 @@ class AudioLibrary {
               'modified': audio.modified.toInt(),
               'created': audio.created.toInt(),
               'by': audio.by,
+              'play_count': audio.playCount,
             }));
           }
           folders.add(
@@ -129,6 +133,7 @@ class AudioLibrary {
         logger.i(
           'AudioLibrary init from sqlite: ${stopwatch.elapsedMilliseconds}ms, audios=${instance.audioCollection.length}',
         );
+        libraryVersion.value++;
         return;
       } catch (_) {}
 
@@ -156,6 +161,7 @@ class AudioLibrary {
       logger.i(
         'AudioLibrary init from json: ${stopwatch.elapsedMilliseconds}ms, audios=${instance.audioCollection.length}',
       );
+      libraryVersion.value++;
     } catch (err, trace) {
       logger.e(err, stackTrace: trace);
     }
@@ -479,6 +485,9 @@ class Audio {
   /// 标签来源（Lofty、Windows、null）
   String? by;
 
+  /// 播放次数（从 library.sqlite 读取/写入）
+  int playCount;
+
   /// 缓存 ImageProvider 实例，避免每次创建新实例导致 Flutter ImageCache 失效
   /// 使用 WeakReference 让 CoverImageCache 的 LRU 驱逐后能被 GC 回收
   WeakReference<ImageProvider>? _coverImage;
@@ -524,8 +533,9 @@ class Audio {
     this.path,
     this.modified,
     this.created,
-    this.by,
-  )   : splitedArtists = _splitAndDedup(
+    this.by, {
+    this.playCount = 0,
+  })  : splitedArtists = _splitAndDedup(
           artist,
           AppSettings.instance.artistSplitRegex,
         ),
@@ -547,6 +557,7 @@ class Audio {
         map['modified'] ?? 0,
         map['created'] ?? 0,
         map['by'],
+        playCount: map['play_count'] ?? 0,
       );
 
   Map toMap() => {
@@ -561,6 +572,7 @@ class Audio {
         'path': path,
         'modified': modified,
         'created': created,
+        'play_count': playCount,
         'by': by
       };
 
