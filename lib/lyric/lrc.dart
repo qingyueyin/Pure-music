@@ -746,7 +746,6 @@ class Lrc extends Lyric {
       return null;
     }
 
-    // 估算每行的实际显示时长
     for (var i = 0; i < lines.length; i++) {
       final currentLine = lines[i];
       final nextLine = i < lines.length - 1 ? lines[i + 1] : null;
@@ -755,8 +754,13 @@ class Lrc extends Lyric {
         final timeGap = nextLine.start - currentLine.start;
         currentLine.length = timeGap;
       } else {
-        // 最后一行：使用默认的 3.5 秒作为持续时间
         currentLine.length = const Duration(milliseconds: 3500);
+        for (int j = 0; j < i; j++) {
+          if (lines[j].content == currentLine.content) {
+            currentLine.length = lines[j].length;
+            break;
+          }
+        }
       }
     }
 
