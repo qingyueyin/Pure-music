@@ -12,6 +12,7 @@ import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_tile.dart';
+import 'package:pure_music/page/now_playing_page/component/lyric_stagger_motion.dart';
 import 'package:pure_music/page/now_playing_page/component/lyrics_line_painter.dart';
 import 'package:pure_music/play_service/play_service.dart';
 
@@ -68,8 +69,6 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
 
   late final AnimationController _scaleController;
   late final AnimationController _floatController;
-  late final AnimationController _springController;
-  int _jumpAnimTrigger = 0;
 
   // 缓存 Painter，避免每帧重建
   LyricsLinePainter? _cachedPainter;
@@ -127,13 +126,6 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
       duration: const Duration(milliseconds: 600),
     );
     _floatController.value = widget.distance == 0 ? 1.0 : 0.0;
-    _springController = AnimationController.unbounded(vsync: this);
-    if (_config.staggerStyle == LyricStaggerStyle.salt && widget.jumpDeltaY != 0) {
-      _springController.value = widget.jumpDeltaY;
-      _scheduleSpringBack();
-    } else {
-      _springController.value = 0.0;
-    }
     _playerStateListener = _syncProgressTicker;
     PlayService.instance.playbackService.playerStateNotifier
         .addListener(_playerStateListener);
@@ -161,43 +153,6 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
       duration: const Duration(milliseconds: 600),
       curve: Curves.easeOutCubic,
     );
-  }
-
-  void _triggerJump() {
-    if (_config.staggerStyle != LyricStaggerStyle.salt) return;
-    if (widget.jumpDeltaY == 0) return;
-    _springController.value = widget.jumpDeltaY;
-    _scheduleSpringBack();
-  }
-
-  void _scheduleSpringBack() {
-    final delay = widget.staggerDelay;
-    final trigger = ++_jumpAnimTrigger;
-    if (delay > Duration.zero) {
-      Future.delayed(delay, () {
-        if (mounted && trigger == _jumpAnimTrigger) {
-          _startSpringBack();
-        }
-      });
-    } else {
-      _startSpringBack();
-    }
-  }
-
-  void _startSpringBack() {
-    final springDesc = SpringDescription.withDampingRatio(
-      mass: 1.0,
-      stiffness: 200,
-      ratio: 1.1,
-    );
-    final simulation = SpringSimulation(
-      springDesc,
-      _springController.value,
-      0.0,
-      0.0,
-      tolerance: const Tolerance(distance: 0.5, velocity: 0.1),
-    );
-    _springController.animateWith(simulation);
   }
 
   bool get _needsProgressTicker =>
@@ -353,10 +308,6 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
       }
     }
 
-    if (widget.jumpTriggerId != oldWidget.jumpTriggerId) {
-      _triggerJump();
-    }
-
     final oldKeepAlive = (oldWidget.distance ?? 999).abs() <= 2;
     final newKeepAlive = (widget.distance ?? 999).abs() <= 2;
     if (oldKeepAlive != newKeepAlive) {
@@ -378,7 +329,6 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
     _ticker?.dispose();
     _scaleController.dispose();
     _floatController.dispose();
-    _springController.dispose();
     _currentTimeNotifier.dispose();
     _heightNotifier.dispose();
     _cachedPainter = null;
@@ -590,15 +540,12 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
       child: inner,
     );
 
-    inner = AnimatedBuilder(
-      animation: _springController,
-      builder: (context, child) {
-        if (_springController.value == 0) return child!;
-        return Transform.translate(
-          offset: Offset(0, _springController.value),
-          child: child!,
-        );
-      },
+    inner = LyricStaggerTransition(
+      enabled: renderConfig.enableStaggeredAnimation &&
+          renderConfig.staggerStyle == LyricStaggerStyle.salt,
+      generation: widget.jumpTriggerId,
+      shiftY: widget.jumpDeltaY,
+      delay: widget.staggerDelay,
       child: inner,
     );
 
