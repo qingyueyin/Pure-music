@@ -34,6 +34,11 @@ class MeshGradientBackground extends StatelessWidget {
           inputs: inputs,
           fallbackColor: fallbackColor,
         ),
+      _ => MeshGradientBackgroundInternal(
+          inputs: inputs,
+          fallbackColor: fallbackColor,
+        ),
+
     };
   }
 }
