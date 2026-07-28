@@ -214,10 +214,9 @@ class _EntryState extends State<Entry>
     final Color onPrimarySurfaceColor =
         isDark ? colorScheme.onSurface : colorScheme.onPrimary;
 
-    // Material 3 的 Typography，确保 fontFamily 传播到各 text style
-    // 这样 lyric widget 能通过 theme.textTheme.bodyMedium?.fontFamily 获取到
-    // （Flutter 3.44.1 已移除 ThemeData.fontFamily getter，无法用 theme.fontFamily 回退）
-    final defaultTextTheme = Typography.material2021().white;
+    final defaultTextTheme = isDark
+        ? Typography.material2021().white
+        : Typography.material2021().black;
     final textTheme = fontFamily != null
         ? defaultTextTheme.apply(fontFamily: fontFamily)
         : defaultTextTheme;
