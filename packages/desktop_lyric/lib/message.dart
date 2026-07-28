@@ -246,6 +246,7 @@ class DesktopLyricConfigMessage extends Message {
   final double? backgroundOpacity;
   final int? playedColor;
   final int? unplayedColor;
+  final bool? followThemeColor;
 
   const DesktopLyricConfigMessage({
     this.lyricFontSize,
@@ -260,6 +261,7 @@ class DesktopLyricConfigMessage extends Message {
     this.backgroundOpacity,
     this.playedColor,
     this.unplayedColor,
+    this.followThemeColor,
   });
 
   @override
@@ -276,5 +278,6 @@ class DesktopLyricConfigMessage extends Message {
         if (backgroundOpacity != null) 'backgroundOpacity': backgroundOpacity,
         if (playedColor != null) 'playedColor': playedColor,
         if (unplayedColor != null) 'unplayedColor': unplayedColor,
+        if (followThemeColor != null) 'followThemeColor': followThemeColor,
       };
 }

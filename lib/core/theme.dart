@@ -68,6 +68,9 @@ class ThemeProvider extends ChangeNotifier {
 
   Color? _lastAlbumSeedColor;
 
+  /// 封面提取的原始种子色（非 Material 3 衍生色）
+  Color? get lastAlbumSeedColor => _lastAlbumSeedColor;
+
   void applyThemeOption(ThemeOption option) {
     final seed = _lastAlbumSeedColor ?? Color(AppSettings.getWindowsTheme());
     lightScheme = _applyLightSurfacePalette(ColorScheme.fromSeed(
