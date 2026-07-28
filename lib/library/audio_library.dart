@@ -661,6 +661,7 @@ class Audio {
   /// 同步获取已缓存的封面（不触发异步加载）
   /// 用于需要立即显示封面的场景，避免异步等待导致的闪烁
   ImageProvider? get cachedMediumCover => _mediumCoverImage?.target;
+  ImageProvider? get cachedLargeCover => _largeCoverImage?.target;
 
   /// Evict cover cache only when this Audio actually retains one.
   bool evictCoverCacheIfPresent() {
