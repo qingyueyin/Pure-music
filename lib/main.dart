@@ -41,6 +41,9 @@ Future<void> initWindow() async {
   );
   windowManager.waitUntilReadyToShow(windowOptions, () async {
     await windowManager.show();
+    if (AppSettings.instance.isWindowMaximized) {
+      await windowManager.maximize();
+    }
     await windowManager.focus();
   });
 }

@@ -1,5 +1,5 @@
 cargo:
   debug:
-    toolchain: nightly
+    toolchain: stable
   release:
-    toolchain: nightly
+    toolchain: stable

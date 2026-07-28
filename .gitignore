@@ -51,11 +51,7 @@ lib/page/settings_page/cpfeedback_key.dart
 test/
 .claude/
 .agent/
-.opencode/*
-!.opencode/skills/
-.opencode/skills/*
-!.opencode/skills/1pure-music/
-!.opencode/skills/1pure-music/**
+.opencode/
 
 # Trae specific - ignore rules and skills but keep other .trae files
 .trae/rules/
