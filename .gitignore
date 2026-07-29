@@ -91,6 +91,7 @@ todo/
 
 # Local docs
 docs/
+!page/docs/
 output/
 output/data/
 release/
