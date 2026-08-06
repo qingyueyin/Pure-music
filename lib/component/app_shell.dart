@@ -61,13 +61,12 @@ class _AppShell_Small extends StatefulWidget {
 }
 
 class _AppShell_SmallState extends State<_AppShell_Small> {
-  late final Color _backgroundColor;
+  late Color _backgroundColor;
   late final VoidCallback _onNowPlayingChanged;
 
   @override
   void initState() {
     super.initState();
-    _backgroundColor = _resolveDynamicColor(Theme.of(context).colorScheme);
     _onNowPlayingChanged = () {
       final newColor = _resolveDynamicColor(Theme.of(context).colorScheme);
       if (newColor != _backgroundColor) {
@@ -81,10 +80,7 @@ class _AppShell_SmallState extends State<_AppShell_Small> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final newColor = _resolveDynamicColor(Theme.of(context).colorScheme);
-    if (newColor != _backgroundColor) {
-      setState(() => _backgroundColor = newColor);
-    }
+    _backgroundColor = _resolveDynamicColor(Theme.of(context).colorScheme);
   }
 
   @override
@@ -108,11 +104,8 @@ class _AppShell_SmallState extends State<_AppShell_Small> {
           width: drawerWidth,
           child: SideNav(navigationShell: widget.navigationShell)),
       body: Stack(
-          children: [
-            widget.navigationShell,
-            const MiniNowPlaying()
-          ],
-        ),
+        children: [widget.navigationShell, const MiniNowPlaying()],
+      ),
     );
   }
 }
@@ -127,13 +120,12 @@ class _AppShell_Large extends StatefulWidget {
 }
 
 class _AppShell_LargeState extends State<_AppShell_Large> {
-  late final Color _backgroundColor;
+  late Color _backgroundColor;
   late final VoidCallback _onNowPlayingChanged;
 
   @override
   void initState() {
     super.initState();
-    _backgroundColor = _resolveDynamicColor(Theme.of(context).colorScheme);
     _onNowPlayingChanged = () {
       final newColor = _resolveDynamicColor(Theme.of(context).colorScheme);
       if (newColor != _backgroundColor) {
@@ -147,10 +139,7 @@ class _AppShell_LargeState extends State<_AppShell_Large> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final newColor = _resolveDynamicColor(Theme.of(context).colorScheme);
-    if (newColor != _backgroundColor) {
-      setState(() => _backgroundColor = newColor);
-    }
+    _backgroundColor = _resolveDynamicColor(Theme.of(context).colorScheme);
   }
 
   @override
