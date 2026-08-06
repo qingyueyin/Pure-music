@@ -85,8 +85,6 @@ class SlideTransitionPage<T> extends CustomTransitionPage<T> {
   }
 }
 
-
-
 class Entry extends StatefulWidget {
   const Entry({super.key, required this.welcome});
   final bool welcome;
@@ -122,6 +120,11 @@ class _EntryState extends State<Entry>
   @override
   void didHaveMemoryPressure() {
     _onLowMemory();
+  }
+
+  @override
+  void didChangePlatformBrightness() {
+    ThemeProvider.instance.handlePlatformBrightnessChanged();
   }
 
   @override
@@ -343,7 +346,8 @@ class _EntryState extends State<Entry>
         activeTrackColor: colorScheme.primary,
         inactiveTrackColor: colorScheme.surfaceContainerHighest,
         thumbColor: colorScheme.primary,
-        overlayColor: colorScheme.primary.withAlpha((255 * Alpha.hover).round()),
+        overlayColor:
+            colorScheme.primary.withAlpha((255 * Alpha.hover).round()),
       ),
       segmentedButtonTheme: SegmentedButtonThemeData(
         style: ButtonStyle(

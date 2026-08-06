@@ -76,6 +76,20 @@ enum LyricTextAlign {
   }
 }
 
+enum DesktopLyricBrightnessMode {
+  follow,
+  light,
+  dark;
+
+  static DesktopLyricBrightnessMode? fromString(String? name) {
+    if (name == null) return null;
+    for (final value in DesktopLyricBrightnessMode.values) {
+      if (_matchesStoredEnumName(name, value.name)) return value;
+    }
+    return null;
+  }
+}
+
 enum PlayMode {
   /// 顺序播放到播放列表结尾
   forward,

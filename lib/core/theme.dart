@@ -48,8 +48,15 @@ class ThemeProvider extends ChangeNotifier {
 
   String? fontFamily = AppSettings.instance.fontFamily;
 
+  Brightness get effectiveBrightness => switch (themeMode) {
+        ThemeMode.light => Brightness.light,
+        ThemeMode.dark => Brightness.dark,
+        ThemeMode.system =>
+          WidgetsBinding.instance.platformDispatcher.platformBrightness,
+      };
+
   ColorScheme get currScheme =>
-      themeMode == ThemeMode.dark ? darkScheme : lightScheme;
+      effectiveBrightness == Brightness.dark ? darkScheme : lightScheme;
 
   ThemeMode themeMode = switch (AppSettings.instance.themeOption) {
     ThemeOption.system => ThemeMode.system,
@@ -90,8 +97,11 @@ class ThemeProvider extends ChangeNotifier {
 
     PlayService.instance.desktopLyricService.canSendMessage.then((canSend) {
       if (!canSend) return;
-      PlayService.instance.desktopLyricService
-          .sendThemeMessage(darkScheme, darkMode: true);
+      final scheme = currScheme;
+      PlayService.instance.desktopLyricService.sendThemeMessage(
+        scheme,
+        darkMode: scheme.brightness == Brightness.dark,
+      );
     });
   }
 
@@ -121,8 +131,25 @@ class ThemeProvider extends ChangeNotifier {
 
     PlayService.instance.desktopLyricService.canSendMessage.then((canSend) {
       if (!canSend) return;
-      PlayService.instance.desktopLyricService
-          .sendThemeMessage(darkScheme, darkMode: true);
+      final scheme = currScheme;
+      PlayService.instance.desktopLyricService.sendThemeMessage(
+        scheme,
+        darkMode: scheme.brightness == Brightness.dark,
+      );
+    });
+  }
+
+  void handlePlatformBrightnessChanged() {
+    if (themeMode != ThemeMode.system) return;
+    notifyListeners();
+
+    PlayService.instance.desktopLyricService.canSendMessage.then((canSend) {
+      if (!canSend) return;
+      final scheme = currScheme;
+      PlayService.instance.desktopLyricService.sendThemeMessage(
+        scheme,
+        darkMode: scheme.brightness == Brightness.dark,
+      );
     });
   }
 
@@ -192,8 +219,11 @@ class ThemeProvider extends ChangeNotifier {
 
     PlayService.instance.desktopLyricService.canSendMessage.then((canSend) {
       if (!canSend) return;
-      PlayService.instance.desktopLyricService
-          .sendThemeMessage(darkScheme, darkMode: true);
+      final scheme = currScheme;
+      PlayService.instance.desktopLyricService.sendThemeMessage(
+        scheme,
+        darkMode: scheme.brightness == Brightness.dark,
+      );
     });
 
     if (notify) notifyListeners();

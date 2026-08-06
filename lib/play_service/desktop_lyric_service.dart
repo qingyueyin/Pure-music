@@ -10,6 +10,7 @@ import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/playback_service.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/core/desktop_lyric_colors.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:flutter/material.dart';
@@ -358,15 +359,18 @@ class DesktopLyricService extends ChangeNotifier {
     final primary = scheme.primary.toARGB32();
     final surfaceContainer = scheme.surfaceContainer.toARGB32();
     final onSurface = scheme.onSurface.toARGB32();
-    sendMessage(msg.ThemeChangedMessage(darkMode, primary, surfaceContainer, onSurface));
-    if (AppSettings.instance.desktopFollowThemeColor) {
-      final seedColor = ThemeProvider.instance.lastAlbumSeedColor;
-      sendConfig(
-        followThemeColor: true,
-        playedColor: seedColor?.toARGB32() ?? primary,
-        unplayedColor: onSurface,
-      );
-    }
+    sendMessage(msg.ThemeChangedMessage(
+        darkMode, primary, surfaceContainer, onSurface));
+    final colors = resolveDesktopLyricColors(
+      followThemeColor: AppSettings.instance.desktopFollowThemeColor,
+      brightnessMode: AppSettings.instance.desktopLyricBrightnessMode,
+      scheme: scheme,
+    );
+    sendConfig(
+      followThemeColor: AppSettings.instance.desktopFollowThemeColor,
+      playedColor: colors.played.toARGB32(),
+      unplayedColor: colors.unplayed.toARGB32(),
+    );
   }
 
   void sendPlayerStateMessage(bool isPlaying) {
@@ -527,25 +531,17 @@ class DesktopLyricService extends ChangeNotifier {
   void _sendInitialConfig() {
     final settings = AppSettings.instance;
     final scheme = ThemeProvider.instance.currScheme;
-    final int? playedColor;
-    final int? unplayedColor;
-    final bool followThemeColor;
-    if (settings.desktopFollowThemeColor) {
-      final seedColor = ThemeProvider.instance.lastAlbumSeedColor;
-      playedColor = seedColor?.toARGB32() ?? scheme.primary.toARGB32();
-      unplayedColor = scheme.onSurface.toARGB32();
-      followThemeColor = true;
-    } else {
-      playedColor = settings.desktopPlayedColor;
-      unplayedColor = settings.desktopUnplayedColor;
-      followThemeColor = false;
-    }
+    final colors = resolveDesktopLyricColors(
+      followThemeColor: settings.desktopFollowThemeColor,
+      brightnessMode: settings.desktopLyricBrightnessMode,
+      scheme: scheme,
+    );
     sendConfig(
       showRoman: settings.showDesktopLyricRoman,
       romanPosition: settings.desktopLyricRomanPosition,
-      playedColor: playedColor,
-      unplayedColor: unplayedColor,
-      followThemeColor: followThemeColor,
+      playedColor: colors.played.toARGB32(),
+      unplayedColor: colors.unplayed.toARGB32(),
+      followThemeColor: settings.desktopFollowThemeColor,
     );
   }
 

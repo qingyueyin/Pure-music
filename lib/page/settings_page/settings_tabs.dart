@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:pure_music/core/design_tokens.dart';
+import 'package:pure_music/core/desktop_lyric_colors.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/settings.dart';
@@ -1321,63 +1322,17 @@ class _DesktopLyricTabContent extends StatefulWidget {
 
 class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
   final settings = AppSettings.instance;
-  double _playedOpacity = 1.0;
-  double _unplayedOpacity = 1.0;
-
-  @override
-  void initState() {
-    super.initState();
-    _playedOpacity = _alphaFromColor(settings.desktopPlayedColor);
-    _unplayedOpacity = _alphaFromColor(settings.desktopUnplayedColor);
-  }
-
-  double _alphaFromColor(int? color) {
-    if (color == null) return 1.0;
-    return ((color >> 24) & 0xFF) / 255.0;
-  }
-
-  Future<void> _pickDesktopColor(
-    int? current,
-    double opacity,
-    ValueChanged<int> onPicked,
-    ValueChanged<double> onChangedOpacity,
-  ) async {
-    final initial = current != null
-        ? Color(current | 0xFF000000)
-        : Theme.of(context).colorScheme.primary;
-    final result = await showDialog<_DesktopColorResult>(
-      context: context,
-      builder: (context) => _DesktopColorPickerDialog(
-        initialColor: initial,
-        initialOpacity: opacity,
-        label: '选择颜色',
-      ),
-    );
-    if (result != null) {
-      final alpha = (result.opacity * 255).round().clamp(0, 255);
-      final argb = (alpha << 24) | (result.color.toARGB32() & 0x00FFFFFF);
-      setState(() {
-        onPicked(argb);
-        onChangedOpacity(result.opacity);
-        _saveAndSend();
-      });
-    }
-  }
 
   DesktopLyricService get _service => PlayService.instance.desktopLyricService;
 
   void _sendAll() {
     if (!_service.isRunning) return;
     final scheme = Theme.of(context).colorScheme;
-    final int? playedColor;
-    final int? unplayedColor;
-    if (settings.desktopFollowThemeColor) {
-      playedColor = scheme.primary.toARGB32();
-      unplayedColor = scheme.onSurface.toARGB32();
-    } else {
-      playedColor = settings.desktopPlayedColor;
-      unplayedColor = settings.desktopUnplayedColor;
-    }
+    final colors = resolveDesktopLyricColors(
+      followThemeColor: settings.desktopFollowThemeColor,
+      brightnessMode: settings.desktopLyricBrightnessMode,
+      scheme: scheme,
+    );
     _service.sendConfig(
       lyricFontSize: settings.desktopLyricFontSize,
       translationFontSize: settings.desktopTranslationFontSize,
@@ -1389,8 +1344,8 @@ class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
       lyricTextAlign: settings.desktopLyricTextAlign,
       enableStroke: settings.desktopEnableStroke,
       backgroundOpacity: settings.desktopBackgroundOpacity,
-      playedColor: playedColor,
-      unplayedColor: unplayedColor,
+      playedColor: colors.played.toARGB32(),
+      unplayedColor: colors.unplayed.toARGB32(),
       followThemeColor: settings.desktopFollowThemeColor,
     );
   }
@@ -1593,36 +1548,33 @@ class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
                 value: settings.desktopFollowThemeColor,
                 onChanged: (v) => _update(() {
                   settings.desktopFollowThemeColor = v;
-                  if (v) {
-                    settings.desktopPlayedColor = null;
-                    settings.desktopUnplayedColor = null;
-                  }
                 }),
               ),
             ),
             if (!settings.desktopFollowThemeColor) ...[
               const SizedBox(height: 16),
-              _DesktopColorSetting(
-                label: '已播放颜色',
-                color: settings.desktopPlayedColor,
-                opacity: _playedOpacity,
-                onPickColor: () => _pickDesktopColor(
-                  settings.desktopPlayedColor,
-                  _playedOpacity,
-                  (c) => settings.desktopPlayedColor = c,
-                  (o) => _playedOpacity = o,
-                ),
-              ),
-              const SizedBox(height: 16),
-              _DesktopColorSetting(
-                label: '未播放颜色',
-                color: settings.desktopUnplayedColor,
-                opacity: _unplayedOpacity,
-                onPickColor: () => _pickDesktopColor(
-                  settings.desktopUnplayedColor,
-                  _unplayedOpacity,
-                  (c) => settings.desktopUnplayedColor = c,
-                  (o) => _unplayedOpacity = o,
+              SettingsTile(
+                description: '明暗配色',
+                action: SegmentedButton<DesktopLyricBrightnessMode>(
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment(
+                      value: DesktopLyricBrightnessMode.follow,
+                      label: Text('跟随'),
+                    ),
+                    ButtonSegment(
+                      value: DesktopLyricBrightnessMode.light,
+                      label: Text('浅色'),
+                    ),
+                    ButtonSegment(
+                      value: DesktopLyricBrightnessMode.dark,
+                      label: Text('深色'),
+                    ),
+                  ],
+                  selected: {settings.desktopLyricBrightnessMode},
+                  onSelectionChanged: (value) => _update(
+                    () => settings.desktopLyricBrightnessMode = value.first,
+                  ),
                 ),
               ),
             ],
@@ -1633,6 +1585,7 @@ class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
   }
 }
 
+// ignore: unused_element
 class _DesktopColorSetting extends StatelessWidget {
   final String label;
   final int? color;

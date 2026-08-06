@@ -85,7 +85,8 @@ enum LyricDisplayMode {
 
 enum ThemeOption { system, light, dark }
 
-Set<NowPlayingMode> defaultWavyBarEnabledModes() => {NowPlayingMode.portrait, NowPlayingMode.landscape};
+Set<NowPlayingMode> defaultWavyBarEnabledModes() =>
+    {NowPlayingMode.portrait, NowPlayingMode.landscape};
 
 ThemeOption normalizedThemeOption(Object? value) {
   final index = normalizedEnumIndex(
@@ -200,6 +201,8 @@ class AppSettings {
   int? desktopPlayedColor;
   int? desktopUnplayedColor;
   bool desktopFollowThemeColor = true;
+  DesktopLyricBrightnessMode desktopLyricBrightnessMode =
+      DesktopLyricBrightnessMode.follow;
   LyricDisplayMode lyricDisplayMode = LyricDisplayMode.wordByWord;
   ZhConversionMode zhConversionMode = ZhConversionMode.none;
   bool promptWriteLyricToTag = true;
@@ -520,28 +523,32 @@ class AppSettings {
     final dst = settingsMap['DesktopShowTranslation'];
     if (dst != null) {
       _instance.desktopShowTranslation = normalizedBoolSetting(
-        dst, defaultValue: true,
+        dst,
+        defaultValue: true,
       );
     }
 
     final dsnp = settingsMap['DesktopShowNowPlayingInfo'];
     if (dsnp != null) {
       _instance.desktopShowNowPlayingInfo = normalizedBoolSetting(
-        dsnp, defaultValue: true,
+        dsnp,
+        defaultValue: true,
       );
     }
 
     final des = settingsMap['DesktopEnableStroke'];
     if (des != null) {
       _instance.desktopEnableStroke = normalizedBoolSetting(
-        des, defaultValue: true,
+        des,
+        defaultValue: true,
       );
     }
 
     final dept = settingsMap['DesktopEnablePinTop'];
     if (dept != null) {
       _instance.desktopEnablePinTop = normalizedBoolSetting(
-        dept, defaultValue: true,
+        dept,
+        defaultValue: true,
       );
     }
 
@@ -552,17 +559,20 @@ class AppSettings {
 
     final dts = settingsMap['DesktopTranslationFontSize'];
     if (dts != null) {
-      _instance.desktopTranslationFontSize = (dts as num).clamp(8, 48).toDouble();
+      _instance.desktopTranslationFontSize =
+          (dts as num).clamp(8, 48).toDouble();
     }
 
     final dlfw = settingsMap['DesktopLyricFontWeight'];
     if (dlfw != null) {
-      _instance.desktopLyricFontWeight = ((dlfw as num).toInt()).clamp(100, 900);
+      _instance.desktopLyricFontWeight =
+          ((dlfw as num).toInt()).clamp(100, 900);
     }
 
     final dbo = settingsMap['DesktopBackgroundOpacity'];
     if (dbo != null) {
-      _instance.desktopBackgroundOpacity = (dbo as num).clamp(0.0, 1.0).toDouble();
+      _instance.desktopBackgroundOpacity =
+          (dbo as num).clamp(0.0, 1.0).toDouble();
     }
 
     final dlta = settingsMap['DesktopLyricTextAlign'];
@@ -577,13 +587,21 @@ class AppSettings {
       _instance.desktopPlayedColor = settingsMap['DesktopPlayedColor'] as int?;
     }
     if (settingsMap.containsKey('DesktopUnplayedColor')) {
-      _instance.desktopUnplayedColor = settingsMap['DesktopUnplayedColor'] as int?;
+      _instance.desktopUnplayedColor =
+          settingsMap['DesktopUnplayedColor'] as int?;
     }
 
     final dftc = settingsMap['DesktopFollowThemeColor'];
     if (dftc != null) {
-      _instance.desktopFollowThemeColor = normalizedBoolSetting(dftc, defaultValue: true);
+      _instance.desktopFollowThemeColor =
+          normalizedBoolSetting(dftc, defaultValue: true);
     }
+
+    _instance.desktopLyricBrightnessMode =
+        DesktopLyricBrightnessMode.fromString(
+              settingsMap['DesktopLyricBrightnessMode']?.toString(),
+            ) ??
+            DesktopLyricBrightnessMode.follow;
 
     final ff = settingsMap['FontFamily'];
     final fp = settingsMap['FontPath'];
@@ -638,6 +656,7 @@ class AppSettings {
         'DesktopPlayedColor': desktopPlayedColor,
         'DesktopUnplayedColor': desktopUnplayedColor,
         'DesktopFollowThemeColor': desktopFollowThemeColor,
+        'DesktopLyricBrightnessMode': desktopLyricBrightnessMode.name,
         'LyricDisplayMode': lyricDisplayMode.name,
         'ZhConversionMode': zhConversionMode.name,
         'PromptWriteLyricToTag': promptWriteLyricToTag,
