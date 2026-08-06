@@ -337,13 +337,7 @@ class PlaybackService extends ChangeNotifier {
     if (_closed) return;
     final audio = nowPlaying;
     if (audio == null) return;
-    unawaited(_smtc.updateDisplay(
-      title: audio.title,
-      artist: audio.artist,
-      album: audio.album,
-      duration: audio.duration * 1000,
-      path: audio.path,
-    ));
+    unawaited(_smtc.refreshDisplay());
     unawaited(_smtc.updateState(
       playerState == PlayerState.playing ? SMTCState.playing : SMTCState.paused,
     ));

@@ -57,6 +57,10 @@ pub struct SMTCFlutter {
     _smtc: SystemMediaTransportControls,
     duration_ms: Mutex<u32>,
     progress_ms: AtomicU64,
+    last_path: Mutex<Option<String>>,
+    last_title: Mutex<Option<String>>,
+    last_artist: Mutex<Option<String>>,
+    last_album: Mutex<Option<String>>,
     button_pressed_token: Mutex<Option<EventRegistrationToken>>,
     position_change_token: Mutex<Option<EventRegistrationToken>>,
     display_revision: Arc<AtomicU64>,
@@ -215,6 +219,12 @@ impl SMTCFlutter {
         self._clear_display().map_err(|error| error.to_string())
     }
 
+    /// 系统在会话挂起（最小化/后台）时会静默丢弃 DisplayUpdater 更新。
+    /// 通过往返切换 PlaybackStatus 强制系统端重新评估会话并重绘显示。
+    pub fn refresh_display(&self) -> Result<(), String> {
+        self._refresh_display().map_err(|error| error.to_string())
+    }
+
     pub fn debug_snapshot(&self) -> Result<SMTCDebugSnapshot, String> {
         self._debug_snapshot().map_err(|error| error.to_string())
     }
@@ -305,6 +315,10 @@ impl SMTCFlutter {
             _smtc,
             duration_ms: Mutex::new(0),
             progress_ms: AtomicU64::new(0),
+            last_path: Mutex::new(None),
+            last_title: Mutex::new(None),
+            last_artist: Mutex::new(None),
+            last_album: Mutex::new(None),
             button_pressed_token: Mutex::new(None),
             position_change_token: Mutex::new(None),
             display_revision,
@@ -413,7 +427,93 @@ impl SMTCFlutter {
 
         log_to_dart(format!("SMTC: Display updated - {}", title));
         drop(display_guard);
+        if let Ok(mut slot) = self.last_path.lock() {
+            *slot = Some(path.to_string());
+        }
+        if let Ok(mut slot) = self.last_title.lock() {
+            *slot = Some(title.to_string());
+        }
+        if let Ok(mut slot) = self.last_artist.lock() {
+            *slot = Some(artist.to_string());
+        }
+        if let Ok(mut slot) = self.last_album.lock() {
+            *slot = Some(album.to_string());
+        }
         self._queue_thumbnail_update(path, revision);
+
+        Ok(())
+    }
+
+    /// 强制系统端重绘媒体会话显示：往返切换 IsEnabled + PlaybackStatus，
+    /// 再重放当前元数据、时间线与缩略图。用于会话被系统挂起后解冻显示。
+    fn _refresh_display(&self) -> Result<(), windows::core::Error> {
+        let _display_guard = match self.display_lock.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        let revision = self.display_revision.fetch_add(1, Ordering::SeqCst) + 1;
+        let current_status = self._smtc.PlaybackStatus()?;
+
+        // 往返禁用再启用，强制系统重新注册并重绘会话
+        self._smtc.SetIsEnabled(false)?;
+        self._smtc.SetPlaybackStatus(MediaPlaybackStatus::Stopped)?;
+        self._smtc.SetIsEnabled(true)?;
+        self._smtc.SetPlaybackStatus(current_status)?;
+
+        // 重放时间线
+        let dur = match self.duration_ms.lock() {
+            Ok(value) => *value,
+            Err(poisoned) => *poisoned.into_inner(),
+        };
+        let progress = self.progress_ms.load(Ordering::Acquire).min(dur as u64) as u32;
+        if let Ok(time_properties) = SystemMediaTransportControlsTimelineProperties::new() {
+            let _ = time_properties.SetStartTime(TimeSpan { Duration: 0 });
+            let _ = time_properties.SetEndTime(TimeSpan::from(Duration::from_millis(dur.into())));
+            let _ = time_properties.SetMinSeekTime(TimeSpan { Duration: 0 });
+            let _ =
+                time_properties.SetMaxSeekTime(TimeSpan::from(Duration::from_millis(dur.into())));
+            let _ =
+                time_properties.SetPosition(TimeSpan::from(Duration::from_millis(progress.into())));
+            let _ = self._smtc.UpdateTimelineProperties(&time_properties);
+        }
+
+        // 重放当前元数据
+        let title = self
+            .last_title
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone())
+            .unwrap_or_default();
+        let artist = self
+            .last_artist
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone())
+            .unwrap_or_default();
+        let album = self
+            .last_album
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone())
+            .unwrap_or_default();
+        let updater = self._smtc.DisplayUpdater()?;
+        updater.SetType(MediaPlaybackType::Music)?;
+        if let Ok(music_properties) = updater.MusicProperties() {
+            let _ = music_properties.SetTitle(&HSTRING::from(&title));
+            let _ = music_properties.SetArtist(&HSTRING::from(&artist));
+            let _ = music_properties.SetAlbumTitle(&HSTRING::from(&album));
+        }
+        updater.Update()?;
+        log_to_dart(format!("SMTC: Display refreshed - {}", title));
+
+        let path = self
+            .last_path
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone());
+        if let Some(path) = path {
+            self._queue_thumbnail_update(HSTRING::from(path), revision);
+        }
 
         Ok(())
     }

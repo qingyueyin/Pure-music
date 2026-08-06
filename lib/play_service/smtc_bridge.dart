@@ -16,6 +16,7 @@ abstract interface class SmtcBackend {
   });
   Future<void> updateState(SMTCState state);
   Future<void> updateTimeProperties(int progress);
+  Future<void> refreshDisplay();
   Future<void> clearDisplay();
   Future<void> close();
 }
@@ -58,6 +59,9 @@ class NativeSmtcBackend implements SmtcBackend {
   @override
   Future<void> updateTimeProperties(int progress) =>
       _native.updateTimeProperties(progress: progress);
+
+  @override
+  Future<void> refreshDisplay() => _native.refreshDisplay();
 
   @override
   Future<void> clearDisplay() => _native.clearDisplay();
@@ -176,6 +180,11 @@ class SmtcBridge {
     _pendingState = null;
     _pendingProgress = null;
     return _enqueue((backend) => backend.clearDisplay(), 'clear display');
+  }
+
+  Future<void> refreshDisplay() {
+    if (_closed || _backend == null) return Future<void>.value();
+    return _enqueue((backend) => backend.refreshDisplay(), 'refresh display');
   }
 
   Future<void> flush() => _operationChain;

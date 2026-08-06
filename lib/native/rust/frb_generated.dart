@@ -107,6 +107,9 @@ abstract class RustLibApi extends BaseApi {
   Future<void> crateApiSmtcFlutterSmtcFlutterClearDisplay(
       {required SmtcFlutter that});
 
+  Future<void> crateApiSmtcFlutterSmtcFlutterRefreshDisplay(
+      {required SmtcFlutter that});
+
   Future<void> crateApiSmtcFlutterSmtcFlutterClose({required SmtcFlutter that});
 
   Future<SMTCDebugSnapshot> crateApiSmtcFlutterSmtcFlutterDebugSnapshot(
@@ -406,6 +409,33 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiSmtcFlutterSmtcFlutterClearDisplayConstMeta =>
       const TaskConstMeta(
         debugName: 'SmtcFlutter_clear_display',
+        argNames: ['that'],
+      );
+
+  @override
+  Future<void> crateApiSmtcFlutterSmtcFlutterRefreshDisplay(
+      {required SmtcFlutter that}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSMTCFlutter(
+            that, serializer);
+        pdeCallFfi(generalizedFrbRustBinding, serializer,
+            funcId: 46, port: port_);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_unit,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateApiSmtcFlutterSmtcFlutterRefreshDisplayConstMeta,
+      argValues: [that],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateApiSmtcFlutterSmtcFlutterRefreshDisplayConstMeta =>
+      const TaskConstMeta(
+        debugName: 'SmtcFlutter_refresh_display',
         argNames: ['that'],
       );
 
@@ -3434,6 +3464,14 @@ class SmtcFlutterImpl extends RustOpaque implements SmtcFlutter {
   /// Apis for Flutter
   Future<void> clearDisplay() =>
       RustLib.instance.api.crateApiSmtcFlutterSmtcFlutterClearDisplay(
+        that: this,
+      );
+
+  /// 系统在会话挂起（最小化/后台）时会静默丢弃 DisplayUpdater 更新。
+  /// 通过往返切换 PlaybackStatus 强制系统端重新评估会话并重绘显示。
+  /// Apis for Flutter
+  Future<void> refreshDisplay() =>
+      RustLib.instance.api.crateApiSmtcFlutterSmtcFlutterRefreshDisplay(
         that: this,
       );
 
