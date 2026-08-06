@@ -18,6 +18,13 @@ class LyricViewController extends ChangeNotifier {
     return _instance!;
   }
 
+  static void disposeIfInitialized() {
+    final controller = _instance;
+    if (controller == null) return;
+    _instance = null;
+    controller.dispose();
+  }
+
   bool _disposed = false;
   bool _isListening = false;
   bool hasRomanLyric = false;
@@ -34,8 +41,6 @@ class LyricViewController extends ChangeNotifier {
     enableLyricBlur = nowPlayingPagePref.enableLyricBlur;
     showLyricRoman = nowPlayingPagePref.showLyricRoman;
     rubyPosition = nowPlayingPagePref.rubyPosition;
-    enableLyricScale = nowPlayingPagePref.enableLyricScale;
-    enableLyricSpring = nowPlayingPagePref.enableLyricSpring;
     enableLyricGlow = nowPlayingPagePref.enableLyricGlow;
 
     _listenToLyricChanges();
@@ -57,7 +62,8 @@ class LyricViewController extends ChangeNotifier {
 
       bool needsNotify = false;
 
-      final found = lyric?.lines.any(
+      final found =
+          lyric?.lines.any(
             (line) => line.romanLyric != null && line.romanLyric!.isNotEmpty,
           ) ??
           false;
@@ -108,13 +114,11 @@ class LyricViewController extends ChangeNotifier {
   late LyricTextAlign lyricTextAlign;
   late double lyricFontSize;
   late double translationFontSize;
-  late   bool showLyricTranslation;
+  late bool showLyricTranslation;
   late bool showLyricRoman;
   late RubyPosition rubyPosition;
   late int lyricFontWeight;
   late bool enableLyricBlur;
-  late bool enableLyricScale;
-  late bool enableLyricSpring;
   late bool enableLyricGlow;
 
   LyricRenderConfig get renderConfig =>
@@ -127,19 +131,13 @@ class LyricViewController extends ChangeNotifier {
         lineOrder: rubyPosition.toLineOrder(),
         fontWeight: lyricFontWeight,
         enableBlur: enableLyricBlur,
-        enableLineScale: enableLyricScale,
-        enableLineSpring: enableLyricSpring,
         enableGlow: enableLyricGlow,
         hasMultipleAgents: hasMultipleAgents,
-        displayMode: lyricDisplayMode,
       );
 
   void triggerRebuild() {
     notifyListeners();
   }
-
-  LyricDisplayMode get lyricDisplayMode =>
-      AppSettings.instance.lyricDisplayMode;
 
   ZhConversionMode get zhConversionMode =>
       AppSettings.instance.zhConversionMode;
@@ -216,20 +214,6 @@ class LyricViewController extends ChangeNotifier {
   void toggleLyricBlur() {
     enableLyricBlur = !enableLyricBlur;
     nowPlayingPagePref.enableLyricBlur = enableLyricBlur;
-    AppPreference.instance.save();
-    notifyListeners();
-  }
-
-  void toggleLyricScale() {
-    enableLyricScale = !enableLyricScale;
-    nowPlayingPagePref.enableLyricScale = enableLyricScale;
-    AppPreference.instance.save();
-    notifyListeners();
-  }
-
-  void toggleLyricSpring() {
-    enableLyricSpring = !enableLyricSpring;
-    nowPlayingPagePref.enableLyricSpring = enableLyricSpring;
     AppPreference.instance.save();
     notifyListeners();
   }
@@ -353,17 +337,14 @@ class _LyricTranslationSwitchBtn extends StatelessWidget {
       onPressed: available ? lyricViewController.toggleLyricTranslation : null,
       tooltip: available
           ? enabled
-              ? '歌词翻译：显示'
-              : '歌词翻译：隐藏'
+                ? '歌词翻译：显示'
+                : '歌词翻译：隐藏'
           : '当前歌词没有翻译',
       style: IconButton.styleFrom(
         backgroundColor: enabled ? scheme.secondaryContainer : null,
       ),
       color: scheme.onSecondaryContainer,
-      icon: Icon(
-        Symbols.translate,
-        fill: enabled ? 1 : 0,
-      ),
+      icon: Icon(Symbols.translate, fill: enabled ? 1 : 0),
     );
   }
 }
@@ -384,10 +365,7 @@ class _LyricRomanSwitchBtn extends StatelessWidget {
         backgroundColor: enabled ? scheme.secondaryContainer : null,
       ),
       color: scheme.onSecondaryContainer,
-      icon: Icon(
-        Symbols.language,
-        fill: enabled ? 1 : 0,
-      ),
+      icon: Icon(Symbols.language, fill: enabled ? 1 : 0),
     );
   }
 }
@@ -408,10 +386,7 @@ class _LyricBlurSwitchBtn extends StatelessWidget {
         backgroundColor: enabled ? scheme.secondaryContainer : null,
       ),
       color: scheme.onSecondaryContainer,
-      icon: Icon(
-        Symbols.blur_on,
-        fill: enabled ? 1 : 0,
-      ),
+      icon: Icon(Symbols.blur_on, fill: enabled ? 1 : 0),
     );
   }
 }
@@ -446,5 +421,3 @@ class _FontWeightBtn extends StatelessWidget {
     );
   }
 }
-
-
