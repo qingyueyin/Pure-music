@@ -65,6 +65,7 @@ void main() {
 
     await pumpHost();
     expect(find.byType(MeshGradientBackground), findsOneWidget);
+    expect(find.byType(MeshGradientBackgroundInternal), findsOneWidget);
 
     spectrumController.add(Float32List.fromList(
       [0.9, 0.7, 0.5, 0.3, 0.1, 0.05, 0.02, 0.01],
@@ -83,12 +84,6 @@ void main() {
     await tester.pump(const Duration(milliseconds: 900));
     expect(tester.takeException(), isNull);
 
-    mode = NowPlayingBackgroundMode.meshGradient;
-    await pumpHost();
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(find.byType(MeshGradientBackground), findsOneWidget);
-    expect(tester.takeException(), isNull);
-
     spectrumController.add(Float32List.fromList(
       [0.15, 0.25, 0.35, 0.45, 0.2, 0.1, 0.05, 0.02],
     ));
@@ -101,7 +96,7 @@ void main() {
     expect(tester.takeException(), isNull);
 
     isVisible = true;
-    mode = NowPlayingBackgroundMode.coverBlurTest;
+    mode = NowPlayingBackgroundMode.flowingCover;
     await pumpHost();
     await tester.pump(const Duration(milliseconds: 250));
     expect(find.byType(NowPlayingBackground), findsOneWidget);
