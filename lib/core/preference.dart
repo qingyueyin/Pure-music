@@ -20,10 +20,10 @@ class PagePreference {
   PagePreference(this.sortMethod, this.sortOrder, this.contentView);
 
   Map<String, dynamic> toMap() => {
-        'sortMethod': sortMethod,
-        'sortOrder': sortOrder.name,
-        'contentView': contentView.name,
-      };
+    'sortMethod': sortMethod,
+    'sortOrder': sortOrder.name,
+    'contentView': contentView.name,
+  };
 
   factory PagePreference.fromMap(Object? value) {
     final map = value is Map ? value : const <String, dynamic>{};
@@ -45,16 +45,13 @@ class NowPlayingPagePreference {
   RubyPosition rubyPosition;
   int lyricFontWeight;
   bool enableLyricBlur;
-  bool enableLyricScale;
-  bool enableLyricSpring;
   bool enableLyricGlow;
   LyricLiftStyle liftStyle;
   double liftPeak;
   int liftDurationMs;
   LyricStaggerStyle staggerStyle;
-  double karaokeGradientWidthFraction;
-  double unplayedAlpha;
   NowPlayingBackgroundMode backgroundMode;
+  bool dynamicFlowingLight;
   bool audioReactiveFlow;
 
   NowPlayingPagePreference(
@@ -67,67 +64,57 @@ class NowPlayingPagePreference {
     this.enableLyricBlur, {
     this.showLyricRoman = true,
     this.rubyPosition = RubyPosition.below,
-    this.enableLyricScale = true,
-    this.enableLyricSpring = true,
     this.enableLyricGlow = false,
     this.liftStyle = LyricLiftStyle.vertical,
     this.liftPeak = 2.0,
     this.liftDurationMs = 300,
     this.staggerStyle = LyricStaggerStyle.smooth,
-    this.karaokeGradientWidthFraction = 0.25,
-    this.unplayedAlpha = 0.30,
-    this.backgroundMode = NowPlayingBackgroundMode.coverBlurTest,
+    this.backgroundMode = NowPlayingBackgroundMode.meshGradient,
+    this.dynamicFlowingLight = true,
     this.audioReactiveFlow = false,
   });
 
   LyricRenderConfig get lyricRenderConfig => LyricRenderConfig(
-        textAlign: lyricTextAlign,
-        baseFontSize: lyricFontSize,
-        translationBaseFontSize: translationFontSize,
-        showTranslation: showLyricTranslation,
-        showRoman: showLyricRoman,
-        lineOrder: rubyPosition.toLineOrder(),
-        fontWeight: lyricFontWeight,
-        enableBlur: enableLyricBlur,
-        enableLineScale: enableLyricScale,
-        enableLineSpring: enableLyricSpring,
-        enableGlow: enableLyricGlow,
-        liftStyle: liftStyle,
-        liftPeak: liftPeak,
-        liftDurationMs: liftDurationMs,
-        staggerStyle: staggerStyle,
-        karaokeGradientWidthFraction: karaokeGradientWidthFraction,
-        unplayedAlpha: unplayedAlpha,
-      );
+    textAlign: lyricTextAlign,
+    baseFontSize: lyricFontSize,
+    translationBaseFontSize: translationFontSize,
+    showTranslation: showLyricTranslation,
+    showRoman: showLyricRoman,
+    lineOrder: rubyPosition.toLineOrder(),
+    fontWeight: lyricFontWeight,
+    enableBlur: enableLyricBlur,
+    enableGlow: enableLyricGlow,
+    liftStyle: liftStyle,
+    liftPeak: liftPeak,
+    liftDurationMs: liftDurationMs,
+    staggerStyle: staggerStyle,
+  );
 
   Map<String, dynamic> toMap() => {
-        'nowPlayingViewMode': nowPlayingViewMode.name,
-        'lyricTextAlign': lyricTextAlign.name,
-        'lyricFontSize': lyricFontSize,
-        'translationFontSize': translationFontSize,
-        'showLyricTranslation': showLyricTranslation,
-        'showLyricRoman': showLyricRoman,
-        'rubyPosition': rubyPosition.name,
-        'lyricFontWeight': lyricFontWeight,
-        'enableLyricBlur': enableLyricBlur,
-        'enableLyricScale': enableLyricScale,
-        'enableLyricSpring': enableLyricSpring,
-        'enableLyricGlow': enableLyricGlow,
-        'liftStyle': liftStyle.name,
-        'liftPeak': liftPeak,
-        'liftDurationMs': liftDurationMs,
-        'staggerStyle': staggerStyle.name,
-        'karaokeGradientWidthFraction': karaokeGradientWidthFraction,
-        'unplayedAlpha': unplayedAlpha,
-        'backgroundMode': backgroundMode.name,
-        'audioReactiveFlow': audioReactiveFlow,
-      };
+    'nowPlayingViewMode': nowPlayingViewMode.name,
+    'lyricTextAlign': lyricTextAlign.name,
+    'lyricFontSize': lyricFontSize,
+    'translationFontSize': translationFontSize,
+    'showLyricTranslation': showLyricTranslation,
+    'showLyricRoman': showLyricRoman,
+    'rubyPosition': rubyPosition.name,
+    'lyricFontWeight': lyricFontWeight,
+    'enableLyricBlur': enableLyricBlur,
+    'enableLyricGlow': enableLyricGlow,
+    'liftStyle': liftStyle.name,
+    'liftPeak': liftPeak,
+    'liftDurationMs': liftDurationMs,
+    'staggerStyle': staggerStyle.name,
+    'backgroundMode': backgroundMode.name,
+    'dynamicFlowingLight': dynamicFlowingLight,
+    'audioReactiveFlow': audioReactiveFlow,
+  };
 
   factory NowPlayingPagePreference.fromMap(Object? value) {
     final map = value is Map ? value : const <String, dynamic>{};
     final backgroundMode =
         _nowPlayingBackgroundModeFromStoredValue(map['backgroundMode']) ??
-            NowPlayingBackgroundMode.coverBlurTest;
+        NowPlayingBackgroundMode.meshGradient;
     return NowPlayingPagePreference(
       _nowPlayingViewModeFromStoredValue(map['nowPlayingViewMode']) ??
           NowPlayingViewMode.withLyric,
@@ -153,21 +140,19 @@ class NowPlayingPagePreference {
         max: 900,
       ),
       _normalizedBool(map['enableLyricBlur'], defaultValue: true),
-      showLyricRoman:
-          _normalizedBool(map['showLyricRoman'], defaultValue: true),
-      rubyPosition: RubyPosition.fromString(
-            (map['rubyPosition'] as String?) ?? '',
-          ) ??
+      showLyricRoman: _normalizedBool(
+        map['showLyricRoman'],
+        defaultValue: true,
+      ),
+      rubyPosition:
+          RubyPosition.fromString((map['rubyPosition'] as String?) ?? '') ??
           RubyPosition.below,
-      enableLyricScale:
-          _normalizedBool(map['enableLyricScale'], defaultValue: true),
-      enableLyricSpring:
-          _normalizedBool(map['enableLyricSpring'], defaultValue: true),
-      enableLyricGlow:
-          _normalizedBool(map['enableLyricGlow'], defaultValue: false),
-      liftStyle: LyricLiftStyle.fromString(
-            (map['liftStyle'] as String?) ?? '',
-          ) ??
+      enableLyricGlow: _normalizedBool(
+        map['enableLyricGlow'],
+        defaultValue: false,
+      ),
+      liftStyle:
+          LyricLiftStyle.fromString((map['liftStyle'] as String?) ?? '') ??
           LyricLiftStyle.vertical,
       liftPeak: _normalizedBoundedDouble(
         map['liftPeak'],
@@ -181,25 +166,17 @@ class NowPlayingPagePreference {
         min: 50,
         max: 2000,
       ),
-      staggerStyle: LyricStaggerStyle.fromString(
+      staggerStyle:
+          LyricStaggerStyle.fromString(
             (map['staggerStyle'] as String?) ?? '',
           ) ??
           LyricStaggerStyle.smooth,
-      karaokeGradientWidthFraction: _normalizedBoundedDouble(
-        map['karaokeGradientWidthFraction'],
-        defaultValue: 0.25,
-        min: 0.05,
-        max: 0.8,
-      ),
-      unplayedAlpha: _normalizedBoundedDouble(
-        map['unplayedAlpha'],
-        defaultValue: 0.30,
-        min: 0.0,
-        max: 1.0,
-      ),
       backgroundMode: backgroundMode,
-      audioReactiveFlow:
-          _normalizedBool(map['audioReactiveFlow'], defaultValue: false),
+      dynamicFlowingLight: true,
+      audioReactiveFlow: _normalizedBool(
+        map['audioReactiveFlow'],
+        defaultValue: false,
+      ),
     );
   }
 }
@@ -210,15 +187,10 @@ class EqPreset {
 
   EqPreset(this.name, this.gains);
 
-  Map<String, dynamic> toMap() => {
-        'name': name,
-        'gains': gains,
-      };
+  Map<String, dynamic> toMap() => {'name': name, 'gains': gains};
 
-  factory EqPreset.fromMap(Map map) => EqPreset(
-        _normalizedString(map['name']),
-        normalizedEqGains(map['gains']),
-      );
+  factory EqPreset.fromMap(Map map) =>
+      EqPreset(_normalizedString(map['name']), normalizedEqGains(map['gains']));
 }
 
 List<EqPreset> _eqPresetsFromStoredValue(Object? value) {
@@ -281,12 +253,7 @@ double _normalizedVolumeDsp(Object? value) {
       return (percent / 100.0).clamp(0.0, 1.0).toDouble();
     }
   }
-  return _normalizedBoundedDouble(
-    value,
-    defaultValue: 1.0,
-    min: 0.0,
-    max: 1.0,
-  );
+  return _normalizedBoundedDouble(value, defaultValue: 1.0, min: 0.0, max: 1.0);
 }
 
 int _normalizedNonNegativeInt(Object? value) {
@@ -349,13 +316,6 @@ NowPlayingViewMode? _nowPlayingViewModeFromStoredValue(Object? value) {
   return name == null ? null : NowPlayingViewMode.fromString(name);
 }
 
-LyricTextAlign? _lyricTextAlignFromStoredValue(Object? value) {
-  final index = _normalizedEnumIndex(value, LyricTextAlign.values.length);
-  if (index != null) return LyricTextAlign.values[index];
-  final name = _normalizedEnumName(value);
-  return name == null ? null : LyricTextAlign.fromString(name);
-}
-
 NowPlayingBackgroundMode? _nowPlayingBackgroundModeFromStoredValue(
   Object? value,
 ) {
@@ -366,6 +326,13 @@ NowPlayingBackgroundMode? _nowPlayingBackgroundModeFromStoredValue(
   if (index != null) return NowPlayingBackgroundMode.values[index];
   final name = _normalizedEnumName(value);
   return name == null ? null : NowPlayingBackgroundMode.fromString(name);
+}
+
+LyricTextAlign? _lyricTextAlignFromStoredValue(Object? value) {
+  final index = _normalizedEnumIndex(value, LyricTextAlign.values.length);
+  if (index != null) return LyricTextAlign.values[index];
+  final name = _normalizedEnumName(value);
+  return name == null ? null : LyricTextAlign.fromString(name);
 }
 
 PlayMode? _playModeFromStoredValue(Object? value) {
@@ -402,10 +369,9 @@ List<String> _normalizedPathStringList(Object? value) {
     final path = _normalizedFolderPath(value);
     return path.isEmpty ? const [] : [path];
   }
-  return _normalizedStringList(value)
-      .map(_normalizedFolderPath)
-      .where((item) => item.isNotEmpty)
-      .toList();
+  return _normalizedStringList(
+    value,
+  ).map(_normalizedFolderPath).where((item) => item.isNotEmpty).toList();
 }
 
 List<String> _normalizedStringList(Object? value) {
@@ -455,10 +421,7 @@ List<String> _normalizedFolderPathList(Object? value) {
   final incoming = value is String && _looksLikeFolderPath(value)
       ? [_normalizedFolderPath(value)]
       : _normalizedStringList(value).map(_normalizedFolderPath);
-  return appendUniquePendingFolders(
-    current: const [],
-    incoming: incoming,
-  );
+  return appendUniquePendingFolders(current: const [], incoming: incoming);
 }
 
 bool _looksLikeFolderPath(String value) {
@@ -500,24 +463,6 @@ String? _normalizedNullableString(Object? value) {
   return normalized.isEmpty ? null : normalized;
 }
 
-enum PlaybackOutputBackend {
-  system,
-  asio;
-
-  static PlaybackOutputBackend fromStoredValue(Object? value) {
-    final index =
-        _normalizedEnumIndex(value, PlaybackOutputBackend.values.length);
-    if (index != null) return PlaybackOutputBackend.values[index];
-    final name = _normalizedEnumName(value);
-    if (name != null) {
-      for (final backend in PlaybackOutputBackend.values) {
-        if (backend.name.toLowerCase() == name.toLowerCase()) return backend;
-      }
-    }
-    return PlaybackOutputBackend.system;
-  }
-}
-
 class PlaybackPreference {
   PlayMode playMode;
   double volumeDsp;
@@ -531,12 +476,8 @@ class PlaybackPreference {
   int lastPlaylistIndex;
   bool lastShuffleActive;
   List<String> lastOriginalPlaylistPaths;
-  double wasapiBufferSec;
-  bool wasapiEventDriven;
   bool reinitOnSetSource;
   bool replayGainEnabled;
-  PlaybackOutputBackend outputBackend;
-  int asioDeviceIndex;
 
   PlaybackPreference(
     this.playMode,
@@ -552,33 +493,25 @@ class PlaybackPreference {
     this.lastPlaylistIndex = 0,
     this.lastShuffleActive = false,
     this.lastOriginalPlaylistPaths = const [],
-    this.wasapiBufferSec = 0.10,
-    this.wasapiEventDriven = false,
     this.reinitOnSetSource = false,
-    this.outputBackend = PlaybackOutputBackend.system,
-    this.asioDeviceIndex = 0,
   });
 
   Map<String, dynamic> toMap() => {
-        'playMode': playMode.name,
-        'volumeDsp': volumeDsp,
-        'eqGains': eqGains,
-        'eqPreampDb': eqPreampDb,
-        'eqAutoGainEnabled': eqAutoGainEnabled,
-        'eqAutoHeadroomDb': eqAutoHeadroomDb,
-        'eqPresets': eqPresets.map((e) => e.toMap()).toList(),
-        'lastAudioPath': lastAudioPath,
-        'lastPlaylistPaths': lastPlaylistPaths,
-        'lastPlaylistIndex': lastPlaylistIndex,
-        'lastShuffleActive': lastShuffleActive,
-        'lastOriginalPlaylistPaths': lastOriginalPlaylistPaths,
-        'wasapiBufferSec': wasapiBufferSec,
-        'wasapiEventDriven': wasapiEventDriven,
-        'reinitOnSetSource': reinitOnSetSource,
-        'outputBackend': outputBackend.name,
-        'asioDeviceIndex': asioDeviceIndex,
-        'replayGainEnabled': replayGainEnabled,
-      };
+    'playMode': playMode.name,
+    'volumeDsp': volumeDsp,
+    'eqGains': eqGains,
+    'eqPreampDb': eqPreampDb,
+    'eqAutoGainEnabled': eqAutoGainEnabled,
+    'eqAutoHeadroomDb': eqAutoHeadroomDb,
+    'eqPresets': eqPresets.map((e) => e.toMap()).toList(),
+    'lastAudioPath': lastAudioPath,
+    'lastPlaylistPaths': lastPlaylistPaths,
+    'lastPlaylistIndex': lastPlaylistIndex,
+    'lastShuffleActive': lastShuffleActive,
+    'lastOriginalPlaylistPaths': lastOriginalPlaylistPaths,
+    'reinitOnSetSource': reinitOnSetSource,
+    'replayGainEnabled': replayGainEnabled,
+  };
 
   factory PlaybackPreference.fromMap(Object? value) {
     final map = value is Map ? value : const <String, dynamic>{};
@@ -602,8 +535,10 @@ class PlaybackPreference {
           : normalizedEqGains(null),
       _eqPresetsFromStoredValue(map['eqPresets']),
       eqPreampDb: normalizedEqPreampDb(map['eqPreampDb']),
-      eqAutoGainEnabled:
-          _normalizedBool(map['eqAutoGainEnabled'], defaultValue: true),
+      eqAutoGainEnabled: _normalizedBool(
+        map['eqAutoGainEnabled'],
+        defaultValue: true,
+      ),
       eqAutoHeadroomDb: _normalizedBoundedDouble(
         map['eqAutoHeadroomDb'],
         defaultValue: 1.0,
@@ -613,25 +548,19 @@ class PlaybackPreference {
       lastAudioPath: _normalizedPathString(map['lastAudioPath']),
       lastPlaylistPaths: lastPlaylistPaths,
       lastPlaylistIndex: lastPlaylistIndex,
-      lastShuffleActive:
-          _normalizedBool(map['lastShuffleActive'], defaultValue: false),
+      lastShuffleActive: _normalizedBool(
+        map['lastShuffleActive'],
+        defaultValue: false,
+      ),
       lastOriginalPlaylistPaths: lastOriginalPlaylistPaths,
-      wasapiBufferSec: _normalizedBoundedDouble(
-        map['wasapiBufferSec'],
-        defaultValue: 0.10,
-        min: 0.05,
-        max: 0.30,
+      reinitOnSetSource: _normalizedBool(
+        map['reinitOnSetSource'],
+        defaultValue: false,
       ),
-      wasapiEventDriven:
-          _normalizedBool(map['wasapiEventDriven'], defaultValue: false),
-      reinitOnSetSource:
-          _normalizedBool(map['reinitOnSetSource'], defaultValue: false),
-      outputBackend: PlaybackOutputBackend.fromStoredValue(
-        map['outputBackend'],
+      replayGainEnabled: _normalizedBool(
+        map['replayGainEnabled'],
+        defaultValue: false,
       ),
-      asioDeviceIndex: _normalizedNonNegativeInt(map['asioDeviceIndex']),
-      replayGainEnabled:
-          _normalizedBool(map['replayGainEnabled'], defaultValue: false),
     );
   }
 }
@@ -645,45 +574,74 @@ class AppPreference {
 
   var audiosPagePref = PagePreference(0, SortOrder.ascending, ContentView.list);
 
-  var artistsPagePref =
-      PagePreference(0, SortOrder.ascending, ContentView.table);
+  var artistsPagePref = PagePreference(
+    0,
+    SortOrder.ascending,
+    ContentView.table,
+  );
 
-  var artistDetailPagePref =
-      PagePreference(0, SortOrder.ascending, ContentView.list);
+  var artistDetailPagePref = PagePreference(
+    0,
+    SortOrder.ascending,
+    ContentView.list,
+  );
 
-  var albumsPagePref =
-      PagePreference(0, SortOrder.ascending, ContentView.table);
+  var albumsPagePref = PagePreference(
+    0,
+    SortOrder.ascending,
+    ContentView.table,
+  );
 
-  var albumDetailPagePref =
-      PagePreference(2, SortOrder.ascending, ContentView.list);
+  var albumDetailPagePref = PagePreference(
+    2,
+    SortOrder.ascending,
+    ContentView.list,
+  );
 
-  var foldersPagePref =
-      PagePreference(0, SortOrder.ascending, ContentView.list);
+  var foldersPagePref = PagePreference(
+    0,
+    SortOrder.ascending,
+    ContentView.list,
+  );
 
-  var folderDetailPagePref =
-      PagePreference(0, SortOrder.ascending, ContentView.list);
+  var folderDetailPagePref = PagePreference(
+    0,
+    SortOrder.ascending,
+    ContentView.list,
+  );
 
-  var playlistsPagePref =
-      PagePreference(0, SortOrder.ascending, ContentView.list);
+  var playlistsPagePref = PagePreference(
+    0,
+    SortOrder.ascending,
+    ContentView.list,
+  );
 
-  var playlistDetailPagePref =
-      PagePreference(0, SortOrder.ascending, ContentView.list);
+  var playlistDetailPagePref = PagePreference(
+    0,
+    SortOrder.ascending,
+    ContentView.list,
+  );
 
   int startPage = 0;
 
   bool sidebarExpanded = true;
 
-  var playbackPref =
-      PlaybackPreference(PlayMode.forward, 1.0, List.filled(10, 0.0), []);
+  var playbackPref = PlaybackPreference(
+    PlayMode.forward,
+    1.0,
+    List.filled(10, 0.0),
+    [],
+  );
 
   var nowPlayingPagePref = NowPlayingPagePreference(
-      NowPlayingViewMode.withLyric,
-      LyricTextAlign.left,
-      22.0,
-      18.0,
-      true,
-      400,
-      false);
+    NowPlayingViewMode.withLyric,
+    LyricTextAlign.left,
+    22.0,
+    18.0,
+    true,
+    400,
+    false,
+  );
 
   String customCpFeedbackKey = '';
   String updateRepoSlug = defaultUpdateRepoSlug;
@@ -736,6 +694,10 @@ class AppPreference {
     );
     _nowPlayingBackgroundModeNotifier?.value =
         nowPlayingPagePref.backgroundMode;
+    _nowPlayingDynamicFlowingLightNotifier?.value =
+        nowPlayingPagePref.dynamicFlowingLight;
+    _nowPlayingAudioReactiveFlowNotifier?.value =
+        nowPlayingPagePref.audioReactiveFlow;
     customCpFeedbackKey = _normalizedString(prefMap['customCpFeedbackKey']);
     updateRepoSlug = _normalizedNonEmptyString(
       prefMap['updateRepoSlug'],
@@ -764,8 +726,10 @@ class AppPreference {
   Future<bool> save() async {
     try {
       final settingsDir = await getSettingsDir();
-      final appPreferencePath =
-          path.join(settingsDir.path, 'app_preference.json');
+      final appPreferencePath = path.join(
+        settingsDir.path,
+        'app_preference.json',
+      );
 
       final prefMap = _rawPrefMap != null
           ? Map<String, dynamic>.from(_rawPrefMap!)
@@ -807,8 +771,10 @@ class AppPreference {
   Future<bool> savePlaybackOnly() async {
     try {
       final settingsDir = await getSettingsDir();
-      final playbackPrefPath =
-          path.join(settingsDir.path, 'playback_pref.json');
+      final playbackPrefPath = path.join(
+        settingsDir.path,
+        'playback_pref.json',
+      );
 
       final prefJson = json.encode(playbackPref.toMap());
       await writeTextFileAtomically(playbackPrefPath, prefJson);
@@ -822,8 +788,10 @@ class AppPreference {
   Future<void> loadPlaybackOnly() async {
     try {
       final settingsDir = await getSettingsDir();
-      final playbackPrefPath =
-          path.join(settingsDir.path, 'playback_pref.json');
+      final playbackPrefPath = path.join(
+        settingsDir.path,
+        'playback_pref.json',
+      );
 
       if (File(playbackPrefPath).existsSync()) {
         final prefJson = await File(playbackPrefPath).readAsString();
@@ -838,8 +806,10 @@ class AppPreference {
   static Future<void> read() async {
     try {
       final settingsDir = await getSettingsDir();
-      final appPreferencePath =
-          path.join(settingsDir.path, 'app_preference.json');
+      final appPreferencePath = path.join(
+        settingsDir.path,
+        'app_preference.json',
+      );
 
       final prefJson = await File(appPreferencePath).readAsString();
       final Map prefMap = json.decode(prefJson);
@@ -860,9 +830,23 @@ class AppPreference {
 }
 
 ValueNotifier<NowPlayingBackgroundMode>? _nowPlayingBackgroundModeNotifier;
+ValueNotifier<bool>? _nowPlayingDynamicFlowingLightNotifier;
+ValueNotifier<bool>? _nowPlayingAudioReactiveFlowNotifier;
 
 ValueNotifier<NowPlayingBackgroundMode> get nowPlayingBackgroundModeNotifier {
   return _nowPlayingBackgroundModeNotifier ??= ValueNotifier(
     AppPreference.instance.nowPlayingPagePref.backgroundMode,
+  );
+}
+
+ValueNotifier<bool> get nowPlayingDynamicFlowingLightNotifier {
+  return _nowPlayingDynamicFlowingLightNotifier ??= ValueNotifier(
+    AppPreference.instance.nowPlayingPagePref.dynamicFlowingLight,
+  );
+}
+
+ValueNotifier<bool> get nowPlayingAudioReactiveFlowNotifier {
+  return _nowPlayingAudioReactiveFlowNotifier ??= ValueNotifier(
+    AppPreference.instance.nowPlayingPagePref.audioReactiveFlow,
   );
 }
