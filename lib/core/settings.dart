@@ -6,6 +6,7 @@ import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/core/zh_converter.dart';
 import 'package:pure_music/lyric/lyric_source.dart';
+import 'package:pure_music/lyric/lyric_tag_word_format.dart';
 import 'package:flutter/material.dart';
 import 'package:github/github.dart';
 import 'package:path/path.dart' as path;
@@ -16,32 +17,46 @@ const bool portableBuild = bool.fromEnvironment(
   defaultValue: true,
 );
 
-Future<Directory> getAppDataDir() async {
-  final exe = Platform.resolvedExecutable;
-  final exeBase = path.basename(exe).toLowerCase();
-  if (portableBuild &&
+const bool enableOnlineLyricTagWriting = false;
+
+String resolveAppDataPath({
+  required bool usePortableData,
+  required String executablePath,
+  required Map<String, String> environment,
+}) {
+  final exeBase = path.basename(executablePath).toLowerCase();
+  if (usePortableData &&
       exeBase != 'dart.exe' &&
       exeBase != 'flutter_tester.exe') {
-    final portable = Directory(path.join(path.dirname(exe), 'data'));
-    try {
-      return portable.create(recursive: true);
-    } catch (_) {}
+    return path.join(path.dirname(executablePath), 'data');
   }
 
-  final appData = Platform.environment['APPDATA'];
-  if (appData != null) {
-    final dir = Directory(path.join(appData, 'pure_music'));
-    return dir.create(recursive: true);
+  final localAppData = environment['LOCALAPPDATA'];
+  if (localAppData != null && localAppData.trim().isNotEmpty) {
+    return path.join(localAppData, 'pure_music');
   }
 
-  final userProfile = Platform.environment['USERPROFILE'];
-  if (userProfile != null) {
-    final dir =
-        Directory(path.join(userProfile, 'AppData', 'Roaming', 'pure_music'));
-    return dir.create(recursive: true);
+  final userProfile = environment['USERPROFILE'];
+  if (userProfile != null && userProfile.trim().isNotEmpty) {
+    return path.join(userProfile, 'AppData', 'Local', 'pure_music');
+  }
+
+  final appData = environment['APPDATA'];
+  if (appData != null && appData.trim().isNotEmpty) {
+    return path.join(appData, 'pure_music');
   }
 
   throw StateError('Unable to determine app data directory');
+}
+
+Future<Directory> getAppDataDir() async {
+  final exe = Platform.resolvedExecutable;
+  final resolvedPath = resolveAppDataPath(
+    usePortableData: portableBuild,
+    executablePath: exe,
+    environment: Platform.environment,
+  );
+  return Directory(resolvedPath).create(recursive: true);
 }
 
 Future<Directory> getSettingsDir() async {
@@ -165,7 +180,7 @@ class AppSettings {
   static final rebuildNotifier = RebuildNotifier();
   static const String version = String.fromEnvironment(
     'APP_VERSION',
-    defaultValue: '2.0.0-preview',
+    defaultValue: '2.2.2',
   );
 
   static GitHub? _github;
@@ -198,17 +213,18 @@ class AppSettings {
   int desktopLyricFontWeight = 700;
   double desktopBackgroundOpacity = 0.0;
   int desktopLyricTextAlign = 1;
+  DesktopLyricAnimation desktopLyricAnimation = DesktopLyricAnimation.slideUp;
   int? desktopPlayedColor;
   int? desktopUnplayedColor;
   bool desktopFollowThemeColor = true;
   DesktopLyricBrightnessMode desktopLyricBrightnessMode =
       DesktopLyricBrightnessMode.follow;
-  LyricDisplayMode lyricDisplayMode = LyricDisplayMode.wordByWord;
   ZhConversionMode zhConversionMode = ZhConversionMode.none;
   bool promptWriteLyricToTag = true;
   int promptWriteLyricToTagDelay = 15;
   bool autoWriteLyricToTag = false;
   int autoWriteLyricToTagDelay = 30;
+  LyricTagWordFormat lyricTagWordFormat = LyricTagWordFormat.enhanced;
   bool useMaterialYouForLyrics = false;
   bool useMaterialYouForProgressBar = false;
   bool useMaterialYouForTransition = false;
@@ -358,19 +374,6 @@ class AppSettings {
       );
     }
 
-    final ldm = settingsMap['LyricDisplayMode'];
-    if (ldm != null) {
-      final modeName = normalizedSettingEnumName(ldm);
-      _instance.lyricDisplayMode =
-          normalizedSettingEnumValue(ldm, LyricDisplayMode.values) ??
-              switch (modeName) {
-                'plain' => LyricDisplayMode.lineByLine,
-                'verbatim' => LyricDisplayMode.wordByWord,
-                'enhanced' => LyricDisplayMode.wordByWord,
-                _ => LyricDisplayMode.wordByWord,
-              };
-    }
-
     final zcm = settingsMap['ZhConversionMode'];
     if (zcm != null) {
       final modeName = normalizedSettingEnumName(zcm);
@@ -417,6 +420,15 @@ class AppSettings {
         min: 10,
         max: 120,
       );
+    }
+
+    final ltwf = settingsMap['LyricTagWordFormat'];
+    if (ltwf != null) {
+      _instance.lyricTagWordFormat = normalizedSettingEnumValue(
+        ltwf,
+        LyricTagWordFormat.values,
+        fallback: LyricTagWordFormat.enhanced,
+      )!;
     }
 
     final umyl = settingsMap['UseMaterialYouForLyrics'];
@@ -467,11 +479,16 @@ class AppSettings {
 
     final tbla = settingsMap['TopBarLyricAnimation'];
     if (tbla != null) {
-      _instance.topBarLyricAnimation = normalizedSettingEnumValue(
-        tbla,
-        TopBarLyricAnimation.values,
-        fallback: TopBarLyricAnimation.slideUp,
-      )!;
+      final storedName = normalizedSettingEnumName(tbla);
+      _instance.topBarLyricAnimation = switch (storedName) {
+        'flipx' => TopBarLyricAnimation.slideLeft,
+        'flipy' => TopBarLyricAnimation.slideRight,
+        _ => normalizedSettingEnumValue(
+            tbla,
+            TopBarLyricAnimation.values,
+            fallback: TopBarLyricAnimation.slideUp,
+          )!,
+      };
     }
 
     final ecce = settingsMap['EnableCoverColorExtraction'];
@@ -580,6 +597,11 @@ class AppSettings {
       _instance.desktopLyricTextAlign = ((dlta as num).toInt()).clamp(0, 2);
     }
 
+    _instance.desktopLyricAnimation = DesktopLyricAnimation.fromString(
+          settingsMap['DesktopLyricAnimation']?.toString() ?? '',
+        ) ??
+        DesktopLyricAnimation.slideUp;
+
     if (settingsMap.containsKey('DesktopTextColor')) {
       _instance.desktopPlayedColor = settingsMap['DesktopTextColor'] as int?;
     }
@@ -653,16 +675,17 @@ class AppSettings {
         'DesktopLyricFontWeight': desktopLyricFontWeight,
         'DesktopBackgroundOpacity': desktopBackgroundOpacity,
         'DesktopLyricTextAlign': desktopLyricTextAlign,
+        'DesktopLyricAnimation': desktopLyricAnimation.name,
         'DesktopPlayedColor': desktopPlayedColor,
         'DesktopUnplayedColor': desktopUnplayedColor,
         'DesktopFollowThemeColor': desktopFollowThemeColor,
         'DesktopLyricBrightnessMode': desktopLyricBrightnessMode.name,
-        'LyricDisplayMode': lyricDisplayMode.name,
         'ZhConversionMode': zhConversionMode.name,
         'PromptWriteLyricToTag': promptWriteLyricToTag,
         'PromptWriteLyricToTagDelay': promptWriteLyricToTagDelay,
         'AutoWriteLyricToTag': autoWriteLyricToTag,
         'AutoWriteLyricToTagDelay': autoWriteLyricToTagDelay,
+        'LyricTagWordFormat': lyricTagWordFormat.name,
         'UseMaterialYouForLyrics': useMaterialYouForLyrics,
         'UseMaterialYouForProgressBar': useMaterialYouForProgressBar,
         'UseMaterialYouForTransition': useMaterialYouForTransition,
