@@ -3,7 +3,12 @@ import 'package:pure_music/lyric/lyric.dart';
 import 'package:xml/xml.dart';
 
 class Ttml extends Lyric {
-  Ttml(super.lines, [super.source = LyricFormat.local, super.rawText, super.isDuet]);
+  Ttml(
+    super.lines, [
+    super.source = LyricFormat.local,
+    super.rawText,
+    super.isDuet,
+  ]);
 
   static Ttml? fromTtmlText(String ttml, {String? separator}) {
     try {
@@ -33,7 +38,9 @@ class Ttml extends Lyric {
 
       if (lines.isEmpty) return null;
 
-      final isDuet = lines.any((l) => l.agent == 'v1') && lines.any((l) => l.agent == 'v2');
+      final isDuet =
+          lines.any((l) => l.agent == 'v1') &&
+          lines.any((l) => l.agent == 'v2');
 
       lines.sort((a, b) => a.start.compareTo(b.start));
 
@@ -42,7 +49,8 @@ class Ttml extends Lyric {
       for (int i = 0; i < lines.length; i++) {
         final l = lines[i];
         if (l.words.isEmpty && l.bgText != null) {
-          final bgEnd = l.bgEnd ??
+          final bgEnd =
+              l.bgEnd ??
               (l.bgWords.isNotEmpty
                   ? l.bgWords.last.start + l.bgWords.last.length
                   : l.start + l.length);
@@ -82,7 +90,9 @@ class Ttml extends Lyric {
         if (line.length <= Duration.zero) {
           if (nextStart != null) {
             final nextBasedLen = nextStart - line.start;
-            line.length = nextBasedLen.isNegative ? Duration.zero : nextBasedLen;
+            line.length = nextBasedLen.isNegative
+                ? Duration.zero
+                : nextBasedLen;
           } else {
             line.length = const Duration(seconds: 5);
           }
@@ -101,6 +111,13 @@ class Ttml extends Lyric {
 
       // 检测相邻行之间的时间间隙，自动插入间奏行
       final linesWithGaps = <TtmlLine>[];
+
+      // 开头前奏：第一句歌词之前（0 秒起）的空白
+      final openingDuration = lines.first.start;
+      if (openingDuration >= const Duration(seconds: 5)) {
+        linesWithGaps.add(TtmlLine(Duration.zero, openingDuration, const []));
+      }
+
       for (int i = 0; i < lines.length; i++) {
         final line = lines[i];
         linesWithGaps.add(line);
@@ -173,8 +190,7 @@ class Ttml extends Lyric {
     if (content.isEmpty) return true;
     return content.runes.every((c) {
       final char = String.fromCharCode(c);
-      return char == ' ' || char == '\u00A0' ||
-          '♪♫♬♩♭♯♮☆★·.。…'.contains(char);
+      return char == ' ' || char == '\u00A0' || '♪♫♬♩♭♯♮☆★·.。…'.contains(char);
     });
   }
 
@@ -210,8 +226,12 @@ class Ttml extends Lyric {
 
   static Map<String, String> _parseTimedTextMap(XmlElement root, String tag) {
     final result = <String, String>{};
-    for (final container in root.descendantElements.where((e) => e.name.local == tag)) {
-      for (final textElem in container.childElements.where((e) => e.name.local == 'text')) {
+    for (final container in root.descendantElements.where(
+      (e) => e.name.local == tag,
+    )) {
+      for (final textElem in container.childElements.where(
+        (e) => e.name.local == 'text',
+      )) {
         final key = _attr(textElem, 'for');
         if (key.isEmpty) continue;
         final value = _cleanText(textElem.innerText);
@@ -221,34 +241,55 @@ class Ttml extends Lyric {
     return result;
   }
 
-  static Map<String, _TtmlPronunciation> _parseTransliterations(XmlElement root) {
+  static Map<String, _TtmlPronunciation> _parseTransliterations(
+    XmlElement root,
+  ) {
     final result = <String, _TtmlPronunciation>{};
-    for (final container in root.descendantElements
-        .where((e) => e.name.local == 'transliteration')) {
-      for (final textElem in container.childElements.where((e) => e.name.local == 'text')) {
+    for (final container in root.descendantElements.where(
+      (e) => e.name.local == 'transliteration',
+    )) {
+      for (final textElem in container.childElements.where(
+        (e) => e.name.local == 'text',
+      )) {
         final key = _attr(textElem, 'for');
         if (key.isEmpty) continue;
         final words = <SyncLyricWord>[];
-        for (final span in textElem.childElements.where((e) => e.name.local == 'span')) {
+        for (final span in textElem.childElements.where(
+          (e) => e.name.local == 'span',
+        )) {
+          if (_hasRole(span, 'x-bg')) continue;
           final value = _removeBgParentheses(
-            _decodeEntities(span.innerText).replaceAll(RegExp(r'[ \t\r\n]+'), ' ').trim(),
+            _decodeEntities(
+              span.innerText,
+            ).replaceAll(RegExp(r'[ \t\r\n]+'), ' ').trim(),
           );
           if (value.isEmpty) continue;
           final start = _parseTime(_attr(span, 'begin'));
           final end = _parseTime(_attr(span, 'end'));
           if (start != null) {
-            words.add(SyncLyricWord(
-              start,
-              end != null ? end - start : Duration.zero,
-              value,
-            ));
+            words.add(
+              SyncLyricWord(
+                start,
+                end != null ? end - start : Duration.zero,
+                value,
+              ),
+            );
           }
         }
-        final plainText = _removeBgParentheses(
-          _decodeEntities(textElem.innerText).replaceAll(RegExp(r'[ \t\r\n]+'), ' ').trim(),
+        final backgroundText = _removeBgParentheses(
+          _collectRoleText(textElem, 'x-bg'),
         );
-        if (plainText.isNotEmpty || words.isNotEmpty) {
-          result[key] = _TtmlPronunciation(text: plainText, words: words);
+        final plainText = _removeBgParentheses(
+          _collectTextExcludingRole(textElem, 'x-bg'),
+        );
+        if (plainText.isNotEmpty ||
+            words.isNotEmpty ||
+            backgroundText.isNotEmpty) {
+          result[key] = _TtmlPronunciation(
+            text: plainText,
+            words: words,
+            backgroundText: backgroundText.isNotEmpty ? backgroundText : null,
+          );
         }
       }
     }
@@ -278,12 +319,7 @@ class Ttml extends Lyric {
       // 长时间空白段落保留为间奏/过渡行
       if (text.isEmpty || _isMusicSymbolOnly(text)) {
         if (duration >= const Duration(seconds: 3)) {
-          final line = TtmlLine(
-            begin,
-            duration,
-            const [],
-            null,
-          );
+          final line = TtmlLine(begin, duration, const [], null);
           if (resolvedAgent.isNotEmpty) line.agent = resolvedAgent;
           return line;
         }
@@ -292,14 +328,13 @@ class Ttml extends Lyric {
 
       final parts = separator != null ? text.split(separator) : [text];
       final wordContent = parts.first.trim();
-      final translation = parts.length > 1 ? parts.sublist(1).join(separator ?? '').trim() : null;
+      final translation = parts.length > 1
+          ? parts.sublist(1).join(separator ?? '').trim()
+          : null;
 
-      final line = TtmlLine(
-        begin,
-        duration,
-        [SyncLyricWord(begin, Duration.zero, wordContent)],
-        translation?.isNotEmpty == true ? translation : null,
-      );
+      final line = TtmlLine(begin, duration, [
+        SyncLyricWord(begin, Duration.zero, wordContent),
+      ], translation?.isNotEmpty == true ? translation : null);
       if (resolvedAgent.isNotEmpty) line.agent = resolvedAgent;
       return line;
     }
@@ -347,44 +382,45 @@ class Ttml extends Lyric {
     String? pronunciation;
     if (romanText.isNotEmpty) {
       pronunciation = romanText;
-    } else if (transf != null && transf.text.replaceAll(RegExp(r'[()（）]'), '').trim().isNotEmpty) {
+    } else if (transf != null &&
+        transf.text.replaceAll(RegExp(r'[()（）]'), '').trim().isNotEmpty) {
       pronunciation = _removeBgParentheses(transf.text);
     } else if (transf != null && transf.words.isNotEmpty) {
       pronunciation = transf.words.map((w) => w.content).join();
     }
     if (pronunciation != null && pronunciation.isEmpty) pronunciation = null;
 
-    String? translation =
-        inlineTranslation.isNotEmpty ? inlineTranslation : lineTranslation;
+    String? translation = inlineTranslation.isNotEmpty
+        ? inlineTranslation
+        : lineTranslation;
     if (translation != null && translation.isEmpty) translation = null;
 
     final duration = end != null ? end - begin : Duration.zero;
-    if (text.isEmpty && bgSpan == null && translation == null && pronunciation == null) {
+    if (text.isEmpty &&
+        bgSpan == null &&
+        translation == null &&
+        pronunciation == null) {
       // 非空子元素但最终无歌词内容（如仅时间标签的段落），保留为间奏行
       if (duration >= const Duration(seconds: 3)) {
-        final line = TtmlLine(
-          begin,
-          duration,
-          const [],
-          null,
-        );
+        final line = TtmlLine(begin, duration, const [], null);
         if (resolvedAgent.isNotEmpty) line.agent = resolvedAgent;
         return line;
       }
       return null;
     }
 
-    final line = TtmlLine(
-      begin,
-      duration,
-      words,
-      translation,
-    );
+    final line = TtmlLine(begin, duration, words, translation);
     line.romanLyric = pronunciation;
     if (resolvedAgent.isNotEmpty) line.agent = resolvedAgent;
 
     if (bgSpan != null) {
-      _parseBackground(bgSpan, line, end, translations[key]);
+      _parseBackground(
+        bgSpan,
+        line,
+        end,
+        translations[key],
+        fallbackRoman: transf?.backgroundText,
+      );
     }
 
     return line;
@@ -395,6 +431,7 @@ class Ttml extends Lyric {
     List<SyncLyricWord> words,
     Duration? fallbackEnd, {
     Duration parentBegin = Duration.zero,
+    bool Function(XmlElement)? skipElement,
   }) {
     final buffer = StringBuffer();
     for (int i = 0; i < nodes.length; i++) {
@@ -406,6 +443,7 @@ class Ttml extends Lyric {
         fallbackEnd,
         parentBegin,
         separator,
+        skipElement,
       );
     }
     return _cleanText(buffer.toString());
@@ -439,6 +477,7 @@ class Ttml extends Lyric {
     Duration? fallbackEnd,
     Duration parentBegin,
     String trailingSpace,
+    bool Function(XmlElement)? skipElement,
   ) {
     if (node is XmlText) {
       buffer.write(_decodeEntities(node.value));
@@ -447,6 +486,7 @@ class Ttml extends Lyric {
 
     if (node is! XmlElement) return;
     final element = node;
+    if (skipElement?.call(element) == true) return;
 
     // <br/> 用占位符标记，最后 _cleanText 会换回真正的换行
     if (element.name.local == 'br') {
@@ -476,14 +516,20 @@ class Ttml extends Lyric {
       final wordText = text + trailingSpace;
       if (wordText.isNotEmpty) {
         final parsedEnd = _parseTime(_attr(element, 'end'));
-        final actualEnd = parsedEnd != null && _isOffsetTime(_attr(element, 'end'))
+        final actualEnd =
+            parsedEnd != null && _isOffsetTime(_attr(element, 'end'))
             ? parentBegin + parsedEnd
             : parsedEnd;
-        words.add(SyncLyricWord(
-          actualBegin,
-          (actualEnd ?? fallbackEnd ?? actualBegin + _estimateDuration(text)) - actualBegin,
-          wordText,
-        ));
+        words.add(
+          SyncLyricWord(
+            actualBegin,
+            (actualEnd ??
+                    fallbackEnd ??
+                    actualBegin + _estimateDuration(text)) -
+                actualBegin,
+            wordText,
+          ),
+        );
       }
       buffer.write(wordText);
       return; // 已处理，不再遍历子元素
@@ -500,6 +546,7 @@ class Ttml extends Lyric {
         fallbackEnd,
         parentBegin,
         childTrailing,
+        skipElement,
       );
     }
   }
@@ -514,18 +561,57 @@ class Ttml extends Lyric {
     }
   }
 
+  static String _collectRoleText(XmlElement root, String role) {
+    final parts = <String>[];
+
+    void visit(XmlElement element) {
+      for (final child in element.childElements) {
+        if (_hasRole(child, role)) {
+          final text = _cleanText(child.innerText);
+          if (text.isNotEmpty) parts.add(text);
+        } else {
+          visit(child);
+        }
+      }
+    }
+
+    visit(root);
+    return parts.join(' ');
+  }
+
+  static String _collectTextExcludingRole(XmlElement root, String role) {
+    final buffer = StringBuffer();
+
+    void visit(XmlElement element) {
+      for (final child in element.children) {
+        if (child is XmlText) {
+          buffer.write(_decodeEntities(child.value));
+        } else if (child is XmlElement && !_hasRole(child, role)) {
+          visit(child);
+        }
+      }
+    }
+
+    visit(root);
+    return _cleanText(buffer.toString());
+  }
+
   static void _parseBackground(
     XmlElement bgSpan,
     TtmlLine line,
     Duration? fallbackEnd,
-    String? fallbackTranslation,
-  ) {
+    String? fallbackTranslation, {
+    String? fallbackRoman,
+  }) {
     final bgWords = <SyncLyricWord>[];
     final bgBegin = _parseTime(_attr(bgSpan, 'begin')) ?? Duration.zero;
 
     // 排除翻译子节点，让 inner span 各自成为独立词
     final bgChildren = bgSpan.children.where((child) {
-      if (child is XmlElement && _hasRole(child, 'x-translation')) return false;
+      if (child is XmlElement &&
+          (_hasRole(child, 'x-translation') || _hasRole(child, 'x-roman'))) {
+        return false;
+      }
       return true;
     }).toList();
     final bgText = _collectMainText(
@@ -533,8 +619,13 @@ class Ttml extends Lyric {
       bgWords,
       fallbackEnd,
       parentBegin: bgBegin,
+      skipElement: (element) =>
+          _hasRole(element, 'x-translation') || _hasRole(element, 'x-roman'),
     );
     _mergeConsecutiveWords(bgWords);
+
+    var bgRoman = _collectRoleText(bgSpan, 'x-roman');
+    if (bgRoman.isEmpty) bgRoman = fallbackRoman ?? '';
 
     final translationChildren = bgSpan.childElements
         .where((e) => _hasRole(e, 'x-translation'))
@@ -548,10 +639,13 @@ class Ttml extends Lyric {
 
     final cleanedBgText = _removeBgParentheses(bgText);
     final cleanedBgWords = bgWords
-        .map((w) => SyncLyricWord(
+        .map(
+          (w) => SyncLyricWord(
             w.start,
             w.length,
-            w.content.replaceAll(RegExp(r'[()（）]'), '')))
+            w.content.replaceAll(RegExp(r'[()（）]'), ''),
+          ),
+        )
         .where((w) => w.content.isNotEmpty)
         .toList();
 
@@ -563,8 +657,19 @@ class Ttml extends Lyric {
       }
     }
 
-    line.bgStart = _parseTime(_attr(bgSpan, 'begin'));
-    line.bgEnd = _parseTime(_attr(bgSpan, 'end')) ?? fallbackEnd;
+    final parsedBgStart = _parseTime(_attr(bgSpan, 'begin')) ?? bgBegin;
+    final parsedBgEnd = _parseTime(_attr(bgSpan, 'end')) ?? fallbackEnd;
+    if (cleanedBgWords.isEmpty &&
+        finalBgText.isNotEmpty &&
+        parsedBgEnd != null &&
+        parsedBgEnd > parsedBgStart) {
+      cleanedBgWords.add(
+        SyncLyricWord(parsedBgStart, parsedBgEnd - parsedBgStart, finalBgText),
+      );
+    }
+
+    line.bgStart = parsedBgStart;
+    line.bgEnd = parsedBgEnd;
     line.bgText = finalBgText.isNotEmpty ? finalBgText : null;
     line.bgWords = cleanedBgWords;
     line.bgTranslation = bgTranslation.isNotEmpty ? bgTranslation : null;
@@ -575,6 +680,7 @@ class Ttml extends Lyric {
         start: line.bgStart ?? Duration.zero,
         end: line.bgEnd ?? Duration.zero,
         translation: bgTranslation.isNotEmpty ? bgTranslation : null,
+        romanLyric: bgRoman.isNotEmpty ? bgRoman : null,
       );
     }
   }
@@ -586,7 +692,8 @@ class Ttml extends Lyric {
       final cur = words[wi];
       final next = words[wi + 1];
       final curEnd = cur.content.endsWith(' ') || cur.content.endsWith('\n');
-      final nextStart = next.content.startsWith(' ') || next.content.startsWith('\n');
+      final nextStart =
+          next.content.startsWith(' ') || next.content.startsWith('\n');
       if (!curEnd && !nextStart) {
         // 只合并拉丁词碎片，CJK/假名保留源时间轴
         if (!_canMergeAsLatinWord(cur.content, next.content)) {
@@ -625,17 +732,21 @@ class Ttml extends Lyric {
   }
 
   static bool _containsLatinLetter(String text) {
-    return text.runes.any((c) =>
-        (c >= 0x41 && c <= 0x5A) ||
-        (c >= 0x61 && c <= 0x7A) ||
-        (c >= 0x00C0 && c <= 0x024F));
+    return text.runes.any(
+      (c) =>
+          (c >= 0x41 && c <= 0x5A) ||
+          (c >= 0x61 && c <= 0x7A) ||
+          (c >= 0x00C0 && c <= 0x024F),
+    );
   }
 
   static bool _containsCjkKanaOrHangul(String text) {
-    return text.runes.any((c) =>
-        (c >= 0x3040 && c <= 0x30FF) ||
-        (c >= 0x3400 && c <= 0x9FFF) ||
-        (c >= 0xAC00 && c <= 0xD7AF));
+    return text.runes.any(
+      (c) =>
+          (c >= 0x3040 && c <= 0x30FF) ||
+          (c >= 0x3400 && c <= 0x9FFF) ||
+          (c >= 0xAC00 && c <= 0xD7AF),
+    );
   }
 
   static void _fillWordDurations(
@@ -653,8 +764,8 @@ class Ttml extends Lyric {
       curr.length = d.isNegative
           ? Duration.zero
           : (d < const Duration(milliseconds: 50)
-              ? const Duration(milliseconds: 50)
-              : d);
+                ? const Duration(milliseconds: 50)
+                : d);
     }
   }
 
@@ -670,7 +781,8 @@ class Ttml extends Lyric {
         final minutes = double.tryParse(parts[1]) ?? 0;
         final seconds = _parseSeconds(parts[2]);
         return Duration(
-          milliseconds: ((hours * 3600 + minutes * 60 + seconds) * 1000).round(),
+          milliseconds: ((hours * 3600 + minutes * 60 + seconds) * 1000)
+              .round(),
         );
       } else if (parts.length == 2) {
         final minutes = double.tryParse(parts[0]) ?? 0;
@@ -746,7 +858,13 @@ class TtmlWord extends SyncLyricWord {
 class _TtmlPronunciation {
   final String text;
   final List<SyncLyricWord> words;
-  const _TtmlPronunciation({required this.text, required this.words});
+  final String? backgroundText;
+
+  const _TtmlPronunciation({
+    required this.text,
+    required this.words,
+    this.backgroundText,
+  });
 }
 
 extension on String {
