@@ -96,6 +96,41 @@ class PlayerStateChangedMessage extends Message {
   Map<String, dynamic> toMessageJson() => {'playing': playing};
 }
 
+class LyricProgressChangedMessage extends Message {
+  final int progressMs;
+  final int sampledAtMs;
+  final double playbackRate;
+  final bool playing;
+  final int? lineId;
+
+  const LyricProgressChangedMessage(
+    this.progressMs,
+    this.sampledAtMs,
+    this.playbackRate,
+    this.playing, [
+    this.lineId,
+  ]);
+
+  factory LyricProgressChangedMessage.fromJson(Map<String, dynamic> json) {
+    return LyricProgressChangedMessage(
+      (json['progressMs'] as num).toInt(),
+      (json['sampledAtMs'] as num).toInt(),
+      (json['playbackRate'] as num).toDouble(),
+      json['playing'] as bool,
+      (json['lineId'] as num?)?.toInt(),
+    );
+  }
+
+  @override
+  Map<String, dynamic> toMessageJson() => {
+        'progressMs': progressMs,
+        'sampledAtMs': sampledAtMs,
+        'playbackRate': playbackRate,
+        'playing': playing,
+        if (lineId != null) 'lineId': lineId,
+      };
+}
+
 class NowPlayingChangedMessage extends Message {
   final String title;
   final String artist;
@@ -130,6 +165,13 @@ class LyricLineChangedMessage extends Message {
   final String? nextTranslation;
   final String? nextRomanLyric;
   final List<LyricWord>? nextWords;
+  final bool? wordByWord;
+  final int? lineId;
+  final int? highlightDeadlineMs;
+  final int? highlightCatchUpDurationMs;
+  final int? highlightFinishLeadMs;
+
+  bool get isWordByWord => wordByWord ?? (words?.isNotEmpty ?? false);
 
   const LyricLineChangedMessage(
     this.content,
@@ -142,6 +184,11 @@ class LyricLineChangedMessage extends Message {
     this.nextWords,
     this.romanLyric,
     this.nextRomanLyric,
+    this.wordByWord,
+    this.lineId,
+    this.highlightDeadlineMs,
+    this.highlightCatchUpDurationMs,
+    this.highlightFinishLeadMs,
   ]);
 
   factory LyricLineChangedMessage.fromJson(Map<String, dynamic> json) {
@@ -160,6 +207,11 @@ class LyricLineChangedMessage extends Message {
           .toList(growable: false),
       json['romanLyric'] as String?,
       json['nextRomanLyric'] as String?,
+      json['isWordByWord'] as bool?,
+      (json['lineId'] as num?)?.toInt(),
+      (json['highlightDeadlineMs'] as num?)?.toInt(),
+      (json['highlightCatchUpDurationMs'] as num?)?.toInt(),
+      (json['highlightFinishLeadMs'] as num?)?.toInt(),
     );
   }
 
@@ -175,6 +227,14 @@ class LyricLineChangedMessage extends Message {
         'nextTranslation': nextTranslation,
         'nextRomanLyric': nextRomanLyric,
         'nextWords': nextWords?.map((e) => e.toJson()).toList(growable: false),
+        'isWordByWord': wordByWord,
+        if (lineId != null) 'lineId': lineId,
+        if (highlightDeadlineMs != null)
+          'highlightDeadlineMs': highlightDeadlineMs,
+        if (highlightCatchUpDurationMs != null)
+          'highlightCatchUpDurationMs': highlightCatchUpDurationMs,
+        if (highlightFinishLeadMs != null)
+          'highlightFinishLeadMs': highlightFinishLeadMs,
       };
 }
 
@@ -206,7 +266,8 @@ class ThemeChangedMessage extends Message {
   final int surfaceContainer;
   final int onSurface;
 
-  const ThemeChangedMessage(this.darkMode, this.primary, this.surfaceContainer, this.onSurface);
+  const ThemeChangedMessage(
+      this.darkMode, this.primary, this.surfaceContainer, this.onSurface);
 
   factory ThemeChangedMessage.fromJson(Map<String, dynamic> json) {
     return ThemeChangedMessage(
@@ -242,11 +303,13 @@ class DesktopLyricConfigMessage extends Message {
   final int? romanPosition;
   final bool? showNowPlayingInfo;
   final int? lyricTextAlign;
+  final int? lyricAnimation;
   final bool? enableStroke;
   final double? backgroundOpacity;
   final int? playedColor;
   final int? unplayedColor;
   final bool? followThemeColor;
+  final bool? useLightOutline;
 
   const DesktopLyricConfigMessage({
     this.lyricFontSize,
@@ -257,27 +320,34 @@ class DesktopLyricConfigMessage extends Message {
     this.romanPosition,
     this.showNowPlayingInfo,
     this.lyricTextAlign,
+    this.lyricAnimation,
     this.enableStroke,
     this.backgroundOpacity,
     this.playedColor,
     this.unplayedColor,
     this.followThemeColor,
+    this.useLightOutline,
   });
 
   @override
   Map<String, dynamic> toMessageJson() => {
         if (lyricFontSize != null) 'lyricFontSize': lyricFontSize,
-        if (translationFontSize != null) 'translationFontSize': translationFontSize,
+        if (translationFontSize != null)
+          'translationFontSize': translationFontSize,
         if (lyricFontWeight != null) 'lyricFontWeight': lyricFontWeight,
-        if (showLyricTranslation != null) 'showLyricTranslation': showLyricTranslation,
+        if (showLyricTranslation != null)
+          'showLyricTranslation': showLyricTranslation,
         if (showRoman != null) 'showRoman': showRoman,
         if (romanPosition != null) 'romanPosition': romanPosition,
-        if (showNowPlayingInfo != null) 'showNowPlayingInfo': showNowPlayingInfo,
+        if (showNowPlayingInfo != null)
+          'showNowPlayingInfo': showNowPlayingInfo,
         if (lyricTextAlign != null) 'lyricTextAlign': lyricTextAlign,
+        if (lyricAnimation != null) 'lyricAnimation': lyricAnimation,
         if (enableStroke != null) 'enableStroke': enableStroke,
         if (backgroundOpacity != null) 'backgroundOpacity': backgroundOpacity,
         if (playedColor != null) 'playedColor': playedColor,
         if (unplayedColor != null) 'unplayedColor': unplayedColor,
         if (followThemeColor != null) 'followThemeColor': followThemeColor,
+        if (useLightOutline != null) 'useLightOutline': useLightOutline,
       };
 }
