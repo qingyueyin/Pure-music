@@ -4,6 +4,19 @@ import 'package:pure_music/core/desktop_lyric_colors.dart';
 import 'package:pure_music/core/enums.dart';
 
 void main() {
+  group('shouldUseLightDesktopLyricOutline', () {
+    test('uses the contrasting outline for the played color', () {
+      expect(
+        shouldUseLightDesktopLyricOutline(const Color(0xff765a00)),
+        isTrue,
+      );
+      expect(
+        shouldUseLightDesktopLyricOutline(const Color(0xffffb95f)),
+        isFalse,
+      );
+    });
+  });
+
   group('DesktopLyricBrightnessMode', () {
     test('parses stored names and falls back for invalid values', () {
       expect(
@@ -45,6 +58,23 @@ void main() {
 
       expect(colors.played, scheme.primary);
       expect(colors.unplayed, scheme.onSurface);
+    });
+
+    test('custom colors override neutral defaults', () {
+      final scheme = ColorScheme.fromSeed(
+        seedColor: Colors.orange,
+        brightness: Brightness.dark,
+      );
+      final colors = resolveDesktopLyricColors(
+        followThemeColor: false,
+        brightnessMode: DesktopLyricBrightnessMode.dark,
+        scheme: scheme,
+        customPlayedColor: 0xff123456,
+        customUnplayedColor: 0x80123456,
+      );
+
+      expect(colors.played, const Color(0xff123456));
+      expect(colors.unplayed, const Color(0x80123456));
     });
 
     test('follow uses effective dark brightness', () {
