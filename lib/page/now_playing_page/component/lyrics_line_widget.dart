@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/physics.dart';
 import 'package:provider/provider.dart';
@@ -27,6 +28,7 @@ class LyricsLineWidget extends StatefulWidget {
     this.jumpTriggerId = 0,
     this.jumpDeltaY = 0.0,
     this.isUserScrolling = false,
+    this.backgroundVocalVisibilityListenable,
     this.onTap,
   });
 
@@ -38,6 +40,7 @@ class LyricsLineWidget extends StatefulWidget {
   final int jumpTriggerId;
   final double jumpDeltaY;
   final bool isUserScrolling;
+  final ValueListenable<double>? backgroundVocalVisibilityListenable;
   final VoidCallback? onTap;
 
   /// 保留给内存监控调用；歌词模糊已改为 painter 内绘制。
@@ -123,10 +126,20 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
       duration: const Duration(milliseconds: 600),
     );
     _floatController.value = widget.distance == 0 ? 1.0 : 0.0;
+    widget.backgroundVocalVisibilityListenable
+        ?.addListener(_updateBackgroundVocalHeight);
     _playerStateListener = _syncProgressTicker;
     PlayService.instance.playbackService.playerStateNotifier
         .addListener(_playerStateListener);
     _syncProgressTicker();
+  }
+
+  void _updateBackgroundVocalHeight() {
+    if (!mounted || _cachedPainter == null || _cachedLineWidth <= 0) return;
+    final height = _cachedPainter!.measureHeight(_cachedLineWidth);
+    if ((height - _heightNotifier.value).abs() <= 0.01) return;
+    _cachedLineHeight = height;
+    _heightNotifier.value = height;
   }
 
   void _animateScale() {
@@ -306,6 +319,14 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
       }
     }
 
+    if (widget.backgroundVocalVisibilityListenable !=
+        oldWidget.backgroundVocalVisibilityListenable) {
+      oldWidget.backgroundVocalVisibilityListenable
+          ?.removeListener(_updateBackgroundVocalHeight);
+      widget.backgroundVocalVisibilityListenable
+          ?.addListener(_updateBackgroundVocalHeight);
+    }
+
     final oldKeepAlive = (oldWidget.distance ?? 999).abs() <= 2;
     final newKeepAlive = (widget.distance ?? 999).abs() <= 2;
     if (oldKeepAlive != newKeepAlive) {
@@ -327,6 +348,8 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
     _ticker?.dispose();
     _scaleController.dispose();
     _floatController.dispose();
+    widget.backgroundVocalVisibilityListenable
+        ?.removeListener(_updateBackgroundVocalHeight);
     _currentTimeNotifier.dispose();
     _heightNotifier.dispose();
     _cachedPainter = null;
@@ -444,11 +467,16 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
                     AppSettings.instance.useMaterialYouForLyrics;
                 final currentTimeListenable =
                     _needsProgressTicker ? _currentTimeNotifier : null;
+                final backgroundVocalVisibilityListenable = isCurrentLine
+                    ? null
+                    : widget.backgroundVocalVisibilityListenable;
 
                 if (_cachedPainter == null ||
                     _cachedPainter!.line != widget.line ||
                     _cachedPainter!.currentTimeListenable !=
                         currentTimeListenable ||
+                    _cachedPainter!.backgroundVocalVisibilityListenable !=
+                        backgroundVocalVisibilityListenable ||
                     (currentTimeListenable == null &&
                         _cachedPainter!.currentTimeMs != _currentTimeMs) ||
                     _cachedPainter!.blurSigma != animatedBlurSigma ||
@@ -463,6 +491,8 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
                     line: widget.line,
                     currentTimeMs: _currentTimeMs,
                     currentTimeListenable: currentTimeListenable,
+                    backgroundVocalVisibilityListenable:
+                        backgroundVocalVisibilityListenable,
                     blurSigma: animatedBlurSigma,
                     config: renderConfig,
                     scheme: scheme,

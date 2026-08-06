@@ -256,15 +256,12 @@ class _MeshGradientBackgroundInternalState
 
   void _scheduleFallbackPalette() {
     _fallbackPaletteTimer?.cancel();
-    if (_paletteColors.isEmpty &&
-        _prevPaletteColors.isEmpty &&
-        _targetPaletteColors.isEmpty) {
-      return;
-    }
+    if (_currentDisplayedPalette().isNotEmpty) return;
     _fallbackPaletteTimer = Timer(const Duration(milliseconds: 900), () {
       if (_disposed || !mounted) return;
       final colors = widget.inputs.preExtractedColors;
       if (colors != null && colors.isNotEmpty) return;
+      if (_currentDisplayedPalette().isNotEmpty) return;
       _applyPaletteColors(List.filled(4, widget.fallbackColor));
     });
   }

@@ -1,6 +1,6 @@
 import 'dart:math' show cos, pi;
 
-import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/foundation.dart' show Listenable, ValueListenable;
 import 'package:flutter/material.dart';
 
 import 'package:pure_music/core/enums.dart';
@@ -13,7 +13,7 @@ import 'package:pure_music/lyric/ttml.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.dart';
 
 const _bgEntryDuration = 400.0;
-const _bgExitDuration = 400.0;
+const lyricBackgroundVocalExitDuration = Duration(milliseconds: 400);
 
 enum LyricWordEffect { none, scale, scaleAndGlow }
 
@@ -183,6 +183,7 @@ class LyricsLinePainter extends CustomPainter {
   final LyricLine line;
   final double currentTimeMs;
   final ValueListenable<double>? currentTimeListenable;
+  final ValueListenable<double>? backgroundVocalVisibilityListenable;
   final double blurSigma;
   final LyricRenderConfig config;
   final ColorScheme scheme;
@@ -213,10 +214,11 @@ class LyricsLinePainter extends CustomPainter {
   static final _blurPaintCache = <int, Paint>{};
   static const _maxBlurPaintCacheSize = 64;
 
-  const LyricsLinePainter({
+  LyricsLinePainter({
     required this.line,
     required this.currentTimeMs,
     this.currentTimeListenable,
+    this.backgroundVocalVisibilityListenable,
     required this.blurSigma,
     required this.config,
     required this.scheme,
@@ -225,7 +227,10 @@ class LyricsLinePainter extends CustomPainter {
     this.fontFamily,
     this.agent,
     this.opacity = 1.0,
-  }) : super(repaint: currentTimeListenable);
+  }) : super(repaint: Listenable.merge([
+          currentTimeListenable,
+          backgroundVocalVisibilityListenable,
+        ]));
 
   double get _effectiveCurrentTimeMs =>
       currentTimeListenable?.value ?? currentTimeMs;
@@ -358,6 +363,8 @@ class LyricsLinePainter extends CustomPainter {
   }
 
   double _bgHeightFactor(SyncLyricLine syncLine) {
+    final visibility = backgroundVocalVisibilityListenable?.value;
+    if (visibility != null) return visibility.clamp(0.0, 1.0).toDouble();
     if (!isMainLine) return 0.0;
     final currentTimeMs = _effectiveCurrentTimeMs;
     final start = (syncLine.bgStart ?? syncLine.bg?.start ?? syncLine.start)
@@ -376,9 +383,11 @@ class LyricsLinePainter extends CustomPainter {
 
     if (currentTimeMs <= end) return 1.0;
 
-    if (currentTimeMs < end + _bgExitDuration) {
+    final exitDuration =
+        lyricBackgroundVocalExitDuration.inMilliseconds.toDouble();
+    if (currentTimeMs < end + exitDuration) {
       // 退出：向上收起，从 1 到 0
-      final t = ((currentTimeMs - end) / _bgExitDuration).clamp(0.0, 1.0);
+      final t = ((currentTimeMs - end) / exitDuration).clamp(0.0, 1.0);
       return 1.0 - Curves.easeInCubic.transform(t);
     }
 
@@ -1815,6 +1824,8 @@ class LyricsLinePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant LyricsLinePainter oldDelegate) {
     return currentTimeListenable != oldDelegate.currentTimeListenable ||
+        backgroundVocalVisibilityListenable !=
+            oldDelegate.backgroundVocalVisibilityListenable ||
         (currentTimeListenable == null &&
             currentTimeMs != oldDelegate.currentTimeMs) ||
         blurSigma != oldDelegate.blurSigma ||

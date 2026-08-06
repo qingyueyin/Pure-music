@@ -31,6 +31,7 @@ const _shaderFadeInWithoutBlur = 0.05;
 const _shaderFadeOutWithBlur = 0.80;
 const _shaderFadeOutWithoutBlur = 0.95;
 const _lyricOffsetCacheCapacity = 6;
+const _backgroundVocalStaggerHold = Duration(milliseconds: 600);
 
 bool alwaysShowLyricViewControls = false;
 
@@ -242,6 +243,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   Timer? _userScrollHoldTimer;
   Timer? _sizeChangeTimer;
   Timer? _idleCleanupTimer;
+  Timer? _backgroundVocalReleaseTimer;
   bool _didIdleCleanup = false;
   LyricScrollState _scrollState = LyricScrollState.idle;
   int _mainLine = 0;
@@ -254,6 +256,9 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   /// TTML 重叠行的额外透明度 boost，不决定“当前高亮行”。
   /// 唯一当前行来源是 [_mainLine]。
   final Set<int> _activeLines = {};
+  int? _departingBackgroundVocalLine;
+  late final AnimationController _backgroundVocalExitController;
+  int _backgroundVocalExitGeneration = 0;
   int _pendingScrollRetries = 0;
   static const int _maxPendingScrollRetries = 90;
   LyricViewportRange _viewportRange =
@@ -303,6 +308,10 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       begin: 0,
       interpolator: _sineOutInterpolator,
       duration: const Duration(milliseconds: 300),
+    );
+    _backgroundVocalExitController = AnimationController(
+      vsync: this,
+      duration: lyricBackgroundVocalExitDuration,
     );
     lyricLineStreamSubscription =
         lyricService.lyricLineStream.listen(_updateNextLyricLine);
@@ -408,7 +417,49 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     }
     if (!_scrollTransition.isActive) {
       _stopScrollTicker();
+      _collapseDepartingBackgroundVocal();
     }
+  }
+
+  void _collapseDepartingBackgroundVocal() {
+    _backgroundVocalReleaseTimer?.cancel();
+    _backgroundVocalReleaseTimer = null;
+    if (_departingBackgroundVocalLine == null || _disposed || !mounted) return;
+    final line = _departingBackgroundVocalLine;
+    final generation = ++_backgroundVocalExitGeneration;
+    _backgroundVocalExitController
+        .animateTo(
+          0.0,
+          duration: lyricBackgroundVocalExitDuration,
+          curve: Curves.easeInCubic,
+        )
+        .whenCompleteOrCancel(() {
+      if (_disposed ||
+          !mounted ||
+          generation != _backgroundVocalExitGeneration ||
+          line != _departingBackgroundVocalLine) {
+        return;
+      }
+      setState(() => _departingBackgroundVocalLine = null);
+    });
+  }
+
+  void _discardDepartingBackgroundVocal() {
+    _backgroundVocalReleaseTimer?.cancel();
+    _backgroundVocalReleaseTimer = null;
+    _backgroundVocalExitGeneration++;
+    _backgroundVocalExitController
+      ..stop()
+      ..value = 0.0;
+    _departingBackgroundVocalLine = null;
+  }
+
+  void _scheduleDepartingBackgroundVocalRelease() {
+    _backgroundVocalReleaseTimer?.cancel();
+    if (_departingBackgroundVocalLine == null) return;
+    _backgroundVocalReleaseTimer = Timer(_backgroundVocalStaggerHold, () {
+      _collapseDepartingBackgroundVocal();
+    });
   }
 
   void _computeOffsets(double maxWidth) {
@@ -789,6 +840,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       _jumpDeltaY = 0;
       _jumpTriggerId++;
       _activeLines.clear();
+      _discardDepartingBackgroundVocal();
       _viewportRange = const LyricViewportRange(start: 0, end: 0);
       _lineKeys.clear();
       _startPositionResyncWindow();
@@ -871,8 +923,10 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       _stopScrollTicker();
       _needsInitialScroll = false;
       _positionResyncExtensionCount = 0;
+      _scheduleDepartingBackgroundVocalRelease();
     } else {
       _jumpDeltaY = 0;
+      _collapseDepartingBackgroundVocal();
     }
   }
 
@@ -895,6 +949,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       if (_scrollState == LyricScrollState.programScrolling) {
         _scrollState = LyricScrollState.idle;
       }
+      _collapseDepartingBackgroundVocal();
       return;
     }
 
@@ -915,6 +970,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     _markActivity(); // 标记活动
     if (_scrollState != LyricScrollState.userDragging) {
       _stopScrollTicker();
+      _discardDepartingBackgroundVocal();
       setState(() {
         _scrollState = LyricScrollState.userDragging;
         _pendingStaggerScroll = false;
@@ -1115,6 +1171,31 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
         .toSet();
   }
 
+  bool _isBackgroundVocalVisible(LyricLine line) {
+    if (line is! SyncLyricLine) return false;
+    final hasBackground = line.bgText?.isNotEmpty == true ||
+        line.bgTranslation?.isNotEmpty == true ||
+        line.bgWords.isNotEmpty;
+    if (!hasBackground) return false;
+    final start = (line.bgStart ?? line.bg?.start ?? line.start)
+        .inMilliseconds
+        .toDouble();
+    var end = (line.bgEnd ?? line.bg?.end ?? (line.start + line.length))
+        .inMilliseconds
+        .toDouble();
+    if (line.bgWords.isNotEmpty) {
+      final lastWord = line.bgWords.last;
+      end = max(
+        end,
+        (lastWord.start + lastWord.length).inMilliseconds.toDouble(),
+      );
+    }
+    final positionMs = playbackService.position * 1000.0;
+    return positionMs >= start &&
+        positionMs <
+            end + lyricBackgroundVocalExitDuration.inMilliseconds.toDouble();
+  }
+
   void _syncToPlaybackPosition({
     Duration? duration,
     bool forceScroll = true,
@@ -1201,6 +1282,23 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     );
     if (renderableMainLine == null) return;
     final nextActiveLines = _renderableActiveLines(update);
+    final previousMainLine = _mainLine;
+    final mainLineChanged = previousMainLine != renderableMainLine;
+    final departingBackgroundVocalLine = forceScroll
+        ? null
+        : mainLineChanged && _isBackgroundVocalVisible(lines[previousMainLine])
+            ? previousMainLine
+            : mainLineChanged
+                ? null
+                : _departingBackgroundVocalLine;
+    if (departingBackgroundVocalLine != _departingBackgroundVocalLine) {
+      _backgroundVocalReleaseTimer?.cancel();
+      _backgroundVocalReleaseTimer = null;
+      _backgroundVocalExitGeneration++;
+      _backgroundVocalExitController
+        ..stop()
+        ..value = departingBackgroundVocalLine == null ? 0.0 : 1.0;
+    }
 
     final renderConfig = context.read<LyricViewController>().renderConfig;
     final shouldStagger = canStartLyricStagger(
@@ -1239,6 +1337,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
     setState(() {
       _mainLine = renderableMainLine;
+      _departingBackgroundVocalLine = departingBackgroundVocalLine;
       _activeLines
         ..clear()
         ..addAll(nextActiveLines);
@@ -1414,6 +1513,10 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                           jumpTriggerId: _jumpTriggerId,
                           jumpDeltaY: _jumpDeltaY,
                           isUserScrolling: userIsDragging,
+                          backgroundVocalVisibilityListenable:
+                              i == _departingBackgroundVocalLine
+                                  ? _backgroundVocalExitController
+                                  : null,
                           onTap: widget.enableSeekOnTap
                               ? () => _seekToLyricLineWithOriginalIndex(line)
                               : null,
@@ -1442,6 +1545,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     _sizeChangeTimer?.cancel();
     _playbackResyncTimer?.cancel();
     _idleCleanupTimer?.cancel(); // 取消空闲检测
+    _backgroundVocalReleaseTimer?.cancel();
+    _backgroundVocalExitController.dispose();
     _lyricViewController?.removeListener(_scheduleEnsureCurrentVisible);
     routeVisibilityObserver.unsubscribe(this);
     playbackService.nowPlayingNotifier.removeListener(_playbackResyncListener);

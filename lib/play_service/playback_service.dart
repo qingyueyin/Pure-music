@@ -449,7 +449,7 @@ class PlaybackService extends ChangeNotifier {
     _songChangeCleanupTimer = Timer(const Duration(milliseconds: 1800), () {
       _songChangeCleanupTimer = null;
       if (!_isCurrentSongChangeTask(token, audio)) return;
-      AudioLibrary.instance.evictAllCoversExcept(audio.path);
+      AudioLibrary.instance.evictStaleCoverBytes();
     });
   }
 

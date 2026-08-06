@@ -157,6 +157,17 @@ class Ttml extends Lyric {
     return decoded.trim();
   }
 
+  static String _cleanTimedText(String text) {
+    var decoded = _decodeEntities(text);
+    final hasLeadingSpace = RegExp(r'^[ \t\r\n]+').hasMatch(decoded);
+    final hasTrailingSpace = RegExp(r'[ \t\r\n]+$').hasMatch(decoded);
+    decoded = decoded.replaceAll(RegExp(r'[ \t\r\n]+'), ' ');
+    decoded = decoded.replaceAll('\u0001', '\n');
+    final trimmed = decoded.trim();
+    if (trimmed.isEmpty) return '';
+    return '${hasLeadingSpace ? ' ' : ''}$trimmed${hasTrailingSpace ? ' ' : ''}';
+  }
+
   static bool _isMusicSymbolOnly(String text) {
     final content = text.trim();
     if (content.isEmpty) return true;
@@ -461,7 +472,7 @@ class Ttml extends Lyric {
 
       final inner = StringBuffer();
       _collectRawText(element, inner);
-      final text = _cleanText(inner.toString());
+      final text = _cleanTimedText(inner.toString());
       final wordText = text + trailingSpace;
       if (wordText.isNotEmpty) {
         final parsedEnd = _parseTime(_attr(element, 'end'));
@@ -577,6 +588,11 @@ class Ttml extends Lyric {
       final curEnd = cur.content.endsWith(' ') || cur.content.endsWith('\n');
       final nextStart = next.content.startsWith(' ') || next.content.startsWith('\n');
       if (!curEnd && !nextStart) {
+        // 只合并拉丁词碎片，CJK/假名保留源时间轴
+        if (!_canMergeAsLatinWord(cur.content, next.content)) {
+          wi++;
+          continue;
+        }
         // 用 span 原始 begin/end 判断时间连续性，超过 100ms 间隔不合并
         final gap = next.start - (cur.start + cur.length);
         if (gap > const Duration(milliseconds: 100)) {
@@ -595,6 +611,31 @@ class Ttml extends Lyric {
         wi++;
       }
     }
+  }
+
+  static bool _canMergeAsLatinWord(String current, String next) {
+    final currentText = current.trim();
+    final nextText = next.trim();
+    if (currentText.isEmpty || nextText.isEmpty) return false;
+    if (_containsCjkKanaOrHangul(currentText) ||
+        _containsCjkKanaOrHangul(nextText)) {
+      return false;
+    }
+    return _containsLatinLetter(currentText) && _containsLatinLetter(nextText);
+  }
+
+  static bool _containsLatinLetter(String text) {
+    return text.runes.any((c) =>
+        (c >= 0x41 && c <= 0x5A) ||
+        (c >= 0x61 && c <= 0x7A) ||
+        (c >= 0x00C0 && c <= 0x024F));
+  }
+
+  static bool _containsCjkKanaOrHangul(String text) {
+    return text.runes.any((c) =>
+        (c >= 0x3040 && c <= 0x30FF) ||
+        (c >= 0x3400 && c <= 0x9FFF) ||
+        (c >= 0xAC00 && c <= 0xD7AF));
   }
 
   static void _fillWordDurations(
