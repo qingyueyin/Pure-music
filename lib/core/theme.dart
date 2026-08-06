@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:pure_music/core/color_extraction.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/native/rust/api/color_extraction.dart';
@@ -108,7 +109,7 @@ class ThemeProvider extends ChangeNotifier {
   int _themeRequestToken = 0;
   Timer? _themeDebounceTimer;
 
-  /// 缓存封面到种子色的映射，避免重复 palette_generator 计算
+  /// 缓存封面到种子色的映射，避免重复提取封面颜色
   static const int _seedCacheSize = 50;
   final Map<String, Color> _seedCache = {};
   final List<String> _seedAccessOrder = [];
@@ -153,8 +154,7 @@ class ThemeProvider extends ChangeNotifier {
     });
   }
 
-  /// 直接应用预计算好的种子色（来自 Rust k-means 或其它提取路径）。
-  /// 跳过 PaletteGenerator，避免重复解码。
+  /// 直接应用预计算好的种子色，避免重复解码。
   void applySeedColorDirectly(Color seedColor, String cacheKey) {
     final cached = _seedCache[cacheKey];
     if (cached != null) {
@@ -169,8 +169,7 @@ class ThemeProvider extends ChangeNotifier {
     _applySeedColor(seedColor);
   }
 
-  /// 用 Rust k-means 从封面字节提取种子色（替换 palette_generator）。
-  /// k-means 排序后的第一个颜色即最 dominant 的颜色。
+  /// 从封面字节提取种子色，排序后的第一个颜色为主色。
   Future<Color> _extractSeedColor(Uint8List bytes, String cacheKey) async {
     final cached = _seedCache[cacheKey];
     if (cached != null) {
@@ -183,6 +182,12 @@ class ThemeProvider extends ChangeNotifier {
         imageBytes: bytes,
         numColors: 4,
       );
+      if (rustColors.isNotEmpty) {
+        ColorExtractionService().cachePaletteForPath(
+          cacheKey,
+          rustColors.map(Color.new).toList(growable: false),
+        );
+      }
 
       final seedColor = rustColors.isNotEmpty
           ? Color(rustColors.first)
