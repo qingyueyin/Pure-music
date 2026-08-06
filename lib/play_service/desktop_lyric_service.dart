@@ -8,6 +8,12 @@ import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/playback_service.dart';
+import 'package:pure_music/play_service/lyric_service.dart'
+    show
+        lyricHighlightCatchUpDurationMs,
+        lyricHighlightDeadlineMsForLine,
+        lyricHighlightFinishLeadMs,
+        desktopLyricPreludeLineAt;
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/desktop_lyric_colors.dart';
@@ -17,6 +23,16 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
 
 import 'package:desktop_lyric/message.dart' as msg;
+
+Duration desktopLyricHighlightDuration(LyricLine line) {
+  var duration = line.length;
+  if (line is SyncLyricLine && line.words.isNotEmpty) {
+    final lastWord = line.words.last;
+    final authoredDuration = lastWord.start + lastWord.length - line.start;
+    if (authoredDuration > duration) duration = authoredDuration;
+  }
+  return duration.isNegative ? Duration.zero : duration;
+}
 
 /// Windows Job Object 辅助——确保主进程意外终止时子进程被自动关闭
 class _WinJobObject {
@@ -110,7 +126,12 @@ class _WinJobObject {
 
 class DesktopLyricService extends ChangeNotifier {
   final PlayService playService;
-  DesktopLyricService(this.playService);
+  DesktopLyricService(this.playService) {
+    _positionSyncListener = _sendLyricProgressSnapshot;
+    _rateListener = _sendLyricProgressSnapshot;
+    _playbackService.positionSyncNotifier.addListener(_positionSyncListener);
+    _playbackService.rate.addListener(_rateListener);
+  }
 
   PlaybackService get _playbackService => playService.playbackService;
 
@@ -127,8 +148,14 @@ class DesktopLyricService extends ChangeNotifier {
   bool _isKilling = false;
   bool _isRunning = false;
 
-  // ── 心跳 / 位置追踪 / Job Object ────────────────────────
-  StreamSubscription<double>? _positionSub;
+  // ── 位置追踪 / Job Object ──────────────────────────────
+  Timer? _progressSyncTimer;
+  late final VoidCallback _positionSyncListener;
+  late final VoidCallback _rateListener;
+  int? _currentLyricLineStartMs;
+  int _currentLyricLineLengthMs = 0;
+  int? _currentLyricLineId;
+  int _nextLyricLineId = 0;
   Pointer<Void>? _jobHandle;
 
   /// 桌面歌词是否正在运行
@@ -160,8 +187,10 @@ class DesktopLyricService extends ChangeNotifier {
     _isRunning = false;
     _isKilling = false;
     isLocked = false;
-    _positionSub?.cancel();
-    _positionSub = null;
+    _progressSyncTimer?.cancel();
+    _progressSyncTimer = null;
+    _currentLyricLineStartMs = null;
+    _currentLyricLineLengthMs = 0;
     _WinJobObject.close(_jobHandle);
     _jobHandle = null;
     notifyListeners();
@@ -251,6 +280,7 @@ class DesktopLyricService extends ChangeNotifier {
     _monitorProcessExit(process);
     _sendInitialState();
     _sendInitialConfig();
+    _startProgressSync();
 
     // ── 创建 Windows Job Object（崩溃保护） ──
     if (Platform.isWindows) {
@@ -326,11 +356,13 @@ class DesktopLyricService extends ChangeNotifier {
     int? romanPosition,
     bool? showNowPlayingInfo,
     int? lyricTextAlign,
+    int? lyricAnimation,
     bool? enableStroke,
     double? backgroundOpacity,
     int? playedColor,
     int? unplayedColor,
     bool? followThemeColor,
+    bool? useLightOutline,
   }) {
     sendMessage(msg.DesktopLyricConfigMessage(
       lyricFontSize: lyricFontSize,
@@ -341,11 +373,13 @@ class DesktopLyricService extends ChangeNotifier {
       romanPosition: romanPosition,
       showNowPlayingInfo: showNowPlayingInfo,
       lyricTextAlign: lyricTextAlign,
+      lyricAnimation: lyricAnimation,
       enableStroke: enableStroke,
       backgroundOpacity: backgroundOpacity,
       playedColor: playedColor,
       unplayedColor: unplayedColor,
       followThemeColor: followThemeColor,
+      useLightOutline: useLightOutline,
     ));
   }
 
@@ -368,6 +402,7 @@ class DesktopLyricService extends ChangeNotifier {
     );
     sendConfig(
       followThemeColor: AppSettings.instance.desktopFollowThemeColor,
+      useLightOutline: shouldUseLightDesktopLyricOutline(colors.played),
       playedColor: colors.played.toARGB32(),
       unplayedColor: colors.unplayed.toARGB32(),
     );
@@ -375,9 +410,13 @@ class DesktopLyricService extends ChangeNotifier {
 
   void sendPlayerStateMessage(bool isPlaying) {
     sendMessage(msg.PlayerStateChangedMessage(isPlaying));
+    _sendLyricProgressSnapshot();
   }
 
   void sendNowPlayingMessage(Audio nowPlaying) {
+    _currentLyricLineStartMs = null;
+    _currentLyricLineLengthMs = 0;
+    _currentLyricLineId = null;
     sendMessage(msg.NowPlayingChangedMessage(
       nowPlaying.title,
       nowPlaying.artist,
@@ -385,13 +424,27 @@ class DesktopLyricService extends ChangeNotifier {
     ));
   }
 
-  void sendLyricLineMessage(LyricLine line, {LyricLine? nextLine}) {
+  void sendLyricLineMessage(
+    LyricLine line, {
+    LyricLine? nextLine,
+    required bool isWordByWord,
+    int? highlightDeadlineMs,
+  }) {
+    final lineStartMs = line.start.inMilliseconds;
+    final highlightDuration = desktopLyricHighlightDuration(line);
+    final lineLengthMs = highlightDuration.inMilliseconds;
+    final lineId = ++_nextLyricLineId;
+    final progressMs =
+        ((_playbackService.position * 1000).round() - lineStartMs)
+            .clamp(-60000, lineLengthMs);
+    _currentLyricLineStartMs = lineStartMs;
+    _currentLyricLineLengthMs = lineLengthMs;
+    _currentLyricLineId = lineId;
+    final relativeHighlightDeadlineMs =
+        highlightDeadlineMs == null ? null : highlightDeadlineMs - lineStartMs;
+
     List<msg.LyricWord>? words;
     if (line is SyncLyricLine) {
-      final progressMs = ((_playbackService.position * 1000).round() -
-              line.start.inMilliseconds)
-          .clamp(0, line.length.inMilliseconds);
-      final lineStartMs = line.start.inMilliseconds;
       words = line.words
           .map((w) => msg.LyricWord(
                 w.start.inMilliseconds - lineStartMs,
@@ -434,12 +487,9 @@ class DesktopLyricService extends ChangeNotifier {
     }
 
     if (line is SyncLyricLine) {
-      final progressMs = ((_playbackService.position * 1000).round() -
-              line.start.inMilliseconds)
-          .clamp(0, line.length.inMilliseconds);
       sendMessage(msg.LyricLineChangedMessage(
         line.content,
-        line.length,
+        highlightDuration,
         line.translation,
         words,
         progressMs,
@@ -448,14 +498,16 @@ class DesktopLyricService extends ChangeNotifier {
         nextWords,
         line.romanLyric,
         nextRomanLyric,
+        isWordByWord,
+        lineId,
+        relativeHighlightDeadlineMs,
+        lyricHighlightCatchUpDurationMs,
+        lyricHighlightFinishLeadMs,
       ));
     } else if (line is LrcLine) {
-      final progressMs = ((_playbackService.position * 1000).round() -
-              line.start.inMilliseconds)
-          .clamp(0, line.length.inMilliseconds);
       sendMessage(msg.LyricLineChangedMessage(
         line.content,
-        line.length,
+        highlightDuration,
         line.translation,
         words,
         progressMs,
@@ -464,8 +516,43 @@ class DesktopLyricService extends ChangeNotifier {
         nextWords,
         line.romanLyric,
         nextRomanLyric,
+        isWordByWord,
+        lineId,
+        relativeHighlightDeadlineMs,
+        lyricHighlightCatchUpDurationMs,
+        lyricHighlightFinishLeadMs,
       ));
     }
+    _sendLyricProgressSnapshot();
+  }
+
+  void _startProgressSync() {
+    _progressSyncTimer?.cancel();
+    _progressSyncTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _sendLyricProgressSnapshot(),
+    );
+  }
+
+  void _sendLyricProgressSnapshot() {
+    final lineStartMs = _currentLyricLineStartMs;
+    final lineId = _currentLyricLineId;
+    if (!_isRunning ||
+        _process == null ||
+        lineStartMs == null ||
+        lineId == null) {
+      return;
+    }
+    final progressMs =
+        ((_playbackService.position * 1000).round() - lineStartMs)
+            .clamp(-60000, _currentLyricLineLengthMs);
+    sendMessage(msg.LyricProgressChangedMessage(
+      progressMs,
+      DateTime.now().millisecondsSinceEpoch,
+      _playbackService.rate.value,
+      _playbackService.playerState == PlayerState.playing,
+      lineId,
+    ));
   }
 
   void _handleDesktopLyricMessage(String raw) {
@@ -511,20 +598,31 @@ class DesktopLyricService extends ChangeNotifier {
 
     playService.lyricService.currLyricFuture.then((lyric) {
       if (lyric == null) return;
-      final posMs = (_playbackService.position * 1000).floor();
-      int idx = -1;
-      for (int i = 0; i < lyric.lines.length; i++) {
-        if (lyric.lines[i].start.inMilliseconds <= posMs) {
-          idx = i;
-        } else {
-          break;
-        }
-      }
       if (lyric.lines.isEmpty) return;
-      if (idx < 0) return;
+      final positionMs = (_playbackService.position * 1000).round();
+      final preludeLine = desktopLyricPreludeLineAt(lyric, positionMs);
+      if (preludeLine != null) {
+        sendLyricLineMessage(
+          preludeLine,
+          nextLine: lyric.lines.first,
+          isWordByWord: lyric.isWordByWord,
+        );
+        return;
+      }
+      final update = playService.lyricService.lineUpdateForLyric(
+        lyric,
+        _playbackService.position,
+      );
+      final idx = update?.primaryIndex;
+      if (idx == null || idx < 0 || idx >= lyric.lines.length) return;
       final nextLine =
           idx + 1 < lyric.lines.length ? lyric.lines[idx + 1] : null;
-      sendLyricLineMessage(lyric.lines[idx], nextLine: nextLine);
+      sendLyricLineMessage(
+        lyric.lines[idx],
+        nextLine: nextLine,
+        isWordByWord: lyric.isWordByWord,
+        highlightDeadlineMs: lyricHighlightDeadlineMsForLine(lyric, idx),
+      );
     });
   }
 
@@ -539,9 +637,12 @@ class DesktopLyricService extends ChangeNotifier {
     sendConfig(
       showRoman: settings.showDesktopLyricRoman,
       romanPosition: settings.desktopLyricRomanPosition,
+      lyricAnimation: settings.desktopLyricAnimation.index,
+      enableStroke: settings.desktopEnableStroke,
       playedColor: colors.played.toARGB32(),
       unplayedColor: colors.unplayed.toARGB32(),
       followThemeColor: settings.desktopFollowThemeColor,
+      useLightOutline: shouldUseLightDesktopLyricOutline(colors.played),
     );
   }
 
@@ -557,9 +658,10 @@ class DesktopLyricService extends ChangeNotifier {
     _desktopLyricSubscription = null;
     _stderrSubscription?.cancel();
     _stderrSubscription = null;
-    // 取消定时器
-    _positionSub?.cancel();
-    _positionSub = null;
+    _progressSyncTimer?.cancel();
+    _progressSyncTimer = null;
+    _playbackService.positionSyncNotifier.removeListener(_positionSyncListener);
+    _playbackService.rate.removeListener(_rateListener);
     // 释放 Job Object 句柄
     _WinJobObject.close(_jobHandle);
     _jobHandle = null;
