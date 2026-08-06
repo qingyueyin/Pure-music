@@ -5,14 +5,16 @@ import 'package:flutter/scheduler.dart';
 
 class ScrollAwareFutureBuilder<T> extends StatefulWidget {
   final Future<T> Function() future;
-  final AsyncWidgetBuilder builder;
+  final AsyncWidgetBuilder<T> builder;
   final String? identity;
+  final T? initialData;
 
   const ScrollAwareFutureBuilder({
     super.key,
     required this.future,
     required this.builder,
     this.identity,
+    this.initialData,
   });
 
   @override
@@ -24,31 +26,27 @@ class _ScrollAwareFutureBuilderState<T>
     extends State<ScrollAwareFutureBuilder<T>> {
   Future<T>? _future;
   Timer? _loadTimer;
+  int _loadGeneration = 0;
 
   void _scheduleLoad() {
     _loadTimer?.cancel();
+    final generation = ++_loadGeneration;
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      _tryLoad(generation);
+    });
+  }
 
-    if (!context.mounted) {
-      SchedulerBinding.instance.scheduleFrameCallback((_) {
-        scheduleMicrotask(_scheduleLoad);
-      });
-      return;
-    }
-
+  void _tryLoad(int generation) {
+    if (!mounted || generation != _loadGeneration) return;
     if (Scrollable.recommendDeferredLoadingForContext(context)) {
-      // 仍在快速滚动，推迟到下一帧再尝试
-      SchedulerBinding.instance.scheduleFrameCallback((_) {
-        if (mounted) {
-          _scheduleLoad();
-        }
-      });
+      _loadTimer = Timer(
+        const Duration(milliseconds: 64),
+        () => _tryLoad(generation),
+      );
       return;
     }
-
-    // 不设 _future = null — 避免每次重载都闪一下转圈。
-    // 直接取 future，如果 Audio._coverImage 已缓存则返回已完成的 Future，
-    // FutureBuilder 会立即用 snapshot.data 渲染图片，无闪烁。
-    setState(() => _future = widget.future());
+    final future = widget.future();
+    setState(() => _future = future);
   }
 
   @override
@@ -61,24 +59,24 @@ class _ScrollAwareFutureBuilderState<T>
   void didUpdateWidget(ScrollAwareFutureBuilder<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.identity != oldWidget.identity) {
+      _future = null;
       _scheduleLoad();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_future == null) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
     return FutureBuilder<T>(
+      key: ValueKey(widget.identity),
       future: _future,
+      initialData: widget.initialData,
       builder: widget.builder,
     );
   }
 
   @override
   void dispose() {
+    _loadGeneration++;
     _loadTimer?.cancel();
     super.dispose();
   }
