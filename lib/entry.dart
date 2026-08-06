@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' show PointerDeviceKind;
 
@@ -28,7 +29,6 @@ import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/component/app_scroll_behavior.dart';
 import 'package:pure_music/core/cache.dart';
-import 'package:pure_music/core/color_extraction.dart';
 import 'package:pure_music/core/immersive.dart';
 import 'package:pure_music/core/memory_monitor.dart';
 import 'package:pure_music/core/matcher.dart' hide logger;
@@ -95,6 +95,9 @@ class Entry extends StatefulWidget {
 
 class _EntryState extends State<Entry>
     with WindowListener, WidgetsBindingObserver {
+  final ValueNotifier<bool> _windowResizing = ValueNotifier(false);
+  Timer? _resizeIdleTimer;
+
   @override
   void initState() {
     super.initState();
@@ -112,6 +115,8 @@ class _EntryState extends State<Entry>
 
   @override
   void dispose() {
+    _resizeIdleTimer?.cancel();
+    _windowResizing.dispose();
     WidgetsBinding.instance.removeObserver(this);
     windowManager.removeListener(this);
     super.dispose();
@@ -131,6 +136,37 @@ class _EntryState extends State<Entry>
   void onWindowMinimize() {
     MemoryMonitorService.instance.trimAll();
     logger.i('[mem] window minimized - cleared invisible caches');
+    PlayService.instance.playbackService.startSmtcKeepAlive();
+  }
+
+  @override
+  void onWindowRestore() {
+    PlayService.instance.playbackService.stopSmtcKeepAlive();
+  }
+
+  @override
+  void onWindowResize() {
+    if (!_windowResizing.value) {
+      _windowResizing.value = true;
+    }
+    _resizeIdleTimer?.cancel();
+    _resizeIdleTimer = Timer(
+      const Duration(milliseconds: 160),
+      _finishWindowResize,
+    );
+  }
+
+  @override
+  void onWindowResized() {
+    _finishWindowResize();
+  }
+
+  void _finishWindowResize() {
+    _resizeIdleTimer?.cancel();
+    _resizeIdleTimer = null;
+    if (_windowResizing.value) {
+      _windowResizing.value = false;
+    }
   }
 
   @override
@@ -194,7 +230,6 @@ class _EntryState extends State<Entry>
   /// 内存不足时的统一清理入口
   void _onLowMemory() {
     CoverImageCache.instance.clear();
-    ColorExtractionService().clear();
     AudioLibrary.instance.evictAllCoversExcept(
       PlayService.instance.playbackService.nowPlaying?.path,
       includeCollectionCovers: true,
@@ -401,6 +436,14 @@ class _EntryState extends State<Entry>
             scaffoldMessengerKey: scaffoldMessengerKey,
             debugShowCheckedModeBanner: false,
             scrollBehavior: const AppScrollBehavior(),
+            builder: (context, child) => ValueListenableBuilder<bool>(
+              valueListenable: _windowResizing,
+              child: child,
+              builder: (context, resizing, child) => TickerMode(
+                enabled: !resizing,
+                child: child ?? const SizedBox.shrink(),
+              ),
+            ),
             theme: fromSchemeAndFontFamily(
               fontFamily: theme.fontFamily,
               colorScheme: theme.lightScheme,
@@ -409,7 +452,7 @@ class _EntryState extends State<Entry>
               fontFamily: theme.fontFamily,
               colorScheme: theme.darkScheme,
             ),
-            themeAnimationDuration: const Duration(milliseconds: 560),
+            themeAnimationDuration: Duration.zero,
             themeAnimationCurve: Curves.easeInOutCubic,
             themeMode: theme.themeMode,
             localizationsDelegates: GlobalMaterialLocalizations.delegates,
