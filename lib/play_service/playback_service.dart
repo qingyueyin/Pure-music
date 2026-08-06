@@ -8,6 +8,7 @@ import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
 import 'package:pure_music/play_service/equalizer_service.dart';
+import 'package:pure_music/play_service/smtc_bridge.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/native/rust/api/smtc_flutter.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart' as rust_tag_reader;
@@ -23,8 +24,11 @@ class PlaybackService extends ChangeNotifier {
 
   late StreamSubscription _playerStateStreamSub;
   late StreamSubscription _smtcEventStreamSub;
+  late StreamSubscription _smtcPositionChangeStreamSub;
   int _lastNowPlayingChangedMs = 0;
   Timer? _smtcPositionTimer;
+  Timer? _smtcKeepAliveTimer;
+  final Set<Timer> _positionSyncBurstTimers = {};
   int _songChangeTaskToken = 0;
   Timer? _songChangeMetadataTimer;
   Timer? _songChangePrefetchTimer;
@@ -34,7 +38,6 @@ class PlaybackService extends ChangeNotifier {
   double _listenLastPositionSec = 0;
   double _thresholdSec = 0;
   bool _listenRecorded = false;
-  StreamSubscription<double>? _listenStreamSub;
   String? _supportPath;
   bool _closed = false;
 
@@ -52,7 +55,7 @@ class PlaybackService extends ChangeNotifier {
       }
     });
 
-    _smtcEventStreamSub = _smtc.subscribeToControlEvents().listen((event) {
+    _smtcEventStreamSub = _smtc.controlEvents.listen((event) {
       switch (event) {
         case SMTCControlEvent.play:
           start();
@@ -68,14 +71,23 @@ class PlaybackService extends ChangeNotifier {
           break;
         case SMTCControlEvent.stop:
           pause();
+          seek(0);
           break;
         case SMTCControlEvent.unknown:
       }
     });
+    _smtcPositionChangeStreamSub =
+        _smtc.positionChangeEvents.listen((position) {
+      final audio = nowPlaying;
+      if (_closed || audio == null) return;
+      final positionSeconds = (position / 1000).clamp(
+        0.0,
+        audio.duration.toDouble(),
+      );
+      seek(positionSeconds);
+    });
 
     _eq = EqualizerService(_player, _pref);
-
-    _listenStreamSub = _player.positionStream.listen(_onPositionUpdate);
 
     Future.microtask(() async {
       try {
@@ -88,7 +100,7 @@ class PlaybackService extends ChangeNotifier {
   }
 
   final _player = BassPlayer();
-  final _smtc = SmtcFlutter();
+  final _smtc = SmtcBridge.create();
   final _pref = AppPreference.instance.playbackPref;
   late final EqualizerService _eq;
   String? _replayGainForPath;
@@ -253,6 +265,7 @@ class PlaybackService extends ChangeNotifier {
     int? token,
     String? path,
   }) {
+    _cancelPositionSyncBurst();
     _notifyPositionSync();
     const delays = [
       Duration(milliseconds: 16),
@@ -261,13 +274,23 @@ class PlaybackService extends ChangeNotifier {
       Duration(milliseconds: 360),
     ];
     for (final delay in delays) {
-      Timer(delay, () {
+      late final Timer timer;
+      timer = Timer(delay, () {
+        _positionSyncBurstTimers.remove(timer);
         if (_closed) return;
         if (token != null && token != _songChangeTaskToken) return;
         if (path != null && nowPlaying?.path != path) return;
         _notifyPositionSync();
       });
+      _positionSyncBurstTimers.add(timer);
     }
+  }
+
+  void _cancelPositionSyncBurst() {
+    for (final timer in _positionSyncBurstTimers) {
+      timer.cancel();
+    }
+    _positionSyncBurstTimers.clear();
   }
 
   SpectrumUpdateMode get spectrumUpdateMode => _player.spectrumUpdateMode;
@@ -277,7 +300,11 @@ class PlaybackService extends ChangeNotifier {
   }
 
   void _updateSmtcPosition() {
-    _smtc.updateTimeProperties(progress: (position * 1000).round());
+    if (_closed) return;
+    final currentPosition = position;
+    _onPositionUpdate(currentPosition);
+    final progress = (currentPosition * 1000).round();
+    unawaited(_smtc.updateTimeProperties(progress));
   }
 
   void _syncSmtcPositionTimer() {
@@ -290,6 +317,37 @@ class PlaybackService extends ChangeNotifier {
     _smtcPositionTimer ??= Timer.periodic(const Duration(seconds: 1), (_) {
       _updateSmtcPosition();
     });
+  }
+
+  /// 窗口最小化期间系统会冻结媒体会话的显示更新（普通 Update 被静默丢弃，
+  /// 只有媒体栏按钮交互才强制刷新）。用周期心跳重推当前曲目，模拟会话活跃。
+  void startSmtcKeepAlive() {
+    if (_closed || _smtcKeepAliveTimer != null) return;
+    _smtcKeepAliveTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      _pushSmtcKeepAlive();
+    });
+  }
+
+  void stopSmtcKeepAlive() {
+    _smtcKeepAliveTimer?.cancel();
+    _smtcKeepAliveTimer = null;
+  }
+
+  void _pushSmtcKeepAlive() {
+    if (_closed) return;
+    final audio = nowPlaying;
+    if (audio == null) return;
+    unawaited(_smtc.updateDisplay(
+      title: audio.title,
+      artist: audio.artist,
+      album: audio.album,
+      duration: audio.duration * 1000,
+      path: audio.path,
+    ));
+    unawaited(_smtc.updateState(
+      playerState == PlayerState.playing ? SMTCState.playing : SMTCState.paused,
+    ));
+    _updateSmtcPosition();
   }
 
   Duration get nowPlayingChangeAge {
@@ -322,6 +380,14 @@ class PlaybackService extends ChangeNotifier {
 
       _player.start();
       _playerState.value = PlayerState.playing;
+      unawaited(_smtc.updateDisplay(
+        title: audio.title,
+        artist: audio.artist,
+        album: audio.album,
+        duration: audio.duration * 1000,
+        path: audio.path,
+      ));
+      unawaited(_smtc.updateState(SMTCState.playing));
       _syncSmtcPositionTimer();
       _schedulePositionSyncBurst(token: token, path: audio.path);
       notifyListeners();
@@ -332,9 +398,9 @@ class PlaybackService extends ChangeNotifier {
         audioIndex: audioIndex,
         playlist: playlist,
       );
-    } catch (err) {
-      logger.e('[load and play] $err');
-      showTextOnSnackBar(err.toString(), variant: ToastVariant.error);
+    } catch (err, trace) {
+      logger.e('加载并播放歌曲失败', error: err, stackTrace: trace);
+      showTextOnSnackBar('播放失败，请查看日志', variant: ToastVariant.error);
     }
   }
 
@@ -382,7 +448,8 @@ class PlaybackService extends ChangeNotifier {
     _listenRecorded = true;
     final audioPath = nowPlaying?.path;
     if (_supportPath == null || audioPath == null) return;
-    rust_library_db.incrementPlayCount(indexPath: _supportPath!, path: audioPath);
+    rust_library_db.incrementPlayCount(
+        indexPath: _supportPath!, path: audioPath);
   }
 
   void _schedulePostSongChangeTasks({
@@ -395,14 +462,6 @@ class PlaybackService extends ChangeNotifier {
       _songChangeMetadataTimer = null;
       if (!_isCurrentSongChangeTask(token, audio)) return;
 
-      _smtc.updateDisplay(
-        title: audio.title,
-        artist: audio.artist,
-        album: audio.album,
-        duration: audio.duration * 1000,
-        path: audio.path,
-      );
-      _smtc.updateState(state: SMTCState.playing);
       _syncSmtcPositionTimer();
 
       playService.desktopLyricService.canSendMessage.then((canSend) {
@@ -535,9 +594,8 @@ class PlaybackService extends ChangeNotifier {
 
   /// 下一首播放
   void addToNext(Audio audio) {
-    logger.i('[action] addToNext path=${audio.path}');
-    AudioEchoLogRecorder.instance
-        .mark('addToNext', extra: {'path': audio.path});
+    logger.i('[action] addToNext');
+    AudioEchoLogRecorder.instance.mark('addToNext');
     if (_playlistIndex != null) {
       _playlist.value = [..._playlist.value]
         ..insert(_playlistIndex! + 1, audio);
@@ -574,7 +632,7 @@ class PlaybackService extends ChangeNotifier {
     _playlistBackup = [];
     _playlistIndex = null;
     _nowPlaying.value = null;
-    _smtc.updateState(state: SMTCState.paused);
+    unawaited(_smtc.clearDisplay());
     _clearPersistedLastSession();
   }
 
@@ -607,6 +665,7 @@ class PlaybackService extends ChangeNotifier {
           _player.pause();
           _playlistIndex = null;
           _nowPlaying.value = null;
+          unawaited(_smtc.clearDisplay());
           _clearPersistedLastSession();
         } else if (_playlistIndex! < _playlist.value.length) {
           _loadAndPlay(_playlistIndex!, _playlist.value);
@@ -747,14 +806,15 @@ class PlaybackService extends ChangeNotifier {
       playService.lyricService.updateLyric();
       ThemeProvider.instance.applyThemeFromAudio(nowPlaying!);
 
-      _smtc.updateDisplay(
-        title: nowPlaying!.title,
-        artist: nowPlaying!.artist,
-        album: nowPlaying!.album,
-        duration: nowPlaying!.duration * 1000,
-        path: nowPlaying!.path,
+      final restoredAudio = nowPlaying!;
+      await _smtc.updateDisplay(
+        title: restoredAudio.title,
+        artist: restoredAudio.artist,
+        album: restoredAudio.album,
+        duration: restoredAudio.duration * 1000,
+        path: restoredAudio.path,
       );
-      _smtc.updateState(state: SMTCState.paused);
+      await _smtc.updateState(SMTCState.paused);
       _syncSmtcPositionTimer();
     } catch (err) {
       logger.e('[restore last session] $err');
@@ -827,15 +887,15 @@ class PlaybackService extends ChangeNotifier {
       logger.i('[action] pause');
       AudioEchoLogRecorder.instance.mark('pause');
       _player.pause();
-      _smtc.updateState(state: SMTCState.paused);
+      unawaited(_smtc.updateState(SMTCState.paused));
       playService.desktopLyricService.canSendMessage.then((canSend) {
         if (!canSend) return;
 
         playService.desktopLyricService.sendPlayerStateMessage(false);
       });
-    } catch (err) {
-      logger.e('[pause] $err');
-      showTextOnSnackBar(err.toString(), variant: ToastVariant.error);
+    } catch (err, trace) {
+      logger.e('暂停播放失败', error: err, stackTrace: trace);
+      showTextOnSnackBar('暂停播放失败，请查看日志', variant: ToastVariant.error);
     }
   }
 
@@ -845,16 +905,16 @@ class PlaybackService extends ChangeNotifier {
       logger.i('[action] start');
       AudioEchoLogRecorder.instance.mark('start');
       _player.start();
-      _smtc.updateState(state: SMTCState.playing);
+      unawaited(_smtc.updateState(SMTCState.playing));
       _schedulePositionSyncBurst();
       playService.desktopLyricService.canSendMessage.then((canSend) {
         if (!canSend) return;
 
         playService.desktopLyricService.sendPlayerStateMessage(true);
       });
-    } catch (err) {
-      logger.e('[start]: $err');
-      showTextOnSnackBar(err.toString(), variant: ToastVariant.error);
+    } catch (err, trace) {
+      logger.e('恢复播放失败', error: err, stackTrace: trace);
+      showTextOnSnackBar('恢复播放失败，请查看日志', variant: ToastVariant.error);
     }
   }
 
@@ -875,6 +935,7 @@ class PlaybackService extends ChangeNotifier {
     _closed = true;
     _songChangeTaskToken++;
     _cancelSongChangeTasks();
+    _cancelPositionSyncBurst();
 
     // 1. 先停止音频播放（防止释放资源时仍有音频回调）
     try {
@@ -885,26 +946,20 @@ class PlaybackService extends ChangeNotifier {
     try {
       await _playerStateStreamSub.cancel();
     } catch (_) {}
-    try {
-      await _smtcEventStreamSub.cancel();
-    } catch (_) {}
-    try {
-      await _listenStreamSub?.cancel();
-    } catch (_) {}
+    unawaited(_smtcEventStreamSub.cancel());
+    unawaited(_smtcPositionChangeStreamSub.cancel());
     _smtcPositionTimer?.cancel();
     _smtcPositionTimer = null;
+    _smtcKeepAliveTimer?.cancel();
+    _smtcKeepAliveTimer = null;
 
     // 4. 等待异步回调完全停止（避免 use-after-free）
     await Future.delayed(const Duration(milliseconds: 100));
 
     // 5. 关闭 SMTC（系统媒体传输控制）
     try {
-      _smtc.updateState(state: SMTCState.paused);
-      await Future.delayed(const Duration(milliseconds: 50));
-      await _smtc
-          .close()
-          .timeout(const Duration(milliseconds: 500))
-          .catchError((_) {});
+      await _smtc.updateState(SMTCState.paused);
+      await _smtc.close();
     } catch (_) {}
 
     // 6. dispose ValueNotifiers（释放 _playlist 引用的 Audio 列表）
