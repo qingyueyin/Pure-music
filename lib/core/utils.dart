@@ -381,7 +381,7 @@ void showHotkeyToast({
 }
 
 /// 显示网络歌词写入标签的提示（Overlay bubble）
-void showLyricWritePrompt({
+bool showLyricWritePrompt({
   required String title,
   required VoidCallback onWrite,
   required VoidCallback onDismiss,
@@ -389,77 +389,83 @@ void showLyricWritePrompt({
   final context =
       scaffoldMessengerKey.currentContext ?? routerKey.currentContext;
   final overlay = routerKey.currentState?.overlay;
-  if (context == null || overlay == null) return;
+  if (context == null || overlay == null) return false;
 
-  _lyricWriteEntry?.remove();
-  _lyricWriteTimer?.cancel();
+  hideLyricWritePrompt();
 
   final scheme = Theme.of(context).colorScheme;
+  final textTheme = Theme.of(context).textTheme;
 
   final visible = ValueNotifier(false);
   OverlayEntry? entry;
   entry = OverlayEntry(
     builder: (context) => Positioned.fill(
-      child: IgnorePointer(
-        child: SafeArea(
-          minimum: const EdgeInsets.all(16.0),
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: Spacing.bottomNav),
-            child: Align(
-              alignment: Alignment.bottomCenter,
-              child: ValueListenableBuilder(
-                valueListenable: visible,
-                builder: (context, v, child) => AnimatedOpacity(
+      child: SafeArea(
+        minimum: const EdgeInsets.all(16.0),
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: Spacing.bottomNav),
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: ValueListenableBuilder(
+              valueListenable: visible,
+              builder: (context, v, child) => AnimatedOpacity(
+                duration: const Duration(milliseconds: 140),
+                curve: Curves.fastOutSlowIn,
+                opacity: v ? 1.0 : 0.0,
+                child: AnimatedScale(
                   duration: const Duration(milliseconds: 140),
                   curve: Curves.fastOutSlowIn,
-                  opacity: v ? 1.0 : 0.0,
-                  child: AnimatedScale(
-                    duration: const Duration(milliseconds: 140),
-                    curve: Curves.fastOutSlowIn,
-                    scale: v ? 1.0 : 0.96,
-                    child: child,
-                  ),
+                  scale: v ? 1.0 : 0.96,
+                  child: child,
                 ),
-                child: GestureDetector(
-                  onTap: () {
-                    entry?.remove();
-                    _lyricWriteEntry = null;
-                    _lyricWriteTimer?.cancel();
-                    onWrite();
-                  },
-                  child: Material(
-                    type: MaterialType.transparency,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: Spacing.md,
-                        vertical: Spacing.sm,
-                      ),
-                      decoration: BoxDecoration(
-                        color: scheme.secondaryContainer.withAlpha(240),
-                        borderRadius: AppRadius.smCircular,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            '写入标签？',
-                            style: TextStyle(
-                              fontSize: AppType.caption,
-                              color: scheme.onSecondaryContainer,
-                              fontWeight: AppType.weightMedium,
-                            ),
+              ),
+              child: GestureDetector(
+                onTap: () {
+                  hideLyricWritePrompt();
+                  onWrite();
+                },
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: Spacing.md,
+                      vertical: Spacing.sm,
+                    ),
+                    decoration: BoxDecoration(
+                      color: scheme.inverseSurface,
+                      borderRadius: const BorderRadius.all(Radius.circular(4)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: scheme.shadow.withAlpha(40),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.lyrics_outlined,
+                          size: 16,
+                          color: scheme.onInverseSurface,
+                        ),
+                        const SizedBox(width: Spacing.sm),
+                        Text(
+                          '写入标签？',
+                          style: textTheme.labelLarge?.copyWith(
+                            color: scheme.onInverseSurface,
                           ),
-                          const SizedBox(width: Spacing.sm),
-                          Text(
-                            '写入',
-                            style: TextStyle(
-                              fontSize: AppType.caption,
-                              color: scheme.onSecondaryContainer,
-                              fontWeight: AppType.weightBold,
-                            ),
+                        ),
+                        const SizedBox(width: Spacing.sm),
+                        Text(
+                          '写入',
+                          style: textTheme.labelLarge?.copyWith(
+                            color: scheme.onInverseSurface,
+                            fontWeight: AppType.weightBold,
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -488,6 +494,45 @@ void showLyricWritePrompt({
       }
     });
   });
+  return true;
+}
+
+void hideLyricWritePrompt() {
+  _lyricWriteTimer?.cancel();
+  _lyricWriteTimer = null;
+  _lyricWriteEntry?.remove();
+  _lyricWriteEntry = null;
+}
+
+final _diagnosticWindowsPathPattern = RegExp(
+  r'(?:[A-Za-z]:\\|\\\\)[^|"\r\n]*?(?=\s+\((?:error|code)\b|[|"\r\n]|$)',
+  caseSensitive: false,
+);
+final _diagnosticUnixPathPattern = RegExp(
+  r'/(?:Users|home)/[^|"\r\n]*?(?=\s+\((?:error|code)\b|[|"\r\n]|$)',
+  caseSensitive: false,
+);
+final _diagnosticUrlQueryPattern = RegExp(
+  r'(https?://[^\s?|]+)\?[^\s|]+',
+  caseSensitive: false,
+);
+final _diagnosticSecretFieldPattern = RegExp(
+  r'\b(access[_-]?key|auth[_-]?token|token|device[_-]?id|session[_-]?id)\s*[:=]\s*[^&\s|]+',
+  caseSensitive: false,
+);
+
+String redactDiagnosticData(String text) {
+  return text
+      .replaceAll(_diagnosticWindowsPathPattern, '[local path]')
+      .replaceAll(_diagnosticUnixPathPattern, '[local path]')
+      .replaceAllMapped(
+        _diagnosticUrlQueryPattern,
+        (match) => '${match.group(1)}?[redacted]',
+      )
+      .replaceAllMapped(
+        _diagnosticSecretFieldPattern,
+        (match) => '${match.group(1)}=[redacted]',
+      );
 }
 
 /// 自定义 MemoryOutput：限制最大条目数，防止无限膨胀
