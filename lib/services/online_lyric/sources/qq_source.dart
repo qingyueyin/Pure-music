@@ -2,7 +2,8 @@ import 'package:pure_music/services/online_lyric/models/lyric_entry.dart';
 import 'package:pure_music/services/online_lyric/models/lyric_source_type.dart';
 import 'package:pure_music/services/online_lyric/models/song_search_result.dart';
 import 'package:pure_music/services/online_lyric/sources/lyric_source.dart';
-import 'package:pure_music/services/online_lyric/api/net_lyric_api.dart' as net_api;
+import 'package:pure_music/services/online_lyric/api/net_lyric_api.dart'
+    as net_api;
 import 'package:pure_music/core/utils.dart';
 
 class QQSource implements LyricSource {
@@ -37,7 +38,10 @@ class QQSource implements LyricSource {
         );
       }).toList();
     } catch (e, st) {
-      logger.w('QQSource.search failed: $e', error: st);
+      logger.w(
+        'QQSource.search failed: ${e.runtimeType}',
+        stackTrace: st,
+      );
       return [];
     }
   }
@@ -59,7 +63,10 @@ class QQSource implements LyricSource {
 
       return lyricResult.toParsedLyric();
     } catch (e, st) {
-      logger.w('QQSource.getLyrics failed: $e', error: st);
+      logger.w(
+        'QQSource.getLyrics failed: ${e.runtimeType}',
+        stackTrace: st,
+      );
       return null;
     }
   }

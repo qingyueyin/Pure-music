@@ -14,19 +14,3 @@ enum LyricSourceType {
     return null;
   }
 }
-
-/// 歌词源优先级配置
-/// 默认顺序：QQ > 网易云 > 酷狗
-class LyricSourcePriority {
-  static const defaultOrder = [
-    LyricSourceType.qq,
-    LyricSourceType.ne,
-    LyricSourceType.kugou,
-  ];
-
-  static List<LyricSourceType> load() => defaultOrder;
-
-  static void save(List<LyricSourceType> order) {
-    // TODO: persist to settings when lyricSourcePriority is added
-  }
-}
