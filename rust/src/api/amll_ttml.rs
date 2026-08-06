@@ -74,27 +74,127 @@ fn cache() -> &'static Mutex<Option<CachedIndex>> {
 // 搜索算法
 // ──────────────────────────────────────────────
 
-fn score_entry(entry: &IndexEntry, terms: &[String]) -> i32 {
-    let mut s = 0;
-    for t in terms {
-        for title in &entry.metadata.titles {
-            let low = title.to_lowercase();
-            if low == *t {
-                s += 300;
-            } else if low.starts_with(t) || low.ends_with(t) {
-                s += 200;
-            } else if low.contains(t) {
-                s += 100;
-            }
+fn normalize_search_text(value: &str) -> String {
+    let mut normalized = String::new();
+    for ch in value.chars() {
+        if ch == '.' {
+            continue;
         }
-        for artist in &entry.metadata.artists {
-            let low = artist.to_lowercase();
-            if low.contains(t) {
-                s += 50;
-            }
+        if ch.is_alphanumeric() {
+            normalized.extend(ch.to_lowercase());
+        } else if !normalized.ends_with(' ') {
+            normalized.push(' ');
         }
     }
-    s
+    normalized.trim().to_string()
+}
+
+fn search_terms(keyword: &str) -> Vec<String> {
+    normalize_search_text(keyword)
+        .split_whitespace()
+        .map(str::to_string)
+        .filter(|term| !term.is_empty())
+        .collect()
+}
+
+fn is_common_english_term(term: &str) -> bool {
+    matches!(
+        term,
+        "a" | "an"
+            | "and"
+            | "are"
+            | "as"
+            | "at"
+            | "be"
+            | "by"
+            | "for"
+            | "from"
+            | "in"
+            | "is"
+            | "it"
+            | "of"
+            | "on"
+            | "or"
+            | "the"
+            | "to"
+            | "with"
+    )
+}
+
+fn field_match_score(field: &str, term: &str, is_title: bool) -> i32 {
+    if field.is_empty() {
+        return 0;
+    }
+    if field == term {
+        return if is_title { 300 } else { 100 };
+    }
+
+    let tokens: Vec<_> = field.split_whitespace().collect();
+    if tokens.iter().any(|token| *token == term) {
+        return if is_title { 100 } else { 80 };
+    }
+
+    let is_short_ascii_term = term.is_ascii() && term.len() < 3;
+    if !is_short_ascii_term && field.contains(term) {
+        return if is_title { 60 } else { 40 };
+    }
+    0
+}
+
+fn score_entry(entry: &IndexEntry, terms: &[String]) -> i32 {
+    let normalized_titles: Vec<_> = entry
+        .metadata
+        .titles
+        .iter()
+        .map(|title| normalize_search_text(title))
+        .collect();
+    let normalized_artists: Vec<_> = entry
+        .metadata
+        .artists
+        .iter()
+        .map(|artist| normalize_search_text(artist))
+        .collect();
+
+    let mut active_terms: Vec<&String> = terms
+        .iter()
+        .filter(|term| !is_common_english_term(term))
+        .collect();
+    if active_terms.is_empty() {
+        active_terms = terms.iter().collect();
+    }
+
+    let mut score = 0;
+    for term in active_terms {
+        let title_score = normalized_titles
+            .iter()
+            .map(|title| field_match_score(title, term, true))
+            .max()
+            .unwrap_or(0);
+        let artist_score = normalized_artists
+            .iter()
+            .map(|artist| field_match_score(artist, term, false))
+            .max()
+            .unwrap_or(0);
+        if title_score == 0 && artist_score == 0 {
+            return 0;
+        }
+        score += title_score + artist_score;
+    }
+
+    let normalized_query = normalize_search_text(&terms.join(" "));
+    if normalized_titles
+        .iter()
+        .any(|title| title == &normalized_query)
+    {
+        score += 300;
+    }
+    if normalized_artists
+        .iter()
+        .any(|artist| artist == &normalized_query)
+    {
+        score += 400;
+    }
+    score
 }
 
 // ──────────────────────────────────────────────
@@ -193,12 +293,7 @@ pub fn amll_search_lyrics(
     page_size: u32,
     cache_dir: &str,
 ) -> Result<Vec<AmllSearchItem>, String> {
-    let terms: Vec<String> = keyword
-        .to_lowercase()
-        .split_whitespace()
-        .map(|s| s.to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
+    let terms = search_terms(keyword);
     if terms.is_empty() {
         return Ok(vec![]);
     }
@@ -318,6 +413,46 @@ mod tests {
         format!(
             r#"{{"metadata":[["musicName",["{title}"]],["artists",["Artist"]],["album",["Album"]]],"rawLyricFile":"{file}"}}"#
         )
+    }
+
+    fn test_entry(title: &str, artist: &str) -> IndexEntry {
+        serde_json::from_value(serde_json::json!({
+            "metadata": [
+                ["musicName", [title]],
+                ["artists", [artist]],
+                ["album", ["Album"]]
+            ],
+            "rawLyricFile": "test.ttml"
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn ranks_title_coverage_above_common_word_matches() {
+        let terms = search_terms("Proud of Us (English Version) R.E.D");
+        let accurate = test_entry("Proud of Us (English Version)", "R.E.D");
+        let unrelated = test_entry("The Song of You and Me (Bubbles Solo)", "HoYoFair");
+
+        assert!(score_entry(&accurate, &terms) > score_entry(&unrelated, &terms));
+        assert_eq!(score_entry(&unrelated, &terms), 0);
+    }
+
+    #[test]
+    fn keeps_exact_single_term_title_match_strong() {
+        let terms = search_terms("不该");
+        let entry = test_entry("不该", "周杰伦");
+
+        assert!(score_entry(&entry, &terms) >= 300);
+    }
+
+    #[test]
+    fn rejects_partial_multi_term_matches() {
+        let terms = search_terms("Shawn Mendes");
+        let matching = test_entry("Señorita", "Shawn Mendes, Camila Cabello");
+        let partial = test_entry("Reminding Me", "Shawn Hook, Vanessa Hudgens");
+
+        assert!(score_entry(&matching, &terms) > 0);
+        assert_eq!(score_entry(&partial, &terms), 0);
     }
 
     #[test]
