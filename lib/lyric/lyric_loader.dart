@@ -111,7 +111,7 @@ Future<_ExternalLyricResult?> _findLyricInDirectory(
 
         final content = await _safeReadFile(entity.path);
         if (content != null && content.trim().isNotEmpty) {
-          logger.i('lyric_loader:   fuzzy match OK: $ext ($base)');
+          logger.i('lyric_loader: fuzzy match OK: $ext');
           best = _ExternalLyricResult(content: content, ext: ext);
           bestPriority = priority;
         }
@@ -119,7 +119,7 @@ Future<_ExternalLyricResult?> _findLyricInDirectory(
     }
     return best;
   } catch (e) {
-    logger.e('lyric_loader: error scanning directory: $e');
+    logger.e('lyric_loader: directory scan failed: ${e.runtimeType}');
     return null;
   }
 }
@@ -178,7 +178,7 @@ Future<String?> _safeReadFile(String filePath) async {
     // 终极 fallback：容忍乱码
     return utf8.decode(bytes, allowMalformed: true);
   } catch (e) {
-    logger.e('lyric_loader: error reading $filePath: $e');
+    logger.e('lyric_loader: file read failed: ${e.runtimeType}');
     return null;
   }
 }
@@ -190,10 +190,11 @@ Future<_ExternalLyricResult?> _loadExternalLyric(String audioPath) async {
   final paths = _candidatePaths(audioPath, _kLyricExts);
   final songName = p.basenameWithoutExtension(audioPath);
 
-  logger.i('lyric_loader: checking paths: $paths');
+  logger.i('lyric_loader: checking ${paths.length} candidate paths');
   for (final path in paths) {
     final content = await _safeReadFile(path);
-    logger.i('lyric_loader:   $path -> ${content != null ? 'found(len=${content.length})' : 'null'}');
+    logger.i(
+        'lyric_loader: candidate ${content != null ? 'found(len=${content.length})' : 'not found'}');
     if (content == null || content.trim().isEmpty) continue;
 
     final ext = p.extension(path).toLowerCase();
@@ -214,7 +215,8 @@ Future<_ExternalLyricResult?> _loadExternalLyric(String audioPath) async {
         Directory(p.dirname(audioPath)),
         songName,
         ['.lrc'],
-      ))?.content;
+      ))
+          ?.content;
     }
 
     return _ExternalLyricResult(
@@ -233,7 +235,8 @@ Future<_ExternalLyricResult?> _loadExternalLyric(String audioPath) async {
   // ── 同目录模糊匹配失败，尝试父目录模糊匹配 ──
   final parent = dir.parent;
   if (parent.path != dir.path) {
-    final parentFuzzy = await _findLyricInDirectory(parent, songName, _kLyricExts);
+    final parentFuzzy =
+        await _findLyricInDirectory(parent, songName, _kLyricExts);
     if (parentFuzzy != null) return parentFuzzy;
   }
 
@@ -301,7 +304,7 @@ Future<Lyric?> loadLyricFromAudio(
   String audioPath, {
   String? separator = '┃',
 }) async {
-  logger.i('lyric_loader: loading for $audioPath');
+  logger.i('lyric_loader: loading');
 
   // ── 第 1 步：外挂歌词文件 ──
   final external = await _loadExternalLyric(audioPath);
@@ -318,17 +321,17 @@ Future<Lyric?> loadLyricFromAudio(
         RegExp(r'<(\d+:\d+\.\d+|\d+)>').hasMatch(embeddedRaw);
 
     if (embeddedHasWordTags) {
-      logger.i(
-          'lyric_loader: embedded has word tags, preferring over external');
+      logger
+          .i('lyric_loader: embedded has word tags, preferring over external');
     } else {
       logger.i(
           'lyric_loader: found external ${external.ext}, content len=${external.content.length}');
       final lyric = _parseExternalToPureLyric(external, separator: separator);
       if (lyric != null && lyric.lines.isNotEmpty) {
-        logger.i(
-            'lyric_loader: loaded external ${external.ext} for $audioPath');
+        logger.i('lyric_loader: loaded external ${external.ext}');
         final stripped = _stripMetadata(lyric);
-        logger.i('lyric_loader: external return lines=${stripped?.lines.length ?? "null"}');
+        logger.i(
+            'lyric_loader: external return lines=${stripped?.lines.length ?? "null"}');
         return stripped;
       } else {
         logger.i('lyric_loader: external ${external.ext} parse FAILED');
@@ -344,14 +347,14 @@ Future<Lyric?> loadLyricFromAudio(
         ? embeddedRaw
         : await getLyricFromPath(path: audioPath);
     if (embedded != null && embedded.isNotEmpty) {
-      logger.i(
-          'lyric_loader: embedded lyric found, len=${embedded.length}, preview=${embedded.length > 80 ? embedded.substring(0, 80) : embedded}');
+      logger.i('lyric_loader: embedded lyric found, len=${embedded.length}');
       final lyric = _parseEmbeddedToPureLyric(embedded, separator: separator);
       if (lyric != null && lyric.lines.isNotEmpty) {
         logger.i(
-            'lyric_loader: loaded embedded lyric for $audioPath, lines=${lyric.lines.length}');
+            'lyric_loader: loaded embedded lyric, lines=${lyric.lines.length}');
         final stripped = _stripMetadata(lyric);
-        logger.i('lyric_loader: embedded return lines=${stripped?.lines.length ?? "null"}');
+        logger.i(
+            'lyric_loader: embedded return lines=${stripped?.lines.length ?? "null"}');
         return stripped;
       } else {
         logger.i('lyric_loader: embedded lyric parse FAILED');
@@ -360,11 +363,10 @@ Future<Lyric?> loadLyricFromAudio(
       logger.i('lyric_loader: no embedded lyric found');
     }
   } catch (e) {
-    logger.i('lyric_loader: embedded catch: $e');
-    logger.e('lyric_loader: error reading embedded lyric: $e');
+    logger.e('lyric_loader: embedded lyric failed: ${e.runtimeType}');
   }
 
-  logger.i('lyric_loader: returning null for $audioPath');
+  logger.i('lyric_loader: returning null');
   return null;
 }
 
