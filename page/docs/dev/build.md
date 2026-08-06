@@ -103,10 +103,10 @@ flutter build windows --release
 ### 便携产物
 
 - `output/pure_music_{ver}_release_portable/` 与可选 `.zip`
-- 包内含 `upgrade_from_previous.ps1`、`PORTABLE_README.txt`
-- zip 旁可有 SHA-256；包内有逐文件清单
+- exe、`data/`、`dll/`、`desktop_lyric/` 直接位于包根目录，无多余说明文件
+- zip 旁可有 SHA-256
 
-`upgrade_from_previous.ps1` 只迁移旧便携版的曲库、设置和缓存，不会用旧版 `app.so` 或 Flutter 资源覆盖新版本。
+数据迁移工具（`tool/upgrade_from_previous.ps1`）保留在源码库中，不打包进产物。
 
 ### 安装器产物
 
