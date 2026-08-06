@@ -7,6 +7,7 @@ import 'package:pure_music/services/online_lyric/models/lyric_entry.dart'
     hide LyricFormat;
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
+import 'package:pure_music/lyric/lyric_source.dart';
 import 'package:pure_music/lyric/krc.dart';
 import 'package:pure_music/lyric/qrc.dart';
 import 'package:pure_music/lyric/ttml.dart';
@@ -25,7 +26,11 @@ final Map<String, Future<Lyric?>> _lyricFetchCache = {};
 final Map<String, Lyric> _lyricResultCache = {};
 final List<String> _lyricCacheAccessOrder = [];
 
-String _cacheKey({String? qqSongId, String? kugouSongHash, int? neSongId, String? amllTtmlFile}) {
+String _cacheKey(
+    {String? qqSongId,
+    String? kugouSongHash,
+    int? neSongId,
+    String? amllTtmlFile}) {
   return qqSongId != null
       ? 'qq:$qqSongId'
       : kugouSongHash != null
@@ -274,6 +279,69 @@ void clearLyricCaches() {
   _lyricCacheAccessOrder.clear();
 }
 
+String _stripTrailingTitleVariants(String title) {
+  return title
+      .replaceAll(
+        RegExp(
+          r'\s*[\(\[（【][^)\]）】]*(?:acoustic|live|remix|explicit|deluxe|edit|version|mix|radio|single|demo|bonus|track|album|studio|remaster(?:ed|ing)?|feat(?:uring)?|ft\.?)[^)\]）】]*[\)\]）】]\s*$',
+          caseSensitive: false,
+        ),
+        '',
+      )
+      .replaceAll(
+        RegExp(
+          r'\s*[-‐‑‒–—―]\s*(?:acoustic|live|remix|edit|version|mix|radio|demo|remaster(?:ed|ing)?)(?:\s+version)?\s*$',
+          caseSensitive: false,
+        ),
+        '',
+      )
+      .replaceAll(
+        RegExp(
+          r'\s+(?:feat(?:uring)?|ft)\.?\s*.*$',
+          caseSensitive: false,
+        ),
+        '',
+      )
+      .trim();
+}
+
+String _normalizeExactMatchText(String value) {
+  return _stripTrailingTitleVariants(value.toLowerCase()).replaceAll(
+    RegExp(
+        r'''[-‐‑‒–—―\s_/\\|,，、.&＆+＋·・:：;；!！?？'"“”‘’`~～^()（）\[\]【】{}《》〈〉「」『』]+'''),
+    '',
+  );
+}
+
+Set<String> _normalizedArtistParts(String value) {
+  final separated = value
+      .replaceAll(
+        RegExp(
+          r'\s+(?:feat(?:uring)?|ft|with)\.?\s*',
+          caseSensitive: false,
+        ),
+        ';',
+      )
+      .replaceAll(RegExp(r'\s+[x×]\s+', caseSensitive: false), ';');
+  return separated
+      .split(RegExp(r'[、,，/&＆;；|()（）\[\]【】]+'))
+      .map(_normalizeExactMatchText)
+      .where((part) => part.isNotEmpty && part != 'unknown')
+      .toSet();
+}
+
+bool _isExactAggregateMatch(Audio audio, SongSearchResult result) {
+  final audioTitle = _normalizeExactMatchText(audio.title);
+  final resultTitle = _normalizeExactMatchText(result.title);
+  if (audioTitle.isEmpty || resultTitle != audioTitle) return false;
+
+  final audioArtists = _normalizedArtistParts(audio.artist);
+  if (audioArtists.isEmpty) return true;
+
+  final resultArtists = _normalizedArtistParts(result.artists);
+  return resultArtists.any(audioArtists.contains);
+}
+
 double _computeScore(Audio audio, String title, String artists, String album,
     {int? duration}) {
   double score = 0.0;
@@ -299,23 +367,8 @@ double _computeScore(Audio audio, String title, String artists, String album,
   if (normalizedTitle.isEmpty) return -1.0;
   if (normalizedAudioTitle.isEmpty) return -1.0;
 
-  // 剥离常见后缀（(Acoustic)/(Live)/(Remix)/(Explicit)/Feat. 等）提高匹配准确度
-  String stripTrailingVariants(String t) {
-    return t
-        .replaceAll(
-            RegExp(
-                r'\s*\([^)]*(?:acoustic|live|remix|explicit|deluxe|edit|version|mix|radio|single|demo|bonus|track|album|studio)[^)]*\)',
-                caseSensitive: false),
-            '')
-        .replaceAll(RegExp(r'\s*\(feat\..*\)', caseSensitive: false), '')
-        .replaceAll(
-            RegExp(r'\s*-\s*(?:acoustic|live|remix).*$', caseSensitive: false),
-            '')
-        .trim();
-  }
-
-  final strippedAudio = stripTrailingVariants(normalizedAudioTitle);
-  final strippedResult = stripTrailingVariants(normalizedTitle);
+  final strippedAudio = _stripTrailingTitleVariants(normalizedAudioTitle);
+  final strippedResult = _stripTrailingTitleVariants(normalizedTitle);
 
   // 用剥离后的标题做精确匹配
   if (strippedResult == strippedAudio) {
@@ -384,6 +437,22 @@ class SongSearchResult {
       this.duration,
       this.lyricType});
 
+  LyricSource toLyricSource() {
+    final sourceType = switch (source) {
+      ResultSource.qq => LyricSourceType.qq,
+      ResultSource.kugou => LyricSourceType.kugou,
+      ResultSource.ne => LyricSourceType.ne,
+      ResultSource.amll => LyricSourceType.amll,
+    };
+    return LyricSource(
+      sourceType,
+      qqSongId: qqSongId,
+      kugouSongHash: kugouSongHash,
+      neSongId: neSongId,
+      amllTtmlFile: amllTtmlFile,
+    );
+  }
+
   @override
   String toString() {
     return json.encode({
@@ -442,10 +511,10 @@ class SongSearchResult {
 
   static SongSearchResult? fromAmllSearchItem(
       net_api.AmllSearchItem item, Audio audio) {
-    final apiScore = item.score / 1000;
-    final computeScore = _computeScore(audio, item.title, item.artist,
-        item.album);
-    final blended = apiScore * 60 + computeScore * 40;
+    final apiScore = (item.score / 1000).clamp(0.0, 1.0).toDouble();
+    final computeScore =
+        _computeScore(audio, item.title, item.artist, item.album);
+    final blended = apiScore * 60 + computeScore * 0.4;
     return SongSearchResult(
       ResultSource.amll,
       item.title,
@@ -517,7 +586,7 @@ Future<List<SongSearchResult>> uniSearch(Audio audio) async {
   }
 
   final List<SongSearchResult> result = [];
-  const int perSourceLimit = 1; // 聚合：每源只取一条，严格筛选
+  const int perSourceSearchLimit = 6;
 
   // 尝试每个查询，直到找到高置信结果
   for (int i = 0; i < searchQueries.length; i++) {
@@ -525,17 +594,18 @@ Future<List<SongSearchResult>> uniSearch(Audio audio) async {
     logger.d('=== uniSearch query #${i + 1}: "$searchQuery" ===');
 
     final kgFuture =
-        _searchKugouWithTimeout(searchQuery, audio, 6, perSourceLimit);
+        _searchKugouWithTimeout(searchQuery, audio, 6, perSourceSearchLimit);
     final qqFuture =
-        _searchQQWithTimeout(searchQuery, audio, 6, perSourceLimit);
+        _searchQQWithTimeout(searchQuery, audio, 6, perSourceSearchLimit);
     final neFuture =
-        _searchNEWithTimeout(searchQuery, audio, 6, perSourceLimit);
+        _searchNEWithTimeout(searchQuery, audio, 6, perSourceSearchLimit);
     final amllFuture =
-        _searchAMLLWithTimeout(searchQuery, audio, 6, perSourceLimit);
+        _searchAMLLWithTimeout(searchQuery, audio, 6, perSourceSearchLimit);
 
-    final results =
-        await Future.wait([kgFuture, qqFuture, neFuture, amllFuture], eagerError: false)
-            .timeout(const Duration(seconds: 18), onTimeout: () {
+    final results = await Future.wait(
+            [kgFuture, qqFuture, neFuture, amllFuture],
+            eagerError: false)
+        .timeout(const Duration(seconds: 18), onTimeout: () {
       logger.w('uniSearch timeout for query: $searchQuery');
       return <List<SongSearchResult>>[[], [], [], []];
     });
@@ -543,17 +613,19 @@ Future<List<SongSearchResult>> uniSearch(Audio audio) async {
     // 取各来源分数最高的结果
     final bestResults = <SongSearchResult>[];
     for (final sourceResults in results) {
-      if (sourceResults.isNotEmpty) {
-        sourceResults.sort((a, b) => b.score.compareTo(a.score));
-        bestResults.add(sourceResults.first);
+      final exactMatches = sourceResults
+          .where((item) => _isExactAggregateMatch(audio, item))
+          .toList()
+        ..sort((a, b) => b.score.compareTo(a.score));
+      if (exactMatches.isNotEmpty) {
+        bestResults.add(exactMatches.first);
       }
     }
 
     bestResults.sort((a, b) => b.score.compareTo(a.score));
 
-    // 只保留分数 >= 60 的结果（充分匹配）
     for (final item in bestResults) {
-      if (item.score >= 60 && !_containsResult(result, item)) {
+      if (!_containsResult(result, item)) {
         result.add(item);
       }
     }
@@ -567,7 +639,7 @@ Future<List<SongSearchResult>> uniSearch(Audio audio) async {
 
   logger.d(
       '=== uniSearch done: ${result.length} results, best=${result.isNotEmpty ? result.first.score : 0} ===');
-  return result.take(3).toList();
+  return result.take(4).toList();
 }
 
 Future<List<SongSearchResult>> _searchKugouWithTimeout(
@@ -682,7 +754,9 @@ bool _containsResult(List<SongSearchResult> list, SongSearchResult item) {
       return true;
     }
     if (r.neSongId != null && r.neSongId == item.neSongId) return true;
-    if (r.amllTtmlFile != null && r.amllTtmlFile == item.amllTtmlFile) return true;
+    if (r.amllTtmlFile != null && r.amllTtmlFile == item.amllTtmlFile) {
+      return true;
+    }
   }
   return false;
 }
@@ -721,7 +795,8 @@ Future<Lyric?> _getKugouSyncLyric(String kugouSongHash) async {
       for (final entry in parsed.lines) {
         // 过滤元数据行
         final lineContent = entry.content;
-        if (lineContent.isNotEmpty && LrcLine.isLyricMetadataLine(lineContent)) {
+        if (lineContent.isNotEmpty &&
+            LrcLine.isLyricMetadataLine(lineContent)) {
           continue;
         }
 
@@ -850,7 +925,8 @@ Lyric? _parsedToLyric(ParsedLyricResult parsed, {String? rawText}) {
   for (int i = 0; i < parsed.lines.length; i++) {
     final entry = parsed.lines[i];
     // 过滤非同步歌词中的元数据行
-    if (entry.content.isNotEmpty && LrcLine.isLyricMetadataLine(entry.content)) {
+    if (entry.content.isNotEmpty &&
+        LrcLine.isLyricMetadataLine(entry.content)) {
       continue;
     }
 
