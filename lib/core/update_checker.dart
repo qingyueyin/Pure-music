@@ -18,7 +18,7 @@ class UpdateInfo {
     this.htmlUrl,
   });
 
-  /// 从 GitHub Release 转换
+  /// 从远程发布数据转换
   factory UpdateInfo.fromGitHubRelease(gh.Release release) => UpdateInfo(
         tagName: release.tagName ?? '',
         name: release.name,
@@ -55,15 +55,13 @@ String? _normalizedOptionalString(Object? value) {
 
 /// 更新检查服务
 ///
-/// 支持多个数据源按顺序 fallback：
-/// 1. GitHub API（[github] package）
-/// 2. HTTP JSON 端点（可通过偏好配置多个 fallback URL）
+/// 按顺序尝试主发布接口和备用 JSON 端点。
 class UpdateChecker {
   UpdateChecker._();
 
   /// 逐个尝试所有数据源，返回第一个成功的结果，全部失败返回 null
   static Future<UpdateInfo?> checkForUpdate() async {
-    // Source 1: GitHub API
+    // 优先尝试主发布接口。
     final fromGitHub = await _checkGitHub();
     if (fromGitHub != null) return fromGitHub;
 
@@ -82,7 +80,7 @@ class UpdateChecker {
     return null;
   }
 
-  /// 通过 GitHub API 检查更新
+  /// 通过主发布接口检查更新
   static Future<UpdateInfo?> _checkGitHub() async {
     try {
       final slug =
@@ -95,7 +93,7 @@ class UpdateChecker {
       if (tagName.isEmpty) return null;
       return UpdateInfo.fromGitHubRelease(release);
     } catch (e) {
-      logger.w('[UpdateChecker] GitHub API failed: $e');
+      logger.w('[UpdateChecker] primary source failed: ${e.runtimeType}');
       return null;
     }
   }
@@ -117,7 +115,7 @@ class UpdateChecker {
       if (info.tagName.isEmpty) return null;
       return info;
     } catch (e) {
-      logger.w('[UpdateChecker] HTTP fallback failed ($url): $e');
+      logger.w('[UpdateChecker] fallback source failed: ${e.runtimeType}');
       return null;
     }
   }
