@@ -247,7 +247,14 @@ Invoke-Step "pub get" {
     }
 
     if ($needPubGet) {
-        flutter pub get
+        flutter pub get --offline
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "Offline dependency resolution failed; retrying online."
+            flutter pub get
+            if ($LASTEXITCODE -ne 0) {
+                throw "Failed to resolve Flutter dependencies."
+            }
+        }
     }
     else {
         Write-Host "Dependencies up to date; skipping pub get." -ForegroundColor Gray
@@ -298,6 +305,7 @@ Invoke-Step "flutter build windows" {
         "build",
         "windows",
         $modeFlag,
+        "--no-pub",
         "--dart-define=APP_VERSION=$version"
     )
     if ($VerboseBuild) {
@@ -338,8 +346,9 @@ $buildDir = "build\windows\x64\runner\$BuildMode"
 
 if ($LASTEXITCODE -ne 0) {
     # 路径含括号时 CMake INSTALL 步骤可能失败但编译实际已成功
-    $exeCheck = Join-Path $PSScriptRoot $buildDir "pure_music.exe"
-    $dllCheck = Join-Path $PSScriptRoot $buildDir "rust_lib_pure_music.dll"
+    $buildOutputDir = Join-Path $PSScriptRoot $buildDir
+    $exeCheck = Join-Path $buildOutputDir "pure_music.exe"
+    $dllCheck = Join-Path $buildOutputDir "rust_lib_pure_music.dll"
     if ((Test-Path $exeCheck) -and (Test-Path $dllCheck)) {
         Write-Warning "Build compilation succeeded but CMake INSTALL step failed (likely caused by parentheses in path). Artifacts are intact, continuing..."
     } else {

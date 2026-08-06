@@ -46,6 +46,10 @@ REM To detect changes in package we compare output of DIR /s (recursive)
 set PREV_PACKAGE_INFO=.dart_tool\package_info.prev
 set CUR_PACKAGE_INFO=.dart_tool\package_info.cur
 
+if not exist .dart_tool (
+    mkdir .dart_tool
+)
+
 DIR "%BUILD_TOOL_PKG_DIR%" /s > "%CUR_PACKAGE_INFO%_orig" 2>nul
 
 REM Last line in dir output is free space on harddrive. That is bound to
@@ -78,15 +82,27 @@ REM There is no CUR_PACKAGE_INFO it was renamed in previous step to %PREV_PACKAG
 REM which means  we need to do pub get and precompile
 if not exist "%PRECOMPILED%" (
     echo Running pub get in "%cd%"
-    "%DART%" pub get --no-precompile
+    "%DART%" pub get --offline --no-precompile
+    if errorlevel 1 (
+        echo Offline pub get failed; retrying online.
+        "%DART%" pub get --no-precompile
+        if errorlevel 1 exit /b !ERRORLEVEL!
+    )
     "%DART%" compile kernel bin/build_tool_runner.dart
+    if errorlevel 1 exit /b !ERRORLEVEL!
 )
 
 "%DART%" "%PRECOMPILED%" %*
 
 REM 253 means invalid snapshot version.
 If %ERRORLEVEL% equ 253 (
-    "%DART%" pub get --no-precompile
+    "%DART%" pub get --offline --no-precompile
+    if errorlevel 1 (
+        echo Offline pub get failed; retrying online.
+        "%DART%" pub get --no-precompile
+        if errorlevel 1 exit /b !ERRORLEVEL!
+    )
     "%DART%" compile kernel bin/build_tool_runner.dart
+    if errorlevel 1 exit /b !ERRORLEVEL!
     "%DART%" "%PRECOMPILED%" %*
 )
