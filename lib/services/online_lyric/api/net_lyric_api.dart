@@ -8,7 +8,8 @@ import 'package:pure_music/services/online_lyric/parsers/lrc_tool.dart';
 import 'package:pure_music/services/online_lyric/api/krc_decryptor.dart';
 import 'package:pure_music/services/online_lyric/api/qrc_decryptor.dart';
 import 'package:pure_music/services/online_lyric/api/krc_extract_decode.dart';
-import 'package:pure_music/services/online_lyric/api/isolate_helpers.dart' as iso;
+import 'package:pure_music/services/online_lyric/api/isolate_helpers.dart'
+    as iso;
 
 // ──────────────────────────────────────────────
 // 搜索结果模型
@@ -106,22 +107,22 @@ final _lrcMetadataRegex = RegExp(
 
 /// Strip LRC metadata tags (ar/ti/al/by/etc.) while preserving timestamp lines and lyric content.
 String _stripLrcMetadata(String text) {
-  return text.split('\n').where((line) {
-    final trimmed = line.trim();
-    if (trimmed.isEmpty) return true;
-    if (_lrcMetadataRegex.hasMatch(trimmed)) return false;
-    return true;
-  }).join('\n');
+  return text
+      .split('\n')
+      .where((line) {
+        final trimmed = line.trim();
+        if (trimmed.isEmpty) return true;
+        if (_lrcMetadataRegex.hasMatch(trimmed)) return false;
+        return true;
+      })
+      .join('\n');
 }
-
-// ──────────────────────────────────────────────
-// QQ 音乐
-// ──────────────────────────────────────────────
 
 Future<List<QmSearchItem>> qqSearchLyric({
   required String keyword,
   int page = 1,
   int pageSize = 8,
+  bool forceRefresh = false,
 }) async {
   final rawResults = await iso.qqSearchIsolate(
     text: keyword,
@@ -184,11 +185,13 @@ Future<List<NeSearchItem>> neSearchLyric({
   required String keyword,
   int page = 1,
   int pageSize = 8,
+  bool forceRefresh = false,
 }) async {
   final rawResults = await iso.neSearchIsolate(
     text: keyword,
     offset: (page - 1) * pageSize,
     limit: pageSize,
+    cacheBust: forceRefresh ? DateTime.now().microsecondsSinceEpoch : null,
   );
   return rawResults.map((e) {
     final item = e as Map<String, dynamic>;
@@ -229,11 +232,13 @@ Future<List<KgSearchItem>> kgSearchLyric({
   required String keyword,
   int page = 1,
   int pageSize = 8,
+  bool forceRefresh = false,
 }) async {
   final rawResults = await iso.kgSearchIsolate(
     text: keyword,
     offset: page,
     limit: pageSize,
+    cacheBust: forceRefresh ? DateTime.now().microsecondsSinceEpoch : null,
   );
   return rawResults.map((e) {
     final item = e as Map;
@@ -243,7 +248,8 @@ Future<List<KgSearchItem>> kgSearchLyric({
       title: item['songname'] as String,
       artist: item['singername'] as String,
       album: item['album_name'] as String,
-      durationMs: (int.tryParse(item['duration']?.toString() ?? '0') ?? 0) * 1000,
+      durationMs:
+          (int.tryParse(item['duration']?.toString() ?? '0') ?? 0) * 1000,
     );
   }).toList();
 }
@@ -265,18 +271,16 @@ Future<NetLyricResult?> kgGetLyric({required String hash}) async {
   );
 }
 
-// ──────────────────────────────────────────────
-// AMLL TTML 歌词库 (Rust FRB)
-// ──────────────────────────────────────────────
-
 typedef AmllSearchItem = frb_amll.AmllSearchItem;
 
 Future<List<AmllSearchItem>> amllSearchSingle({
   required String keyword,
   int page = 1,
   int pageSize = 15,
+  bool forceRefresh = false,
 }) async {
   final cacheDir = await getCacheDir();
+  if (forceRefresh) amllClearCache();
   return frb_amll.amllSearchLyrics(
     keyword: keyword,
     page: page,
@@ -285,7 +289,6 @@ Future<List<AmllSearchItem>> amllSearchSingle({
   );
 }
 
-Future<String?> amllGetTtml(String id) =>
-    frb_amll.amllGetTtml(id: id);
+Future<String?> amllGetTtml(String id) => frb_amll.amllGetTtml(id: id);
 
 void amllClearCache() => frb_amll.amllClearCache();
