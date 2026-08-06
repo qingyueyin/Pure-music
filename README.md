@@ -23,67 +23,47 @@
 
 **深色模式**
 
-<p align="center">
-  <img src="screenshot/深色主页.png" width="380" alt="深色主页">
-  <img src="screenshot/深色播放页.png" width="380" alt="深色播放页">
-</p>
+<img src="screenshot/深色主页.png" width="380" alt="深色主页">
+<img src="screenshot/深色播放页.png" width="380" alt="深色播放页">
 
-<p align="center">
-  <img src="screenshot/深色专辑页.png" width="380" alt="深色专辑页">
-  <img src="screenshot/深色沉浸模式.png" width="380" alt="深色沉浸模式">
-</p>
+<img src="screenshot/深色专辑页.png" width="380" alt="深色专辑页">
+<img src="screenshot/深色沉浸模式.png" width="380" alt="深色沉浸模式">
 
-<p align="center">
-  <img src="screenshot/深色竖屏.png" width="180" alt="深色竖屏">
-  <img src="screenshot/深色竖屏歌词.png" width="180" alt="深色竖屏歌词">
-  <img src="screenshot/深色竖屏沉浸模式.png" width="180" alt="深色竖屏沉浸模式">
-</p>
+<img src="screenshot/深色竖屏.png" width="180" alt="深色竖屏">
+<img src="screenshot/深色竖屏歌词.png" width="180" alt="深色竖屏歌词">
+<img src="screenshot/深色竖屏沉浸模式.png" width="180" alt="深色竖屏沉浸模式">
 
 **浅色模式**
 
-<p align="center">
-  <img src="screenshot/浅色主页.png" width="380" alt="浅色主页">
-  <img src="screenshot/浅色播放页.png" width="380" alt="浅色播放页">
-</p>
+<img src="screenshot/浅色主页.png" width="380" alt="浅色主页">
+<img src="screenshot/浅色播放页.png" width="380" alt="浅色播放页">
 
-<p align="center">
-  <img src="screenshot/浅色专辑页.png" width="380" alt="浅色专辑页">
-  <img src="screenshot/浅色沉浸模式.png" width="380" alt="浅色沉浸模式">
-</p>
+<img src="screenshot/浅色专辑页.png" width="380" alt="浅色专辑页">
+<img src="screenshot/浅色沉浸模式.png" width="380" alt="浅色沉浸模式">
 
-<p align="center">
-  <img src="screenshot/浅色竖屏.png" width="180" alt="浅色竖屏">
-  <img src="screenshot/浅色竖屏歌词.png" width="180" alt="浅色竖屏歌词">
-  <img src="screenshot/浅色竖屏沉浸模式.png" width="180" alt="浅色竖屏沉浸模式">
-</p>
+<img src="screenshot/浅色竖屏.png" width="180" alt="浅色竖屏">
+<img src="screenshot/浅色竖屏歌词.png" width="180" alt="浅色竖屏歌词">
+<img src="screenshot/浅色竖屏沉浸模式.png" width="180" alt="浅色竖屏沉浸模式">
 
 **曲库浏览**
 
-<p align="center">
-  <img src="screenshot/歌单页.png" width="330" alt="歌单页">
-  <img src="screenshot/文件夹页.png" width="330" alt="文件夹页">
-  <img src="screenshot/统计页.png" width="330" alt="统计页">
-</p>
+<img src="screenshot/歌单页.png" width="330" alt="歌单页">
+<img src="screenshot/文件夹页.png" width="330" alt="文件夹页">
+<img src="screenshot/统计页.png" width="330" alt="统计页">
 
 **桌面歌词样式**
 
-<p align="center">
-  <img src="screenshot/左对齐主题色歌词.png" width="330" alt="左对齐主题色歌词">
-  <img src="screenshot/居中主题色歌词信息歌词.png" width="330" alt="居中主题色歌词">
-  <img src="screenshot/右对齐主题色歌词.png" width="330" alt="右对齐主题色歌词">
-</p>
+<img src="screenshot/左对齐主题色歌词.png" width="330" alt="左对齐主题色歌词">
+<img src="screenshot/居中主题色歌词信息歌词.png" width="330" alt="居中主题色歌词">
+<img src="screenshot/右对齐主题色歌词.png" width="330" alt="右对齐主题色歌词">
 
 **媒体集成**
 
-<p align="center">
-  <img src="screenshot/SMTC.png" width="380" alt="SMTC">
-</p>
+<img src="screenshot/SMTC.png" width="380" alt="SMTC">
 
 **标签编辑**
 
-<p align="center">
-  <img src="screenshot/内嵌数据编辑.png" width="330" alt="内嵌编辑页面">
-</p>
+<img src="screenshot/内嵌数据编辑.png" width="330" alt="内嵌编辑页面">
 
 ---
 
