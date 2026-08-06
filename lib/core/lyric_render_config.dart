@@ -7,31 +7,6 @@ import 'package:pure_music/core/settings.dart';
 import 'package:flutter/foundation.dart';
 
 @immutable
-class LyricSpringDescription {
-  final double stiffness;
-  final double damping;
-  final double mass;
-
-  const LyricSpringDescription({
-    required this.stiffness,
-    required this.damping,
-    required this.mass,
-  });
-
-  @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-    return other is LyricSpringDescription &&
-        other.stiffness == stiffness &&
-        other.damping == damping &&
-        other.mass == mass;
-  }
-
-  @override
-  int get hashCode => Object.hash(stiffness, damping, mass);
-}
-
-@immutable
 class LyricRenderConfig {
   final LyricTextAlign textAlign;
   final double baseFontSize;
@@ -41,14 +16,10 @@ class LyricRenderConfig {
   final List<LyricLineTrack> lineOrder;
   final int fontWeight;
   final bool enableBlur;
-  final bool enableLineScale;
-  final bool enableLineSpring;
   final bool enableStaggeredAnimation;
   final bool enableAudioReactive;
   final double audioReactiveStrength;
   final bool enableGlow;
-  final double karaokeGradientWidthFraction;
-  final double unplayedAlpha;
   final LyricLiftStyle liftStyle;
   final double liftPeak;
   final int liftDurationMs;
@@ -69,7 +40,6 @@ class LyricRenderConfig {
   final double blurSigmaStep;
   final double blurSigmaMax;
   final Duration implicitAnimationDuration;
-  final LyricSpringDescription lineSpring;
   final int viewportLeadingLines;
   final int viewportTrailingLines;
   final double viewportOverscanScreens;
@@ -84,14 +54,10 @@ class LyricRenderConfig {
     required this.fontWeight,
     required this.enableBlur,
     this.lineOrder = defaultLyricLineOrder,
-    this.enableLineScale = true,
-    this.enableLineSpring = true,
     this.enableStaggeredAnimation = true,
     this.enableAudioReactive = false,
     this.audioReactiveStrength = 0.5,
     this.enableGlow = false,
-    this.karaokeGradientWidthFraction = 0.25,
-    this.unplayedAlpha = 0.30,
     this.liftStyle = LyricLiftStyle.vertical,
     this.liftPeak = 2.0,
     this.liftDurationMs = 300,
@@ -109,11 +75,6 @@ class LyricRenderConfig {
     this.blurSigmaStep = 0.6,
     this.blurSigmaMax = 2.5,
     this.implicitAnimationDuration = const Duration(milliseconds: 300),
-    this.lineSpring = const LyricSpringDescription(
-      stiffness: 90.0,
-      damping: 15.0,
-      mass: 0.9,
-    ),
     this.viewportLeadingLines = 2,
     this.viewportTrailingLines = 3,
     this.viewportOverscanScreens = 0.75,
@@ -132,14 +93,10 @@ class LyricRenderConfig {
     List<LyricLineTrack>? lineOrder,
     int? fontWeight,
     bool? enableBlur,
-    bool? enableLineScale,
-    bool? enableLineSpring,
     bool? enableStaggeredAnimation,
     bool? enableAudioReactive,
     double? audioReactiveStrength,
     bool? enableGlow,
-    double? karaokeGradientWidthFraction,
-    double? unplayedAlpha,
     LyricLiftStyle? liftStyle,
     double? liftPeak,
     int? liftDurationMs,
@@ -157,7 +114,6 @@ class LyricRenderConfig {
     double? blurSigmaStep,
     double? blurSigmaMax,
     Duration? implicitAnimationDuration,
-    LyricSpringDescription? lineSpring,
     int? viewportLeadingLines,
     int? viewportTrailingLines,
     double? viewportOverscanScreens,
@@ -173,17 +129,12 @@ class LyricRenderConfig {
       lineOrder: lineOrder ?? this.lineOrder,
       fontWeight: fontWeight ?? this.fontWeight,
       enableBlur: enableBlur ?? this.enableBlur,
-      enableLineScale: enableLineScale ?? this.enableLineScale,
-      enableLineSpring: enableLineSpring ?? this.enableLineSpring,
       enableStaggeredAnimation:
           enableStaggeredAnimation ?? this.enableStaggeredAnimation,
       enableAudioReactive: enableAudioReactive ?? this.enableAudioReactive,
       audioReactiveStrength:
           audioReactiveStrength ?? this.audioReactiveStrength,
       enableGlow: enableGlow ?? this.enableGlow,
-      karaokeGradientWidthFraction:
-          karaokeGradientWidthFraction ?? this.karaokeGradientWidthFraction,
-      unplayedAlpha: unplayedAlpha ?? this.unplayedAlpha,
       liftStyle: liftStyle ?? this.liftStyle,
       liftPeak: liftPeak ?? this.liftPeak,
       liftDurationMs: liftDurationMs ?? this.liftDurationMs,
@@ -204,7 +155,6 @@ class LyricRenderConfig {
       blurSigmaMax: blurSigmaMax ?? this.blurSigmaMax,
       implicitAnimationDuration:
           implicitAnimationDuration ?? this.implicitAnimationDuration,
-      lineSpring: lineSpring ?? this.lineSpring,
       viewportLeadingLines: viewportLeadingLines ?? this.viewportLeadingLines,
       viewportTrailingLines:
           viewportTrailingLines ?? this.viewportTrailingLines,
@@ -227,14 +177,10 @@ class LyricRenderConfig {
         listEquals(other.lineOrder, lineOrder) &&
         other.fontWeight == fontWeight &&
         other.enableBlur == enableBlur &&
-        other.enableLineScale == enableLineScale &&
-        other.enableLineSpring == enableLineSpring &&
         other.enableStaggeredAnimation == enableStaggeredAnimation &&
         other.enableAudioReactive == enableAudioReactive &&
         other.audioReactiveStrength == audioReactiveStrength &&
         other.enableGlow == enableGlow &&
-        other.karaokeGradientWidthFraction == karaokeGradientWidthFraction &&
-        other.unplayedAlpha == unplayedAlpha &&
         other.liftStyle == liftStyle &&
         other.liftPeak == liftPeak &&
         other.liftDurationMs == liftDurationMs &&
@@ -252,7 +198,6 @@ class LyricRenderConfig {
         other.blurSigmaStep == blurSigmaStep &&
         other.blurSigmaMax == blurSigmaMax &&
         other.implicitAnimationDuration == implicitAnimationDuration &&
-        other.lineSpring == lineSpring &&
         other.viewportLeadingLines == viewportLeadingLines &&
         other.viewportTrailingLines == viewportTrailingLines &&
         other.viewportOverscanScreens == viewportOverscanScreens &&
@@ -261,45 +206,40 @@ class LyricRenderConfig {
 
   @override
   int get hashCode => Object.hashAll([
-        textAlign,
-        baseFontSize,
-        translationBaseFontSize,
-        showTranslation,
-        showRoman,
-        Object.hashAll(lineOrder),
-        fontWeight,
-        enableBlur,
-        enableLineScale,
-        enableLineSpring,
-        enableStaggeredAnimation,
-        enableAudioReactive,
-        audioReactiveStrength,
-        enableGlow,
-        karaokeGradientWidthFraction,
-        unplayedAlpha,
-        liftStyle,
-        liftPeak,
-        liftDurationMs,
-        staggerStyle,
-        hasMultipleAgents,
-        displayMode,
-        useCustomPaint,
-        viewportFadeExtent,
-        mainLineScale,
-        subLineScale,
-        mainTranslationScale,
-        subTranslationScale,
-        activeLineScaleMultiplier,
-        inactiveLineScaleMultiplier,
-        blurSigmaStep,
-        blurSigmaMax,
-        implicitAnimationDuration,
-        lineSpring,
-        viewportLeadingLines,
-        viewportTrailingLines,
-        viewportOverscanScreens,
-        userScrollHoldDuration,
-      ]);
+    textAlign,
+    baseFontSize,
+    translationBaseFontSize,
+    showTranslation,
+    showRoman,
+    Object.hashAll(lineOrder),
+    fontWeight,
+    enableBlur,
+    enableStaggeredAnimation,
+    enableAudioReactive,
+    audioReactiveStrength,
+    enableGlow,
+    liftStyle,
+    liftPeak,
+    liftDurationMs,
+    staggerStyle,
+    hasMultipleAgents,
+    displayMode,
+    useCustomPaint,
+    viewportFadeExtent,
+    mainLineScale,
+    subLineScale,
+    mainTranslationScale,
+    subTranslationScale,
+    activeLineScaleMultiplier,
+    inactiveLineScaleMultiplier,
+    blurSigmaStep,
+    blurSigmaMax,
+    implicitAnimationDuration,
+    viewportLeadingLines,
+    viewportTrailingLines,
+    viewportOverscanScreens,
+    userScrollHoldDuration,
+  ]);
 
   FontWeight discreteFontWeight([int? resolvedWeight]) {
     final weight = (resolvedWeight ?? fontWeight).clamp(100, 900);
@@ -332,14 +272,16 @@ class LyricRenderConfig {
 
   double syncVerticalPadding({required bool isMainLine}) {
     if (!isMainLine) return 12.0;
-    final base = baseFontSize *
+    final base =
+        baseFontSize *
         0.35 *
         (1.0 + ((fontWeight - 600).clamp(0, 300) / 300) * 0.10);
     return base.clamp(10.0, 20.0).toDouble();
   }
 
   double lrcVerticalPadding() {
-    final base = baseFontSize *
+    final base =
+        baseFontSize *
         0.32 *
         (1.0 + ((fontWeight - 600).clamp(0, 300) / 300) * 0.10);
     return base.clamp(10.0, 18.0).toDouble();
@@ -358,11 +300,6 @@ class LyricRenderConfig {
   }
 
   List<double> viewportMaskStops() {
-    return <double>[
-      0.0,
-      viewportFadeExtent,
-      1.0 - viewportFadeExtent,
-      1.0,
-    ];
+    return <double>[0.0, viewportFadeExtent, 1.0 - viewportFadeExtent, 1.0];
   }
 }
