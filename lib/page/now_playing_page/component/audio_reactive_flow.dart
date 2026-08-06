@@ -16,7 +16,7 @@ final class AudioReactiveFlowResponse {
       return value.isFinite && value >= 0 ? value : 0;
     }
 
-    final low = bandAt(0);
+    final low = math.max(bandAt(0), bandAt(1) * 0.85);
     final mid = (bandAt(1) + bandAt(2)) / 2;
     final high = bandAt(3);
     return AudioReactiveFlowResponse(
@@ -73,7 +73,7 @@ final class AudioReactiveFlowEnvelope {
 }
 
 final class AudioReactiveFlowNormalizer {
-  static const _targetPeak = 0.5;
+  static const _targetPeak = 0.65;
   static const _attack = 0.30;
   static const _release = 0.01;
   static const _maxGain = 30.0;
@@ -148,22 +148,34 @@ final class AudioReactiveFlowTransientDetector {
 }
 
 final class AudioReactiveFlowPulseEnvelope {
-  static const _attackSeconds = .05;
-  static const _releaseSeconds = .26;
-  static const _targetDecaySeconds = .18;
+  static const _attackSeconds = .025;
+  static const _releaseSeconds = .10;
+  static const _targetDecaySeconds = .06;
+  static const _minimumTriggerStrength = .16;
+  static const _retriggerDelaySeconds = .045;
+  static const _retriggerLift = .35;
 
   double _value = 0;
   double _target = 0;
+  double _retriggerDelayRemaining = 0;
 
   double get value => _value;
 
-  void trigger(double strength) {
+  bool trigger(double strength) {
     final next = strength.isFinite ? strength.clamp(0.0, 1.0).toDouble() : 0.0;
-    _target = math.max(_target, next);
+    if (next < _minimumTriggerStrength || _retriggerDelayRemaining > 0) {
+      return false;
+    }
+    final accentedTarget = (_value + next * _retriggerLift).clamp(0.0, 1.0);
+    _target = math.max(_target, math.max(next, accentedTarget));
+    _retriggerDelayRemaining = _retriggerDelaySeconds;
+    return true;
   }
 
   double advance(double deltaSeconds) {
     if (!deltaSeconds.isFinite || deltaSeconds <= 0) return _value;
+    _retriggerDelayRemaining =
+        math.max(0.0, _retriggerDelayRemaining - deltaSeconds);
     final timeConstant = _target > _value ? _attackSeconds : _releaseSeconds;
     final response = 1 - math.exp(-deltaSeconds / timeConstant);
     _value += (_target - _value) * response;
@@ -175,5 +187,6 @@ final class AudioReactiveFlowPulseEnvelope {
   void reset() {
     _value = 0;
     _target = 0;
+    _retriggerDelayRemaining = 0;
   }
 }

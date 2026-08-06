@@ -5,35 +5,113 @@ import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_shaders/flutter_shaders.dart';
-import 'package:mesh_gradient/mesh_gradient.dart';
-import 'package:pure_music/core/enums.dart';
-import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/page/now_playing_page/component/now_playing_background_inputs.dart';
 
+const _kDarkMeshScrim = Color(0x2E171717);
+const _kLightMeshScrim = Color(0x24F0F0F0);
+const _kMeshRenderExtent = 360.0;
+const _kMeshColorCount = 4;
+const _kShaderColorCount = 4;
+
+Size _meshRenderSize(Size viewport) {
+  if (viewport.isEmpty) return Size.zero;
+  if (viewport.width >= viewport.height) {
+    return Size(_kMeshRenderExtent, _kMeshRenderExtent / viewport.aspectRatio);
+  }
+  return Size(_kMeshRenderExtent * viewport.aspectRatio, _kMeshRenderExtent);
+}
+
+class _MeshAnimationController {
+  final ValueNotifier<bool> isAnimating = ValueNotifier(false);
+
+  void start() {
+    if (!isAnimating.value) isAnimating.value = true;
+  }
+
+  void stop() {
+    if (isAnimating.value) isAnimating.value = false;
+  }
+
+  void dispose() => isAnimating.dispose();
+}
+
+List<Color> _adjustMeshColors(List<Color> colors, Brightness brightness) {
+  if (colors.isEmpty) return colors;
+
+  final isDark = brightness == Brightness.dark;
+  if (isDark && colors.every((color) => color.computeLuminance() <= 0.008)) {
+    const levels = <double>[0.10, 0.19, 0.14, 0.07];
+    return levels
+        .map(
+          (level) => Color.from(
+            alpha: 1.0,
+            red: level,
+            green: level,
+            blue: level,
+          ),
+        )
+        .toList(growable: false);
+  }
+  const darkLuminanceLimit = <double>[0.13, 0.22, 0.17, 0.20];
+  return colors.indexed.map((entry) {
+    final (index, color) = entry;
+    final hsl = HSLColor.fromColor(color);
+    const maxSaturation = 0.78;
+    final adjusted =
+        hsl.withSaturation(hsl.saturation.clamp(0.0, maxSaturation)).toColor();
+    if (isDark) {
+      return _capMeshLuminance(adjusted, darkLuminanceLimit[index]);
+    }
+    return HSLColor.fromColor(adjusted)
+        .withLightness((hsl.lightness * 0.82 + 0.12).clamp(0.34, 0.82))
+        .toColor();
+  }).toList(growable: false);
+}
+
+Color _capMeshLuminance(Color color, double limit) {
+  if (color.computeLuminance() <= limit) return color;
+  var lower = 0.0;
+  var upper = 1.0;
+  for (var attempt = 0; attempt < 9; attempt++) {
+    final scale = (lower + upper) * 0.5;
+    final candidate = color.withValues(
+      red: color.r * scale,
+      green: color.g * scale,
+      blue: color.b * scale,
+    );
+    if (candidate.computeLuminance() > limit) {
+      upper = scale;
+    } else {
+      lower = scale;
+    }
+  }
+  return color.withValues(
+    red: color.r * lower,
+    green: color.g * lower,
+    blue: color.b * lower,
+  );
+}
+
+List<Color> _meshShaderColors(List<Color> colors) {
+  return colors.length == _kShaderColorCount ? colors : const [];
+}
+
 class MeshGradientBackground extends StatelessWidget {
-  final NowPlayingBackgroundMode mode;
   final NowPlayingBackgroundInputs inputs;
   final Color fallbackColor;
 
   const MeshGradientBackground({
     super.key,
-    required this.mode,
     required this.inputs,
     required this.fallbackColor,
   });
 
   @override
   Widget build(BuildContext context) {
-    return switch (mode) {
-      NowPlayingBackgroundMode.meshGradient => MeshGradientBackgroundInternal(
-          inputs: inputs,
-          fallbackColor: fallbackColor,
-        ),
-      _ => MeshGradientBackgroundInternal(
-          inputs: inputs,
-          fallbackColor: fallbackColor,
-        ),
-    };
+    return MeshGradientBackgroundInternal(
+      inputs: inputs,
+      fallbackColor: fallbackColor,
+    );
   }
 }
 
@@ -58,12 +136,6 @@ class _MeshGradientBackgroundInternalState
     extends State<MeshGradientBackgroundInternal>
     with TickerProviderStateMixin {
   List<Color> _paletteColors = [];
-  bool _isPlaying = false;
-  double _breathScale = 1.0;
-  final ValueNotifier<double> _breathScaleNotifier = ValueNotifier(1.0);
-  double _targetBreathScale = 1.0;
-  double _smoothedEnergy = 0.0;
-  StreamSubscription<Float32List>? _spectrumSubscription;
 
   double _transitionValue = 0.0;
   final ValueNotifier<double> _transitionValueNotifier = ValueNotifier(0.0);
@@ -73,42 +145,19 @@ class _MeshGradientBackgroundInternalState
   bool _isTransitioning = false;
   bool _disposed = false;
 
-  Timer? _decayTimer;
-  Timer? _fallbackPaletteTimer;
-
   static const Duration _paletteTransitionDuration = Duration(
-    milliseconds: 1800,
+    milliseconds: 360,
   );
 
-  /// Controls the mesh gradient's internal Ticker.
-  /// Stopped when paused or not visible to avoid idle CPU/GPU overhead.
-  final AnimatedMeshGradientController _meshController =
-      AnimatedMeshGradientController();
+  final _MeshAnimationController _meshController = _MeshAnimationController();
 
   int? _lastCoverHash;
   int? _lastPaletteSignature;
-  int _lastSpectrumUpdateMs = 0;
-  final Stopwatch _spectrumClock = Stopwatch()..start();
-
-  static final _playOptions = AnimatedMeshGradientOptions(
-    frequency: 4.4,
-    amplitude: 48,
-    speed: 3.6,
-    grain: 0,
-  );
-  static final _pauseOptions = AnimatedMeshGradientOptions(
-    frequency: 4.4,
-    amplitude: 52,
-    speed: 0.28,
-    grain: 0,
-  );
 
   @override
   void initState() {
     super.initState();
     _syncPaletteFromInputs(animate: false);
-    _isPlaying = widget.inputs.playerState == PlayerState.playing;
-    _listenSpectrum();
     _syncMeshController();
   }
 
@@ -136,100 +185,57 @@ class _MeshGradientBackgroundInternalState
       oldWidget.inputs.preExtractedColors,
     )) {
       if (!_syncPaletteFromInputs(animate: true)) {
-        _scheduleFallbackPalette();
+        _showFallbackPalette();
       }
     }
 
     final wasVisible = oldWidget.inputs.isVisible;
     final isVisible = widget.inputs.isVisible;
-    final nowPlaying = widget.inputs.playerState == PlayerState.playing;
 
-    if (nowPlaying != _isPlaying) {
-      setState(() => _isPlaying = nowPlaying);
-      _targetBreathScale = nowPlaying ? 1.0 : 0.98;
-      _startDecayTimer();
+    if (wasVisible && !isVisible && _isTransitioning) {
+      _transitionTicker?.dispose();
+      _transitionTicker = null;
+      _transitionValue = 1;
+      _transitionValueNotifier.value = 1;
+      _paletteColors = List<Color>.from(_targetPaletteColors);
+      _prevPaletteColors = [];
+      _targetPaletteColors = [];
+      _isTransitioning = false;
+    } else if (!wasVisible && isVisible) {
+      _syncPaletteFromInputs(animate: true);
     }
 
-    if (wasVisible != isVisible) {
-      _syncMeshController();
-      if (!wasVisible && isVisible) {
-        if (nowPlaying) {
-          _syncSpectrumSubscription();
-        }
-        _syncPaletteFromInputs(animate: true);
-      } else if (wasVisible && !isVisible) {
-        _spectrumSubscription?.cancel();
-        _spectrumSubscription = null;
-      }
-    } else if (_isPlaying !=
-        (oldWidget.inputs.playerState == PlayerState.playing)) {
-      _syncMeshController();
-      _syncSpectrumSubscription();
-    }
-  }
-
-  /// Sync spectrum subscription based on playing and visibility state.
-  /// Ensures only one active subscription at any time.
-  void _syncSpectrumSubscription() {
-    final shouldListen = _isPlaying && widget.inputs.isVisible;
-
-    if (shouldListen && _spectrumSubscription == null) {
-      _listenSpectrum();
-    } else if (!shouldListen) {
-      _spectrumSubscription?.cancel();
-      _spectrumSubscription = null;
-    }
-  }
-
-  void _startDecayTimer() {
-    _decayTimer?.cancel();
-    const step = Duration(milliseconds: 100);
-    const totalSteps = 40;
-    var count = 0;
-
-    _decayTimer = Timer.periodic(step, (_) {
-      if (_disposed || !mounted || count >= totalSteps) {
-        _decayTimer?.cancel();
-        _decayTimer = null;
-        return;
-      }
-      count++;
-      if (_isPlaying) {
-        _decayTimer?.cancel();
-        _decayTimer = null;
-        return;
-      }
-      final decay = 1.0 - count / totalSteps;
-      final newScale = 1.0 + (_breathScale - 1.0) * decay;
-      if ((newScale - _breathScale).abs() > 0.005) {
-        _setBreathScale(newScale);
-      }
-    });
+    _syncMeshController();
   }
 
   void _coverBytesChanged(Uint8List? newBytes) {
     if (newBytes == null || newBytes.isEmpty) {
       _lastCoverHash = null;
       if (!_syncPaletteFromInputs(animate: true)) {
-        _scheduleFallbackPalette();
+        _showFallbackPalette();
       }
       return;
     }
-    _fallbackPaletteTimer?.cancel();
     final newHash = _computeHash(newBytes);
     if (_lastCoverHash == newHash) return;
     _lastCoverHash = newHash;
 
-    _syncPaletteFromInputs(animate: true);
+    if (!_syncPaletteFromInputs(animate: true)) {
+      _showFallbackPalette();
+    }
+  }
+
+  void _showFallbackPalette() {
+    _lastPaletteSignature = null;
+    _setPaletteColors(List.filled(_kMeshColorCount, widget.fallbackColor));
   }
 
   bool _syncPaletteFromInputs({required bool animate}) {
     if (!widget.inputs.isVisible || _disposed) return false;
     final colors = widget.inputs.preExtractedColors;
     if (colors == null || colors.isEmpty) return false;
-    _fallbackPaletteTimer?.cancel();
 
-    final target = _padToFour(colors);
+    final target = _padPalette(colors);
     final signature = _paletteSignature(target);
     if (_lastPaletteSignature == signature) return true;
     _lastPaletteSignature = signature;
@@ -243,7 +249,7 @@ class _MeshGradientBackgroundInternalState
   }
 
   void _setPaletteColors(List<Color> colors) {
-    final target = _padToFour(colors);
+    final target = _padPalette(colors);
     _transitionTicker?.dispose();
     _transitionTicker = null;
     _transitionValue = 0.0;
@@ -254,20 +260,8 @@ class _MeshGradientBackgroundInternalState
     _isTransitioning = false;
   }
 
-  void _scheduleFallbackPalette() {
-    _fallbackPaletteTimer?.cancel();
-    if (_currentDisplayedPalette().isNotEmpty) return;
-    _fallbackPaletteTimer = Timer(const Duration(milliseconds: 900), () {
-      if (_disposed || !mounted) return;
-      final colors = widget.inputs.preExtractedColors;
-      if (colors != null && colors.isNotEmpty) return;
-      if (_currentDisplayedPalette().isNotEmpty) return;
-      _applyPaletteColors(List.filled(4, widget.fallbackColor));
-    });
-  }
-
   void _applyPaletteColors(List<Color> colors) {
-    final target = _padToFour(colors);
+    final target = _padPalette(colors);
     final displayedColors = _currentDisplayedPalette();
     _lastPaletteSignature = _paletteSignature(target);
     _transitionTicker?.dispose();
@@ -277,8 +271,8 @@ class _MeshGradientBackgroundInternalState
 
     setState(() {
       _prevPaletteColors = displayedColors.isEmpty
-          ? List.filled(4, widget.fallbackColor)
-          : _padToFour(displayedColors);
+          ? List.filled(_kMeshColorCount, widget.fallbackColor)
+          : _padPalette(displayedColors);
       _targetPaletteColors = target;
       _isTransitioning = true;
     });
@@ -314,53 +308,13 @@ class _MeshGradientBackgroundInternalState
     return hash;
   }
 
-  void _listenSpectrum() {
-    _spectrumSubscription?.cancel();
-    final stream = widget.inputs.spectrumStream;
-    if (stream == null ||
-        !_isPlaying ||
-        !widget.inputs.shouldAnimate ||
-        !widget.inputs.isVisible) {
-      return;
-    }
-
-    _spectrumSubscription = stream.listen((spectrum) {
-      if (!mounted || !_isPlaying || !widget.inputs.isVisible) return;
-
-      final now = _spectrumClock.elapsedMilliseconds;
-      if (now - _lastSpectrumUpdateMs < 66) return;
-      _lastSpectrumUpdateMs = now;
-
-      final lowFreq = spectrum.isNotEmpty ? spectrum[0] : 0.0;
-      final subBass = spectrum.length > 1 ? spectrum[1] : 0.0;
-      final raw = (lowFreq * 0.7 + subBass * 0.3).clamp(0.0, 1.0);
-
-      // EMA 平滑，α=0.25：足够跟上节拍，但过滤掉高频抖动
-      _smoothedEnergy = _smoothedEnergy * 0.75 + raw * 0.25;
-
-      _targetBreathScale = 1.0 +
-          _smoothedEnergy * 0.038 * widget.inputs.intensity;
-
-      if ((_targetBreathScale - _breathScale).abs() > 0.006) {
-        _setBreathScale(
-          _breathScale + (_targetBreathScale - _breathScale) * 0.45,
-        );
-      }
-    });
-  }
-
-  void _setBreathScale(double scale) {
-    _breathScale = scale;
-    _breathScaleNotifier.value = scale;
-  }
-
-  List<Color> _padToFour(List<Color> colors) {
+  List<Color> _padPalette(List<Color> colors) {
     if (colors.isEmpty) {
       final fallback = widget.fallbackColor;
-      return List.filled(4, fallback);
+      return List.filled(_kMeshColorCount, fallback);
     }
-    final padded = [...colors];
-    while (padded.length < 4) {
+    final padded = colors.take(_kMeshColorCount).toList();
+    while (padded.length < _kMeshColorCount) {
       padded.add(colors[padded.length % colors.length]);
     }
     return padded;
@@ -374,8 +328,6 @@ class _MeshGradientBackgroundInternalState
     return hash;
   }
 
-  /// Smoothstep interpolation for smoother color transitions.
-  /// Smoothstep: t²(3-2t)
   static double _smoothstep(double t) {
     return t * t * (3.0 - 2.0 * t);
   }
@@ -383,7 +335,7 @@ class _MeshGradientBackgroundInternalState
   List<Color> _interpolateColors(double t) {
     if (_prevPaletteColors.isEmpty || _targetPaletteColors.isEmpty) {
       return _paletteColors.isEmpty
-          ? List.filled(4, widget.fallbackColor)
+          ? List.filled(_kMeshColorCount, widget.fallbackColor)
           : _paletteColors;
     }
     final count =
@@ -409,53 +361,9 @@ class _MeshGradientBackgroundInternalState
     return const [];
   }
 
-  List<Color> _softenMeshColors(List<Color> colors, Color surface) {
-    if (colors.isEmpty) return colors;
-
-    var sumR = 0.0;
-    var sumG = 0.0;
-    var sumB = 0.0;
-    for (final color in colors) {
-      sumR += color.r;
-      sumG += color.g;
-      sumB += color.b;
-    }
-    final avgR = sumR / colors.length;
-    final avgG = sumG / colors.length;
-    final avgB = sumB / colors.length;
-    int channel(double value) => (value * 255.0).round().clamp(0, 255).toInt();
-    final average = Color.fromARGB(
-      255,
-      channel(avgR),
-      channel(avgG),
-      channel(avgB),
-    );
-
-    final isDark = surface.computeLuminance() < 0.5;
-    final surfaceMix = isDark ? 0.02 : 0.04;
-    const maxSaturation = 0.72;
-    final softened = List<Color>.filled(colors.length, colors.first);
-    for (var i = 0; i < colors.length; i++) {
-      final color = colors[i];
-      final toward = Color.lerp(color, average, 0.22)!;
-      final hsl = HSLColor.fromColor(toward);
-      final lightness = isDark
-          ? (hsl.lightness * 0.86).clamp(0.12, 0.42)
-          : (hsl.lightness * 0.75 + 0.20).clamp(0.42, 0.78);
-      final ambient = hsl
-          .withSaturation(hsl.saturation.clamp(0.0, maxSaturation))
-          .withLightness(lightness)
-          .toColor();
-      softened[i] = Color.lerp(ambient, surface, surfaceMix)!;
-    }
-    return softened;
-  }
-
-  /// Sync the mesh gradient controller based on current play/visibility state.
-  /// When stopped, the mesh gradient's internal Ticker is fully halted.
   void _syncMeshController() {
-    final shouldRun =
-        widget.inputs.isVisible && (_isPlaying || _isTransitioning);
+    final shouldRun = widget.inputs.isVisible &&
+        (widget.inputs.shouldAnimate || _isTransitioning);
     if (shouldRun) {
       _meshController.start();
     } else {
@@ -467,50 +375,48 @@ class _MeshGradientBackgroundInternalState
   void dispose() {
     _disposed = true;
     _meshController.dispose();
-    _decayTimer?.cancel();
-    _fallbackPaletteTimer?.cancel();
     _transitionTicker?.dispose();
-    _spectrumSubscription?.cancel();
     _paletteColors = const [];
     _prevPaletteColors = const [];
     _targetPaletteColors = const [];
-    _breathScaleNotifier.dispose();
     _transitionValueNotifier.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final surface = scheme.surface;
+    if (!TickerMode.valuesOf(context).enabled) {
+      return ColoredBox(color: widget.fallbackColor);
+    }
+    final brightness = Theme.of(context).brightness;
+    final scrimColor =
+        brightness == Brightness.dark ? _kDarkMeshScrim : _kLightMeshScrim;
     final transitionFromColors = _isTransitioning
-        ? _softenMeshColors(_prevPaletteColors, surface)
+        ? _meshShaderColors(
+            _adjustMeshColors(_prevPaletteColors, brightness),
+          )
         : null;
     final transitionToColors = _isTransitioning
-        ? _softenMeshColors(_targetPaletteColors, surface)
+        ? _meshShaderColors(
+            _adjustMeshColors(_targetPaletteColors, brightness),
+          )
         : null;
     final meshColors = transitionToColors ??
-        _softenMeshColors(
-          _currentDisplayedPalette(),
-          surface,
+        _meshShaderColors(
+          _adjustMeshColors(_currentDisplayedPalette(), brightness),
         );
 
     return Stack(
       fit: StackFit.expand,
       children: [
-        Container(color: surface),
-        // Note: no AnimatedSwitcher wrapping the mesh — removing it avoids
-        // double-rendering two mesh gradients during play/pause transitions.
-        // The mesh controller stops the internal Ticker when paused.
+        Container(color: widget.fallbackColor),
         RepaintBoundary(
           child: _buildMesh(
             meshColors,
             transitionFromColors: transitionFromColors,
             transitionToColors: transitionToColors,
+            scrimColor: scrimColor,
           ),
-        ),
-        Container(
-          color: surface.withValues(alpha: 0.14),
         ),
       ],
     );
@@ -520,103 +426,103 @@ class _MeshGradientBackgroundInternalState
     List<Color> colors, {
     List<Color>? transitionFromColors,
     List<Color>? transitionToColors,
+    required Color scrimColor,
   }) {
-    if (colors.length != 4) {
+    if (colors.length != _kShaderColorCount) {
       return Container(color: widget.fallbackColor);
     }
-    return RepaintBoundary(
-      child: _LowOverheadMeshGradient(
-        colors: colors,
-        transitionFromColors: transitionFromColors,
-        transitionToColors: transitionToColors,
-        colorTransition: _isTransitioning ? _transitionValueNotifier : null,
-        audioPulse: _breathScaleNotifier,
-        options: _isPlaying ? _playOptions : _pauseOptions,
-        controller: _meshController,
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final renderSize = _meshRenderSize(constraints.biggest);
+        return FittedBox(
+          fit: BoxFit.fill,
+          child: SizedBox.fromSize(
+            size: renderSize,
+            child: _SoftMeshGradient(
+              colors: colors,
+              transitionFromColors: transitionFromColors,
+              transitionToColors: transitionToColors,
+              colorTransition:
+                  _isTransitioning ? _transitionValueNotifier : null,
+              controller: _meshController,
+              scrimColor: scrimColor,
+            ),
+          ),
+        );
+      },
     );
   }
 }
 
-/// 替代 AnimatedMeshGradient，去掉 willChange: true 避免每帧分配独立 GPU 图层。
-/// 其他逻辑与原包一致。
-class _LowOverheadMeshGradient extends StatefulWidget {
+class _SoftMeshGradient extends StatefulWidget {
   final List<Color> colors;
   final List<Color>? transitionFromColors;
   final List<Color>? transitionToColors;
   final ValueListenable<double>? colorTransition;
-  final ValueListenable<double>? audioPulse;
-  final AnimatedMeshGradientOptions options;
-  final AnimatedMeshGradientController? controller;
+  final _MeshAnimationController? controller;
+  final Color scrimColor;
 
-  const _LowOverheadMeshGradient({
+  const _SoftMeshGradient({
     required this.colors,
     this.transitionFromColors,
     this.transitionToColors,
     this.colorTransition,
-    this.audioPulse,
-    required this.options,
     this.controller,
+    required this.scrimColor,
   });
 
   @override
-  State<_LowOverheadMeshGradient> createState() =>
-      _LowOverheadMeshGradientState();
+  State<_SoftMeshGradient> createState() => _SoftMeshGradientState();
 }
 
-class _LowOverheadMeshGradientState extends State<_LowOverheadMeshGradient>
-    with TickerProviderStateMixin {
-  static const _shaderAssetPath =
-      'packages/mesh_gradient/shaders/animated_mesh_gradient.frag';
-  static const Duration _meshFrameInterval = Duration.zero;
+class _SoftMeshGradientState extends State<_SoftMeshGradient> {
+  static const _shaderAssetPath = 'assets/shaders/soft_mesh_gradient.frag';
+  static const Duration _meshFrameInterval = Duration(milliseconds: 42);
   static const double _timeScale = 1.0;
 
-  Ticker? _ticker;
+  Timer? _frameTimer;
   late final ValueNotifier<double> _time;
-  Duration? _lastPaintElapsed;
   VoidCallback? _controllerListener;
 
-  void _onTick(Duration elapsed) {
-    if (!mounted) return;
-    if (widget.controller != null && !widget.controller!.isAnimating.value) {
+  void _onFrame(Timer _) {
+    if (!mounted ||
+        (widget.controller != null && !widget.controller!.isAnimating.value)) {
+      _syncFrameTimer();
       return;
     }
-    final lastPaintElapsed = _lastPaintElapsed;
-    if (lastPaintElapsed != null &&
-        elapsed - lastPaintElapsed < _meshFrameInterval) {
-      return;
-    }
-    final delta = lastPaintElapsed == null
-        ? _meshFrameInterval
-        : elapsed - lastPaintElapsed;
-    _lastPaintElapsed = elapsed;
-    _time.value +=
-        delta.inMicroseconds / Duration.microsecondsPerSecond * _timeScale;
+    _time.value += _meshFrameInterval.inMicroseconds /
+        Duration.microsecondsPerSecond *
+        _timeScale;
   }
 
-  void _syncTicker() {
+  void _syncFrameTimer() {
     final shouldRun =
         widget.controller == null || widget.controller!.isAnimating.value;
-    if (shouldRun && !(_ticker?.isActive ?? false)) {
-      _lastPaintElapsed = null;
-      _ticker?.start();
-    } else if (!shouldRun && (_ticker?.isActive ?? false)) {
-      _ticker?.stop();
-      _lastPaintElapsed = null;
+    if (shouldRun && _frameTimer == null) {
+      _frameTimer = Timer.periodic(_meshFrameInterval, _onFrame);
+    } else if (!shouldRun && _frameTimer != null) {
+      _frameTimer?.cancel();
+      _frameTimer = null;
     }
+  }
+
+  void _stopFrameTimer() {
+    _frameTimer?.cancel();
+    _frameTimer = null;
+  }
+
+  void _onControllerChanged() {
+    _syncFrameTimer();
   }
 
   void _bindController() {
     final controller = widget.controller;
     if (controller == null || _controllerListener != null) return;
-    _controllerListener = () {
-      if (!mounted) return;
-      _syncTicker();
-    };
+    _controllerListener = _onControllerChanged;
     controller.isAnimating.addListener(_controllerListener!);
   }
 
-  void _unbindController(AnimatedMeshGradientController? controller) {
+  void _unbindController(_MeshAnimationController? controller) {
     final listener = _controllerListener;
     if (controller != null && listener != null) {
       controller.isAnimating.removeListener(listener);
@@ -628,25 +534,24 @@ class _LowOverheadMeshGradientState extends State<_LowOverheadMeshGradient>
   void initState() {
     super.initState();
     _time = ValueNotifier(0);
-    _ticker = createTicker(_onTick);
     _bindController();
-    _syncTicker();
+    _syncFrameTimer();
   }
 
   @override
-  void didUpdateWidget(covariant _LowOverheadMeshGradient oldWidget) {
+  void didUpdateWidget(covariant _SoftMeshGradient oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) {
       _unbindController(oldWidget.controller);
       _bindController();
     }
-    _syncTicker();
+    _syncFrameTimer();
   }
 
   @override
   void dispose() {
     _unbindController(widget.controller);
-    _ticker?.dispose();
+    _stopFrameTimer();
     _time.dispose();
     super.dispose();
   }
@@ -657,17 +562,15 @@ class _LowOverheadMeshGradientState extends State<_LowOverheadMeshGradient>
       assetKey: _shaderAssetPath,
       (context, shader, child) {
         return CustomPaint(
-          painter: _AnimatedMeshGradientRepaintPainter(
+          painter: _SoftMeshGradientPainter(
             shader: shader,
             time: _time,
             colors: widget.colors,
             transitionFromColors: widget.transitionFromColors,
             transitionToColors: widget.transitionToColors,
             colorTransition: widget.colorTransition,
-            audioPulse: widget.audioPulse,
-            options: widget.options,
+            scrimColor: widget.scrimColor,
           ),
-          // 不设 willChange，让合成器自行决定是否创建独立图层
           child: child,
         );
       },
@@ -676,17 +579,18 @@ class _LowOverheadMeshGradientState extends State<_LowOverheadMeshGradient>
   }
 }
 
-class _AnimatedMeshGradientRepaintPainter extends CustomPainter {
-  _AnimatedMeshGradientRepaintPainter({
+class _SoftMeshGradientPainter extends CustomPainter {
+  _SoftMeshGradientPainter({
     required this.shader,
     required this.time,
     required this.colors,
     this.transitionFromColors,
     this.transitionToColors,
     this.colorTransition,
-    this.audioPulse,
-    required this.options,
-  }) : super(repaint: time);
+    required this.scrimColor,
+  })  : _paint = Paint()
+          ..colorFilter = ColorFilter.mode(scrimColor, BlendMode.srcOver),
+        super(repaint: time);
 
   final FragmentShader shader;
   final ValueListenable<double> time;
@@ -694,27 +598,21 @@ class _AnimatedMeshGradientRepaintPainter extends CustomPainter {
   final List<Color>? transitionFromColors;
   final List<Color>? transitionToColors;
   final ValueListenable<double>? colorTransition;
-  final ValueListenable<double>? audioPulse;
-  final AnimatedMeshGradientOptions options;
-  final Paint _paint = Paint();
+  final Color scrimColor;
+  final Paint _paint;
 
   @override
   void paint(Canvas canvas, Size size) {
     shader.setFloat(0, size.width);
     shader.setFloat(1, size.height);
     shader.setFloat(2, time.value);
-    shader.setFloat(3, options.frequency);
-    final pulse =
-        (((audioPulse?.value ?? 1.0) - 1.0) * 8.0).clamp(0.0, 0.42).toDouble();
-    shader.setFloat(4, options.amplitude * (1.0 + pulse));
-    shader.setFloat(5, options.speed * (1.0 + pulse * 0.18));
-    shader.setFloat(6, options.grain);
 
-    var i = 7;
+    var i = 3;
     final from = transitionFromColors;
     final to = transitionToColors;
     final transition = colorTransition;
-    final t = transition == null ? 1.0 : _smoothstep(transition.value);
+    final t =
+        transition == null ? 1.0 : _paletteTransitionCurve(transition.value);
     final colorCount = from != null && to != null && from.length == to.length
         ? from.length
         : colors.length;
@@ -743,19 +641,19 @@ class _AnimatedMeshGradientRepaintPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(
-    covariant _AnimatedMeshGradientRepaintPainter oldDelegate,
+    covariant _SoftMeshGradientPainter oldDelegate,
   ) {
     return oldDelegate.shader != shader ||
         oldDelegate.time != time ||
         oldDelegate.colorTransition != colorTransition ||
-        oldDelegate.audioPulse != audioPulse ||
         oldDelegate.transitionFromColors != transitionFromColors ||
         oldDelegate.transitionToColors != transitionToColors ||
-        oldDelegate.options != options ||
+        oldDelegate.scrimColor != scrimColor ||
         oldDelegate.colors != colors;
   }
 
-  static double _smoothstep(double t) {
-    return t * t * (3.0 - 2.0 * t);
+  static double _paletteTransitionCurve(double t) {
+    final remaining = 1.0 - t;
+    return 1.0 - remaining * remaining * remaining;
   }
 }
