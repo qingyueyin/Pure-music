@@ -3,19 +3,22 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:pure_player_lyric/message.dart';
 
 class LyricTransitionDots extends StatefulWidget {
   final Duration length;
-  final int? progressMs;
+  final ValueListenable<LyricProgressChangedMessage> progress;
   final Color color;
   final ValueListenable<bool> isPlaying;
+  final int? lineId;
 
   const LyricTransitionDots({
     super.key,
     required this.length,
-    required this.progressMs,
+    required this.progress,
     required this.color,
     required this.isPlaying,
+    this.lineId,
   });
 
   @override
@@ -28,16 +31,20 @@ class _LyricTransitionDotsState extends State<LyricTransitionDots>
   final Stopwatch _stopwatch = Stopwatch();
   final ValueNotifier<double> _progress = ValueNotifier(0);
   double _sizeFactor = 0;
-  int _baseProgressMs = 0;
+  double _baseProgressMs = 0;
+  double _playbackRate = 1.0;
   late VoidCallback _playingListener;
+  late VoidCallback _progressListener;
 
   @override
   void initState() {
     super.initState();
     _ticker = createTicker(_onTick);
-    _baseProgressMs = widget.progressMs ?? 0;
     _playingListener = _syncPlaying;
+    _progressListener = _applyProgressSnapshot;
     widget.isPlaying.addListener(_playingListener);
+    widget.progress.addListener(_progressListener);
+    _applyProgressSnapshot();
     _syncPlaying();
   }
 
@@ -49,44 +56,82 @@ class _LyricTransitionDotsState extends State<LyricTransitionDots>
       _playingListener = _syncPlaying;
       widget.isPlaying.addListener(_playingListener);
     }
-    if (oldWidget.progressMs != widget.progressMs ||
+    if (oldWidget.progress != widget.progress) {
+      oldWidget.progress.removeListener(_progressListener);
+      _progressListener = _applyProgressSnapshot;
+      widget.progress.addListener(_progressListener);
+    }
+    if (oldWidget.progress != widget.progress ||
         oldWidget.length != widget.length) {
-      _stopwatch.reset();
-      _baseProgressMs = widget.progressMs ?? 0;
-      _syncPlaying();
+      _applyProgressSnapshot();
     }
   }
 
+  double _currentProgressMs() {
+    return _baseProgressMs + _stopwatch.elapsedMilliseconds * _playbackRate;
+  }
+
+  bool _matchesLine(LyricProgressChangedMessage snapshot) =>
+      widget.lineId == null ||
+      snapshot.lineId == null ||
+      snapshot.lineId == widget.lineId;
+
+  void _applyProgressSnapshot() {
+    final snapshot = widget.progress.value;
+    if (!_matchesLine(snapshot)) {
+      if (_stopwatch.isRunning) _stopwatch.stop();
+      if (_ticker.isActive) _ticker.stop();
+      return;
+    }
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final transitMs = snapshot.playing
+        ? (nowMs - snapshot.sampledAtMs).clamp(0, 60000) * snapshot.playbackRate
+        : 0.0;
+    final maxProgress = widget.length.inMilliseconds.toDouble();
+    _baseProgressMs = (snapshot.progressMs + transitMs)
+        .clamp(0.0, maxProgress)
+        .toDouble();
+    _playbackRate = snapshot.playbackRate > 0 ? snapshot.playbackRate : 1.0;
+    _stopwatch.reset();
+    _updateProgress();
+    _syncPlaying();
+  }
+
+  void _updateProgress() {
+    final lenMs = widget.length.inMilliseconds;
+    final posMs = _currentProgressMs();
+    _progress.value = lenMs <= 0 ? 0.0 : (posMs / lenMs).clamp(0.0, 1.0);
+  }
+
   void _syncPlaying() {
-    final playing = widget.isPlaying.value;
+    final progress = widget.progress.value;
+    final playing =
+        widget.isPlaying.value && progress.playing && _matchesLine(progress);
     if (playing) {
       if (!_ticker.isActive) _ticker.start();
       if (!_stopwatch.isRunning) _stopwatch.start();
     } else {
       if (_stopwatch.isRunning) {
+        _baseProgressMs = _currentProgressMs();
         _stopwatch.stop();
-        _baseProgressMs += _stopwatch.elapsedMilliseconds;
         _stopwatch.reset();
       }
       if (_ticker.isActive) _ticker.stop();
-      _progress.value = 0;
+      _updateProgress();
     }
   }
 
   void _onTick(Duration elapsed) {
     // Smooth sinusoidal breathing (~6s per cycle, matching main player behavior)
-    final t = (_baseProgressMs + _stopwatch.elapsedMilliseconds) / 1000.0;
+    final t = _currentProgressMs() / 1000.0;
     _sizeFactor = (sin(t * pi / 3) + 1) / 2;
-
-    final lenMs = widget.length.inMilliseconds;
-    final posMs = _baseProgressMs + _stopwatch.elapsedMilliseconds;
-    final p = lenMs <= 0 ? 0.0 : ((posMs % lenMs) / lenMs);
-    _progress.value = p;
+    _updateProgress();
   }
 
   @override
   void dispose() {
     widget.isPlaying.removeListener(_playingListener);
+    widget.progress.removeListener(_progressListener);
     _ticker.dispose();
     _stopwatch.stop();
     _progress.dispose();

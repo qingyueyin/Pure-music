@@ -1,8 +1,8 @@
 import 'dart:async';
 
-import 'package:desktop_lyric/component/foreground.dart';
-import 'package:desktop_lyric/component/lyric_line_display_area.dart';
-import 'package:desktop_lyric/desktop_lyric_controller.dart';
+import 'package:pure_player_lyric/component/foreground.dart';
+import 'package:pure_player_lyric/component/lyric_line_display_area.dart';
+import 'package:pure_player_lyric/desktop_lyric_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -14,7 +14,7 @@ class LyricLineView extends StatefulWidget {
 }
 
 class _LyricLineViewState extends State<LyricLineView> {
-  /// 停留 300ms 后开始滚动，提前 300ms 滚动到底
+  /// 鍋滅暀 300ms 鍚庡紑濮嬫粴鍔紝鎻愬墠 300ms 婊氬姩鍒板簳
   final waitFor = const Duration(milliseconds: 300);
   final scrollController = ScrollController();
   int _scrollToken = 0;
@@ -29,7 +29,7 @@ class _LyricLineViewState extends State<LyricLineView> {
       _scrollToken += 1;
       final token = _scrollToken;
 
-      /// 减去启动延时和滚动结束停留时间
+      /// 鍑忓幓鍚姩寤舵椂鍜屾粴鍔ㄧ粨鏉熷仠鐣欐椂闂?
       final Duration lastTime = line.length - waitFor - waitFor;
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
