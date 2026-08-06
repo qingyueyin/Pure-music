@@ -34,6 +34,37 @@ Flutter / Dart UI
 | `rust/src/api/` | Rust 暴露 API |
 | `desktop_lyric/` | 桌面歌词独立进程 |
 
+## 运行路径
+
+```text
+音乐文件夹
+  → Rust 扫描标签与目录
+  → data/library.sqlite
+  → AudioLibrary 组织歌曲、艺术家、专辑和文件夹
+  → 页面读取并展示
+
+点击歌曲
+  → PlaybackService 管理队列与状态
+  → BassPlayer 负责解码、输出、EQ 与独占模式
+
+切换歌曲
+  → LyricService 按本地 / 在线模式加载歌词
+  → 播放页与桌面歌词消费同一份歌词状态
+```
+
+## 从哪里开始改
+
+| 目标 | 入口 |
+|------|------|
+| 应用启动、初始化与路由 | `lib/main.dart`、`lib/entry.dart` |
+| 曲库扫描与标签 | `rust/src/api/tag_reader.rs`、`lib/library/audio_library.dart` |
+| 播放、队列与输出 | `lib/play_service/playback_service.dart`、`lib/native/bass/` |
+| 歌词解析 | `lib/lyric/` |
+| 在线歌词 | `lib/core/matcher.dart`、`lib/services/online_lyric/` |
+| 播放页与歌词 UI | `lib/page/now_playing_page/` |
+| 设置持久化 | `lib/core/settings.dart`、`lib/core/preference.dart` |
+| 对应测试 | `test/`、`integration_test/` |
+
 ## 状态管理约定
 
 - 全局配置：`AppSettings.instance`
@@ -48,6 +79,7 @@ Flutter / Dart UI
 
 - 原文 - 翻译 - 罗马音分组
 - 音调调节
+- 流光背景及音频律动模式
 - 其它已上线的特有能力（不确定就先问）
 
 ## 播放页性能硬约束（摘要）

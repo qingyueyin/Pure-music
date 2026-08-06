@@ -182,6 +182,7 @@ body {
   font-size: 0.875rem;
 }
 .vp-doc th { background: var(--vp-c-bg-soft); }
+.vp-doc td { overflow-wrap: anywhere; }
 
 .VPSidebarItem .link:hover .text,
 .VPSidebarItem.is-active .link .text {
@@ -332,47 +333,53 @@ body {
   color: var(--vp-c-text-2);
 }
 
-.download-hero {
-  display: flex;
-  justify-content: flex-start;
-  padding: 0.25rem 0 1.5rem;
+.download-release {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2rem;
+  margin: 1.25rem 0 2rem;
+  padding: 1.5rem 0;
+  border-top: 1px solid var(--vp-c-divider);
+  border-bottom: 1px solid var(--vp-c-divider);
 }
 
-.download-card {
-  width: 100%;
-  max-width: 420px;
-  text-align: center;
-  padding: 1.75rem 1.5rem;
-  background: var(--vp-c-bg-soft);
-  border: 1px solid var(--vp-c-border);
-  border-radius: 16px;
-  box-sizing: border-box;
+.download-release-main {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-width: 0;
 }
 
 .download-logo {
-  width: 56px;
-  height: 56px;
-  border-radius: 14px;
-  margin-bottom: 0.75rem;
+  flex: 0 0 auto;
+  width: 52px;
+  height: 52px;
+  border-radius: 8px;
 }
 
-.download-card h2 {
-  margin: 0 0 0.35rem;
+.download-release h2 {
+  margin: 0 0 0.25rem;
   padding: 0;
   border: none;
-  font-size: 1.375rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  background: linear-gradient(135deg, #D4B85C 0%, #BDA12F 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  font-size: 1.125rem;
+  font-weight: 650;
+  color: var(--vp-c-text-1);
 }
 
-.download-version {
-  margin: 0 0 1.25rem;
-  font-size: 0.8125rem;
-  color: var(--vp-c-text-3);
+.download-kicker {
+  margin: 0 0 0.2rem !important;
+  color: var(--vp-c-brand-1);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.download-description {
+  max-width: 560px;
+  margin: 0 !important;
+  color: var(--vp-c-text-2);
+  font-size: 0.875rem;
+  line-height: 1.6;
 }
 
 .download-btn {
@@ -380,10 +387,10 @@ body {
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  width: 100%;
-  max-width: 280px;
-  padding: 0.7rem 1.25rem;
-  border-radius: 980px;
+  flex: 0 0 auto;
+  min-width: 112px;
+  padding: 0.65rem 1rem;
+  border-radius: 8px;
   background: var(--pm-gold);
   color: #14140D !important;
   text-decoration: none !important;
@@ -403,15 +410,14 @@ body {
   transform: scale(0.98);
 }
 
-.download-hint {
-  margin: 0.875rem 0 0;
-  font-size: 0.75rem;
-  color: var(--vp-c-text-3);
-}
-
 @media (max-width: 768px) {
   .pm-cards { grid-template-columns: 1fr; }
   .home-cards { grid-template-columns: 1fr; }
+  .download-release {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+  .download-btn { width: 100%; }
 }
 
 @media (min-width: 769px) and (max-width: 1023px) {

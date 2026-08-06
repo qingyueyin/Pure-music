@@ -8,7 +8,7 @@ outline: deep
 
 ## 报告问题
 
-- 设置中「创建 Issue」会附带日志
+- 设置中的「报告问题」可以生成并复制日志，需要手动粘贴到 Issue 正文
 - 也可在 [GitHub Issues](https://github.com/qingyueyin/Pure-music/issues) 提交
 - 附上复现步骤、系统版本与日志，能帮助更快定位
 
@@ -16,8 +16,9 @@ outline: deep
 
 1. Fork 并 clone 仓库
 2. 功能分支从 main 分出来
-3. 确保 `flutter analyze` 无错误
-4. 描述清楚改了什么、为什么改
+3. 按 [构建指南](/dev/build) 完成首次运行
+4. 确保 `flutter analyze` 无错误，并运行与改动相关的测试
+5. 描述清楚改了什么、为什么改
 
 开发环境搭建见 [构建](/dev/build)。
 
@@ -27,8 +28,9 @@ outline: deep
 
 - 不改播放页语言分组与音调等高稳定功能前先问
 - 不引入不在依赖列表中的状态管理库
-- 封面取色用 Rust k-means，不用 `PaletteGenerator`
+- 新增封面取色路径使用 Rust k-means，不再扩展 `PaletteGenerator` 的使用范围
 - 颜色用 `Color.withValues(alpha:)`，不用 `withOpacity`
+- 不手动修改 `lib/native/rust/` 与 `rust/src/frb_generated.rs` 中的生成代码
 
 ## 非代码贡献
 
