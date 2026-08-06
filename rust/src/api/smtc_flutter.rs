@@ -1,71 +1,69 @@
-use std::sync::Mutex;
+use std::sync::{
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    Arc, Condvar, Mutex,
+};
 use std::time::Duration;
 
 use flutter_rust_bridge::frb;
 use windows::{
-    core::HSTRING,
-    Foundation::{TimeSpan, TypedEventHandler},
+    core::{factory, HSTRING, PCWSTR},
+    Foundation::{EventRegistrationToken, TimeSpan, TypedEventHandler},
     Media::{
-        Core::MediaSource, MediaPlaybackStatus, MediaPlaybackType, Playback::MediaPlayer,
+        MediaPlaybackStatus, MediaPlaybackType, PlaybackPositionChangeRequestedEventArgs,
         SystemMediaTransportControls, SystemMediaTransportControlsButton,
         SystemMediaTransportControlsButtonPressedEventArgs,
         SystemMediaTransportControlsTimelineProperties,
     },
-    Storage::{
-        FileProperties::ThumbnailMode,
-        StorageFile,
-        Streams::{DataWriter, InMemoryRandomAccessStream, RandomAccessStreamReference},
+    Storage::Streams::{DataWriter, InMemoryRandomAccessStream, RandomAccessStreamReference},
+    Win32::{
+        Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM},
+        System::{
+            LibraryLoader::GetModuleHandleW,
+            WinRT::{
+                ISystemMediaTransportControlsInterop, RoInitialize, RoUninitialize,
+                RO_INIT_MULTITHREADED,
+            },
+        },
+        UI::WindowsAndMessaging::{
+            CreateWindowExW, DefWindowProcW, RegisterClassW, WINDOW_EX_STYLE, WNDCLASSW, WS_POPUP,
+        },
     },
 };
+
+struct WinRtThreadGuard;
+
+impl Drop for WinRtThreadGuard {
+    fn drop(&mut self) {
+        unsafe { RoUninitialize() };
+    }
+}
 
 use crate::frb_generated::StreamSink;
 
 use super::{logger::log_to_dart, tag_reader};
 
-/// 生成 1 秒静默 PCM WAV（44100Hz，单声道，16bit）
-/// 用于给 MediaPlayer 提供一个持续活动的播放会话，使 SMTC 能注册到 Windows。
-fn create_silent_wav_1s() -> Vec<u8> {
-    let sample_rate = 44100u32;
-    let num_channels = 1u16;
-    let bits_per_sample = 16u16;
-    let duration_samples = sample_rate; // 1秒
-    let data_size = duration_samples * num_channels as u32 * (bits_per_sample / 8) as u32;
-    // = 44100 * 1 * 2 = 88200
-
-    let total_size = 44 + data_size as usize;
-    let mut wav = Vec::with_capacity(total_size);
-
-    // RIFF header
-    wav.extend_from_slice(b"RIFF");
-    wav.extend_from_slice(&(36u32 + data_size).to_le_bytes());
-    wav.extend_from_slice(b"WAVE");
-
-    // fmt subchunk
-    wav.extend_from_slice(b"fmt ");
-    wav.extend_from_slice(&16u32.to_le_bytes()); // Subchunk1Size (PCM)
-    wav.extend_from_slice(&1u16.to_le_bytes()); // AudioFormat (PCM)
-    wav.extend_from_slice(&num_channels.to_le_bytes());
-    wav.extend_from_slice(&sample_rate.to_le_bytes());
-    let byte_rate = sample_rate * num_channels as u32 * (bits_per_sample / 8) as u32;
-    wav.extend_from_slice(&byte_rate.to_le_bytes());
-    let block_align = num_channels * (bits_per_sample / 8);
-    wav.extend_from_slice(&block_align.to_le_bytes());
-    wav.extend_from_slice(&bits_per_sample.to_le_bytes());
-
-    // data subchunk
-    wav.extend_from_slice(b"data");
-    wav.extend_from_slice(&data_size.to_le_bytes());
-
-    // 静默数据（全零）
-    wav.resize(total_size, 0u8);
-
-    wav
+/// 创建一个永不显示的隐藏窗口，SMTC 绑定到它而不是主窗口，
+/// 这样窗口最小化后系统端媒体会话不会冻结
+unsafe extern "system" fn hidden_window_proc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    DefWindowProcW(hwnd, msg, wparam, lparam)
 }
 
 pub struct SMTCFlutter {
     _smtc: SystemMediaTransportControls,
-    _player: MediaPlayer,
     duration_ms: Mutex<u32>,
+    progress_ms: AtomicU64,
+    button_pressed_token: Mutex<Option<EventRegistrationToken>>,
+    position_change_token: Mutex<Option<EventRegistrationToken>>,
+    display_revision: Arc<AtomicU64>,
+    display_lock: Arc<Mutex<()>>,
+    thumbnail_pending: Arc<Mutex<Option<(String, u64)>>>,
+    thumbnail_wake: Arc<Condvar>,
+    thumbnail_closed: Arc<AtomicBool>,
 }
 
 #[derive(Debug)]
@@ -83,11 +81,26 @@ pub enum SMTCState {
     Playing,
 }
 
+pub struct SMTCDebugSnapshot {
+    pub enabled: bool,
+    pub play_enabled: bool,
+    pub pause_enabled: bool,
+    pub previous_enabled: bool,
+    pub next_enabled: bool,
+    pub stop_enabled: bool,
+    pub playback_status: String,
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub duration_ms: u32,
+    pub progress_ms: u64,
+}
+
 /// Apis for Flutter
 impl SMTCFlutter {
     #[frb(sync)]
-    pub fn new() -> Self {
-        Self::_new().unwrap()
+    pub fn new() -> Result<Self, String> {
+        Self::_new().map_err(|error| error.to_string())
     }
 
     pub fn subscribe_to_control_events(&self, sink: StreamSink<SMTCControlEvent>) {
@@ -106,8 +119,11 @@ impl SMTCFlutter {
             is_playing_enabled, is_pause_enabled, is_next_enabled, is_previous_enabled
         ));
 
-        self._smtc
-            .ButtonPressed(&TypedEventHandler::<
+        if let Ok(mut token_slot) = self.button_pressed_token.lock() {
+            if let Some(token) = token_slot.take() {
+                let _ = self._smtc.RemoveButtonPressed(token);
+            }
+            let token = self._smtc.ButtonPressed(&TypedEventHandler::<
                 SystemMediaTransportControls,
                 SystemMediaTransportControlsButtonPressedEventArgs,
             >::new(move |_, event| {
@@ -116,6 +132,7 @@ impl SMTCFlutter {
                         let event = match button {
                             SystemMediaTransportControlsButton::Play => SMTCControlEvent::Play,
                             SystemMediaTransportControlsButton::Pause => SMTCControlEvent::Pause,
+                            SystemMediaTransportControlsButton::Stop => SMTCControlEvent::Stop,
                             SystemMediaTransportControlsButton::Next => SMTCControlEvent::Next,
                             SystemMediaTransportControlsButton::Previous => {
                                 SMTCControlEvent::Previous
@@ -127,23 +144,53 @@ impl SMTCFlutter {
                     }
                 }
                 Ok(())
-            }))
-            .unwrap();
+            }));
+            match token {
+                Ok(token) => *token_slot = Some(token),
+                Err(error) => log_to_dart(format!(
+                    "SMTC: ButtonPressed subscription failed: {}",
+                    error
+                )),
+            }
+        }
 
         log_to_dart("SMTC: Subscription complete".to_string());
     }
 
-    pub fn update_state(&self, state: SMTCState) {
-        if let Err(err) = self._update_state(state) {
-            log_to_dart(format!("fail to update state: {}", err));
+    pub fn subscribe_to_position_change_events(&self, sink: StreamSink<u64>) {
+        if let Ok(mut token_slot) = self.position_change_token.lock() {
+            if let Some(token) = token_slot.take() {
+                let _ = self._smtc.RemovePlaybackPositionChangeRequested(token);
+            }
+            let token = self
+                ._smtc
+                .PlaybackPositionChangeRequested(&TypedEventHandler::<
+                    SystemMediaTransportControls,
+                    PlaybackPositionChangeRequestedEventArgs,
+                >::new(move |_, event| {
+                    if let Some(event) = event {
+                        if let Ok(position) = event.RequestedPlaybackPosition() {
+                            let ticks = position.Duration.max(0) as u64;
+                            let _ = sink.add(ticks / 10_000);
+                        }
+                    }
+                    Ok(())
+                }));
+            match token {
+                Ok(token) => *token_slot = Some(token),
+                Err(error) => log_to_dart(format!("SMTC: position subscription failed: {}", error)),
+            }
         }
     }
 
+    pub fn update_state(&self, state: SMTCState) -> Result<(), String> {
+        self._update_state(state).map_err(|error| error.to_string())
+    }
+
     /// progress, duration: ms
-    pub fn update_time_properties(&self, progress: u32) {
-        if let Err(err) = self._update_time_properties(progress) {
-            log_to_dart(format!("fail to update time properties: {}", err));
-        }
+    pub fn update_time_properties(&self, progress: u32) -> Result<(), String> {
+        self._update_time_properties(progress)
+            .map_err(|error| error.to_string())
     }
 
     pub fn update_display(
@@ -153,87 +200,118 @@ impl SMTCFlutter {
         album: String,
         duration: u32,
         path: String,
-    ) {
-        if let Err(err) = self._update_display(
+    ) -> Result<(), String> {
+        self._update_display(
             HSTRING::from(title),
             HSTRING::from(artist),
             HSTRING::from(album),
             duration,
             HSTRING::from(path),
-        ) {
-            log_to_dart(format!("fail to update display: {}", err));
-        }
+        )
+        .map_err(|error| error.to_string())
     }
 
-    pub fn close(self) {
-        // 先禁用 SMTC 控件，避免残留的 SMTC 会话干扰下次启动
-        let _ = self._smtc.SetIsEnabled(false);
-        // 更新一次状态让 Windows 知道播放已停止
-        let _ = self._smtc.SetPlaybackStatus(MediaPlaybackStatus::Stopped);
-        // 最后关闭 MediaPlayer，释放 COM 资源
-        let _ = self._player.Close();
+    pub fn clear_display(&self) -> Result<(), String> {
+        self._clear_display().map_err(|error| error.to_string())
+    }
+
+    pub fn debug_snapshot(&self) -> Result<SMTCDebugSnapshot, String> {
+        self._debug_snapshot().map_err(|error| error.to_string())
+    }
+
+    pub fn close(self) -> Result<(), String> {
+        if let Ok(mut token_slot) = self.button_pressed_token.lock() {
+            if let Some(token) = token_slot.take() {
+                let _ = self._smtc.RemoveButtonPressed(token);
+            }
+        }
+        if let Ok(mut token_slot) = self.position_change_token.lock() {
+            if let Some(token) = token_slot.take() {
+                let _ = self._smtc.RemovePlaybackPositionChangeRequested(token);
+            }
+        }
+        self.thumbnail_closed.store(true, Ordering::Release);
+        if let Ok(mut pending) = self.thumbnail_pending.lock() {
+            *pending = None;
+            self.thumbnail_wake.notify_one();
+        }
+        self._clear_display().map_err(|error| error.to_string())
     }
 }
 
 impl SMTCFlutter {
-    fn _create_silent_media_source() -> Result<MediaSource, windows::core::Error> {
-        use windows::core::Interface;
-
-        let wav_bytes = create_silent_wav_1s();
-        let stream = InMemoryRandomAccessStream::new()?;
-        let writer = DataWriter::CreateDataWriter(&stream)?;
-        writer.WriteBytes(&wav_bytes)?;
-        writer.StoreAsync()?.get()?;
-        writer.DetachStream()?;
-        stream.Seek(0)?;
-
-        // Use cast to convert InMemoryRandomAccessStream to IRandomAccessStream
-        let ras = stream.cast::<windows::Storage::Streams::IRandomAccessStream>()?;
-        MediaSource::CreateFromStream(&ras, &HSTRING::from("audio/wav"))
+    /// 创建隐藏窗口，SMTC 绑定到它而不是可见主窗口：
+    /// 主窗口最小化后系统端不会冻结媒体会话显示
+    fn _create_hidden_smtc_window() -> Result<HWND, windows::core::Error> {
+        const CLASS_NAME: &str = "PureMusicSmtcHiddenWindow";
+        unsafe {
+            let instance = GetModuleHandleW(PCWSTR::null())?;
+            let class_name: HSTRING = HSTRING::from(CLASS_NAME);
+            let wnd_class = WNDCLASSW {
+                lpfnWndProc: Some(hidden_window_proc),
+                hInstance: HINSTANCE(instance.0),
+                lpszClassName: PCWSTR(class_name.as_ptr()),
+                ..Default::default()
+            };
+            RegisterClassW(&wnd_class);
+            let hwnd = CreateWindowExW(
+                WINDOW_EX_STYLE(0),
+                &class_name,
+                None,
+                WS_POPUP,
+                0,
+                0,
+                0,
+                0,
+                None,
+                None,
+                HINSTANCE(instance.0),
+                None,
+            );
+            if hwnd.0 == 0 {
+                return Err(windows::core::Error::from_win32());
+            }
+            Ok(hwnd)
+        }
     }
 
     fn _init_controls(smtc: &SystemMediaTransportControls) -> Result<(), windows::core::Error> {
-        smtc.SetIsEnabled(true)?;
+        smtc.SetIsEnabled(false)?;
         smtc.SetIsNextEnabled(true)?;
         smtc.SetIsPauseEnabled(true)?;
         smtc.SetIsPlayEnabled(true)?;
         smtc.SetIsPreviousEnabled(true)?;
+        smtc.SetIsStopEnabled(true)?;
         Ok(())
     }
 
     fn _new() -> Result<Self, windows::core::Error> {
-        let _player = MediaPlayer::new()?;
-        _player.CommandManager()?.SetIsEnabled(false)?;
-        _player.SetIsMuted(true)?;
-        _player.SetVolume(0.0)?;
-
-        // 设置静默音源并循环播放，使 PlaybackSession 保持活动状态
-        // SMTC 只有在 MediaPlayer 处于播放状态时才会出现在 Windows 系统中
-        if let Ok(source) = Self::_create_silent_media_source() {
-            _player.SetSource(&source)?;
-            _player.SetIsLoopingEnabled(true)?;
-            _player.Play()?;
-        }
-
-        let _smtc = _player.SystemMediaTransportControls()?;
+        let hwnd = Self::_create_hidden_smtc_window()?;
+        let interop =
+            factory::<SystemMediaTransportControls, ISystemMediaTransportControlsInterop>()?;
+        let _smtc: SystemMediaTransportControls = unsafe { interop.GetForWindow(hwnd) }?;
         Self::_init_controls(&_smtc)?;
+        log_to_dart(format!("SMTC: bound to hidden HWND={}", hwnd.0));
 
-        // 关键：初始化时调用DisplayUpdater.Update()，确保SMTC注册到系统
-        // 只有Update()被调用后，SMTC的按钮事件才会被系统分发
-        // 同时立即设置占位信息，覆盖上一个异常退出残留的 SMTC 显示
-        let updater = _smtc.DisplayUpdater()?;
-        updater.SetType(MediaPlaybackType::Music)?;
-        if let Ok(music_properties) = updater.MusicProperties() {
-            let _ = music_properties.SetTitle(&HSTRING::from("Pure Music"));
-            let _ = music_properties.SetArtist(&HSTRING::from(""));
-        }
-        updater.Update()?;
-        log_to_dart("SMTC: DisplayUpdater.Update() called during init".to_string());
+        let display_revision = Arc::new(AtomicU64::new(0));
+        let display_lock = Arc::new(Mutex::new(()));
+        let (thumbnail_pending, thumbnail_wake, thumbnail_closed) = Self::_start_thumbnail_worker(
+            _smtc.clone(),
+            Arc::clone(&display_revision),
+            Arc::clone(&display_lock),
+        );
 
         Ok(Self {
             _smtc,
-            _player,
             duration_ms: Mutex::new(0),
+            progress_ms: AtomicU64::new(0),
+            button_pressed_token: Mutex::new(None),
+            position_change_token: Mutex::new(None),
+            display_revision,
+            display_lock,
+            thumbnail_pending,
+            thumbnail_wake,
+            thumbnail_closed,
         })
     }
 
@@ -249,13 +327,18 @@ impl SMTCFlutter {
 
     /// progress, duration: ms
     fn _update_time_properties(&self, progress: u32) -> Result<(), windows::core::Error> {
-        let dur = *self.duration_ms.lock().unwrap();
+        let dur = match self.duration_ms.lock() {
+            Ok(duration) => *duration,
+            Err(poisoned) => *poisoned.into_inner(),
+        };
+        let progress = progress.min(dur);
         let time_properties = SystemMediaTransportControlsTimelineProperties::new()?;
         time_properties.SetPosition(TimeSpan::from(Duration::from_millis(progress.into())))?;
         time_properties.SetEndTime(TimeSpan::from(Duration::from_millis(dur.into())))?;
         time_properties.SetMinSeekTime(TimeSpan { Duration: 0 })?;
         time_properties.SetMaxSeekTime(TimeSpan::from(Duration::from_millis(dur.into())))?;
         self._smtc.UpdateTimelineProperties(&time_properties)?;
+        self.progress_ms.store(progress.into(), Ordering::Release);
 
         Ok(())
     }
@@ -287,6 +370,11 @@ impl SMTCFlutter {
         duration: u32,
         path: HSTRING,
     ) -> Result<(), windows::core::Error> {
+        let display_guard = match self.display_lock.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        let revision = self.display_revision.fetch_add(1, Ordering::SeqCst) + 1;
         let updater = self._smtc.DisplayUpdater()?;
         updater.SetType(MediaPlaybackType::Music)?;
 
@@ -297,19 +385,12 @@ impl SMTCFlutter {
             let _ = music_properties.SetAlbumTitle(&album);
         }
 
-        // 缩略图：优先从 tag_reader 读内嵌封面，失败则用 Windows 缩略图
-        match Self::_try_get_thumbnail(&path) {
-            Ok(Some(pic_ref)) => {
-                let _ = updater.SetThumbnail(&pic_ref);
-            }
-            Ok(None) => {}
-            Err(e) => {
-                log_to_dart(format!("SMTC: thumbnail err: {}", e));
-            }
-        }
-
         // 更新时间线（非致命：失败了也继续提交，不丢元数据）
-        *self.duration_ms.lock().unwrap() = duration;
+        match self.duration_ms.lock() {
+            Ok(mut value) => *value = duration,
+            Err(poisoned) => *poisoned.into_inner() = duration,
+        }
+        self.progress_ms.store(0, Ordering::Release);
         if let Ok(time_properties) = SystemMediaTransportControlsTimelineProperties::new() {
             let _ = time_properties.SetStartTime(TimeSpan { Duration: 0 });
             let _ =
@@ -325,35 +406,187 @@ impl SMTCFlutter {
             }
         }
 
-        // 提交更改 — 这是最关键的调用，绝不能跳过
-        updater.Update()?;
-
         if !(self._smtc.IsEnabled()?) {
             self._smtc.SetIsEnabled(true)?;
         }
+        updater.Update()?;
 
         log_to_dart(format!("SMTC: Display updated - {}", title));
+        drop(display_guard);
+        self._queue_thumbnail_update(path, revision);
 
         Ok(())
+    }
+
+    fn _clear_display(&self) -> Result<(), windows::core::Error> {
+        let _display_guard = match self.display_lock.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        self.display_revision.fetch_add(1, Ordering::SeqCst);
+        let updater = self._smtc.DisplayUpdater()?;
+        updater.ClearAll()?;
+        updater.Update()?;
+        match self.duration_ms.lock() {
+            Ok(mut value) => *value = 0,
+            Err(poisoned) => *poisoned.into_inner() = 0,
+        }
+        self.progress_ms.store(0, Ordering::Release);
+        self._smtc.SetPlaybackStatus(MediaPlaybackStatus::Stopped)?;
+        self._smtc.SetIsEnabled(false)?;
+        Ok(())
+    }
+
+    fn _queue_thumbnail_update(&self, path: HSTRING, revision: u64) {
+        if let Ok(mut pending) = self.thumbnail_pending.lock() {
+            if self.thumbnail_closed.load(Ordering::Acquire) {
+                return;
+            }
+            *pending = Some((path.to_string(), revision));
+            self.thumbnail_wake.notify_one();
+        }
+    }
+
+    fn _start_thumbnail_worker(
+        smtc: SystemMediaTransportControls,
+        display_revision: Arc<AtomicU64>,
+        display_lock: Arc<Mutex<()>>,
+    ) -> (
+        Arc<Mutex<Option<(String, u64)>>>,
+        Arc<Condvar>,
+        Arc<AtomicBool>,
+    ) {
+        let pending = Arc::new(Mutex::new(None::<(String, u64)>));
+        let wake = Arc::new(Condvar::new());
+        let closed = Arc::new(AtomicBool::new(false));
+        let worker_pending = Arc::clone(&pending);
+        let worker_wake = Arc::clone(&wake);
+        let worker_closed = Arc::clone(&closed);
+        let spawn_result = std::thread::Builder::new()
+            .name("smtc-thumbnail".to_string())
+            .spawn(move || {
+                if let Err(error) = unsafe { RoInitialize(RO_INIT_MULTITHREADED) } {
+                    log_to_dart(format!("SMTC: thumbnail worker init failed: {}", error));
+                    worker_closed.store(true, Ordering::Release);
+                    return;
+                }
+                let _winrt_guard = WinRtThreadGuard;
+                loop {
+                    let job = {
+                        let mut pending = match worker_pending.lock() {
+                            Ok(pending) => pending,
+                            Err(poisoned) => poisoned.into_inner(),
+                        };
+                        while pending.is_none() && !worker_closed.load(Ordering::Acquire) {
+                            pending = match worker_wake.wait(pending) {
+                                Ok(pending) => pending,
+                                Err(poisoned) => poisoned.into_inner(),
+                            };
+                        }
+                        if worker_closed.load(Ordering::Acquire) {
+                            return;
+                        }
+                        match pending.take() {
+                            Some(job) => job,
+                            None => continue,
+                        }
+                    };
+                    let thumbnail = match Self::_try_get_thumbnail(&HSTRING::from(job.0)) {
+                        Ok(thumbnail) => thumbnail,
+                        Err(error) => {
+                            log_to_dart(format!("SMTC: thumbnail err: {}", error));
+                            None
+                        }
+                    };
+                    let _display_guard = match display_lock.lock() {
+                        Ok(guard) => guard,
+                        Err(poisoned) => poisoned.into_inner(),
+                    };
+                    if display_revision.load(Ordering::Acquire) != job.1 {
+                        continue;
+                    }
+                    let result = (|| -> Result<(), windows::core::Error> {
+                        let updater = smtc.DisplayUpdater()?;
+                        match thumbnail {
+                            Some(thumbnail) => updater.SetThumbnail(&thumbnail)?,
+                            None => updater.SetThumbnail(None::<&RandomAccessStreamReference>)?,
+                        }
+                        updater.Update()?;
+                        Ok(())
+                    })();
+                    if let Err(error) = result {
+                        log_to_dart(format!("SMTC: thumbnail update err: {}", error));
+                    }
+                }
+            });
+        if let Err(error) = spawn_result {
+            log_to_dart(format!("SMTC: thumbnail worker failed: {}", error));
+            closed.store(true, Ordering::Release);
+        }
+        (pending, wake, closed)
+    }
+
+    fn _debug_snapshot(&self) -> Result<SMTCDebugSnapshot, windows::core::Error> {
+        let updater = self._smtc.DisplayUpdater()?;
+        let (title, artist, album) = match updater.MusicProperties() {
+            Ok(properties) => (
+                properties
+                    .Title()
+                    .map(|value| value.to_string())
+                    .unwrap_or_default(),
+                properties
+                    .Artist()
+                    .map(|value| value.to_string())
+                    .unwrap_or_default(),
+                properties
+                    .AlbumTitle()
+                    .map(|value| value.to_string())
+                    .unwrap_or_default(),
+            ),
+            Err(_) => (String::new(), String::new(), String::new()),
+        };
+        let status = match self._smtc.PlaybackStatus()? {
+            MediaPlaybackStatus::Playing => "playing",
+            MediaPlaybackStatus::Paused => "paused",
+            MediaPlaybackStatus::Stopped => "stopped",
+            MediaPlaybackStatus::Changing => "changing",
+            MediaPlaybackStatus::Closed => "closed",
+            _ => "unknown",
+        }
+        .to_string();
+        let duration_ms = match self.duration_ms.lock() {
+            Ok(duration) => *duration,
+            Err(poisoned) => *poisoned.into_inner(),
+        };
+        Ok(SMTCDebugSnapshot {
+            enabled: self._smtc.IsEnabled()?,
+            play_enabled: self._smtc.IsPlayEnabled()?,
+            pause_enabled: self._smtc.IsPauseEnabled()?,
+            previous_enabled: self._smtc.IsPreviousEnabled()?,
+            next_enabled: self._smtc.IsNextEnabled()?,
+            stop_enabled: self._smtc.IsStopEnabled()?,
+            playback_status: status,
+            title,
+            artist,
+            album,
+            duration_ms,
+            progress_ms: self.progress_ms.load(Ordering::Acquire),
+        })
     }
 
     /// 尝试获取缩略图引用，返回 None 表示无缩略图（非错误）
     fn _try_get_thumbnail(
         path: &HSTRING,
     ) -> Result<Option<RandomAccessStreamReference>, windows::core::Error> {
-        if let Some(pic_data) = tag_reader::get_picture_from_path(path.to_string(), 256, 256) {
+        if let Some(pic_data) =
+            tag_reader::get_embedded_picture_from_path(&path.to_string(), 256, 256)
+        {
             return Ok(Some(Self::_ras_ref_from_pic_data(&pic_data)?));
         }
         log_to_dart(format!(
             "SMTC: no embedded picture for {}",
             path.to_string()
         ));
-        let file = StorageFile::GetFileFromPathAsync(path)?.get()?;
-        let thumbnail = file
-            .GetThumbnailAsyncOverloadDefaultSizeDefaultOptions(ThumbnailMode::MusicView)?
-            .get()?;
-        Ok(Some(RandomAccessStreamReference::CreateFromStream(
-            &thumbnail,
-        )?))
+        Ok(None)
     }
 }
