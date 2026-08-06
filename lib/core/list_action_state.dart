@@ -122,15 +122,19 @@ List<String> appendUniquePendingFolders({
   required Iterable<String> incoming,
 }) {
   final result = <String>[];
-  final seen = <String>{};
-  for (final path in current) {
+  for (final path in [...current, ...incoming]) {
     final key = pendingFolderKey(path);
-    if (key.isEmpty || !seen.add(key)) continue;
-    result.add(path);
-  }
-  for (final path in incoming) {
-    final key = pendingFolderKey(path);
-    if (key.isEmpty || !seen.add(key)) continue;
+    if (key.isEmpty) continue;
+    final existingKeys = result.map(pendingFolderKey).toList();
+    if (existingKeys.any(
+      (existing) => key == existing || key.startsWith('$existing/'),
+    )) {
+      continue;
+    }
+    for (var i = result.length - 1; i >= 0; i--) {
+      final existing = pendingFolderKey(result[i]);
+      if (existing.startsWith('$key/')) result.removeAt(i);
+    }
     result.add(path);
   }
   return result;
