@@ -212,6 +212,7 @@ class _UniPageState<T> extends State<UniPage<T>> {
           builder: (context, screenType) {
             final bottom = screenType == ScreenType.small ? 88.0 : 112.0;
             final right = screenType == ScreenType.small ? 88.0 : 128.0;
+            final reduceMotion = MediaQuery.disableAnimationsOf(context);
             return Positioned(
               right: right,
               bottom: bottom,
@@ -223,7 +224,7 @@ class _UniPageState<T> extends State<UniPage<T>> {
                 builder: (context, t, child) => Opacity(
                   opacity: t,
                   child: Transform.scale(
-                    scale: 0.7 + t * 0.3,
+                    scale: reduceMotion ? 1.0 : 0.7 + t * 0.3,
                     filterQuality: FilterQuality.low,
                     child: child,
                   ),
@@ -235,7 +236,8 @@ class _UniPageState<T> extends State<UniPage<T>> {
                     fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
                     padding: const WidgetStatePropertyAll(EdgeInsets.zero),
                     shape: WidgetStatePropertyAll(
-                      RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
+                      RoundedRectangleBorder(
+                          borderRadius: AppRadius.smCircular),
                     ),
                   ),
                   icon: const Icon(Symbols.my_location),
@@ -253,43 +255,44 @@ class _UniPageState<T> extends State<UniPage<T>> {
       builder: (context, screenType) {
         final bottom = screenType == ScreenType.small ? 88.0 : 112.0;
         final right = screenType == ScreenType.small ? 88.0 : 128.0;
+        final reduceMotion = MediaQuery.disableAnimationsOf(context);
         return Positioned(
           right: right,
           bottom: bottom + 56.0,
-              child: TweenAnimationBuilder<double>(
-                tween: Tween(begin: 0.0, end: _showScrollToTop ? 1.0 : 0.0),
-                duration: MotionDuration.fast,
-                curve: MotionCurve.standard,
-                builder: (context, t, child) => IgnorePointer(
-                  ignoring: t <= 0.01,
-                  child: Opacity(
-                    opacity: t,
-                    child: Transform.scale(
-                      scale: 0.7 + t * 0.3,
-                      filterQuality: FilterQuality.low,
-                      child: child,
-                    ),
-                  ),
+          child: TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0.0, end: _showScrollToTop ? 1.0 : 0.0),
+            duration: MotionDuration.fast,
+            curve: MotionCurve.standard,
+            builder: (context, t, child) => IgnorePointer(
+              ignoring: t <= 0.01,
+              child: Opacity(
+                opacity: t,
+                child: Transform.scale(
+                  scale: reduceMotion ? 1.0 : 0.7 + t * 0.3,
+                  filterQuality: FilterQuality.low,
+                  child: child,
                 ),
-                child: IconButton.filledTonal(
-                  tooltip: '回到顶部',
-                  onPressed: () {
-                    if (!scrollController.hasClients) return;
-                    scrollController.animateTo(
-                      0.0,
-                      duration: const Duration(milliseconds: 250),
-                      curve: Curves.fastOutSlowIn,
-                    );
-                  },
-                  style: ButtonStyle(
-                    fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
-                    padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-                    shape: WidgetStatePropertyAll(
-                      RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
-                    ),
-                  ),
-                  icon: const Icon(Symbols.vertical_align_top),
+              ),
+            ),
+            child: IconButton.filledTonal(
+              tooltip: '回到顶部',
+              onPressed: () {
+                if (!scrollController.hasClients) return;
+                scrollController.animateTo(
+                  0.0,
+                  duration: const Duration(milliseconds: 250),
+                  curve: Curves.fastOutSlowIn,
+                );
+              },
+              style: ButtonStyle(
+                fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
+                padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+                shape: WidgetStatePropertyAll(
+                  RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
                 ),
+              ),
+              icon: const Icon(Symbols.vertical_align_top),
+            ),
           ),
         );
       },

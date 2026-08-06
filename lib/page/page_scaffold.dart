@@ -75,7 +75,7 @@ class PageScaffold extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         _titleWidget(scheme),
-        const SizedBox(height: 12.0),
+        const SizedBox(height: 16.0),
         Wrap(spacing: 8.0, runSpacing: 8.0, children: actions),
       ],
     );
@@ -109,7 +109,11 @@ class PageScaffold extends StatelessWidget {
     if (subtitle == null) {
       return Text(
         title,
-        style: TextStyle(fontSize: AppType.display, color: scheme.onSurface),
+        style: TextStyle(
+          fontSize: AppType.display,
+          fontWeight: AppType.weightSemibold,
+          color: scheme.onSurface,
+        ),
         overflow: TextOverflow.ellipsis,
       );
     }
@@ -119,12 +123,20 @@ class PageScaffold extends StatelessWidget {
       children: [
         Text(
           title,
-          style: TextStyle(fontSize: AppType.display, color: scheme.onSurface),
+          style: TextStyle(
+            fontSize: AppType.display,
+            fontWeight: AppType.weightSemibold,
+            color: scheme.onSurface,
+          ),
           overflow: TextOverflow.ellipsis,
         ),
+        const SizedBox(height: 6.0),
         Text(
           subtitle!,
-          style: TextStyle(fontSize: AppType.body, color: scheme.onSurface),
+          style: TextStyle(
+            fontSize: AppType.body,
+            color: scheme.onSurfaceVariant,
+          ),
           overflow: TextOverflow.ellipsis,
         ),
       ],

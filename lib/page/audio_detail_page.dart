@@ -1,3 +1,4 @@
+import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/library/audio_library.dart';
@@ -36,7 +37,8 @@ Future<rust_tag_reader.AudioExtraMetadata> _getAudioExtra(Audio audio) {
   if (existing != null) return existing;
   final future = rust_tag_reader
       .readAudioExtraMetadata(path: audio.path)
-      .catchError((_) => rust_tag_reader.AudioExtraMetadata(
+      .catchError(
+        (_) => rust_tag_reader.AudioExtraMetadata(
           extension_: '',
           fileSize: BigInt.zero,
           channels: null,
@@ -45,7 +47,9 @@ Future<rust_tag_reader.AudioExtraMetadata> _getAudioExtra(Audio audio) {
           replaygainTrackGain: null,
           replaygainTrackPeak: null,
           replaygainAlbumGain: null,
-          replaygainAlbumPeak: null));
+          replaygainAlbumPeak: null,
+        ),
+      );
   _audioExtraCache[key] = future;
   return future;
 }
@@ -232,15 +236,26 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
     try {
       final payload = _controllers.buildPayload();
       await rust_tag_reader.writeAudioTags(
-          path: audio.path, payload: payload, onlyChanged: true);
+        path: audio.path,
+        payload: payload,
+        onlyChanged: true,
+      );
       _clearAudioExtraCache();
+      AudioLibrary.instance.updateAudioTags(
+        audio,
+        title: _controllers.title.text,
+        artist: _controllers.artist.text,
+        album: _controllers.album.text,
+        track: int.tryParse(_controllers.track.text.trim()) ?? 0,
+      );
       if (mounted) {
-        showTextOnSnackBar('标签已保存，下次扫描库后生效');
+        showTextOnSnackBar('标签已保存');
         setState(() => _isEditing = false);
       }
-    } catch (e) {
+    } catch (e, trace) {
+      logger.e('保存音频标签失败', error: e, stackTrace: trace);
       if (mounted) {
-        showTextOnSnackBar('保存失败: $e');
+        showTextOnSnackBar('保存标签失败，请查看日志');
       }
     } finally {
       if (mounted) {
@@ -263,12 +278,9 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
           ),
           const SizedBox(height: 16.0),
           Expanded(
-            child: IndexedStack(
+            child: DirectionalTabView(
               index: _currentTabIndex,
-              children: [
-                _buildInfoTab(scheme),
-                _buildLyricTab(scheme),
-              ],
+              children: [_buildInfoTab(scheme), _buildLyricTab(scheme)],
             ),
           ),
         ],
@@ -341,83 +353,97 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
     );
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16.0, 0, 16.0, 96.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final narrow = constraints.maxWidth < 560.0;
-              final cover = FutureBuilder(
-                future: audio.mediumCover,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState != ConnectionState.done) {
-                    return const SizedBox(
-                      width: 156,
-                      height: 156,
-                      child: Center(
-                        child: CircularProgressIndicator(),
-                      ),
+      padding: const EdgeInsets.fromLTRB(16.0, 0, 16.0, 120.0),
+      child: Align(
+        alignment: Alignment.topLeft,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1080),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final narrow = constraints.maxWidth < 560.0;
+                  final cover = FutureBuilder(
+                    future: audio.mediumCover,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState != ConnectionState.done) {
+                        return const SizedBox(
+                          width: 156,
+                          height: 156,
+                          child: Center(child: CircularProgressIndicator()),
+                        );
+                      }
+                      if (snapshot.data == null) return placeholder;
+                      return ClipRRect(
+                        borderRadius: AppRadius.mdCircular,
+                        child: Image(
+                          image: snapshot.data!,
+                          width: 156,
+                          height: 156,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => placeholder,
+                        ),
+                      );
+                    },
+                  );
+                  final info = _isEditing
+                      ? _buildEditInfo(scheme)
+                      : _buildViewInfo(scheme);
+                  final constrainedInfo = ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 640),
+                    child: info,
+                  );
+                  if (narrow) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        cover,
+                        const SizedBox(height: 16.0),
+                        constrainedInfo,
+                      ],
                     );
                   }
-                  if (snapshot.data == null) return placeholder;
-                  return ClipRRect(
-                    borderRadius: AppRadius.mdCircular,
-                    child: Image(
-                      image: snapshot.data!,
-                      width: 156,
-                      height: 156,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => placeholder,
-                    ),
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      cover,
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.topLeft,
+                          child: constrainedInfo,
+                        ),
+                      ),
+                    ],
                   );
                 },
-              );
-              final info =
-                  _isEditing ? _buildEditInfo(scheme) : _buildViewInfo(scheme);
-              if (narrow) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    cover,
-                    const SizedBox(height: 16.0),
-                    info,
-                  ],
-                );
-              }
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  cover,
-                  const SizedBox(width: 16),
-                  Expanded(child: info),
-                ],
-              );
-            },
-          ),
-          space,
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final contentWidth =
-                  constraints.maxWidth > 1080 ? 1080.0 : constraints.maxWidth;
-              return Align(
-                alignment: Alignment.topLeft,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 1080),
-                  child: FutureBuilder<rust_tag_reader.AudioExtraMetadata>(
+              ),
+              space,
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  return FutureBuilder<rust_tag_reader.AudioExtraMetadata>(
                     future: _getAudioExtra(audio),
                     builder: (context, snapshot) {
                       final data = snapshot.data;
                       return _isEditing
-                          ? _buildEditSections(scheme, contentWidth, data)
-                          : _buildViewSections(scheme, contentWidth, data);
+                          ? _buildEditSections(
+                              scheme,
+                              constraints.maxWidth,
+                              data,
+                            )
+                          : _buildViewSections(
+                              scheme,
+                              constraints.maxWidth,
+                              data,
+                            );
                     },
-                  ),
-                ),
-              );
-            },
+                  );
+                },
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -519,9 +545,9 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
               onPressed: artist == null
                   ? null
                   : () => context.push(
-                        app_paths.ARTIST_DETAIL_PAGE,
-                        extra: artist,
-                      ),
+                      app_paths.ARTIST_DETAIL_PAGE,
+                      extra: artist,
+                    ),
               style: TextButton.styleFrom(
                 visualDensity: VisualDensity.compact,
                 padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -537,10 +563,7 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
         TextButton.icon(
           onPressed: album == null
               ? null
-              : () => context.push(
-                    app_paths.ALBUM_DETAIL_PAGE,
-                    extra: album,
-                  ),
+              : () => context.push(app_paths.ALBUM_DETAIL_PAGE, extra: album),
           icon: const Icon(Symbols.album, size: 18),
           label: Text(
             audio.album,
@@ -552,9 +575,7 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
             visualDensity: VisualDensity.compact,
             padding: const EdgeInsets.symmetric(horizontal: 6),
             minimumSize: const Size(0, 32),
-            shape: RoundedRectangleBorder(
-              borderRadius: AppRadius.smCircular,
-            ),
+            shape: RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
           ),
         ),
         const SizedBox(height: 10),
@@ -570,16 +591,15 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
             ),
             IconButton.filledTonal(
               tooltip: '在文件管理器中显示',
-              onPressed:
-                  _isOpeningInExplorer ? null : _showCurrentAudioInExplorer,
+              onPressed: _isOpeningInExplorer
+                  ? null
+                  : _showCurrentAudioInExplorer,
               style: _headerActionStyle(),
               icon: _isOpeningInExplorer
                   ? const SizedBox(
                       width: 20.0,
                       height: 20.0,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.0,
-                      ),
+                      child: CircularProgressIndicator(strokeWidth: 2.0),
                     )
                   : const Icon(Symbols.folder_open),
             ),
@@ -591,9 +611,7 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
                   ? const SizedBox(
                       width: 20.0,
                       height: 20.0,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.0,
-                      ),
+                      child: CircularProgressIndicator(strokeWidth: 2.0),
                     )
                   : const Icon(Symbols.content_copy),
             ),
@@ -654,7 +672,9 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
                       width: 16,
                       height: 16,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white),
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
                     )
                   : const Icon(Symbols.check, size: 16),
               label: Text(_isSaving ? '保存中…' : '保存'),
@@ -670,8 +690,11 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
     );
   }
 
-  Widget _buildViewSections(ColorScheme scheme, double maxWidth,
-      rust_tag_reader.AudioExtraMetadata? data) {
+  Widget _buildViewSections(
+    ColorScheme scheme,
+    double maxWidth,
+    rust_tag_reader.AudioExtraMetadata? data,
+  ) {
     final tagFields = <Widget>[
       _DetailField(label: '音轨', value: audio.track.toString()),
     ];
@@ -703,7 +726,7 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
         _DetailField(label: '声道', value: data!.channels.toString()),
     ];
 
-    return _buildSectionLayout(maxWidth, [
+    return _buildViewSectionLayout(maxWidth, [
       _DetailSection(
         title: '音乐标签',
         icon: Symbols.music_note,
@@ -731,12 +754,13 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
     ]);
   }
 
-  Widget _buildSectionLayout(double maxWidth, List<Widget> sections) {
-    final sectionWidth = maxWidth >= 960
-        ? (maxWidth - 32) / 3
-        : maxWidth >= 640
-            ? (maxWidth - 16) / 2
-            : maxWidth;
+  Widget _buildViewSectionLayout(double maxWidth, List<Widget> sections) {
+    final columnCount = maxWidth >= 900
+        ? 3
+        : maxWidth >= 600
+        ? 2
+        : 1;
+    final sectionWidth = (maxWidth - (columnCount - 1) * 16) / columnCount;
     return Wrap(
       spacing: 16,
       runSpacing: 16,
@@ -762,9 +786,9 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
   }
 
   String _formatTimestamp(int seconds) {
-    return DateTime.fromMillisecondsSinceEpoch(seconds * 1000)
-        .toString()
-        .substring(0, 19);
+    return DateTime.fromMillisecondsSinceEpoch(
+      seconds * 1000,
+    ).toString().substring(0, 19);
   }
 
   InputDecoration _chipDecoration(ColorScheme scheme, [String? hint]) {
@@ -785,8 +809,11 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
     );
   }
 
-  Widget _buildEditSections(ColorScheme scheme, double maxWidth,
-      rust_tag_reader.AudioExtraMetadata? data) {
+  Widget _buildEditSections(
+    ColorScheme scheme,
+    double maxWidth,
+    rust_tag_reader.AudioExtraMetadata? data,
+  ) {
     Widget editField(
       String label,
       TextEditingController controller, {
@@ -799,66 +826,109 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
       );
     }
 
-    return _buildSectionLayout(maxWidth, [
-      _DetailSection(
-        title: '音乐标签',
-        icon: Symbols.music_note,
+    final tagSection = _DetailSection(
+      title: '音乐标签',
+      icon: Symbols.music_note,
+      columns: maxWidth >= 640 ? 2 : 1,
+      children: [
+        editField('音轨', _controllers.track, hint: '数字'),
+        editField('总音轨数', _controllers.trackTotal, hint: '数字'),
+        editField('碟号', _controllers.disc, hint: '数字'),
+        editField('总碟数', _controllers.discTotal, hint: '数字'),
+        editField('流派', _controllers.genre),
+        editField('年份', _controllers.year),
+        editField('作曲', _controllers.composer),
+        editField('作词', _controllers.lyricist),
+        editField('唱片公司', _controllers.label),
+        editField('注释', _controllers.comment),
+        editField('BPM', _controllers.bpm),
+        editField('语言', _controllers.language),
+        editField('版权', _controllers.copyright),
+        editField('许可', _controllers.license),
+      ],
+    );
+    final technicalSection = _DetailSection(
+      title: '音频参数',
+      icon: Symbols.graphic_eq,
+      children: [
+        _DetailField(
+          label: '时长',
+          value: Duration(
+            milliseconds: (audio.duration * 1000).toInt(),
+          ).toStringHMMSS(),
+        ),
+        _DetailField(
+          label: '码率',
+          value: audio.bitrate == null ? '-' : '${audio.bitrate} kbps',
+        ),
+        _DetailField(
+          label: '采样率',
+          value: audio.sampleRate == null ? '-' : '${audio.sampleRate} Hz',
+        ),
+        if (data?.bitDepth != null)
+          _DetailField(label: '位深', value: '${data!.bitDepth} bit'),
+        if (data?.channels != null)
+          _DetailField(label: '声道', value: data!.channels.toString()),
+      ],
+    );
+    final fileSection = _DetailSection(
+      title: '文件信息',
+      icon: Symbols.folder,
+      children: [
+        _DetailField(
+          label: '格式',
+          value: p.extension(audio.path).replaceFirst('.', '').toUpperCase(),
+        ),
+        _DetailField(label: '文件大小', child: _buildFileSize(data)),
+        _DetailField(label: '路径', value: audio.path, allowWrap: true),
+        _DetailField(label: '修改时间', value: _formatTimestamp(audio.modified)),
+        _DetailField(label: '创建时间', value: _formatTimestamp(audio.created)),
+      ],
+    );
+
+    if (maxWidth >= 840) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          editField('音轨', _controllers.track, hint: '数字'),
-          editField('总音轨数', _controllers.trackTotal, hint: '数字'),
-          editField('碟号', _controllers.disc, hint: '数字'),
-          editField('总碟数', _controllers.discTotal, hint: '数字'),
-          editField('流派', _controllers.genre),
-          editField('年份', _controllers.year),
-          editField('作曲', _controllers.composer),
-          editField('作词', _controllers.lyricist),
-          editField('唱片公司', _controllers.label),
-          editField('注释', _controllers.comment),
-          editField('BPM', _controllers.bpm),
-          editField('语言', _controllers.language),
-          editField('版权', _controllers.copyright),
-          editField('许可', _controllers.license),
+          Expanded(flex: 2, child: tagSection),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              children: [
+                technicalSection,
+                const SizedBox(height: 16),
+                fileSection,
+              ],
+            ),
+          ),
         ],
-      ),
-      _DetailSection(
-        title: '音频参数',
-        icon: Symbols.graphic_eq,
+      );
+    }
+    if (maxWidth >= 640) {
+      return Column(
         children: [
-          _DetailField(
-            label: '时长',
-            value: Duration(
-              milliseconds: (audio.duration * 1000).toInt(),
-            ).toStringHMMSS(),
+          tagSection,
+          const SizedBox(height: 16),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: technicalSection),
+              const SizedBox(width: 16),
+              Expanded(child: fileSection),
+            ],
           ),
-          _DetailField(
-            label: '码率',
-            value: audio.bitrate == null ? '-' : '${audio.bitrate} kbps',
-          ),
-          _DetailField(
-            label: '采样率',
-            value: audio.sampleRate == null ? '-' : '${audio.sampleRate} Hz',
-          ),
-          if (data?.bitDepth != null)
-            _DetailField(label: '位深', value: '${data!.bitDepth} bit'),
-          if (data?.channels != null)
-            _DetailField(label: '声道', value: data!.channels.toString()),
         ],
-      ),
-      _DetailSection(
-        title: '文件信息',
-        icon: Symbols.folder,
-        children: [
-          _DetailField(
-            label: '格式',
-            value: p.extension(audio.path).replaceFirst('.', '').toUpperCase(),
-          ),
-          _DetailField(label: '文件大小', child: _buildFileSize(data)),
-          _DetailField(label: '路径', value: audio.path, allowWrap: true),
-          _DetailField(label: '修改时间', value: _formatTimestamp(audio.modified)),
-          _DetailField(label: '创建时间', value: _formatTimestamp(audio.created)),
-        ],
-      ),
-    ]);
+      );
+    }
+    return Column(
+      children: [
+        tagSection,
+        const SizedBox(height: 16),
+        technicalSection,
+        const SizedBox(height: 16),
+        fileSection,
+      ],
+    );
   }
 }
 
@@ -867,11 +937,13 @@ class _DetailSection extends StatelessWidget {
     required this.title,
     required this.icon,
     required this.children,
+    this.columns = 1,
   });
 
   final String title;
   final IconData icon;
   final List<Widget> children;
+  final int columns;
 
   @override
   Widget build(BuildContext context) {
@@ -901,10 +973,27 @@ class _DetailSection extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            for (var i = 0; i < children.length; i++) ...[
-              if (i > 0) Divider(height: 17, color: scheme.outlineVariant),
-              children[i],
-            ],
+            if (columns == 1)
+              for (var i = 0; i < children.length; i++) ...[
+                if (i > 0) Divider(height: 17, color: scheme.outlineVariant),
+                children[i],
+              ]
+            else
+              for (var i = 0; i < children.length; i += 2) ...[
+                if (i > 0) Divider(height: 17, color: scheme.outlineVariant),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: children[i]),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: i + 1 < children.length
+                          ? children[i + 1]
+                          : const SizedBox.shrink(),
+                    ),
+                  ],
+                ),
+              ],
           ],
         ),
       ),
@@ -947,7 +1036,8 @@ class _DetailField extends StatelessWidget {
               color: scheme.onSurface,
               height: 1.35,
             ),
-            child: child ??
+            child:
+                child ??
                 Text(
                   value!.trim().isEmpty ? '-' : value!,
                   maxLines: allowWrap ? 3 : 2,

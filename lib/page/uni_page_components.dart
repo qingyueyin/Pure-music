@@ -84,8 +84,7 @@ class SortMethodComboBox<T> extends StatelessWidget {
             }
           },
           style: ButtonStyle(
-            backgroundColor:
-                WidgetStatePropertyAll(scheme.secondaryContainer),
+            backgroundColor: WidgetStatePropertyAll(scheme.secondaryContainer),
             foregroundColor:
                 WidgetStatePropertyAll(scheme.onSecondaryContainer),
             fixedSize: const WidgetStatePropertyAll(Size.fromHeight(40)),
@@ -140,7 +139,9 @@ class SortOrderSwitch<T> extends StatelessWidget {
         ),
       ),
       icon: AnimatedSwitcher(
-        duration: MotionDuration.fast,
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : MotionDuration.fast,
         switchInCurve: MotionCurve.standard,
         switchOutCurve: MotionCurve.standard,
         transitionBuilder: (child, animation) => FadeTransition(
@@ -179,7 +180,9 @@ class ContentViewSwitch<T> extends StatelessWidget {
         ),
       ),
       icon: AnimatedSwitcher(
-        duration: MotionDuration.fast,
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : MotionDuration.fast,
         switchInCurve: MotionCurve.standard,
         switchOutCurve: MotionCurve.standard,
         transitionBuilder: (child, animation) => FadeTransition(
@@ -552,12 +555,17 @@ class MultiSelectSelectOrClearAll<T> extends StatelessWidget {
                     multiSelectController.selectAll(contentList);
                   }
                 },
+          iconSize: 20,
           icon: Icon(
             allSelected ? Symbols.deselect : Symbols.select_all,
           ),
-          style: IconButton.styleFrom(
-            shape: RoundedRectangleBorder(
-              borderRadius: AppRadius.smCircular,
+          style: ButtonStyle(
+            fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
+            padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+            shape: WidgetStatePropertyAll(
+              RoundedRectangleBorder(
+                borderRadius: AppRadius.smCircular,
+              ),
             ),
           ),
         );
@@ -579,10 +587,15 @@ class MultiSelectExit<T> extends StatelessWidget {
         multiSelectController.useMultiSelectView(false);
         multiSelectController.clear();
       },
+      iconSize: 20,
       icon: const Icon(Symbols.cancel),
-      style: IconButton.styleFrom(
-        shape: RoundedRectangleBorder(
-          borderRadius: AppRadius.smCircular,
+      style: ButtonStyle(
+        fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
+        padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(
+            borderRadius: AppRadius.smCircular,
+          ),
         ),
       ),
     );

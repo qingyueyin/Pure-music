@@ -59,10 +59,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
     }
   }
 
-  void editPlaylist(
-    BuildContext context,
-    Playlist playlist,
-  ) async {
+  void editPlaylist(BuildContext context, Playlist playlist) async {
     final name = await showDialog<String>(
       context: context,
       builder: (context) => _EditPlaylistDialog(
@@ -144,12 +141,24 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
 
       final audioFiles = <String>[];
       final audioExtensions = <String>{
-        'mp3', 'flac', 'wav', 'ogg', 'ape', 'm4a', 'wma', 'opus', 'aiff', 'aac',
+        'mp3',
+        'flac',
+        'wav',
+        'ogg',
+        'ape',
+        'm4a',
+        'wma',
+        'opus',
+        'aiff',
+        'aac',
       };
 
       await for (final entity in dir.list(recursive: true)) {
         if (entity is File) {
-          final ext = p.extension(entity.path).toLowerCase().replaceFirst('.', '');
+          final ext = p
+              .extension(entity.path)
+              .toLowerCase()
+              .replaceFirst('.', '');
           if (audioExtensions.contains(ext)) {
             audioFiles.add(entity.path);
           }
@@ -358,16 +367,17 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                 onPressed: isBusy
                     ? null
                     : () => context.push(
-                          app_paths.PLAYLIST_DETAIL_PAGE,
-                          extra: playlist,
-                        ),
+                        app_paths.PLAYLIST_DETAIL_PAGE,
+                        extra: playlist,
+                      ),
                 leadingIcon: const Icon(Symbols.open_in_new),
                 child: const Text('打开'),
               ),
               MenuItemButton(
                 style: menuItemStyle,
-                onPressed:
-                    isBusy ? null : () => editPlaylist(context, playlist),
+                onPressed: isBusy
+                    ? null
+                    : () => editPlaylist(context, playlist),
                 leadingIcon: const Icon(Symbols.edit),
                 child: const Text('编辑'),
               ),
@@ -422,8 +432,9 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
             builder: (context, controller, _) => AnimatedContainer(
               duration: const Duration(milliseconds: 150),
               decoration: BoxDecoration(
-                color:
-                    isSelected ? scheme.secondaryContainer : Colors.transparent,
+                color: isSelected
+                    ? scheme.secondaryContainer
+                    : Colors.transparent,
                 borderRadius: AppRadius.smCircular,
               ),
               child: Material(
@@ -466,71 +477,76 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                   },
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                    child: Row(children: [
-                      _PlaylistCover(playlist: playlist),
-                      const SizedBox(width: 16.0),
-                      Expanded(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              playlist.name,
-                              softWrap: false,
-                              maxLines: 1,
-                              style: const TextStyle(fontSize: AppType.subtitle),
-                            ),
-                            const SizedBox(height: 4.0),
-                            Text(
-                              '${playlist.paths.length}首乐曲',
-                              softWrap: false,
-                              maxLines: 1,
-                              style: TextStyle(
-                                color: scheme.onSurface.withAlpha(153),
+                    child: Row(
+                      children: [
+                        _PlaylistCover(playlist: playlist),
+                        const SizedBox(width: 16.0),
+                        Expanded(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                playlist.name,
+                                softWrap: false,
+                                maxLines: 1,
+                                style: const TextStyle(
+                                  fontSize: AppType.subtitle,
+                                ),
                               ),
-                            ),
-                          ],
+                              const SizedBox(height: 4.0),
+                              Text(
+                                '${playlist.paths.length}首乐曲',
+                                softWrap: false,
+                                maxLines: 1,
+                                style: TextStyle(
+                                  color: scheme.onSurface.withAlpha(153),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                      if (isMultiSelectView)
-                        Checkbox(
-                          value: isSelected,
-                          onChanged: isBusy
-                              ? null
-                              : (v) {
-                                  if (v == true) {
-                                    multiSelectController?.select(playlist);
-                                  } else {
-                                    multiSelectController?.unselect(playlist);
-                                  }
-                                },
-                        )
-                      else ...[
-                        IconButton(
-                          tooltip: '编辑',
-                          onPressed: isBusy
-                              ? null
-                              : () => editPlaylist(context, playlist),
-                          icon: const Icon(Symbols.edit),
-                        ),
-                        const SizedBox(width: 8.0),
-                        IconButton(
-                          tooltip: '删除',
-                          onPressed:
-                              isBusy ? null : () => _deletePlaylist(playlist),
-                          color: scheme.error,
-                          icon: isDeleting
-                              ? const SizedBox(
-                                  width: 20.0,
-                                  height: 20.0,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2.0,
-                                  ),
-                                )
-                              : const Icon(Symbols.delete),
-                        ),
+                        if (isMultiSelectView)
+                          Checkbox(
+                            value: isSelected,
+                            onChanged: isBusy
+                                ? null
+                                : (v) {
+                                    if (v == true) {
+                                      multiSelectController?.select(playlist);
+                                    } else {
+                                      multiSelectController?.unselect(playlist);
+                                    }
+                                  },
+                          )
+                        else ...[
+                          IconButton(
+                            tooltip: '编辑',
+                            onPressed: isBusy
+                                ? null
+                                : () => editPlaylist(context, playlist),
+                            icon: const Icon(Symbols.edit),
+                          ),
+                          const SizedBox(width: 8.0),
+                          IconButton(
+                            tooltip: '删除',
+                            onPressed: isBusy
+                                ? null
+                                : () => _deletePlaylist(playlist),
+                            color: scheme.error,
+                            icon: isDeleting
+                                ? const SizedBox(
+                                    width: 20.0,
+                                    height: 20.0,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.0,
+                                    ),
+                                  )
+                                : const Icon(Symbols.delete),
+                          ),
+                        ],
                       ],
-                    ]),
+                    ),
                   ),
                 ),
               ),
@@ -560,7 +576,9 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                     child: CircularProgressIndicator(strokeWidth: 2.0),
                   )
                 : const Icon(Symbols.folder_open),
-            onPressed: _isImportingFolder ? null : () => importFolderAsPlaylist(),
+            onPressed: _isImportingFolder
+                ? null
+                : () => importFolderAsPlaylist(),
             child: Text(_isImportingFolder ? '导入中' : '导入文件夹歌单'),
           ),
           MenuItemButton(
@@ -603,8 +621,8 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                 const SizedBox(width: 4.0),
                 const Text('管理歌单'),
                 const SizedBox(width: 4.0),
-                    AnimatedRotation(
-                      duration: const Duration(milliseconds: 200),
+                AnimatedRotation(
+                  duration: const Duration(milliseconds: 200),
                   turns: menuController.isOpen ? 0.5 : 0.0,
                   child: const Icon(Symbols.arrow_drop_down, size: 20),
                 ),
@@ -625,8 +643,8 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
             tooltip: '删除选中歌单',
             onPressed:
                 multiSelectController.selected.isEmpty || _isDeletingSelected
-                    ? null
-                    : _deleteSelectedPlaylists,
+                ? null
+                : _deleteSelectedPlaylists,
             style: ButtonStyle(
               backgroundColor: WidgetStatePropertyAll(scheme.error),
               foregroundColor: WidgetStatePropertyAll(scheme.onError),
@@ -706,7 +724,8 @@ class _NewPlaylistDialogState extends State<_NewPlaylistDialog> {
   void _onNameChanged(String value) {
     final name = value.trim();
     setState(() {
-      _errorText = name.isNotEmpty &&
+      _errorText =
+          name.isNotEmpty &&
               hasEquivalentPlaylistName(
                 existingNames: widget.existingNames,
                 targetName: name,
@@ -750,9 +769,7 @@ class _NewPlaylistDialogState extends State<_NewPlaylistDialog> {
         horizontal: 24.0,
         vertical: 24.0,
       ),
-      shape: RoundedRectangleBorder(
-        borderRadius: AppRadius.mdCircular,
-      ),
+      shape: RoundedRectangleBorder(borderRadius: AppRadius.mdCircular),
       child: SizedBox(
         width: width,
         child: Padding(
@@ -801,7 +818,7 @@ class _NewPlaylistDialogState extends State<_NewPlaylistDialog> {
                     child: const Text('创建'),
                   ),
                 ],
-              )
+              ),
             ],
           ),
         ),
@@ -823,8 +840,9 @@ class _EditPlaylistDialog extends StatefulWidget {
 }
 
 class _EditPlaylistDialogState extends State<_EditPlaylistDialog> {
-  late final _editingController =
-      TextEditingController(text: widget.currentName);
+  late final _editingController = TextEditingController(
+    text: widget.currentName,
+  );
   String? _errorText;
 
   String get _trimmedName => _editingController.text.trim();
@@ -842,7 +860,8 @@ class _EditPlaylistDialogState extends State<_EditPlaylistDialog> {
   void _onNameChanged(String value) {
     final name = value.trim();
     setState(() {
-      _errorText = name.isNotEmpty &&
+      _errorText =
+          name.isNotEmpty &&
               hasEquivalentPlaylistName(
                 existingNames: widget.existingNames,
                 targetName: name,
@@ -887,9 +906,7 @@ class _EditPlaylistDialogState extends State<_EditPlaylistDialog> {
         horizontal: 24.0,
         vertical: 24.0,
       ),
-      shape: RoundedRectangleBorder(
-        borderRadius: AppRadius.mdCircular,
-      ),
+      shape: RoundedRectangleBorder(borderRadius: AppRadius.mdCircular),
       child: SizedBox(
         width: width,
         child: Padding(
@@ -938,7 +955,7 @@ class _EditPlaylistDialogState extends State<_EditPlaylistDialog> {
                     child: const Text('确认'),
                   ),
                 ],
-              )
+              ),
             ],
           ),
         ),
@@ -1030,7 +1047,7 @@ class _PlaylistCoverState extends State<_PlaylistCover> {
                         height: 48.0,
                         fit: BoxFit.cover,
                         gaplessPlayback: true,
-                        errorBuilder: (_, __, ___) => _placeholder(context),
+                        errorBuilder: (_, _, _) => _placeholder(context),
                       ),
                     ),
                   )

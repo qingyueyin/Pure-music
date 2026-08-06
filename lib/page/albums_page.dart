@@ -16,81 +16,85 @@ class AlbumsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return ValueListenableBuilder<int>(
       valueListenable: AudioLibrary.libraryVersion,
-      builder: (context, _, __) {
-        final contentList =
-            AudioLibrary.instance.albumCollection.values.toList();
+      builder: (context, _, _) {
+        final contentList = AudioLibrary.instance.albumCollection.values
+            .toList();
         final canSortItems = hasEnoughItemsToSort(contentList.length);
         final multiSelectController = MultiSelectController<Album>();
         return UniPage<Album>(
-      pref: AppPreference.instance.albumsPagePref,
-      title: '专辑',
-      subtitle: '${contentList.length} 张专辑',
-      contentList: contentList,
-      contentBuilder: (context, item, i, multiSelectController, view) =>
-          AlbumTile(
-        album: item,
-        multiSelectController: multiSelectController,
-        view: view,
-      ),
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 180,
-        childAspectRatio: 0.75,
-        mainAxisSpacing: 24.0,
-        crossAxisSpacing: 24.0,
-      ),
-      enableShufflePlay: false,
-      enableSortMethod: canSortItems,
-      enableSortOrder: canSortItems,
-      enableContentViewSwitch: false,
-      multiSelectController: multiSelectController,
-      multiSelectViewActions: [
-        MultiSelectPlaySelectedAudios(
-          multiSelectController: multiSelectController,
-          toAudios: (selected) =>
-              selected.expand((album) => album.works).toList(),
-        ),
-        AddSelectedAudiosToPlaylist(
-          multiSelectController: multiSelectController,
-          toAudios: (selected) =>
-              selected.expand((album) => album.works).toList(),
-        ),
-        MultiSelectSelectOrClearAll(
-          multiSelectController: multiSelectController,
+          pref: AppPreference.instance.albumsPagePref,
+          title: '专辑',
+          subtitle: '${contentList.length} 张专辑',
           contentList: contentList,
-        ),
-        MultiSelectExit(multiSelectController: multiSelectController),
-      ],
-      sortMethods: [
-        SortMethodDesc(
-          icon: Symbols.title,
-          name: '标题',
-          method: (list, order) {
-            switch (order) {
-              case SortOrder.ascending:
-                list.sort((a, b) => a.name.naturalCompareTo(b.name));
-                break;
-              case SortOrder.decending:
-                list.sort((a, b) => b.name.naturalCompareTo(a.name));
-                break;
-            }
-          },
-        ),
-        SortMethodDesc(
-          icon: Symbols.music_note,
-          name: '作品数量',
-          method: (list, order) {
-            switch (order) {
-              case SortOrder.ascending:
-                list.sort((a, b) => a.works.length.compareTo(b.works.length));
-                break;
-              case SortOrder.decending:
-                list.sort((a, b) => b.works.length.compareTo(a.works.length));
-                break;
-            }
-          },
-        ),
-      ],
-    );
+          contentBuilder: (context, item, i, multiSelectController, view) =>
+              AlbumTile(
+                album: item,
+                multiSelectController: multiSelectController,
+                view: view,
+              ),
+          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 180,
+            childAspectRatio: 0.75,
+            mainAxisSpacing: 24.0,
+            crossAxisSpacing: 24.0,
+          ),
+          enableShufflePlay: false,
+          enableSortMethod: canSortItems,
+          enableSortOrder: canSortItems,
+          enableContentViewSwitch: false,
+          multiSelectController: multiSelectController,
+          multiSelectViewActions: [
+            MultiSelectPlaySelectedAudios(
+              multiSelectController: multiSelectController,
+              toAudios: (selected) =>
+                  selected.expand((album) => album.works).toList(),
+            ),
+            AddSelectedAudiosToPlaylist(
+              multiSelectController: multiSelectController,
+              toAudios: (selected) =>
+                  selected.expand((album) => album.works).toList(),
+            ),
+            MultiSelectSelectOrClearAll(
+              multiSelectController: multiSelectController,
+              contentList: contentList,
+            ),
+            MultiSelectExit(multiSelectController: multiSelectController),
+          ],
+          sortMethods: [
+            SortMethodDesc(
+              icon: Symbols.title,
+              name: '标题',
+              method: (list, order) {
+                switch (order) {
+                  case SortOrder.ascending:
+                    list.sort((a, b) => a.name.naturalCompareTo(b.name));
+                    break;
+                  case SortOrder.decending:
+                    list.sort((a, b) => b.name.naturalCompareTo(a.name));
+                    break;
+                }
+              },
+            ),
+            SortMethodDesc(
+              icon: Symbols.music_note,
+              name: '作品数量',
+              method: (list, order) {
+                switch (order) {
+                  case SortOrder.ascending:
+                    list.sort(
+                      (a, b) => a.works.length.compareTo(b.works.length),
+                    );
+                    break;
+                  case SortOrder.decending:
+                    list.sort(
+                      (a, b) => b.works.length.compareTo(a.works.length),
+                    );
+                    break;
+                }
+              },
+            ),
+          ],
+        );
       },
     );
   }

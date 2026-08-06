@@ -1,5 +1,6 @@
 import 'dart:ui';
 
+import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/enums.dart';
@@ -101,8 +102,10 @@ class UniDetailPage<P, S, T> extends StatefulWidget {
 }
 
 class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
-  late SortMethodDesc<S>? currSortMethod =
-      resolveSortMethod(widget.pref, widget.sortMethods);
+  late SortMethodDesc<S>? currSortMethod = resolveSortMethod(
+    widget.pref,
+    widget.sortMethods,
+  );
   late SortOrder currSortOrder = widget.pref.sortOrder;
   late ContentView currContentView = widget.pref.contentView;
   int _currentTabIndex = 0;
@@ -123,8 +126,10 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
   @override
   void didUpdateWidget(covariant UniDetailPage<P, S, T> oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final resolvedSortMethod =
-        resolveSortMethod(widget.pref, widget.sortMethods);
+    final resolvedSortMethod = resolveSortMethod(
+      widget.pref,
+      widget.sortMethods,
+    );
     if (resolvedSortMethod != null) {
       currSortMethod = resolvedSortMethod;
     }
@@ -170,24 +175,30 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
       actions.add(ShufflePlay<S>(contentList: widget.secondaryContent));
     }
     if (widget.enableSortMethod) {
-      actions.add(SortMethodComboBox<S>(
-        sortMethods: widget.sortMethods!,
-        contentList: widget.secondaryContent,
-        currSortMethod: currSortMethod!,
-        setSortMethod: setSortMethod,
-      ));
+      actions.add(
+        SortMethodComboBox<S>(
+          sortMethods: widget.sortMethods!,
+          contentList: widget.secondaryContent,
+          currSortMethod: currSortMethod!,
+          setSortMethod: setSortMethod,
+        ),
+      );
     }
     if (widget.enableSortOrder) {
-      actions.add(SortOrderSwitch<S>(
-        sortOrder: currSortOrder,
-        setSortOrder: setSortOrder,
-      ));
+      actions.add(
+        SortOrderSwitch<S>(
+          sortOrder: currSortOrder,
+          setSortOrder: setSortOrder,
+        ),
+      );
     }
     if (widget.enableSecondaryContentViewSwitch) {
-      actions.add(ContentViewSwitch<S>(
-        contentView: currContentView,
-        setContentView: setContentView,
-      ));
+      actions.add(
+        ContentViewSwitch<S>(
+          contentView: currContentView,
+          setContentView: setContentView,
+        ),
+      );
     }
     if (widget.extraActions != null) {
       actions.addAll(widget.extraActions!);
@@ -197,16 +208,16 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
         ? result(null, actions, scheme)
         : ListenableBuilder(
             listenable: widget.multiSelectController!,
-            builder: (context, _) => result(
-              widget.multiSelectController!,
-              actions,
-              scheme,
-            ),
+            builder: (context, _) =>
+                result(widget.multiSelectController!, actions, scheme),
           );
   }
 
-  Widget result(MultiSelectController<S>? multiSelectController,
-      List<Widget> actions, ColorScheme scheme) {
+  Widget result(
+    MultiSelectController<S>? multiSelectController,
+    List<Widget> actions,
+    ColorScheme scheme,
+  ) {
     final hasTertiaryContent = canShowRelatedContentTab(
       widget.tertiaryContent?.length ?? 0,
     );
@@ -241,13 +252,16 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
             ],
             const SizedBox(height: 16.0),
             Expanded(
-              child: widget.bodyOverride ??
+              child:
+                  widget.bodyOverride ??
                   (widget.enableTabs
-                      ? IndexedStack(
+                      ? DirectionalTabView(
                           index: currentTabIndex,
                           children: [
                             _buildSecondaryContent(
-                                multiSelectController, scheme),
+                              multiSelectController,
+                              scheme,
+                            ),
                             if (hasTertiaryContent)
                               _buildTertiaryContent(scheme),
                           ],
@@ -274,11 +288,14 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
       runSpacing: 8.0,
       children: List.generate(tabs.length, (i) {
         final selected = _currentTabIndex == i;
-        final canSwitch =
-            canSwitchTab(currentIndex: _currentTabIndex, targetIndex: i);
+        final canSwitch = canSwitchTab(
+          currentIndex: _currentTabIndex,
+          targetIndex: i,
+        );
         return OutlinedButton.icon(
-          onPressed:
-              canSwitch ? () => setState(() => _currentTabIndex = i) : null,
+          onPressed: canSwitch
+              ? () => setState(() => _currentTabIndex = i)
+              : null,
           icon: Icon(tabs[i].$2, size: 18),
           label: Text(tabs[i].$1),
           style: ButtonStyle(
@@ -286,12 +303,12 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
               selected ? scheme.onSecondaryContainer : scheme.onSurfaceVariant,
             ),
             backgroundColor: WidgetStatePropertyAll(
-              selected ? scheme.secondaryContainer : scheme.surfaceContainerHighest,
+              selected
+                  ? scheme.secondaryContainer
+                  : scheme.surfaceContainerHighest,
             ),
             side: WidgetStatePropertyAll(
-              BorderSide(
-                color: selected ? scheme.primary : scheme.outline,
-              ),
+              BorderSide(color: selected ? scheme.primary : scheme.outline),
             ),
             shape: WidgetStatePropertyAll(
               RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
@@ -306,7 +323,9 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
   }
 
   Widget _buildSecondaryContent(
-      MultiSelectController<S>? multiSelectController, ColorScheme scheme) {
+    MultiSelectController<S>? multiSelectController,
+    ColorScheme scheme,
+  ) {
     return Material(
       borderRadius: AppRadius.smCircular,
       type: MaterialType.transparency,
@@ -314,27 +333,27 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
         slivers: [
           switch (currContentView) {
             ContentView.list => SliverFixedExtentList.builder(
-                itemExtent: 64,
-                itemCount: widget.secondaryContent.length,
-                itemBuilder: (context, i) => widget.secondaryContentBuilder(
-                  context,
-                  widget.secondaryContent[i],
-                  i,
-                  multiSelectController,
-                  ContentView.list,
-                ),
+              itemExtent: 64,
+              itemCount: widget.secondaryContent.length,
+              itemBuilder: (context, i) => widget.secondaryContentBuilder(
+                context,
+                widget.secondaryContent[i],
+                i,
+                multiSelectController,
+                ContentView.list,
               ),
+            ),
             ContentView.table => SliverGrid.builder(
-                gridDelegate: gridDelegate,
-                itemCount: widget.secondaryContent.length,
-                itemBuilder: (context, i) => widget.secondaryContentBuilder(
-                  context,
-                  widget.secondaryContent[i],
-                  i,
-                  multiSelectController,
-                  ContentView.table,
-                ),
+              gridDelegate: gridDelegate,
+              itemCount: widget.secondaryContent.length,
+              itemBuilder: (context, i) => widget.secondaryContentBuilder(
+                context,
+                widget.secondaryContent[i],
+                i,
+                multiSelectController,
+                ContentView.table,
               ),
+            ),
           },
           const SliverPadding(padding: EdgeInsets.only(bottom: 96.0)),
         ],
@@ -376,7 +395,9 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
   }
 
   Widget _buildCombinedContent(
-      MultiSelectController<S>? multiSelectController, ColorScheme scheme) {
+    MultiSelectController<S>? multiSelectController,
+    ColorScheme scheme,
+  ) {
     return Material(
       borderRadius: AppRadius.smCircular,
       type: MaterialType.transparency,
@@ -384,27 +405,27 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
         slivers: [
           switch (currContentView) {
             ContentView.list => SliverFixedExtentList.builder(
-                itemExtent: 64,
-                itemCount: widget.secondaryContent.length,
-                itemBuilder: (context, i) => widget.secondaryContentBuilder(
-                  context,
-                  widget.secondaryContent[i],
-                  i,
-                  multiSelectController,
-                  ContentView.list,
-                ),
+              itemExtent: 64,
+              itemCount: widget.secondaryContent.length,
+              itemBuilder: (context, i) => widget.secondaryContentBuilder(
+                context,
+                widget.secondaryContent[i],
+                i,
+                multiSelectController,
+                ContentView.list,
               ),
+            ),
             ContentView.table => SliverGrid.builder(
-                gridDelegate: gridDelegate,
-                itemCount: widget.secondaryContent.length,
-                itemBuilder: (context, i) => widget.secondaryContentBuilder(
-                  context,
-                  widget.secondaryContent[i],
-                  i,
-                  multiSelectController,
-                  ContentView.table,
-                ),
+              gridDelegate: gridDelegate,
+              itemCount: widget.secondaryContent.length,
+              itemBuilder: (context, i) => widget.secondaryContentBuilder(
+                context,
+                widget.secondaryContent[i],
+                i,
+                multiSelectController,
+                ContentView.table,
               ),
+            ),
           },
           if (widget.tertiaryContent != null &&
               widget.tertiaryContent!.isNotEmpty &&
@@ -492,9 +513,7 @@ class _ActionsRow extends StatelessWidget {
 
     return Row(
       children: [
-        Expanded(
-          child: Wrap(spacing: 8.0, runSpacing: 8.0, children: actions),
-        ),
+        Expanded(child: Wrap(spacing: 8.0, runSpacing: 8.0, children: actions)),
         const SizedBox(width: 12.0),
         SizedBox(width: 220, child: searchField),
       ],
@@ -572,15 +591,18 @@ class _CompactSearchBarState extends State<_CompactSearchBar> {
               color: widget.scheme.onSurfaceVariant.withValues(alpha: 0.6),
             ),
           ),
-          prefixIconConstraints:
-              const BoxConstraints(minWidth: 34, maxHeight: 40),
+          prefixIconConstraints: const BoxConstraints(
+            minWidth: 34,
+            maxHeight: 40,
+          ),
           suffixIcon: widget.query.isNotEmpty
               ? IconButton(
                   icon: Icon(
                     Symbols.close,
                     size: 16,
-                    color:
-                        widget.scheme.onSurfaceVariant.withValues(alpha: 0.6),
+                    color: widget.scheme.onSurfaceVariant.withValues(
+                      alpha: 0.6,
+                    ),
                   ),
                   onPressed: () {
                     widget.controller.clear();
@@ -595,8 +617,7 @@ class _CompactSearchBarState extends State<_CompactSearchBar> {
                   ),
                 )
               : null,
-          suffixIconConstraints:
-              const BoxConstraints(maxHeight: 40),
+          suffixIconConstraints: const BoxConstraints(maxHeight: 40),
           border: OutlineInputBorder(
             borderRadius: AppRadius.mdCircular,
             borderSide: BorderSide.none,
@@ -682,17 +703,17 @@ class _UniDetailPageHeader extends StatelessWidget {
                     image: snapshot.data!,
                     fit: BoxFit.cover,
                     gaplessPlayback: true,
-                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
                   );
                 },
               ),
               switch (brightness) {
                 Brightness.dark => ColoredBox(
-                    color: scheme.surface.withValues(alpha: 0.38),
-                  ),
+                  color: scheme.surface.withValues(alpha: 0.38),
+                ),
                 Brightness.light => ColoredBox(
-                    color: scheme.surface.withValues(alpha: 0.70),
-                  ),
+                  color: scheme.surface.withValues(alpha: 0.70),
+                ),
               },
               BackdropFilter(
                 filter: _UniDetailPageHeader._blurFilter,
@@ -724,7 +745,9 @@ class _UniDetailPageHeader extends StatelessWidget {
                           child: Text(
                             title,
                             style: TextStyle(
-                              fontSize: compact ? AppType.pageTitle : AppType.hero,
+                              fontSize: compact
+                                  ? AppType.pageTitle
+                                  : AppType.hero,
                               color: scheme.onSurface,
                               fontWeight: AppType.weightBold,
                             ),
@@ -742,13 +765,13 @@ class _UniDetailPageHeader extends StatelessWidget {
                           actions: multiSelectController == null
                               ? actions
                               : multiSelectController!.enableMultiSelectView
-                                  ? multiSelectViewActions!
-                                  : actions,
+                              ? multiSelectViewActions!
+                              : actions,
                           searchController: searchController,
                           searchQuery: searchQuery,
                           onSearchChanged: onSearchChanged,
                           scheme: scheme,
-                        )
+                        ),
                       ],
                     ),
                   ),
@@ -799,32 +822,31 @@ class _HoverableCoverState extends State<_HoverableCover> {
         future: widget.futurePic,
         builder: (context, snapshot) {
           return switch (snapshot.connectionState) {
-            ConnectionState.done => snapshot.data == null
-                ? widget.placeholder
-                : switch (widget.picShape) {
-                    PicShape.oval => ClipOval(
+            ConnectionState.done =>
+              snapshot.data == null
+                  ? widget.placeholder
+                  : switch (widget.picShape) {
+                      PicShape.oval => ClipOval(
                         child: Image(
                           image: snapshot.data!,
                           width: widget.size,
                           height: widget.size,
                           gaplessPlayback: true,
-                          errorBuilder: (_, __, ___) => widget.placeholder,
+                          errorBuilder: (_, _, _) => widget.placeholder,
                         ),
                       ),
-                    PicShape.rrect => ClipRRect(
+                      PicShape.rrect => ClipRRect(
                         borderRadius: AppRadius.smCircular,
                         child: Image(
                           image: snapshot.data!,
                           width: widget.size,
                           height: widget.size,
                           gaplessPlayback: true,
-                          errorBuilder: (_, __, ___) => widget.placeholder,
+                          errorBuilder: (_, _, _) => widget.placeholder,
                         ),
                       ),
-                  },
-            _ => const Center(
-                child: CircularProgressIndicator(),
-              ),
+                    },
+            _ => const Center(child: CircularProgressIndicator()),
           };
         },
       ),
@@ -848,7 +870,9 @@ class _HoverableCoverState extends State<_HoverableCover> {
                   decoration: BoxDecoration(
                     color: overlayColor,
                     borderRadius: BorderRadius.circular(
-                      widget.picShape == PicShape.oval ? widget.size / 2 : AppRadius.sm,
+                      widget.picShape == PicShape.oval
+                          ? widget.size / 2
+                          : AppRadius.sm,
                     ),
                   ),
                   child: Center(
