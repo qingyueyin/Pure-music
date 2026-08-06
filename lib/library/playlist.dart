@@ -90,8 +90,8 @@ Future<void> readPlaylists() async {
         }
       }
       loadedPlaylists.add(Playlist(name, paths)
-        ..id = id
-        ..coverSource = coverSource
+          ..id = id
+          ..coverSource = coverSource
         .._addedAt.addAll(addedAtMap));
     }
     playlists = loadedPlaylists;
@@ -295,7 +295,9 @@ class Playlist {
       return null;
     }
     Audio? target;
-    if (coverSource!.startsWith('album:')) {
+    if (coverSource!.startsWith('audio:')) {
+      target = AudioLibrary.instance.audioByPath(coverSource!.substring(6));
+    } else if (coverSource!.startsWith('album:')) {
       final album =
           AudioLibrary.instance.albumCollection[coverSource!.substring(6)];
       if (album != null && album.works.isNotEmpty) target = album.works.first;
@@ -321,6 +323,13 @@ class Playlist {
         width: (size * ratio).round(),
         height: (size * ratio).round(),
       );
+    }
+    if (coverSource!.startsWith('audio:')) {
+      final audio = AudioLibrary.instance.audioByPath(
+        coverSource!.substring(6),
+      );
+      if (audio == null) return null;
+      return size <= 48 ? audio.cover : audio.mediumCover;
     }
     if (coverSource!.startsWith('album:')) {
       final album =
