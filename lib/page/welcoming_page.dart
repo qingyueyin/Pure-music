@@ -152,9 +152,7 @@ class _FolderSelectorViewState extends State<FolderSelectorView> {
                       await Future<void>.delayed(Duration.zero);
 
                       try {
-                        final paths = pickMultipleDirectories(
-                          title: '选择文件夹',
-                        );
+                        final paths = pickMultipleDirectories(title: '选择文件夹');
                         if (paths.isEmpty || !mounted) return;
 
                         final nextFolders = appendUniquePendingFolders(
@@ -189,8 +187,9 @@ class _FolderSelectorViewState extends State<FolderSelectorView> {
                     : () async {
                         setState(() => _isCommittingChoice = true);
                         try {
-                          AppPreference.instance.userFolders =
-                              List.from(folders);
+                          AppPreference.instance.userFolders = List.from(
+                            folders,
+                          );
                           await AppPreference.instance.save();
                           if (mounted) {
                             context.go(app_paths.AUDIOS_PAGE);
@@ -217,8 +216,9 @@ class _FolderSelectorViewState extends State<FolderSelectorView> {
                     : () async {
                         setState(() => _isCommittingChoice = true);
                         try {
-                          AppPreference.instance.userFolders =
-                              List.from(folders);
+                          AppPreference.instance.userFolders = List.from(
+                            folders,
+                          );
                           await AppPreference.instance.save();
                           if (mounted) {
                             setState(() {
@@ -259,10 +259,11 @@ class _FolderSelectorViewState extends State<FolderSelectorView> {
                         foregroundColor: scheme.error,
                         visualDensity: VisualDensity.compact,
                       ),
-                      onPressed: canRemovePendingFolder(
-                        isCommitting: _isCommittingChoice,
-                        isPickingFolder: _isPickingFolder,
-                      )
+                      onPressed:
+                          canRemovePendingFolder(
+                            isCommitting: _isCommittingChoice,
+                            isPickingFolder: _isPickingFolder,
+                          )
                           ? () {
                               setState(() {
                                 folders.removeAt(i);
@@ -312,11 +313,7 @@ class _EmptyFolderState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Symbols.folder_open,
-              size: 32,
-              color: scheme.onSurfaceVariant,
-            ),
+            Icon(Symbols.folder_open, size: 32, color: scheme.onSurfaceVariant),
             const SizedBox(height: 12),
             Text(
               '还没有选择音乐文件夹',
@@ -361,7 +358,10 @@ class _TitleBar extends StatelessWidget {
                   ),
                   Text(
                     'Pure Music',
-                    style: TextStyle(color: scheme.onSurface, fontSize: AppType.subtitle),
+                    style: TextStyle(
+                      color: scheme.onSurface,
+                      fontSize: AppType.subtitle,
+                    ),
                   ),
                 ],
               ),
@@ -419,8 +419,8 @@ class __WindowControllsState extends State<_WindowControlls>
 
     try {
       await AppSettings.instance.saveSettings().timeout(
-            const Duration(seconds: 1),
-          );
+        const Duration(seconds: 1),
+      );
     } catch (_) {}
 
     try {
@@ -474,8 +474,9 @@ class __WindowControllsState extends State<_WindowControlls>
         ),
         IconButton(
           tooltip: _isMaximized ? '还原' : '最大化',
-          onPressed:
-              _isMaximized ? windowManager.unmaximize : windowManager.maximize,
+          onPressed: _isMaximized
+              ? windowManager.unmaximize
+              : windowManager.maximize,
           icon: Icon(
             _isMaximized ? Symbols.fullscreen_exit : Symbols.fullscreen,
           ),

@@ -31,8 +31,8 @@ class _UpdatingPageState extends State<UpdatingPage> {
   Future<Directory?> _getAppDataDirSafe() async {
     try {
       return await getAppDataDir();
-    } catch (e) {
-      logger.e('getAppDataDir failed: $e');
+    } catch (e, trace) {
+      logger.e('获取应用数据目录失败', error: e, stackTrace: trace);
       return null;
     }
   }
@@ -71,8 +71,6 @@ class _UpdatingPageState extends State<UpdatingPage> {
             if (snapshot.hasError ||
                 !snapshot.hasData ||
                 snapshot.data == null) {
-              final message = snapshot.error?.toString() ?? '超时';
-
               return Padding(
                 padding: const EdgeInsets.all(32.0),
                 child: ConstrainedBox(
@@ -96,7 +94,7 @@ class _UpdatingPageState extends State<UpdatingPage> {
                       ),
                       const SizedBox(height: 8.0),
                       Text(
-                        message,
+                        '应用数据目录不可用，请查看日志',
                         textAlign: TextAlign.center,
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis,
@@ -152,10 +150,10 @@ class _UpdatingStateViewState extends State<UpdatingStateView> {
       if (ctx.mounted) {
         ctx.go(app_paths.AUDIOS_PAGE);
       }
-    } catch (e) {
-      logger.e('load library after update failed: $e');
+    } catch (e, trace) {
+      logger.e('索引完成后读取音乐库失败', error: e, stackTrace: trace);
       if (mounted) {
-        setState(() => _errorMessage = e.toString());
+        setState(() => _errorMessage = '音乐库读取失败，请查看日志');
       }
     }
   }
@@ -172,9 +170,9 @@ class _UpdatingStateViewState extends State<UpdatingStateView> {
         logger.i('[update index] ${action.progress}: ${action.message}');
       },
       onError: (Object error, StackTrace stackTrace) {
-        logger.e('update index failed: $error', stackTrace: stackTrace);
+        logger.e('更新音乐库索引失败', error: error, stackTrace: stackTrace);
         if (mounted) {
-          setState(() => _errorMessage = error.toString());
+          setState(() => _errorMessage = '音乐库索引失败，请查看日志');
         }
       },
       onDone: whenIndexUpdated,
