@@ -6,14 +6,17 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `cache`, `deserialize_metadata`, `download_index`, `http_get`, `score_entry`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `IndexEntry`, `Metadata`
+// These functions are ignored because they are not marked as `pub`: `cache`, `deserialize_metadata`, `download_index_text`, `http_get`, `parse_index`, `resolve_index`, `score_entry`, `should_refresh_index`, `write_index_cache`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `CachedIndex`, `IndexEntry`, `Metadata`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `fmt`, `fmt`
 
 Future<List<AmllSearchItem>> amllSearchLyrics(
-        {required String keyword, required int page, required int pageSize}) =>
+        {required String keyword,
+        required int page,
+        required int pageSize,
+        required String cacheDir}) =>
     RustLib.instance.api.crateApiAmllTtmlAmllSearchLyrics(
-        keyword: keyword, page: page, pageSize: pageSize);
+        keyword: keyword, page: page, pageSize: pageSize, cacheDir: cacheDir);
 
 Future<String?> amllGetTtml({required String id}) =>
     RustLib.instance.api.crateApiAmllTtmlAmllGetTtml(id: id);

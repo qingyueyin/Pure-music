@@ -655,15 +655,16 @@ fn wire__crate__api__amll_ttml__amll_search_lyrics_impl(
             let api_keyword = <String>::sse_decode(&mut deserializer);
             let api_page = <u32>::sse_decode(&mut deserializer);
             let api_page_size = <u32>::sse_decode(&mut deserializer);
+            let api_cache_dir = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, ()>((move || {
-                    let output_ok =
-                        Result::<_, ()>::Ok(crate::api::amll_ttml::amll_search_lyrics(
-                            &api_keyword,
-                            api_page,
-                            api_page_size,
-                        ))?;
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::amll_ttml::amll_search_lyrics(
+                        &api_keyword,
+                        api_page,
+                        api_page_size,
+                        &api_cache_dir,
+                    )?;
                     Ok(output_ok)
                 })())
             }

@@ -131,7 +131,10 @@ abstract class RustLibApi extends BaseApi {
   Future<String?> crateApiAmllTtmlAmllGetTtml({required String id});
 
   Future<List<AmllSearchItem>> crateApiAmllTtmlAmllSearchLyrics(
-      {required String keyword, required int page, required int pageSize});
+      {required String keyword,
+      required int page,
+      required int pageSize,
+      required String cacheDir});
 
   Stream<IndexActionState> crateApiTagReaderBuildIndexFromFoldersRecursively(
       {required List<String> folders, required String indexPath});
@@ -593,22 +596,26 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @override
   Future<List<AmllSearchItem>> crateApiAmllTtmlAmllSearchLyrics(
-      {required String keyword, required int page, required int pageSize}) {
+      {required String keyword,
+      required int page,
+      required int pageSize,
+      required String cacheDir}) {
     return handler.executeNormal(NormalTask(
       callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_String(keyword, serializer);
         sse_encode_u_32(page, serializer);
         sse_encode_u_32(pageSize, serializer);
+        sse_encode_String(cacheDir, serializer);
         pdeCallFfi(generalizedFrbRustBinding, serializer,
             funcId: 14, port: port_);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_list_amll_search_item,
-        decodeErrorData: null,
+        decodeErrorData: sse_decode_String,
       ),
       constMeta: kCrateApiAmllTtmlAmllSearchLyricsConstMeta,
-      argValues: [keyword, page, pageSize],
+      argValues: [keyword, page, pageSize, cacheDir],
       apiImpl: this,
     ));
   }
@@ -616,7 +623,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiAmllTtmlAmllSearchLyricsConstMeta =>
       const TaskConstMeta(
         debugName: 'amll_search_lyrics',
-        argNames: ['keyword', 'page', 'pageSize'],
+        argNames: ['keyword', 'page', 'pageSize', 'cacheDir'],
       );
 
   @override

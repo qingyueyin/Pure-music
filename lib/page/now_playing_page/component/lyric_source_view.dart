@@ -36,19 +36,13 @@ bool _isSavedLyricResult(String audioPath, SongSearchResult result) {
         saved.kugouSongHash == result.kugouSongHash,
     ResultSource.ne =>
       saved.neSongId != null && saved.neSongId == result.neSongId,
-    ResultSource.amll => saved.amllTtmlFile != null &&
-        saved.amllTtmlFile == result.amllTtmlFile,
+    ResultSource.amll =>
+      saved.amllTtmlFile != null && saved.amllTtmlFile == result.amllTtmlFile,
   };
 }
 
 void _applySavedOnlineLyricResult(Audio audio, SongSearchResult result) {
-  final source = _lyricSourceTypeFromResultSource(result.source);
-  lyricSources[audio.path] = LyricSource(
-    source,
-    qqSongId: result.qqSongId,
-    kugouSongHash: result.kugouSongHash,
-    neSongId: result.neSongId,
-  );
+  lyricSources[audio.path] = result.toLyricSource();
   saveLyricSources();
 }
 
@@ -186,8 +180,14 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
           _isSearching = false;
         });
       }
-    } catch (e) {
-      if (mounted) setState(() => _isSearching = false);
+    } catch (e, trace) {
+      logger.w('Lyric source search failed: $e', stackTrace: trace);
+      if (mounted) {
+        setState(() => _isSearching = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('歌词搜索失败，请稍后重试')),
+        );
+      }
     }
   }
 
@@ -882,8 +882,8 @@ class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
                       );
                     }
                     final results = _results ?? snapshot.data!;
-                    // 搜索结果较少（少于 3 条）时提示手动搜索
-                    final showManualHint = results.length < 3;
+                    // 搜索结果不足四个来源时提示手动搜索
+                    final showManualHint = results.length < 4;
                     return ListView.builder(
                       shrinkWrap: true,
                       itemCount: results.length + (showManualHint ? 1 : 0),
