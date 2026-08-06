@@ -4,7 +4,6 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:pure_music/core/cache.dart';
-import 'package:pure_music/core/color_extraction.dart';
 import 'package:pure_music/core/matcher.dart' hide logger;
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/library/audio_library.dart';
@@ -65,6 +64,16 @@ class MemoryMonitorService {
   MemoryMonitorService._();
 
   Timer? _timer;
+  DateTime? _lastWorkingSetTrimAt;
+
+  void _trimWorkingSetIfDue({Duration cooldown = const Duration(minutes: 1)}) {
+    final now = DateTime.now();
+    final lastTrim = _lastWorkingSetTrimAt;
+    if (lastTrim != null && now.difference(lastTrim) < cooldown) return;
+    if (_WindowsWorkingSetTrimmer.trim()) {
+      _lastWorkingSetTrimAt = now;
+    }
+  }
 
   /// 播放状态下仅做轻量清理，避免缓存重建开销导致音频卡顿
   bool _isPlaying() {
@@ -85,39 +94,54 @@ class MemoryMonitorService {
         final playing = _isPlaying();
         // 播放中贴近 140-160MB 目标区间，越界后从轻到重逐级清理。
         final tier1Threshold = playing ? 185 : 220;
-        final tier2Threshold = playing ? 240 : 270;
-        final tier3Threshold = playing ? 300 : 330;
+        final tier2Threshold = playing ? 220 : 260;
+        final tier3Threshold = playing ? 280 : 320;
 
         if (rssMB > tier3Threshold) {
           logger.w(
             '[mem] RSS ${rssMB}MB > $tier3Threshold, tier-3 emergency cleanup',
           );
-          // clear() only removes non-live decoded images, so it is safe during playback.
-          PaintingBinding.instance.imageCache.clear();
           if (!playing) {
+            PaintingBinding.instance.imageCache.clear();
             PaintingBinding.instance.imageCache.clearLiveImages();
+          } else {
+            PaintingBinding.instance.imageCache.clear();
           }
-          CoverImageCache.instance.trimMemory();
-          ColorExtractionService().clear();
+          CoverImageCache.instance.trimMemory(
+            keepPath: PlayService.instance.playbackService.nowPlaying?.path,
+          );
+          CoverImageCache.instance.trimSmall(keepEntries: 24);
+          AudioLibrary.instance.trimCollectionThumbnailRetention(32);
           LyricsLinePainter.clearPool();
           LyricsLineWidget.clearBlurFilterCache();
-          AudioLibrary.instance.evictAllCoversExcept(
-            PlayService.instance.playbackService.nowPlaying?.path,
-            includeCollectionCovers: true,
-          );
-          clearLyricCaches();
-          _WindowsWorkingSetTrimmer.trim();
+          if (playing) {
+            AudioLibrary.instance.evictStaleCoverBytes();
+          } else {
+            AudioLibrary.instance.evictAllCoversExcept(
+              PlayService.instance.playbackService.nowPlaying?.path,
+              includeCollectionCovers: true,
+            );
+            clearLyricCaches();
+          }
+          _trimWorkingSetIfDue();
         } else if (rssMB > tier2Threshold) {
           logger.w(
             '[mem] RSS ${rssMB}MB > $tier2Threshold, tier-2 cleanup',
           );
-          PaintingBinding.instance.imageCache.clear();
-          CoverImageCache.instance.trimMemory();
+          CoverImageCache.instance.trimMemory(
+            keepPath: PlayService.instance.playbackService.nowPlaying?.path,
+          );
+          CoverImageCache.instance.trimSmall(keepEntries: 64);
+          AudioLibrary.instance.trimCollectionThumbnailRetention(80);
           LyricsLinePainter.trimPool();
           LyricsLineWidget.clearBlurFilterCache();
           AudioLibrary.instance.evictStaleCoverBytes();
+          if (playing) {
+            _trimWorkingSetIfDue();
+          }
         } else if (rssMB > tier1Threshold) {
           // tier-1: keep playback smooth; avoid forcing image reloads or OS working-set trim.
+          AudioLibrary.instance.trimCollectionThumbnailRetention(128);
           LyricsLinePainter.trimPool();
           AudioLibrary.instance.evictStaleCoverBytes();
         }
@@ -138,17 +162,22 @@ class MemoryMonitorService {
 
   void trimAfterSongChange() {
     final rssMB = (ProcessInfo.currentRss / (1024 * 1024)).round();
-    if (rssMB < 190) return;
+    if (rssMB < 185) return;
 
     // Song changes are latency-sensitive. Do the lightest useful cleanup first
     // and leave OS working-set trimming to the emergency path.
     AudioLibrary.instance.evictStaleCoverBytes();
-    if (rssMB >= 220) {
-      PaintingBinding.instance.imageCache.clear();
+    AudioLibrary.instance.trimCollectionThumbnailRetention(96);
+    if (rssMB >= 210) {
       LyricsLinePainter.trimPool();
+      CoverImageCache.instance.trimMemory(
+        keepPath: PlayService.instance.playbackService.nowPlaying?.path,
+      );
+      CoverImageCache.instance.trimSmall(keepEntries: 64);
     }
-    if (rssMB >= 260) {
-      CoverImageCache.instance.trimMemory();
+    if (rssMB >= 235) {
+      PaintingBinding.instance.imageCache.clear();
+      _trimWorkingSetIfDue(cooldown: const Duration(seconds: 45));
     }
   }
 
@@ -158,7 +187,7 @@ class MemoryMonitorService {
     PaintingBinding.instance.imageCache.clearLiveImages();
     CoverImageCache.instance.trimMemory();
     CoverImageCache.instance.clear();
-    ColorExtractionService().clear();
+    AudioLibrary.instance.trimCollectionThumbnailRetention(0);
     LyricsLinePainter.clearPool();
     LyricsLineWidget.clearBlurFilterCache();
     AudioLibrary.instance.evictAllCoversExcept(
