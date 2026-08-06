@@ -1,6 +1,7 @@
 import 'dart:isolate';
 
 import 'package:pure_music/services/online_lyric/models/lyric_entry.dart';
+import 'package:pure_music/lyric/metadata_detector.dart';
 
 /// 统一歌词解析工具
 /// 综合 lrc/yrc/qrc/krc 解析器
@@ -12,6 +13,7 @@ class LrcTool {
       RegExp(r'\((\d+),(\d+),\d+\)[^(]*?((?:.(?!\(\d+,))*.)');
   static final _qrcWordRegex =
       RegExp(r'[^(]*?((?:.(?!\(\d+,))*.)\((\d+),(\d+)\)');
+  static final _qrcTimingMarkerRegex = RegExp(r'\(\d+,\d+\)');
   static final _krcWordRegex =
       RegExp(r'<(\d+),(\d+),\d+>[^<]*?((?:.(?!<\d+,))*.)');
   static final _enhancedLrcWordRegex =
@@ -226,6 +228,7 @@ class LrcTool {
       if (regex == null) continue;
 
       final words = _parseKaraOkWords(content, regex, startIdx, durIdx, textIdx,
+          format: format,
           lineStartMs:
               format == LyricFormat.krc ? (int.tryParse(m.group(1)!) ?? 0) : 0);
       final lineContent = words.map((w) => w.content).join();
@@ -246,15 +249,19 @@ class LrcTool {
     int startIdx,
     int durIdx,
     int textIdx, {
+    required LyricFormat format,
     int lineStartMs = 0,
   }) {
     final words = <WordEntry>[];
     for (final m in wordRegex.allMatches(content)) {
+      final rawContent = m.group(textIdx)?.replaceAll('\n', '') ?? '';
       final curr = WordEntry(
         start:
             Duration(milliseconds: int.parse(m.group(startIdx)!) + lineStartMs),
         length: Duration(milliseconds: int.parse(m.group(durIdx)!)),
-        content: m.group(textIdx)?.replaceAll('\n', '') ?? '',
+        content: format == LyricFormat.qrc
+            ? rawContent.replaceAll(_qrcTimingMarkerRegex, '')
+            : rawContent,
       );
 
       if (words.isNotEmpty && _shouldMergeWords(curr, words.last)) {
@@ -370,8 +377,7 @@ class LrcTool {
     return _mergeTimedSubtitle(main, romaLines, isRomanization: true);
   }
 
-  /// 时间窗口匹配核心算法。
-  /// 原文、翻译、罗马音的行时间戳完全一致时，此算法可正确对齐。
+  /// 按最近时间戳匹配翻译或罗马音，同时间戳的主行共享匹配结果。
   static ParsedLyricResult _mergeTimedSubtitle(
       ParsedLyricResult main, List<LyricEntry> subLines,
       {required bool isRomanization}) {
@@ -383,44 +389,53 @@ class LrcTool {
       ..sort((a, b) => a.start.compareTo(b.start));
     if (sorted.isEmpty) return main;
 
-    const leadToleranceMs = 500;
-    int subIdx = 0;
+    final mainGroups = <int, List<LyricEntry>>{};
+    for (final line in main.lines) {
+      final content = line.content.trim();
+      if (content.isEmpty || _isLyricMetadata(content)) continue;
+      mainGroups.putIfAbsent(line.start.inMilliseconds, () => []).add(line);
+    }
+    if (mainGroups.isEmpty) return main;
 
-    for (int i = 0; i < main.lines.length; i++) {
-      // 跳过主元数据行（词/曲/歌曲名等），避免它们的时间窗口捕获正常歌词
-      if (_isLyricMetadata(main.lines[i].content.trim())) continue;
-      final winStart = main.lines[i].start.inMilliseconds;
-      final winEnd = i + 1 < main.lines.length
-          ? main.lines[i + 1].start.inMilliseconds
-          : 0x7FFFFFFFFFFFF;
-
-      String? matched;
-      while (subIdx < sorted.length) {
-        final sub = sorted[subIdx];
-        final subMs = sub.start.inMilliseconds;
-        if (subMs < winStart - leadToleranceMs) {
-          subIdx++;
-          continue;
-        }
-        if (subMs >= winEnd) break;
-        matched = sub.content.trim();
-        // 仅在翻译时间戳早于下一行时才消耗条目（允许多个逐词 QRC 行共享同一条 LRC 翻译）
-        if (i + 1 < main.lines.length) {
-          final nextWinStart = main.lines[i + 1].start.inMilliseconds;
-          if (subMs < nextWinStart - leadToleranceMs) {
-            subIdx++;
-          }
-        } else {
-          subIdx++;
-        }
-        break;
+    final mainStarts = mainGroups.keys.toList()..sort();
+    const alignmentToleranceMs = 500;
+    final candidates = <({int difference, int mainIndex, int subIndex})>[];
+    for (var subIndex = 0; subIndex < sorted.length; subIndex++) {
+      final subStart = sorted[subIndex].start.inMilliseconds;
+      for (var mainIndex = 0; mainIndex < mainStarts.length; mainIndex++) {
+        final mainStart = mainStarts[mainIndex];
+        if (mainStart < subStart - alignmentToleranceMs) continue;
+        if (mainStart > subStart + alignmentToleranceMs) break;
+        candidates.add((
+          difference: (mainStart - subStart).abs(),
+          mainIndex: mainIndex,
+          subIndex: subIndex,
+        ));
       }
+    }
+    candidates.sort((a, b) {
+      final difference = a.difference.compareTo(b.difference);
+      if (difference != 0) return difference;
+      final subIndex = a.subIndex.compareTo(b.subIndex);
+      if (subIndex != 0) return subIndex;
+      return a.mainIndex.compareTo(b.mainIndex);
+    });
 
-      if (matched != null) {
+    final matchedMain = <int>{};
+    final matchedSub = <int>{};
+    for (final candidate in candidates) {
+      if (matchedMain.contains(candidate.mainIndex) ||
+          matchedSub.contains(candidate.subIndex)) {
+        continue;
+      }
+      matchedMain.add(candidate.mainIndex);
+      matchedSub.add(candidate.subIndex);
+      final matched = sorted[candidate.subIndex].content.trim();
+      for (final line in mainGroups[mainStarts[candidate.mainIndex]]!) {
         if (isRomanization) {
-          main.lines[i].romanization = _addRomajiPunctuationSpacing(matched);
+          line.romanization = _addRomajiPunctuationSpacing(matched);
         } else {
-          main.lines[i].translation = matched;
+          line.translation = matched;
         }
       }
     }
@@ -459,21 +474,7 @@ class LrcTool {
 
   /// 简单判断一行文本是否为歌词元数据（词/曲/版权/歌曲名等）。
   static bool _isLyricMetadata(String text) {
-    final t = text.replaceAll(RegExp(r'<[^>]*>'), '').trim();
-    if (t.isEmpty) return false;
-    // 中文/日文冒号
-    if (RegExp(r'[：:]').hasMatch(t)) return true;
-    // 横线分隔符（歌名 - 歌手、标题-艺术家），仅短文本判为元数据避免误伤歌词
-    if (t.length < 60 && RegExp(r'[\-\u2013\u2014\uff0d]').hasMatch(t)) {
-      return true;
-    }
-    // 版权/来源关键词
-    if (RegExp(r'(?:QQ音乐|享有|着作权|著作权|版权|提供|出品|发行|翻译|翻訳)').hasMatch(t)) {
-      return true;
-    }
-    // CJK 前缀 + 冒号（词/曲/编）
-    if (RegExp(r'^[\u4e00-\u9fff]{1,2}[:：]').hasMatch(t)) return true;
-    return false;
+    return isLyricMetadataText(text);
   }
 
   static ParsedLyricResult _insertBlankLines(ParsedLyricResult result) {
@@ -529,9 +530,12 @@ class LrcTool {
     return entry.start.inMilliseconds + 3500;
   }
 
-  /// 罗马音标点符号前后加空格（NetEase 源返回的 romaji 常把 !?。， 粘在字母后）
+  /// 为罗马音中紧贴字母的标点补充分隔空格。
   static String _addRomajiPunctuationSpacing(String text) {
-    return text.replaceAll(RegExp(r'(\w)([!?.,;:!！？。，；：])'), '\$1 \$2');
+    return text.replaceAllMapped(
+      RegExp(r'(\w)([!?.,;:!！？。，；：])'),
+      (match) => '${match.group(1)} ${match.group(2)}',
+    );
   }
 }
 
