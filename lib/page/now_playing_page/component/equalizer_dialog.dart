@@ -107,9 +107,10 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
             );
             if (!saved) showTextOnSnackBar('保存均衡器预设失败');
           }
-        } catch (e) {
+        } catch (e, trace) {
+          logger.e('导入均衡器预设失败', error: e, stackTrace: trace);
           if (mounted) {
-            showTextOnSnackBar('Import failed: $e');
+            showTextOnSnackBar('导入均衡器预设失败，请查看日志');
           }
         }
       }
@@ -277,8 +278,7 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
         }
         lastImportedName = name;
         lastImportedContent = content;
-      } catch (_) {
-      }
+      } catch (_) {}
     }
 
     if (lastImportedName != null && lastImportedContent != null && mounted) {
@@ -360,12 +360,14 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
                             await playbackService.saveEqPreset(presetName);
                         if (!context.mounted) return;
                         if (!saved) {
-                          showTextOnSnackBar('保存均衡器预设失败', variant: ToastVariant.error);
+                          showTextOnSnackBar('保存均衡器预设失败',
+                              variant: ToastVariant.error);
                           return;
                         }
                         Navigator.of(context).pop();
                         if (mounted) {
-                          showTextOnSnackBar('已保存预设', variant: ToastVariant.success);
+                          showTextOnSnackBar('已保存预设',
+                              variant: ToastVariant.success);
                           setState(() {});
                         }
                       },
@@ -403,7 +405,8 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
         preset.name,
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: scheme.onSurfaceVariant, fontSize: AppType.caption),
+        style: TextStyle(
+            color: scheme.onSurfaceVariant, fontSize: AppType.caption),
       ),
     );
     if (!confirmed || !mounted) return;
@@ -619,7 +622,8 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
                           const SizedBox(height: 8),
                           Text(
                             _eqCenters[index],
-                            style: const TextStyle(fontSize: AppType.microlabel),
+                            style:
+                                const TextStyle(fontSize: AppType.microlabel),
                           ),
                         ],
                       );

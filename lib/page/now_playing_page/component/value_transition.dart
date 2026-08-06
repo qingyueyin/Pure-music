@@ -5,7 +5,7 @@ class ValueTransition<T extends num> {
   T value;
   T _start;
   T _target;
-  final T Function(double t, T start, T end) _interpolator;
+  T Function(double t, T start, T end) _interpolator;
   Duration duration;
   Duration _elapsed = Duration.zero;
   bool _active = false;
@@ -20,6 +20,10 @@ class ValueTransition<T extends num> {
         _interpolator = interpolator;
 
   bool get isActive => _active;
+
+  set interpolator(T Function(double t, T start, T end) value) {
+    _interpolator = value;
+  }
 
   // 允许外部修改起始值（用于复用对象）
   set begin(T value) {
