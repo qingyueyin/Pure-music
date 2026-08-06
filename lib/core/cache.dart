@@ -8,6 +8,7 @@ import 'dart:ui' as ui;
 import 'package:pure_music/core/database.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/library/audio_library.dart';
+import 'package:pure_music/native/rust/api/library_db.dart' as library_db;
 import 'package:pure_music/native/rust/api/tag_reader.dart';
 import 'package:flutter/material.dart';
 import 'package:sqlite3/sqlite3.dart';
@@ -271,8 +272,11 @@ class AlbumColorCache {
     final cover = _findLocalCoverFile(parent);
     if (cover != null) return cover.readAsBytes();
 
-    final bytes =
-        await getPictureFromPath(path: audio.path, width: 64, height: 64);
+    final bytes = await CoverImageCache.instance.loadBytes(
+      path: audio.path,
+      width: 64,
+      height: 64,
+    );
     return bytes;
   }
 
@@ -349,10 +353,16 @@ class _AsyncSemaphore {
 /// 通用 LRU 映射表
 class _LruMap<K, V> {
   final int maxSize;
+  final void Function(K key, V value)? onRemove;
   final void Function(K key, V value)? onEvict;
   final _map = <K, V>{};
 
-  _LruMap(this.maxSize, {this.onEvict});
+  _LruMap(this.maxSize, {this.onRemove, this.onEvict});
+
+  void _discard(K key, V value, {required bool evict}) {
+    onRemove?.call(key, value);
+    if (evict) onEvict?.call(key, value);
+  }
 
   V? get(K key) {
     final value = _map.remove(key);
@@ -364,26 +374,24 @@ class _LruMap<K, V> {
   void set(K key, V value) {
     final old = _map.remove(key);
     if (old != null && !identical(old, value)) {
-      onEvict?.call(key, old);
+      _discard(key, old, evict: false);
     }
     while (_map.length >= maxSize) {
       final oldestKey = _map.keys.first;
       final evicted = _map.remove(oldestKey);
-      if (evicted != null) onEvict?.call(oldestKey, evicted);
+      if (evicted != null) _discard(oldestKey, evicted, evict: false);
     }
     _map[key] = value;
   }
 
   void remove(K key) {
     final removed = _map.remove(key);
-    if (removed != null) onEvict?.call(key, removed);
+    if (removed != null) _discard(key, removed, evict: true);
   }
 
   void clear() {
-    if (onEvict != null) {
-      for (final entry in _map.entries) {
-        onEvict!(entry.key, entry.value);
-      }
+    for (final entry in _map.entries) {
+      _discard(entry.key, entry.value, evict: true);
     }
     _map.clear();
   }
@@ -394,6 +402,14 @@ class _LruMap<K, V> {
     final keys = _map.keys.where(test).toList(growable: false);
     for (final key in keys) {
       remove(key);
+    }
+  }
+
+  void trimToSize(int size) {
+    while (_map.length > size) {
+      final oldestKey = _map.keys.first;
+      final removed = _map.remove(oldestKey);
+      if (removed != null) _discard(oldestKey, removed, evict: false);
     }
   }
 }
@@ -437,33 +453,35 @@ class CoverImageCache {
   CoverImageCache._();
 
   late final _small = _LruMap<String, ImageProvider>(
-    12,
-    onEvict: (key, provider) {
-      unawaited(provider.evict());
-      _smallBytes.remove(key);
-    },
+    96,
+    onRemove: (key, _) => _smallBytes.remove(key),
+    onEvict: (_, provider) => unawaited(provider.evict()),
   );
   late final _medium = _LruMap<String, ImageProvider>(
-    4,
-    onEvict: (key, provider) {
-      unawaited(provider.evict());
-      _mediumBytes.remove(key);
-    },
+    64,
+    onRemove: (key, _) => _mediumBytes.remove(key),
+    onEvict: (_, provider) => unawaited(provider.evict()),
   );
   late final _large = _LruMap<String, ImageProvider>(
     1,
-    onEvict: (key, provider) {
-      unawaited(provider.evict());
-      _largeBytes.remove(key);
-    },
+    onRemove: (key, _) => _largeBytes.remove(key),
+    onEvict: (_, provider) => unawaited(provider.evict()),
   );
   final _smallBytes = <String, int>{};
   final _mediumBytes = <String, int>{};
   final _largeBytes = <String, int>{};
   final _pending = <String, Future<ImageProvider?>>{};
+  final _pendingBytes = <String, Future<Uint8List?>>{};
+  final _coverLoadSemaphore = _AsyncSemaphore(4);
   int _generation = 0;
   int _hitCount = 0;
   int _missCount = 0;
+  String? _indexPath;
+  bool _databaseWarningLogged = false;
+
+  void configure({required String indexPath}) {
+    _indexPath = indexPath;
+  }
 
   _LruMap<String, ImageProvider> _tierFor(int width, int height) {
     final max = width > height ? width : height;
@@ -480,9 +498,8 @@ class CoverImageCache {
     final key = '$path|${width}x$height';
     final tier = _tierFor(width, height);
 
-    final cached = tier.get(key);
+    final cached = _getCached(key, tier);
     if (cached != null) {
-      _hitCount++;
       return cached;
     }
 
@@ -511,6 +528,24 @@ class CoverImageCache {
     }
   }
 
+  ImageProvider? getCached({
+    required String path,
+    required int width,
+    required int height,
+  }) {
+    final key = '$path|${width}x$height';
+    return _getCached(key, _tierFor(width, height));
+  }
+
+  ImageProvider? _getCached(
+    String key,
+    _LruMap<String, ImageProvider> tier,
+  ) {
+    final cached = tier.get(key);
+    if (cached != null) _hitCount++;
+    return cached;
+  }
+
   void _trackBytes(
     String key,
     _LruMap<String, ImageProvider> tier,
@@ -529,14 +564,69 @@ class CoverImageCache {
   }
 
   Future<ImageProvider?> _fetch(String path, int width, int height) async {
-    final ratio = ui.PlatformDispatcher.instance.views.first.devicePixelRatio;
-    final bytes = await getPictureFromPath(
-      path: path,
-      width: (width * ratio).round(),
-      height: (height * ratio).round(),
-    );
+    final bytes = await loadBytes(path: path, width: width, height: height);
     if (bytes == null) return null;
     return MemoryImage(bytes);
+  }
+
+  Future<Uint8List?> loadBytes({
+    required String path,
+    required int width,
+    required int height,
+  }) async {
+    final ratio = ui.PlatformDispatcher.instance.views.first.devicePixelRatio;
+    final physicalWidth = (width * ratio).round();
+    final physicalHeight = (height * ratio).round();
+    final key = '$path|${physicalWidth}x$physicalHeight';
+    final pending = _pendingBytes[key];
+    if (pending != null) return pending;
+
+    final future = _coverLoadSemaphore.run(
+      () => _loadBytesUncached(
+        path: path,
+        physicalWidth: physicalWidth,
+        physicalHeight: physicalHeight,
+      ),
+    );
+    _pendingBytes[key] = future;
+    try {
+      return await future;
+    } finally {
+      if (identical(_pendingBytes[key], future)) {
+        _pendingBytes.remove(key);
+      }
+    }
+  }
+
+  Future<Uint8List?> _loadBytesUncached({
+    required String path,
+    required int physicalWidth,
+    required int physicalHeight,
+  }) async {
+    final indexPath = _indexPath;
+    if (indexPath != null) {
+      try {
+        return await library_db.getCachedCover(
+          indexPath: indexPath,
+          path: path,
+          width: physicalWidth,
+          height: physicalHeight,
+        );
+      } catch (error, trace) {
+        if (!_databaseWarningLogged) {
+          _databaseWarningLogged = true;
+          logger.w(
+            '[cache] persistent cover cache unavailable: $error',
+            stackTrace: trace,
+          );
+        }
+      }
+    }
+    return getPictureFromPath(
+      path: path,
+      width: physicalWidth,
+      height: physicalHeight,
+    );
   }
 
   void preload(String? path, {int width = 48, int height = 48}) {
@@ -550,6 +640,7 @@ class CoverImageCache {
     _medium.clear();
     _large.clear();
     _pending.clear();
+    _pendingBytes.clear();
   }
 
   /// 释放不常用的缓存层，保留小图缓存以维持列表流畅滚动
@@ -561,12 +652,18 @@ class CoverImageCache {
       _medium.removeWhere(notKeep);
       _large.removeWhere(notKeep);
       _pending.removeWhere((key, _) => notKeep(key));
+      _pendingBytes.removeWhere((key, _) => notKeep(key));
     } else {
       _generation++;
       _medium.clear();
       _large.clear();
       _pending.clear();
+      _pendingBytes.clear();
     }
+  }
+
+  void trimSmall({required int keepEntries}) {
+    _small.trimToSize(keepEntries.clamp(0, 96));
   }
 
   void evictPath(String path) {
@@ -577,13 +674,14 @@ class CoverImageCache {
     _medium.removeWhere(matches);
     _large.removeWhere(matches);
     _pending.removeWhere((key, _) => matches(key));
+    _pendingBytes.removeWhere((key, _) => matches(key));
   }
 
   CacheStats get stats => CacheStats(
         smallEntries: _small.length,
         mediumEntries: _medium.length,
         largeEntries: _large.length,
-        pendingRequests: _pending.length,
+        pendingRequests: _pending.length + _pendingBytes.length,
         hits: _hitCount,
         misses: _missCount,
         smallBytes: _smallBytes.values.fold(0, (a, b) => a + b),
@@ -593,10 +691,13 @@ class CoverImageCache {
 
   void logStats() {
     final s = stats;
+    final hitRate = s.hitRate;
+    final hitRateText =
+        hitRate == null ? '-' : '${(hitRate * 100).toStringAsFixed(0)}%';
     logger.d(
       '[cache] CoverImageCache '
       '${s.hits}h/${s.misses}m '
-      '(hit rate ${(s.hitRate! * 100).toStringAsFixed(0)}%) '
+      '(hit rate $hitRateText) '
       '| ${s.smallEntries}s/${s.mediumEntries}m/${s.largeEntries}l entries '
       '| ${(s.smallBytes / 1024).toStringAsFixed(0)}/${(s.mediumBytes / 1024).toStringAsFixed(0)}/${(s.largeBytes / 1024).toStringAsFixed(0)} KB '
       '| ${s.pendingRequests} pending',
@@ -610,5 +711,6 @@ class CoverImageCache {
     _medium.clear();
     _large.clear();
     _pending.clear();
+    _pendingBytes.clear();
   }
 }
