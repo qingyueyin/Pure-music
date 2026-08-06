@@ -91,11 +91,15 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
                     switchInCurve: MotionCurve.standard,
                     switchOutCurve: MotionCurve.standard,
                     child: switch (views[1]) {
-                      NowPlayingViewMode.onlyMain =>
-                        const Center(child: _NowPlayingInfo()),
+                      NowPlayingViewMode.onlyMain => const Center(
+                          child: _NowPlayingInfo(
+                            usePortraitCoverSize: true,
+                          ),
+                        ),
                       NowPlayingViewMode.withLyric => Padding(
                           // 负 padding 抵消歌词行内部 12px 水平 padding，让歌词贴近切换按钮
-                          padding: const EdgeInsets.symmetric(horizontal: -12.0),
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: -12.0),
                           child: ClipRRect(
                             borderRadius: AppRadius.mdCircular,
                             child: const VerticalLyricView(

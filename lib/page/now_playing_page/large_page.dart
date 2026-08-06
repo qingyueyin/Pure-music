@@ -17,11 +17,30 @@ class _NowPlayingLargePage extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(24.0, 8.0, 24.0, 8.0),
             child: LayoutBuilder(builder: (context, constraints) {
+              final immersiveViewportHeight =
+                  MediaQuery.sizeOf(context).height - 16.0;
+              final currentLineAlignment =
+                  (immersiveViewportHeight * 0.45 / constraints.maxHeight)
+                      .clamp(0.0, 1.0)
+                      .toDouble();
+              // 封面尺寸按整个窗口高度计算，与横屏沉浸模式一致
+              final coverSize = _responsiveNowPlayingCoverSize(
+                maxWidth: constraints.maxWidth / 2,
+                maxHeight: immersiveViewportHeight,
+              );
               return Row(
                 children: [
-                  // 左侧：封面+ 歌曲信息 (50%) - 垂直居中
-                  const Expanded(
-                    child: Center(child: _NowPlayingInfo()),
+                  // 左侧：封面+ 歌曲信息 (50%) - 封面垂直居中于整个窗口
+                  Expanded(
+                    child: Transform.translate(
+                      offset: const Offset(
+                        0,
+                        _normalLandscapeBottomAreaHeight / 2,
+                      ),
+                      child: Center(
+                        child: _NowPlayingInfo(coverSizeOverride: coverSize),
+                      ),
+                    ),
                   ),
                   // 右侧：歌词区域(50%)
                   Expanded(
@@ -34,11 +53,11 @@ class _NowPlayingLargePage extends StatelessWidget {
                         child: switch (value) {
                           NowPlayingViewMode.withPlaylist =>
                             const CurrentPlaylistView(),
-                          _ => const Padding(
-                              padding: EdgeInsets.only(right: 8.0),
+                          _ => Padding(
+                              padding: const EdgeInsets.only(right: 8.0),
                               child: VerticalLyricView(
                                 enableEdgeSpacer: true,
-                                currentLineAlignment: 0.45,
+                                currentLineAlignment: currentLineAlignment,
                               ),
                             ),
                         },
@@ -267,13 +286,13 @@ class _NowPlayingLargeViewSwitchState
         onPressed: () => _changeView(value),
         icon: switch (value) {
           NowPlayingViewMode.withPlaylist => const Icon(
-            Symbols.lyrics,
-            fill: 1.0,
-          ),
+              Symbols.lyrics,
+              fill: 1.0,
+            ),
           _ => const Icon(
-            Symbols.queue_music,
-            fill: 1.0,
-          ),
+              Symbols.queue_music,
+              fill: 1.0,
+            ),
         },
         color: color,
         disabledColor: disabledColor,

@@ -51,6 +51,46 @@ final nowPlayingViewMode = ValueNotifier(
   AppPreference.instance.nowPlayingPagePref.nowPlayingViewMode,
 );
 
+bool _usesCompactNowPlayingLayout(BuildContext context, ScreenType screenType) {
+  return screenType == ScreenType.small ||
+      MediaQuery.orientationOf(context) == Orientation.portrait;
+}
+
+double _responsiveNowPlayingCoverSize({
+  required double maxWidth,
+  required double maxHeight,
+}) {
+  const textAreaHeight = 80.0;
+  const compactExtent = 420.0;
+  const roomyExtent = 920.0;
+  final availableExtent = min(maxWidth, max(0.0, maxHeight - textAreaHeight));
+  final growth =
+      ((availableExtent - compactExtent) / (roomyExtent - compactExtent))
+          .clamp(0.0, 1.0)
+          .toDouble();
+  // 封面占可用区比例：紧凑窗口 0.55，宽裕窗口 0.60
+  final fillFraction = lerpDouble(0.55, 0.60, growth)!;
+  return availableExtent * fillFraction;
+}
+
+// 沉浸模式封面下方区域高度（24 间距 + 进度条 40）
+const _immersiveCoverBelowHeight = 64.0;
+
+// 普通横屏模式下信息区底部控制区高度（进度条约40 + 控制行64 + 底部留白12）。
+// 两种横屏模式的封面垂直居中于整个窗口：普通模式从信息区中心下移该值的一半，
+// 沉浸模式从整列中心下移封面下方区域的一半，两者落点一致。
+const _normalLandscapeBottomAreaHeight = 116.0;
+
+double _portraitNowPlayingCoverSize({
+  required double maxWidth,
+  required double maxHeight,
+}) {
+  const textAreaHeight = 80.0;
+  const maxPortraitCoverSize = 420.0;
+  final coverAreaHeight = max(0.0, maxHeight - textAreaHeight);
+  return min(maxWidth, min(coverAreaHeight, maxPortraitCoverSize));
+}
+
 class NowPlayingPage extends StatefulWidget {
   const NowPlayingPage({super.key});
 
@@ -73,6 +113,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   bool _backgroundUsesCachedLargeCover = false;
   Color? _dominantColor;
   List<Color>? _preExtractedPalette;
+  String? _palettePath;
   final ColorExtractionService _colorService = ColorExtractionService();
 
   /// 用于防重复：同一次切歌内只提取一次调色板
@@ -111,34 +152,54 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     _coverDebounceTimer?.cancel();
     final path = _nowPlayingCoverPath;
     if (!_routeReady || path == null) return;
-    if (_backgroundUsesCachedLargeCover && _preExtractedPalette != null) return;
+    if (_backgroundUsesCachedLargeCover &&
+        _palettePath == path &&
+        _preExtractedPalette != null) {
+      return;
+    }
     final token = _coverRequestToken;
 
     _coverDebounceTimer = Timer(MotionDuration.xFast, () async {
       final audio = playbackService.nowPlaying;
       if (audio == null || _isCoverRequestStale(token, path)) return;
 
-      final (bytes, rustColors) = await getPictureAndColors(
-        path: path,
-        width: 160,
-        height: 160,
-        numColors: 4,
-      );
+      final cachedPalette = _colorService.getCachedPaletteForPath(path);
+      Uint8List? bytes;
+      List<Color>? palette = cachedPalette;
+      if (cachedPalette == null || cachedPalette.isEmpty) {
+        final (loadedBytes, rustColors) = await getPictureAndColors(
+          path: path,
+          width: 160,
+          height: 160,
+          numColors: 4,
+        );
+        bytes = loadedBytes;
+        if (rustColors.isNotEmpty) {
+          palette = rustColors.map((argb) => Color(argb)).toList();
+        }
+      } else {
+        bytes = await CoverImageCache.instance.loadBytes(
+          path: path,
+          width: 160,
+          height: 160,
+        );
+      }
       if (_isCoverRequestStale(token, path)) return;
 
       if (bytes != null) {
         _nowPlayingCoverBytes = bytes;
       }
-      if (rustColors.isNotEmpty) {
-        final palette = rustColors.map((argb) => Color(argb)).toList();
+      if (palette != null && palette.isNotEmpty) {
         _dominantColor = palette.first;
         _preExtractedPalette = palette;
+        _palettePath = path;
         _colorService.cachePaletteForPath(path, palette);
         ThemeProvider.instance.applySeedColorDirectly(palette.first, path);
       } else if (bytes == null) {
         _nowPlayingCoverBytes = null;
         _dominantColor = null;
         _preExtractedPalette = null;
+        _palettePath = null;
         _backgroundUsesCachedLargeCover = false;
       }
       if (mounted) setState(() {});
@@ -158,6 +219,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
           _nowPlayingCoverBytes = null;
           _dominantColor = null;
           _preExtractedPalette = null;
+          _palettePath = null;
           _backgroundUsesCachedLargeCover = false;
         });
       }
@@ -166,8 +228,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
 
     if (path == _nowPlayingCoverPath) return;
     _nowPlayingCoverPath = path;
-    // 保留旧背景，等新封面数据到位后自然替换。
-    _dominantColor = null;
+    // Keep the previous frame visible until this track's artwork is ready.
     _backgroundUsesCachedLargeCover = false;
 
     _coverDebounceTimer?.cancel();
@@ -180,6 +241,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
       if (cachedPalette != null && cachedPalette.isNotEmpty) {
         _dominantColor = cachedPalette.first;
         _preExtractedPalette = cachedPalette;
+        _palettePath = path;
       } else {
         final cached = _colorService.getCachedColorForPath(path);
         if (cached != null) {
@@ -227,6 +289,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     _bumpCursor();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      FocusManager.instance.primaryFocus?.unfocus();
       PlayService.instance.lyricService.forceEmitCurrentLine();
     });
   }
@@ -259,42 +322,49 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     super.dispose();
   }
 
-  Widget _buildBackground(ColorScheme scheme, Brightness brightness) {
+  Widget _buildBackground(Brightness brightness) {
     return RepaintBoundary(
       child: Stack(
         fit: StackFit.expand,
         children: [
-          ColoredBox(color: scheme.surface),
+          ColoredBox(color: _neutralBackgroundColor(brightness)),
           ValueListenableBuilder<NowPlayingBackgroundMode>(
             valueListenable: nowPlayingBackgroundModeNotifier,
             builder: (context, backgroundMode, _) {
-              return StreamBuilder<PlayerState>(
-                stream: playbackService.playerStateStream,
-                initialData: playbackService.playerState,
-                builder: (context, snapshot) {
-                  final playerState =
-                      snapshot.data ?? playbackService.playerState;
-                  final backgroundInputs = NowPlayingBackgroundInputs(
-                    albumCoverBytes: _nowPlayingCoverBytes,
-                    dominantColor: _dominantColor,
-                    spectrumStream: playbackService.spectrumStream,
-                    enableAnimation: true,
-                    isVisible: _routeReady,
-                    playerState: playerState,
-                    flowSpeed: 1.5,
-                    intensity: brightness == Brightness.dark ? 1.0 : 0.9,
-                    audioReactiveFlow: AppPreference
-                        .instance.nowPlayingPagePref.audioReactiveFlow,
-                    preExtractedColors: _preExtractedPalette,
-                  );
-                  final softBg = _dominantColor != null
-                      ? _softenColor(_dominantColor!,
-                          isDark: brightness == Brightness.dark)
-                      : _neutralBackgroundColor(scheme);
-                  return NowPlayingBackground(
-                    mode: backgroundMode,
-                    inputs: backgroundInputs,
-                    fallbackColor: softBg,
+              return ValueListenableBuilder<bool>(
+                valueListenable: nowPlayingDynamicFlowingLightNotifier,
+                builder: (context, dynamicFlowingLight, _) {
+                  return ValueListenableBuilder<bool>(
+                    valueListenable: nowPlayingAudioReactiveFlowNotifier,
+                    builder: (context, audioReactiveFlow, _) {
+                      return StreamBuilder<PlayerState>(
+                        stream: playbackService.playerStateStream,
+                        initialData: playbackService.playerState,
+                        builder: (context, snapshot) {
+                          final playerState =
+                              snapshot.data ?? playbackService.playerState;
+                          final backgroundInputs = NowPlayingBackgroundInputs(
+                            albumCoverBytes: _nowPlayingCoverBytes,
+                            dominantColor: _dominantColor,
+                            spectrumStream: playbackService.spectrumStream,
+                            enableAnimation: dynamicFlowingLight,
+                            isVisible: _routeReady,
+                            playerState: playerState,
+                            flowSpeed: 1.0,
+                            intensity: brightness == Brightness.dark
+                                ? 1.0
+                                : 0.9,
+                            audioReactiveFlow: audioReactiveFlow,
+                            preExtractedColors: _preExtractedPalette,
+                          );
+                          return NowPlayingBackground(
+                            mode: backgroundMode,
+                            inputs: backgroundInputs,
+                            fallbackColor: _neutralBackgroundColor(brightness),
+                          );
+                        },
+                      );
+                    },
                   );
                 },
               );
@@ -305,23 +375,10 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     );
   }
 
-  static Color _neutralBackgroundColor(ColorScheme scheme) {
-    return Color.lerp(
-      scheme.surface,
-      scheme.surfaceContainerHighest,
-      scheme.brightness == Brightness.dark ? 0.48 : 0.62,
-    )!;
-  }
-
-  static Color _softenColor(Color color, {required bool isDark}) {
-    final hsl = HSLColor.fromColor(color);
-    if (isDark) {
-      final softLightness = (hsl.lightness * 0.55).clamp(0.10, 0.40);
-      return hsl.withLightness(softLightness).toColor();
-    } else {
-      final softLightness = (hsl.lightness * 0.50 + 0.38).clamp(0.50, 0.80);
-      return hsl.withLightness(softLightness).toColor();
-    }
+  static Color _neutralBackgroundColor(Brightness brightness) {
+    return brightness == Brightness.dark
+        ? const Color(0xFF171717)
+        : const Color(0xFFF0F0F0);
   }
 
   @override
@@ -329,10 +386,8 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     final theme = Theme.of(context);
     final brightness = theme.brightness;
     final scheme = theme.colorScheme;
-    final size = MediaQuery.sizeOf(context);
-    final drawerWidth = (size.width * 0.78).clamp(240.0, 288.0);
 
-    return ListenableBuilder(
+    final page = ListenableBuilder(
       listenable: ImmersiveModeController.instance,
       builder: (context, _) {
         final immersive = ImmersiveModeController.instance.enabled;
@@ -342,7 +397,10 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
         return Scaffold(
           appBar: null,
           backgroundColor: Colors.transparent,
-          drawer: SizedBox(width: drawerWidth, child: const SideNav()),
+          drawer: const SizedBox(
+            width: SideNav.expandedWidth,
+            child: SideNav(),
+          ),
           drawerEnableOpenDragGesture: !immersive,
           body: Listener(
             onPointerDown: (_) {
@@ -358,7 +416,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
               fit: StackFit.expand,
               alignment: AlignmentDirectional.center,
               children: [
-                _buildBackground(scheme, brightness),
+                _buildBackground(brightness),
                 ListenableBuilder(
                   listenable: AppSettings.rebuildNotifier,
                   builder: (context, _) {
@@ -375,8 +433,9 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                             backgroundColor: const WidgetStatePropertyAll(
                               Colors.transparent,
                             ),
-                            overlayColor:
-                                WidgetStateProperty.resolveWith((states) {
+                            overlayColor: WidgetStateProperty.resolveWith((
+                              states,
+                            ) {
                               if (states.contains(WidgetState.pressed)) {
                                 return scheme.onSecondaryContainer.withValues(
                                   alpha: 0.04,
@@ -398,13 +457,13 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                               ? const _NowPlayingImmersivePage()
                               : ResponsiveBuilder2(
                                   builder: (context, screenType) {
-                                    switch (screenType) {
-                                      case ScreenType.small:
-                                        return const _NowPlayingSmallPage();
-                                      case ScreenType.medium:
-                                      case ScreenType.large:
-                                        return const _NowPlayingLargePage();
+                                    if (_usesCompactNowPlayingLayout(
+                                      context,
+                                      screenType,
+                                    )) {
+                                      return const _NowPlayingSmallPage();
                                     }
+                                    return const _NowPlayingLargePage();
                                   },
                                 ),
                         ),
@@ -441,16 +500,19 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                                       children: [
                                         ResponsiveBuilder2(
                                           builder: (context, screenType) {
-                                            if (screenType !=
-                                                ScreenType.small) {
+                                            if (!_usesCompactNowPlayingLayout(
+                                              context,
+                                              screenType,
+                                            )) {
                                               return const SizedBox.shrink();
                                             }
                                             return Builder(
                                               builder: (context) => IconButton(
                                                 tooltip: '侧边栏',
                                                 onPressed: () {
-                                                  Scaffold.of(context)
-                                                      .openDrawer();
+                                                  Scaffold.of(
+                                                    context,
+                                                  ).openDrawer();
                                                 },
                                                 icon: const Icon(Symbols.menu),
                                               ),
@@ -494,6 +556,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
         );
       },
     );
+    return FocusTraversalGroup(descendantsAreTraversable: false, child: page);
   }
 }
 
@@ -508,10 +571,7 @@ class _NowPlayingMoreActionState extends State<_NowPlayingMoreAction> {
   Audio? _addingAudioToPlaylist;
   Playlist? _addingTargetPlaylist;
 
-  Future<void> _addNowPlayingToPlaylist(
-    Audio audio,
-    Playlist playlist,
-  ) async {
+  Future<void> _addNowPlayingToPlaylist(Audio audio, Playlist playlist) async {
     if (_addingAudioToPlaylist != null) {
       return;
     }
@@ -565,39 +625,37 @@ class _NowPlayingMoreActionState extends State<_NowPlayingMoreAction> {
       child: MenuAnchor(
         style: menuStyle,
         menuChildren: [
-          ...List.generate(
-            nowPlaying.splitedArtists.length,
-            (i) {
-              final artistName = nowPlaying.splitedArtists[i];
-              final artist = AudioLibrary.instance.artistCollection[artistName];
-              return MenuItemButton(
-                style: menuItemStyle,
-                onPressed: artist == null
-                    ? null
-                    : () {
-                        context.pushReplacement(
-                          app_paths.ARTIST_DETAIL_PAGE,
-                          extra: artist,
-                        );
-                      },
-                leadingIcon: const Icon(Symbols.people),
-                child: Text(artistName),
-              );
-            },
-          ),
+          ...List.generate(nowPlaying.splitedArtists.length, (i) {
+            final artistName = nowPlaying.splitedArtists[i];
+            final artist = AudioLibrary.instance.artistCollection[artistName];
+            return MenuItemButton(
+              style: menuItemStyle,
+              onPressed: artist == null
+                  ? null
+                  : () {
+                      context.pushReplacement(
+                        app_paths.ARTIST_DETAIL_PAGE,
+                        extra: artist,
+                      );
+                    },
+              leadingIcon: const Icon(Symbols.people),
+              child: Text(artistName),
+            );
+          }),
           MenuItemButton(
             style: menuItemStyle,
             onPressed:
                 AudioLibrary.instance.albumCollection[nowPlaying.album] == null
-                    ? null
-                    : () {
-                        final album = AudioLibrary
-                            .instance.albumCollection[nowPlaying.album]!;
-                        context.pushReplacement(
-                          app_paths.ALBUM_DETAIL_PAGE,
-                          extra: album,
-                        );
-                      },
+                ? null
+                : () {
+                    final album = AudioLibrary
+                        .instance
+                        .albumCollection[nowPlaying.album]!;
+                    context.pushReplacement(
+                      app_paths.ALBUM_DETAIL_PAGE,
+                      extra: album,
+                    );
+                  },
             leadingIcon: const Icon(Symbols.album),
             child: Text(nowPlaying.album),
           ),
@@ -634,9 +692,7 @@ class _NowPlayingMoreActionState extends State<_NowPlayingMoreAction> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : Icon(
-                            playlistMemberships.every(
-                              (alreadyIn) => alreadyIn,
-                            )
+                            playlistMemberships.every((alreadyIn) => alreadyIn)
                                 ? Symbols.check
                                 : Symbols.queue_music,
                           ),
@@ -649,17 +705,14 @@ class _NowPlayingMoreActionState extends State<_NowPlayingMoreAction> {
                     final playlist = playlists[i];
                     final isAddingTarget =
                         identical(_addingAudioToPlaylist, nowPlaying) &&
-                            identical(_addingTargetPlaylist, playlist);
+                        identical(_addingTargetPlaylist, playlist);
                     final alreadyInPlaylist = playlistMemberships[i];
                     return MenuItemButton(
                       style: menuItemStyle,
                       onPressed:
                           _addingAudioToPlaylist == null && !alreadyInPlaylist
-                              ? () => _addNowPlayingToPlaylist(
-                                    nowPlaying,
-                                    playlist,
-                                  )
-                              : null,
+                          ? () => _addNowPlayingToPlaylist(nowPlaying, playlist)
+                          : null,
                       leadingIcon: isAddingTarget
                           ? const SizedBox(
                               width: 18,
@@ -768,8 +821,10 @@ class _NowPlayingPlaybackModeSwitchState
     final playbackService = PlayService.instance.playbackService;
 
     return ListenableBuilder(
-      listenable:
-          Listenable.merge([playbackService.shuffle, playbackService.playMode]),
+      listenable: Listenable.merge([
+        playbackService.shuffle,
+        playbackService.playMode,
+      ]),
       builder: (context, _) {
         final shuffle = playbackService.shuffle.value;
         final playMode = playbackService.playMode.value;
@@ -820,9 +875,8 @@ class _ExclusiveModeSwitch extends StatelessWidget {
     return ValueListenableBuilder(
       valueListenable: PlayService.instance.playbackService.wasapiExclusive,
       builder: (context, exclusive, _) {
-        final foregroundColor = exclusive
-            ? scheme.onPrimaryContainer
-            : (useMonet ? scheme.primary : scheme.onSurface);
+        // 激活态也只跟「主题色控件」：关=浅黑/深白，开才用主题色
+        final foregroundColor = useMonet ? scheme.primary : scheme.onSurface;
 
         return IconButton(
           tooltip: exclusive ? '关闭独占' : '打开独占',
@@ -908,21 +962,20 @@ class _DesktopLyricSwitchState extends State<_DesktopLyricSwitch> {
           );
         }
 
-        final foregroundColor = isRunning
-            ? scheme.onPrimaryContainer
-            : (useMonet ? scheme.primary : scheme.onSurface);
+        // 激活态也只跟「主题色控件」：关=浅黑/深白，开才用主题色
+        final foregroundColor = useMonet ? scheme.primary : scheme.onSurface;
 
         return IconButton(
           tooltip: !isRunning
               ? '打开桌面歌词'
               : desktopLyricService.isLocked
-                  ? '解锁桌面歌词'
-                  : '关闭桌面歌词',
+              ? '解锁桌面歌词'
+              : '关闭桌面歌词',
           onPressed: !isRunning
               ? _startDesktopLyric
               : desktopLyricService.isLocked
-                  ? desktopLyricService.sendUnlockMessage
-                  : desktopLyricService.killDesktopLyric,
+              ? desktopLyricService.sendUnlockMessage
+              : desktopLyricService.killDesktopLyric,
           icon: Icon(
             desktopLyricService.isLocked ? Symbols.lock : Symbols.toast,
             fill: isRunning ? 1 : 0,
@@ -1077,19 +1130,22 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
         }
         int ticks = 0;
         _systemVolBoostTimer?.cancel();
-        _systemVolBoostTimer =
-            Timer.periodic(const Duration(milliseconds: 120), (_) async {
-          if (!mounted || isSystemDragging) return;
-          if (ticks++ > 25) {
-            _systemVolBoostTimer?.cancel();
-            return;
-          }
-          final v =
-              await _readSystemVol(timeout: const Duration(milliseconds: 500));
-          if (v != null && (v - dragSystemVol.value).abs() > 0.003) {
-            dragSystemVol.value = v;
-          }
-        });
+        _systemVolBoostTimer = Timer.periodic(
+          const Duration(milliseconds: 120),
+          (_) async {
+            if (!mounted || isSystemDragging) return;
+            if (ticks++ > 25) {
+              _systemVolBoostTimer?.cancel();
+              return;
+            }
+            final v = await _readSystemVol(
+              timeout: const Duration(milliseconds: 500),
+            );
+            if (v != null && (v - dragSystemVol.value).abs() > 0.003) {
+              dragSystemVol.value = v;
+            }
+          },
+        );
       },
       onClose: () {
         _isMenuOpen = false;
@@ -1108,10 +1164,7 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
                   padding: const EdgeInsets.fromLTRB(16.0, 4.0, 16.0, 8.0),
                   child: Text(
                     '系统音量',
-                    style: TextStyle(
-                      color: scheme.onSurface,
-                      fontSize: 12,
-                    ),
+                    style: TextStyle(color: scheme.onSurface, fontSize: 12),
                   ),
                 ),
                 SliderTheme(
@@ -1198,10 +1251,7 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
                   padding: const EdgeInsets.fromLTRB(16.0, 4.0, 16.0, 8.0),
                   child: Text(
                     '应用音量',
-                    style: TextStyle(
-                      color: scheme.onSurface,
-                      fontSize: 12,
-                    ),
+                    style: TextStyle(color: scheme.onSurface, fontSize: 12),
                   ),
                 ),
                 SliderTheme(
@@ -1262,7 +1312,8 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
                                 ),
                                 if (_showCustomIndicator || _isHovering)
                                   Positioned(
-                                    left: leftOffset -
+                                    left:
+                                        leftOffset -
                                         24.0, // Center the bubble (width 48)
                                     top: -40,
                                     child: IgnorePointer(
@@ -1341,10 +1392,7 @@ class _CustomValueIndicator extends StatelessWidget {
             ),
           ),
         ),
-        CustomPaint(
-          size: const Size(12, 6),
-          painter: _TrianglePainter(color),
-        ),
+        CustomPaint(size: const Size(12, 6), painter: _TrianglePainter(color)),
       ],
     );
   }
@@ -1507,7 +1555,9 @@ class _MorphPlayPauseButtonState extends State<_MorphPlayPauseButton>
   bool _isHovering = false;
   bool _isPressed = false;
   late final AnimationController _controller = AnimationController(
-      vsync: this, duration: const Duration(milliseconds: 220));
+    vsync: this,
+    duration: const Duration(milliseconds: 220),
+  );
   late PlayerState _state = widget.playerState;
   StreamSubscription<PlayerState>? _playerStateSubscription;
 
@@ -1632,10 +1682,12 @@ class _MorphPlayPauseButtonState extends State<_MorphPlayPauseButton>
                         size: widget.size,
                       ),
                       style: const ButtonStyle(
-                        backgroundColor:
-                            WidgetStatePropertyAll(Colors.transparent),
-                        overlayColor:
-                            WidgetStatePropertyAll(Colors.transparent),
+                        backgroundColor: WidgetStatePropertyAll(
+                          Colors.transparent,
+                        ),
+                        overlayColor: WidgetStatePropertyAll(
+                          Colors.transparent,
+                        ),
                       ),
                     ),
                   ),
@@ -1776,8 +1828,9 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
   }
 
   void _syncWavyAnimation(PlayerState state) {
-    final enabled =
-        AppSettings.instance.wavyBarEnabledModes.contains(widget.mode);
+    final enabled = AppSettings.instance.wavyBarEnabledModes.contains(
+      widget.mode,
+    );
     if (enabled && state == PlayerState.playing) {
       if (!_wavyController.isAnimating) _wavyController.repeat();
     } else {
@@ -1823,9 +1876,7 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
     if (delta <= Duration.zero) return;
     final length = _trackLength;
     final next = livePosition.value + delta.inMicroseconds / 1000000.0;
-    _syncLivePosition(
-      length > 0 ? next.clamp(0.0, length).toDouble() : next,
-    );
+    _syncLivePosition(length > 0 ? next.clamp(0.0, length).toDouble() : next);
   }
 
   void _syncLivePosition(double position, {bool force = false}) {
@@ -1866,8 +1917,9 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
     final playbackService = context.read<PlaybackService>();
     final nowPlayingLength = playbackService.length;
     final useMonetBar = AppSettings.instance.useMaterialYouForProgressBar;
-    final useWavyBar =
-        AppSettings.instance.wavyBarEnabledModes.contains(widget.mode);
+    final useWavyBar = AppSettings.instance.wavyBarEnabledModes.contains(
+      widget.mode,
+    );
     final barColor = useMonetBar ? scheme.primary : scheme.onSurface;
     final barGlow = useMonetBar
         ? scheme.primaryContainer
@@ -1886,8 +1938,9 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
                 color: scheme.onSurface,
               ),
               Text(
-                Duration(milliseconds: (nowPlayingLength * 1000).toInt())
-                    .toStringMSS(),
+                Duration(
+                  milliseconds: (nowPlayingLength * 1000).toInt(),
+                ).toStringMSS(),
                 style: TextStyle(
                   color: scheme.onSurface,
                   fontSize: 12,
@@ -1913,13 +1966,13 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
                     isDragging.value = true;
                     final value =
                         (details.localPosition.dx / width).clamp(0.0, 1.0) *
-                            max;
+                        max;
                     dragPosition.value = value;
                   },
                   onHorizontalDragUpdate: (details) {
                     final value =
                         (details.localPosition.dx / width).clamp(0.0, 1.0) *
-                            max;
+                        max;
                     dragPosition.value = value;
                   },
                   onHorizontalDragEnd: (details) {
@@ -1930,7 +1983,7 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
                   onTapDown: (details) {
                     final value =
                         (details.localPosition.dx / width).clamp(0.0, 1.0) *
-                            max;
+                        max;
                     _syncLivePosition(value, force: true);
                     playbackService.seek(value);
                   },
@@ -2050,20 +2103,20 @@ class _ProgressSliderPainter extends CustomPainter {
     required this.useWavyBar,
     required this.wavyController,
   }) : super(
-          repaint: Listenable.merge([
-            livePosition,
-            dragPosition,
-            isDragging,
-            if (useWavyBar) wavyController,
-          ]),
-        );
+         repaint: Listenable.merge([
+           livePosition,
+           dragPosition,
+           isDragging,
+           if (useWavyBar) wavyController,
+         ]),
+       );
 
   double get _fraction {
     final position = isDragging.value
         ? dragPosition.value
         : livePosition.value > max
-            ? max
-            : livePosition.value;
+        ? max
+        : livePosition.value;
     return max > 0 ? (position / max).clamp(0.0, 1.0) : 0.0;
   }
 
@@ -2095,8 +2148,12 @@ class _ProgressSliderPainter extends CustomPainter {
     );
 
     // Active track (Solid color, no animation/glow on the track itself to reduce visual noise)
-    final Rect activeRect =
-        Rect.fromLTWH(0, centerY - height / 2, activeWidth, height);
+    final Rect activeRect = Rect.fromLTWH(
+      0,
+      centerY - height / 2,
+      activeWidth,
+      height,
+    );
     if (activeWidth > 0) {
       _paint
         ..color = color
@@ -2113,11 +2170,7 @@ class _ProgressSliderPainter extends CustomPainter {
       ..color = color;
     // Draw thumb shadow (very subtle, avoid visual distraction)
     _thumbGlowPaint.color = glowColor.withValues(alpha: 0.15);
-    canvas.drawCircle(
-      Offset(activeWidth, centerY),
-      5,
-      _thumbGlowPaint,
-    );
+    canvas.drawCircle(Offset(activeWidth, centerY), 5, _thumbGlowPaint);
     // Draw thumb
     canvas.drawCircle(Offset(activeWidth, centerY), 6, _paint);
   }
@@ -2196,7 +2249,13 @@ class _ProgressSliderPainter extends CustomPainter {
 
 /// title, artist, album, cover
 class _NowPlayingInfo extends StatefulWidget {
-  const _NowPlayingInfo();
+  const _NowPlayingInfo({
+    this.usePortraitCoverSize = false,
+    this.coverSizeOverride,
+  });
+
+  final bool usePortraitCoverSize;
+  final double? coverSizeOverride;
 
   @override
   State<_NowPlayingInfo> createState() => __NowPlayingInfoState();
@@ -2268,8 +2327,9 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
       _immediateCoverPath = path;
       _hiResCover = cachedLargeCover;
       _hiResCoverPath = cachedLargeCover == null ? null : path;
-      _cachedImmediateCoverImage =
-          _immediateCover != null ? MemoryImage(_immediateCover!) : null;
+      _cachedImmediateCoverImage = _immediateCover != null
+          ? MemoryImage(_immediateCover!)
+          : null;
     });
 
     if (_immediateCover == null) {
@@ -2278,8 +2338,9 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
         if (playbackService.nowPlaying?.path != path) return;
         setState(() {
           _immediateCover = bytes;
-          _cachedImmediateCoverImage =
-              bytes != null ? MemoryImage(bytes) : null;
+          _cachedImmediateCoverImage = bytes != null
+              ? MemoryImage(bytes)
+              : null;
         });
       });
     }
@@ -2325,8 +2386,9 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
       _immediateCoverPath = audio.path;
       _hiResCover = audio.cachedLargeCover;
       _hiResCoverPath = _hiResCover == null ? null : audio.path;
-      _cachedImmediateCoverImage =
-          _immediateCover != null ? MemoryImage(_immediateCover!) : null;
+      _cachedImmediateCoverImage = _immediateCover != null
+          ? MemoryImage(_immediateCover!)
+          : null;
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2342,35 +2404,38 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
     final nowPlayingPath = nowPlaying?.path;
     final heroEnabled = !playbackService.nowPlayingChangedRecently;
 
-    final placeholder = Icon(
-      Symbols.queue_music,
-      size: 400.0,
-      color: scheme.onSurface.withAlpha(60),
-    );
-
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 520.0),
-      child: LayoutBuilder(builder: (context, constraints) {
-        const infoPaddingTop = 0.0;
-        const infoSpacing = 14.0;
-        const textBlockHeight = 86.0;
-
-        final maxWidth = constraints.maxWidth;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final viewportSize = MediaQuery.sizeOf(context);
+        final maxWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : viewportSize.width;
         final maxHeight = constraints.maxHeight.isFinite
             ? constraints.maxHeight
-            : (520.0 + textBlockHeight + infoPaddingTop + infoSpacing);
-
-        final coverMax =
-            (maxHeight - infoPaddingTop - infoSpacing - textBlockHeight)
-                .clamp(160.0, 420.0)
-                .toDouble();
-        final coverWidthLimit = maxWidth.clamp(160.0, 520.0).toDouble();
+            : viewportSize.height;
         final coverSize =
-            coverWidthLimit < coverMax ? coverWidthLimit : coverMax;
+            widget.coverSizeOverride ??
+            (widget.usePortraitCoverSize
+                ? _portraitNowPlayingCoverSize(
+                    maxWidth: maxWidth,
+                    maxHeight: maxHeight,
+                  )
+                : _responsiveNowPlayingCoverSize(
+                    maxWidth: maxWidth,
+                    maxHeight: maxHeight,
+                  ));
+        final textWidth = min(maxWidth, max(coverSize, min(maxWidth, 240.0)));
+        final placeholder = Icon(
+          Symbols.queue_music,
+          size: coverSize * 0.42,
+          color: scheme.onSurface.withAlpha(60),
+        );
 
-        final currentCover =
-            _hiResCoverPath == nowPlayingPath ? _hiResCover : null;
-        final fallbackCover = currentCover == null &&
+        final currentCover = _hiResCoverPath == nowPlayingPath
+            ? _hiResCover
+            : null;
+        final fallbackCover =
+            currentCover == null &&
                 nowPlaying != null &&
                 _immediateCoverPath == nowPlayingPath
             ? _cachedImmediateCoverImage
@@ -2396,10 +2461,8 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
                     fit: BoxFit.cover,
                     gaplessPlayback: true,
                     filterQuality: FilterQuality.high,
-                    errorBuilder: (_, __, ___) => FittedBox(
-                      fit: BoxFit.contain,
-                      child: placeholder,
-                    ),
+                    errorBuilder: (_, _, _) =>
+                        FittedBox(fit: BoxFit.contain, child: placeholder),
                   ),
                 ),
               );
@@ -2423,10 +2486,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
               opacity: animation,
               child: SlideTransition(
                 position: offsetAnimation,
-                child: ScaleTransition(
-                  scale: scaleAnimation,
-                  child: child,
-                ),
+                child: ScaleTransition(scale: scaleAnimation, child: child),
               ),
             );
           },
@@ -2442,41 +2502,45 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
                   width: coverSize,
                   height: coverSize,
                   child: heroEnabled && nowPlayingPath != null
-                      ? Hero(
-                          tag: nowPlayingPath,
-                          child: coverWidget,
-                        )
+                      ? Hero(tag: nowPlayingPath, child: coverWidget)
                       : RepaintBoundary(child: coverWidget),
                 ),
                 const SizedBox(height: 24.0),
-                Text(
-                  nowPlaying == null ? 'Pure Music' : nowPlaying.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: scheme.onSurface,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 24,
-                    height: 1.2,
+                SizedBox(
+                  width: textWidth,
+                  child: Text(
+                    nowPlaying == null ? 'Pure Music' : nowPlaying.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: scheme.onSurface,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 24,
+                      height: 1.2,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 8),
-                Text(
-                  nowPlaying == null ? 'Enjoy Music' : nowPlaying.artist,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: scheme.onSurface.withValues(alpha: 0.7),
-                    fontSize: 16,
-                    height: 1.2,
+                SizedBox(
+                  width: textWidth,
+                  child: Text(
+                    nowPlaying == null ? 'Enjoy Music' : nowPlaying.artist,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: scheme.onSurface.withValues(alpha: 0.7),
+                      fontSize: 16,
+                      height: 1.2,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
         );
-      }),
+      },
     );
   }
 
