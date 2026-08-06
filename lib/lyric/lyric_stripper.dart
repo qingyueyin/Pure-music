@@ -2,35 +2,8 @@ import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/ttml.dart';
 import 'package:pure_music/lyric/exclude_data.dart';
-
-// 分隔符列表（用于判断关键词后的字符是否为有效分隔符）
-const _separators = <String>[
-  ':',
-  '：',
-  ',',
-  '，',
-  '.',
-  '。',
-  '!',
-  '！',
-  '-',
-  '_',
-  '(',
-  '（',
-  '[',
-  '【',
-  '{',
-  '『',
-  '「',
-  ')',
-  '）',
-  ']',
-  '】',
-  '}',
-  '』',
-  '」',
-  '》',
-];
+import 'package:pure_music/lyric/metadata_detector.dart';
+import 'package:pure_music/core/zh_converter.dart';
 
 // 括号对（用于清理文本前后的括号包裹）
 const _bracketPairs = <List<String>>[
@@ -50,7 +23,7 @@ class StripOptions {
   final List<RegExp> regexes;
   final List<RegExp> softRegexes;
 
-  /// 歌曲名+歌手，用于过滤第 1 行 "歌名 - 歌手" 格式
+  /// 歌曲名+歌手，用于识别与当前歌曲对应的标题行
   final String? matchTitle;
   final List<String> matchArtists;
 
@@ -113,6 +86,7 @@ String _cleanText(String text) {
 /// 强匹配：关键词 + 分隔符，或正则匹配
 bool _isStrictMatch(String text, List<String> keywords, List<RegExp> regexes) {
   final cleaned = _cleanText(text);
+  if (isLyricMetadataText(cleaned)) return true;
   final normalized = cleaned.toLowerCase().replaceAll(RegExp(r'\s+'), '');
 
   for (final kw in keywords) {
@@ -121,11 +95,7 @@ bool _isStrictMatch(String text, List<String> keywords, List<RegExp> regexes) {
     // 开头匹配：关键词在文本开头，后面紧跟分隔符或为空
     if (normalized.startsWith(nkw)) {
       final remainder = normalized.substring(nkw.length);
-      if (remainder.isEmpty) return true;
-      // 关键词后紧跟分隔符，如「混音：李荣浩」
-      if (_separators.contains(remainder[0])) return true;
-      // 关键词后有后缀再跟分隔符，如「混音师：李荣浩」「母带后期制作人：李荣浩」
-      if (remainder.contains('：') || remainder.contains(':')) return true;
+      if (remainder.startsWith(':') || remainder.startsWith('：')) return true;
     }
 
     // 模糊匹配：关键词出现在文本中任意位置，且后面紧跟分隔符
@@ -135,10 +105,7 @@ bool _isStrictMatch(String text, List<String> keywords, List<RegExp> regexes) {
       final kwIndex = normalized.indexOf(nkw, searchStart);
       if (kwIndex < 0) break;
       final afterKw = normalized.substring(kwIndex + nkw.length);
-      if (afterKw.isNotEmpty &&
-          (_separators.contains(afterKw[0]) ||
-              afterKw.contains('：') ||
-              afterKw.contains(':'))) {
+      if (afterKw.startsWith(':') || afterKw.startsWith('：')) {
         return true;
       }
       searchStart = kwIndex + 1;
@@ -152,10 +119,10 @@ bool _isStrictMatch(String text, List<String> keywords, List<RegExp> regexes) {
   return false;
 }
 
-/// 弱匹配：含冒号或连字符
+/// 弱匹配：只保留首尾扫描需要的上下文信号
 bool _looksLikeMetadata(String text, List<RegExp> softRegexes) {
   final cleaned = _cleanText(text);
-  if (cleaned.contains(':') || cleaned.contains('：') || cleaned.contains('-')) {
+  if (RegExp(r'^[^:：]{1,40}[:：]\s*\S').hasMatch(cleaned)) {
     return true;
   }
   for (final reg in softRegexes) {
@@ -192,6 +159,194 @@ bool _isUnbracketedTitleArtistLine(String text) {
 
   return (_looksLikeArtistList(left) && _looksLikeSongTitle(right)) ||
       (_looksLikeSongTitle(left) && _looksLikeArtistList(right));
+}
+
+String _normalizeMetadataValue(String text) {
+  return ZhConverter.toSimple(text.trim().toLowerCase()).replaceAll(
+    RegExp(
+      r'''[-‐‑‒–—―\s_/\\|,，、.&＆+＋·・:：;；!！?？'"“”‘’`~～^()（）\[\]【】{}《》〈〉「」『』♪♫♬♩♭♮♯🎵🎶]+''',
+    ),
+    '',
+  );
+}
+
+bool _containsTitleVersionQualifier(String text) {
+  return RegExp(
+    r'\b(?:acoustic|anniversary|bonus|cover|deluxe|demo|edit|explicit|instrumental|karaoke|live|mix|radio|remaster(?:ed|ing)?|remix|single|studio|version|ver\.?)\b|'
+    r'伴奏|纯音乐|純音樂|翻唱|混音|重混|重制|重製|新版|现场|現場|演唱会|演唱會|音乐节|音樂節|版|'
+    r'アコースティック|インスト(?:ゥルメンタル)?|ライブ|リミックス|弾き語り|라이브|리믹스|버전',
+    caseSensitive: false,
+  ).hasMatch(text);
+}
+
+bool _isTitleVariantQualifier(String text) {
+  if (_containsTitleVersionQualifier(text)) return true;
+  return RegExp(
+    r'^(?:国|國|国语|國語|粤|粵|粤语|粵語|台|台语|台語|日语|日語|韩语|韓語|英语|英語)$|'
+    r'^(?:mandarin|cantonese|taiwanese|japanese|korean|english)(?:\s+version)?$',
+    caseSensitive: false,
+  ).hasMatch(text.trim());
+}
+
+String? _textLanguageGroup(String value) {
+  if (RegExp(r'[\u3040-\u30ff]').hasMatch(value)) return 'ja';
+  if (RegExp(r'[\uac00-\ud7af]').hasMatch(value)) return 'ko';
+  final hasHan = RegExp(r'[\u3400-\u9fff]').hasMatch(value);
+  final hasLatin = RegExp(r'[A-Za-z]').hasMatch(value);
+  if (hasHan && !hasLatin) return 'han';
+  if (hasLatin && !hasHan) return 'latin';
+  return null;
+}
+
+Set<String> _titleMatchCandidates(String text) {
+  final candidates = <String>{};
+  final pending = <String>[text.trim()];
+  final visited = <String>{};
+
+  while (pending.isNotEmpty) {
+    final value = pending.removeLast().trim();
+    if (value.isEmpty || !visited.add(value)) continue;
+    final normalized = _normalizeMetadataValue(value);
+    if (normalized.isNotEmpty) candidates.add(normalized);
+
+    final bracketMatch = RegExp(
+      r'^(.*?)\s*[（(【\[]([^）)】\]]+)[）)】\]]\s*$',
+    ).firstMatch(value);
+    if (bracketMatch != null) {
+      final base = bracketMatch.group(1)!.trim();
+      final suffix = bracketMatch.group(2)!.trim();
+      final baseLanguage = _textLanguageGroup(base);
+      final suffixLanguage = _textLanguageGroup(suffix);
+      if (_isTitleVariantQualifier(suffix) ||
+          RegExp(r'^(?:feat(?:uring)?|ft)\.?\s+', caseSensitive: false)
+              .hasMatch(suffix)) {
+        pending.add(base);
+      } else if (baseLanguage != null &&
+          suffixLanguage != null &&
+          baseLanguage != suffixLanguage) {
+        pending
+          ..add(base)
+          ..add(suffix);
+      }
+    }
+
+    final featuredArtistSuffix = RegExp(
+      r'^(.*?)\s+(?:feat(?:uring)?|ft)\.?\s+\S.+$',
+      caseSensitive: false,
+    ).firstMatch(value);
+    if (featuredArtistSuffix != null) {
+      pending.add(featuredArtistSuffix.group(1)!);
+    }
+
+    for (final separator in RegExp(r'\s+').allMatches(value)) {
+      final base = value.substring(0, separator.start).trim();
+      final suffix = value.substring(separator.end).trim();
+      final baseLanguage = _textLanguageGroup(base);
+      final suffixLanguage = _textLanguageGroup(suffix);
+      if (baseLanguage != null &&
+          suffixLanguage != null &&
+          baseLanguage != suffixLanguage) {
+        pending
+          ..add(base)
+          ..add(suffix);
+      }
+    }
+
+    final separators = RegExp(r'\s+[-－–—]\s+').allMatches(value).toList();
+    if (separators.isNotEmpty) {
+      final last = separators.last;
+      final suffix = value.substring(last.end).trim();
+      if (_isTitleVariantQualifier(suffix)) {
+        pending.add(value.substring(0, last.start));
+      }
+    }
+
+    final plainVersion = RegExp(
+      r'^(.*?)\s+(?:acoustic|cover|demo|instrumental|karaoke|live|radio edit|remaster(?:ed)?|remix|version|伴奏版?|纯音乐版?|純音樂版?|翻唱版?|混音版?|重混版?|重制版?|重製版?|新版|现场版?|現場版?)$',
+      caseSensitive: false,
+    ).firstMatch(value);
+    if (plainVersion != null) pending.add(plainVersion.group(1)!);
+  }
+  return candidates;
+}
+
+Set<String> _artistMatchCandidates(String text) {
+  final candidates = <String>{};
+  final pending = <String>[text.trim()];
+  final visited = <String>{};
+
+  while (pending.isNotEmpty) {
+    final value = pending.removeLast().trim();
+    if (value.isEmpty || !visited.add(value)) continue;
+    final normalized = _normalizeMetadataValue(value);
+    if (normalized.isNotEmpty) {
+      candidates.add(normalized);
+      if (RegExp(r'^[a-z0-9]+$').hasMatch(normalized) &&
+          normalized.startsWith('the') &&
+          normalized.length > 6) {
+        candidates.add(normalized.substring(3));
+      }
+      final scriptParts = RegExp(
+        r'[a-z0-9]+|[\u3400-\u9fff]+|[\u3040-\u30ff]+|[\uac00-\ud7af]+',
+      ).allMatches(normalized).map((match) => match.group(0)!).toList();
+      if (scriptParts.length > 1) candidates.addAll(scriptParts);
+    }
+
+    final bracketMatches =
+        RegExp(r'[（(【\[]([^）)】\]]+)[）)】\]]').allMatches(value).toList();
+    if (bracketMatches.isNotEmpty) {
+      pending.add(value.replaceAll(RegExp(r'[（(【\[][^）)】\]]+[）)】\]]'), ' '));
+      pending.addAll(bracketMatches.map((match) => match.group(1)!));
+    }
+
+    final separated = value
+        .replaceAll(
+          RegExp(
+            r'\s+(?:feat(?:uring)?|ft|with|vs)\.?\s+',
+            caseSensitive: false,
+          ),
+          ';',
+        )
+        .replaceAll(RegExp(r'\s+[x×]\s+', caseSensitive: false), ';');
+    final parts = separated.split(RegExp(r'[、,，/&＆;；|+＋]+'));
+    if (parts.length > 1) pending.addAll(parts);
+  }
+  return candidates;
+}
+
+bool _hasCandidateOverlap(Set<String> actual, Set<String> expected) {
+  if (actual.isEmpty || expected.isEmpty) return false;
+  return actual.any(expected.contains);
+}
+
+bool _matchesKnownTitleArtistLine(
+  String text,
+  String? title,
+  List<String> artists,
+) {
+  if (title == null || title.trim().isEmpty || artists.isEmpty) return false;
+  final cleaned = text.trim();
+  final titleCandidates = _titleMatchCandidates(title);
+  final artistCandidates = <String>{
+    for (final artist in artists) ..._artistMatchCandidates(artist),
+  };
+  for (final separator in RegExp(r'[-－–—]').allMatches(cleaned)) {
+    final left = cleaned.substring(0, separator.start).trim();
+    final right = cleaned.substring(separator.end).trim();
+    if (left.isEmpty || right.isEmpty) continue;
+    final leftIsTitle =
+        _hasCandidateOverlap(_titleMatchCandidates(left), titleCandidates);
+    final rightIsTitle =
+        _hasCandidateOverlap(_titleMatchCandidates(right), titleCandidates);
+    final leftIsArtist =
+        _hasCandidateOverlap(_artistMatchCandidates(left), artistCandidates);
+    final rightIsArtist =
+        _hasCandidateOverlap(_artistMatchCandidates(right), artistCandidates);
+    if ((leftIsTitle && rightIsArtist) || (rightIsTitle && leftIsArtist)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 bool _looksLikeArtistList(String text) {
@@ -297,16 +452,20 @@ List<LyricLine> stripLyricMetadata(List<LyricLine>? lines,
 
   var scanStart = 0;
 
-  // 检查第 1 行是否为 "歌名 - 歌手" 格式
-  if (options.matchTitle != null && options.matchArtists.isNotEmpty) {
-    final firstText = _lineText(lines[0]).toLowerCase();
-    final firstTrans = (lines[0].translation ?? '').toLowerCase();
-    final combined = '$firstText $firstTrans';
-    if (combined.contains(options.matchTitle!.toLowerCase())) {
-      final hasArtist =
-          options.matchArtists.any((a) => combined.contains(a.toLowerCase()));
-      if (hasArtist) scanStart = 1;
-    }
+  // 检查第 1 行是否为与当前歌曲精确对应的“歌名 - 歌手”格式
+  final firstText = _lineText(lines[0]);
+  final firstTrans = lines[0].translation ?? '';
+  if (_matchesKnownTitleArtistLine(
+        firstText,
+        options.matchTitle,
+        options.matchArtists,
+      ) ||
+      _matchesKnownTitleArtistLine(
+        firstTrans,
+        options.matchTitle,
+        options.matchArtists,
+      )) {
+    scanStart = 1;
   }
 
   if (options.keywords.isEmpty &&
@@ -524,6 +683,22 @@ final List<RegExp> _cachedExcludeSoftRegexes = defaultExcludeSoftRegexes
     .map((p) => RegExp(p, caseSensitive: false))
     .toList();
 
+final RegExp _amllTtmlCreatorPattern = RegExp(r'^【创作者：[^【】\r\n]+】$');
+
+void blankAmllTtmlCreatorLines(List<LyricLine> lines) {
+  for (final line in lines) {
+    if (!_amllTtmlCreatorPattern.hasMatch(_lineText(line).trim())) continue;
+    if (line is SyncLyricLine) {
+      line.words.clear();
+    } else if (line is UnsyncLyricLine) {
+      line.content = '';
+      if (line is LrcLine) line.isBlank = true;
+    }
+    line.translation = null;
+    line.romanLyric = null;
+  }
+}
+
 void blankMetadataLines(List<LyricLine> lines, [StripOptions? options]) {
   if (lines.isEmpty) return;
   options ??= const StripOptions();
@@ -557,6 +732,7 @@ void blankMetadataLines(List<LyricLine> lines, [StripOptions? options]) {
   final isStrict = List<bool>.filled(totalLines, false);
   final isWeak = List<bool>.filled(totalLines, false);
   final isTitleArtist = List<bool>.filled(totalLines, false);
+  final isMatchedTitleArtist = List<bool>.filled(totalLines, false);
   for (int i = 0; i < totalLines; i++) {
     final text = _lineText(lines[i]);
     final transText = lines[i].translation ?? '';
@@ -571,10 +747,21 @@ void blankMetadataLines(List<LyricLine> lines, [StripOptions? options]) {
         (transText.isNotEmpty &&
             (_isBracketedTitleArtistLine(transText) ||
                 _isUnbracketedTitleArtistLine(transText)));
+    isMatchedTitleArtist[i] = _matchesKnownTitleArtistLine(
+          text,
+          options.matchTitle,
+          options.matchArtists,
+        ) ||
+        _matchesKnownTitleArtistLine(
+          transText,
+          options.matchTitle,
+          options.matchArtists,
+        );
   }
 
-  bool isAnchor(int index) => isStrict[index] || isTitleArtist[index];
-  bool isCandidate(int index) => isAnchor(index) || isWeak[index];
+  bool isAnchor(int index) => isStrict[index] || isMatchedTitleArtist[index];
+  bool isCandidate(int index) =>
+      isAnchor(index) || isWeak[index] || isTitleArtist[index];
 
   // ── 头部扫描：找连续元数据区截止位置 ──
   var headerCutoff = 0;
@@ -587,8 +774,10 @@ void blankMetadataLines(List<LyricLine> lines, [StripOptions? options]) {
     if (!isCandidate(i)) {
       break;
     }
-    headerHasAnchor = headerHasAnchor || isAnchor(i);
-    headerCutoff = i + 1;
+    if (isAnchor(i)) {
+      headerHasAnchor = true;
+      headerCutoff = i + 1;
+    }
   }
   if (!headerHasAnchor) headerCutoff = 0;
 
@@ -605,8 +794,10 @@ void blankMetadataLines(List<LyricLine> lines, [StripOptions? options]) {
     if (!isCandidate(i)) {
       break;
     }
-    footerHasAnchor = footerHasAnchor || isAnchor(i);
-    firstAnyInFooter = i;
+    if (isAnchor(i)) {
+      footerHasAnchor = true;
+      firstAnyInFooter = i;
+    }
   }
   if (!footerHasAnchor) firstAnyInFooter = totalLines;
 
@@ -635,7 +826,7 @@ void blankMetadataLines(List<LyricLine> lines, [StripOptions? options]) {
         ? lines[blankCount].start
         : const Duration(seconds: 30);
 
-    if (blankCount > 1 && firstRealStart > Duration.zero) {
+    if (blankCount > 0 && firstRealStart > Duration.zero) {
       prelude = _createPrelude(firstElement, firstRealStart);
       lines.removeRange(0, blankCount);
       lines.insert(0, prelude);
