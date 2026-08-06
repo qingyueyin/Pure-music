@@ -123,7 +123,7 @@ Future<void> _ensureInit() async {
     _session.isInitialized = true;
     _session.initTime = DateTime.now().millisecondsSinceEpoch;
 
-    logger.d('QmSource: 初始化完成: guid=${_session.guid}');
+    logger.d('[QQ] init succeeded');
   });
 }
 
@@ -143,10 +143,8 @@ Future<String> _doRequest(QmRequestBody body) async {
     request.headers.set('Accept', '*/*');
 
     request.write(body.toJson());
-    logger.d(
-        'QmSource: request body: ${body.toJson().substring(0, body.toJson().length.clamp(0, 300))}...');
     final response = await request.close();
-    logger.d('QmSource: HTTP ${response.statusCode}');
+    logger.d('[QQ] HTTP ${response.statusCode}');
 
     final responseBodyBytes = await response
         .fold<BytesBuilder>(BytesBuilder(), (b, d) => b..add(d))
@@ -154,16 +152,14 @@ Future<String> _doRequest(QmRequestBody body) async {
     client.close();
 
     if (responseBodyBytes.isEmpty) {
-      logger.e('QmSource: empty response body');
+      logger.e('[QQ] empty response body');
       return '';
     }
 
     final respStr = utf8.decode(responseBodyBytes);
-    logger.d(
-        'QmSource: response: ${respStr.substring(0, respStr.length.clamp(0, 300))}...');
     return respStr;
   } catch (e, st) {
-    logger.e('QmSource: 请求失败: $e', stackTrace: st);
+    logger.e('[QQ] request failed: ${e.runtimeType}', stackTrace: st);
     return '';
   }
 }
@@ -171,9 +167,8 @@ Future<String> _doRequest(QmRequestBody body) async {
 Future<List<Map<String, dynamic>>> qqSearch(String keyword,
     {int limit = 10}) async {
   try {
-    logger.d('[QQ] qqSearch: keyword="$keyword" limit=$limit');
+    logger.d('[QQ] search started: limit=$limit');
     await _ensureInit();
-    logger.d('[QQ] session guid=${_session.guid}');
 
     final body = QmRequestBody(
       comm: QmComm(guid: _session.guid ?? ''),
@@ -222,7 +217,7 @@ Future<List<Map<String, dynamic>>> qqSearch(String keyword,
         .toList()
         .cast<Map<String, dynamic>>();
   } catch (e) {
-    logger.e('QQ search failed: $e');
+    logger.e('[QQ] search failed: ${e.runtimeType}');
     return [];
   }
 }
@@ -271,7 +266,7 @@ Future<Map<String, dynamic>?> qqLyric(String songId) async {
         final rawDecrypted = utf8.decode(decryptedBytes);
         decryptedLyric = _stripLrcMetadata(rawDecrypted);
       } catch (e) {
-        logger.e('QmSource: QRC解密失败: $e');
+        logger.e('[QQ] lyric decode failed: ${e.runtimeType}');
       }
     }
 
@@ -300,7 +295,7 @@ Future<Map<String, dynamic>?> qqLyric(String songId) async {
         final decryptedBytes = TripleDesDecryptor.decrypt(transBytes);
         decryptedTrans = _stripLrcMetadata(utf8.decode(decryptedBytes));
       } catch (e) {
-        logger.e('QmSource: 翻译解密失败: $e');
+        logger.e('[QQ] translation decode failed: ${e.runtimeType}');
       }
     }
 
@@ -311,7 +306,7 @@ Future<Map<String, dynamic>?> qqLyric(String songId) async {
         final decryptedBytes = TripleDesDecryptor.decrypt(romaBytes);
         decryptedRoma = _stripLrcMetadata(utf8.decode(decryptedBytes));
       } catch (e) {
-        logger.e('QmSource: 罗马音解密失败: $e');
+        logger.e('[QQ] romanization decode failed: ${e.runtimeType}');
       }
     }
 
@@ -341,7 +336,7 @@ Future<Map<String, dynamic>?> qqLyric(String songId) async {
     }
     return result;
   } catch (e) {
-    logger.e('QQ lyric failed: $e');
+    logger.e('[QQ] lyric failed: ${e.runtimeType}');
     return null;
   }
 }

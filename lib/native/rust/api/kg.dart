@@ -136,7 +136,6 @@ Future<void> _ensureInit() async {
 
       if (responseBodyBytes.isNotEmpty) {
         final respStr = utf8.decode(responseBodyBytes);
-        logger.d('[KG] init response: $respStr');
         final resp = jsonDecode(respStr);
         if (resp['status'] == 1 &&
             resp['data'] != null &&
@@ -145,15 +144,13 @@ Future<void> _ensureInit() async {
           _session.mid = deviceMid;
           _session.isInitialized = true;
           _session.initTime = DateTime.now().millisecondsSinceEpoch;
-          logger
-              .d('KgSource: 初始化成功: dfid=${_session.dfid}, mid=${_session.mid}');
+          logger.d('[KG] init succeeded');
         } else {
-          logger.e(
-              'KgSource: init failed: ${resp['error_code']} data=${resp['data']}');
+          logger.e('[KG] init failed: code=${resp['error_code']}');
         }
       }
     } catch (e) {
-      logger.e('KgSource: 初始化失败: $e');
+      logger.e('[KG] init failed: ${e.runtimeType}');
     }
   });
 }
@@ -198,7 +195,7 @@ Map<String, String> _buildSignedParams(
 Future<List<Map<String, dynamic>>> kgSearch(String keyword,
     {int limit = 10}) async {
   try {
-    logger.d('[KG] kgSearch: keyword="$keyword" limit=$limit');
+    logger.d('[KG] search started: limit=$limit');
     await _ensureInit();
 
     final params = _buildSignedParams({
@@ -210,8 +207,6 @@ Future<List<Map<String, dynamic>>> kgSearch(String keyword,
     final queryStr = params.entries.map((e) => '${e.key}=${e.value}').join('&');
     final uri =
         Uri.parse('http://complexsearch.kugou.com/v2/search/song?$queryStr');
-    logger.d('[KG] uri: $uri');
-
     final client = HttpClient()
       ..connectionTimeout = const Duration(seconds: 10);
     final request = await client.getUrl(uri);
@@ -235,7 +230,7 @@ Future<List<Map<String, dynamic>>> kgSearch(String keyword,
     logger.d(
         '[KG] status=${resp['status']}, data=${resp['data'] != null ? "present" : "null"}');
     if (resp['status'] != 1 || resp['data'] == null) {
-      logger.e('[KG] API error: ${resp['data'] ?? resp}');
+      logger.e('[KG] API error: status=${resp['status']}');
       return [];
     }
 
@@ -265,7 +260,7 @@ Future<List<Map<String, dynamic>>> kgSearch(String keyword,
         .toList()
         .cast<Map<String, dynamic>>();
   } catch (e) {
-    logger.e('[KG] search failed: $e');
+    logger.e('[KG] search failed: ${e.runtimeType}');
     return [];
   }
 }
@@ -278,7 +273,7 @@ Future<Map<String, dynamic>?> kgLyric(String hash) async {
       return null;
     }
 
-    // Step 1: Search lyrics candidates with signature
+    // 搜索歌词候选。
     final searchParams = _buildSignedParams({
       'hash': hash,
       'keyword': '',
@@ -289,8 +284,6 @@ Future<Map<String, dynamic>?> kgLyric(String hash) async {
     final queryStr =
         searchParams.entries.map((e) => '${e.key}=${e.value}').join('&');
     final searchUri = Uri.parse('https://lyrics.kugou.com/v1/search?$queryStr');
-    logger.d('[KG] lyric: search uri=$searchUri');
-
     var client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
     var request = await client.getUrl(searchUri);
     request.headers.set('User-Agent',
@@ -311,16 +304,15 @@ Future<Map<String, dynamic>?> kgLyric(String hash) async {
     final candidates = searchResp['candidates'] as List?;
     logger.d('[KG] lyric: candidates count=${candidates?.length}');
     if (candidates == null || candidates.isEmpty) {
-      logger.d('[KG] lyric: no candidates, resp=${jsonEncode(searchResp)}');
+      logger.d('[KG] lyric: no candidates');
       return null;
     }
 
     final candidate = candidates.first as Map<String, dynamic>;
     final id = candidate['id'];
     final accessKey = candidate['accesskey'];
-    logger.d('[KG] lyric: candidate id=$id accesskey=$accessKey');
 
-    // Step 2: Download lyric with signature
+    // 下载选中的歌词。
     final downloadParams = _buildSignedParams({
       'accesskey': accessKey,
       'charset': 'utf8',
@@ -334,8 +326,6 @@ Future<Map<String, dynamic>?> kgLyric(String hash) async {
         downloadParams.entries.map((e) => '${e.key}=${e.value}').join('&');
     final downloadUri =
         Uri.parse('http://lyrics.kugou.com/download?$downloadQueryStr');
-    logger.d('[KG] lyric: download uri=$downloadUri');
-
     client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
     request = await client.getUrl(downloadUri);
     request.headers.set('User-Agent',
@@ -361,8 +351,7 @@ Future<Map<String, dynamic>?> kgLyric(String hash) async {
         '[KG] lyric: content length=${content?.toString().length}, contentType=$contentType');
 
     if (content == null || content.isEmpty) {
-      logger.d(
-          '[KG] lyric: content null or empty, resp=${jsonEncode(downloadResp)}');
+      logger.d('[KG] lyric: content null or empty');
       return null;
     }
 
@@ -371,7 +360,7 @@ Future<Map<String, dynamic>?> kgLyric(String hash) async {
       try {
         lyricText = KgCryptoUtils.decryptKrc(content);
       } catch (e) {
-        logger.e('KgSource: KRC解密失败: $e');
+        logger.e('[KG] lyric decode failed: ${e.runtimeType}');
       }
     } else {
       try {
@@ -391,7 +380,7 @@ Future<Map<String, dynamic>?> kgLyric(String hash) async {
       'contentType': contentType,
     };
   } catch (e) {
-    logger.e('KgSource: lyric failed: $e');
+    logger.e('[KG] lyric failed: ${e.runtimeType}');
     return null;
   }
 }
