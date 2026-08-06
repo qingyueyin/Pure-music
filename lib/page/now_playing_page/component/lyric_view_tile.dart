@@ -20,7 +20,7 @@ const transitionTileMargin = 12.0;
 const _enterOpacityFraction = 0.12;
 const _exitOpacityFraction = 0.18;
 const _alphaBase = 0.05;
-const _alphaRange = 0.95;
+const _activeAlphaBase = 0.22;
 const _staggerStep = 1 / 3;
 const _breathingStep = 1 / 180;
 
@@ -33,6 +33,7 @@ class LyricTransitionTile extends StatefulWidget {
   final bool enableBreathing;
   final bool compact;
   final bool useMaterialYouColor;
+  final bool animateVisibilityWithProgress;
   const LyricTransitionTile({
     super.key,
     this.lrcLine,
@@ -41,6 +42,7 @@ class LyricTransitionTile extends StatefulWidget {
     this.enableBreathing = true,
     this.compact = false,
     this.useMaterialYouColor = true,
+    this.animateVisibilityWithProgress = true,
   });
 
   @override
@@ -78,8 +80,8 @@ class _LyricTransitionTileState extends State<LyricTransitionTile> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
-    // 间奏结束后隐藏，避免动画残留
-    if (controller.progress >= 1) {
+    // 由播放进度控制可见性时，结束后立即隐藏
+    if (widget.animateVisibilityWithProgress && controller.progress >= 1) {
       return const SizedBox.shrink();
     }
 
@@ -103,6 +105,8 @@ class _LyricTransitionTileState extends State<LyricTransitionTile> {
               compact: true,
               alignment: align,
               useMaterialYouColor: widget.useMaterialYouColor,
+              animateVisibilityWithProgress:
+                  widget.animateVisibilityWithProgress,
             ),
           ),
         ),
@@ -118,6 +122,7 @@ class _LyricTransitionTileState extends State<LyricTransitionTile> {
           controller,
           alignment: align,
           useMaterialYouColor: widget.useMaterialYouColor,
+          animateVisibilityWithProgress: widget.animateVisibilityWithProgress,
         ),
       ),
     );
@@ -129,6 +134,7 @@ class LyricTransitionPainter extends CustomPainter {
   final LyricTransitionTileController controller;
   final bool compact;
   final bool useMaterialYouColor;
+  final bool animateVisibilityWithProgress;
   final LyricTextAlign alignment;
 
   final Paint circlePaint1 = Paint();
@@ -140,6 +146,7 @@ class LyricTransitionPainter extends CustomPainter {
   LyricTransitionPainter(this.scheme, this.controller,
       {this.compact = false,
       this.useMaterialYouColor = true,
+      this.animateVisibilityWithProgress = true,
       this.alignment = LyricTextAlign.left})
       : super(repaint: controller);
 
@@ -150,30 +157,33 @@ class LyricTransitionPainter extends CustomPainter {
         .transform((progress / _enterOpacityFraction).clamp(0.0, 1.0));
     final exitOpacity = Curves.easeOutCubic
         .transform(((1.0 - progress) / _exitOpacityFraction).clamp(0.0, 1.0));
-    final opacityEnvelope = enterOpacity * exitOpacity;
+    final opacityEnvelope =
+        animateVisibilityWithProgress ? enterOpacity * exitOpacity : 1.0;
+    final alphaBase =
+        animateVisibilityWithProgress ? _alphaBase : _activeAlphaBase;
+    final alphaRange = 1.0 - alphaBase;
 
     final a1 = (255 *
             opacityEnvelope *
-            (_alphaBase + min(controller.progress * 3, 1) * _alphaRange))
+            (alphaBase + min(controller.progress * 3, 1) * alphaRange))
         .round()
         .clamp(0, 255);
     final a2 = (255 *
             opacityEnvelope *
-            (_alphaBase +
+            (alphaBase +
                 min(max(controller.progress - _staggerStep, 0) * 3, 1) *
-                    _alphaRange))
+                    alphaRange))
         .round()
         .clamp(0, 255);
     final a3 = (255 *
             opacityEnvelope *
-            (_alphaBase +
+            (alphaBase +
                 min(max(controller.progress - 2 * _staggerStep, 0) * 3, 1) *
-                    _alphaRange))
+                    alphaRange))
         .round()
         .clamp(0, 255);
-    final transitionColor = useMaterialYouColor
-        ? scheme.onSecondaryContainer
-        : scheme.onSurface;
+    final transitionColor =
+        useMaterialYouColor ? scheme.onSecondaryContainer : scheme.onSurface;
     circlePaint1.color = transitionColor.withAlpha(a1);
     circlePaint2.color = transitionColor.withAlpha(a2);
     circlePaint3.color = transitionColor.withAlpha(a3);

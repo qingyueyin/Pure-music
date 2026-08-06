@@ -3,6 +3,18 @@ import 'dart:async';
 import 'package:flutter/physics.dart';
 import 'package:flutter/widgets.dart';
 
+const lyricSmoothTransitionDuration = Duration(milliseconds: 700);
+const lyricSmoothTransitionCurve = Cubic(0.25, 0.0, 0.2, 1.0);
+
+double lyricSmoothTransitionInterpolator(
+  double t,
+  double start,
+  double end,
+) {
+  final progress = lyricSmoothTransitionCurve.transform(t);
+  return start + (end - start) * progress;
+}
+
 int lyricStaggerDelayMs({
   required int itemIndex,
   required int visibleStartIndex,
@@ -29,6 +41,33 @@ bool canStartLyricStagger({
     return false;
   }
   return (nextIndex - previousIndex).abs() <= 10;
+}
+
+enum LyricUserScrollPhase {
+  ignored,
+  started,
+  updated,
+  ended,
+}
+
+class LyricUserScrollTracker {
+  bool _isActive = false;
+
+  bool get isActive => _isActive;
+
+  LyricUserScrollPhase start() {
+    if (_isActive) return LyricUserScrollPhase.updated;
+    _isActive = true;
+    return LyricUserScrollPhase.started;
+  }
+
+  LyricUserScrollPhase update() => start();
+
+  LyricUserScrollPhase end() {
+    if (!_isActive) return LyricUserScrollPhase.ignored;
+    _isActive = false;
+    return LyricUserScrollPhase.ended;
+  }
 }
 
 class LyricStaggerTransition extends StatefulWidget {
