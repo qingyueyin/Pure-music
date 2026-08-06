@@ -9,7 +9,7 @@ int mainWindowProc(int hWnd, int uMsg, int wParam, int lParam) {
       win32.CreateWindow(
         win32.TEXT("BUTTON"),
         win32.TEXT("UNLOCK"),
-        win32.WINDOW_STYLE.WS_VISIBLE | win32.WINDOW_STYLE.WS_CHILD,
+        win32.WS_VISIBLE | win32.WS_CHILD,
         10,
         10,
         80,
@@ -18,7 +18,7 @@ int mainWindowProc(int hWnd, int uMsg, int wParam, int lParam) {
         1,
         win32.GetWindowLongPtr(
           hWnd,
-          win32.WINDOW_LONG_PTR_INDEX.GWLP_HINSTANCE,
+          win32.GWLP_HINSTANCE,
         ),
         nullptr,
       );
@@ -27,18 +27,18 @@ int mainWindowProc(int hWnd, int uMsg, int wParam, int lParam) {
       if (win32.LOWORD(wParam) == 1) {
         final parentHwnd = win32.GetWindowLongPtr(
           hWnd,
-          win32.WINDOW_LONG_PTR_INDEX.GWLP_HWNDPARENT,
+          win32.GWLP_HWNDPARENT,
         );
         final exStyle = win32.GetWindowLongPtr(
           parentHwnd,
-          win32.WINDOW_LONG_PTR_INDEX.GWL_EXSTYLE,
+          win32.GWL_EXSTYLE,
         );
         win32.SetWindowLongPtr(
           parentHwnd,
-          win32.WINDOW_LONG_PTR_INDEX.GWL_EXSTYLE,
+          win32.GWL_EXSTYLE,
           exStyle &
-              ~win32.WINDOW_EX_STYLE.WS_EX_LAYERED &
-              ~win32.WINDOW_EX_STYLE.WS_EX_TRANSPARENT,
+              ~win32.WS_EX_LAYERED &
+              ~win32.WS_EX_TRANSPARENT,
         );
         win32.DestroyWindow(hWnd);
       }
@@ -73,12 +73,12 @@ void showUnlockOverlay(int parentHwnd) {
   // Create the window.
   final windowCaption = win32.TEXT('desktop_lyric_unlock_overlay');
   final hWnd = win32.CreateWindowEx(
-    win32.WINDOW_EX_STYLE.WS_EX_TOPMOST |
-        win32.WINDOW_EX_STYLE.WS_EX_LAYERED |
-        win32.WINDOW_EX_STYLE.WS_EX_TOOLWINDOW,
+    win32.WS_EX_TOPMOST |
+        win32.WS_EX_LAYERED |
+        win32.WS_EX_TOOLWINDOW,
     className, // Window class
     windowCaption, // Window caption
-    win32.WINDOW_STYLE.WS_POPUP, // Window style
+    win32.WS_POPUP, // Window style
     // Size and position
     0,
     0,
@@ -102,10 +102,10 @@ void showUnlockOverlay(int parentHwnd) {
     hWnd,
     0,
     (255 * 70) ~/ 100,
-    win32.LAYERED_WINDOW_ATTRIBUTES_FLAGS.LWA_ALPHA,
+    win32.LWA_ALPHA,
   );
 
-  win32.ShowWindow(hWnd, win32.SHOW_WINDOW_CMD.SW_SHOW);
+  win32.ShowWindow(hWnd, win32.SW_SHOW);
 
   // 定位到指定窗口左上角
   final targetRect = ffi.calloc<win32.RECT>();
@@ -117,7 +117,7 @@ void showUnlockOverlay(int parentHwnd) {
     targetRect.ref.top,
     100,
     50,
-    win32.SET_WINDOW_POS_FLAGS.SWP_SHOWWINDOW,
+    win32.SWP_SHOWWINDOW,
   );
   ffi.calloc.free(targetRect);
 

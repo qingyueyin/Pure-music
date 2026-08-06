@@ -1,6 +1,6 @@
-import 'package:desktop_lyric/component/foreground.dart';
-import 'package:desktop_lyric/message.dart';
-import 'package:desktop_lyric/desktop_lyric_controller.dart';
+import 'package:pure_player_lyric/component/foreground.dart';
+import 'package:pure_player_lyric/message.dart';
+import 'package:pure_player_lyric/desktop_lyric_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -12,8 +12,8 @@ class NowPlayingInfo extends StatelessWidget {
     final textDisplayController = context.watch<TextDisplayController>();
     final theme = context.watch<ThemeChangedMessage>();
 
-    final textColor = textDisplayController.hasSpecifiedColor
-        ? textDisplayController.specifiedColor
+    final textColor = textDisplayController.hasSpecifiedPlayedColor
+        ? textDisplayController.playedColor
         : Color(theme.primary).withValues(alpha: 1.0);
     final textStyle = DefaultTextStyle.of(context).style.merge(
       TextStyle(
@@ -23,7 +23,7 @@ class NowPlayingInfo extends StatelessWidget {
         ),
       ),
     );
-    final outlineColor = lyricOutlineColor(textColor);
+    final outlineColor = lyricOutlineColor(false);
     final textAlign = switch (textDisplayController.lyricTextAlign) {
       LyricTextAlign.left => TextAlign.left,
       LyricTextAlign.center => TextAlign.center,
