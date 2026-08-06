@@ -45,16 +45,20 @@ enum NowPlayingViewMode {
 
 enum NowPlayingBackgroundMode {
   meshGradient,
-  coverBlurTest;
+  flowingCover;
 
   static NowPlayingBackgroundMode? fromString(String? backgroundMode) {
     if (backgroundMode == null) return null;
+    if (_matchesStoredEnumName(backgroundMode, 'meshGradientV2')) {
+      return NowPlayingBackgroundMode.meshGradient;
+    }
     if (_matchesStoredEnumName(backgroundMode, 'pureColor') ||
         _matchesStoredEnumName(backgroundMode, 'simpleFallback') ||
         _matchesStoredEnumName(backgroundMode, 'blurCover') ||
         _matchesStoredEnumName(backgroundMode, 'fluidBlob') ||
-        _matchesStoredEnumName(backgroundMode, 'hybrid')) {
-      return NowPlayingBackgroundMode.coverBlurTest;
+        _matchesStoredEnumName(backgroundMode, 'hybrid') ||
+        _matchesStoredEnumName(backgroundMode, 'coverBlurTest')) {
+      return NowPlayingBackgroundMode.flowingCover;
     }
     for (var value in NowPlayingBackgroundMode.values) {
       if (_matchesStoredEnumName(backgroundMode, value.name)) return value;
@@ -113,11 +117,39 @@ enum TopBarLyricAnimation {
   slideDown,
   fade,
   absorb,
-  flipX,
-  flipY;
+  slideLeft,
+  slideRight;
 
   static TopBarLyricAnimation? fromString(String name) {
+    if (_matchesStoredEnumName(name, 'flipX')) {
+      return TopBarLyricAnimation.slideLeft;
+    }
+    if (_matchesStoredEnumName(name, 'flipY')) {
+      return TopBarLyricAnimation.slideRight;
+    }
     for (var value in TopBarLyricAnimation.values) {
+      if (_matchesStoredEnumName(name, value.name)) return value;
+    }
+    return null;
+  }
+}
+
+enum DesktopLyricAnimation {
+  slideUp,
+  slideDown,
+  fade,
+  absorb,
+  slideLeft,
+  slideRight;
+
+  static DesktopLyricAnimation? fromString(String name) {
+    if (_matchesStoredEnumName(name, 'flipX')) {
+      return DesktopLyricAnimation.slideLeft;
+    }
+    if (_matchesStoredEnumName(name, 'flipY')) {
+      return DesktopLyricAnimation.slideRight;
+    }
+    for (var value in DesktopLyricAnimation.values) {
       if (_matchesStoredEnumName(name, value.name)) return value;
     }
     return null;
