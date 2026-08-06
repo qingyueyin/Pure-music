@@ -61,6 +61,28 @@ void main() {
     });
   });
 
+  group('LyricUserScrollTracker', () {
+    test('keeps a drag active until scrolling actually ends', () {
+      final tracker = LyricUserScrollTracker();
+
+      expect(tracker.start(), LyricUserScrollPhase.started);
+      expect(tracker.update(), LyricUserScrollPhase.updated);
+      expect(tracker.isActive, isTrue);
+      expect(tracker.end(), LyricUserScrollPhase.ended);
+      expect(tracker.isActive, isFalse);
+    });
+
+    test('ignores duplicate endings', () {
+      final tracker = LyricUserScrollTracker();
+
+      expect(tracker.end(), LyricUserScrollPhase.ignored);
+      expect(tracker.start(), LyricUserScrollPhase.started);
+      expect(tracker.start(), LyricUserScrollPhase.updated);
+      expect(tracker.end(), LyricUserScrollPhase.ended);
+      expect(tracker.end(), LyricUserScrollPhase.ignored);
+    });
+  });
+
   testWidgets('a new generation starts from the captured displacement',
       (tester) async {
     Widget host({

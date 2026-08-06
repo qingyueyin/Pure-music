@@ -2,8 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/page/now_playing_page/component/audio_reactive_flow.dart';
@@ -17,6 +19,24 @@ Future<Uint8List> _createCoverPng() async {
   );
 }
 
+Future<Uint8List> _createColorCoverPng() async {
+  final recorder = ui.PictureRecorder();
+  final canvas = Canvas(recorder);
+  final paint = Paint();
+  paint.color = const Color(0xFFE53935);
+  canvas.drawRect(const Rect.fromLTWH(0, 0, 32, 32), paint);
+  paint.color = const Color(0xFF1E88E5);
+  canvas.drawRect(const Rect.fromLTWH(32, 0, 32, 32), paint);
+  paint.color = const Color(0xFF43A047);
+  canvas.drawRect(const Rect.fromLTWH(0, 32, 32, 32), paint);
+  paint.color = const Color(0xFFFDD835);
+  canvas.drawRect(const Rect.fromLTWH(32, 32, 32, 32), paint);
+  final image = await recorder.endRecording().toImage(64, 64);
+  final data = await image.toByteData(format: ui.ImageByteFormat.png);
+  image.dispose();
+  return data!.buffer.asUint8List();
+}
+
 Future<void> _pumpAsyncWork(WidgetTester tester) async {
   await tester.runAsync(
     () => Future<void>.delayed(const Duration(milliseconds: 50)),
@@ -27,6 +47,18 @@ Future<void> _pumpAsyncWork(WidgetTester tester) async {
 }
 
 void main() {
+  test('upper bass joins the low-frequency beat energy', () {
+    final upperBassHit = AudioReactiveFlowResponse.fromBands(
+      const [0.12, 0.70, 0.10, 0.05],
+    );
+    final subBassHit = AudioReactiveFlowResponse.fromBands(
+      const [0.68, 0.20, 0.10, 0.05],
+    );
+
+    expect(upperBassHit.low, closeTo(0.595, 0.001));
+    expect(subBassHit.low, closeTo(0.68, 0.001));
+  });
+
   test('visual normalization strengthens quiet spectrum response', () {
     final normalizer = AudioReactiveFlowNormalizer();
     const input = AudioReactiveFlowResponse(0.16, 0.10, 0.04);
@@ -50,7 +82,7 @@ void main() {
       );
     }
 
-    expect(output.low, closeTo(0.5, 0.001));
+    expect(output.low, closeTo(0.65, 0.001));
     expect(output.mid / output.low, closeTo(0.5 / 0.9, 0.001));
   });
 
@@ -86,16 +118,11 @@ void main() {
     expect(detector.update(0.62), greaterThan(0.9));
   });
 
-  test('bass impact includes the upper bass band', () {
-    expect(audioReactiveFlowBassEnergy([0.12, 0.70]), closeTo(0.595, 0.001));
-    expect(audioReactiveFlowBassEnergy([0.68, 0.20]), closeTo(0.68, 0.001));
-  });
-
   test('bass transient gives a medium rising edge visible strength', () {
     final detector = AudioReactiveFlowTransientDetector();
     detector.update(0.30);
 
-    expect(detector.update(0.45), greaterThan(0.5));
+    expect(detector.update(0.45), closeTo(0.36, 0.001));
   });
 
   test('bass transient resets across silence without a startup flash', () {
@@ -128,9 +155,31 @@ void main() {
       pulse.advance(1 / 60);
     }
 
-    expect(firstFrame, inExclusiveRange(0.5, 0.7));
+    expect(firstFrame, inExclusiveRange(0.48, 0.50));
     expect(peak, greaterThan(firstFrame));
     expect(pulse.value, lessThan(0.05));
+  });
+
+  test('bass pulse rejects weak fluctuations and immediate duplicate frames',
+      () {
+    final pulse = AudioReactiveFlowPulseEnvelope();
+
+    expect(pulse.trigger(0.15), isFalse);
+    expect(pulse.trigger(0.8), isTrue);
+    expect(pulse.trigger(1), isFalse);
+    pulse.advance(0.046);
+    expect(pulse.trigger(1), isTrue);
+  });
+
+  test('closely spaced bass hits create a new visible accent', () {
+    final pulse = AudioReactiveFlowPulseEnvelope()..trigger(1);
+    pulse.advance(0.05);
+    final beforeRetrigger = pulse.value;
+
+    expect(pulse.trigger(0.8), isTrue);
+    final afterRetrigger = pulse.advance(1 / 60);
+
+    expect(afterRetrigger, greaterThan(beforeRetrigger));
   });
 
   test('smallest artwork layer is cropped beyond the viewport', () {
@@ -145,16 +194,27 @@ void main() {
   });
 
   test('audio breathing stays visible without oversized face movement', () {
-    expect(flowingLightBreathingScale(0.5), closeTo(1.025, 0.001));
-    expect(flowingLightBreathingScale(1), lessThanOrEqualTo(1.05));
+    expect(flowingLightBreathingScale(0.5), closeTo(1.045, 0.001));
+    expect(flowingLightBreathingScale(1), closeTo(1.09, 0.001));
     expect(
       flowingLightBreathingScale(0.5, bassTransient: 1),
-      closeTo(1.175, 0.001),
+      1.30,
     );
+    expect(flowingLightBreathingScale(1, bassTransient: 1), 1.30);
   });
 
-  test('artwork layers carry the cover color over the sampled base color', () {
-    expect(flowingLightArtworkOpacityCeiling(), greaterThanOrEqualTo(0.9));
+  test('bass transient adds a bounded local cover warp', () {
+    expect(flowingLightWarpStrength(0), 0);
+    expect(flowingLightWarpStrength(0.5), closeTo(0.009, 0.001));
+    expect(
+      flowingLightWarpStrength(0.5, bassTransient: 1),
+      closeTo(0.079, 0.001),
+    );
+    expect(flowingLightWarpStrength(1, bassTransient: 1), 0.085);
+  });
+
+  test('artwork layers carry the cover color over the neutral fallback', () {
+    expect(flowingLightArtworkOpacityCeiling(), greaterThan(0.92));
   });
 
   testWidgets('disabled audio-reactive flow does not subscribe to spectrum', (
@@ -166,7 +226,6 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: FlowingLightBackground(
-          fallbackColor: Colors.black,
           inputs: NowPlayingBackgroundInputs(
             spectrumStream: spectrum.stream,
             enableAnimation: true,
@@ -182,6 +241,121 @@ void main() {
     expect(spectrum.hasListener, isFalse);
   });
 
+  testWidgets('static flow does not subscribe to spectrum while playing', (
+    tester,
+  ) async {
+    final spectrum = StreamController<Float32List>.broadcast();
+    addTearDown(spectrum.close);
+    final cover = await _createCoverPng();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: FlowingLightBackground(
+          inputs: NowPlayingBackgroundInputs(
+            albumCoverBytes: cover,
+            spectrumStream: spectrum.stream,
+            enableAnimation: false,
+            isVisible: true,
+            playerState: PlayerState.playing,
+            audioReactiveFlow: true,
+          ),
+        ),
+      ),
+    );
+    await _pumpAsyncWork(tester);
+
+    expect(spectrum.hasListener, isFalse);
+  });
+
+  testWidgets('bass pulse paints the warped artwork mesh', (tester) async {
+    final spectrum = StreamController<Float32List>.broadcast();
+    addTearDown(spectrum.close);
+    final cover = await _createCoverPng();
+
+    try {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: FlowingLightBackground(
+            inputs: NowPlayingBackgroundInputs(
+              albumCoverBytes: cover,
+              spectrumStream: spectrum.stream,
+              enableAnimation: true,
+              isVisible: true,
+              playerState: PlayerState.playing,
+              audioReactiveFlow: true,
+            ),
+          ),
+        ),
+      );
+      await _pumpAsyncWork(tester);
+      expect(spectrum.hasListener, isTrue);
+
+      spectrum.add(Float32List.fromList([0.1, 0.1, 0.05, 0.02]));
+      await tester.pump(const Duration(milliseconds: 42));
+      spectrum.add(Float32List.fromList([0.9, 0.75, 0.12, 0.04]));
+      await tester.pump(const Duration(milliseconds: 42));
+
+      expect(tester.takeException(), isNull);
+    } finally {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    }
+  });
+
+  testWidgets('flowing artwork renders a non-empty layered color field', (
+    tester,
+  ) async {
+    final boundaryKey = GlobalKey();
+    final cover = (await tester.runAsync(_createColorCoverPng))!;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(),
+        home: Center(
+          child: RepaintBoundary(
+            key: boundaryKey,
+            child: SizedBox(
+              width: 320,
+              height: 180,
+              child: FlowingLightBackground(
+                inputs: NowPlayingBackgroundInputs(
+                  albumCoverBytes: cover,
+                  enableAnimation: false,
+                  isVisible: true,
+                  playerState: PlayerState.paused,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await _pumpAsyncWork(tester);
+
+    final boundary =
+        boundaryKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
+    final image = (await tester.runAsync(boundary.toImage))!;
+    final data = await tester.runAsync(
+      () => image.toByteData(format: ui.ImageByteFormat.rawRgba),
+    );
+    image.dispose();
+    final pixels = data!.buffer.asUint8List();
+    final colorBuckets = <int>{};
+    var maxChannelSpread = 0;
+    for (var offset = 0; offset < pixels.length; offset += 4) {
+      final red = pixels[offset];
+      final green = pixels[offset + 1];
+      final blue = pixels[offset + 2];
+      final maximum = max(red, max(green, blue));
+      final minimum = min(red, min(green, blue));
+      maxChannelSpread = max(maxChannelSpread, maximum - minimum);
+      colorBuckets.add((red ~/ 16 << 8) | (green ~/ 16 << 4) | blue ~/ 16);
+    }
+
+    expect(maxChannelSpread, greaterThan(24));
+    expect(colorBuckets.length, greaterThan(24));
+  });
+
   testWidgets('paused audio-reactive flow releases its spectrum subscription', (
     tester,
   ) async {
@@ -191,7 +365,6 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: FlowingLightBackground(
-          fallbackColor: Colors.black,
           inputs: NowPlayingBackgroundInputs(
             spectrumStream: spectrum.stream,
             enableAnimation: true,
@@ -217,7 +390,6 @@ void main() {
         home: TickerMode(
           enabled: tickerModeEnabled,
           child: FlowingLightBackground(
-            fallbackColor: Colors.black,
             inputs: NowPlayingBackgroundInputs(
               albumCoverBytes: cover,
               spectrumStream: spectrum.stream,
@@ -258,7 +430,6 @@ void main() {
     Widget buildSubject(Uint8List bytes) {
       return MaterialApp(
         home: FlowingLightBackground(
-          fallbackColor: Colors.black,
           inputs: NowPlayingBackgroundInputs(
             albumCoverBytes: bytes,
             enableAnimation: false,
