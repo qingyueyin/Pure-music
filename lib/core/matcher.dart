@@ -22,6 +22,7 @@ final logger = utils.logger;
 enum ResultSource { qq, kugou, ne, amll }
 
 const int _lyricCacheMaxSize = 64;
+const int _amllSearchLimit = 30;
 final Map<String, Future<Lyric?>> _lyricFetchCache = {};
 final Map<String, Lyric> _lyricResultCache = {};
 final List<String> _lyricCacheAccessOrder = [];
@@ -93,14 +94,14 @@ Lyric? getCachedLyric({
 /// 搜索指定源并返回最佳匹配的歌词
 Future<Lyric?> getLyricFromPreferredSource(
     Audio audio, ResultSource source) async {
-  final searchQueries = _buildSearchQueries(audio);
+  final searchQueries = buildOnlineLyricSearchQueries(audio);
   if (searchQueries.isEmpty) {
     logger.w('[preferred] no valid search queries');
     return null;
   }
 
   final query = searchQueries.first;
-  logger.i('[preferred] searching "$query" from $source');
+  logger.i('[preferred] searching from $source');
 
   try {
     final List<SongSearchResult> results;
@@ -137,7 +138,7 @@ Future<Lyric?> getLyricFromPreferredSource(
         break;
       case ResultSource.amll:
         final raw = await net_api
-            .amllSearchSingle(keyword: query, pageSize: 3)
+            .amllSearchSingle(keyword: query, pageSize: _amllSearchLimit)
             .timeout(const Duration(seconds: 8));
         results = raw
             .map((item) => SongSearchResult.fromAmllSearchItem(item, audio))
@@ -154,8 +155,7 @@ Future<Lyric?> getLyricFromPreferredSource(
 
     results.sort((a, b) => b.score.compareTo(a.score));
     final best = results.first;
-    logger.i(
-        '[preferred] best from $source: score=${best.score} id=${best.qqSongId ?? best.kugouSongHash ?? best.neSongId ?? best.amllTtmlFile}');
+    logger.i('[preferred] best from $source: score=${best.score}');
 
     return getOnlineLyric(
       qqSongId: best.qqSongId,
@@ -164,7 +164,7 @@ Future<Lyric?> getLyricFromPreferredSource(
       amllTtmlFile: best.amllTtmlFile,
     );
   } catch (e) {
-    logger.e('[preferred] $source search failed: $e');
+    logger.e('[preferred] $source search failed: ${e.runtimeType}');
     return null;
   }
 }
@@ -194,7 +194,7 @@ Future<Lyric?> getOnlineLyric({
   );
 
   if (key.isNotEmpty && _lyricFetchCache.containsKey(key)) {
-    logger.d('[getOnlineLyric] request dedup: $key');
+    logger.d('[getOnlineLyric] request dedup');
     return _lyricFetchCache[key]!;
   }
 
@@ -253,7 +253,7 @@ Future<Lyric?> _fetchLyricInternal({
 
   // Run all sources in parallel, each with error isolation
   final wrapped = futures.map((f) => f.catchError((e) {
-        logger.e('Source failed: $e');
+        logger.e('Source failed: ${e.runtimeType}');
         return null;
       }));
 
@@ -279,18 +279,11 @@ void clearLyricCaches() {
   _lyricCacheAccessOrder.clear();
 }
 
-String _stripTrailingTitleVariants(String title) {
+String _stripTrailingFeaturedArtists(String title) {
   return title
       .replaceAll(
         RegExp(
-          r'\s*[\(\[（【][^)\]）】]*(?:acoustic|live|remix|explicit|deluxe|edit|version|mix|radio|single|demo|bonus|track|album|studio|remaster(?:ed|ing)?|feat(?:uring)?|ft\.?)[^)\]）】]*[\)\]）】]\s*$',
-          caseSensitive: false,
-        ),
-        '',
-      )
-      .replaceAll(
-        RegExp(
-          r'\s*[-‐‑‒–—―]\s*(?:acoustic|live|remix|edit|version|mix|radio|demo|remaster(?:ed|ing)?)(?:\s+version)?\s*$',
+          r'\s*[\(\[（【]\s*(?:feat(?:uring)?|ft)\.?\s+[^)\]）】]*[\)\]）】]\s*$',
           caseSensitive: false,
         ),
         '',
@@ -305,8 +298,54 @@ String _stripTrailingTitleVariants(String title) {
       .trim();
 }
 
+bool _containsVersionQualifier(String value) {
+  return RegExp(
+    r'\b(?:acoustic|live|remix|explicit|deluxe|edit|version|mix|radio|single|demo|bonus|track|album|studio|remaster(?:ed|ing)?|instrumental|karaoke|cover|ver\.?)\b|现场|現場|现场版|現場版|演唱会|演唱會|音乐节|音樂節|混音|重混|伴奏|纯音乐|純音樂|翻唱|ライブ|リミックス|アコースティック|インスト(?:ゥルメンタル)?|弾き語り|라이브|리믹스|버전',
+    caseSensitive: false,
+  ).hasMatch(value);
+}
+
+String? _titleLanguageGroup(String value) {
+  if (RegExp(r'[\u3040-\u30ff]').hasMatch(value)) return 'ja';
+  if (RegExp(r'[\uac00-\ud7af]').hasMatch(value)) return 'ko';
+
+  final hasHan = RegExp(r'[\u3400-\u9fff]').hasMatch(value);
+  final hasLatin = RegExp(r'[A-Za-z]').hasMatch(value);
+  if (hasHan && !hasLatin) return 'han';
+  if (hasLatin && !hasHan) return 'latin';
+  return null;
+}
+
+String _stripTrailingLocalizedTranslation(String title) {
+  final match = RegExp(
+    r'^(.*?)\s*[\(\[（【]([^)\]）】]+)[\)\]）】]\s*$',
+  ).firstMatch(title);
+  if (match == null) return title.trim();
+
+  final base = match.group(1)!.trim();
+  final suffix = match.group(2)!.trim();
+  if (base.isEmpty || suffix.isEmpty || _containsVersionQualifier(suffix)) {
+    return title.trim();
+  }
+
+  final baseLanguage = _titleLanguageGroup(base);
+  final suffixLanguage = _titleLanguageGroup(suffix);
+  if (baseLanguage != null &&
+      suffixLanguage != null &&
+      baseLanguage != suffixLanguage) {
+    return base;
+  }
+  return title.trim();
+}
+
+String _stripNonVersionTitleSuffixes(String title) {
+  return _stripTrailingFeaturedArtists(
+    _stripTrailingLocalizedTranslation(title),
+  );
+}
+
 String _normalizeExactMatchText(String value) {
-  return _stripTrailingTitleVariants(value.toLowerCase()).replaceAll(
+  return _stripNonVersionTitleSuffixes(value.toLowerCase()).replaceAll(
     RegExp(
         r'''[-‐‑‒–—―\s_/\\|,，、.&＆+＋·・:：;；!！?？'"“”‘’`~～^()（）\[\]【】{}《》〈〉「」『』]+'''),
     '',
@@ -367,8 +406,8 @@ double _computeScore(Audio audio, String title, String artists, String album,
   if (normalizedTitle.isEmpty) return -1.0;
   if (normalizedAudioTitle.isEmpty) return -1.0;
 
-  final strippedAudio = _stripTrailingTitleVariants(normalizedAudioTitle);
-  final strippedResult = _stripTrailingTitleVariants(normalizedTitle);
+  final strippedAudio = _stripNonVersionTitleSuffixes(normalizedAudioTitle);
+  final strippedResult = _stripNonVersionTitleSuffixes(normalizedTitle);
 
   // 用剥离后的标题做精确匹配
   if (strippedResult == strippedAudio) {
@@ -475,7 +514,6 @@ class SongSearchResult {
           duration: item.durationMs ~/ 1000),
       qqSongId: item.id,
       duration: item.durationMs ~/ 1000,
-      lyricType: '逐字',
     );
   }
 
@@ -490,7 +528,6 @@ class SongSearchResult {
           duration: item.durationMs ~/ 1000),
       kugouSongHash: item.hash,
       duration: item.durationMs ~/ 1000,
-      lyricType: '逐字',
     );
   }
 
@@ -505,7 +542,6 @@ class SongSearchResult {
           duration: item.durationMs ~/ 1000),
       neSongId: int.tryParse(item.id),
       duration: item.durationMs ~/ 1000,
-      lyricType: null,
     );
   }
 
@@ -522,9 +558,76 @@ class SongSearchResult {
       item.album,
       blended,
       amllTtmlFile: item.id,
-      lyricType: '逐字',
     );
   }
+}
+
+Future<List<SongSearchResult>> validateOnlineLyricResults(
+  Iterable<SongSearchResult> candidates, {
+  Future<Lyric?> Function(SongSearchResult result)? loadLyric,
+  int maxConcurrency = 6,
+}) async {
+  final items = candidates.toList(growable: false);
+  if (items.isEmpty) return const [];
+
+  final loader = loadLyric ?? _loadOnlineLyricResult;
+  final validated = List<SongSearchResult?>.filled(items.length, null);
+  var nextIndex = 0;
+
+  Future<void> worker() async {
+    while (nextIndex < items.length) {
+      final index = nextIndex++;
+      final item = items[index];
+      try {
+        final lyric = await loader(item);
+        if (lyric == null || lyric.lines.isEmpty) continue;
+        item.lyricType = lyric.isWordByWord ? '逐字' : '逐行';
+        validated[index] = item;
+      } catch (error, trace) {
+        logger.w(
+          'Lyric result validation failed: ${error.runtimeType}',
+          stackTrace: trace,
+        );
+      }
+    }
+  }
+
+  final workerCount = min(max(1, maxConcurrency), items.length);
+  await Future.wait(List.generate(workerCount, (_) => worker()));
+  return validated.whereType<SongSearchResult>().toList(growable: false);
+}
+
+Future<List<SongSearchResult>> selectBestValidOnlineLyricResults(
+  Audio audio,
+  Iterable<SongSearchResult> candidates, {
+  Future<Lyric?> Function(SongSearchResult result)? loadLyric,
+  int maxConcurrency = 6,
+}) async {
+  final exactCandidates = candidates
+      .where((item) => _isExactAggregateMatch(audio, item))
+      .toList(growable: false);
+  final validated = (await validateOnlineLyricResults(
+    exactCandidates,
+    loadLyric: loadLyric,
+    maxConcurrency: maxConcurrency,
+  ))
+      .toList()
+    ..sort((a, b) => b.score.compareTo(a.score));
+
+  final bestBySource = <ResultSource, SongSearchResult>{};
+  for (final item in validated) {
+    bestBySource.putIfAbsent(item.source, () => item);
+  }
+  return bestBySource.values.toList(growable: false);
+}
+
+Future<Lyric?> _loadOnlineLyricResult(SongSearchResult result) {
+  return getOnlineLyric(
+    qqSongId: result.qqSongId,
+    kugouSongHash: result.kugouSongHash,
+    neSongId: result.neSongId,
+    amllTtmlFile: result.amllTtmlFile,
+  );
 }
 
 /// 清理搜索关键词，移除分隔符和噪音
@@ -537,13 +640,31 @@ String _cleanForSearch(String text) {
       .trim();
 }
 
+String _cleanArtistsForSearch(Audio audio) {
+  final artistParts = audio.splitedArtists
+      .map((artist) => artist.trim())
+      .where((artist) => artist.isNotEmpty)
+      .toList(growable: false);
+  final joinedArtists =
+      artistParts.isEmpty ? audio.artist.trim() : artistParts.join(' ');
+  return _cleanForSearch(joinedArtists)
+      .replaceAll(
+        RegExp(
+          r'\s+(?:feat(?:uring)?|ft|with|vs)\.?\s+',
+          caseSensitive: false,
+        ),
+        ' ',
+      )
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+}
+
 /// 构建多个搜索查询
 /// 例如："呼吸决定 - Fine乐团" → ["呼吸决定 Fine乐团", "呼吸决定", "Fine乐团 呼吸决定"]
-List<String> _buildSearchQueries(Audio audio) {
+List<String> buildOnlineLyricSearchQueries(Audio audio) {
   final queries = <String>[];
 
   final rawTitle = audio.title.trim();
-  final rawArtist = audio.artist.trim();
 
   if (rawTitle.isEmpty || rawTitle == 'UNKNOWN') {
     // 从文件路径提取文件名作为后备
@@ -558,7 +679,7 @@ List<String> _buildSearchQueries(Audio audio) {
   }
 
   final cleanTitle = _cleanForSearch(rawTitle);
-  final cleanArtist = _cleanForSearch(rawArtist);
+  final cleanArtist = _cleanArtistsForSearch(audio);
   final hasArtist = cleanArtist.isNotEmpty && cleanArtist != 'UNKNOWN';
 
   // 1. 主要查询：标题 + 艺术家（空格连接，替代原来的 "title - artist"）
@@ -579,19 +700,19 @@ List<String> _buildSearchQueries(Audio audio) {
 }
 
 Future<List<SongSearchResult>> uniSearch(Audio audio) async {
-  final searchQueries = _buildSearchQueries(audio);
+  final searchQueries = buildOnlineLyricSearchQueries(audio);
   if (searchQueries.isEmpty) {
     logger.w('uniSearch: no valid search queries');
     return [];
   }
 
-  final List<SongSearchResult> result = [];
+  final bestBySource = <ResultSource, SongSearchResult>{};
   const int perSourceSearchLimit = 6;
 
   // 尝试每个查询，直到找到高置信结果
   for (int i = 0; i < searchQueries.length; i++) {
     final searchQuery = searchQueries[i];
-    logger.d('=== uniSearch query #${i + 1}: "$searchQuery" ===');
+    logger.d('=== uniSearch query #${i + 1} ===');
 
     final kgFuture =
         _searchKugouWithTimeout(searchQuery, audio, 6, perSourceSearchLimit);
@@ -600,43 +721,37 @@ Future<List<SongSearchResult>> uniSearch(Audio audio) async {
     final neFuture =
         _searchNEWithTimeout(searchQuery, audio, 6, perSourceSearchLimit);
     final amllFuture =
-        _searchAMLLWithTimeout(searchQuery, audio, 6, perSourceSearchLimit);
+        _searchAMLLWithTimeout(searchQuery, audio, 6, _amllSearchLimit);
 
     final results = await Future.wait(
             [kgFuture, qqFuture, neFuture, amllFuture],
             eagerError: false)
         .timeout(const Duration(seconds: 18), onTimeout: () {
-      logger.w('uniSearch timeout for query: $searchQuery');
+      logger.w('uniSearch query #${i + 1} timed out');
       return <List<SongSearchResult>>[[], [], [], []];
     });
 
-    // 取各来源分数最高的结果
-    final bestResults = <SongSearchResult>[];
-    for (final sourceResults in results) {
-      final exactMatches = sourceResults
-          .where((item) => _isExactAggregateMatch(audio, item))
-          .toList()
-        ..sort((a, b) => b.score.compareTo(a.score));
-      if (exactMatches.isNotEmpty) {
-        bestResults.add(exactMatches.first);
-      }
+    final unresolvedCandidates = results
+        .expand((sourceResults) => sourceResults)
+        .where((item) => !bestBySource.containsKey(item.source));
+    final selectedResults = await selectBestValidOnlineLyricResults(
+      audio,
+      unresolvedCandidates,
+      maxConcurrency: 4,
+    );
+
+    for (final item in selectedResults) {
+      bestBySource[item.source] = item;
     }
 
-    bestResults.sort((a, b) => b.score.compareTo(a.score));
-
-    for (final item in bestResults) {
-      if (!_containsResult(result, item)) {
-        result.add(item);
-      }
-    }
-
-    // 如果已经找到高置信结果，不再尝试后续查询
-    if (result.isNotEmpty) {
-      logger.d('=== uniSearch found results on query #${i + 1}, stopping ===');
+    if (bestBySource.length == ResultSource.values.length) {
+      logger.d('=== uniSearch resolved every source on query #${i + 1} ===');
       break;
     }
   }
 
+  final result = bestBySource.values.toList()
+    ..sort((a, b) => b.score.compareTo(a.score));
   logger.d(
       '=== uniSearch done: ${result.length} results, best=${result.isNotEmpty ? result.first.score : 0} ===');
   return result.take(4).toList();
@@ -645,7 +760,7 @@ Future<List<SongSearchResult>> uniSearch(Audio audio) async {
 Future<List<SongSearchResult>> _searchKugouWithTimeout(
     String query, Audio audio, int seconds, int limit) async {
   try {
-    logger.d('[KG] searching: "$query"');
+    logger.d('[KG] searching');
     final kugouResults = await net_api
         .kgSearchLyric(
           keyword: query,
@@ -663,8 +778,8 @@ Future<List<SongSearchResult>> _searchKugouWithTimeout(
     }
     logger.d('[KG] accepted ${results.length}');
     return results;
-  } catch (err, trace) {
-    logger.w('KuGou search failed: $err', stackTrace: trace);
+  } catch (err) {
+    logger.w('[KG] search failed: ${err.runtimeType}');
     return [];
   }
 }
@@ -672,7 +787,7 @@ Future<List<SongSearchResult>> _searchKugouWithTimeout(
 Future<List<SongSearchResult>> _searchQQWithTimeout(
     String query, Audio audio, int seconds, int limit) async {
   try {
-    logger.d('[QQ] searching: "$query"');
+    logger.d('[QQ] searching');
     final qqResults = await net_api
         .qqSearchLyric(
           keyword: query,
@@ -690,8 +805,8 @@ Future<List<SongSearchResult>> _searchQQWithTimeout(
     }
     logger.d('[QQ] accepted ${results.length}');
     return results;
-  } catch (err, trace) {
-    logger.w('QQ search failed: $err', stackTrace: trace);
+  } catch (err) {
+    logger.w('[QQ] search failed: ${err.runtimeType}');
     return [];
   }
 }
@@ -699,7 +814,7 @@ Future<List<SongSearchResult>> _searchQQWithTimeout(
 Future<List<SongSearchResult>> _searchNEWithTimeout(
     String query, Audio audio, int seconds, int limit) async {
   try {
-    logger.d('[NE] searching: "$query"');
+    logger.d('[NE] searching');
     final neResults = await net_api
         .neSearchLyric(
           keyword: query,
@@ -717,8 +832,8 @@ Future<List<SongSearchResult>> _searchNEWithTimeout(
     }
     logger.d('[NE] accepted ${results.length}');
     return results;
-  } catch (err, trace) {
-    logger.w('NetEase search failed: $err', stackTrace: trace);
+  } catch (err) {
+    logger.w('[NE] search failed: ${err.runtimeType}');
     return [];
   }
 }
@@ -726,7 +841,7 @@ Future<List<SongSearchResult>> _searchNEWithTimeout(
 Future<List<SongSearchResult>> _searchAMLLWithTimeout(
     String query, Audio audio, int seconds, int limit) async {
   try {
-    logger.d('[AMLL] searching: "$query"');
+    logger.d('[AMLL] searching');
     final amllResults = await net_api
         .amllSearchSingle(keyword: query, pageSize: limit)
         .timeout(Duration(seconds: seconds),
@@ -741,24 +856,10 @@ Future<List<SongSearchResult>> _searchAMLLWithTimeout(
     }
     logger.d('[AMLL] accepted ${results.length}');
     return results;
-  } catch (err, trace) {
-    logger.w('AMLL search failed: $err', stackTrace: trace);
+  } catch (err) {
+    logger.w('[AMLL] search failed: ${err.runtimeType}');
     return [];
   }
-}
-
-bool _containsResult(List<SongSearchResult> list, SongSearchResult item) {
-  for (final r in list) {
-    if (r.qqSongId != null && r.qqSongId == item.qqSongId) return true;
-    if (r.kugouSongHash != null && r.kugouSongHash == item.kugouSongHash) {
-      return true;
-    }
-    if (r.neSongId != null && r.neSongId == item.neSongId) return true;
-    if (r.amllTtmlFile != null && r.amllTtmlFile == item.amllTtmlFile) {
-      return true;
-    }
-  }
-  return false;
 }
 
 Future<Lyric?> _getQQSyncLyric(String qqSongId) async {
