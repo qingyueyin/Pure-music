@@ -14,6 +14,8 @@ import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/native/rust/api/installed_font.dart';
 import 'package:pure_music/lyric/lyric_source.dart';
+import 'package:pure_music/lyric/lyric_tag_word_format.dart';
+import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/settings_tile.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/desktop_lyric_service.dart';
@@ -21,6 +23,8 @@ import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.d
 import 'package:pure_music/page/settings_page/check_update.dart';
 import 'package:pure_music/page/settings_page/create_issue.dart';
 import 'package:pure_music/page/settings_page/artist_separator_editor.dart';
+import 'package:pure_music/page/settings_page/other_settings.dart'
+    show AudioEchoLogRecordControl, ReplayGainControl;
 import 'package:pure_music/native/rust/api/utils.dart' as rust_utils;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -89,7 +93,7 @@ class _SettingsTabsState extends State<SettingsTabs> {
         ),
         const SizedBox(height: 24.0),
         Expanded(
-          child: IndexedStack(
+          child: DirectionalTabView(
             index: _currentIndex,
             children: const [
               _AppearanceTabContent(),
@@ -120,10 +124,6 @@ class _AppearanceTabContent extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 96.0, right: 20),
       children: const [
         _ThemeOptionControl(),
-        SizedBox(height: 16.0),
-        NowPlayingBackgroundModeToggle(),
-        SizedBox(height: 16.0),
-        _AudioReactiveFlowSwitch(),
         SizedBox(height: 16.0),
         _CoverColorExtractionSwitch(),
         SizedBox(height: 16.0),
@@ -298,10 +298,10 @@ class _TopBarLyricAnimationSelectorState
     const animationItems = {
       TopBarLyricAnimation.slideUp: '上划',
       TopBarLyricAnimation.slideDown: '下划',
+      TopBarLyricAnimation.slideLeft: '左划',
+      TopBarLyricAnimation.slideRight: '右划',
       TopBarLyricAnimation.fade: '淡入淡出',
       TopBarLyricAnimation.absorb: '吸收',
-      TopBarLyricAnimation.flipX: 'X 翻转',
-      TopBarLyricAnimation.flipY: 'Y 翻转',
     };
 
     final current = settings.topBarLyricAnimation;
@@ -436,7 +436,7 @@ class _GlowEffectSwitchState extends State<_GlowEffectSwitch> {
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      description: '辉光缩放效果（实验性）',
+      description: '辉光缩放效果',
       subtitle: '逐字播放时的辉光缩放动画',
       action: Switch(
         value: nowPlayingPagePref.enableLyricGlow,
@@ -1122,35 +1122,6 @@ class _LyricsTabContentState extends State<_LyricsTabContent> {
       children: [
         const DefaultLyricSourceControl(),
         const SizedBox(height: 16.0),
-        // 注释：歌词模式设置暂时隐藏，功能未实现
-        // 问题：用户设置后没有实际效果，渲染器直接根据歌词数据类型（SyncLyricLine/LrcLine）决定显示方式
-        // TODO: 实现强制显示模式转换（例如：把逐字歌词降级显示为逐行）
-        // SettingsTile(
-        //   description: '歌词模式',
-        //   subtitle: '获取到的网络歌词格式',
-        //   action: SegmentedButton<LyricDisplayMode>(
-        //     showSelectedIcon: false,
-        //     segments: const [
-        //       ButtonSegment<LyricDisplayMode>(
-        //         value: LyricDisplayMode.lineByLine,
-        //         label: Text('逐行歌词'),
-        //       ),
-        //       ButtonSegment<LyricDisplayMode>(
-        //         value: LyricDisplayMode.wordByWord,
-        //         label: Text('逐字歌词'),
-        //       ),
-        //     ],
-        //     selected: {settings.lyricDisplayMode},
-        //     onSelectionChanged: (newSelection) {
-        //       setState(() {
-        //         settings.lyricDisplayMode = newSelection.first;
-        //       });
-        //       settings.saveSettings();
-        //       LyricViewController.instance.triggerRebuild();
-        //     },
-        //   ),
-        // ),
-        // const SizedBox(height: 16.0),
         // 注释：这两个设置暂时隐藏，因为第三方歌词 API 总是返回全部数据（主歌词+翻译+注音），
         // 无法单独控制是否获取翻译和注音。播放页面已有显示/隐藏开关，这里的设置是冗余的。
         // TODO: 未来如果 API 支持分别请求，可以重新启用
@@ -1220,93 +1191,118 @@ class _LyricsTabContentState extends State<_LyricsTabContent> {
         const _StaggerStyleSelector(),
         const SizedBox(height: 16.0),
         const _LiftStyleSelector(),
-        const SizedBox(height: 16.0),
-        // 注释：歌词写入标签功能暂时隐藏，功能未完全实现
-        // TODO: 完善歌词写入标签功能后重新启用
-        // SettingsTile(
-        //   description: '歌词写入标签提示',
-        //   subtitle: '获取网络歌词后询问是否写入音频标签',
-        //   action: Switch(
-        //     value: settings.promptWriteLyricToTag,
-        //     onChanged: (v) {
-        //       setState(() {
-        //         settings.promptWriteLyricToTag = v;
-        //         if (!v) settings.autoWriteLyricToTag = false;
-        //       });
-        //       settings.saveSettings();
-        //       if (!v) {
-        //         PlayService.instance.lyricService.resetLyricWritePrompts();
-        //       }
-        //     },
-        //   ),
-        // ),
-        // if (settings.promptWriteLyricToTag) ...[
-        //   const SizedBox(height: 16.0),
-        //   SettingsTile(
-        //     description: '自动写入标签',
-        //     subtitle: settings.autoWriteLyricToTag
-        //         ? '获取歌词 ${settings.autoWriteLyricToTagDelay} 秒后自动写入，无需确认'
-        //         : '开启后静默写入，不再弹窗询问',
-        //     action: Switch(
-        //       value: settings.autoWriteLyricToTag,
-        //       onChanged: (v) {
-        //         setState(() {
-        //           settings.autoWriteLyricToTag = v;
-        //         });
-        //         settings.saveSettings();
-        //         PlayService.instance.lyricService.resetLyricWritePrompts();
-        //       },
-        //     ),
-        //   ),
-        //   if (settings.autoWriteLyricToTag) ...[
-        //     const SizedBox(height: 16.0),
-        //     SettingsTile(
-        //       description: '自动写入延迟',
-        //       subtitle: '获取歌词后 ${settings.autoWriteLyricToTagDelay} 秒自动写入',
-        //       action: SizedBox(
-        //         width: 140,
-        //         child: Slider(
-        //           value: settings.autoWriteLyricToTagDelay.toDouble(),
-        //           min: 10,
-        //           max: 120,
-        //           divisions: 11,
-        //           label: '${settings.autoWriteLyricToTagDelay}秒',
-        //           onChanged: (v) {
-        //             setState(() {
-        //               settings.autoWriteLyricToTagDelay = v.round();
-        //             });
-        //             settings.saveSettings();
-        //           },
-        //         ),
-        //       ),
-        //     ),
-        //   ],
-        //   const SizedBox(height: 16.0),
-        //   SettingsTile(
-        //     description: '提示延迟',
-        //     subtitle: settings.autoWriteLyricToTag
-        //         ? '自动写入已启用，提示不生效'
-        //         : '获取歌词后等待 ${settings.promptWriteLyricToTagDelay} 秒再提示',
-        //     action: SizedBox(
-        //       width: 140,
-        //       child: Slider(
-        //         value: settings.promptWriteLyricToTagDelay.toDouble(),
-        //         min: 5,
-        //         max: 60,
-        //         divisions: 11,
-        //         label: '${settings.promptWriteLyricToTagDelay}秒',
-        //         onChanged: settings.autoWriteLyricToTag
-        //             ? null
-        //             : (v) {
-        //                 setState(() {
-        //                   settings.promptWriteLyricToTagDelay = v.round();
-        //                 });
-        //                 settings.saveSettings();
-        //               },
-        //       ),
-        //     ),
-        //   ),
-        // ],
+        if (enableOnlineLyricTagWriting) ...[
+          const SizedBox(height: 16.0),
+          SettingsTile(
+            description: '逐字歌词写入格式',
+            subtitle: '逐行歌词始终写为标准 LRC',
+            action: SegmentedButton<LyricTagWordFormat>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(
+                  value: LyricTagWordFormat.wordByWord,
+                  label: Text('逐字 LRC'),
+                ),
+                ButtonSegment(
+                  value: LyricTagWordFormat.enhanced,
+                  label: Text('增强 LRC'),
+                ),
+              ],
+              selected: {settings.lyricTagWordFormat},
+              onSelectionChanged: (selection) {
+                setState(() {
+                  settings.lyricTagWordFormat = selection.first;
+                });
+                settings.saveSettings();
+              },
+            ),
+          ),
+          const SizedBox(height: 16.0),
+          SettingsTile(
+            description: '歌词写入标签提示',
+            subtitle: '获取网络歌词后询问是否写入音频标签',
+            action: Switch(
+              value: settings.promptWriteLyricToTag,
+              onChanged: (v) {
+                setState(() {
+                  settings.promptWriteLyricToTag = v;
+                  if (!v) settings.autoWriteLyricToTag = false;
+                });
+                settings.saveSettings();
+                if (!v) {
+                  PlayService.instance.lyricService.resetLyricWritePrompts();
+                }
+              },
+            ),
+          ),
+          if (settings.promptWriteLyricToTag) ...[
+            const SizedBox(height: 16.0),
+            SettingsTile(
+              description: '自动写入标签',
+              subtitle: settings.autoWriteLyricToTag
+                  ? '获取歌词 ${settings.autoWriteLyricToTagDelay} 秒后自动写入，无需确认'
+                  : '开启后静默写入，不再弹窗询问',
+              action: Switch(
+                value: settings.autoWriteLyricToTag,
+                onChanged: (v) {
+                  setState(() {
+                    settings.autoWriteLyricToTag = v;
+                  });
+                  settings.saveSettings();
+                  PlayService.instance.lyricService.resetLyricWritePrompts();
+                },
+              ),
+            ),
+            if (settings.autoWriteLyricToTag) ...[
+              const SizedBox(height: 16.0),
+              SettingsTile(
+                description: '自动写入延迟',
+                subtitle: '获取歌词后 ${settings.autoWriteLyricToTagDelay} 秒自动写入',
+                action: SizedBox(
+                  width: 140,
+                  child: Slider(
+                    value: settings.autoWriteLyricToTagDelay.toDouble(),
+                    min: 10,
+                    max: 120,
+                    divisions: 11,
+                    label: '${settings.autoWriteLyricToTagDelay}秒',
+                    onChanged: (v) {
+                      setState(() {
+                        settings.autoWriteLyricToTagDelay = v.round();
+                      });
+                      settings.saveSettings();
+                    },
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 16.0),
+            SettingsTile(
+              description: '提示延迟',
+              subtitle: settings.autoWriteLyricToTag
+                  ? '自动写入已启用，提示不生效'
+                  : '获取歌词后等待 ${settings.promptWriteLyricToTagDelay} 秒再提示',
+              action: SizedBox(
+                width: 140,
+                child: Slider(
+                  value: settings.promptWriteLyricToTagDelay.toDouble(),
+                  min: 5,
+                  max: 60,
+                  divisions: 11,
+                  label: '${settings.promptWriteLyricToTagDelay}秒',
+                  onChanged: settings.autoWriteLyricToTag
+                      ? null
+                      : (v) {
+                          setState(() {
+                            settings.promptWriteLyricToTagDelay = v.round();
+                          });
+                          settings.saveSettings();
+                        },
+                ),
+              ),
+            ),
+          ],
+        ],
       ],
     );
   }
@@ -1322,6 +1318,46 @@ class _DesktopLyricTabContent extends StatefulWidget {
 
 class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
   final settings = AppSettings.instance;
+  double _playedOpacity = 1.0;
+  double _unplayedOpacity = 1.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _playedOpacity = _alphaFromColor(settings.desktopPlayedColor);
+    _unplayedOpacity = _alphaFromColor(settings.desktopUnplayedColor);
+  }
+
+  double _alphaFromColor(int? color) {
+    if (color == null) return 1.0;
+    return ((color >> 24) & 0xFF) / 255.0;
+  }
+
+  Future<void> _pickDesktopColor(
+    int? current,
+    double opacity,
+    ValueChanged<int> onPicked,
+    ValueChanged<double> onChangedOpacity,
+  ) async {
+    final initial = current != null
+        ? Color(current.toUnsigned(32))
+        : Theme.of(context).colorScheme.primary;
+    final result = await showDialog<_DesktopColorResult>(
+      context: context,
+      builder: (context) => _DesktopColorPickerDialog(
+        initialColor: initial,
+        initialOpacity: opacity,
+        label: '选择颜色',
+      ),
+    );
+    if (!mounted || result == null) return;
+    final alpha = (result.opacity * 255).round().clamp(0, 255);
+    final argb = (alpha << 24) | (result.color.toARGB32() & 0x00FFFFFF);
+    _update(() {
+      onPicked(argb);
+      onChangedOpacity(result.opacity);
+    });
+  }
 
   DesktopLyricService get _service => PlayService.instance.desktopLyricService;
 
@@ -1332,6 +1368,8 @@ class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
       followThemeColor: settings.desktopFollowThemeColor,
       brightnessMode: settings.desktopLyricBrightnessMode,
       scheme: scheme,
+      customPlayedColor: settings.desktopPlayedColor,
+      customUnplayedColor: settings.desktopUnplayedColor,
     );
     _service.sendConfig(
       lyricFontSize: settings.desktopLyricFontSize,
@@ -1342,11 +1380,13 @@ class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
       romanPosition: settings.desktopLyricRomanPosition,
       showNowPlayingInfo: settings.desktopShowNowPlayingInfo,
       lyricTextAlign: settings.desktopLyricTextAlign,
+      lyricAnimation: settings.desktopLyricAnimation.index,
       enableStroke: settings.desktopEnableStroke,
       backgroundOpacity: settings.desktopBackgroundOpacity,
       playedColor: colors.played.toARGB32(),
       unplayedColor: colors.unplayed.toARGB32(),
       followThemeColor: settings.desktopFollowThemeColor,
+      useLightOutline: shouldUseLightDesktopLyricOutline(colors.played),
     );
   }
 
@@ -1363,6 +1403,14 @@ class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    const animationItems = {
+      DesktopLyricAnimation.slideUp: '上划',
+      DesktopLyricAnimation.slideDown: '下划',
+      DesktopLyricAnimation.slideLeft: '左划',
+      DesktopLyricAnimation.slideRight: '右划',
+      DesktopLyricAnimation.fade: '淡入淡出',
+      DesktopLyricAnimation.absorb: '吸收',
+    };
     return ListenableBuilder(
       listenable: _service,
       builder: (context, _) {
@@ -1462,6 +1510,32 @@ class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
             ),
             const SizedBox(height: 16),
             SettingsTile(
+              description: '桌面歌词切换动画',
+              action: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: SegmentedButton<DesktopLyricAnimation>(
+                      segments: [
+                        for (final entry in animationItems.entries)
+                          ButtonSegment(
+                            value: entry.key,
+                            label: Text(entry.value),
+                          ),
+                      ],
+                      selected: {settings.desktopLyricAnimation},
+                      onSelectionChanged: (value) => _update(
+                        () => settings.desktopLyricAnimation = value.first,
+                      ),
+                      showSelectedIcon: false,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            SettingsTile(
               description: '歌词字号',
               subtitle: '${settings.desktopLyricFontSize.toStringAsFixed(0)}px',
               action: SizedBox(
@@ -1523,11 +1597,11 @@ class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
             ),
             const SizedBox(height: 16),
             SettingsTile(
-              description: '描边',
+              description: '文字描边',
               action: Switch(
                 value: settings.desktopEnableStroke,
-                onChanged: (v) => _update(
-                  () => settings.desktopEnableStroke = v,
+                onChanged: (value) => _update(
+                  () => settings.desktopEnableStroke = value,
                 ),
               ),
             ),
@@ -1572,9 +1646,37 @@ class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
                     ),
                   ],
                   selected: {settings.desktopLyricBrightnessMode},
-                  onSelectionChanged: (value) => _update(
-                    () => settings.desktopLyricBrightnessMode = value.first,
-                  ),
+                  onSelectionChanged: (value) => _update(() {
+                    settings.desktopLyricBrightnessMode = value.first;
+                    settings.desktopPlayedColor = null;
+                    settings.desktopUnplayedColor = null;
+                    _playedOpacity = 1.0;
+                    _unplayedOpacity = 1.0;
+                  }),
+                ),
+              ),
+              const SizedBox(height: 16),
+              _DesktopColorSetting(
+                label: '已播放颜色',
+                color: settings.desktopPlayedColor,
+                opacity: _playedOpacity,
+                onPickColor: () => _pickDesktopColor(
+                  settings.desktopPlayedColor,
+                  _playedOpacity,
+                  (color) => settings.desktopPlayedColor = color,
+                  (opacity) => _playedOpacity = opacity,
+                ),
+              ),
+              const SizedBox(height: 16),
+              _DesktopColorSetting(
+                label: '未播放颜色',
+                color: settings.desktopUnplayedColor,
+                opacity: _unplayedOpacity,
+                onPickColor: () => _pickDesktopColor(
+                  settings.desktopUnplayedColor,
+                  _unplayedOpacity,
+                  (color) => settings.desktopUnplayedColor = color,
+                  (opacity) => _unplayedOpacity = opacity,
                 ),
               ),
             ],
@@ -1585,7 +1687,6 @@ class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
   }
 }
 
-// ignore: unused_element
 class _DesktopColorSetting extends StatelessWidget {
   final String label;
   final int? color;
@@ -1886,15 +1987,15 @@ class _AdvancedTabContent extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.only(bottom: 96.0, right: 20),
       children: const [
+        ReplayGainControl(),
+        SizedBox(height: 16.0),
+        AudioEchoLogRecordControl(),
+        SizedBox(height: 16.0),
         ArtistSeparatorEditor(),
         SizedBox(height: 16.0),
         SelectFontCombobox(),
         SizedBox(height: 16.0),
         CreateIssueTile(),
-        SizedBox(height: 16.0),
-        CheckForUpdate(),
-        SizedBox(height: 16.0),
-        AutoUpdateToggle(),
       ],
     );
   }
@@ -1956,10 +2057,10 @@ class _SelectFontComboboxState extends State<SelectFontCombobox> {
           } else if (mounted) {
             showTextOnSnackBar('已恢复默认字体', variant: ToastVariant.success);
           }
-        } catch (err) {
-          logger.e('[reset font] $err');
+        } catch (err, trace) {
+          logger.e('恢复默认字体失败', error: err, stackTrace: trace);
           if (mounted) {
-            showTextOnSnackBar(err.toString());
+            showTextOnSnackBar('恢复默认字体失败，请查看日志');
           }
         }
         return;
@@ -1988,11 +2089,11 @@ class _SelectFontComboboxState extends State<SelectFontCombobox> {
         } else if (mounted) {
           showTextOnSnackBar('已应用字体');
         }
-      } catch (err) {
+      } catch (err, trace) {
         ThemeProvider.instance.changeFontFamily(null);
-        logger.e('[select font] $err');
+        logger.e('应用字体失败', error: err, stackTrace: trace);
         if (mounted) {
-          showTextOnSnackBar(err.toString());
+          showTextOnSnackBar('应用字体失败，请查看日志');
         }
       }
     } finally {
@@ -2273,87 +2374,6 @@ class _DefaultLyricSourceControlState extends State<DefaultLyricSourceControl> {
   }
 }
 
-class NowPlayingBackgroundModeToggle extends StatefulWidget {
-  const NowPlayingBackgroundModeToggle({super.key});
-
-  @override
-  State<NowPlayingBackgroundModeToggle> createState() =>
-      _NowPlayingBackgroundModeToggleState();
-}
-
-class _NowPlayingBackgroundModeToggleState
-    extends State<NowPlayingBackgroundModeToggle> {
-  final pref = AppPreference.instance.nowPlayingPagePref;
-
-  @override
-  Widget build(BuildContext context) {
-    if (!Platform.isWindows) {
-      return const SizedBox.shrink();
-    }
-
-    return SettingsTile(
-      description: '播放页背景模式',
-      action: SegmentedButton<NowPlayingBackgroundMode>(
-        showSelectedIcon: false,
-        segments: const [
-          ButtonSegment<NowPlayingBackgroundMode>(
-            value: NowPlayingBackgroundMode.meshGradient,
-            label: Text('动态背景'),
-          ),
-          ButtonSegment<NowPlayingBackgroundMode>(
-            value: NowPlayingBackgroundMode.coverBlurTest,
-            label: Text('流光背景'),
-          ),
-        ],
-        selected: {pref.backgroundMode},
-        onSelectionChanged: (selection) {
-          final nextMode = selection.first;
-          if (nextMode == pref.backgroundMode) return;
-          setState(() => pref.backgroundMode = nextMode);
-          nowPlayingBackgroundModeNotifier.value = nextMode;
-          AppPreference.instance.save();
-        },
-      ),
-    );
-  }
-}
-
-class _AudioReactiveFlowSwitch extends StatefulWidget {
-  const _AudioReactiveFlowSwitch();
-
-  @override
-  State<_AudioReactiveFlowSwitch> createState() =>
-      _AudioReactiveFlowSwitchState();
-}
-
-class _AudioReactiveFlowSwitchState extends State<_AudioReactiveFlowSwitch> {
-  final pref = AppPreference.instance.nowPlayingPagePref;
-
-  @override
-  Widget build(BuildContext context) {
-    if (pref.backgroundMode != NowPlayingBackgroundMode.coverBlurTest) {
-      return const SizedBox.shrink();
-    }
-
-    return SettingsTile(
-      description: '音频律动',
-      subtitle: '流光背景随音乐频率动态变化',
-      action: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Switch(
-            value: pref.audioReactiveFlow,
-            onChanged: (value) {
-              setState(() => pref.audioReactiveFlow = value);
-              AppPreference.instance.save();
-            },
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _AboutTabContent extends StatelessWidget {
   const _AboutTabContent();
 
@@ -2362,28 +2382,34 @@ class _AboutTabContent extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.only(bottom: 96.0, right: 20),
       children: const [
-        _AboutAppIdentity(),
-        SizedBox(height: 24.0),
         _AboutSectionHeader('更新'),
         SizedBox(height: 4.0),
         _AboutVersionItem(),
         SizedBox(height: 16.0),
         _AboutAutoUpdateItem(),
         SizedBox(height: 24.0),
-        _AboutSectionHeader('项目'),
+        _AboutSectionHeader('相关链接'),
         SizedBox(height: 4.0),
         _AboutLinkItem(
-          icon: Symbols.code,
-          title: '项目主页',
-          subtitle: 'qingyueyin/Pure-music',
-          url: 'https://github.com/qingyueyin/Pure-music',
+          title: '官方网站',
+          url: 'https://qingyueyin.github.io/Pure-music/',
+          actionLabel: '访问官网',
+          icon: Symbols.language,
         ),
         SizedBox(height: 16.0),
         _AboutLinkItem(
-          icon: Symbols.lightbulb,
+          title: '项目主页',
+          url: 'https://github.com/qingyueyin/Pure-music',
+          actionLabel: '打开仓库',
+          icon: Symbols.code,
+        ),
+        SizedBox(height: 16.0),
+        _AboutLinkItem(
           title: '反馈与建议',
           subtitle: '在 GitHub 提交 Issue',
           url: 'https://github.com/qingyueyin/Pure-music/issues/new/choose',
+          actionLabel: '提交 Issue',
+          icon: Symbols.lightbulb,
         ),
       ],
     );
@@ -2408,47 +2434,6 @@ class _AboutSectionHeader extends StatelessWidget {
           letterSpacing: 0.5,
         ),
       ),
-    );
-  }
-}
-
-class _AboutAppIdentity extends StatelessWidget {
-  const _AboutAppIdentity();
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Row(
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(10),
-          child: Image.asset('app_icon.ico', width: 48, height: 48),
-        ),
-        const SizedBox(width: 16),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Pure Music',
-              style: TextStyle(
-                color: scheme.onSurface,
-                fontSize: AppType.pageTitle,
-                fontWeight: AppType.weightSemibold,
-                letterSpacing: -0.3,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              '版本 ${AppSettings.version}',
-              style: TextStyle(
-                color: scheme.onSurfaceVariant,
-                fontSize: AppType.subtitle,
-                letterSpacing: 0.15,
-              ),
-            ),
-          ],
-        ),
-      ],
     );
   }
 }
@@ -2536,63 +2521,32 @@ class _AboutAutoUpdateItemState extends State<_AboutAutoUpdateItem> {
 class _AboutLinkItem extends StatelessWidget {
   final IconData icon;
   final String title;
-  final String subtitle;
+  final String? subtitle;
   final String url;
+  final String actionLabel;
 
   const _AboutLinkItem({
     required this.icon,
     required this.title,
-    required this.subtitle,
+    this.subtitle,
     required this.url,
+    required this.actionLabel,
   });
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return SizedBox(
-      height: 48,
-      child: InkWell(
-        onTap: () async {
+    return SettingsTile(
+      description: title,
+      subtitle: subtitle,
+      action: FilledButton.tonalIcon(
+        onPressed: () async {
           final opened = await rust_utils.launchInBrowser(uri: url);
           if (!opened) {
             showTextOnSnackBar('打开链接失败');
           }
         },
-        child: Row(
-          children: [
-            Icon(icon, size: 20, color: scheme.onSurfaceVariant),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      color: scheme.onSurface,
-                      fontSize: AppType.body,
-                      fontWeight: AppType.weightMedium,
-                    ),
-                  ),
-                  const SizedBox(height: 1),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      color: scheme.onSurfaceVariant,
-                      fontSize: AppType.caption,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(
-              Symbols.open_in_new,
-              size: 16,
-              color: scheme.onSurfaceVariant,
-            ),
-          ],
-        ),
+        icon: Icon(icon, size: 18),
+        label: Text(actionLabel),
       ),
     );
   }

@@ -55,23 +55,6 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
   bool _logExpanded = true;
   bool _isPreparingLog = false;
 
-  String _sanitizePaths(String text) {
-    var t = text;
-    t = t.replaceAll(
-      RegExp(r'([A-Za-z]:\\Users\\)([^\\]+)\\', caseSensitive: false),
-      r'$1***\\',
-    );
-    t = t.replaceAll(
-      RegExp(r'(/Users/)([^/]+)/', caseSensitive: false),
-      r'$1***/',
-    );
-    t = t.replaceAll(
-      RegExp(r'(/home/)([^/]+)/', caseSensitive: false),
-      r'$1***/',
-    );
-    return t;
-  }
-
   String _buildEnvironmentInfo() {
     final locale = WidgetsBinding.instance.platformDispatcher.locale;
     return [
@@ -105,8 +88,6 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
         'eqPreampDb': pb.eqPreampDb,
         'eqAutoGainEnabled': pb.eqAutoGainEnabled,
         'eqAutoHeadroomDb': pb.eqAutoHeadroomDb,
-        'wasapiBufferSec': pb.wasapiBufferSec,
-        'wasapiEventDriven': pb.wasapiEventDriven,
         'reinitOnSetSource': pb.reinitOnSetSource,
       },
       'nowPlaying': {
@@ -143,23 +124,15 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
       return const JsonEncoder.withIndent('  ').convert(base);
     }
     base['nowPlaying'] = {
-      'title': now.title,
-      'artist': now.artist,
-      'album': now.album,
       'track': now.track,
       'duration': now.duration,
       'bitrate': now.bitrate,
       'sampleRate': now.sampleRate,
-      'path': _sanitizePaths(now.path),
     };
     return const JsonEncoder.withIndent('  ').convert(base);
   }
 
   String _buildDescTemplate() {
-    final pb = PlayService.instance.playbackService;
-    final now = pb.nowPlaying;
-    final hint =
-        now == null ? '' : '当前歌曲：${now.title} - ${now.artist} (${now.album})';
     return [
       '### 复现步骤',
       '1. ',
@@ -172,8 +145,8 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
       '### 发生频率',
       '',
       '### 其他补充（可选）',
-      hint.isEmpty ? '' : hint,
-    ].where((e) => e.isNotEmpty).join('\n');
+      '',
+    ].join('\n');
   }
 
   String _buildLogSnapshot() {
@@ -189,11 +162,10 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
         logStrBuf.writeln(line);
       }
     }
-    var text = logStrBuf.toString();
-    return _sanitizePaths(text);
+    return redactDiagnosticData(logStrBuf.toString());
   }
 
-  String _buildLogSnapshotFull() {
+  Future<String> _buildLogSnapshotFull() async {
     final parts = <String>[];
     parts.add('== APP ==');
     parts.add(_buildAppInfo());
@@ -201,9 +173,9 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
     parts.add('== ENV ==');
     parts.add(_buildEnvironmentInfo());
     parts.add('');
-    final echoPath = AudioEchoLogRecorder.instance.currentLogPath;
     parts.add('== AUDIO_ECHO_LOG ==');
-    parts.add("path: ${echoPath == null ? "-" : _sanitizePaths(echoPath)}");
+    final echoLog = await AudioEchoLogRecorder.instance.readLatestLog();
+    parts.add(echoLog == null ? '-' : redactDiagnosticData(echoLog));
     parts.add('');
     parts.add('== PREF ==');
     parts.add(_buildPreferenceSnapshot());
@@ -231,10 +203,12 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
     setState(() => _isPreparingLog = true);
     try {
       _ensureFieldsPrepared();
-      final snapshot = _buildLogSnapshotFull();
+      final snapshot = await _buildLogSnapshotFull();
       logEditingController.text = snapshot;
       await Clipboard.setData(ClipboardData(text: snapshot));
       if (mounted) showTextOnSnackBar('已复制日志到剪贴板');
+    } catch (_) {
+      if (mounted) showTextOnSnackBar('日志获取失败');
     } finally {
       if (mounted) {
         setState(() => _isPreparingLog = false);
