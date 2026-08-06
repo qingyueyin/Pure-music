@@ -1,4 +1,5 @@
 import 'package:pure_music/lyric/lyric.dart';
+import 'package:pure_music/lyric/metadata_detector.dart';
 import 'dart:math';
 
 class Qrc extends Lyric {
@@ -7,55 +8,7 @@ class Qrc extends Lyric {
   /// 判断是否为元数据行（作曲、作词、编曲、和声、混音等）
   /// 支持中文、英文、日文、韩文等多种语言的元数据标签
   static bool _isMetadataLine(String text) {
-    final trimmed = text.trim();
-    if (trimmed.isEmpty) return true;
-    
-    // 多语言元数据标签
-    final metadataPatterns = [
-      // 中文
-      '作曲', '作词', '编曲', '和声', '混音', '母带',
-      '演唱', '歌手', '原唱', '翻唱', '录音', '监制',
-      '制作', '统筹', '企划', '宣发', '吉他', '贝斯',
-      '鼓', '键盘', '弦乐', '管乐', '打击乐',
-      // 英文
-      'Composer', 'Lyricist', 'Arranger', 'Producer',
-      'Vocal', 'Singer', 'Mixing', 'Mastering',
-      'Recorded', 'Written', 'Composed', 'Arranged',
-      'Guitar', 'Bass', 'Drums', 'Keyboard', 'Strings',
-      'Horn', 'Percussion', 'Background', 'Backing',
-      'feat.', 'ft.', 'featuring',
-      // 日文
-      '作曲', '作詞', '編曲', '歌', 'コーラス',
-      'ギター', 'ベース', 'ドラム', 'ピアノ',
-      'ミックス', 'マスタリング', 'プロデュース',
-      // 韩文
-      '작곡', '작사', '편곡', '노래', '코러스',
-      '믹싱', '마스터링', '프로듀스',
-      // 法文
-      'Compositeur', 'Parolier', 'Arrangeur',
-      'Chant', 'Mixage', 'Mastering',
-      // 德文
-      'Komponist', 'Texter', 'Arrangeur',
-      'Gesang', 'Mischung', 'Mastering',
-      // 西班牙文
-      'Compositor', 'Letrista', 'Arreglista',
-      'Voz', 'Mezcla', 'Masterización',
-      // 通用缩写和符号
-      'by', 'prod.', 'arr.', 'mix.', 'mast.',
-    ];
-    
-    for (final pattern in metadataPatterns) {
-      if (trimmed.startsWith(pattern)) return true;
-    }
-    
-    // 匹配常见的元数据格式： "角色: 名字" 或 "角色 - 名字"
-    final metadataRegex = RegExp(
-      r'^(作曲|作词|编曲|Composer|Lyricist|Arranger|Producer|作曲|作詞|編曲|작곡|작사|편곡)\s*[:：\-–—]',
-      caseSensitive: false,
-    );
-    if (metadataRegex.hasMatch(trimmed)) return true;
-    
-    return false;
+    return isLyricMetadataText(text);
   }
 
   static Qrc fromQrcText(String qrc, [String? transRawStr]) {
@@ -93,7 +46,11 @@ class Qrc extends Lyric {
       for (var transLine in splitedTrans) {
         final bracketStart = transLine.indexOf('[');
         final bracketEnd = transLine.indexOf(']');
-        if (bracketStart == -1 || bracketEnd == -1 || bracketEnd <= bracketStart) continue;
+        if (bracketStart == -1 ||
+            bracketEnd == -1 ||
+            bracketEnd <= bracketStart) {
+          continue;
+        }
 
         final timeStr = transLine.substring(bracketStart + 1, bracketEnd);
         final parts = timeStr.split(':');
@@ -101,9 +58,12 @@ class Qrc extends Lyric {
           final mins = int.tryParse(parts[0]) ?? 0;
           final secs = double.tryParse(parts[1]) ?? 0.0;
           final transTimeMs = (mins * 60000 + (secs * 1000).round());
-          final t = transLine.replaceAll(RegExp(r'\[\d{2}:\d{2}\.\d{2,}\]'), '').trim();
+          final t = transLine
+              .replaceAll(RegExp(r'\[\d{2}:\d{2}\.\d{2,}\]'), '')
+              .trim();
           if (t.isNotEmpty && !_isMetadataLine(t)) {
-            transEntries.add(_TransLine(Duration(milliseconds: transTimeMs), t));
+            transEntries
+                .add(_TransLine(Duration(milliseconds: transTimeMs), t));
           }
         }
       }
@@ -118,7 +78,8 @@ class Qrc extends Lyric {
 
         for (int i = lastMatchedIdx + 1; i < lines.length; i++) {
           if (lines[i].words.isEmpty) continue;
-          final diff = (lines[i].start.inMilliseconds - te.start.inMilliseconds).abs();
+          final diff =
+              (lines[i].start.inMilliseconds - te.start.inMilliseconds).abs();
 
           if (diff < bestDiff) {
             bestDiff = diff;
@@ -215,7 +176,9 @@ class QrcLine extends SyncLyricLine {
   static QrcWord _mergeWords(QrcWord last, QrcWord curr) {
     return QrcWord(
       last.start,
-      Duration(milliseconds: last.length.inMilliseconds + curr.length.inMilliseconds),
+      Duration(
+          milliseconds:
+              last.length.inMilliseconds + curr.length.inMilliseconds),
       last.content + curr.content,
     );
   }

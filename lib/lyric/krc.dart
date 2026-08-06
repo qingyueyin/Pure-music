@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:pure_music/lyric/lyric.dart';
+import 'package:pure_music/lyric/metadata_detector.dart';
 import 'dart:math';
 
 class Krc extends Lyric {
@@ -9,58 +10,7 @@ class Krc extends Lyric {
   /// 判断是否为元数据行（作曲、作词、编曲、和声、混音等）
   /// 支持中文、英文、日文、韩文等多种语言的元数据标签
   static bool _isMetadataLine(String text) {
-    final trimmed = text.trim();
-    if (trimmed.isEmpty) return true;
-    
-    // 多语言元数据标签
-    final metadataPatterns = [
-      // 中文
-      '作曲', '作词', '编曲', '和声', '混音', '母带',
-      '演唱', '歌手', '原唱', '翻唱', '录音', '监制',
-      '制作', '统筹', '企划', '宣发', '吉他', '贝斯',
-      '鼓', '键盘', '弦乐', '管乐', '打击乐',
-      // QQ音乐KRC常见缩写（词/曲不带"作"前缀）
-      '词', '曲',
-      // 英文
-      'Composer', 'Lyricist', 'Arranger', 'Producer',
-      'Vocal', 'Singer', 'Mixing', 'Mastering',
-      'Recorded', 'Written', 'Composed', 'Arranged',
-      'Guitar', 'Bass', 'Drums', 'Keyboard', 'Strings',
-      'Horn', 'Percussion', 'Background', 'Backing',
-      'feat.', 'ft.', 'featuring',
-      // 日文
-      '作曲', '作詞', '編曲', '歌', 'コーラス',
-      'ギター', 'ベース', 'ドラム', 'ピアノ',
-      'ミックス', 'マスタリング', 'プロデュース',
-      // 韩文
-      '작곡', '작사', '편곡', '노래', '코러스',
-      '믹싱', '마스터링', '프로듀스',
-      // 法文
-      'Compositeur', 'Parolier', 'Arrangeur',
-      'Chant', 'Mixage', 'Mastering',
-      // 德文
-      'Komponist', 'Texter', 'Arrangeur',
-      'Gesang', 'Mischung', 'Mastering',
-      // 西班牙文
-      'Compositor', 'Letrista', 'Arreglista',
-      'Voz', 'Mezcla', 'Masterización',
-      // 通用缩写和符号
-      'by', 'prod.', 'arr.', 'mix.', 'mast.',
-    ];
-    
-    for (final pattern in metadataPatterns) {
-      if (trimmed.startsWith(pattern)) return true;
-    }
-    
-    // 匹配常见的元数据格式： "角色: 名字" 或 "角色 - 名字"
-    // 包含单字缩写：词/曲（QQ音乐KRC常见）
-    final metadataRegex = RegExp(
-      r'^(作曲|作词|编曲|词|曲|Composer|Lyricist|Arranger|Producer|作曲|作詞|編曲|작곡|작사|편곡)\s*[:：\-–—]',
-      caseSensitive: false,
-    );
-    if (metadataRegex.hasMatch(trimmed)) return true;
-    
-    return false;
+    return isLyricMetadataText(text);
   }
 
   static Krc fromKrcText(String krc) {
@@ -83,7 +33,9 @@ class Krc extends Lyric {
       if (languageFrame == null) {
         final bracketStart = item.indexOf('[');
         final bracketEnd = item.indexOf(']');
-        if (bracketStart == -1 || bracketEnd == -1 || bracketEnd <= bracketStart) {
+        if (bracketStart == -1 ||
+            bracketEnd == -1 ||
+            bracketEnd <= bracketStart) {
           continue;
         }
         final tag = item.substring(bracketStart + 1, bracketEnd);
