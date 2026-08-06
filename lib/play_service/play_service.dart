@@ -13,9 +13,15 @@ import 'package:pure_music/play_service/lyric_service.dart';
 import 'package:pure_music/play_service/playback_service.dart';
 
 class PlayService {
-  late final playbackService = PlaybackService(this);
-  late final lyricService = LyricService(this);
-  late final desktopLyricService = DesktopLyricService(this);
+  PlaybackService? _playbackService;
+  LyricService? _lyricService;
+  DesktopLyricService? _desktopLyricService;
+
+  PlaybackService get playbackService =>
+      _playbackService ??= PlaybackService(this);
+  LyricService get lyricService => _lyricService ??= LyricService(this);
+  DesktopLyricService get desktopLyricService =>
+      _desktopLyricService ??= DesktopLyricService(this);
 
   PlayService._();
 
@@ -27,29 +33,20 @@ class PlayService {
 
   Future<void> close() async {
     // 按顺序关闭服务，每个操作带超时保护
-    try {
-      await desktopLyricService.killDesktopLyric().timeout(
-        const Duration(seconds: 1),
-        onTimeout: () {
-          logger.w('desktopLyricService.close timeout');
-        },
-      );
-    } catch (e) {
-      logger.w('desktopLyricService.close error: $e');
+    final desktopLyric = _desktopLyricService;
+    if (desktopLyric != null) {
+      try {
+        await desktopLyric.killDesktopLyric().timeout(
+          const Duration(seconds: 1),
+          onTimeout: () {
+            logger.w('desktopLyricService.close timeout');
+          },
+        );
+      } catch (e) {
+        logger.w('desktopLyricService.close error: $e');
+      }
     }
-    
-    // 先关闭播放服务（可能触发回调）
-    try {
-      await playbackService.close().timeout(
-        const Duration(seconds: 2),
-        onTimeout: () {
-          logger.w('playbackService.close timeout');
-        },
-      );
-    } catch (e) {
-      logger.w('playbackService.close error: $e');
-    }
-    
+
     // 停止音频回波日志记录
     try {
       await AudioEchoLogRecorder.instance.stop().timeout(
@@ -62,22 +59,38 @@ class PlayService {
       logger.w('AudioEchoLogRecorder.stop error: $e');
     }
 
+    LyricViewController.disposeIfInitialized();
+    final lyric = _lyricService;
+    if (lyric != null) {
+      try {
+        lyric.dispose();
+      } catch (e) {
+        logger.w('lyricService.dispose error: $e');
+      }
+    }
+
+    final playback = _playbackService;
+    if (playback != null) {
+      try {
+        await playback.close().timeout(
+          const Duration(seconds: 2),
+          onTimeout: () {
+            logger.w('playbackService.close timeout');
+          },
+        );
+      } catch (e) {
+        logger.w('playbackService.close error: $e');
+      }
+    }
+
     ThemeProvider.instance.dispose();
     SystemVolumeService.instance.dispose();
     AlbumColorCache.instance.dispose();
     CoverImageCache.instance.dispose();
-    LyricViewController.instance.dispose();
     AudioLibrary.instance.dispose();
     AppDb.instance.dispose();
     AppSettings.closeGithub();
     clearLyricCaches();
-
-    // 歌词服务最后释放，避免 UI 组件仍在监听时访问已销毁的 service
-    try {
-      lyricService.dispose();
-    } catch (e) {
-      logger.w('lyricService.dispose error: $e');
-    }
 
     _instance = null;
   }
