@@ -1,0 +1,1 @@
+enum LyricTagWordFormat { wordByWord, enhanced }
