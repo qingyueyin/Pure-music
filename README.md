@@ -22,11 +22,9 @@ Pure Music 的桌面歌词，跟随主播放器实时同步歌词与播放状态
 
 **歌词样式**
 
-<p align="center">
-  <img src="screenshot/左对齐主题色歌词.png" width="330" alt="左对齐主题色歌词">
-  <img src="screenshot/居中主题色歌词信息歌词.png" width="330" alt="居中主题色歌词">
-  <img src="screenshot/右对齐主题色歌词.png" width="330" alt="右对齐主题色歌词">
-</p>
+<img src="screenshot/左对齐主题色歌词.png" width="330" alt="左对齐主题色歌词">
+<img src="screenshot/居中主题色歌词信息歌词.png" width="330" alt="居中主题色歌词">
+<img src="screenshot/右对齐主题色歌词.png" width="330" alt="右对齐主题色歌词">
 
 ---
 
