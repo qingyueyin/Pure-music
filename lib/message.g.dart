@@ -46,22 +46,6 @@ const _$ControlEventEnumMap = {
   ControlEvent.close: 5,
 };
 
-PreferenceChangedMessage _$PreferenceChangedMessageFromJson(
-  Map<String, dynamic> json,
-) => PreferenceChangedMessage(
-  (json['primary'] as num).toInt(),
-  (json['surfaceContainer'] as num).toInt(),
-  (json['onSurface'] as num).toInt(),
-);
-
-Map<String, dynamic> _$PreferenceChangedMessageToJson(
-  PreferenceChangedMessage instance,
-) => <String, dynamic>{
-  'primary': instance.primary,
-  'surfaceContainer': instance.surfaceContainer,
-  'onSurface': instance.onSurface,
-};
-
 PlayerStateChangedMessage _$PlayerStateChangedMessageFromJson(
   Map<String, dynamic> json,
 ) => PlayerStateChangedMessage(json['playing'] as bool);
@@ -101,6 +85,13 @@ LyricLineChangedMessage _$LyricLineChangedMessageFromJson(
   (json['nextWords'] as List<dynamic>?)
       ?.map((e) => LyricWord.fromJson(e as Map<String, dynamic>))
       .toList(),
+  json['romanLyric'] as String?,
+  json['nextRomanLyric'] as String?,
+  json['isWordByWord'] as bool?,
+  (json['lineId'] as num?)?.toInt(),
+  (json['highlightDeadlineMs'] as num?)?.toInt(),
+  (json['highlightCatchUpDurationMs'] as num?)?.toInt(),
+  (json['highlightFinishLeadMs'] as num?)?.toInt(),
 );
 
 Map<String, dynamic> _$LyricLineChangedMessageToJson(
@@ -108,12 +99,19 @@ Map<String, dynamic> _$LyricLineChangedMessageToJson(
 ) => <String, dynamic>{
   'content': instance.content,
   'translation': instance.translation,
+  'romanLyric': instance.romanLyric,
   'length': instance.length.inMicroseconds,
   'words': instance.words,
   'progressMs': instance.progressMs,
   'nextContent': instance.nextContent,
   'nextTranslation': instance.nextTranslation,
+  'nextRomanLyric': instance.nextRomanLyric,
   'nextWords': instance.nextWords,
+  'isWordByWord': instance.wordByWord,
+  'lineId': instance.lineId,
+  'highlightDeadlineMs': instance.highlightDeadlineMs,
+  'highlightCatchUpDurationMs': instance.highlightCatchUpDurationMs,
+  'highlightFinishLeadMs': instance.highlightFinishLeadMs,
 };
 
 LyricWord _$LyricWordFromJson(Map<String, dynamic> json) => LyricWord(
@@ -128,28 +126,9 @@ Map<String, dynamic> _$LyricWordToJson(LyricWord instance) => <String, dynamic>{
   'content': instance.content,
 };
 
-PositionMessage _$PositionMessageFromJson(Map<String, dynamic> json) =>
-    PositionMessage(
-      (json['wordIndex'] as num).toInt(),
-      (json['progress'] as num).toDouble(),
-    );
-
-Map<String, dynamic> _$PositionMessageToJson(PositionMessage instance) =>
-    <String, dynamic>{
-      'wordIndex': instance.wordIndex,
-      'progress': instance.progress,
-    };
-
-ThemeModeChangedMessage _$ThemeModeChangedMessageFromJson(
-  Map<String, dynamic> json,
-) => ThemeModeChangedMessage(json['darkMode'] as bool);
-
-Map<String, dynamic> _$ThemeModeChangedMessageToJson(
-  ThemeModeChangedMessage instance,
-) => <String, dynamic>{'darkMode': instance.darkMode};
-
 ThemeChangedMessage _$ThemeChangedMessageFromJson(Map<String, dynamic> json) =>
     ThemeChangedMessage(
+      json['darkMode'] as bool,
       (json['primary'] as num).toInt(),
       (json['surfaceContainer'] as num).toInt(),
       (json['onSurface'] as num).toInt(),
@@ -158,6 +137,7 @@ ThemeChangedMessage _$ThemeChangedMessageFromJson(Map<String, dynamic> json) =>
 Map<String, dynamic> _$ThemeChangedMessageToJson(
   ThemeChangedMessage instance,
 ) => <String, dynamic>{
+  'darkMode': instance.darkMode,
   'primary': instance.primary,
   'surfaceContainer': instance.surfaceContainer,
   'onSurface': instance.onSurface,
@@ -167,10 +147,4 @@ UnlockMessage _$UnlockMessageFromJson(Map<String, dynamic> json) =>
     UnlockMessage();
 
 Map<String, dynamic> _$UnlockMessageToJson(UnlockMessage instance) =>
-    <String, dynamic>{};
-
-HeartbeatMessage _$HeartbeatMessageFromJson(Map<String, dynamic> json) =>
-    const HeartbeatMessage();
-
-Map<String, dynamic> _$HeartbeatMessageToJson(HeartbeatMessage instance) =>
     <String, dynamic>{};

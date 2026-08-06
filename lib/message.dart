@@ -85,26 +85,6 @@ class ControlEventMessage extends Message {
   Map<String, dynamic> _toJson() => _$ControlEventMessageToJson(this);
 }
 
-/// desktop lyric -> player
-@JsonSerializable()
-class PreferenceChangedMessage extends Message {
-  final int primary;
-  final int surfaceContainer;
-  final int onSurface;
-
-  const PreferenceChangedMessage(
-    this.primary,
-    this.surfaceContainer,
-    this.onSurface,
-  );
-
-  factory PreferenceChangedMessage.fromJson(Map<String, dynamic> json) =>
-      _$PreferenceChangedMessageFromJson(json);
-
-  @override
-  Map<String, dynamic> _toJson() => _$PreferenceChangedMessageToJson(this);
-}
-
 /// player -> desktop lyric
 @JsonSerializable()
 class PlayerStateChangedMessage extends Message {
@@ -117,6 +97,41 @@ class PlayerStateChangedMessage extends Message {
 
   @override
   Map<String, dynamic> _toJson() => _$PlayerStateChangedMessageToJson(this);
+}
+
+class LyricProgressChangedMessage extends Message {
+  final int progressMs;
+  final int sampledAtMs;
+  final double playbackRate;
+  final bool playing;
+  final int? lineId;
+
+  const LyricProgressChangedMessage(
+    this.progressMs,
+    this.sampledAtMs,
+    this.playbackRate,
+    this.playing, [
+    this.lineId,
+  ]);
+
+  factory LyricProgressChangedMessage.fromJson(Map<String, dynamic> json) {
+    return LyricProgressChangedMessage(
+      (json['progressMs'] as num).toInt(),
+      (json['sampledAtMs'] as num).toInt(),
+      (json['playbackRate'] as num).toDouble(),
+      json['playing'] as bool,
+      (json['lineId'] as num?)?.toInt(),
+    );
+  }
+
+  @override
+  Map<String, dynamic> _toJson() => {
+    'progressMs': progressMs,
+    'sampledAtMs': sampledAtMs,
+    'playbackRate': playbackRate,
+    'playing': playing,
+    if (lineId != null) 'lineId': lineId,
+  };
 }
 
 /// player -> desktop lyric
@@ -140,12 +155,22 @@ class NowPlayingChangedMessage extends Message {
 class LyricLineChangedMessage extends Message {
   final String content;
   final String? translation;
+  final String? romanLyric;
   final Duration length;
   final List<LyricWord>? words;
   final int? progressMs;
   final String? nextContent;
   final String? nextTranslation;
+  final String? nextRomanLyric;
   final List<LyricWord>? nextWords;
+  @JsonKey(name: 'isWordByWord')
+  final bool? wordByWord;
+  final int? lineId;
+  final int? highlightDeadlineMs;
+  final int? highlightCatchUpDurationMs;
+  final int? highlightFinishLeadMs;
+
+  bool get isWordByWord => wordByWord ?? (words?.isNotEmpty ?? false);
 
   const LyricLineChangedMessage(
     this.content,
@@ -156,6 +181,13 @@ class LyricLineChangedMessage extends Message {
     this.nextContent,
     this.nextTranslation,
     this.nextWords,
+    this.romanLyric,
+    this.nextRomanLyric,
+    this.wordByWord,
+    this.lineId,
+    this.highlightDeadlineMs,
+    this.highlightCatchUpDurationMs,
+    this.highlightFinishLeadMs,
   ]);
 
   factory LyricLineChangedMessage.fromJson(Map<String, dynamic> json) =>
@@ -179,41 +211,16 @@ class LyricWord {
   Map<String, dynamic> toJson() => _$LyricWordToJson(this);
 }
 
-@JsonSerializable()
-class PositionMessage {
-  final int wordIndex;
-  final double progress;
-
-  const PositionMessage(this.wordIndex, this.progress);
-
-  factory PositionMessage.fromJson(Map<String, dynamic> json) =>
-      _$PositionMessageFromJson(json);
-
-  Map<String, dynamic> toJson() => _$PositionMessageToJson(this);
-}
-
-/// player -> desktop lyric
-@JsonSerializable()
-class ThemeModeChangedMessage extends Message {
-  final bool darkMode;
-
-  const ThemeModeChangedMessage(this.darkMode);
-
-  factory ThemeModeChangedMessage.fromJson(Map<String, dynamic> json) =>
-      _$ThemeModeChangedMessageFromJson(json);
-
-  @override
-  Map<String, dynamic> _toJson() => _$ThemeModeChangedMessageToJson(this);
-}
-
 /// player -> desktop lyric
 @JsonSerializable()
 class ThemeChangedMessage extends Message {
+  final bool darkMode;
   final int primary;
   final int surfaceContainer;
   final int onSurface;
 
   const ThemeChangedMessage(
+    this.darkMode,
     this.primary,
     this.surfaceContainer,
     this.onSurface,
@@ -238,14 +245,80 @@ class UnlockMessage extends Message {
   Map<String, dynamic> _toJson() => _$UnlockMessageToJson(this);
 }
 
-/// 心跳消息——主程序定期发送给桌面歌词，用于检测子进程是否存活
-@JsonSerializable()
-class HeartbeatMessage extends Message {
-  const HeartbeatMessage();
+/// player -> desktop lyric
+class DesktopLyricConfigMessage extends Message {
+  final double? lyricFontSize;
+  final double? translationFontSize;
+  final int? lyricFontWeight;
+  final bool? showLyricTranslation;
+  final bool? showRoman;
+  final int? romanPosition;
+  final bool? showNowPlayingInfo;
+  final int? lyricTextAlign;
+  final int? lyricAnimation;
+  final bool? enableStroke;
+  final double? backgroundOpacity;
+  final int? playedColor;
+  final int? unplayedColor;
+  final bool? followThemeColor;
+  final bool? useLightOutline;
 
-  factory HeartbeatMessage.fromJson(Map<String, dynamic> json) =>
-      _$HeartbeatMessageFromJson(json);
+  const DesktopLyricConfigMessage({
+    this.lyricFontSize,
+    this.translationFontSize,
+    this.lyricFontWeight,
+    this.showLyricTranslation,
+    this.showRoman,
+    this.romanPosition,
+    this.showNowPlayingInfo,
+    this.lyricTextAlign,
+    this.lyricAnimation,
+    this.enableStroke,
+    this.backgroundOpacity,
+    this.playedColor,
+    this.unplayedColor,
+    this.followThemeColor,
+    this.useLightOutline,
+  });
+
+  factory DesktopLyricConfigMessage.fromJson(Map<String, dynamic> json) =>
+      DesktopLyricConfigMessage(
+        lyricFontSize: (json['lyricFontSize'] as num?)?.toDouble(),
+        translationFontSize: (json['translationFontSize'] as num?)?.toDouble(),
+        lyricFontWeight: (json['lyricFontWeight'] as num?)?.toInt(),
+        showLyricTranslation: json['showLyricTranslation'] as bool?,
+        showRoman: json['showRoman'] as bool?,
+        romanPosition: (json['romanPosition'] as num?)?.toInt(),
+        showNowPlayingInfo: json['showNowPlayingInfo'] as bool?,
+        lyricTextAlign: (json['lyricTextAlign'] as num?)?.toInt(),
+        lyricAnimation: (json['lyricAnimation'] as num?)?.toInt(),
+        enableStroke: json['enableStroke'] as bool?,
+        backgroundOpacity: (json['backgroundOpacity'] as num?)?.toDouble(),
+        playedColor: (json['playedColor'] as num?)?.toInt(),
+        unplayedColor: (json['unplayedColor'] as num?)?.toInt(),
+        followThemeColor: json['followThemeColor'] as bool?,
+        useLightOutline: json['useLightOutline'] as bool?,
+      );
+
+  Map<String, dynamic> toJson() => _toJson();
 
   @override
-  Map<String, dynamic> _toJson() => _$HeartbeatMessageToJson(this);
+  Map<String, dynamic> _toJson() => {
+    if (lyricFontSize != null) 'lyricFontSize': lyricFontSize,
+    if (translationFontSize != null) 'translationFontSize': translationFontSize,
+    if (lyricFontWeight != null) 'lyricFontWeight': lyricFontWeight,
+    if (showLyricTranslation != null)
+      'showLyricTranslation': showLyricTranslation,
+    if (showRoman != null) 'showRoman': showRoman,
+    if (romanPosition != null) 'romanPosition': romanPosition,
+    if (showNowPlayingInfo != null) 'showNowPlayingInfo': showNowPlayingInfo,
+    if (lyricTextAlign != null) 'lyricTextAlign': lyricTextAlign,
+    if (lyricAnimation != null) 'lyricAnimation': lyricAnimation,
+    if (enableStroke != null) 'enableStroke': enableStroke,
+    if (backgroundOpacity != null) 'backgroundOpacity': backgroundOpacity,
+    if (playedColor != null) 'playedColor': playedColor,
+    if (unplayedColor != null) 'unplayedColor': unplayedColor,
+    if (followThemeColor != null) 'followThemeColor': followThemeColor,
+    if (useLightOutline != null) 'useLightOutline': useLightOutline,
+  };
 }
