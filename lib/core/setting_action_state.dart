@@ -95,11 +95,15 @@ bool normalizedBoolSetting(Object? value, {required bool defaultValue}) {
   }
   if (value is String) {
     final normalized = value.trim().toLowerCase();
-    if (normalized == 'true' || normalized == '1' || normalized == 'yes' ||
+    if (normalized == 'true' ||
+        normalized == '1' ||
+        normalized == 'yes' ||
         normalized == 'on') {
       return true;
     }
-    if (normalized == 'false' || normalized == '0' || normalized == 'no' ||
+    if (normalized == 'false' ||
+        normalized == '0' ||
+        normalized == 'no' ||
         normalized == 'off') {
       return false;
     }
@@ -140,6 +144,7 @@ int? _normalizedIntSettingNumber(Object? value) {
 }
 
 const defaultWindowSizeSetting = (width: 1280.0, height: 756.0);
+const minimumWindowSizeSetting = (width: 360.0, height: 240.0);
 
 ({double width, double height}) normalizedWindowSizeSetting(Object? value) {
   final parts = switch (value) {
@@ -156,7 +161,10 @@ const defaultWindowSizeSetting = (width: 1280.0, height: 756.0);
   final height = _normalizedWindowSizeNumber(parts[1]);
   if (width == null || height == null) return defaultWindowSizeSetting;
   if (width <= 0 || height <= 0) return defaultWindowSizeSetting;
-  return (width: width, height: height);
+  return (
+    width: width.clamp(minimumWindowSizeSetting.width, double.infinity),
+    height: height.clamp(minimumWindowSizeSetting.height, double.infinity),
+  );
 }
 
 String _normalizedWindowSizeString(String value) {

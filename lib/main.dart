@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:pure_music/core/preference.dart';
+import 'package:pure_music/core/setting_action_state.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/cache.dart';
 import 'package:path/path.dart' as path;
@@ -21,19 +22,26 @@ import 'package:flutter_single_instance/flutter_single_instance.dart';
 Future<void> initWindow() async {
   await windowManager.ensureInitialized();
   await windowManager.setPreventClose(true);
+  final minimumSize = Size(
+    minimumWindowSizeSetting.width,
+    minimumWindowSizeSetting.height,
+  );
   Size targetSize = AppSettings.instance.windowSize;
   final view = WidgetsBinding.instance.platformDispatcher.views.first;
   final display = view.display;
   final displayW = display.size.width / display.devicePixelRatio;
   final displayH = display.size.height / display.devicePixelRatio;
-  final maxW = (displayW - 16.0).clamp(1.0, double.infinity).toDouble();
-  final maxH = (displayH - 16.0).clamp(1.0, double.infinity).toDouble();
+  final maxW =
+      (displayW - 16.0).clamp(minimumSize.width, double.infinity).toDouble();
+  final maxH =
+      (displayH - 16.0).clamp(minimumSize.height, double.infinity).toDouble();
   targetSize = Size(
-    targetSize.width.clamp(1.0, maxW),
-    targetSize.height.clamp(1.0, maxH),
+    targetSize.width.clamp(minimumSize.width, maxW),
+    targetSize.height.clamp(minimumSize.height, maxH),
   );
 
   WindowOptions windowOptions = WindowOptions(
+    minimumSize: minimumSize,
     size: targetSize,
     center: true,
     skipTaskbar: false,
@@ -70,11 +78,9 @@ Future<void> loadPrefFont() async {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 优化 ImageCache：调小上限，大曲库下减少内存压力
-  // 默认: maximumSize=100, maximumSizeBytes=100MB
-  // 经 DevTools 实测 RSS 约 317MB，Dart Heap 仅 30MB，瓶颈在 Native 内存
-  PaintingBinding.instance.imageCache.maximumSize = 15;
-  PaintingBinding.instance.imageCache.maximumSizeBytes = 12 << 20; // 12MB
+  // 覆盖多屏缩略图，避免滚动回来时反复解码；内存监控仍会分级回收。
+  PaintingBinding.instance.imageCache.maximumSize = 96;
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 32 << 20;
 
   final singleInstance = FlutterSingleInstance();
   if (!await singleInstance.isFirstInstance()) {
@@ -97,6 +103,7 @@ Future<void> main() async {
   HotkeysHelper.registerHotKeys();
 
   final supportPath = (await getAppDataDir()).path;
+  CoverImageCache.instance.configure(indexPath: supportPath);
   final settingsDir = await getSettingsDir();
   if (File(path.join(settingsDir.path, 'settings.json')).existsSync()) {
     await AppSettings.readFromJson();
