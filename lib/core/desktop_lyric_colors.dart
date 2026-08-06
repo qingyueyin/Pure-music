@@ -12,10 +12,16 @@ class DesktopLyricColors {
   });
 }
 
+bool shouldUseLightDesktopLyricOutline(Color playedColor) {
+  return ThemeData.estimateBrightnessForColor(playedColor) == Brightness.dark;
+}
+
 DesktopLyricColors resolveDesktopLyricColors({
   required bool followThemeColor,
   required DesktopLyricBrightnessMode brightnessMode,
   required ColorScheme scheme,
+  int? customPlayedColor,
+  int? customUnplayedColor,
 }) {
   if (followThemeColor) {
     return DesktopLyricColors(
@@ -23,9 +29,17 @@ DesktopLyricColors resolveDesktopLyricColors({
       unplayed: scheme.onSurface,
     );
   }
-  return resolveDesktopLyricNeutralColors(
+  final neutralColors = resolveDesktopLyricNeutralColors(
     mode: brightnessMode,
     effectiveBrightness: scheme.brightness,
+  );
+  return DesktopLyricColors(
+    played: customPlayedColor == null
+        ? neutralColors.played
+        : Color(customPlayedColor),
+    unplayed: customUnplayedColor == null
+        ? neutralColors.unplayed
+        : Color(customUnplayedColor),
   );
 }
 
