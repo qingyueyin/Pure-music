@@ -8,8 +8,8 @@ outline: deep
 
 | 工具 | 要求 |
 |------|------|
-| Flutter | ≥ 3.16，并启用 Windows desktop |
-| Dart | 随 Flutter 安装，版本需 ≥ 3.3 |
+| Flutter | ≥ 3.38.4，并启用 Windows desktop |
+| Dart | 随 Flutter 安装，版本需 ≥ 3.10.3 |
 | Rust | stable；仓库内 `rust/rust-toolchain.toml` 会选择工具链 |
 | Visual Studio | 安装“使用 C++ 的桌面开发”，包含 Windows SDK 与 CMake 工具 |
 | flutter_rust_bridge_codegen | 仅在修改 Rust 暴露 API 时需要，版本使用 2.12.0 |
@@ -76,7 +76,43 @@ flutter build windows --release
 
 产物在 `build/windows/x64/runner/Release/`。发布包必须保留 exe、根目录 DLL、`dll/` 与 `desktop_lyric/`。
 
-根目录的 `build_windows.ps1` 用于正式便携包制作，还会同步版本、清理旧构建、整理运行文件并写入 `output/`。它会关闭正在运行的主程序，不适合作为首次开发运行命令。
+根目录的 `build_windows.ps1` 用于正式发布打包：同步版本、清理旧构建、整理运行文件，并写入 `output/`。脚本先在临时目录组装并校验完整性，成功后再替换同版本旧产物，不会关闭正在运行的主程序。
+
+交互菜单：
+
+| 选项 | 作用 |
+|------|------|
+| 1 | 编译便携版（只出文件夹） |
+| 2 | 编译便携版并打 zip |
+| 3 | 编译并制作 Inno Setup 安装器 |
+| 4 | 跳过编译，打包已有产物为便携 zip |
+| 5 | 跳过编译，用已有产物制作安装器 |
+
+非交互示例：
+
+```powershell
+# 便携 zip（Mode 2）
+.\build_windows.ps1 -Version 2.3.0 -Mode 2 -NonInteractive
+
+# 安装器（Mode 3，需本机已装 Inno Setup 6/7）
+.\build_windows.ps1 -Version 2.3.0 -Mode 3 -NonInteractive
+```
+
+`PORTABLE_BUILD` 由脚本按产物类型注入：便携为 `true`（数据在 exe 旁 `data/`），安装版为 `false`（数据在 `%LOCALAPPDATA%\pure_music`）。
+
+### 便携产物
+
+- `output/pure_music_{ver}_release_portable/` 与可选 `.zip`
+- 包内含 `upgrade_from_previous.ps1`、`PORTABLE_README.txt`
+- zip 旁可有 SHA-256；包内有逐文件清单
+
+`upgrade_from_previous.ps1` 只迁移旧便携版的曲库、设置和缓存，不会用旧版 `app.so` 或 Flutter 资源覆盖新版本。
+
+### 安装器产物
+
+- `output/pure_music_{ver}_release_installer.exe` 与 `.sha256`
+- 脚本：`installer/pure_music.iss`；可选从便携版导入数据：`installer/import_portable_data.ps1`
+- 默认安装到 `%LOCALAPPDATA%\Programs\Pure Music`，`PrivilegesRequired=lowest`（当前用户，无需管理员）
 
 ## 文档站
 

@@ -4,7 +4,7 @@ outline: deep
 
 # 简介
 
-Pure Music 是一款 Windows 本地音乐播放器，默认便携运行，数据写在程序目录旁的 `data/`。
+打开 Pure Music，选一个音乐文件夹，剩下的交给它。索引与设置写在应用数据目录（便携版在程序旁 `data/`，安装版在 `%LOCALAPPDATA%\pure_music`），不碰你的源文件。
 
 <div class="pm-cards">
   <div class="pm-card">
@@ -25,7 +25,7 @@ Pure Music 是一款 Windows 本地音乐播放器，默认便携运行，数据
     <div class="pm-card-icon">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>
     </div>
-    <h3>沉浸界面</h3>
+    <h3>沉浸播放</h3>
     <p>封面取色、响应式布局、桌面歌词</p>
   </div>
 </div>
@@ -43,9 +43,10 @@ Pure Music 是一款 Windows 本地音乐播放器，默认便携运行，数据
 
 ## 推荐阅读路径
 
-1. [安装](/guide/install) — 下载与首次启动
+1. [安装](/guide/install) — 下载、卸载与数据目录
 2. [快速上手](/guide/quickstart) — 导入曲库并播放
-3. [歌词](/guide/lyrics) — 外挂命名与在线源
-4. [常见问题](/guide/faq) — SmartScreen、独占、歌词匹配
+3. [歌词](/guide/lyrics) — 外挂、同步高亮与动效
+4. [外观与设置](/guide/settings) — 设置项一览
+5. [常见问题](/guide/faq) — 安装、曲库、播放、歌词动效、桌面歌词、热键
 
 开发者请看 [架构](/dev/) 与 [构建](/dev/build)。

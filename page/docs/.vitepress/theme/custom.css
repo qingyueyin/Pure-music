@@ -93,6 +93,7 @@ body {
   letter-spacing: -0.025em;
 }
 
+/* logo 与背后光晕共用同一居中盒，避免错位 */
 .VPHero .image-src {
   border-radius: 22%;
   max-width: 240px !important;
@@ -107,13 +108,29 @@ body {
 }
 
 @media (min-width: 960px) {
-  .VPHero .image-src {
-    max-width: 300px !important;
-    max-height: 300px !important;
+  .VPHero .container {
+    max-width: 1152px !important;
   }
   .VPHero .image-container {
-    justify-content: flex-end !important;
+    position: relative !important;
+    width: 320px !important;
+    height: 320px !important;
+    margin-left: auto !important;
+    margin-right: 0 !important;
     transform: none !important;
+  }
+  .VPHero .image-bg {
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+  }
+  .VPHero .image-src {
+    position: absolute !important;
+    top: 50% !important;
+    left: 50% !important;
+    max-width: 280px !important;
+    max-height: 280px !important;
+    transform: translate(-50%, -50%) !important;
   }
 }
 
@@ -167,6 +184,35 @@ body {
 
 .vp-doc h1 { letter-spacing: -0.02em; }
 .vp-doc h2 { letter-spacing: -0.015em; }
+
+/* 更新日志等折叠块：默认收起时更易扫版本号 */
+.vp-doc details {
+  margin: 12px 0;
+  border: 1px solid var(--vp-c-border);
+  border-radius: 10px;
+  padding: 0 14px 4px;
+  background: var(--vp-c-bg-soft);
+}
+.vp-doc details summary {
+  cursor: pointer;
+  padding: 12px 0;
+  font-size: 15px;
+  list-style: none;
+}
+.vp-doc details summary::-webkit-details-marker {
+  display: none;
+}
+.vp-doc details summary::before {
+  content: '▸ ';
+  color: var(--vp-c-brand-1);
+  font-weight: 600;
+}
+.vp-doc details[open] summary::before {
+  content: '▾ ';
+}
+.vp-doc details[open] {
+  padding-bottom: 12px;
+}
 .vp-doc a { color: var(--vp-c-brand-1); }
 .vp-doc code {
   background: var(--vp-c-brand-soft);
@@ -382,13 +428,21 @@ body {
   line-height: 1.6;
 }
 
+.download-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+}
+
 .download-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
   flex: 0 0 auto;
-  min-width: 112px;
+  min-width: 128px;
   padding: 0.65rem 1rem;
   border-radius: 8px;
   background: var(--pm-gold);
@@ -400,14 +454,64 @@ body {
   box-sizing: border-box;
 }
 
-.download-btn:hover {
+.download-btn-alt {
+  background: transparent;
+  color: var(--vp-c-text-1) !important;
+  border: 1px solid var(--vp-c-border);
+}
+
+/* 次要按钮不要套用主按钮的金色底，深浅色都保持可读 */
+.download-btn-alt:hover,
+.download-btn-alt:focus-visible {
+  background: var(--vp-c-brand-soft) !important;
+  border-color: var(--vp-c-brand-1) !important;
+  color: var(--vp-c-brand-1) !important;
+  box-shadow: none !important;
+  transform: none;
+}
+
+.download-btn-alt:focus-visible {
+  outline: 2px solid var(--vp-c-brand-1);
+  outline-offset: 2px;
+}
+
+.download-btn-alt:active {
+  background: var(--vp-c-brand-soft) !important;
+  transform: scale(0.98);
+}
+
+.download-mirror-hint {
+  grid-column: 1 / -1;
+  margin: 0.25rem 0 0 !important;
+  color: var(--vp-c-text-3);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.download-btn:not(.download-btn-alt):hover {
   background: var(--pm-gold-light);
   box-shadow: 0 6px 18px rgba(189, 161, 47, 0.28);
   transform: translateY(-1px);
 }
 
-.download-btn:active {
+.download-btn:not(.download-btn-alt):active {
   transform: scale(0.98);
+}
+
+/* 顶栏社交图标：悬停用品牌色，避免发灰难辨 */
+.VPSocialLink {
+  color: var(--vp-c-text-2) !important;
+  border-radius: 8px;
+  transition: color 0.2s ease, background 0.2s ease !important;
+}
+.VPSocialLink:hover,
+.VPSocialLink:focus-visible {
+  color: var(--vp-c-brand-1) !important;
+  background: var(--vp-c-brand-soft);
+}
+.VPSocialLink:focus-visible {
+  outline: 2px solid var(--vp-c-brand-1);
+  outline-offset: 2px;
 }
 
 @media (max-width: 768px) {
@@ -417,6 +521,7 @@ body {
     grid-template-columns: 1fr;
     gap: 1.25rem;
   }
+  .download-actions { width: 100%; }
   .download-btn { width: 100%; }
 }
 

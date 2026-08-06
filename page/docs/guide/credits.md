@@ -19,16 +19,12 @@ outline: deep
 | dio | [项目主页](https://pub.dev/packages/dio) |
 | file_picker | [项目主页](https://pub.dev/packages/file_picker) |
 | sqlite3 | [项目主页](https://pub.dev/packages/sqlite3) |
-| flutter_animate | [项目主页](https://pub.dev/packages/flutter_animate) |
-| flex_color_picker | [项目主页](https://pub.dev/packages/flex_color_picker) |
 | material_symbols_icons | [项目主页](https://pub.dev/packages/material_symbols_icons) |
 | flutter_volume_controller | [项目主页](https://pub.dev/packages/flutter_volume_controller) |
 | flutter_single_instance | [项目主页](https://pub.dev/packages/flutter_single_instance) |
 | pinyin | [项目主页](https://pub.dev/packages/pinyin) |
 | logger | [项目主页](https://pub.dev/packages/logger) |
 | xml | [项目主页](https://pub.dev/packages/xml) |
-| mesh_gradient | [项目主页](https://pub.dev/packages/mesh_gradient) |
-| palette_generator | [项目主页](https://pub.dev/packages/palette_generator) |
 | fl_charset | [项目主页](https://pub.dev/packages/fl_charset) |
 
 ## 设计资源
@@ -58,3 +54,10 @@ outline: deep
 Pure Music 基于 GPL-3.0 协议发布。
 
 始于 [coriander_player](https://github.com/Ferry-200/coriander_player)（GPL-3.0），历经大量重写与扩展，已成为独立发行的项目。
+
+## 免责声明
+
+- 本项目为开源学习项目，仅限个人学习、研究、交流使用，禁止用于任何商业用途
+- 软件本身不包含任何音乐、歌词等版权内容，播放的是你本地已有的文件
+- 在线歌词搜索的数据来自第三方平台，版权归原平台及权利人所有，仅供个人学习参考，请勿传播或商用
+- 使用本软件产生的任何版权、法律问题由使用者自行承担，与项目作者无关

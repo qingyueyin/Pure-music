@@ -14,14 +14,14 @@ Flutter / Dart UI
   ├─ BASS FFI（播放、EQ、WASAPI、插件）
   └─ flutter_rust_bridge
        └─ Rust crate
-            标签 (lofty) · 曲库 (sqlite) · 取色 · 系统能力
+            标签 (lofty)、曲库 (sqlite)、取色、系统能力
 ```
 
 ## 目录地图
 
 | 路径 | 职责 |
 |------|------|
-| `lib/main.dart` · `entry.dart` | 入口、Rust init、路由、主题 |
+| `lib/main.dart`、`entry.dart` | 入口、Rust init、路由、主题 |
 | `lib/core/` | 设置、偏好、主题、快捷键、路径 |
 | `lib/library/` | 曲库 Dart 侧 |
 | `lib/lyric/` | 本地歌词解析与加载 |
@@ -79,7 +79,7 @@ Flutter / Dart UI
 
 - 原文 - 翻译 - 罗马音分组
 - 音调调节
-- 流光背景及音频律动模式
+- 封面取色的流动渐变 / 流光背景
 - 其它已上线的特有能力（不确定就先问）
 
 ## 播放页性能硬约束（摘要）
@@ -90,6 +90,20 @@ Flutter / Dart UI
 - 缓存有上限；切歌只保留过渡所需资源
 
 细节见仓库内 puremusic-dev skill 的 `player-performance` 参考。
+
+## 环境变量
+
+| 变量 | 值 | 作用 |
+|------|----|------|
+| `CP_ECHO_RECORD` | `1` | 启动时开启音频回声日志记录 |
+| `CP_ECHO_LOG_DIR` | 目录 | 重定向回声日志目录（默认写入应用数据目录下的 `audio_echo_logs/`） |
+| `CP_MEMORY_LOG` | `1` | 内存监控输出统计日志 |
+
+## 测试页
+
+无 UI 入口，通过路由直接访问：
+
+- `/test/background` — 静态封面背景测试页（`lib/test/static_cover_background_test_page.dart`），生成渐变 / 色条 / 人脸三种测试图案，验证背景压暗参数。
 
 ## 下一步
 

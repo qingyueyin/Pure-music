@@ -38,6 +38,10 @@ outline: deep
 - 翻译（页面 / 应用内文案）
 - 推广 —— 在社交平台分享、加 Star
 
+## 发版说明（给维护者）
+
+在 GitHub 发 Release 后，仓库 workflow 会同步更新日志页与检查更新用的版本信息，并部署文档站。细节见 `.github/workflows/sync-release-docs.yml`。发版以 **GitHub** 为准；[Gitee](https://gitee.com/qingyueyin/Pure-music) 仅为镜像，可能滞后。
+
 ## 行为准则
 
 保持开放和尊重。讨论聚焦于代码和产品，不欢迎人身攻击。
