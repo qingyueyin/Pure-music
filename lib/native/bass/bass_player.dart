@@ -940,7 +940,8 @@ class BassPlayer {
     try {
       if (exclusive && !_isEqFlat) {
         logger.w('[bass] Cannot enable exclusive mode while EQ is enabled');
-        showTextOnSnackBar('独占模式与均衡器冲突，请先关闭均衡器（全部归零）', variant: ToastVariant.error);
+        showTextOnSnackBar('独占模式与均衡器冲突，请先关闭均衡器（全部归零）',
+            variant: ToastVariant.error);
         return false;
       }
       final lastPos = position;
@@ -1016,9 +1017,13 @@ class BassPlayer {
 
       onExclusiveModeChanged?.call(wasapiExclusive);
       return wasapiExclusive == exclusive;
-    } catch (err) {
-      logger.e('[use exclusive mode] $err');
-      showTextOnSnackBar(err.toString());
+    } catch (err, trace) {
+      logger.e(
+        '切换独占模式失败',
+        error: err,
+        stackTrace: trace,
+      );
+      showTextOnSnackBar('切换独占模式失败，请查看日志');
       _playerStateStreamController.add(playerState);
     }
     wasapiExclusive = prevState;
@@ -1092,6 +1097,7 @@ class BassPlayer {
   void _createSharedStream(String path, double seekTo) {
     const flags =
         bass.BASS_UNICODE | bass.BASS_SAMPLE_FLOAT | bass.BASS_ASYNCFILE;
+    const decodeFlags = flags | bass.BASS_STREAM_DECODE;
 
     final pathPointer = path.toNativeUtf16() as ffi.Pointer<ffi.Void>;
     var handle = _bass.BASS_StreamCreateFile(
@@ -1099,7 +1105,7 @@ class BassPlayer {
       pathPointer,
       0,
       0,
-      flags,
+      decodeFlags,
     );
 
     if (handle == 0) {
