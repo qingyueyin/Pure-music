@@ -16,8 +16,6 @@ pub fn get_installed_fonts() -> Option<Vec<InstalledFont>> {
 }
 
 fn _read_fonts_in_folder(path: &Path, result: &mut Vec<InstalledFont>) -> anyhow::Result<()> {
-    log_to_dart(format!("read fonts in: {}", path.to_string_lossy()));
-
     let dir = match read_dir(path) {
         Ok(val) => val,
         Err(err) => {

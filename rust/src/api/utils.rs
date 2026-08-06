@@ -44,8 +44,7 @@ fn _pick_single_folder() -> Result<String, windows::core::Error> {
 
     unsafe {
         let hwnd = GetForegroundWindow();
-        // see https://learn.microsoft.com/en-us/windows/apps/develop/ui-input/display-ui-objects#winui-3-with-c
-        // see https://github.com/artiga033/winui_rust/blob/b90df60bfc18c33dfd63c380dcf0b615052105be/src/main.rs#L73
+        // 文件夹选择器创建后必须绑定当前前台窗口。
         let initialize_with_window = folder_picker.cast::<IInitializeWithWindow>()?;
         initialize_with_window.Initialize(hwnd)?;
     }
@@ -70,7 +69,7 @@ fn _launch_in_browser(uri: String) -> Result<bool, windows::core::Error> {
     let uri = uri.trim();
     let lower = uri.to_ascii_lowercase();
     if !lower.starts_with("https://") && !lower.starts_with("http://") {
-        log_to_dart(format!("blocked unsupported browser uri: {}", uri));
+        log_to_dart("blocked unsupported browser uri".to_string());
         return Ok(false);
     }
 
