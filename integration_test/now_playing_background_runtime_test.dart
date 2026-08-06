@@ -21,7 +21,8 @@ final Uint8List _kRedPng = base64Decode(
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('Windows runtime: background modes, pause/resume and cover switch stay stable',
+  testWidgets(
+      'Windows runtime: background modes, pause/resume and cover switch stay stable',
       (tester) async {
     final spectrumController = StreamController<Float32List>.broadcast();
     addTearDown(spectrumController.close);
@@ -100,7 +101,7 @@ void main() {
     expect(tester.takeException(), isNull);
 
     isVisible = true;
-    mode = NowPlayingBackgroundMode.blurCover;
+    mode = NowPlayingBackgroundMode.coverBlurTest;
     await pumpHost();
     await tester.pump(const Duration(milliseconds: 250));
     expect(find.byType(NowPlayingBackground), findsOneWidget);
