@@ -1,5 +1,6 @@
-import 'package:desktop_lyric/component/desktop_lyric_body.dart';
-import 'package:desktop_lyric/desktop_lyric_controller.dart';
+import 'package:pure_player_lyric/component/desktop_lyric_body.dart';
+import 'package:pure_player_lyric/component/foreground.dart';
+import 'package:pure_player_lyric/desktop_lyric_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
@@ -12,15 +13,16 @@ void main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
   await windowManager.ensureInitialized();
   DesktopLyricController.initWithArgs(args);
+  textDisplayController.load();
 
   WindowOptions windowOptions = const WindowOptions(
-    size: Size(800, 122),
+    size: Size(800, 180),
     center: true,
     backgroundColor: Colors.transparent,
     skipTaskbar: true,
     titleBarStyle: TitleBarStyle.hidden,
     alwaysOnTop: true,
-    minimumSize: Size(400, 80),
+    minimumSize: Size(400, 120),
     maximumSize: Size(2400, 600),
   );
   windowManager.waitUntilReadyToShow(windowOptions, () async {
@@ -35,13 +37,13 @@ void main(List<String> args) async {
       hWnd = foundHWnd;
       final exStyle = win32.GetWindowLongPtr(
         foundHWnd,
-        win32.WINDOW_LONG_PTR_INDEX.GWL_EXSTYLE,
+        win32.GWL_EXSTYLE,
       );
       win32.SetWindowLongPtr(
         foundHWnd,
-        win32.WINDOW_LONG_PTR_INDEX.GWL_EXSTYLE,
-        (exStyle | win32.WINDOW_EX_STYLE.WS_EX_TOOLWINDOW) &
-            ~win32.WINDOW_EX_STYLE.WS_EX_APPWINDOW,
+        win32.GWL_EXSTYLE,
+        (exStyle | win32.WS_EX_TOOLWINDOW) &
+            ~win32.WS_EX_APPWINDOW,
       );
     }
   });
