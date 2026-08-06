@@ -6,7 +6,8 @@ class Lyric {
   final String? rawText;
   final bool isDuet; // TTML 对唱标记：同时存在 v1 和 v2
 
-  const Lyric(this.lines, [this.source = LyricFormat.local, this.rawText, this.isDuet = false]);
+  const Lyric(this.lines,
+      [this.source = LyricFormat.local, this.rawText, this.isDuet = false]);
 
   static const Lyric empty = Lyric([]);
 
@@ -32,8 +33,7 @@ class LyricLine {
   String? translation;
   String? romanLyric;
 
-  LyricLine(this.start, this.length, [this.translation])
-      : romanLyric = null;
+  LyricLine(this.start, this.length, [this.translation]) : romanLyric = null;
 }
 
 class BackgroundVocal {
@@ -64,7 +64,8 @@ class SyncLyricLine extends LyricLine {
   Duration? bgEnd;
   BackgroundVocal? bg;
 
-  SyncLyricLine(super.start, super.length, this.words, [super.translation, String? romanLyric]) {
+  SyncLyricLine(super.start, super.length, this.words,
+      [super.translation, String? romanLyric]) {
     this.romanLyric = romanLyric;
   }
 
@@ -85,8 +86,8 @@ class SyncLyricWord {
   String content;
   bool obscene;
   bool isMerged;
-  int? emptyBeat;  // amll:empty-beat 空拍标记
-  List<RubyTag>? ruby;  // tts:ruby 注音
+  int? emptyBeat; // amll:empty-beat 空拍标记
+  List<RubyTag>? ruby; // tts:ruby 注音
 
   SyncLyricWord(this.start, this.length, this.content)
       : obscene = false,
@@ -98,11 +99,13 @@ class SyncLyricWord {
 class LyricLineUpdate {
   final int primaryIndex;
   final List<int> activeIndices;
+  final List<int> layoutIndices;
 
   const LyricLineUpdate({
     required this.primaryIndex,
     required this.activeIndices,
-  });
+    List<int>? layoutIndices,
+  }) : layoutIndices = layoutIndices ?? activeIndices;
 
   bool isActive(int lineIndex) => activeIndices.contains(lineIndex);
 }
