@@ -41,6 +41,21 @@ void main() {
       expect(line.content, '太陽まった');
       expect(line.words.map((w) => w.content), ['太', '陽', 'まっ', 'た']);
     });
+    test('creates timing for direct background text', () {
+      final lyric = Ttml.fromTtmlText(_ttml('''
+<p begin="00:00.000" end="00:03.000">
+  <span begin="00:00.000" end="00:03.000">Main</span>
+  <span ttm:role="x-bg" begin="00:00.500" end="00:02.500">Oh</span>
+</p>
+'''));
+
+      final line = lyric!.lines.single as TtmlLine;
+      expect(line.bgText, 'Oh');
+      expect(line.bgWords, hasLength(1));
+      expect(line.bgWords.single.content, 'Oh');
+      expect(line.bgWords.single.start, const Duration(milliseconds: 500));
+      expect(line.bgWords.single.length, const Duration(seconds: 2));
+    });
   });
 }
 
