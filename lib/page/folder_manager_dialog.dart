@@ -12,6 +12,7 @@ import 'package:pure_music/lyric/lyric_source.dart';
 import 'package:pure_music/native/folder_picker_windows.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:path/path.dart' as p;
 
 Future<void> showFolderManagerDialog(BuildContext context) async {
   await showDialog(
@@ -50,12 +51,19 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
   }
 
   void _appendUniqueFolders(Iterable<String> paths) {
-    final seen = folders.map((f) => pendingFolderKey(f.path)).toSet();
-    for (final path in paths) {
-      final key = pendingFolderKey(path);
-      if (key.isEmpty || !seen.add(key)) continue;
-      folders.add(AudioFolder([], path, 0, 0));
-    }
+    final existing = {
+      for (final folder in folders) pendingFolderKey(folder.path): folder,
+    };
+    final next = appendUniquePendingFolders(
+      current: folders.map((folder) => folder.path),
+      incoming: paths,
+    );
+    folders = next
+        .map(
+          (path) =>
+              existing[pendingFolderKey(path)] ?? AudioFolder([], path, 0, 0),
+        )
+        .toList();
   }
 
   bool get _hasFolderChanges {
@@ -68,7 +76,109 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
     return false;
   }
 
-  Future<bool> _confirmRemoveFolder(AudioFolder folder) async {
+  bool _folderPathsOverlap(String first, String second) {
+    final firstKey = pendingFolderKey(first);
+    final secondKey = pendingFolderKey(second);
+    if (firstKey.isEmpty || secondKey.isEmpty) return false;
+    return firstKey == secondKey ||
+        firstKey.startsWith('$secondKey/') ||
+        secondKey.startsWith('$firstKey/');
+  }
+
+  List<_ManagedFolderGroup> _managedFolderGroups() {
+    final foldersByParent = <String, List<AudioFolder>>{};
+    final parentPaths = <String, String>{};
+    for (final folder in folders) {
+      final parentPath = p.windows.dirname(folder.path);
+      final parentKey = pendingFolderKey(parentPath);
+      if (parentKey.isEmpty || parentKey == pendingFolderKey(folder.path)) {
+        continue;
+      }
+      parentPaths.putIfAbsent(parentKey, () => parentPath);
+      foldersByParent.putIfAbsent(parentKey, () => []).add(folder);
+    }
+
+    final groupedParents = <String>{};
+    final result = <_ManagedFolderGroup>[];
+    for (final folder in folders) {
+      final parentPath = p.windows.dirname(folder.path);
+      final parentKey = pendingFolderKey(parentPath);
+      final siblings = foldersByParent[parentKey];
+      if (siblings != null && siblings.length > 1) {
+        if (!groupedParents.add(parentKey)) continue;
+        final rootPath = parentPaths[parentKey]!;
+        result.add(
+          _ManagedFolderGroup(
+            path: rootPath,
+            sourceFolders: siblings,
+            tree: _buildFolderTree(rootPath, siblings),
+          ),
+        );
+        continue;
+      }
+      result.add(
+        _ManagedFolderGroup(
+          path: folder.path,
+          sourceFolders: [folder],
+          tree: _buildFolderTree(folder.path, [folder]),
+        ),
+      );
+    }
+    return result;
+  }
+
+  _ManagedFolderTreeNode _buildFolderTree(
+    String rootPath,
+    Iterable<AudioFolder> sourceFolders,
+  ) {
+    final rootKey = pendingFolderKey(rootPath);
+    final root = _MutableManagedFolderTreeNode(rootPath);
+    if (rootKey.isEmpty) return root.freeze();
+
+    _MutableManagedFolderTreeNode? nodeForPath(String folderPath) {
+      final folderKey = pendingFolderKey(folderPath);
+      if (folderKey == rootKey) return root;
+      if (!folderKey.startsWith('$rootKey/')) return null;
+
+      final relativePath = p.windows.relative(folderPath, from: rootPath);
+      final segments = p.windows
+          .split(relativePath)
+          .where((segment) => segment.isNotEmpty && segment != '.')
+          .toList();
+      if (segments.isEmpty || segments.first == '..') return null;
+
+      var current = root;
+      var currentPath = rootPath;
+      for (var i = 0; i < segments.length; i++) {
+        final segment = segments[i];
+        currentPath = p.windows.join(currentPath, segment);
+        current = current.children.putIfAbsent(
+          segment.toLowerCase(),
+          () => _MutableManagedFolderTreeNode(
+            i == segments.length - 1 ? folderPath : currentPath,
+          ),
+        );
+      }
+      return current;
+    }
+
+    for (final folder in AudioLibrary.instance.folders) {
+      nodeForPath(folder.path)?.directAudioCount += folder.audios.length;
+    }
+    for (final folder in sourceFolders) {
+      final node = nodeForPath(folder.path);
+      if (node == null) continue;
+      node.sourceFolder = folder;
+      node.pendingScan = !containsEquivalentFolderPath(
+        paths: AppPreference.instance.userFolders,
+        target: folder.path,
+      );
+    }
+
+    return root.freeze();
+  }
+
+  Future<bool> _confirmRemoveFolder(String folderPath) async {
     final scheme = Theme.of(context).colorScheme;
     return showDangerConfirmDialog(
       context: context,
@@ -76,12 +186,27 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
       message: '不会删除本地音乐文件，只会从 Pure Music 的曲库扫描范围中移除。',
       confirmLabel: '移除',
       details: Text(
-        folder.path,
+        folderPath,
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: scheme.onSurfaceVariant, fontSize: AppType.caption),
+        style: TextStyle(
+          color: scheme.onSurfaceVariant,
+          fontSize: AppType.caption,
+        ),
       ),
     );
+  }
+
+  Future<void> _removeManagedFolders(
+    String displayPath,
+    Iterable<AudioFolder> sourceFolders,
+  ) async {
+    final confirmed = await _confirmRemoveFolder(displayPath);
+    if (!confirmed || !mounted) return;
+    final removedFolders = sourceFolders.toSet();
+    setState(() {
+      folders.removeWhere(removedFolders.contains);
+    });
   }
 
   void _startBuild() {
@@ -90,9 +215,7 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
       future: applicationSupportDirectory,
       builder: (context, snapshot) {
         if (snapshot.data == null) {
-          return const Center(
-            child: Text('Fail to get app data dir.'),
-          );
+          return const Center(child: Text('Fail to get app data dir.'));
         }
         return Center(
           child: BuildIndexStateView(
@@ -106,9 +229,7 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
                 readLyricSources(),
               ]);
               AlbumColorCache.instance
-                  .prewarmAlbums(
-                    AudioLibrary.instance.albumCollection.values,
-                  )
+                  .prewarmAlbums(AudioLibrary.instance.albumCollection.values)
                   .ignore();
               if (context.mounted) {
                 Navigator.pop(context);
@@ -130,15 +251,14 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
     final width = (size.width - 48.0).clamp(320.0, 520.0).toDouble();
     final height = (size.height - 96.0).clamp(320.0, 520.0).toDouble();
     final canApplyChanges = !building && !_isPickingFolder && _hasFolderChanges;
+    final managedFolders = _managedFolderGroups();
 
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(
         horizontal: 24.0,
         vertical: 24.0,
       ),
-      shape: RoundedRectangleBorder(
-        borderRadius: AppRadius.mdCircular,
-      ),
+      shape: RoundedRectangleBorder(borderRadius: AppRadius.mdCircular),
       child: SizedBox(
         height: height,
         width: width,
@@ -161,7 +281,7 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
                       ),
                     ),
                     Text(
-                      '${folders.length} 个文件夹',
+                      '${managedFolders.length} 个文件夹',
                       style: TextStyle(
                         color: scheme.onSurfaceVariant,
                         fontSize: AppType.caption,
@@ -175,47 +295,37 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
                   duration: const Duration(milliseconds: 150),
                   child: editing
                       ? folders.isEmpty
-                          ? const _EmptyManagedFolderState()
-                          : ListView.builder(
-                              key: const ValueKey('folder_list'),
-                              itemCount: folders.length,
-                              itemBuilder: (context, i) => ListTile(
-                                title: Text(
-                                  folders[i].path,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                subtitle: Text(
-                                  '${folders[i].audios.length} 首乐曲',
-                                ),
-                                trailing: TextButton.icon(
-                                  style: TextButton.styleFrom(
-                                    foregroundColor: scheme.error,
-                                    visualDensity: VisualDensity.compact,
-                                  ),
-                                  onPressed: building || _isPickingFolder
-                                      ? null
-                                      : () async {
-                                          final folder = folders[i];
-                                          final confirmed =
-                                              await _confirmRemoveFolder(
-                                            folder,
-                                          );
-                                          if (!confirmed || !context.mounted) {
-                                            return;
-                                          }
-                                          setState(() {
-                                            folders.remove(folder);
-                                          });
-                                        },
-                                  icon: const Icon(
-                                    Symbols.remove_circle,
-                                    size: 18,
-                                  ),
-                                  label: const Text('移除'),
-                                ),
-                              ),
-                            )
+                            ? const _EmptyManagedFolderState()
+                            : ListView.builder(
+                                key: const ValueKey('folder_list'),
+                                itemCount: managedFolders.length,
+                                itemBuilder: (context, i) {
+                                  final folder = managedFolders[i];
+                                  return _ManagedFolderTile(
+                                    key: ValueKey(
+                                      folder.sourceFolders
+                                          .map(
+                                            (source) =>
+                                                pendingFolderKey(source.path),
+                                          )
+                                          .join('|'),
+                                    ),
+                                    tree: folder.tree,
+                                    onRemove: building || _isPickingFolder
+                                        ? null
+                                        : () => _removeManagedFolders(
+                                            folder.path,
+                                            folder.sourceFolders,
+                                          ),
+                                    onRemoveFolder: building || _isPickingFolder
+                                        ? null
+                                        : (source) => _removeManagedFolders(
+                                            source.path,
+                                            [source],
+                                          ),
+                                  );
+                                },
+                              )
                       : (_buildView ?? const SizedBox(key: ValueKey('empty'))),
                 ),
               ),
@@ -262,7 +372,7 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
                         : () => Navigator.pop(context),
                     child: const Text('取消'),
                   ),
-                  TextButton(
+                  FilledButton(
                     onPressed: !canApplyChanges
                         ? null
                         : () async {
@@ -278,27 +388,30 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
                             );
 
                             final added = kept
-                                .where((f) => !containsEquivalentFolderPath(
-                                      paths: original,
-                                      target: f,
-                                    ))
+                                .where(
+                                  (f) => !containsEquivalentFolderPath(
+                                    paths: original,
+                                    target: f,
+                                  ),
+                                )
                                 .toList();
                             final removed = original
-                                .where((f) => !containsEquivalentFolderPath(
-                                      paths: kept,
-                                      target: f,
-                                    ))
+                                .where(
+                                  (f) => !containsEquivalentFolderPath(
+                                    paths: kept,
+                                    target: f,
+                                  ),
+                                )
                                 .toList();
 
                             final userFolderKeys = AppPreference
-                                .instance.userFolders
+                                .instance
+                                .userFolders
                                 .map(pendingFolderKey)
                                 .toSet();
                             AppPreference.instance.userFolders.addAll(
                               added.where(
-                                (f) => userFolderKeys.add(
-                                  pendingFolderKey(f),
-                                ),
+                                (f) => userFolderKeys.add(pendingFolderKey(f)),
                               ),
                             );
                             AppPreference.instance.userFolders.removeWhere(
@@ -309,21 +422,31 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
                             );
                             AppPreference.instance.excludedFolderPaths
                                 .removeWhere(
-                              (f) => containsEquivalentFolderPath(
-                                paths: kept,
-                                target: f,
-                              ),
-                            );
+                                  (excluded) => kept.any(
+                                    (root) =>
+                                        _folderPathsOverlap(excluded, root),
+                                  ),
+                                );
                             final excludedFolderKeys = AppPreference
-                                .instance.excludedFolderPaths
+                                .instance
+                                .excludedFolderPaths
                                 .map(pendingFolderKey)
                                 .toSet();
                             AppPreference.instance.excludedFolderPaths.addAll(
-                              removed.where(
-                                (f) => excludedFolderKeys.add(
-                                  pendingFolderKey(f),
-                                ),
-                              ),
+                              removed
+                                  .where(
+                                    (removedPath) => !kept.any(
+                                      (root) => _folderPathsOverlap(
+                                        removedPath,
+                                        root,
+                                      ),
+                                    ),
+                                  )
+                                  .where(
+                                    (f) => excludedFolderKeys.add(
+                                      pendingFolderKey(f),
+                                    ),
+                                  ),
                             );
                             final saved = await AppPreference.instance.save();
                             if (!saved) {
@@ -346,6 +469,187 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ManagedFolderGroup {
+  const _ManagedFolderGroup({
+    required this.path,
+    required this.sourceFolders,
+    required this.tree,
+  });
+
+  final String path;
+  final List<AudioFolder> sourceFolders;
+  final _ManagedFolderTreeNode tree;
+}
+
+class _ManagedFolderTreeNode {
+  const _ManagedFolderTreeNode({
+    required this.path,
+    required this.directAudioCount,
+    required this.children,
+    required this.sourceFolder,
+    required this.pendingScan,
+  });
+
+  final String path;
+  final int directAudioCount;
+  final List<_ManagedFolderTreeNode> children;
+  final AudioFolder? sourceFolder;
+  final bool pendingScan;
+
+  String get name => p.windows.basename(path);
+
+  int get audioCount =>
+      directAudioCount +
+      children.fold(0, (total, child) => total + child.audioCount);
+
+  int get displayAudioCount => pendingScan ? 0 : audioCount;
+
+  int get pendingFolderCount =>
+      (pendingScan ? 1 : 0) +
+      children.fold(0, (total, child) => total + child.pendingFolderCount);
+}
+
+class _MutableManagedFolderTreeNode {
+  _MutableManagedFolderTreeNode(this.path);
+
+  final String path;
+  int directAudioCount = 0;
+  AudioFolder? sourceFolder;
+  bool pendingScan = false;
+  final Map<String, _MutableManagedFolderTreeNode> children = {};
+
+  _ManagedFolderTreeNode freeze() {
+    final frozenChildren =
+        children.values.map((child) => child.freeze()).toList()..sort(
+          (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+        );
+    return _ManagedFolderTreeNode(
+      path: path,
+      directAudioCount: directAudioCount,
+      children: frozenChildren,
+      sourceFolder: sourceFolder,
+      pendingScan: pendingScan,
+    );
+  }
+}
+
+class _ManagedFolderTile extends StatelessWidget {
+  const _ManagedFolderTile({
+    super.key,
+    required this.tree,
+    required this.onRemove,
+    required this.onRemoveFolder,
+  });
+
+  final _ManagedFolderTreeNode tree;
+  final VoidCallback? onRemove;
+  final ValueChanged<AudioFolder>? onRemoveFolder;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final removeButton = TextButton.icon(
+      style: TextButton.styleFrom(
+        foregroundColor: scheme.error,
+        visualDensity: VisualDensity.compact,
+      ),
+      onPressed: onRemove,
+      icon: const Icon(Symbols.remove_circle, size: 18),
+      label: const Text('移除'),
+    );
+    final title = Row(
+      children: [
+        Icon(Symbols.folder, size: 20, color: scheme.onSurfaceVariant),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(tree.path, maxLines: 1, overflow: TextOverflow.ellipsis),
+        ),
+      ],
+    );
+
+    if (tree.children.isEmpty) {
+      return ListTile(
+        title: title,
+        subtitle: Text('${tree.displayAudioCount} 首乐曲'),
+        trailing: removeButton,
+      );
+    }
+
+    return ExpansionTile(
+      initiallyExpanded: tree.pendingFolderCount > 0,
+      controlAffinity: ListTileControlAffinity.leading,
+      childrenPadding: const EdgeInsets.only(left: 20),
+      title: title,
+      subtitle: Text(
+        '${tree.children.length} 个子文件夹 · ${tree.displayAudioCount} 首乐曲',
+      ),
+      trailing: removeButton,
+      children: [
+        for (final child in tree.children)
+          _FolderTreeTile(node: child, onRemoveFolder: onRemoveFolder),
+      ],
+    );
+  }
+}
+
+class _FolderTreeTile extends StatelessWidget {
+  const _FolderTreeTile({required this.node, required this.onRemoveFolder});
+
+  final _ManagedFolderTreeNode node;
+  final ValueChanged<AudioFolder>? onRemoveFolder;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final sourceFolder = node.sourceFolder;
+    final removeButton = sourceFolder == null
+        ? null
+        : IconButton(
+            tooltip: '移除',
+            visualDensity: VisualDensity.compact,
+            style: IconButton.styleFrom(foregroundColor: scheme.error),
+            onPressed: onRemoveFolder == null
+                ? null
+                : () => onRemoveFolder!(sourceFolder),
+            icon: const Icon(Symbols.remove_circle, size: 18),
+          );
+    final title = Row(
+      children: [
+        Icon(Symbols.folder, size: 18, color: scheme.onSurfaceVariant),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(node.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+        ),
+      ],
+    );
+
+    if (node.children.isEmpty) {
+      return ListTile(
+        dense: true,
+        title: title,
+        subtitle: Text('${node.displayAudioCount} 首乐曲'),
+        trailing: removeButton,
+      );
+    }
+
+    return ExpansionTile(
+      dense: true,
+      initiallyExpanded: node.pendingFolderCount > 0,
+      controlAffinity: ListTileControlAffinity.leading,
+      childrenPadding: const EdgeInsets.only(left: 20),
+      title: title,
+      subtitle: Text(
+        '${node.children.length} 个子文件夹 · ${node.displayAudioCount} 首乐曲',
+      ),
+      trailing: removeButton,
+      children: [
+        for (final child in node.children)
+          _FolderTreeTile(node: child, onRemoveFolder: onRemoveFolder),
+      ],
     );
   }
 }

@@ -25,6 +25,7 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
   late final List<Audio> _contentList;
   late final Future<ImageProvider?> _primaryPicFuture;
   late final Future<ImageProvider?> _backgroundPicFuture;
+  String _searchQuery = '';
 
   Future<ImageProvider?> _loadPrimaryPic() {
     return widget.folder.audios.firstOrNull?.mediumCover ??
@@ -47,9 +48,18 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    final canSortSongs = hasEnoughItemsToSort(_contentList.length);
-    final canPlaySongs = canShowPlayAllAction(_contentList.length);
-    final canSwitchContentView = canShowContentViewSwitch(_contentList.length);
+    final allAudios = _contentList;
+    final contentList = _searchQuery.isEmpty
+        ? List<Audio>.from(allAudios)
+        : allAudios.where((audio) {
+            final q = _searchQuery.toLowerCase();
+            return audio.title.toLowerCase().contains(q) ||
+                audio.artist.toLowerCase().contains(q) ||
+                audio.album.toLowerCase().contains(q);
+          }).toList();
+    final canSortSongs = hasEnoughItemsToSort(contentList.length);
+    final canPlaySongs = canShowPlayAllAction(contentList.length);
+    final canSwitchContentView = canShowContentViewSwitch(contentList.length);
 
     return UniDetailPage<AudioFolder, Audio, Object>(
       pref: AppPreference.instance.folderDetailPagePref,
@@ -58,25 +68,33 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
       backgroundPic: _backgroundPicFuture,
       picShape: PicShape.rrect,
       title: p.basename(widget.folder.path),
-      subtitle: '${_contentList.length} 首乐曲',
-      secondaryContent: _contentList,
+      subtitle: _searchQuery.isEmpty
+          ? '${_contentList.length} 首乐曲'
+          : '${contentList.length} / ${_contentList.length} 首乐曲',
+      secondaryContent: contentList,
       secondaryContentBuilder: (context, item, i, msc, _) => AudioTile(
         audioIndex: i,
-        playlist: _contentList,
+        playlist: contentList,
         multiSelectController: msc,
       ),
       enableShufflePlay: canPlaySongs,
       enableSortMethod: canSortSongs,
       enableSortOrder: canSortSongs,
       enableSecondaryContentViewSwitch: canSwitchContentView,
-      bodyOverride:
-          _contentList.isEmpty ? const _EmptyFolderBody() : null,
+      enableSearch: true,
+      searchQuery: _searchQuery,
+      onSearchChanged: (v) => setState(() => _searchQuery = v),
+      bodyOverride: contentList.isEmpty
+          ? (_searchQuery.isEmpty
+              ? const _EmptyFolderBody()
+              : const _NoSearchResultBody())
+          : null,
       multiSelectController: multiSelectController,
       multiSelectViewActions: [
         AddAllToPlaylist(multiSelectController: multiSelectController),
         MultiSelectSelectOrClearAll(
           multiSelectController: multiSelectController,
-          contentList: _contentList,
+          contentList: contentList,
         ),
         MultiSelectExit(multiSelectController: multiSelectController),
       ],
@@ -166,6 +184,19 @@ class _EmptyFolderBody extends StatelessWidget {
       icon: Symbols.folder,
       title: '这个文件夹还没有歌曲',
       message: '等扫描或索引更新后，这里会显示可播放内容。',
+    );
+  }
+}
+
+class _NoSearchResultBody extends StatelessWidget {
+  const _NoSearchResultBody();
+
+  @override
+  Widget build(BuildContext context) {
+    return const QuietEmptyState(
+      icon: Symbols.search_off,
+      title: '没有找到匹配的歌曲',
+      message: '换个关键词试试吧。',
     );
   }
 }
