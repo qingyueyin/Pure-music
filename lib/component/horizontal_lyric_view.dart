@@ -167,15 +167,17 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
         child: LayoutBuilder(
           builder: (context, constraints) {
             final h = constraints.maxHeight;
-            final w = constraints.maxWidth;
             return AnimatedBuilder(
               animation: controller,
               builder: (context, _) {
-                final t = Curves.easeOutCubic.transform(controller.value);
+                final curve = anim == TopBarLyricAnimation.fade
+                    ? Curves.easeInOutCubic
+                    : Curves.easeOutCubic;
+                final t = curve.transform(controller.value);
                 return Stack(
                   children: [
-                    _buildAnimLayer(_prevContent, scheme, t, true, anim, h, w),
-                    _buildAnimLayer(currContent, scheme, t, false, anim, h, w),
+                    _buildAnimLayer(_prevContent, scheme, t, true, anim, h),
+                    _buildAnimLayer(currContent, scheme, t, false, anim, h),
                   ],
                 );
               },
@@ -188,7 +190,7 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
   }
 
   Widget _buildAnimLayer(String content, ColorScheme scheme, double t,
-      bool isPrev, TopBarLyricAnimation anim, double h, double w) {
+      bool isPrev, TopBarLyricAnimation anim, double h) {
     Widget child = _buildText(content, scheme);
 
     switch (anim) {
@@ -212,18 +214,14 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
           scale: s,
           child: Opacity(opacity: isPrev ? 1.0 - t : t, child: child),
         );
-      case TopBarLyricAnimation.flipX:
-        final sx = isPrev ? 1.0 - 2.0 * t : -1.0 + 2.0 * t;
-        child = Transform(
-          alignment: Alignment.center,
-          transform: Matrix4.identity()..setEntry(0, 0, sx),
+      case TopBarLyricAnimation.slideLeft:
+        child = FractionalTranslation(
+          translation: Offset(isPrev ? -t : 1 - t, 0),
           child: Opacity(opacity: isPrev ? 1.0 - t : t, child: child),
         );
-      case TopBarLyricAnimation.flipY:
-        final sy = isPrev ? 1.0 - 2.0 * t : -1.0 + 2.0 * t;
-        child = Transform(
-          alignment: Alignment.center,
-          transform: Matrix4.identity()..setEntry(1, 1, sy),
+      case TopBarLyricAnimation.slideRight:
+        child = FractionalTranslation(
+          translation: Offset(isPrev ? t : t - 1, 0),
           child: Opacity(opacity: isPrev ? 1.0 - t : t, child: child),
         );
     }
@@ -273,7 +271,6 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
     final update = lyricService.lineUpdateForLyric(
       widget.lyric,
       playbackService.position,
-      preferUpcomingInGap: preferUpcoming,
     );
     if (update == null) {
       lyricService.forceEmitCurrentLine();
@@ -308,7 +305,6 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
     final update = lyricService.lineUpdateForLyric(
       widget.lyric,
       position,
-      preferUpcomingInGap: false,
     );
     if (update == null) return;
     final nextLine = _nearestRenderableLineIndex(update.primaryIndex);
@@ -514,7 +510,8 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12.0),
           child: ScrollConfiguration(
-            behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+            behavior:
+                ScrollConfiguration.of(context).copyWith(scrollbars: false),
             child: SingleChildScrollView(
               controller: scrollController,
               scrollDirection: Axis.horizontal,

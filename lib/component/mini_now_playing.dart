@@ -15,47 +15,52 @@ import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 class MiniNowPlaying extends StatelessWidget {
-  const MiniNowPlaying({
-    super.key,
-  });
+  const MiniNowPlaying({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return ResponsiveBuilder(builder: (context, screenType) {
-      return Align(
-        alignment: Alignment.bottomCenter,
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(
-            8.0,
-            0,
-            8.0,
-            screenType == ScreenType.small ? 8.0 : 32.0,
-          ),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 600.0),
-            child: SizedBox(
-              height: 64.0,
-              width: double.infinity,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  borderRadius: AppRadius.smCircular,
-                  boxShadow: kElevationToShadow[4],
-                ),
-                child: ClipRRect(
-                  borderRadius: AppRadius.smCircular,
-                  child: LayoutBuilder(builder: (context, constraints) {
-                    return RectangleProgressIndicator(
-                      size: Size(constraints.maxWidth, constraints.maxHeight),
-                      child: const _NowPlayingForeground(),
-                    );
-                  }),
+    return ResponsiveBuilder(
+      builder: (context, screenType) {
+        return Align(
+          alignment: Alignment.bottomCenter,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              8.0,
+              0,
+              8.0,
+              screenType == ScreenType.small ? 8.0 : 32.0,
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 600.0),
+              child: SizedBox(
+                height: 64.0,
+                width: double.infinity,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: AppRadius.smCircular,
+                    boxShadow: kElevationToShadow[4],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: AppRadius.smCircular,
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        return RectangleProgressIndicator(
+                          size: Size(
+                            constraints.maxWidth,
+                            constraints.maxHeight,
+                          ),
+                          child: const _NowPlayingForeground(),
+                        );
+                      },
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-      );
-    });
+        );
+      },
+    );
   }
 }
 
@@ -147,116 +152,127 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
                     color: scheme.onSecondaryContainer,
                   );
 
-                  return LayoutBuilder(builder: (context, constraints) {
-                    final dense = constraints.maxWidth <= 520;
-                    final hideControls = !_controlsVisible;
-                    final hasNowPlaying = nowPlaying != null;
-                    final controls = Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (!dense)
-                          IconButton(
-                            tooltip: hasNowPlaying ? '上一曲' : '暂无正在播放',
-                            onPressed: hasNowPlaying
-                                ? playbackService.lastAudio
-                                : null,
-                            icon: const Icon(
-                              Symbols.skip_previous,
-                              fill: 1.0,
-                              weight: 400.0,
+                  return LayoutBuilder(
+                    builder: (context, constraints) {
+                      final dense = constraints.maxWidth <= 520;
+                      final hideControls = !_controlsVisible;
+                      final hasNowPlaying = nowPlaying != null;
+                      final controls = Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (!dense)
+                            IconButton(
+                              tooltip: hasNowPlaying ? '上一曲' : '暂无正在播放',
+                              onPressed: hasNowPlaying
+                                  ? playbackService.lastAudio
+                                  : null,
+                              icon: const Icon(
+                                Symbols.skip_previous,
+                                fill: 1.0,
+                                weight: 400.0,
+                              ),
+                              color: scheme.onSecondaryContainer,
                             ),
-                            color: scheme.onSecondaryContainer,
+                          _MiniPlayPauseButton(
+                            dense: dense,
+                            onSecondaryContainer: scheme.onSecondaryContainer,
+                            enabled: hasNowPlaying,
                           ),
-                        _MiniPlayPauseButton(
-                          dense: dense,
-                          onSecondaryContainer: scheme.onSecondaryContainer,
-                          enabled: hasNowPlaying,
-                        ),
-                        if (!dense)
-                          IconButton(
-                            tooltip: hasNowPlaying ? '下一曲' : '暂无正在播放',
-                            onPressed: hasNowPlaying
-                                ? playbackService.nextAudio
-                                : null,
-                            icon: const Icon(
-                              Symbols.skip_next,
-                              fill: 1.0,
-                              weight: 400.0,
+                          if (!dense)
+                            IconButton(
+                              tooltip: hasNowPlaying ? '下一曲' : '暂无正在播放',
+                              onPressed: hasNowPlaying
+                                  ? playbackService.nextAudio
+                                  : null,
+                              icon: const Icon(
+                                Symbols.skip_next,
+                                fill: 1.0,
+                                weight: 400.0,
+                              ),
+                              color: scheme.onSecondaryContainer,
                             ),
-                            color: scheme.onSecondaryContainer,
-                          ),
-                        if (!dense) const SizedBox(width: 8.0),
-                        if (!dense)
-                          _MiniTimeText(color: scheme.onSecondaryContainer),
-                      ],
-                    );
-                    return Row(
-                      children: [
-                        nowPlaying != null
-                            ? Builder(builder: (context) {
-                                final cover = ClipRRect(
-                                  borderRadius: AppRadius.smCircular,
-                                  child: SizedBox(
-                                    width: 48.0,
-                                    height: 48.0,
-                                    child: _MiniCoverWidget(audio: nowPlaying),
+                          if (!dense) const SizedBox(width: 8.0),
+                          if (!dense)
+                            _MiniTimeText(color: scheme.onSecondaryContainer),
+                        ],
+                      );
+                      return Row(
+                        children: [
+                          nowPlaying != null
+                              ? Builder(
+                                  builder: (context) {
+                                    final cover = ClipRRect(
+                                      borderRadius: AppRadius.smCircular,
+                                      child: SizedBox(
+                                        width: 48.0,
+                                        height: 48.0,
+                                        child: _MiniCoverWidget(
+                                          audio: nowPlaying,
+                                        ),
+                                      ),
+                                    );
+                                    if (!heroEnabled) return cover;
+                                    return Hero(
+                                      tag: nowPlaying.path,
+                                      child: cover,
+                                    );
+                                  },
+                                )
+                              : SizedBox(
+                                  width: 48.0,
+                                  height: 48.0,
+                                  child: Center(child: placeholder),
+                                ),
+                          const SizedBox(width: 8.0),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  nowPlaying != null
+                                      ? nowPlaying.title
+                                      : 'Pure Music',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: scheme.onSecondaryContainer,
                                   ),
-                                );
-                                if (!heroEnabled) return cover;
-                                return Hero(tag: nowPlaying.path, child: cover);
-                              })
-                            : SizedBox(
-                                width: 48.0,
-                                height: 48.0,
-                                child: Center(child: placeholder),
-                              ),
-                        const SizedBox(width: 8.0),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                nowPlaying != null
-                                    ? nowPlaying.title
-                                    : 'Pure Music',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                    color: scheme.onSecondaryContainer),
-                              ),
-                              Text(
-                                nowPlaying != null
-                                    ? '${nowPlaying.artist} - ${nowPlaying.album}'
-                                    : '享受音乐',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                    color: scheme.onSecondaryContainer),
-                              ),
-                            ],
+                                ),
+                                Text(
+                                  nowPlaying != null
+                                      ? '${nowPlaying.artist} - ${nowPlaying.album}'
+                                      : '享受音乐',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: scheme.onSecondaryContainer,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 8.0),
-                        IgnorePointer(
-                          ignoring: hideControls,
-                          child: AnimatedSlide(
-                            duration: MotionDuration.fast,
-                            curve: MotionCurve.standard,
-                            offset: hideControls
-                                ? const Offset(0.02, 0.0)
-                                : Offset.zero,
-                            child: AnimatedOpacity(
+                          const SizedBox(width: 8.0),
+                          IgnorePointer(
+                            ignoring: hideControls,
+                            child: AnimatedSlide(
                               duration: MotionDuration.fast,
                               curve: MotionCurve.standard,
-                              opacity: hideControls ? 0.0 : 1.0,
-                              child: controls,
+                              offset: hideControls
+                                  ? const Offset(0.02, 0.0)
+                                  : Offset.zero,
+                              child: AnimatedOpacity(
+                                duration: MotionDuration.fast,
+                                curve: MotionCurve.standard,
+                                opacity: hideControls ? 0.0 : 1.0,
+                                child: controls,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    );
-                  });
+                        ],
+                      );
+                    },
+                  );
                 },
               ),
             ),
@@ -330,7 +346,9 @@ class _AnimatedPlayPauseIconButtonState
     extends State<_AnimatedPlayPauseIconButton>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
-      vsync: this, duration: const Duration(milliseconds: 220));
+    vsync: this,
+    duration: const Duration(milliseconds: 220),
+  );
   late PlayerState _state = widget.initialState;
   StreamSubscription<PlayerState>? _playerStateSub;
 
@@ -394,8 +412,9 @@ class _AnimatedPlayPauseIconButtonState
         onPressed = widget.onPlay;
       }
     }
-    final iconColor =
-        widget.enabled ? widget.color : widget.color.withValues(alpha: 0.38);
+    final iconColor = widget.enabled
+        ? widget.color
+        : widget.color.withValues(alpha: 0.38);
 
     final icon = AnimatedIcon(
       icon: AnimatedIcons.play_pause,
@@ -453,8 +472,7 @@ class _MiniTimeTextState extends State<_MiniTimeText> {
       return;
     }
     _positionTimer ??= Timer.periodic(const Duration(seconds: 1), (_) {
-      final elapsedSinceNative =
-          _clock.elapsedMilliseconds - _lastNativeSyncMs;
+      final elapsedSinceNative = _clock.elapsedMilliseconds - _lastNativeSyncMs;
       if (elapsedSinceNative >= _nativeSyncInterval.inMilliseconds) {
         _syncNativePosition();
       } else {
@@ -478,8 +496,8 @@ class _MiniTimeTextState extends State<_MiniTimeText> {
     final nextLengthSeconds = playbackService.length.floor();
     final nextSeconds = nextLengthSeconds > 0
         ? (_syncedPositionSeconds + elapsedSeconds)
-            .clamp(0, nextLengthSeconds)
-            .toInt()
+              .clamp(0, nextLengthSeconds)
+              .toInt()
         : _syncedPositionSeconds + elapsedSeconds;
     if (nextSeconds == _positionSeconds &&
         (!forceLength || nextLengthSeconds == _lengthSeconds)) {
@@ -510,12 +528,12 @@ class _MiniTimeTextState extends State<_MiniTimeText> {
 
   @override
   Widget build(BuildContext context) {
-    final posText = Duration(seconds: _positionSeconds)
-        .toStringHMMSS()
-        .replaceFirst(RegExp(r'^0:'), '');
-    final lenText = Duration(seconds: _lengthSeconds)
-        .toStringHMMSS()
-        .replaceFirst(RegExp(r'^0:'), '');
+    final posText = Duration(
+      seconds: _positionSeconds,
+    ).toStringHMMSS().replaceFirst(RegExp(r'^0:'), '');
+    final lenText = Duration(
+      seconds: _lengthSeconds,
+    ).toStringHMMSS().replaceFirst(RegExp(r'^0:'), '');
     return Text(
       '$posText / $lenText',
       style: TextStyle(
@@ -583,7 +601,7 @@ class _MiniCoverWidgetState extends State<_MiniCoverWidget> {
           height: 48.0,
           fit: BoxFit.cover,
           gaplessPlayback: true,
-          errorBuilder: (_, __, ___) => _placeholder(context),
+          errorBuilder: (_, _, _) => _placeholder(context),
         ),
       );
     }
@@ -595,10 +613,9 @@ class _MiniCoverWidgetState extends State<_MiniCoverWidget> {
       width: 48.0,
       height: 48.0,
       decoration: BoxDecoration(
-        color: Theme.of(context)
-            .colorScheme
-            .surfaceContainerHighest
-            .withValues(alpha: 0.5),
+        color: Theme.of(
+          context,
+        ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         borderRadius: AppRadius.smCircular,
       ),
     );
