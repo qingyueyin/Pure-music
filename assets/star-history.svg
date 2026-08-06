@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="480" viewBox="0 0 960 480" role="img" aria-labelledby="title description">
+  <title id="title">Star history for qingyueyin/Pure-music</title>
+  <desc id="description">11 stars since 2026-02</desc>
+  <defs>
+    <linearGradient id="lineGrad" x1="72" y1="0" x2="928" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" class="grad-a" />
+      <stop offset="1" class="grad-b" />
+    </linearGradient>
+    <linearGradient id="areaGrad" x1="0" y1="96" x2="0" y2="400" gradientUnits="userSpaceOnUse">
+      <stop offset="0" class="grad-a" stop-opacity="0.1" />
+      <stop offset="1" class="grad-a" stop-opacity="0" />
+    </linearGradient>
+  </defs>
+  <style>
+    :root { color-scheme: light dark; }
+    .grad-a { stop-color: #bda12f; }
+    .grad-b { stop-color: #8b7a1e; }
+    .background { fill: #ffffff; }
+    .eyebrow { fill: #8b7a1e; font: 700 10px -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Roboto, "Helvetica Neue", Arial, sans-serif; letter-spacing: 2.5px; }
+    .owner { fill: #8a8578; font: 700 20px -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Roboto, "Helvetica Neue", Arial, sans-serif; }
+    .title { fill: #14140d; font: 700 20px -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Roboto, "Helvetica Neue", Arial, sans-serif; }
+    .axis-label { fill: #8a8578; font: 500 11px -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Roboto, "Helvetica Neue", Arial, sans-serif; }
+    .grid { stroke: #14140d; stroke-opacity: 0.09; stroke-width: 1.2; stroke-dasharray: 2 5; }
+    .area { fill: url(#areaGrad); }
+    .sketch { fill: none; stroke: url(#lineGrad); stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; opacity: 0.2; }
+    .line { fill: none; stroke: url(#lineGrad); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+    .point { fill: #bda12f; }
+    .pill-bg { fill: rgba(189, 161, 47, 0.08); stroke: rgba(139, 122, 30, 0.5); stroke-width: 1.2; stroke-dasharray: 3 3; }
+    .pill-text { fill: #8b7a1e; font: 700 13px -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Roboto, "Helvetica Neue", Arial, sans-serif; }
+    .wave { fill: none; stroke: #8b7a1e; stroke-opacity: 0.5; stroke-width: 1.6; stroke-linecap: round; }
+    @media (prefers-color-scheme: dark) {
+      .grad-a { stop-color: #d4b85c; }
+      .grad-b { stop-color: #bda12f; }
+      .background { fill: #14140d; }
+      .eyebrow { fill: #d4b85c; }
+      .owner { fill: rgba(245, 240, 232, 0.55); }
+      .title { fill: #f5f0e8; }
+      .axis-label { fill: rgba(245, 240, 232, 0.5); }
+      .grid { stroke: #f5f0e8; stroke-opacity: 0.1; }
+      .point { fill: #d4b85c; }
+      .pill-bg { fill: rgba(189, 161, 47, 0.12); stroke: rgba(212, 184, 92, 0.5); }
+      .pill-text { fill: #d4b85c; }
+      .wave { stroke: #d4b85c; }
+    }
+  </style>
+  <rect class="background" width="960" height="480" />
+  <text class="eyebrow" x="72" y="36">STAR HISTORY</text>
+  <text x="72" y="66">
+    <tspan class="owner">qingyueyin/</tspan><tspan class="title">Pure-music</tspan>
+  </text>
+  <path class="wave" d="M 72 84 Q 92 78 112 84 T 152 84 T 192 84 T 232 84 T 272 84" />
+  <g>
+    <rect class="pill-bg" x="866" y="49" width="62" height="30" rx="15" />
+    <text class="pill-text" x="880" y="69">★ 11</text>
+  </g>
+  <line class="grid" x1="72" y1="400.00" x2="928" y2="400.00" />
+  <text class="axis-label" x="56" y="404.00" text-anchor="end">0</text>
+  <line class="grid" x1="72" y1="324.00" x2="928" y2="324.00" />
+  <text class="axis-label" x="56" y="328.00" text-anchor="end">3</text>
+  <line class="grid" x1="72" y1="248.00" x2="928" y2="248.00" />
+  <text class="axis-label" x="56" y="252.00" text-anchor="end">6</text>
+  <line class="grid" x1="72" y1="172.00" x2="928" y2="172.00" />
+  <text class="axis-label" x="56" y="176.00" text-anchor="end">9</text>
+  <line class="grid" x1="72" y1="96.00" x2="928" y2="96.00" />
+  <text class="axis-label" x="56" y="100.00" text-anchor="end">12</text>
+  <text class="axis-label" x="72.00" y="428" text-anchor="start">2026-02</text>
+  <text class="axis-label" x="286.00" y="428" text-anchor="middle">2026-03</text>
+  <text class="axis-label" x="500.00" y="428" text-anchor="middle">2026-05</text>
+  <text class="axis-label" x="714.00" y="428" text-anchor="middle">2026-06</text>
+  <text class="axis-label" x="928.00" y="428" text-anchor="end">2026-08</text>
+  <path class="area" d="M 71.15 399.17 L 73.44 374.35 L 158.48 348.23 L 159.22 324.98 L 159.52 298.71 L 531.85 273.49 L 535.24 248.40 L 639.73 221.55 L 659.12 198.31 L 660.79 171.92 L 670.48 145.53 L 705.82 120.25 L 928.15 122.00 L 928.00 400.00 Z" />
+  <path class="sketch" d="M 71.15 399.17 L 73.44 374.35 L 158.48 348.23 L 159.22 324.98 L 159.52 298.71 L 531.85 273.49 L 535.24 248.40 L 639.73 221.55 L 659.12 198.31 L 660.79 171.92 L 670.48 145.53 L 705.82 120.25 L 928.15 122.00 " />
+  <path class="line" d="M 71.15 399.17 L 73.44 374.35 L 158.48 348.23 L 159.22 324.98 L 159.52 298.71 L 531.85 273.49 L 535.24 248.40 L 639.73 221.55 L 659.12 198.31 L 660.79 171.92 L 670.48 145.53 L 705.82 120.25 L 928.15 122.00 " />
+  <path class="point" d="M 73.48 370.17 L 75.19 372.62 L 78.31 372.62 L 76.03 375.01 L 77.27 377.97 L 74.37 376.66 L 71.46 379.59 L 72.33 375.52 L 68.78 373.71 L 72.73 373.24 Z" />
+  <path class="point" d="M 158.90 344.73 L 160.55 347.43 L 163.79 347.27 L 161.79 349.74 L 163.32 353.29 L 159.83 351.54 L 156.94 354.17 L 157.53 350.30 L 154.14 348.37 L 158.00 347.74 Z" />
+  <path class="point" d="M 158.96 319.29 L 160.55 322.24 L 163.90 321.92 L 161.70 324.38 L 163.19 327.74 L 159.87 325.93 L 157.06 328.75 L 157.83 324.86 L 154.15 323.02 L 158.27 322.61 Z" />
+  <path class="point" d="M 160.15 293.85 L 161.92 296.60 L 165.15 296.57 L 162.74 299.01 L 164.19 302.19 L 161.10 300.81 L 158.31 303.32 L 158.81 299.64 L 156.47 297.89 L 159.32 297.11 Z" />
+  <path class="point" d="M 532.29 268.41 L 534.00 271.41 L 537.34 271.22 L 535.23 273.74 L 536.13 276.64 L 533.22 275.19 L 530.51 277.90 L 531.18 274.19 L 528.56 272.54 L 531.66 271.97 Z" />
+  <path class="point" d="M 533.34 242.97 L 534.99 246.21 L 538.45 245.87 L 536.13 248.38 L 537.81 251.95 L 534.31 250.07 L 531.62 252.48 L 532.02 248.97 L 529.56 247.19 L 532.57 246.48 Z" />
+  <path class="point" d="M 637.98 217.53 L 639.56 221.02 L 643.14 220.51 L 640.61 223.02 L 642.25 226.40 L 638.99 224.95 L 636.32 227.05 L 636.89 223.53 L 634.14 221.85 L 637.06 220.98 Z" />
+  <path class="point" d="M 657.36 192.09 L 659.12 195.38 L 662.57 195.16 L 660.33 197.74 L 661.43 200.85 L 658.34 199.34 L 655.76 201.63 L 656.05 198.31 L 653.46 196.50 L 656.64 195.84 Z" />
+  <path class="point" d="M 659.72 166.64 L 661.42 170.19 L 664.99 169.81 L 662.54 172.38 L 663.60 175.30 L 660.75 174.22 L 658.18 176.21 L 658.65 172.87 L 655.77 171.15 L 658.86 170.34 Z" />
+  <path class="point" d="M 670.88 141.20 L 672.52 145.00 L 676.20 144.46 L 673.55 147.02 L 675.39 150.61 L 671.88 148.60 L 669.40 150.79 L 669.59 147.64 L 666.88 145.81 L 670.22 145.21 Z" />
+  <path class="point" d="M 703.99 116.95 L 705.65 119.36 L 709.21 119.11 L 706.85 121.74 L 708.15 125.06 L 704.88 123.48 L 702.41 125.36 L 702.78 122.20 L 699.77 120.46 L 703.03 119.71 Z" />
+</svg>

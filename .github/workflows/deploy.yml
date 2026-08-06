@@ -1,4 +1,4 @@
-name: Deploy VitePress to GitHub Pages
+name: page
 
 on:
   push:
@@ -35,6 +35,14 @@ jobs:
       - name: Install dependencies
         working-directory: page
         run: npm ci
+
+      - name: Refresh changelog from GitHub Releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          MIN_TAG: v2.0.0
+        run: node .github/generate-changelog.mjs
+        continue-on-error: true
 
       - name: Build
         working-directory: page
