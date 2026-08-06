@@ -1,6 +1,7 @@
 name: Sync release docs
 
-# 发版后自动：更新日志页 + version.json，并推送以触发文档站部署
+# 发版后自动：更新日志页 + version.json，并推送
+# 部署联动由 deploy.yml 的 workflow_run 触发（GITHUB_TOKEN 的 push 本身不触发工作流）
 on:
   release:
     types: [published, edited]
