@@ -135,6 +135,11 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
         _preExtractedPalette = palette;
         _colorService.cachePaletteForPath(path, palette);
         ThemeProvider.instance.applySeedColorDirectly(palette.first, path);
+      } else if (bytes == null) {
+        _nowPlayingCoverBytes = null;
+        _dominantColor = null;
+        _preExtractedPalette = null;
+        _backgroundUsesCachedLargeCover = false;
       }
       if (mounted) setState(() {});
     });
@@ -163,7 +168,6 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     _nowPlayingCoverPath = path;
     // 保留旧背景，等新封面数据到位后自然替换。
     _dominantColor = null;
-    _preExtractedPalette = null;
     _backgroundUsesCachedLargeCover = false;
 
     _coverDebounceTimer?.cancel();
@@ -235,7 +239,8 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     _routeAnimation?.removeStatusListener(_onRouteAnimationStatus);
     _routeAnimation = animation;
     _routeAnimation?.addStatusListener(_onRouteAnimationStatus);
-    _routeReady = animation == null || animation.status == AnimationStatus.completed;
+    _routeReady =
+        animation == null || animation.status == AnimationStatus.completed;
     if (_routeReady) {
       _scheduleCoverDetails();
     }
@@ -267,7 +272,8 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                 stream: playbackService.playerStateStream,
                 initialData: playbackService.playerState,
                 builder: (context, snapshot) {
-                  final playerState = snapshot.data ?? playbackService.playerState;
+                  final playerState =
+                      snapshot.data ?? playbackService.playerState;
                   final backgroundInputs = NowPlayingBackgroundInputs(
                     albumCoverBytes: _nowPlayingCoverBytes,
                     dominantColor: _dominantColor,
@@ -275,14 +281,16 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                     enableAnimation: true,
                     isVisible: _routeReady,
                     playerState: playerState,
-                    flowSpeed: 3.0,
+                    flowSpeed: 1.5,
                     intensity: brightness == Brightness.dark ? 1.0 : 0.9,
-                    audioReactiveFlow: AppPreference.instance.nowPlayingPagePref.audioReactiveFlow,
+                    audioReactiveFlow: AppPreference
+                        .instance.nowPlayingPagePref.audioReactiveFlow,
                     preExtractedColors: _preExtractedPalette,
                   );
                   final softBg = _dominantColor != null
-                      ? _softenColor(_dominantColor!, isDark: brightness == Brightness.dark)
-                      : _softenColor(scheme.primary, isDark: brightness == Brightness.dark);
+                      ? _softenColor(_dominantColor!,
+                          isDark: brightness == Brightness.dark)
+                      : _neutralBackgroundColor(scheme);
                   return NowPlayingBackground(
                     mode: backgroundMode,
                     inputs: backgroundInputs,
@@ -295,6 +303,14 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
         ],
       ),
     );
+  }
+
+  static Color _neutralBackgroundColor(ColorScheme scheme) {
+    return Color.lerp(
+      scheme.surface,
+      scheme.surfaceContainerHighest,
+      scheme.brightness == Brightness.dark ? 0.48 : 0.62,
+    )!;
   }
 
   static Color _softenColor(Color color, {required bool isDark}) {
@@ -425,14 +441,16 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                                       children: [
                                         ResponsiveBuilder2(
                                           builder: (context, screenType) {
-                                            if (screenType != ScreenType.small) {
+                                            if (screenType !=
+                                                ScreenType.small) {
                                               return const SizedBox.shrink();
                                             }
                                             return Builder(
                                               builder: (context) => IconButton(
                                                 tooltip: '侧边栏',
                                                 onPressed: () {
-                                                  Scaffold.of(context).openDrawer();
+                                                  Scaffold.of(context)
+                                                      .openDrawer();
                                                 },
                                                 icon: const Icon(Symbols.menu),
                                               ),
@@ -2250,9 +2268,8 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
       _immediateCoverPath = path;
       _hiResCover = cachedLargeCover;
       _hiResCoverPath = cachedLargeCover == null ? null : path;
-      _cachedImmediateCoverImage = _immediateCover != null
-          ? MemoryImage(_immediateCover!)
-          : null;
+      _cachedImmediateCoverImage =
+          _immediateCover != null ? MemoryImage(_immediateCover!) : null;
     });
 
     if (_immediateCover == null) {
@@ -2261,9 +2278,8 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
         if (playbackService.nowPlaying?.path != path) return;
         setState(() {
           _immediateCover = bytes;
-          _cachedImmediateCoverImage = bytes != null
-              ? MemoryImage(bytes)
-              : null;
+          _cachedImmediateCoverImage =
+              bytes != null ? MemoryImage(bytes) : null;
         });
       });
     }
@@ -2309,9 +2325,8 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
       _immediateCoverPath = audio.path;
       _hiResCover = audio.cachedLargeCover;
       _hiResCoverPath = _hiResCover == null ? null : audio.path;
-      _cachedImmediateCoverImage = _immediateCover != null
-          ? MemoryImage(_immediateCover!)
-          : null;
+      _cachedImmediateCoverImage =
+          _immediateCover != null ? MemoryImage(_immediateCover!) : null;
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
