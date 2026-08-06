@@ -12,41 +12,104 @@ import 'package:pure_music/page/now_playing_page/component/now_playing_backgroun
 
 const _kDecodeSize = 512;
 const _kRenderExtent = 320.0;
-const _kBlurSigma = 20.0;
+const _kBlurSigma = 12.0;
+const _kDarkNeutralBackground = Color(0xFF171717);
+const _kLightNeutralBackground = Color(0xFFF0F0F0);
 const _kFrameInterval = Duration(milliseconds: 42);
-const _kArtworkTransitionDuration = Duration(milliseconds: 500);
+const _kArtworkTransitionDuration = Duration(milliseconds: 300);
 
 const _kPlaybackSpeedTransitionDuration = Duration(milliseconds: 650);
 
-const _kPeriod1 = 160.0;
-const _kPeriod2 = 120.0;
-const _kPeriod3 = 80.0;
+const _kPeriod1 = 54.0;
+const _kPeriod2 = 40.0;
+const _kPeriod3 = 30.0;
 
-const _kPrimaryLayerScale = 1.34;
-const _kSecondaryLayerScale = 1.58;
-const _kLightLayerScale = 1.82;
+const _kPrimaryLayerScale = 1.30;
+const _kSecondaryLayerScale = 1.50;
+const _kLightLayerScale = 1.76;
 const _kPrimaryLayerPhase = 0.0;
 const _kSecondaryLayerPhase = -0.08 * pi;
 const _kLightLayerPhase = 0.12 * pi;
-const _kPrimaryLayerAlpha = 204;
-const _kPrimaryKickAlpha = 10;
-const _kSecondaryLayerAlpha = 74;
-const _kSecondaryAudioAlpha = 24;
-const _kLightLayerAlpha = 52;
-const _kLightAudioAlpha = 20;
+const _kPrimaryLayerAlpha = 224;
+const _kSecondaryLayerAlpha = 82;
+const _kLightLayerAlpha = 56;
+const _kWarpGridDivisions = 5;
+
+enum _FlowingLightLayer { primary, secondary, light }
+
+typedef _FlowingLightLayerMask = ({
+  double centerX,
+  double centerY,
+  double radius,
+  double middleStop,
+  double outerStop,
+  double middleAlpha,
+});
+
+final _kIdentityShaderMatrix = Float64List.fromList(<double>[
+  1,
+  0,
+  0,
+  0,
+  0,
+  1,
+  0,
+  0,
+  0,
+  0,
+  1,
+  0,
+  0,
+  0,
+  0,
+  1,
+]);
+
+final Float32List _kWarpNormalizedCoordinates = _buildWarpCoordinates();
+
+Float32List _buildWarpCoordinates() {
+  const cells = _kWarpGridDivisions - 1;
+  const vertexCount = cells * cells * 6;
+  final coordinates = Float32List(vertexCount * 2);
+  var vertex = 0;
+
+  void addVertex(double u, double v) {
+    coordinates[vertex * 2] = u;
+    coordinates[vertex * 2 + 1] = v;
+    vertex++;
+  }
+
+  for (var row = 0; row < cells; row++) {
+    final top = row / cells;
+    final bottom = (row + 1) / cells;
+    for (var column = 0; column < cells; column++) {
+      final left = column / cells;
+      final right = (column + 1) / cells;
+      addVertex(left, top);
+      addVertex(right, top);
+      addVertex(right, bottom);
+      addVertex(left, top);
+      addVertex(right, bottom);
+      addVertex(left, bottom);
+    }
+  }
+  return coordinates;
+}
 
 const _kDarkFlowingLightStyle = _FlowingLightVisualStyle(
-  edgeAlpha: 0.08,
-  artworkSaturation: 1.25,
-  artworkBrightness: 1.0,
+  edgeAlpha: 0.05,
+  artworkSaturation: 1.18,
+  artworkBrightness: 0.72,
+  artworkBlackLift: 0.09,
   overlays: <Color>[
-    Color(0x18000000),
+    Color(0x08000000),
   ],
 );
 const _kLightFlowingLightStyle = _FlowingLightVisualStyle(
   edgeAlpha: 0.04,
   artworkSaturation: 1.15,
   artworkBrightness: 1.0,
+  artworkBlackLift: 0.0,
   overlays: <Color>[
     Color(0x14FFFFFF),
   ],
@@ -73,26 +136,37 @@ double flowingLightBreathingScale(
   double audioLevel, {
   double bassTransient = 0.0,
 }) {
-  return 1.0 +
-      audioLevel.clamp(0.0, 1.0) * 0.06 +
-      bassTransient.clamp(0.0, 1.0) * 0.075;
+  return (1.0 +
+          audioLevel.clamp(0.0, 1.0) * 0.09 +
+          bassTransient.clamp(0.0, 1.0) * 0.26)
+      .clamp(1.0, 1.30)
+      .toDouble();
+}
+
+double flowingLightWarpStrength(
+  double audioLevel, {
+  double bassTransient = 0.0,
+}) {
+  final level =
+      audioLevel.isFinite ? audioLevel.clamp(0.0, 1.0).toDouble() : 0.0;
+  final transient =
+      bassTransient.isFinite ? bassTransient.clamp(0.0, 1.0).toDouble() : 0.0;
+  return (level * 0.018 + transient * 0.07).clamp(0.0, 0.085).toDouble();
 }
 
 double flowingLightArtworkOpacityCeiling() {
-  const primary = (_kPrimaryLayerAlpha + _kPrimaryKickAlpha) / 255;
-  const secondary = (_kSecondaryLayerAlpha + _kSecondaryAudioAlpha) / 255;
-  const light = (_kLightLayerAlpha + _kLightAudioAlpha) / 255;
+  const primary = _kPrimaryLayerAlpha / 255;
+  const secondary = _kSecondaryLayerAlpha / 255;
+  const light = _kLightLayerAlpha / 255;
   return 1 - (1 - primary) * (1 - secondary) * (1 - light);
 }
 
 class FlowingLightBackground extends StatefulWidget {
   final NowPlayingBackgroundInputs inputs;
-  final Color fallbackColor;
 
   const FlowingLightBackground({
     super.key,
     required this.inputs,
-    required this.fallbackColor,
   });
 
   @override
@@ -118,6 +192,7 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
   final AudioReactiveFlowTransientDetector _transientDetector =
       AudioReactiveFlowTransientDetector();
   final _FlowAudioState _audio = _FlowAudioState();
+  final _FlowingLightShaderCache _shaderCache = _FlowingLightShaderCache();
   StreamSubscription<Float32List>? _spectrumSubscription;
   int _decodeGeneration = 0;
   bool _disposed = false;
@@ -248,12 +323,17 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
 
   void _setPlaybackSpeedTarget(double target) {
     if (_targetPlaybackSpeed == target) return;
+    if (target == _kIdleSpeed) {
+      _targetPlaybackSpeed = _kIdleSpeed;
+      _smoothedPlaybackSpeed = _kIdleSpeed;
+      _playbackSpeedTransitionFrom = _kIdleSpeed;
+      _playbackSpeedTransitionProgress = 1.0;
+      _resetAudioResponse();
+      return;
+    }
     _playbackSpeedTransitionFrom = _smoothedPlaybackSpeed;
     _targetPlaybackSpeed = target;
     _playbackSpeedTransitionProgress = 0.0;
-    if (target == _kIdleSpeed) {
-      _resetAudioResponse();
-    }
   }
 
   double _updatePlaybackSpeed(double deltaSeconds) {
@@ -352,6 +432,9 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
       );
       final frame = await codec.getNextFrame();
       image = frame.image;
+      final blurredImage = await _createBlurredCover(image);
+      image.dispose();
+      image = blurredImage;
       if (_disposed || !mounted || generation != _decodeGeneration) {
         image.dispose();
         return;
@@ -369,9 +452,38 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     }
   }
 
+  Future<ui.Image> _createBlurredCover(ui.Image source) async {
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    final bounds = Rect.fromLTWH(
+      0,
+      0,
+      source.width.toDouble(),
+      source.height.toDouble(),
+    );
+    final blurPaint = Paint()
+      ..imageFilter = ui.ImageFilter.blur(
+        sigmaX: _kBlurSigma,
+        sigmaY: _kBlurSigma,
+        tileMode: TileMode.clamp,
+      );
+    canvas.saveLayer(bounds, blurPaint);
+    canvas.drawImage(source, Offset.zero, Paint());
+    canvas.restore();
+    final picture = recorder.endRecording();
+    try {
+      return await picture.toImage(source.width, source.height);
+    } finally {
+      picture.dispose();
+    }
+  }
+
   void _acceptDecodedCover(_DecodedCover decoded) {
     if (_previousCoverImage != null) {
-      _pendingCover?.image.dispose();
+      final oldPending = _pendingCover;
+      if (oldPending != null) {
+        _disposeImage(oldPending.image);
+      }
       _pendingCover = decoded;
       return;
     }
@@ -438,9 +550,9 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
       setState(() {});
       _disposeImagesAfterFrame([current, previous, pending?.image]);
     } else {
-      current?.dispose();
-      previous?.dispose();
-      pending?.image.dispose();
+      if (current != null) _disposeImage(current);
+      if (previous != null) _disposeImage(previous);
+      if (pending != null) _disposeImage(pending.image);
     }
     _syncAnimationState();
   }
@@ -450,9 +562,14 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     if (disposable.isEmpty) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       for (final image in disposable) {
-        image.dispose();
+        _disposeImage(image);
       }
     });
+  }
+
+  void _disposeImage(ui.Image image) {
+    _shaderCache.disposeImage(image);
+    image.dispose();
   }
 
   @override
@@ -461,6 +578,7 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     _decodeGeneration++;
     _ticker.dispose();
     _transitionClock.stop();
+    _shaderCache.dispose();
     _coverImage?.dispose();
     _previousCoverImage?.dispose();
     _pendingCover?.image.dispose();
@@ -476,10 +594,13 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     final style = scheme.brightness == Brightness.dark
         ? _kDarkFlowingLightStyle
         : _kLightFlowingLightStyle;
+    final neutralBackground = scheme.brightness == Brightness.dark
+        ? _kDarkNeutralBackground
+        : _kLightNeutralBackground;
     return Stack(
       fit: StackFit.expand,
       children: [
-        ColoredBox(color: widget.fallbackColor),
+        ColoredBox(color: neutralBackground),
         LayoutBuilder(
           builder: (context, constraints) {
             final renderSize = _flowingLightRenderSize(constraints.biggest);
@@ -501,6 +622,7 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
                       audioReactiveFlow: widget.inputs.audioReactiveFlow,
                       audio: _audio,
                       style: style,
+                      shaderCache: _shaderCache,
                       repaint: _frameNotifier,
                     ),
                     size: renderSize,
@@ -555,39 +677,93 @@ class _FlowingLightVisualStyle {
     required this.edgeAlpha,
     required this.artworkSaturation,
     required this.artworkBrightness,
+    required this.artworkBlackLift,
     required this.overlays,
   });
 
   final double edgeAlpha;
   final double artworkSaturation;
   final double artworkBrightness;
+  final double artworkBlackLift;
   final List<Color> overlays;
+}
+
+class _WarpMeshBuffer {
+  final positions = Float32List(_kWarpNormalizedCoordinates.length);
+  final textureCoordinates = Float32List(_kWarpNormalizedCoordinates.length);
+  final colors = Int32List(_kWarpNormalizedCoordinates.length ~/ 2);
+  int _imageWidth = 0;
+  int _imageHeight = 0;
+
+  void syncTextureCoordinates(ui.Image image) {
+    if (_imageWidth == image.width && _imageHeight == image.height) return;
+    _imageWidth = image.width;
+    _imageHeight = image.height;
+    for (var index = 0;
+        index < _kWarpNormalizedCoordinates.length;
+        index += 2) {
+      textureCoordinates[index] =
+          _kWarpNormalizedCoordinates[index] * image.width;
+      textureCoordinates[index + 1] =
+          _kWarpNormalizedCoordinates[index + 1] * image.height;
+    }
+  }
+}
+
+class _FlowingLightShaderCache {
+  final Map<ui.Image, ui.ImageShader> _shaders = Map.identity();
+
+  ui.ImageShader get(ui.Image image) {
+    return _shaders.putIfAbsent(
+      image,
+      () => ui.ImageShader(
+        image,
+        TileMode.clamp,
+        TileMode.clamp,
+        _kIdentityShaderMatrix,
+        filterQuality: FilterQuality.medium,
+      ),
+    );
+  }
+
+  void disposeImage(ui.Image image) {
+    _shaders.remove(image)?.dispose();
+  }
+
+  void dispose() {
+    for (final shader in _shaders.values) {
+      shader.dispose();
+    }
+    _shaders.clear();
+  }
 }
 
 ui.ColorFilter _flowingLightLinearColorFilter(
   double saturation,
   double brightness,
+  double blackLift,
 ) {
   const redLuminance = 0.2126;
   const greenLuminance = 0.7152;
   const blueLuminance = 0.0722;
   final inverse = 1.0 - saturation;
+  final offset = blackLift.clamp(0.0, 1.0) * 255;
   return ui.ColorFilter.matrix(<double>[
     brightness * (inverse * redLuminance + saturation),
     brightness * inverse * greenLuminance,
     brightness * inverse * blueLuminance,
     0,
-    0,
+    offset,
     brightness * inverse * redLuminance,
     brightness * (inverse * greenLuminance + saturation),
     brightness * inverse * blueLuminance,
     0,
-    0,
+    offset,
     brightness * inverse * redLuminance,
     brightness * inverse * greenLuminance,
     brightness * (inverse * blueLuminance + saturation),
     0,
-    0,
+    offset,
     0,
     0,
     0,
@@ -606,10 +782,12 @@ class _FlowingLightPainter extends CustomPainter {
     required this.audioReactiveFlow,
     required this.audio,
     required this.style,
+    required this.shaderCache,
     required ValueNotifier<int> repaint,
   })  : _linearColorFilter = _flowingLightLinearColorFilter(
           style.artworkSaturation,
           style.artworkBrightness,
+          style.artworkBlackLift,
         ),
         super(repaint: repaint);
 
@@ -621,24 +799,22 @@ class _FlowingLightPainter extends CustomPainter {
   final bool audioReactiveFlow;
   final _FlowAudioState audio;
   final _FlowingLightVisualStyle style;
+  final _FlowingLightShaderCache shaderCache;
   final ui.ColorFilter _linearColorFilter;
 
   static const _artworkCurve = Cubic(0, 0, 0.3, 1);
-  static final _blurFilter = ui.ImageFilter.blur(
-    sigmaX: _kBlurSigma,
-    sigmaY: _kBlurSigma,
-    tileMode: TileMode.clamp,
-  );
-
-  late final ui.Paint _blurPaint = ui.Paint()..imageFilter = _blurFilter;
-  late final ui.Paint _linearColorPaint = ui.Paint()
-    ..colorFilter = _linearColorFilter;
   late final ui.Paint _primaryPaint = ui.Paint()
     ..filterQuality = FilterQuality.medium
-    ..color = const Color.fromARGB(_kPrimaryLayerAlpha, 255, 255, 255);
-  final ui.Paint _secondaryPaint = ui.Paint()
-    ..filterQuality = FilterQuality.medium;
-  final ui.Paint _lightPaint = ui.Paint()..filterQuality = FilterQuality.medium;
+    ..colorFilter = _linearColorFilter;
+  late final ui.Paint _secondaryPaint = ui.Paint()
+    ..filterQuality = FilterQuality.medium
+    ..colorFilter = _linearColorFilter;
+  late final ui.Paint _lightPaint = ui.Paint()
+    ..filterQuality = FilterQuality.medium
+    ..colorFilter = _linearColorFilter;
+  final _primaryMesh = _WarpMeshBuffer();
+  final _secondaryMesh = _WarpMeshBuffer();
+  final _lightMesh = _WarpMeshBuffer();
   ui.Paint? _edgePaint;
   Size? _edgePaintSize;
   double? _edgePaintAlpha;
@@ -686,10 +862,6 @@ class _FlowingLightPainter extends CustomPainter {
   ) {
     final alpha = (opacity * 255).round().clamp(0, 255);
     if (alpha == 0 || image == null) return;
-    _blurPaint.color =
-        alpha == 255 ? Colors.white : Color.fromARGB(alpha, 255, 255, 255);
-    canvas.saveLayer(null, _blurPaint);
-    canvas.saveLayer(null, _linearColorPaint);
 
     const driftAmp = 0.052;
     final primaryDriftX = sin(time * 0.5) * driftAmp;
@@ -705,70 +877,68 @@ class _FlowingLightPainter extends CustomPainter {
             bassTransient: audio.bassTransient,
           )
         : 1.0;
-    final audioShift = audioReactiveFlow
-        ? audio.mid * 0.025 + audio.bassTransient * 0.035
+    final warpStrength = audioReactiveFlow
+        ? flowingLightWarpStrength(
+            audio.low,
+            bassTransient: audio.bassTransient,
+          )
         : 0.0;
-    _primaryPaint.color = Color.fromARGB(
-      (_kPrimaryLayerAlpha + audio.bassTransient * _kPrimaryKickAlpha).round(),
-      255,
-      255,
-      255,
-    );
-    _secondaryPaint.color = Color.fromARGB(
-      (_kSecondaryLayerAlpha + audio.mid * _kSecondaryAudioAlpha).round(),
-      255,
-      255,
-      255,
-    );
-    _lightPaint.color = Color.fromARGB(
-      (_kLightLayerAlpha + audio.high * _kLightAudioAlpha).round(),
-      255,
-      255,
-      255,
-    );
-
+    final imageShader = shaderCache.get(image);
     final primaryScale = flowingLightArtworkCropScale(
       size,
       Size(image.width.toDouble(), image.height.toDouble()),
     );
-    final center = size.center(Offset.zero);
-    canvas.save();
-    canvas.translate(center.dx, center.dy);
-    canvas.scale(primaryBreathe);
-    canvas.translate(-center.dx, -center.dy);
     _drawLayer(
       canvas,
       size,
       image,
-      primaryScale,
+      primaryScale * primaryBreathe,
       time / _kPeriod1 * 2 * pi + _kPrimaryLayerPhase,
       primaryDriftX,
       -0.10 + primaryDriftY,
       _primaryPaint,
+      layer: _FlowingLightLayer.primary,
+      mesh: _primaryMesh,
+      warpAmplitude: warpStrength,
+      warpPhase: time * 3.2,
+      shader: imageShader,
+      opacity: opacity,
     );
-    canvas.restore();
     _drawLayer(
       canvas,
       size,
       image,
-      primaryScale / _kPrimaryLayerScale * _kSecondaryLayerScale,
+      primaryScale /
+          _kPrimaryLayerScale *
+          _kSecondaryLayerScale *
+          primaryBreathe,
       -time / _kPeriod2 * 2 * pi + _kSecondaryLayerPhase,
-      0.38 + secondaryDriftX + audioShift,
-      0.22 + secondaryDriftY - audio.bassTransient * 0.015,
+      0.41 + secondaryDriftX,
+      0.23 + secondaryDriftY,
       _secondaryPaint,
+      layer: _FlowingLightLayer.secondary,
+      mesh: _secondaryMesh,
+      warpAmplitude: warpStrength * 0.76,
+      warpPhase: -time * 2.4 + 0.8,
+      shader: imageShader,
+      opacity: opacity,
     );
     _drawLayer(
       canvas,
       size,
       image,
-      primaryScale / _kPrimaryLayerScale * _kLightLayerScale,
+      primaryScale / _kPrimaryLayerScale * _kLightLayerScale * primaryBreathe,
       -time / _kPeriod3 * 2 * pi + _kLightLayerPhase,
-      -0.38 + lightDriftX - audioShift,
-      0.25 + lightDriftY + audio.bassTransient * 0.02,
+      -0.42 + lightDriftX,
+      0.28 + lightDriftY,
       _lightPaint,
+      layer: _FlowingLightLayer.light,
+      mesh: _lightMesh,
+      warpAmplitude: warpStrength * 0.56,
+      warpPhase: time * 4.4 + 1.5,
+      shader: imageShader,
+      opacity: opacity,
     );
-    canvas.restore();
-    canvas.restore();
   }
 
   void _drawLayer(
@@ -779,18 +949,147 @@ class _FlowingLightPainter extends CustomPainter {
     double rotation,
     double offsetX,
     double offsetY,
-    ui.Paint paint,
-  ) {
+    ui.Paint paint, {
+    required _FlowingLightLayer layer,
+    required _WarpMeshBuffer mesh,
+    double warpAmplitude = 0.0,
+    double warpPhase = 0.0,
+    required ui.Shader shader,
+    required double opacity,
+  }) {
     final center = size.center(Offset.zero);
-    final imageCenter = Offset(image.width / 2, image.height / 2);
-    canvas.save();
-    canvas.translate(
-        center.dx + offsetX * size.width, center.dy + offsetY * size.height);
-    canvas.rotate(rotation);
-    canvas.scale(scale, scale);
-    canvas.translate(-imageCenter.dx, -imageCenter.dy);
-    canvas.drawImage(image, Offset.zero, paint);
-    canvas.restore();
+    paint.shader = shader;
+    final vertices = _warpedVertices(
+      image: image,
+      size: size,
+      center: center,
+      scale: scale,
+      rotation: rotation,
+      offsetX: offsetX,
+      offsetY: offsetY,
+      amplitude: warpAmplitude,
+      phase: warpPhase,
+      layer: layer,
+      mesh: mesh,
+      opacity: opacity,
+    );
+    try {
+      canvas.drawVertices(vertices, BlendMode.modulate, paint);
+    } finally {
+      vertices.dispose();
+      paint.shader = null;
+    }
+  }
+
+  ui.Vertices _warpedVertices({
+    required ui.Image image,
+    required Size size,
+    required Offset center,
+    required double scale,
+    required double rotation,
+    required double offsetX,
+    required double offsetY,
+    required double amplitude,
+    required double phase,
+    required _FlowingLightLayer layer,
+    required _WarpMeshBuffer mesh,
+    required double opacity,
+  }) {
+    mesh.syncTextureCoordinates(image);
+    final imageWidth = image.width.toDouble();
+    final imageHeight = image.height.toDouble();
+    final imageCenter = Offset(imageWidth / 2, imageHeight / 2);
+    final cosRotation = cos(rotation);
+    final sinRotation = sin(rotation);
+    final displacementX = amplitude * size.width;
+    final displacementY = amplitude * size.height * 0.72;
+    final crossDisplacement = amplitude * size.shortestSide * 0.28;
+    final layerAlpha = switch (layer) {
+      _FlowingLightLayer.primary => _kPrimaryLayerAlpha,
+      _FlowingLightLayer.secondary => _kSecondaryLayerAlpha,
+      _FlowingLightLayer.light => _kLightLayerAlpha,
+    };
+    final mask = _layerMaskFor(layer, size);
+    for (var vertex = 0;
+        vertex < _kWarpNormalizedCoordinates.length ~/ 2;
+        vertex++) {
+      final u = _kWarpNormalizedCoordinates[vertex * 2];
+      final v = _kWarpNormalizedCoordinates[vertex * 2 + 1];
+      final sourceX = u * imageWidth;
+      final sourceY = v * imageHeight;
+      final localX = (sourceX - imageCenter.dx) * scale;
+      final localY = (sourceY - imageCenter.dy) * scale;
+      final rotatedX = localX * cosRotation - localY * sinRotation;
+      final rotatedY = localX * sinRotation + localY * cosRotation;
+      final waveX = sin(v * 2 * pi + phase) * displacementX;
+      final waveY = cos(u * 2 * pi + phase * 0.73) * displacementY;
+      final crossWave =
+          sin((u + v) * 2 * pi + phase * 1.17) * crossDisplacement;
+      final outputX = center.dx + offsetX * size.width + rotatedX + waveX;
+      final outputY = center.dy + offsetY * size.height + rotatedY + waveY;
+      final x = outputX + crossWave;
+      final y = outputY + crossWave * 0.65;
+      mesh.positions[vertex * 2] = x;
+      mesh.positions[vertex * 2 + 1] = y;
+      final maskAlpha = _layerMaskAlpha(mask, x, y);
+      final alpha = (layerAlpha * maskAlpha * opacity).round().clamp(0, 255);
+      mesh.colors[vertex] = (alpha << 24) | 0x00FFFFFF;
+    }
+    return ui.Vertices.raw(
+      ui.VertexMode.triangles,
+      mesh.positions,
+      colors: mesh.colors,
+      textureCoordinates: mesh.textureCoordinates,
+    );
+  }
+
+  _FlowingLightLayerMask _layerMaskFor(
+    _FlowingLightLayer layer,
+    Size size,
+  ) {
+    return switch (layer) {
+      _FlowingLightLayer.primary => (
+          centerX: size.width * 0.50,
+          centerY: size.height * 0.40,
+          radius: size.shortestSide * 1.12,
+          middleStop: 0.58,
+          outerStop: 0.82,
+          middleAlpha: 210 / 255,
+        ),
+      _FlowingLightLayer.secondary => (
+          centerX: size.width * 0.84,
+          centerY: size.height * 0.68,
+          radius: size.shortestSide * 0.95,
+          middleStop: 0.52,
+          outerStop: 0.82,
+          middleAlpha: 100 / 255,
+        ),
+      _FlowingLightLayer.light => (
+          centerX: size.width * 0.16,
+          centerY: size.height * 0.72,
+          radius: size.shortestSide * 0.95,
+          middleStop: 0.52,
+          outerStop: 0.82,
+          middleAlpha: 100 / 255,
+        ),
+    };
+  }
+
+  double _layerMaskAlpha(_FlowingLightLayerMask mask, double x, double y) {
+    final dx = x - mask.centerX;
+    final dy = y - mask.centerY;
+    final distanceSquared = dx * dx + dy * dy;
+    final middleRadius = mask.radius * mask.middleStop;
+    if (distanceSquared <= middleRadius * middleRadius) return 1.0;
+    final outerRadius = mask.radius * mask.outerStop;
+    final distance = sqrt(distanceSquared);
+    if (distance <= outerRadius) {
+      final local = (distance - middleRadius) / (outerRadius - middleRadius);
+      return 1.0 + (mask.middleAlpha - 1.0) * local;
+    }
+    if (distance >= mask.radius) return 0.0;
+    final local = (distance - outerRadius) / (mask.radius - outerRadius);
+    return mask.middleAlpha * (1.0 - local);
   }
 
   ui.Paint _edgePaintFor(Size size) {
