@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:pure_music/lyric/metadata_detector.dart';
 
 /// 从 KRC 解密后的内容中提取翻译和罗马音
 /// 支持两种来源：
@@ -43,43 +44,38 @@ KrcLanguageData? _parseSearchApiJson(String krcContent) {
   }
 }
 
-/// 从 KRC 原文中识别哪些 [start,end] 行是非空的
-/// 匹配 LrcTool._parseKaraOk 的行为：行中有至少一个字标签带非空内容即为非空
-List<bool> _identifyNonEmptyKrcLines(String krcContent) {
+List<_KrcLineInfo> _extractKrcLineInfo(String krcContent) {
   final lineRegex = RegExp(r'\[(\d+),(\d+)](.*)');
   final wordRegex = RegExp(r'<(\d+),(\d+),\d+>([^<]*)');
-  final result = <bool>[];
+  final result = <_KrcLineInfo>[];
   for (final line in krcContent.split('\n')) {
     final m = lineRegex.firstMatch(line.trim());
     if (m == null) continue;
     final body = m.group(3) ?? '';
-    bool hasContent = false;
-    for (final wm in wordRegex.allMatches(body)) {
-      final text = wm.group(3) ?? '';
-      if (text.isNotEmpty) {
-        hasContent = true;
-        break;
-      }
+    var content =
+        wordRegex.allMatches(body).map((match) => match.group(3) ?? '').join();
+    if (content.isEmpty) {
+      content = body.replaceAll(RegExp(r'<\d+,\d+,\d+>'), '').trim();
     }
-    if (!hasContent) {
-      final plain = body.replaceAll(RegExp(r'<\d+,\d+,\d+>'), '').trim();
-      if (plain.isNotEmpty) hasContent = true;
-    }
-    result.add(hasContent);
+    result.add(_KrcLineInfo(
+      startMs: int.parse(m.group(1)!),
+      isLyric: content.isNotEmpty && !isLyricMetadataText(content),
+    ));
   }
   return result;
 }
 
-KrcLanguageData? _extractFromJson(Map<String, dynamic> json, [String? krcContent]) {
+KrcLanguageData? _extractFromJson(Map<String, dynamic> json,
+    [String? krcContent]) {
   final contentList = json['content'];
   if (contentList is! List || contentList.isEmpty) return null;
 
   String? translation;
   String? romanization;
 
-  List<bool>? nonEmptyLines;
+  List<_KrcLineInfo>? lineInfo;
   if (krcContent != null) {
-    nonEmptyLines = _identifyNonEmptyKrcLines(krcContent);
+    lineInfo = _extractKrcLineInfo(krcContent);
   }
 
   for (final content in contentList) {
@@ -88,9 +84,9 @@ KrcLanguageData? _extractFromJson(Map<String, dynamic> json, [String? krcContent
     if (lyricContent is! List) continue;
 
     if (type == 1) {
-      translation = _formatKrcTranslation(lyricContent, nonEmptyLines);
+      translation = _formatKrcTranslation(lyricContent, lineInfo);
     } else if (type == 0) {
-      romanization = _formatKrcRomanization(lyricContent);
+      romanization = _formatKrcRomanization(lyricContent, lineInfo);
     }
   }
 
@@ -101,42 +97,74 @@ KrcLanguageData? _extractFromJson(Map<String, dynamic> json, [String? krcContent
   );
 }
 
-/// 格式化翻译文本
-/// 若提供 nonEmptyLines 信息，则跳过对应空 KRC 行的翻译条目，
-/// 使输出的行数与主解析器（LrcTool._parseKaraOk）的输出行数一致。
-String? _formatKrcTranslation(dynamic lyricContent, [List<bool>? nonEmptyLines]) {
+String? _formatKrcTranslation(
+  dynamic lyricContent, [
+  List<_KrcLineInfo>? lineInfo,
+]) {
   if (lyricContent is! List) return null;
 
   final List<String> lines = [];
   for (int i = 0; i < lyricContent.length; i++) {
     final line = lyricContent[i];
     if (line is! List) continue;
-    if (nonEmptyLines != null && i < nonEmptyLines.length && !nonEmptyLines[i]) {
-      continue;
+    final text = line.isNotEmpty ? line.first.toString() : '';
+    if (lineInfo != null) {
+      if (i >= lineInfo.length || !lineInfo[i].isLyric || text.trim().isEmpty) {
+        continue;
+      }
+      lines.add('${_formatLrcTimestamp(lineInfo[i].startMs)}$text');
+    } else {
+      lines.add(text);
     }
-    lines.add(line.isNotEmpty ? line.first.toString() : '');
   }
   return lines.join('\n');
 }
 
-String? _formatKrcRomanization(dynamic lyricContent) {
+String? _formatKrcRomanization(
+  dynamic lyricContent, [
+  List<_KrcLineInfo>? lineInfo,
+]) {
   if (lyricContent is! List) return null;
 
   final List<String> lines = [];
-  for (final line in lyricContent) {
+  for (int i = 0; i < lyricContent.length; i++) {
+    final line = lyricContent[i];
     if (line is List) {
       final syllables = line
           .map((s) => s.toString().trim())
           .where((s) => s.isNotEmpty)
           .join(' ');
       if (syllables.isNotEmpty) {
-        lines.add(syllables);
-      } else {
+        if (lineInfo != null) {
+          if (i >= lineInfo.length || !lineInfo[i].isLyric) continue;
+          lines.add(
+            '${_formatLrcTimestamp(lineInfo[i].startMs)}$syllables',
+          );
+        } else {
+          lines.add(syllables);
+        }
+      } else if (lineInfo == null) {
         lines.add('');
       }
     }
   }
   return lines.join('\n');
+}
+
+String _formatLrcTimestamp(int milliseconds) {
+  final minutes = milliseconds ~/ Duration.millisecondsPerMinute;
+  final seconds = (milliseconds % Duration.millisecondsPerMinute) ~/ 1000;
+  final millis = milliseconds % 1000;
+  return '[${minutes.toString().padLeft(2, '0')}:'
+      '${seconds.toString().padLeft(2, '0')}.'
+      '${millis.toString().padLeft(3, '0')}]';
+}
+
+class _KrcLineInfo {
+  final int startMs;
+  final bool isLyric;
+
+  const _KrcLineInfo({required this.startMs, required this.isLyric});
 }
 
 class KrcLanguageData {
