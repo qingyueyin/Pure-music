@@ -6,8 +6,16 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `init_schema`, `open_connection`, `sqlite_path`, `write_index_value_to_sqlite`
+// These functions are ignored because they are not marked as `pub`: `cover_source_signature`, `init_schema`, `open_connection`, `read_cover_thumbnail`, `sqlite_path`, `write_cover_thumbnail`, `write_index_value_to_sqlite`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`
+
+Future<Uint8List?> getCachedCover(
+        {required String indexPath,
+        required String path,
+        required int width,
+        required int height}) =>
+    RustLib.instance.api.crateApiLibraryDbGetCachedCover(
+        indexPath: indexPath, path: path, width: width, height: height);
 
 Future<void> incrementPlayCount(
         {required String indexPath, required String path}) =>

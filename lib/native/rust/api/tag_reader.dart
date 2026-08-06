@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `_get_lyric_from_lofty`, `_get_lyric_from_lrc_file`, `_get_picture_by_lofty`, `_get_picture_by_windows`, `_picture_cache_key`, `_update_index_below_1_1_0`, `add_missing_audio_files`, `count_subdirs`, `discover_new_audio_folders`, `join_deduped`, `new_with_path`, `read_by_lofty`, `read_by_win_music_properties`, `read_from_folder_recursively`, `read_from_folder`, `read_from_path`, `to_json_value`, `to_json_value`
+// These functions are ignored because they are not marked as `pub`: `_get_lyric_from_lofty`, `_get_picture_by_lofty`, `_get_picture_by_windows`, `_picture_cache_key`, `_update_index_below_1_1_0`, `add_missing_audio_files`, `count_subdirs`, `discover_new_audio_folders`, `get_embedded_picture_from_path`, `join_deduped`, `new_with_path`, `read_by_lofty`, `read_by_win_music_properties`, `read_from_folder_recursively`, `read_from_folder`, `read_from_path`, `should_scan_indexed_audio_files`, `should_show_recording_date`, `to_json_value`, `to_json_value`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `AudioFolder`, `Audio`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `fmt`, `fmt`
 
@@ -32,8 +32,7 @@ Future<Uint8List?> getPictureFromPath(
         path: path, width: width, height: height);
 
 /// for Flutter
-/// 只支持读取 ID3V2, VorbisComment, Mp4Ilst 存储的内嵌歌词
-/// 以及相同目录相同文件名的 .lrc 外挂歌词（utf-8 or utf-16）
+/// 只读取 ID3V2、VorbisComment、Mp4Ilst 存储的内嵌歌词
 Future<String?> getLyricFromPath({required String path}) =>
     RustLib.instance.api.crateApiTagReaderGetLyricFromPath(path: path);
 
@@ -60,19 +59,6 @@ Stream<IndexActionState> buildIndexFromFoldersRecursively(
     RustLib.instance.api.crateApiTagReaderBuildIndexFromFoldersRecursively(
         folders: folders, indexPath: indexPath);
 
-/// for Flutter
-/// 读取 index_path/index.json，检查更新。不可能重新读取被修改的文件夹下所有的音乐标签，这样太耗时。
-///
-/// [LOWEST_VERSION] 指定可以继承的 index 的最低版本。
-/// 如果 index version < [LOWEST_VERSION] 或者是 index 根本没有 version 再或者格式不符合要求，就转到
-/// [_update_index_below_1_1_0] 更新 index；
-/// 如果 index version >= [LOWEST_VERSION] 则进行更新。
-///
-/// 如果文件夹不存在，删除记录。
-/// 如果文件夹被修改（再次读取到的 modified > 记录的 modified），就更新它。没有则跳过它
-/// 1. 遍历该文件夹索引，判断文件是否存在，不存在则删除记录
-/// 2. 遍历该文件夹索引，如果文件被修改（再次读取到的 modified > 记录的 modified），重新读取标签；没有则跳过它
-/// 3. 遍历该文件夹，添加索引中不存在的音乐文件
 Stream<IndexActionState> updateIndex({required String indexPath}) =>
     RustLib.instance.api.crateApiTagReaderUpdateIndex(indexPath: indexPath);
 

@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `cache`, `deserialize_metadata`, `download_index_text`, `http_get`, `parse_index`, `resolve_index`, `score_entry`, `should_refresh_index`, `write_index_cache`
+// These functions are ignored because they are not marked as `pub`: `cache`, `deserialize_metadata`, `download_index_text`, `field_match_score`, `http_get`, `is_common_english_term`, `normalize_search_text`, `parse_index`, `resolve_index`, `score_entry`, `search_terms`, `should_refresh_index`, `write_index_cache`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `CachedIndex`, `IndexEntry`, `Metadata`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `fmt`, `fmt`
 

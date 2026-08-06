@@ -6,13 +6,20 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `_create_silent_media_source`, `_init_controls`, `_new`, `_ras_ref_from_pic_data`, `_try_get_thumbnail`, `_update_display`, `_update_state`, `_update_time_properties`, `create_silent_wav_1s`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `fmt`
+// These functions are ignored because they are not marked as `pub`: `_clear_display`, `_debug_snapshot`, `_find_main_window`, `_init_controls`, `_new`, `_queue_thumbnail_update`, `_ras_ref_from_pic_data`, `_start_thumbnail_worker`, `_try_get_thumbnail`, `_update_display`, `_update_state`, `_update_time_properties`, `find_process_window`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `WinRtThreadGuard`, `WindowSearch`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `drop`, `fmt`
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SMTCFlutter>>
 abstract class SmtcFlutter implements RustOpaqueInterface {
   /// Apis for Flutter
+  Future<void> clearDisplay();
+
+  /// Apis for Flutter
   Future<void> close();
+
+  /// Apis for Flutter
+  Future<SMTCDebugSnapshot> debugSnapshot();
 
   /// Apis for Flutter
   factory SmtcFlutter() =>
@@ -20,6 +27,9 @@ abstract class SmtcFlutter implements RustOpaqueInterface {
 
   /// Apis for Flutter
   Stream<SMTCControlEvent> subscribeToControlEvents();
+
+  /// Apis for Flutter
+  Stream<BigInt> subscribeToPositionChangeEvents();
 
   /// Apis for Flutter
   Future<void> updateDisplay(
@@ -45,6 +55,69 @@ enum SMTCControlEvent {
   unknown,
   stop,
   ;
+}
+
+class SMTCDebugSnapshot {
+  final bool enabled;
+  final bool playEnabled;
+  final bool pauseEnabled;
+  final bool previousEnabled;
+  final bool nextEnabled;
+  final bool stopEnabled;
+  final String playbackStatus;
+  final String title;
+  final String artist;
+  final String album;
+  final int durationMs;
+  final BigInt progressMs;
+
+  const SMTCDebugSnapshot({
+    required this.enabled,
+    required this.playEnabled,
+    required this.pauseEnabled,
+    required this.previousEnabled,
+    required this.nextEnabled,
+    required this.stopEnabled,
+    required this.playbackStatus,
+    required this.title,
+    required this.artist,
+    required this.album,
+    required this.durationMs,
+    required this.progressMs,
+  });
+
+  @override
+  int get hashCode =>
+      enabled.hashCode ^
+      playEnabled.hashCode ^
+      pauseEnabled.hashCode ^
+      previousEnabled.hashCode ^
+      nextEnabled.hashCode ^
+      stopEnabled.hashCode ^
+      playbackStatus.hashCode ^
+      title.hashCode ^
+      artist.hashCode ^
+      album.hashCode ^
+      durationMs.hashCode ^
+      progressMs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SMTCDebugSnapshot &&
+          runtimeType == other.runtimeType &&
+          enabled == other.enabled &&
+          playEnabled == other.playEnabled &&
+          pauseEnabled == other.pauseEnabled &&
+          previousEnabled == other.previousEnabled &&
+          nextEnabled == other.nextEnabled &&
+          stopEnabled == other.stopEnabled &&
+          playbackStatus == other.playbackStatus &&
+          title == other.title &&
+          artist == other.artist &&
+          album == other.album &&
+          durationMs == other.durationMs &&
+          progressMs == other.progressMs;
 }
 
 enum SMTCState {
