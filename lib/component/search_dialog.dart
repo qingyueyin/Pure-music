@@ -1,10 +1,11 @@
 import 'dart:async';
 
-import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/component/album_tile.dart';
 import 'package:pure_music/component/artist_tile.dart';
 import 'package:pure_music/component/audio_tile.dart';
+import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/quiet_empty_state.dart';
+import 'package:pure_music/component/search_dialog_layout.dart';
 import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/search_action_state.dart';
@@ -15,27 +16,6 @@ import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
-
-class _SearchCountText extends StatelessWidget {
-  const _SearchCountText({required this.count, required this.selected});
-
-  final int count;
-  final bool selected;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return Text(
-      '$count',
-      style: TextStyle(
-        color: selected ? scheme.onSecondaryContainer : scheme.onSurfaceVariant,
-        fontSize: AppType.caption,
-        fontWeight: AppType.weightMedium,
-      ),
-    );
-  }
-}
 
 class _SearchEmptyState extends StatelessWidget {
   const _SearchEmptyState({
@@ -206,14 +186,16 @@ class _SearchDialogState extends State<SearchDialog> {
           tooltip: isQueuedNext
               ? '已加入下一首'
               : hasNowPlaying
-                  ? '下一首播放'
-                  : '先播放一首歌',
+              ? '下一首播放'
+              : '先播放一首歌',
           style: IconButton.styleFrom(
             backgroundColor: isQueuedNext ? scheme.primaryContainer : null,
-            disabledBackgroundColor:
-                isQueuedNext ? scheme.primaryContainer : null,
-            disabledForegroundColor:
-                isQueuedNext ? scheme.onPrimaryContainer : null,
+            disabledBackgroundColor: isQueuedNext
+                ? scheme.primaryContainer
+                : null,
+            disabledForegroundColor: isQueuedNext
+                ? scheme.onPrimaryContainer
+                : null,
           ),
           onPressed: canAddNext ? () => _addSearchResultToNext(audio) : null,
           icon: AnimatedSwitcher(
@@ -252,8 +234,8 @@ class _SearchDialogState extends State<SearchDialog> {
               tooltip: isAddingThisAudio
                   ? '添加中'
                   : alreadyInAllPlaylists
-                      ? '已存在于所有歌单'
-                      : '添加到歌单',
+                  ? '已存在于所有歌单'
+                  : '添加到歌单',
               onPressed: canOpenPlaylistMenu
                   ? () {
                       if (controller.isOpen) {
@@ -284,168 +266,128 @@ class _SearchDialogState extends State<SearchDialog> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final size = MediaQuery.of(context).size;
-    final width = (size.width - 64).clamp(280.0, 900.0).toDouble();
-    final height = (size.height - 180).clamp(300.0, 720.0).toDouble();
 
-    return AlertDialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+    return SearchDialogFrame(
       title: const Text('搜索'),
-      content: SizedBox(
-        width: width,
-        height: height,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Focus(
-              onFocusChange: HotkeysHelper.onFocusChanges,
-              child: TextField(
-                controller: _searchController,
-                autofocus: true,
-                style: TextStyle(color: scheme.onSurface),
-                decoration: InputDecoration(
-                  prefixIcon: const Icon(Symbols.search),
-                  hintText: '搜索歌曲、艺术家、专辑',
-                  suffixIcon: ValueListenableBuilder<TextEditingValue>(
-                    valueListenable: _searchController,
-                    builder: (context, value, _) {
-                      final hasText = canShowSearchClearAction(value.text);
-                      if (!hasText) return const SizedBox.shrink();
-                      return IconButton(
-                        tooltip: '清除',
-                        onPressed: () {
-                          _debounce?.cancel();
-                          _searchController.clear();
-                          _result.value = UnionSearchResult('');
-                          _isSearching.value = false;
-                        },
-                        icon: const Icon(Symbols.close),
-                      );
-                    },
-                  ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Focus(
+            onFocusChange: HotkeysHelper.onFocusChanges,
+            child: TextField(
+              controller: _searchController,
+              autofocus: true,
+              style: TextStyle(color: scheme.onSurface),
+              decoration: InputDecoration(
+                prefixIcon: const Icon(Symbols.search),
+                hintText: '搜索歌曲、艺术家、专辑',
+                suffixIcon: ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: _searchController,
+                  builder: (context, value, _) {
+                    final hasText = canShowSearchClearAction(value.text);
+                    if (!hasText) return const SizedBox.shrink();
+                    return IconButton(
+                      tooltip: '清除',
+                      onPressed: () {
+                        _debounce?.cancel();
+                        _searchController.clear();
+                        _result.value = UnionSearchResult('');
+                        _isSearching.value = false;
+                      },
+                      icon: const Icon(Symbols.close),
+                    );
+                  },
                 ),
-                onChanged: _onQueryChanged,
-                onSubmitted: (_) {},
               ),
+              onChanged: _onQueryChanged,
+              onSubmitted: (_) {},
             ),
-            ValueListenableBuilder(
-              valueListenable: _isSearching,
-              builder: (context, searching, _) => AnimatedSwitcher(
-                duration: const Duration(milliseconds: 150),
-                child: searching
-                    ? const Padding(
-                        padding: EdgeInsets.only(top: 8.0),
-                        child: LinearProgressIndicator(minHeight: 2.0),
-                      )
-                    : const SizedBox(height: 12.0),
-              ),
+          ),
+          ValueListenableBuilder(
+            valueListenable: _isSearching,
+            builder: (context, searching, _) => AnimatedSwitcher(
+              duration: const Duration(milliseconds: 150),
+              child: searching
+                  ? const Padding(
+                      padding: EdgeInsets.only(top: 8.0),
+                      child: LinearProgressIndicator(minHeight: 2.0),
+                    )
+                  : const SizedBox(height: 12.0),
             ),
-            ValueListenableBuilder(
-              valueListenable: _result,
-              builder: (context, result, _) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12.0),
-                  child: Wrap(
-                    spacing: 8.0,
-                    runSpacing: 8.0,
-                    children: List.generate(_tabs.length, (i) {
-                      final selected = _currentIndex == i;
-                      final canSwitch = canSwitchTab(
-                          currentIndex: _currentIndex, targetIndex: i);
-                      final count = switch (i) {
-                        0 => result.audios.length,
-                        1 => result.artists.length,
-                        _ => result.album.length,
-                      };
-                      final showCount = selected &&
-                          result.query.isNotEmpty &&
-                          result.query ==
-                              normalizedSearchQuery(_searchController.text);
-                      return OutlinedButton.icon(
-                        onPressed: canSwitch
-                            ? () {
-                                setState(() => _currentIndex = i);
-                                final query = normalizedSearchQuery(
-                                  _searchController.text,
-                                );
-                                if (query.isNotEmpty) {
-                                  _searchVersion++;
-                                  _search(query);
-                                }
+          ),
+          ValueListenableBuilder(
+            valueListenable: _result,
+            builder: (context, result, _) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12.0),
+                child: Wrap(
+                  spacing: 8.0,
+                  runSpacing: 8.0,
+                  children: List.generate(_tabs.length, (i) {
+                    final selected = _currentIndex == i;
+                    final canSwitch = canSwitchTab(
+                      currentIndex: _currentIndex,
+                      targetIndex: i,
+                    );
+                    final count = switch (i) {
+                      0 => result.audios.length,
+                      1 => result.artists.length,
+                      _ => result.album.length,
+                    };
+                    final showCount =
+                        selected &&
+                        result.query.isNotEmpty &&
+                        result.query ==
+                            normalizedSearchQuery(_searchController.text);
+                    return SearchCategoryButton(
+                      label: _tabs[i].label,
+                      icon: _tabs[i].icon,
+                      selected: selected,
+                      count: showCount ? count : null,
+                      onPressed: canSwitch
+                          ? () {
+                              setState(() => _currentIndex = i);
+                              final query = normalizedSearchQuery(
+                                _searchController.text,
+                              );
+                              if (query.isNotEmpty) {
+                                _searchVersion++;
+                                _search(query);
                               }
-                            : null,
-                        icon: Icon(_tabs[i].icon, size: 18),
-                        label: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(_tabs[i].label),
-                            if (showCount) ...[
-                              const SizedBox(width: 6),
-                              _SearchCountText(
-                                count: count,
-                                selected: selected,
-                              ),
-                            ],
-                          ],
-                        ),
-                        style: ButtonStyle(
-                          foregroundColor: WidgetStatePropertyAll(
-                            selected
-                                ? scheme.onSecondaryContainer
-                                : scheme.onSurface,
-                          ),
-                          backgroundColor: WidgetStatePropertyAll(
-                            selected
-                                ? scheme.secondaryContainer
-                                : scheme.surfaceContainerHighest,
-                          ),
-                          side: WidgetStatePropertyAll(
-                            BorderSide(
-                              color:
-                                  selected ? scheme.primary : scheme.outline,
-                            ),
-                          ),
-                          shape: WidgetStatePropertyAll(
-                            RoundedRectangleBorder(
-                                borderRadius: AppRadius.smCircular),
-                          ),
-                          padding: const WidgetStatePropertyAll(
-                            EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                          ),
-                        ),
-                      );
-                    }),
-                  ),
+                            }
+                          : null,
+                    );
+                  }),
+                ),
+              );
+            },
+          ),
+          Expanded(
+            child: ValueListenableBuilder(
+              valueListenable: _result,
+              builder: (context, value, _) {
+                final query = value.query.trim();
+                if (query.isEmpty) {
+                  return const _SearchEmptyState(
+                    icon: Symbols.search,
+                    title: '输入关键词开始搜索',
+                    message: '支持搜索歌曲、艺术家、专辑。',
+                  );
+                }
+
+                return DirectionalTabView(
+                  key: ValueKey('search_$_searchVersion'),
+                  index: _currentIndex,
+                  children: [
+                    _buildMusicList(value),
+                    _buildArtistList(value),
+                    _buildAlbumList(value),
+                  ],
                 );
               },
             ),
-            Expanded(
-              child: ValueListenableBuilder(
-                valueListenable: _result,
-                builder: (context, value, _) {
-                  final query = value.query.trim();
-                  if (query.isEmpty) {
-                    return const _SearchEmptyState(
-                      icon: Symbols.search,
-                      title: '输入关键词开始搜索',
-                      message: '支持搜索歌曲、艺术家、专辑。',
-                    );
-                  }
-
-                  return IndexedStack(
-                    key: ValueKey('search_$_searchVersion'),
-                    index: _currentIndex,
-                    children: [
-                      _buildMusicList(value),
-                      _buildArtistList(value),
-                      _buildAlbumList(value),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
