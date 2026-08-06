@@ -30,9 +30,16 @@ final destinations = <DestinationDesc>[
 ];
 
 class SideNav extends StatefulWidget {
-  const SideNav({super.key, this.navigationShell});
+  const SideNav({
+    super.key,
+    this.navigationShell,
+    this.onExpandedChanged,
+  });
 
   final StatefulNavigationShell? navigationShell;
+  final ValueChanged<bool>? onExpandedChanged;
+  static const double collapsedWidth = 80.0;
+  static const double expandedWidth = 240.0;
 
   @override
   State<SideNav> createState() => _SideNavState();
@@ -40,8 +47,8 @@ class SideNav extends StatefulWidget {
 
 class _SideNavState extends State<SideNav> {
   final sidebarExpanded = ValueNotifier(AppPreference.instance.sidebarExpanded);
-  static const double _collapsedWidth = 80.0;
-  static const double _expandedWidth = 240.0;
+  static const double _collapsedWidth = SideNav.collapsedWidth;
+  static const double _expandedWidth = SideNav.expandedWidth;
   static const double _itemHeight = 54.0;
 
   @override
@@ -73,9 +80,23 @@ class _SideNavState extends State<SideNav> {
       if (scaffold.hasDrawer) scaffold.closeDrawer();
     }
 
+    void onDestinationDoubleTap(int value) {
+      if (selectedIndex != value) return;
+
+      if (navShell != null) {
+        navShell.goBranch(value, initialLocation: true);
+      } else {
+        context.go(destinations[value].desPath);
+      }
+
+      final scaffold = Scaffold.of(context);
+      if (scaffold.hasDrawer) scaffold.closeDrawer();
+    }
+
     void toggleSidebar() {
       final newVal = !sidebarExpanded.value;
       sidebarExpanded.value = newVal;
+      widget.onExpandedChanged?.call(newVal);
       AppPreference.instance.sidebarExpanded = newVal;
       AppPreference.instance.save();
     }
@@ -92,22 +113,22 @@ class _SideNavState extends State<SideNav> {
       builder: (context, screenType) {
         return LayoutBuilder(
           builder: (context, constraints) {
-            final expandedWidth =
-                math.min(_expandedWidth, constraints.maxWidth);
+            final expandedWidth = isDrawer
+                ? constraints.maxWidth
+                : math.min(_expandedWidth, constraints.maxWidth);
             return ValueListenableBuilder(
               valueListenable: sidebarExpanded,
               builder: (context, expanded, _) {
                 final effectiveExpanded = isDrawer || expanded;
-                final effectiveT = effectiveExpanded ? 1.0 : 0.0;
                 return _SmoothLargeSideNav(
                   isDrawer: isDrawer,
                   expanded: effectiveExpanded,
-                  t: effectiveT,
                   expandedWidth: expandedWidth,
                   colorScheme: scheme,
                   selectedIndex: selectedIndex,
                   onToggle: onToggle,
                   onSelect: onDestinationSelected,
+                  onReturnHome: onDestinationDoubleTap,
                 );
               },
             );
@@ -122,22 +143,22 @@ class _SmoothLargeSideNav extends StatelessWidget {
   const _SmoothLargeSideNav({
     required this.isDrawer,
     required this.expanded,
-    required this.t,
     required this.expandedWidth,
     required this.colorScheme,
     required this.selectedIndex,
     required this.onToggle,
     required this.onSelect,
+    required this.onReturnHome,
   });
 
   final bool isDrawer;
   final bool expanded;
-  final double t;
   final double expandedWidth;
   final ColorScheme colorScheme;
   final int? selectedIndex;
   final VoidCallback onToggle;
   final void Function(int) onSelect;
+  final void Function(int) onReturnHome;
 
   static const double _collapsedWidth = _SideNavState._collapsedWidth;
   static const double _itemHeight = _SideNavState._itemHeight;
@@ -146,74 +167,83 @@ class _SmoothLargeSideNav extends StatelessWidget {
   Widget build(BuildContext context) {
     return RepaintBoundary(
       child: TweenAnimationBuilder<double>(
-        duration: MotionDuration.medium,
-        curve: MotionCurve.emphasized,
+        duration: MotionDuration.base,
+        curve: MotionCurve.standard,
         tween: Tween(begin: 0.0, end: expanded ? 1.0 : 0.0),
-        builder: (context, t, _) {
-          final visibleWidth =
-              (lerpDouble(_collapsedWidth, expandedWidth, t) ?? _collapsedWidth)
-                  .clamp(_collapsedWidth, expandedWidth);
-          return SizedBox(
-            width: visibleWidth,
-            height: double.infinity,
-            child: Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: colorScheme.surface,
-                  borderRadius: AppRadius.mdCircular,
+        builder: (context, t, _) => _buildPanel(context, t),
+      ),
+    );
+  }
+
+  Widget _buildPanel(BuildContext context, double t) {
+    final visibleWidth =
+        (lerpDouble(_collapsedWidth, expandedWidth, t) ?? _collapsedWidth)
+            .clamp(_collapsedWidth, expandedWidth);
+    final itemWidth = math.max(0.0, visibleWidth - 16.0);
+    final expandedVisual = t >= 0.5;
+    return SizedBox(
+      width: visibleWidth,
+      height: double.infinity,
+      child: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: colorScheme.surface,
+            borderRadius: AppRadius.mdCircular,
+          ),
+          child: ClipRRect(
+            borderRadius: AppRadius.mdCircular,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 12),
+                _NavItem(
+                  height: _itemHeight,
+                  width: itemWidth,
+                  icon: isDrawer
+                      ? Symbols.close
+                      : expandedVisual
+                          ? Symbols.menu_open
+                          : Symbols.menu,
+                  label: isDrawer
+                      ? '关闭'
+                      : expandedVisual
+                          ? '收起'
+                          : '展开',
+                  expandedT: t,
+                  selected: false,
+                  onTap: onToggle,
                 ),
-                child: ClipRRect(
-                  borderRadius: AppRadius.mdCircular,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const SizedBox(height: 12),
-                      _NavItem(
+                const SizedBox(height: 8),
+                Expanded(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    itemCount: destinations.length,
+                    itemBuilder: (context, i) {
+                      final selected = selectedIndex == i;
+                      return _NavItem(
                         height: _itemHeight,
-                        icon: isDrawer
-                            ? Symbols.close
-                            : expanded
-                                ? Symbols.menu_open
-                                : Symbols.menu,
-                        label: isDrawer
-                            ? '关闭'
-                            : expanded
-                                ? '收起'
-                                : '展开',
+                        width: itemWidth,
+                        icon: destinations[i].icon,
+                        label: destinations[i].label,
                         expandedT: t,
-                        selected: false,
-                        onTap: onToggle,
-                      ),
-                      const SizedBox(height: 8),
-                      Expanded(
-                        child: ListView.builder(
-                          padding: const EdgeInsets.symmetric(vertical: 6),
-                          itemCount: destinations.length,
-                          itemBuilder: (context, i) {
-                            final selected = selectedIndex == i;
-                            return _NavItem(
-                              height: _itemHeight,
-                              icon: destinations[i].icon,
-                              label: destinations[i].label,
-                              expandedT: t,
-                              selected: selected,
-                              onTap: () {
-                                onSelect(i);
-                                final scaffold = Scaffold.of(context);
-                                if (scaffold.hasDrawer) scaffold.closeDrawer();
-                              },
-                            );
-                          },
-                        ),
-                      ),
-                    ],
+                        selected: selected,
+                        onTap: () {
+                          onSelect(i);
+                          final scaffold = Scaffold.of(context);
+                          if (scaffold.hasDrawer) {
+                            scaffold.closeDrawer();
+                          }
+                        },
+                        onDoubleTap: selected ? () => onReturnHome(i) : null,
+                      );
+                    },
                   ),
                 ),
-              ),
+              ],
             ),
-          );
-        },
+          ),
+        ),
       ),
     );
   }
@@ -222,19 +252,23 @@ class _SmoothLargeSideNav extends StatelessWidget {
 class _NavItem extends StatelessWidget {
   const _NavItem({
     required this.height,
+    required this.width,
     required this.icon,
     required this.label,
     required this.expandedT,
     required this.selected,
     required this.onTap,
+    this.onDoubleTap,
   });
 
   final double height;
+  final double width;
   final IconData icon;
   final String label;
   final double expandedT;
   final bool selected;
   final VoidCallback onTap;
+  final VoidCallback? onDoubleTap;
 
   @override
   Widget build(BuildContext context) {
@@ -245,35 +279,32 @@ class _NavItem extends StatelessWidget {
     final fg = selected ? scheme.onSecondaryContainer : scheme.onSurface;
     final textOpacity = expandedT.clamp(0.0, 1.0);
     const iconSize = 24.0;
-    const collapsedIconLeftPad = 20.0;
-    const expandedIconLeftPad = 20.0;
+    const iconLeftPad = 20.0;
     const textLeftPad = 8.0;
-    final iconLeftPad = lerpDouble(
-      collapsedIconLeftPad,
-      expandedIconLeftPad,
-      expandedT,
-    )!;
 
-    return SizedBox(
-      height: height,
-      child: Material(
-        color: bg,
-        borderRadius: AppRadius.smCircular,
-        child: InkWell(
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: Material(
+          color: bg,
           borderRadius: AppRadius.smCircular,
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                SizedBox(width: iconLeftPad),
-                SizedBox(
-                  width: iconSize,
-                  child: Icon(icon,
-                      size: iconSize, color: fg.withValues(alpha: 0.90)),
-                ),
-                if (expandedT > 0.01)
+          child: InkWell(
+            borderRadius: AppRadius.smCircular,
+            onTap: onTap,
+            onDoubleTap: onDoubleTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  const SizedBox(width: iconLeftPad),
+                  SizedBox(
+                    width: iconSize,
+                    child: Icon(icon,
+                        size: iconSize, color: fg.withValues(alpha: 0.90)),
+                  ),
                   Opacity(
                     opacity: textOpacity,
                     child: Padding(
@@ -286,14 +317,16 @@ class _NavItem extends StatelessWidget {
                         style: TextStyle(
                           color: fg,
                           fontSize: 14.5,
-                          fontWeight:
-                              selected ? AppType.weightSemibold : AppType.weightMedium,
+                          fontWeight: selected
+                              ? AppType.weightSemibold
+                              : AppType.weightMedium,
                         ),
                       ),
                     ),
                   ),
-                const Spacer(),
-              ],
+                  const Spacer(),
+                ],
+              ),
             ),
           ),
         ),

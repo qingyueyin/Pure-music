@@ -1,8 +1,10 @@
 // ignore_for_file: camel_case_types
 
 import 'package:pure_music/core/cache.dart';
+import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/component/mini_now_playing.dart';
+import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/responsive_builder.dart';
 import 'package:pure_music/component/side_nav.dart';
 import 'package:pure_music/component/title_bar.dart';
@@ -92,8 +94,6 @@ class _AppShell_SmallState extends State<_AppShell_Small> {
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.sizeOf(context);
-    final drawerWidth = (size.width * 0.78).clamp(240.0, 288.0);
     return Scaffold(
       backgroundColor: _backgroundColor,
       appBar: const PreferredSize(
@@ -101,7 +101,7 @@ class _AppShell_SmallState extends State<_AppShell_Small> {
         child: TitleBar(),
       ),
       drawer: SizedBox(
-          width: drawerWidth,
+          width: SideNav.expandedWidth,
           child: SideNav(navigationShell: widget.navigationShell)),
       body: Stack(
         children: [widget.navigationShell, const MiniNowPlaying()],
@@ -122,10 +122,15 @@ class _AppShell_Large extends StatefulWidget {
 class _AppShell_LargeState extends State<_AppShell_Large> {
   late Color _backgroundColor;
   late final VoidCallback _onNowPlayingChanged;
+  late bool _sidebarExpanded;
+  late bool _bodyUsesExpandedLayout;
+  bool _sidebarAnimating = false;
 
   @override
   void initState() {
     super.initState();
+    _sidebarExpanded = AppPreference.instance.sidebarExpanded;
+    _bodyUsesExpandedLayout = _sidebarExpanded;
     _onNowPlayingChanged = () {
       final newColor = _resolveDynamicColor(Theme.of(context).colorScheme);
       if (newColor != _backgroundColor) {
@@ -149,23 +154,78 @@ class _AppShell_LargeState extends State<_AppShell_Large> {
     super.dispose();
   }
 
+  void _handleSidebarExpandedChanged(bool expanded) {
+    if (_sidebarExpanded == expanded) return;
+    setState(() {
+      _sidebarExpanded = expanded;
+      _sidebarAnimating = true;
+      if (!expanded) _bodyUsesExpandedLayout = false;
+    });
+  }
+
+  void _handleSidebarAnimationEnd() {
+    if (!_sidebarAnimating) return;
+    setState(() {
+      _sidebarAnimating = false;
+      _bodyUsesExpandedLayout = _sidebarExpanded;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final bodyLeft = _bodyUsesExpandedLayout
+        ? SideNav.expandedWidth
+        : SideNav.collapsedWidth;
+    const sidebarTravel = SideNav.expandedWidth - SideNav.collapsedWidth;
     return Scaffold(
       backgroundColor: _backgroundColor,
       appBar: const PreferredSize(
         preferredSize: Size.fromHeight(48.0),
         child: TitleBar(),
       ),
-      body: Row(
+      body: Stack(
+        clipBehavior: Clip.hardEdge,
         children: [
-          ClipRect(child: SideNav(navigationShell: widget.navigationShell)),
-          Expanded(
-            child: Stack(
-              children: [
-                widget.navigationShell,
-                const MiniNowPlaying(),
-              ],
+          Positioned(
+            left: bodyLeft,
+            top: 0,
+            right: 0,
+            bottom: 0,
+            child: TweenAnimationBuilder<double>(
+              duration: MotionDuration.base,
+              curve: MotionCurve.standard,
+              tween: Tween<double>(
+                begin: _sidebarExpanded ? 1.0 : 0.0,
+                end: _sidebarExpanded ? 1.0 : 0.0,
+              ),
+              onEnd: _handleSidebarAnimationEnd,
+              builder: (context, progress, child) {
+                final offset =
+                    _sidebarAnimating ? progress * sidebarTravel : 0.0;
+                return Transform.translate(
+                  offset: Offset(offset, 0),
+                  child: child,
+                );
+              },
+              child: RepaintBoundary(
+                child: Stack(
+                  children: [
+                    widget.navigationShell,
+                    const MiniNowPlaying(),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            top: 0,
+            bottom: 0,
+            child: ClipRect(
+              child: SideNav(
+                navigationShell: widget.navigationShell,
+                onExpandedChanged: _handleSidebarExpandedChanged,
+              ),
             ),
           ),
         ],
