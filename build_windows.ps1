@@ -278,7 +278,7 @@ function New-AppPackage([string]$artifactRoot, [string]$version) {
         throw "Build output is incomplete: $buildDir"
     }
 
-    $finalAppDir = Join-Path $artifactRoot "app"
+    $finalAppDir = $artifactRoot
     $finalDllDir = Join-Path $finalAppDir "dll"
     New-Item -ItemType Directory -Force -Path $finalDllDir | Out-Null
 
@@ -311,7 +311,7 @@ function New-AppPackage([string]$artifactRoot, [string]$version) {
         Move-Item -Path $_.FullName -Destination (Join-Path $finalDllDir $_.Name) -Force
     }
 
-    Get-ChildItem -Path $finalAppDir -Recurse -File -Include "*.pdb","*.ilk","*.exp","*.lib" -ErrorAction SilentlyContinue | ForEach-Object {
+    Get-ChildItem -Path $finalAppDir -Recurse -File -Include "*.pdb","*.ilk","*.exp","*.lib","native_assets.json" -ErrorAction SilentlyContinue | ForEach-Object {
         Remove-Item -Path $_.FullName -Force -ErrorAction SilentlyContinue
     }
 
@@ -369,20 +369,7 @@ function Test-KeyFiles([string]$appDir) {
     Write-Host "Key file check passed." -ForegroundColor Green
 }
 
-function Write-BuildInfo([string]$packageRoot, [string]$version, [string]$dist) {
-    $buildInfo = @(
-        "version=$version",
-        "tag=release",
-        "dist=$dist",
-        "architecture=x64",
-        "build_mode=Release",
-        "build_time=$([DateTimeOffset]::Now.ToString('o'))"
-    ) -join "`n"
-    Write-Utf8NoBom (Join-Path $packageRoot "build_info.txt") $buildInfo
-}
-
 function New-PortablePackage([string]$version, [bool]$buildFirst, [bool]$makeZip) {
-    $dist = "portable"
     if ($buildFirst) { Invoke-Build $version $true }
     $artifactName = "pure_music_{0}_release_portable" -f $version
     $publishedRoot = Join-Path $finalOutputDir $artifactName
@@ -402,20 +389,6 @@ function New-PortablePackage([string]$version, [bool]$buildFirst, [bool]$makeZip
         $artifactRoot = Join-Path $staging $artifactName
         New-Item -ItemType Directory -Force -Path $artifactRoot | Out-Null
         $finalAppDir = New-AppPackage $artifactRoot $version
-
-        Invoke-Step "copy portable upgrade helper" {
-            foreach ($item in @(
-                @{ src = Join-Path $PSScriptRoot "tool\upgrade_from_previous.ps1"; name = "upgrade_from_previous.ps1" },
-                @{ src = Join-Path $PSScriptRoot "tool\PORTABLE_README.txt"; name = "PORTABLE_README.txt" }
-            )) {
-                if (-not (Test-Path -LiteralPath $item.src -PathType Leaf)) {
-                    throw "Missing portable helper file: $($item.src)"
-                }
-                Copy-Item -LiteralPath $item.src -Destination (Join-Path $artifactRoot $item.name) -Force
-            }
-        }
-
-        Write-BuildInfo $artifactRoot $version $dist
 
         Invoke-Step "validate portable package" {
             Test-KeyFiles $finalAppDir
@@ -449,7 +422,6 @@ function New-PortablePackage([string]$version, [bool]$buildFirst, [bool]$makeZip
 }
 
 function New-InstallerPackage([string]$version, [bool]$buildFirst) {
-    $dist = "installer"
     if ($buildFirst) { Invoke-Build $version $false }
     $artifactName = "pure_music_{0}_release_installer" -f $version
     $publishedInstaller = Join-Path $finalOutputDir "$artifactName.exe"
@@ -470,7 +442,6 @@ function New-InstallerPackage([string]$version, [bool]$buildFirst) {
         $artifactRoot = Join-Path $staging $artifactName
         New-Item -ItemType Directory -Force -Path $artifactRoot | Out-Null
         $finalAppDir = New-AppPackage $artifactRoot $version
-        Write-BuildInfo $artifactRoot $version $dist
 
         Invoke-Step "validate installer application" {
             Test-KeyFiles $finalAppDir
