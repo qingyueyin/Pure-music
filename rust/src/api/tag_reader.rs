@@ -11,7 +11,7 @@ use image::imageops;
 use lofty::config::{ParseOptions, ParsingMode, WriteOptions};
 use lofty::prelude::{Accessor, AudioFile, ItemKey, TaggedFileExt};
 use lofty::probe::Probe;
-use lofty::tag::Tag;
+use lofty::tag::{ItemValue, Tag, TagItem, TagType};
 use windows::{
     core::Interface,
     core::HSTRING,
@@ -62,6 +62,14 @@ pub struct AudioExtraMetadata {
     pub replaygain_album_peak: Option<String>,
 }
 
+fn should_show_recording_date(recording_date: Option<&str>, year: Option<&str>) -> bool {
+    match (recording_date, year) {
+        (Some(date), Some(year)) => date.trim() != year.trim(),
+        (Some(_), None) => true,
+        _ => false,
+    }
+}
+
 /// for Flutter
 pub fn read_audio_extra_metadata(path: String) -> AudioExtraMetadata {
     let file_size = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
@@ -83,12 +91,10 @@ pub fn read_audio_extra_metadata(path: String) -> AudioExtraMetadata {
         .read_cover_art(false)
         .read_properties(true);
 
-    let tagged_file = match Probe::open(&path)
-        .and_then(|p| p.options(options).read())
-    {
+    let tagged_file = match Probe::open(&path).and_then(|p| p.options(options).read()) {
         Ok(val) => val,
         Err(err) => {
-            log_to_dart(format!("{:?}: {}", path, err));
+            log_to_dart(format!("metadata read failed: {}", err));
             return AudioExtraMetadata {
                 extension,
                 file_size,
@@ -107,7 +113,10 @@ pub fn read_audio_extra_metadata(path: String) -> AudioExtraMetadata {
     let channels = props.channels();
     let bit_depth = props.bit_depth();
 
-    if let Some(tag) = tagged_file.primary_tag().or_else(|| tagged_file.first_tag()) {
+    if let Some(tag) = tagged_file
+        .primary_tag()
+        .or_else(|| tagged_file.first_tag())
+    {
         let mut push_kv = |key: &str, val: Option<&str>| {
             if let Some(v) = val {
                 if !v.trim().is_empty() {
@@ -126,17 +135,21 @@ pub fn read_audio_extra_metadata(path: String) -> AudioExtraMetadata {
             "genre",
             tag.get(&ItemKey::Genre).and_then(|v| v.value().text()),
         );
-        push_kv(
-            "date",
-            tag.get(&ItemKey::RecordingDate).and_then(|v| v.value().text()),
-        );
-        push_kv(
-            "year",
-            tag.get(&ItemKey::Year).and_then(|v| v.value().text()),
-        );
+        let recording_date = tag
+            .get(&ItemKey::RecordingDate)
+            .and_then(|v| v.value().text());
+        let year = tag
+            .get(&ItemKey::Year)
+            .or_else(|| tag.get(&ItemKey::RecordingDate))
+            .and_then(|v| v.value().text());
+        if should_show_recording_date(recording_date, year) {
+            push_kv("date", recording_date);
+        }
+        push_kv("year", year);
         push_kv(
             "release_date",
-            tag.get(&ItemKey::ReleaseDate).and_then(|v| v.value().text()),
+            tag.get(&ItemKey::ReleaseDate)
+                .and_then(|v| v.value().text()),
         );
         push_kv(
             "disc",
@@ -194,7 +207,8 @@ pub fn read_audio_extra_metadata(path: String) -> AudioExtraMetadata {
         );
         push_kv(
             "encoder_settings",
-            tag.get(&ItemKey::EncoderSettings).and_then(|v| v.value().text()),
+            tag.get(&ItemKey::EncoderSettings)
+                .and_then(|v| v.value().text()),
         );
         replaygain_track_gain = tag
             .get(&ItemKey::ReplayGainTrackGain)
@@ -229,7 +243,9 @@ pub fn read_audio_extra_metadata(path: String) -> AudioExtraMetadata {
         );
         push_kv(
             "license",
-            tag.get(&ItemKey::License).and_then(|v| v.value().text()),
+            tag.get(&ItemKey::License)
+                .or_else(|| tag.get(&ItemKey::Unknown("LICENSE".to_string())))
+                .and_then(|v| v.value().text()),
         );
     }
 
@@ -371,10 +387,7 @@ impl Audio {
         // WAV/AIFF 等 RIFF 格式：RIFF INFO 块编码依赖系统 locale，
         // Windows API 能正确处理，Lofty 会乱码 CJK 文本。
         // 因此 WAV/AIFF 优先走 Windows → Lofty 回退。
-        let is_riff_format = matches!(
-            ext_lower.as_str(),
-            "wav" | "wave" | "aif" | "aiff" | "aifc"
-        );
+        let is_riff_format = matches!(ext_lower.as_str(), "wav" | "wave" | "aif" | "aiff" | "aifc");
 
         if is_riff_format {
             match Self::read_by_win_music_properties(path, modified, created) {
@@ -397,7 +410,7 @@ impl Audio {
             match Self::read_by_win_music_properties(path, modified, created) {
                 Ok(value) => Some(value),
                 Err(err) => {
-                    log_to_dart(format!("{:?}: {}", path, err));
+                    log_to_dart(format!("metadata fallback failed: {}", err));
                     Self::new_with_path(path, None)
                 }
             }
@@ -412,14 +425,14 @@ impl Audio {
         let mut file = match std::fs::File::open(path) {
             Ok(f) => f,
             Err(err) => {
-                log_to_dart(format!("{:?}: {}", path, err));
+                log_to_dart(format!("audio file open failed: {}", err));
                 return None;
             }
         };
         let tagged_file = match lofty::read_from(&mut file) {
             Ok(val) => val,
             Err(err) => {
-                log_to_dart(format!("{:?}: {}", path, err));
+                log_to_dart(format!("metadata parse failed: {}", err));
                 return None;
             }
         };
@@ -471,7 +484,10 @@ impl Audio {
         }
 
         Some(Audio {
-            title: path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
+            title: path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default(),
             artist: std::borrow::Cow::Borrowed("UNKNOWN").to_string(),
             album: std::borrow::Cow::Borrowed("UNKNOWN").to_string(),
             album_artist: None,
@@ -584,7 +600,7 @@ impl AudioFolder {
         let dir = match fs::read_dir(path) {
             Ok(val) => val,
             Err(err) => {
-                log_to_dart(format!("{:?}: {}", path, err));
+                log_to_dart(format!("folder scan failed: {}", err));
                 return Err(err);
             }
         };
@@ -753,9 +769,7 @@ fn _get_picture_by_lofty(path: &str) -> Option<Vec<u8>> {
         .read_cover_art(true)
         .read_properties(false);
 
-    let tagged_file = match Probe::open(path)
-        .and_then(|p| p.options(options).read())
-    {
+    let tagged_file = match Probe::open(path).and_then(|p| p.options(options).read()) {
         Ok(f) => f,
         Err(_) => return None,
     };
@@ -765,6 +779,32 @@ fn _get_picture_by_lofty(path: &str) -> Option<Vec<u8>> {
         .or_else(|| tagged_file.first_tag())?;
 
     Some(tag.pictures().first()?.data().to_vec())
+}
+
+pub(crate) fn get_embedded_picture_from_path(
+    path: &str,
+    width: u32,
+    height: u32,
+) -> Option<Vec<u8>> {
+    let picture = _get_picture_by_lofty(path)?;
+    let loaded = image::load_from_memory(&picture).ok()?;
+    let ratio = loaded.width() as f32 / loaded.height() as f32;
+    let (result_width, result_height) = if ratio > 1.0 {
+        (width, (width as f32 / ratio).round() as u32)
+    } else {
+        ((height as f32 * ratio).round() as u32, height)
+    };
+    let resized = imageops::resize(
+        &loaded,
+        result_width.max(1),
+        result_height.max(1),
+        imageops::FilterType::Triangle,
+    );
+    let mut output = Cursor::new(Vec::new());
+    resized
+        .write_to(&mut output, image::ImageFormat::Png)
+        .ok()?;
+    Some(output.into_inner())
 }
 
 const PICTURE_CACHE_CAPACITY: usize = 96;
@@ -799,25 +839,41 @@ pub fn get_picture_and_colors(
             }
         },
     };
-    let colors = super::color_extraction::extract_colors_from_image(pic.clone(), num_colors);
-
-    let resized_png = match image::load_from_memory(&pic) {
-        Ok(loaded) => {
-            let ratio = loaded.width() as f32 / loaded.height() as f32;
-            let (rw, rh) = if ratio > 1.0 {
-                (width, (width as f32 / ratio).round() as u32)
-            } else {
-                ((height as f32 * ratio).round() as u32, height)
-            };
-            let resized = image::imageops::resize(&loaded, rw, rh, image::imageops::FilterType::Triangle);
-            let mut buf = std::io::Cursor::new(Vec::new());
-            if resized.write_to(&mut buf, image::ImageFormat::Png).is_ok() {
-                Some(buf.into_inner())
-            } else {
-                None
-            }
+    let loaded = match image::load_from_memory(&pic) {
+        Ok(loaded) => loaded,
+        Err(err) => {
+            log_to_dart(format!("fail to decode cover: {}", err));
+            return (None, vec![]);
         }
-        Err(_) => None,
+    };
+    drop(pic);
+    let colors = match super::color_extraction::extract_mesh_colors_from_decoded_image(
+        &loaded, num_colors,
+    ) {
+        Ok(colors) => colors,
+        Err(err) => {
+            log_to_dart(format!("fail to extract colors: {}", err));
+            vec![]
+        }
+    };
+    let ratio = loaded.width() as f32 / loaded.height() as f32;
+    let (rw, rh) = if ratio > 1.0 {
+        (width, (width as f32 / ratio).round() as u32)
+    } else {
+        ((height as f32 * ratio).round() as u32, height)
+    };
+    let resized = image::imageops::resize(
+        &loaded,
+        rw.max(1),
+        rh.max(1),
+        image::imageops::FilterType::Triangle,
+    );
+    drop(loaded);
+    let mut buf = std::io::Cursor::new(Vec::new());
+    let resized_png = if resized.write_to(&mut buf, image::ImageFormat::Png).is_ok() {
+        Some(buf.into_inner())
+    } else {
+        None
     };
 
     (resized_png, colors)
@@ -827,7 +883,9 @@ pub fn get_picture_and_colors(
 /// 如果无法通过 Lofty 获取则通过 Windows 获取
 pub fn get_picture_from_path(path: String, width: u32, height: u32) -> Option<Vec<u8>> {
     let cache_key = _picture_cache_key(&path, width, height);
-    if let Ok(cache_lock) = PICTURE_CACHE.get_or_init(|| Mutex::new(VecDeque::new())).lock()
+    if let Ok(cache_lock) = PICTURE_CACHE
+        .get_or_init(|| Mutex::new(VecDeque::new()))
+        .lock()
     {
         if let Some(pos) = cache_lock.iter().position(|(k, _)| k == &cache_key) {
             let mut cache = cache_lock;
@@ -867,10 +925,14 @@ pub fn get_picture_from_path(path: String, width: u32, height: u32) -> Option<Ve
             );
 
             let mut output = Cursor::new(Vec::new());
-            if resized_img.write_to(&mut output, image::ImageFormat::Png).is_ok() {
+            if resized_img
+                .write_to(&mut output, image::ImageFormat::Png)
+                .is_ok()
+            {
                 let out = output.into_inner();
-                if let Ok(mut cache) =
-                    PICTURE_CACHE.get_or_init(|| Mutex::new(VecDeque::new())).lock()
+                if let Ok(mut cache) = PICTURE_CACHE
+                    .get_or_init(|| Mutex::new(VecDeque::new()))
+                    .lock()
                 {
                     if let Some(pos) = cache.iter().position(|(k, _)| k == &cache_key) {
                         cache.remove(pos);
@@ -907,7 +969,10 @@ fn _get_lyric_from_lofty(path: &str) -> Option<String> {
             return None;
         }
     };
-    let tag = match tagged_file.primary_tag().or_else(|| tagged_file.first_tag()) {
+    let tag = match tagged_file
+        .primary_tag()
+        .or_else(|| tagged_file.first_tag())
+    {
         Some(t) => t,
         None => {
             log_to_dart("lofty: no primary/first tag found".to_string());
@@ -933,9 +998,7 @@ fn _get_lyric_from_lofty(path: &str) -> Option<String> {
     for item in tag.items() {
         let key_str = format!("{:?}", item.key());
         // 跳过常见的非歌词字段
-        if key_str.to_lowercase().contains("picture")
-            || key_str.to_lowercase().contains("cover")
-        {
+        if key_str.to_lowercase().contains("picture") || key_str.to_lowercase().contains("cover") {
             continue;
         }
         if let Some(val) = item.value().text() {
@@ -956,49 +1019,14 @@ fn _get_lyric_from_lofty(path: &str) -> Option<String> {
             }
         }
     }
-    log_to_dart("lofty: no lyric-like content found in any tag item".to_string());
+    log_to_dart("no lyric-like content found in any tag item".to_string());
     None
 }
 
-fn _get_lyric_from_lrc_file(path: &str) -> anyhow::Result<String> {
-    let mut lrc_file_path = PathBuf::from(path);
-    lrc_file_path.set_extension("lrc");
-
-    let lrc_bytes = fs::read(lrc_file_path)?;
-
-    let is_le = lrc_bytes.starts_with(&[0xFF, 0xFE]);
-    let is_utf16 = (is_le || lrc_bytes.starts_with(&[0xFE, 0xFF])) && lrc_bytes.len() % 2 == 0;
-
-    if is_utf16 {
-        let convert_fn = match is_le {
-            true => u16::from_le_bytes,
-            false => u16::from_be_bytes,
-        };
-
-        let mut u16_bytes: Vec<u16> = vec![];
-        let mut chunk_iter = lrc_bytes.chunks_exact(2);
-        chunk_iter.next();
-
-        for chunk in chunk_iter {
-            u16_bytes.push(convert_fn([chunk[0], chunk[1]]));
-        }
-        Ok(String::from_utf16(&u16_bytes)?)
-    } else {
-        Ok(String::from_utf8(lrc_bytes)?)
-    }
-}
-
 /// for Flutter   
-/// 只支持读取 ID3V2, VorbisComment, Mp4Ilst 存储的内嵌歌词
-/// 以及相同目录相同文件名的 .lrc 外挂歌词（utf-8 or utf-16）
+/// 只读取 ID3V2、VorbisComment、Mp4Ilst 存储的内嵌歌词
 pub fn get_lyric_from_path(path: String) -> Option<String> {
-    _get_lyric_from_lofty(&path).or_else(|| match _get_lyric_from_lrc_file(&path) {
-        Ok(val) => Some(val),
-        Err(err) => {
-            log_to_dart(format!("fail to get lrc: {err}"));
-            None
-        }
-    })
+    _get_lyric_from_lofty(&path)
 }
 
 #[derive(Clone)]
@@ -1025,11 +1053,15 @@ pub struct WriteTagPayload {
 
 /// for Flutter
 /// 通用标签写入函数。only_changed=true 时只写非 None 字段
-pub fn write_audio_tags(path: String, payload: WriteTagPayload, only_changed: bool) -> Result<(), String> {
+pub fn write_audio_tags(
+    path: String,
+    payload: WriteTagPayload,
+    only_changed: bool,
+) -> Result<(), String> {
     let path_ref = Path::new(&path);
     let options = ParseOptions::new()
         .parsing_mode(ParsingMode::Relaxed)
-        .read_cover_art(false)
+        .read_cover_art(true)
         .read_properties(false)
         .read_tags(true);
 
@@ -1077,6 +1109,7 @@ pub fn write_audio_tags(path: String, payload: WriteTagPayload, only_changed: bo
         let _ = tag.remove_key(&ItemKey::AlbumArtist);
         let _ = tag.remove_key(&ItemKey::Genre);
         let _ = tag.remove_key(&ItemKey::Year);
+        let _ = tag.remove_key(&ItemKey::RecordingDate);
         let _ = tag.remove_key(&ItemKey::TrackNumber);
         let _ = tag.remove_key(&ItemKey::TrackTotal);
         let _ = tag.remove_key(&ItemKey::DiscNumber);
@@ -1086,9 +1119,11 @@ pub fn write_audio_tags(path: String, payload: WriteTagPayload, only_changed: bo
         let _ = tag.remove_key(&ItemKey::Label);
         let _ = tag.remove_key(&ItemKey::Comment);
         let _ = tag.remove_key(&ItemKey::Bpm);
+        let _ = tag.remove_key(&ItemKey::IntegerBpm);
         let _ = tag.remove_key(&ItemKey::Language);
         let _ = tag.remove_key(&ItemKey::CopyrightMessage);
         let _ = tag.remove_key(&ItemKey::License);
+        let _ = tag.remove_key(&ItemKey::Unknown("LICENSE".to_string()));
     }
 
     write_field!(payload.title, ItemKey::TrackTitle);
@@ -1096,7 +1131,7 @@ pub fn write_audio_tags(path: String, payload: WriteTagPayload, only_changed: bo
     write_field!(payload.album, ItemKey::AlbumTitle);
     write_field!(payload.album_artist, ItemKey::AlbumArtist);
     write_field!(payload.genre, ItemKey::Genre);
-    write_field!(payload.year, ItemKey::Year);
+    write_field!(payload.year, ItemKey::RecordingDate);
     write_field!(payload.track, ItemKey::TrackNumber);
     write_field!(payload.track_total, ItemKey::TrackTotal);
     write_field!(payload.disc, ItemKey::DiscNumber);
@@ -1105,10 +1140,22 @@ pub fn write_audio_tags(path: String, payload: WriteTagPayload, only_changed: bo
     write_field!(payload.lyricist, ItemKey::Lyricist);
     write_field!(payload.label, ItemKey::Label);
     write_field!(payload.comment, ItemKey::Comment);
-    write_field!(payload.bpm, ItemKey::Bpm);
+    write_field!(payload.bpm, ItemKey::IntegerBpm);
     write_field!(payload.language, ItemKey::Language);
     write_field!(payload.copyright, ItemKey::CopyrightMessage);
-    write_field!(payload.license, ItemKey::License);
+    if let Some(value) = &payload.license {
+        let trimmed = value.trim().to_string();
+        let _ = tag.remove_key(&ItemKey::License);
+        let custom_key = ItemKey::Unknown("LICENSE".to_string());
+        let _ = tag.remove_key(&custom_key);
+        if !trimmed.is_empty() {
+            if tag.tag_type() == TagType::Id3v2 {
+                tag.insert_unchecked(TagItem::new(custom_key, ItemValue::Text(trimmed)));
+            } else {
+                tag.insert_text(ItemKey::License, trimmed);
+            }
+        }
+    }
 
     tagged_file
         .save_to_path(&path, WriteOptions::default())
@@ -1151,11 +1198,16 @@ pub fn write_lyric_to_path(path: String, lyric: String) -> Result<(), String> {
         }
     };
 
-    tag.insert_text(ItemKey::Lyrics, lyric);
+    let _ = tag.remove_key(&ItemKey::Lyrics);
+    tag.insert_text(ItemKey::Lyrics, lyric.clone());
     tagged_file
         .save_to_path(&path, WriteOptions::default())
         .map_err(|e| format!("Error saving lyrics: {:?}", e.kind()))?;
-    Ok(())
+    match _get_lyric_from_lofty(&path) {
+        Some(saved) if saved == lyric => Ok(()),
+        Some(_) => Err("written lyrics do not match the saved tag".to_string()),
+        None => Err("written lyrics could not be read back".to_string()),
+    }
 }
 
 /// 递归计数所有子目录（含自身）。
@@ -1228,9 +1280,13 @@ fn _update_index_below_1_1_0(
     sink: &StreamSink<IndexActionState>,
 ) -> Result<(), io::Error> {
     let mut audio_folders_json: Vec<serde_json::Value> = vec![];
-    let folders = index.as_array().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "index is not an array"))?;
+    let folders = index
+        .as_array()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "index is not an array"))?;
     for item in folders {
-        let path = item["path"].as_str().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "missing 'path' field"))?;
+        let path = item["path"]
+            .as_str()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "missing 'path' field"))?;
         let _ = sink.add(IndexActionState {
             progress: audio_folders_json.len() as f64 / folders.len() as f64,
             message: String::from("正在扫描 ") + path,
@@ -1285,18 +1341,17 @@ fn discover_new_audio_folders(
     if let Ok(entries) = fs::read_dir(root) {
         for entry in entries.flatten() {
             if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                discover_new_audio_folders(
-                    &entry.path(),
-                    existing_paths,
-                    new_entries,
-                    scanned,
-                );
+                discover_new_audio_folders(&entry.path(), existing_paths, new_entries, scanned);
             }
         }
     }
 }
 
-fn add_missing_audio_files(folder_path: &str, audios: &mut Vec<serde_json::Value>, latest: u64) -> u64 {
+fn add_missing_audio_files(
+    folder_path: &str,
+    audios: &mut Vec<serde_json::Value>,
+    latest: u64,
+) -> u64 {
     let existing_audio_paths: HashSet<String> = audios
         .iter()
         .filter_map(|item| item["path"].as_str().map(|path| path.to_string()))
@@ -1343,10 +1398,36 @@ fn add_missing_audio_files(folder_path: &str, audios: &mut Vec<serde_json::Value
 /// 如果 index version >= [LOWEST_VERSION] 则进行更新。
 ///
 /// 如果文件夹不存在，删除记录。  
-/// 如果文件夹被修改（再次读取到的 modified > 记录的 modified），就更新它。没有则跳过它
+/// 显式刷新时检查每个已索引文件的修改时间，只重新读取实际变化的音乐标签。
 /// 1. 遍历该文件夹索引，判断文件是否存在，不存在则删除记录
 /// 2. 遍历该文件夹索引，如果文件被修改（再次读取到的 modified > 记录的 modified），重新读取标签；没有则跳过它
 /// 3. 遍历该文件夹，添加索引中不存在的音乐文件
+fn should_scan_indexed_audio_files(
+    old_folder_modified: u64,
+    new_folder_modified: u64,
+    explicit_refresh: bool,
+) -> bool {
+    explicit_refresh || new_folder_modified > old_folder_modified
+}
+
+#[cfg(test)]
+mod tag_reader_tests {
+    use super::{should_scan_indexed_audio_files, should_show_recording_date};
+
+    #[test]
+    fn scans_audio_files_when_folder_timestamp_is_unchanged() {
+        assert!(should_scan_indexed_audio_files(100, 100, true));
+    }
+
+    #[test]
+    fn hides_duplicate_recording_date_when_used_as_year() {
+        assert!(!should_show_recording_date(
+            Some("2026-06-11"),
+            Some("2026-06-11")
+        ));
+    }
+}
+
 pub fn update_index(index_path: String, sink: StreamSink<IndexActionState>) -> anyhow::Result<()> {
     let index_dir = PathBuf::from(&index_path);
     let mut index_path = PathBuf::from(index_path);
@@ -1359,7 +1440,9 @@ pub fn update_index(index_path: String, sink: StreamSink<IndexActionState>) -> a
         return Ok(_update_index_below_1_1_0(&index, &index_path, &sink)?);
     }
 
-    let folders = index["folders"].as_array_mut().ok_or_else(|| anyhow::anyhow!("missing 'folders' field"))?;
+    let folders = index["folders"]
+        .as_array_mut()
+        .ok_or_else(|| anyhow::anyhow!("missing 'folders' field"))?;
     // 删除访问不到的文件夹的记录
     folders.retain(|item| {
         let path = match item["path"].as_str() {
@@ -1407,8 +1490,8 @@ pub fn update_index(index_path: String, sink: StreamSink<IndexActionState>) -> a
             Err(_) => continue,
         };
 
-        // 文件夹未被修改时不重读旧标签，但仍检查新增文件
-        if new_folder_modified <= old_folder_modified {
+        // 非显式刷新可依据文件夹时间跳过；手动刷新始终检查已有文件。
+        if !should_scan_indexed_audio_files(old_folder_modified, new_folder_modified, true) {
             if let Some(audios) = folder_item["audios"].as_array_mut() {
                 let new_latest = add_missing_audio_files(&folder_path, audios, latest);
                 folder_item["latest"] = serde_json::json!(new_latest);
