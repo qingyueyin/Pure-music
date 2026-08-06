@@ -1,7 +1,8 @@
+import 'dart:async';
 import 'dart:ffi';
 
-import 'package:desktop_lyric/component/foreground.dart';
-import 'package:desktop_lyric/message.dart';
+import 'package:pure_player_lyric/component/foreground.dart';
+import 'package:pure_player_lyric/message.dart';
 import 'package:ffi/ffi.dart' as ffi;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,9 +10,8 @@ import 'package:provider/provider.dart';
 import 'package:win32/win32.dart' as win32;
 import 'package:window_manager/window_manager.dart';
 
-const WHITE_TRANSPARENT = Color.fromARGB(0, 255, 255, 255);
-const BLACK_TRANSPARENT = Color.fromARGB(0, 0, 0, 0);
-final ValueNotifier<double> BACKGROUND_OPACITY = ValueNotifier(0);
+const whiteTransparent = Color.fromARGB(0, 255, 255, 255);
+const blackTransparent = Color.fromARGB(0, 0, 0, 0);
 
 const double _resizeAreaSize = 12.0;
 
@@ -29,6 +29,31 @@ class _DesktopLyricBodyState extends State<DesktopLyricBody> {
   int? _startCursorY;
   int? _startWindowLeft;
   int? _startWindowTop;
+  Timer? _pinTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _pinTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!textDisplayController.enablePinTop) return;
+      final hWnd = _ensureHwnd();
+      if (hWnd == null) return;
+      win32.SetWindowPos(
+        hWnd,
+        win32.HWND_TOPMOST,
+        0, 0, 0, 0,
+        win32.SWP_NOMOVE |
+            win32.SWP_NOSIZE |
+            win32.SWP_NOACTIVATE,
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _pinTimer?.cancel();
+    super.dispose();
+  }
 
   int? _ensureHwnd() {
     if (_hWnd != null && _hWnd != 0) return _hWnd;
@@ -147,9 +172,9 @@ class _DesktopLyricBodyState extends State<DesktopLyricBody> {
       newTop,
       0,
       0,
-      win32.SET_WINDOW_POS_FLAGS.SWP_NOSIZE |
-          win32.SET_WINDOW_POS_FLAGS.SWP_NOZORDER |
-          win32.SET_WINDOW_POS_FLAGS.SWP_NOACTIVATE,
+      win32.SWP_NOSIZE |
+          win32.SWP_NOZORDER |
+          win32.SWP_NOACTIVATE,
     );
   }
 
@@ -165,11 +190,11 @@ class _DesktopLyricBodyState extends State<DesktopLyricBody> {
     final theme = context.watch<ThemeChangedMessage>();
 
     return ValueListenableBuilder(
-      valueListenable: BACKGROUND_OPACITY,
+      valueListenable: backgroundOpacity,
       builder: (context, opacity, _) {
         final baseOpacity = opacity;
         final effectiveOpacity = isHovering
-            ? (baseOpacity < 0.12 ? 0.12 : baseOpacity)
+            ? (baseOpacity < 0.04 ? 0.04 : baseOpacity)
             : baseOpacity;
         final background = Color(
           theme.surfaceContainer,
