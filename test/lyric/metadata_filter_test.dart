@@ -56,6 +56,15 @@ void main() {
       );
       expect(LrcLine.isLyricMetadataLine('周杰伦 人声录制：Someone'), isTrue);
       const additionalCredits = <String>[
+        '【乐器：吉他 / 贝斯】',
+        '录音室：Some Studio',
+        '录音棚：Some Studio',
+        '混音室：Some Studio',
+        '母带室：Some Studio',
+        '录制地点：Some Studio',
+        '出版：Some Publisher',
+        '发行公司：Some Company',
+        '版权归属：Some Company',
         '额外编程：Derrick Sepnio',
         '数字编辑：Derrick Sepnio',
         'Vocal:ランコ',
@@ -64,6 +73,12 @@ void main() {
         '乐队总监：刘卓@维伴音乐',
         '打击乐：刘效松@维伴音乐',
         '电脑工程：郎梓朔@维伴音乐',
+        'Music Publishing: Some Publisher',
+        'Record Label: Some Label',
+        'Instruments: Guitar / Bass',
+        'Recording Location: Some Studio',
+        'Mixing Studio: Some Studio',
+        'Mastered at: Some Studio',
       ];
       for (final credit in additionalCredits) {
         expect(LrcLine.isLyricMetadataLine(credit), isTrue, reason: credit);
@@ -151,6 +166,72 @@ void main() {
         LrcLine.isLyricMetadataLine('Publishing my thoughts: one by one'),
         isFalse,
       );
+      expect(LrcLine.isLyricMetadataLine('我想开一家公司'), isFalse);
+      expect(LrcLine.isLyricMetadataLine('故事还没有出版'), isFalse);
+      expect(LrcLine.isLyricMetadataLine('乐曲：还在风里飘荡'), isFalse);
+      expect(LrcLine.isLyricMetadataLine('月光（乐曲）：Someone'), isFalse);
+      expect(LrcLine.isLyricMetadataLine('我们在录音室里等天亮'), isFalse);
+      expect(
+        LrcLine.isLyricMetadataLine('This company keeps me waiting'),
+        isFalse,
+      );
+    });
+
+    test('blanks standalone company and publishing lines at the header', () {
+      final metadataLines = <LrcLine>[
+        LrcLine(
+          Duration.zero,
+          '北京星河文化传媒有限公司',
+          requiredIsBlank: false,
+        ),
+        LrcLine(
+          const Duration(seconds: 1),
+          '星河唱片公司',
+          requiredIsBlank: false,
+        ),
+        LrcLine(
+          const Duration(seconds: 2),
+          '星河音乐出版',
+          requiredIsBlank: false,
+        ),
+        LrcLine(
+          const Duration(seconds: 3),
+          'Universal Music Publishing Group',
+          requiredIsBlank: false,
+        ),
+      ];
+      final lyricLine = LrcLine(
+        const Duration(seconds: 8),
+        '我想开一家公司',
+        requiredIsBlank: false,
+      );
+      final lines = <LyricLine>[...metadataLines, lyricLine];
+
+      blankMetadataLines(lines);
+
+      expect(metadataLines.every((line) => line.isBlank), isTrue);
+      expect(lines.last, same(lyricLine));
+      expect(lyricLine.content, '我想开一家公司');
+    });
+
+    test('does not use a standalone company phrase as an anchor', () {
+      final companyLine = LrcLine(
+        Duration.zero,
+        '我想开一家唱片公司',
+        requiredIsBlank: false,
+      );
+      final publishingLine = LrcLine(
+        const Duration(seconds: 1),
+        '故事还没有出版',
+        requiredIsBlank: false,
+      );
+
+      blankMetadataLines([companyLine, publishingLine]);
+
+      expect(companyLine.isBlank, isFalse);
+      expect(companyLine.content, '我想开一家唱片公司');
+      expect(publishingLine.isBlank, isFalse);
+      expect(publishingLine.content, '故事还没有出版');
     });
 
     test('recognizes an English production credit block', () {
@@ -334,6 +415,13 @@ void main() {
           'Born Again ft. Doja Cat & RAYE - LISA/Doja Cat/RAYE',
           'Born Again',
           ['LISA/Doja Cat/RAYE'],
+        ),
+        ('Song Name - Artist Name', 'Song Name', ['Artist Name']),
+        ('Artist Name - Song Name', 'Song Name', ['Artist Name']),
+        (
+          'Artist Name - Song Name (Remix/Explicit)',
+          'Song Name',
+          ['Artist Name'],
         ),
       ];
 

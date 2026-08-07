@@ -172,8 +172,8 @@ String _normalizeMetadataValue(String text) {
 
 bool _containsTitleVersionQualifier(String text) {
   return RegExp(
-    r'\b(?:acoustic|anniversary|bonus|cover|deluxe|demo|edit|explicit|instrumental|karaoke|live|mix|radio|remaster(?:ed|ing)?|remix|single|studio|version|ver\.?)\b|'
-    r'伴奏|纯音乐|純音樂|翻唱|混音|重混|重制|重製|新版|现场|現場|演唱会|演唱會|音乐节|音樂節|版|'
+    r'\b(?:a\s*cappella|acapella|acoustic|album|anniversary|bonus|clean|cover|deluxe|demo|dirty|edit|explicit|extended|instrumental|karaoke|live|mix|mono|original|radio|remaster(?:ed|ing)?|remix|reverb|single|slowed(?:\s+down)?|sped\s+up|stereo|studio|uncensored|version|ver\.?)\b|'
+    r'伴奏|纯音乐|純音樂|翻唱|混音|重混|重制|重製|原版|完整版|特别版|特別版|加速|慢速|新版|现场|現場|演唱会|演唱會|音乐节|音樂節|版|'
     r'アコースティック|インスト(?:ゥルメンタル)?|ライブ|リミックス|弾き語り|라이브|리믹스|버전',
     caseSensitive: false,
   ).hasMatch(text);
@@ -262,7 +262,7 @@ Set<String> _titleMatchCandidates(String text) {
     }
 
     final plainVersion = RegExp(
-      r'^(.*?)\s+(?:acoustic|cover|demo|instrumental|karaoke|live|radio edit|remaster(?:ed)?|remix|version|伴奏版?|纯音乐版?|純音樂版?|翻唱版?|混音版?|重混版?|重制版?|重製版?|新版|现场版?|現場版?)$',
+      r'^(.*?)\s+(?:a\s*cappella|acapella|acoustic|album version|clean|cover|demo|dirty|explicit|extended|instrumental|karaoke|live|original version|radio edit|remaster(?:ed)?|remix|slowed(?:\s+down)?|sped\s+up|stereo|uncensored|version|伴奏版?|纯音乐版?|純音樂版?|翻唱版?|混音版?|重混版?|重制版?|重製版?|原版|完整版|特别版|特別版|加速版?|慢速版?|新版|现场版?|現場版?)$',
       caseSensitive: false,
     ).firstMatch(value);
     if (plainVersion != null) pending.add(plainVersion.group(1)!);
