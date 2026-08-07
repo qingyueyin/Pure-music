@@ -12,13 +12,14 @@ import 'package:pure_music/page/page_scaffold.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
-typedef ContentBuilder<T> = Widget Function(
-  BuildContext context,
-  T item,
-  int index,
-  MultiSelectController<T>? multiSelectController,
-  ContentView view,
-);
+typedef ContentBuilder<T> =
+    Widget Function(
+      BuildContext context,
+      T item,
+      int index,
+      MultiSelectController<T>? multiSelectController,
+      ContentView view,
+    );
 
 typedef SortMethod<T> = void Function(List<T> list, SortOrder order);
 
@@ -143,15 +144,22 @@ class UniPage<T> extends StatefulWidget {
 }
 
 class _UniPageState<T> extends State<UniPage<T>> {
-  late SortMethodDesc<T>? currSortMethod =
-      resolveSortMethod(widget.pref, widget.sortMethods);
+  late SortMethodDesc<T>? currSortMethod = resolveSortMethod(
+    widget.pref,
+    widget.sortMethods,
+  );
   late SortOrder currSortOrder = widget.pref.sortOrder;
   late ContentView currContentView = widget.enableContentViewSwitch
       ? widget.pref.contentView
       : ContentView.table;
-  late ScrollController scrollController = ScrollController();
+  late final ScrollController listScrollController = ScrollController();
+  late final ScrollController tableScrollController = ScrollController();
   Map<String, int> _audioIndexByPath = const {};
   bool _showScrollToTop = false;
+
+  ScrollController get scrollController => currContentView == ContentView.list
+      ? listScrollController
+      : tableScrollController;
 
   void _refreshAudioIndexCache() {
     if (widget.contentList is! List<Audio>) {
@@ -237,7 +245,8 @@ class _UniPageState<T> extends State<UniPage<T>> {
                     padding: const WidgetStatePropertyAll(EdgeInsets.zero),
                     shape: WidgetStatePropertyAll(
                       RoundedRectangleBorder(
-                          borderRadius: AppRadius.smCircular),
+                        borderRadius: AppRadius.smCircular,
+                      ),
                     ),
                   ),
                   icon: const Icon(Symbols.my_location),
@@ -313,7 +322,8 @@ class _UniPageState<T> extends State<UniPage<T>> {
     super.initState();
     currSortMethod?.method(widget.contentList, currSortOrder);
     _refreshAudioIndexCache();
-    scrollController.addListener(_onScrollUpdate);
+    listScrollController.addListener(_onScrollUpdate);
+    tableScrollController.addListener(_onScrollUpdate);
     if (widget.locateTo == null) return;
 
     int targetAt = widget.contentList.indexOf(widget.locateTo as T);
@@ -337,8 +347,10 @@ class _UniPageState<T> extends State<UniPage<T>> {
   @override
   void didUpdateWidget(covariant UniPage<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final resolvedSortMethod =
-        resolveSortMethod(widget.pref, widget.sortMethods);
+    final resolvedSortMethod = resolveSortMethod(
+      widget.pref,
+      widget.sortMethods,
+    );
     if (resolvedSortMethod != null) {
       currSortMethod = resolvedSortMethod;
     }
@@ -354,7 +366,8 @@ class _UniPageState<T> extends State<UniPage<T>> {
 
   @override
   void dispose() {
-    scrollController.dispose();
+    listScrollController.dispose();
+    tableScrollController.dispose();
     super.dispose();
   }
 
@@ -377,9 +390,15 @@ class _UniPageState<T> extends State<UniPage<T>> {
   }
 
   void setContentView(ContentView contentView) {
+    if (currContentView == contentView) return;
+    final nextController = contentView == ContentView.list
+        ? listScrollController
+        : tableScrollController;
     setState(() {
       currContentView = contentView;
       widget.pref.contentView = contentView;
+      _showScrollToTop =
+          nextController.hasClients && nextController.position.pixels > 320.0;
     });
   }
 
@@ -393,34 +412,38 @@ class _UniPageState<T> extends State<UniPage<T>> {
       actions.add(ShufflePlay<T>(contentList: widget.contentList));
     }
     if (widget.enableSortMethod) {
-      actions.add(SortMethodComboBox<T>(
-        sortMethods: widget.sortMethods!,
-        contentList: widget.contentList,
-        currSortMethod: currSortMethod!,
-        setSortMethod: setSortMethod,
-      ));
+      actions.add(
+        SortMethodComboBox<T>(
+          sortMethods: widget.sortMethods!,
+          contentList: widget.contentList,
+          currSortMethod: currSortMethod!,
+          setSortMethod: setSortMethod,
+        ),
+      );
     }
     if (widget.enableSortOrder) {
-      actions.add(SortOrderSwitch<T>(
-        sortOrder: currSortOrder,
-        setSortOrder: setSortOrder,
-      ));
+      actions.add(
+        SortOrderSwitch<T>(
+          sortOrder: currSortOrder,
+          setSortOrder: setSortOrder,
+        ),
+      );
     }
     if (widget.enableContentViewSwitch) {
-      actions.add(ContentViewSwitch<T>(
-        contentView: currContentView,
-        setContentView: setContentView,
-      ));
+      actions.add(
+        ContentViewSwitch<T>(
+          contentView: currContentView,
+          setContentView: setContentView,
+        ),
+      );
     }
 
     return widget.multiSelectController == null
         ? result(null, actions)
         : ListenableBuilder(
             listenable: widget.multiSelectController!,
-            builder: (context, _) => result(
-              widget.multiSelectController!,
-              actions,
-            ),
+            builder: (context, _) =>
+                result(widget.multiSelectController!, actions),
           );
   }
 
@@ -429,50 +452,51 @@ class _UniPageState<T> extends State<UniPage<T>> {
       return _UniPageEmptyState(title: widget.title);
     }
 
+    final listView = ListView.builder(
+      controller: listScrollController,
+      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+      itemCount: widget.contentList.length,
+      itemExtent: 64,
+      itemBuilder: (context, i) => widget.contentBuilder(
+        context,
+        widget.contentList[i],
+        i,
+        multiSelectController,
+        ContentView.list,
+      ),
+    );
+    final tableView = GridView.builder(
+      controller: tableScrollController,
+      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+      gridDelegate: widget.gridDelegate ?? gridDelegate,
+      itemCount: widget.contentList.length,
+      itemBuilder: (context, i) => widget.contentBuilder(
+        context,
+        widget.contentList[i],
+        i,
+        multiSelectController,
+        ContentView.table,
+      ),
+    );
+
     return Row(
       children: [
         Expanded(
-          child: switch (currContentView) {
-            ContentView.list => ListView.builder(
-                controller: scrollController,
-                padding: const EdgeInsets.only(
-                  bottom: 96.0,
-                  right: 20,
-                ),
-                itemCount: widget.contentList.length,
-                itemExtent: 64,
-                itemBuilder: (context, i) => widget.contentBuilder(
-                  context,
-                  widget.contentList[i],
-                  i,
-                  multiSelectController,
-                  ContentView.list,
-                ),
-              ),
-            ContentView.table => GridView.builder(
-                controller: scrollController,
-                padding: const EdgeInsets.only(
-                  bottom: 96.0,
-                  right: 20,
-                ),
-                gridDelegate: widget.gridDelegate ?? gridDelegate,
-                itemCount: widget.contentList.length,
-                itemBuilder: (context, i) => widget.contentBuilder(
-                  context,
-                  widget.contentList[i],
-                  i,
-                  multiSelectController,
-                  ContentView.table,
-                ),
-              ),
-          },
+          child: widget.enableContentViewSwitch
+              ? DirectionalTabView(
+                  index: currContentView == ContentView.list ? 0 : 1,
+                  children: [listView, tableView],
+                )
+              : tableView,
         ),
       ],
     );
   }
 
   Widget result(
-      MultiSelectController<T>? multiSelectController, List<Widget> actions) {
+    MultiSelectController<T>? multiSelectController,
+    List<Widget> actions,
+  ) {
     final scheme = Theme.of(context).colorScheme;
 
     return PageScaffold(
@@ -481,8 +505,8 @@ class _UniPageState<T> extends State<UniPage<T>> {
       actions: multiSelectController == null
           ? actions
           : multiSelectController.enableMultiSelectView
-              ? widget.multiSelectViewActions!
-              : actions,
+          ? widget.multiSelectViewActions!
+          : actions,
       body: Material(
         type: MaterialType.transparency,
         child: Stack(

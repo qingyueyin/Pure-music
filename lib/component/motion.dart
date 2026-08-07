@@ -82,66 +82,97 @@ class DirectionalTabView extends StatefulWidget {
 }
 
 class _DirectionalTabViewState extends State<DirectionalTabView>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  int? _previousIndex;
-  double _direction = 1;
+    with TickerProviderStateMixin {
+  late final List<_TabMotionChannel> _channels;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController.unbounded(vsync: this, value: 1);
+    _channels = List.generate(
+      widget.children.length,
+      (index) => _TabMotionChannel(
+        vsync: this,
+        opacity: index == widget.index ? 1 : 0,
+        offset: index == widget.index
+            ? 0
+            : index < widget.index
+                ? -_tabSwitchDistance
+                : _tabSwitchDistance,
+      ),
+    );
   }
 
   @override
   void didUpdateWidget(covariant DirectionalTabView oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _syncChannelCount();
     if (oldWidget.index == widget.index) return;
-    _previousIndex = oldWidget.index;
-    _direction = widget.index > oldWidget.index ? 1 : -1;
-    _controller
-      ..stop()
-      ..value = 0;
-    final targetIndex = widget.index;
-    _controller
-        .animateWith(
-      SpringSimulation(_listItemEntrySpring, 0, 1, 0),
-    )
-        .whenCompleteOrCancel(() {
-      if (!mounted || widget.index != targetIndex) return;
-      setState(() => _previousIndex = null);
-    });
+    final direction = widget.index > oldWidget.index ? 1.0 : -1.0;
+    final incoming = _channels[widget.index];
+    if (incoming.opacity.value <= 0.001) {
+      incoming
+        ..offset.value = _tabSwitchDistance * direction
+        ..opacity.value = 0.78;
+    }
+    incoming.animateTo(offset: 0, opacity: 1);
+
+    if (oldWidget.index < _channels.length) {
+      _channels[oldWidget.index].animateTo(
+        offset: -_tabExitDistance * direction,
+        opacity: 0,
+      );
+    }
+  }
+
+  void _syncChannelCount() {
+    while (_channels.length < widget.children.length) {
+      final index = _channels.length;
+      _channels.add(
+        _TabMotionChannel(
+          vsync: this,
+          opacity: index == widget.index ? 1 : 0,
+          offset: index < widget.index
+              ? -_tabSwitchDistance
+              : _tabSwitchDistance,
+        ),
+      );
+    }
+    while (_channels.length > widget.children.length) {
+      _channels.removeLast().dispose();
+    }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    for (final channel in _channels) {
+      channel.dispose();
+    }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, _) {
-        final progress = _controller.value.clamp(0.0, 1.0);
-        return Stack(
-          fit: StackFit.expand,
-          children: List.generate(widget.children.length, (index) {
+    return Stack(
+      fit: StackFit.expand,
+      children: List.generate(widget.children.length, (index) {
+        final channel = _channels[index];
+        return AnimatedBuilder(
+          animation: Listenable.merge([channel.offset, channel.opacity]),
+          builder: (context, child) {
             final isCurrent = index == widget.index;
-            final isPrevious = index == _previousIndex;
-            final isVisible = isCurrent || isPrevious;
-            final opacity = isCurrent
-                ? 0.78 + progress * 0.22
-                : isPrevious
-                    ? 1 - progress
-                    : 0.0;
-            final offset = reduceMotion
-                ? 0.0
-                : isCurrent
-                    ? (1 - progress) * _tabSwitchDistance * _direction
-                    : -progress * _tabExitDistance * _direction;
+            final opacity = channel.opacity.value.clamp(0.0, 1.0);
+            final isVisible = isCurrent || opacity > 0.001;
+            Widget result = child!;
+            if (!reduceMotion && channel.offset.value.abs() > 0.001) {
+              result = Transform.translate(
+                offset: Offset(channel.offset.value, 0),
+                child: result,
+              );
+            }
+            if (opacity < 0.999) {
+              result = Opacity(opacity: opacity, child: result);
+            }
             return Offstage(
               offstage: !isVisible,
               child: TickerMode(
@@ -150,21 +181,52 @@ class _DirectionalTabViewState extends State<DirectionalTabView>
                   excluding: !isCurrent,
                   child: IgnorePointer(
                     ignoring: !isCurrent,
-                    child: Opacity(
-                      opacity: opacity,
-                      child: Transform.translate(
-                        offset: Offset(offset, 0),
-                        child: widget.children[index],
-                      ),
-                    ),
+                    child: result,
                   ),
                 ),
               ),
             );
-          }),
+          },
+          child: widget.children[index],
         );
-      },
+      }),
     );
+  }
+}
+
+class _TabMotionChannel {
+  _TabMotionChannel({
+    required TickerProvider vsync,
+    required double opacity,
+    required double offset,
+  })  : opacity = AnimationController.unbounded(vsync: vsync, value: opacity),
+        offset = AnimationController.unbounded(vsync: vsync, value: offset);
+
+  final AnimationController opacity;
+  final AnimationController offset;
+
+  void animateTo({required double opacity, required double offset}) {
+    this.opacity.animateWith(
+          SpringSimulation(
+            _listItemEntrySpring,
+            this.opacity.value,
+            opacity,
+            this.opacity.velocity,
+          ),
+        );
+    this.offset.animateWith(
+          SpringSimulation(
+            _listItemEntrySpring,
+            this.offset.value,
+            offset,
+            this.offset.velocity,
+          ),
+        );
+  }
+
+  void dispose() {
+    opacity.dispose();
+    offset.dispose();
   }
 }
 
