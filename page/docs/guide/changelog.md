@@ -11,6 +11,8 @@ outline: false
 <details>
 <summary><strong>2.2.0</strong></summary>
 
+**由于此次变动较为大，旧版本用户建议重新安装使用!!**
+
 **界面焕新**
 
 - 全面改为圆角矩形风格，按钮、卡片、对话框圆角统一
