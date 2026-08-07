@@ -470,9 +470,14 @@ class _EntryState extends State<Entry>
         widget.welcome ? app_paths.WELCOMING_PAGE : app_paths.UPDATING_DIALOG,
     observers: [routeVisibilityObserver],
     routes: [
-      StatefulShellRoute.indexedStack(
+      StatefulShellRoute(
         builder: (context, state, navigationShell) =>
             AppShell(navigationShell: navigationShell),
+        navigatorContainerBuilder: (context, navigationShell, children) =>
+            DirectionalTabView(
+          index: navigationShell.currentIndex,
+          children: children,
+        ),
         branches: [
           StatefulShellBranch(
             routes: [

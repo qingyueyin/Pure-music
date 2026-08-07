@@ -216,28 +216,66 @@ class _SmoothLargeSideNav extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Expanded(
-                  child: ListView.builder(
+                  child: ListView(
                     padding: const EdgeInsets.symmetric(vertical: 6),
-                    itemCount: destinations.length,
-                    itemBuilder: (context, i) {
-                      final selected = selectedIndex == i;
-                      return _NavItem(
-                        height: _itemHeight,
-                        width: itemWidth,
-                        icon: destinations[i].icon,
-                        label: destinations[i].label,
-                        expandedT: t,
-                        selected: selected,
-                        onTap: () {
-                          onSelect(i);
-                          final scaffold = Scaffold.of(context);
-                          if (scaffold.hasDrawer) {
-                            scaffold.closeDrawer();
-                          }
-                        },
-                        onDoubleTap: selected ? () => onReturnHome(i) : null,
-                      );
-                    },
+                    children: [
+                      SizedBox(
+                        height: _itemHeight * destinations.length,
+                        child: Stack(
+                          children: [
+                            if (selectedIndex != null && selectedIndex! >= 0)
+                              TweenAnimationBuilder<double>(
+                                duration: MediaQuery.disableAnimationsOf(context)
+                                    ? Duration.zero
+                                    : MotionDuration.fast,
+                                curve: MotionCurve.entrance,
+                                tween: Tween<double>(
+                                  begin: selectedIndex!.toDouble(),
+                                  end: selectedIndex!.toDouble(),
+                                ),
+                                builder: (context, index, child) =>
+                                    Transform.translate(
+                                  offset: Offset(0, index * _itemHeight),
+                                  child: child,
+                                ),
+                                child: SizedBox(
+                                  width: itemWidth,
+                                  height: _itemHeight,
+                                  child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color: colorScheme.secondaryContainer
+                                          .withValues(alpha: 0.85),
+                                      borderRadius: AppRadius.smCircular,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            Column(
+                              children: List.generate(destinations.length, (i) {
+                                final selected = selectedIndex == i;
+                                return _NavItem(
+                                  height: _itemHeight,
+                                  width: itemWidth,
+                                  icon: destinations[i].icon,
+                                  label: destinations[i].label,
+                                  expandedT: t,
+                                  selected: selected,
+                                  onTap: () {
+                                    onSelect(i);
+                                    final scaffold = Scaffold.of(context);
+                                    if (scaffold.hasDrawer) {
+                                      scaffold.closeDrawer();
+                                    }
+                                  },
+                                  onDoubleTap:
+                                      selected ? () => onReturnHome(i) : null,
+                                );
+                              }),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -273,9 +311,6 @@ class _NavItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final bg = selected
-        ? scheme.secondaryContainer.withValues(alpha: 0.85)
-        : Colors.transparent;
     final fg = selected ? scheme.onSecondaryContainer : scheme.onSurface;
     final textOpacity = expandedT.clamp(0.0, 1.0);
     const iconSize = 24.0;
@@ -288,7 +323,7 @@ class _NavItem extends StatelessWidget {
         width: width,
         height: height,
         child: Material(
-          color: bg,
+          color: Colors.transparent,
           borderRadius: AppRadius.smCircular,
           child: InkWell(
             borderRadius: AppRadius.smCircular,
