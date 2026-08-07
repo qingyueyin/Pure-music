@@ -27,6 +27,86 @@ const int lyricWordPreSwitchMs = 320;
 const int lyricHighlightCatchUpDurationMs = 260;
 const int lyricHighlightFinishLeadMs = 32;
 
+class _ParallelLyricGroup {
+  const _ParallelLyricGroup(this.members, this.endMs);
+
+  final List<int> members;
+  final int endMs;
+}
+
+int _lyricLineRenderStartMs(LyricLine line) {
+  if (line is SyncLyricLine && line.words.isNotEmpty) {
+    return line.words.first.start.inMilliseconds;
+  }
+  return line.start.inMilliseconds;
+}
+
+int _lyricLineRenderEndMs(Lyric lyric, LyricLine line) {
+  var end = line.start.inMilliseconds + line.length.inMilliseconds;
+  if (line is SyncLyricLine && line.words.isNotEmpty) {
+    final lastWord = line.words.last;
+    final wordEnd =
+        lastWord.start.inMilliseconds + lastWord.length.inMilliseconds;
+    if (lyric is! Ttml) return wordEnd;
+    end = max(end, wordEnd);
+  }
+  if (lyric is Ttml && line is SyncLyricLine) {
+    if (line.bgEnd != null) {
+      end = max(end, line.bgEnd!.inMilliseconds);
+    }
+    if (line.bgWords.isNotEmpty) {
+      final lastBgWord = line.bgWords.last;
+      end = max(
+        end,
+        lastBgWord.start.inMilliseconds + lastBgWord.length.inMilliseconds,
+      );
+    }
+  }
+  return end;
+}
+
+List<_ParallelLyricGroup> _buildParallelLyricGroups({
+  required Lyric lyric,
+  required List<int> lineStartMs,
+  required List<int> lineEndMs,
+}) {
+  if (lyric is! Ttml || lineStartMs.length < 2 || lineEndMs.length < 2) {
+    return const [];
+  }
+
+  final groups = <_ParallelLyricGroup>[];
+  var members = <int>[0];
+  var sharedStart = lineStartMs.first;
+  var sharedEnd = lineEndMs.first;
+  var groupEnd = lineEndMs.first;
+
+  for (var i = 1; i < lyric.lines.length; i++) {
+    final start = lineStartMs[i];
+    final end = lineEndMs[i];
+    final sharedOverlapMs = min(sharedEnd, end) - max(sharedStart, start);
+    if (sharedOverlapMs > lyricWordPreSwitchMs) {
+      members.add(i);
+      sharedStart = max(sharedStart, start);
+      sharedEnd = min(sharedEnd, end);
+      groupEnd = max(groupEnd, end);
+      continue;
+    }
+
+    if (members.length > 1) {
+      groups.add(_ParallelLyricGroup(List.unmodifiable(members), groupEnd));
+    }
+    members = <int>[i];
+    sharedStart = start;
+    sharedEnd = end;
+    groupEnd = end;
+  }
+
+  if (members.length > 1) {
+    groups.add(_ParallelLyricGroup(List.unmodifiable(members), groupEnd));
+  }
+  return groups;
+}
+
 SyncLyricLine? desktopLyricPreludeLineAt(Lyric lyric, int positionMs) {
   if (lyric.lines.isEmpty) return null;
   final firstLine = lyric.lines.first;
@@ -67,21 +147,6 @@ int? lyricHighlightDeadlineMsForLine(Lyric lyric, int lineIndex) {
     return null;
   }
 
-  int lineEndMs(LyricLine line) {
-    if (line is SyncLyricLine && line.words.isNotEmpty) {
-      final lastWord = line.words.last;
-      return lastWord.start.inMilliseconds + lastWord.length.inMilliseconds;
-    }
-    return line.start.inMilliseconds + line.length.inMilliseconds;
-  }
-
-  int lineStartMs(LyricLine line) {
-    if (line is SyncLyricLine && line.words.isNotEmpty) {
-      return line.words.first.start.inMilliseconds;
-    }
-    return line.start.inMilliseconds;
-  }
-
   bool isBlankFiltered(LyricLine line) {
     if (line is SyncLyricLine) {
       return line.words.isEmpty && line.length <= const Duration(seconds: 3);
@@ -94,54 +159,31 @@ int? lyricHighlightDeadlineMsForLine(Lyric lyric, int lineIndex) {
     return false;
   }
 
-  bool formsParallelGroup(int firstIndex, int secondIndex) {
-    final first = lines[firstIndex];
-    final second = lines[secondIndex];
-    final overlapMs = min(lineEndMs(first), lineEndMs(second)) -
-        max(lineStartMs(first), lineStartMs(second));
-    return overlapMs > lyricWordPreSwitchMs;
-  }
-
-  int? parallelGroupEnd;
-  Set<int>? parallelGroupLines;
-  if (lyric is Ttml) {
-    final groupMembers = <int>[0];
-    var groupEnd = lineEndMs(lines.first);
-    for (var i = 1; i < lines.length; i++) {
-      if (groupMembers.any((member) => formsParallelGroup(member, i))) {
-        groupMembers.add(i);
-        groupEnd = max(groupEnd, lineEndMs(lines[i]));
-        continue;
-      }
-      if (groupMembers.contains(lineIndex)) {
-        if (groupMembers.length > 1) {
-          parallelGroupEnd = groupEnd;
-          parallelGroupLines = groupMembers.toSet();
-        }
-        break;
-      }
-      groupMembers
-        ..clear()
-        ..add(i);
-      groupEnd = lineEndMs(lines[i]);
-    }
-    if (parallelGroupEnd == null && groupMembers.contains(lineIndex)) {
-      if (groupMembers.length > 1) {
-        parallelGroupEnd = groupEnd;
-        parallelGroupLines = groupMembers.toSet();
-      }
+  final lineStartMs = lines.map(_lyricLineRenderStartMs).toList();
+  final lineEndMs = lines
+      .map((line) => _lyricLineRenderEndMs(lyric, line))
+      .toList();
+  _ParallelLyricGroup? parallelGroup;
+  for (final group in _buildParallelLyricGroups(
+    lyric: lyric,
+    lineStartMs: lineStartMs,
+    lineEndMs: lineEndMs,
+  )) {
+    if (group.members.contains(lineIndex)) {
+      parallelGroup = group;
+      break;
     }
   }
 
   for (var i = lineIndex + 1; i < lines.length; i++) {
-    if (parallelGroupLines?.contains(i) == true) continue;
+    if (parallelGroup?.members.contains(i) == true) continue;
     final nextLine = lines[i];
     if (isBlankFiltered(nextLine)) continue;
-    final nextStart = lineStartMs(nextLine);
+    final nextStart = lineStartMs[i];
     if (nextLine is SyncLyricLine && nextLine.words.isNotEmpty) {
-      return parallelGroupEnd == null
+      return parallelGroup == null
           ? nextStart - lyricWordPreSwitchMs
-          : max(parallelGroupEnd, nextStart - lyricWordPreSwitchMs);
+          : max(parallelGroup.endMs, nextStart - lyricWordPreSwitchMs);
     }
     return nextStart;
   }
@@ -207,8 +249,9 @@ class LyricService extends ChangeNotifier {
   Timer? _promptTimer;
   int _promptGeneration = 0;
   LyricService(this.playService) {
-    playService.playbackService.playerStateNotifier
-        .addListener(_syncLineAdvanceTimer);
+    playService.playbackService.playerStateNotifier.addListener(
+      _syncLineAdvanceTimer,
+    );
     _syncLineAdvanceTimer();
   }
 
@@ -310,11 +353,13 @@ class LyricService extends ChangeNotifier {
         _lastEmittedLineIndexForHint = 0;
         _lastEmittedActiveIndices = activeIndices;
         _lastEmittedLayoutIndices = layoutIndices;
-        _lyricLineStreamController.add(LyricLineUpdate(
-          primaryIndex: 0,
-          activeIndices: activeIndices,
-          layoutIndices: layoutIndices,
-        ));
+        _lyricLineStreamController.add(
+          LyricLineUpdate(
+            primaryIndex: 0,
+            activeIndices: activeIndices,
+            layoutIndices: layoutIndices,
+          ),
+        );
       }
       _sendDesktopPreludeIfNeeded(posMs);
       return;
@@ -328,11 +373,13 @@ class LyricService extends ChangeNotifier {
         _lastEmittedLineIndexForHint = p;
         _lastEmittedActiveIndices = activeIndices;
         _lastEmittedLayoutIndices = layoutIndices;
-        _lyricLineStreamController.add(LyricLineUpdate(
-          primaryIndex: p,
-          activeIndices: activeIndices,
-          layoutIndices: layoutIndices,
-        ));
+        _lyricLineStreamController.add(
+          LyricLineUpdate(
+            primaryIndex: p,
+            activeIndices: activeIndices,
+            layoutIndices: layoutIndices,
+          ),
+        );
       }
       return;
     }
@@ -352,11 +399,13 @@ class LyricService extends ChangeNotifier {
       _lastEmittedLineIndexForHint = primaryIndex;
       _lastEmittedActiveIndices = activeIndices;
       _lastEmittedLayoutIndices = layoutIndices;
-      _lyricLineStreamController.add(LyricLineUpdate(
-        primaryIndex: primaryIndex,
-        activeIndices: activeIndices,
-        layoutIndices: layoutIndices,
-      ));
+      _lyricLineStreamController.add(
+        LyricLineUpdate(
+          primaryIndex: primaryIndex,
+          activeIndices: activeIndices,
+          layoutIndices: layoutIndices,
+        ),
+      );
     }
 
     if (primaryIndex != _lastDesktopLyricLineIndex) {
@@ -372,8 +421,10 @@ class LyricService extends ChangeNotifier {
             lyric.lines[primaryIndex],
             nextLine: nextLine,
             isWordByWord: lyric.isWordByWord,
-            highlightDeadlineMs:
-                lyricHighlightDeadlineMsForLine(lyric, primaryIndex),
+            highlightDeadlineMs: lyricHighlightDeadlineMsForLine(
+              lyric,
+              primaryIndex,
+            ),
           );
         });
       }
@@ -400,8 +451,9 @@ class LyricService extends ChangeNotifier {
     final nextLine = currLineIndex + 1 < lyric.lines.length
         ? lyric.lines[currLineIndex + 1]
         : null;
-    final gapDuration =
-        nextLine != null ? nextLine.start.inMilliseconds - lineEnd : 6000;
+    final gapDuration = nextLine != null
+        ? nextLine.start.inMilliseconds - lineEnd
+        : 6000;
     playService.desktopLyricService.canSendMessage.then((canSend) {
       if (!canSend) return;
       playService.desktopLyricService.sendLyricLineMessage(
@@ -468,8 +520,9 @@ class LyricService extends ChangeNotifier {
     await writeLyricToPath(path: audioPath, lyric: lrcText);
   }
 
-  Future<String?> saveCurrentLyricAsLrc(
-      {LyricTagWordFormat? wordFormat}) async {
+  Future<String?> saveCurrentLyricAsLrc({
+    LyricTagWordFormat? wordFormat,
+  }) async {
     final nowPlaying = _getNowPlaying();
     if (nowPlaying == null) return null;
 
@@ -513,9 +566,11 @@ class LyricService extends ChangeNotifier {
   List<int> _lastEmittedLayoutIndices = const [];
 
   late final StreamController<LyricLineUpdate> _lyricLineStreamController =
-      StreamController.broadcast(onListen: () {
-    forceEmitCurrentLine();
-  });
+      StreamController.broadcast(
+        onListen: () {
+          forceEmitCurrentLine();
+        },
+      );
 
   Stream<LyricLineUpdate> get lyricLineStream =>
       _lyricLineStreamController.stream;
@@ -538,8 +593,9 @@ class LyricService extends ChangeNotifier {
     if (lyric.lines.isEmpty) return null;
     final posMs = (positionSeconds * 1000).round();
     final useCurrentTables = identical(lyric, _currLyric);
-    final renderStartMs =
-        useCurrentTables ? _lineRenderStartMs : _buildLineStarts(lyric);
+    final renderStartMs = useCurrentTables
+        ? _lineRenderStartMs
+        : _buildLineStarts(lyric);
     final lineEndMs = useCurrentTables ? _lineEndMs : _buildLineEnds(lyric);
     final switchStartMs = useCurrentTables
         ? _lineSwitchStartMs
@@ -633,7 +689,10 @@ class LyricService extends ChangeNotifier {
     }
     final posMs = (playService.playbackService.position * 1000).round();
     final next = _findLrcPos(
-        time: posMs, lines: lyric.lines, hint: _lastEmittedLineIndexForHint);
+      time: posMs,
+      lines: lyric.lines,
+      hint: _lastEmittedLineIndexForHint,
+    );
     _nextLyricLine = next == -1 ? lyric.lines.length : next;
     final currLineIndex = _nextLyricLine - 1;
     final activity = _lineActivityForSwitchPosition(currLineIndex, posMs);
@@ -648,11 +707,13 @@ class LyricService extends ChangeNotifier {
         _lastEmittedLineIndexForHint = 0;
         _lastEmittedActiveIndices = activeIndices;
         _lastEmittedLayoutIndices = layoutIndices;
-        _lyricLineStreamController.add(LyricLineUpdate(
-          primaryIndex: 0,
-          activeIndices: activeIndices,
-          layoutIndices: layoutIndices,
-        ));
+        _lyricLineStreamController.add(
+          LyricLineUpdate(
+            primaryIndex: 0,
+            activeIndices: activeIndices,
+            layoutIndices: layoutIndices,
+          ),
+        );
       }
       _sendDesktopPreludeIfNeeded(posMs);
       _restartLineAdvanceTimer();
@@ -667,11 +728,13 @@ class LyricService extends ChangeNotifier {
         _lastEmittedLineIndexForHint = p;
         _lastEmittedActiveIndices = activeIndices;
         _lastEmittedLayoutIndices = layoutIndices;
-        _lyricLineStreamController.add(LyricLineUpdate(
-          primaryIndex: p,
-          activeIndices: activeIndices,
-          layoutIndices: layoutIndices,
-        ));
+        _lyricLineStreamController.add(
+          LyricLineUpdate(
+            primaryIndex: p,
+            activeIndices: activeIndices,
+            layoutIndices: layoutIndices,
+          ),
+        );
       }
       _restartLineAdvanceTimer();
       return;
@@ -687,11 +750,13 @@ class LyricService extends ChangeNotifier {
     _lastEmittedLineIndexForHint = primaryIndex;
     _lastEmittedActiveIndices = activeIndices;
     _lastEmittedLayoutIndices = layoutIndices;
-    _lyricLineStreamController.add(LyricLineUpdate(
-      primaryIndex: primaryIndex,
-      activeIndices: activeIndices,
-      layoutIndices: layoutIndices,
-    ));
+    _lyricLineStreamController.add(
+      LyricLineUpdate(
+        primaryIndex: primaryIndex,
+        activeIndices: activeIndices,
+        layoutIndices: layoutIndices,
+      ),
+    );
 
     if (primaryIndex != _lastDesktopLyricLineIndex) {
       _lastDesktopLyricLineIndex = primaryIndex;
@@ -706,8 +771,10 @@ class LyricService extends ChangeNotifier {
             lyric.lines[primaryIndex],
             nextLine: nextLine,
             isWordByWord: lyric.isWordByWord,
-            highlightDeadlineMs:
-                lyricHighlightDeadlineMsForLine(lyric, primaryIndex),
+            highlightDeadlineMs: lyricHighlightDeadlineMsForLine(
+              lyric,
+              primaryIndex,
+            ),
           );
         });
       }
@@ -749,11 +816,13 @@ class LyricService extends ChangeNotifier {
         _lastEmittedLineIndexForHint = 0;
         _lastEmittedActiveIndices = activeIndices;
         _lastEmittedLayoutIndices = layoutIndices;
-        _lyricLineStreamController.add(LyricLineUpdate(
-          primaryIndex: 0,
-          activeIndices: activeIndices,
-          layoutIndices: layoutIndices,
-        ));
+        _lyricLineStreamController.add(
+          LyricLineUpdate(
+            primaryIndex: 0,
+            activeIndices: activeIndices,
+            layoutIndices: layoutIndices,
+          ),
+        );
       }
       _sendDesktopPreludeIfNeeded(posMs);
       _restartLineAdvanceTimer();
@@ -768,11 +837,13 @@ class LyricService extends ChangeNotifier {
         _lastEmittedLineIndexForHint = p;
         _lastEmittedActiveIndices = activeIndices;
         _lastEmittedLayoutIndices = layoutIndices;
-        _lyricLineStreamController.add(LyricLineUpdate(
-          primaryIndex: p,
-          activeIndices: activeIndices,
-          layoutIndices: layoutIndices,
-        ));
+        _lyricLineStreamController.add(
+          LyricLineUpdate(
+            primaryIndex: p,
+            activeIndices: activeIndices,
+            layoutIndices: layoutIndices,
+          ),
+        );
       }
       _restartLineAdvanceTimer();
       return;
@@ -791,11 +862,13 @@ class LyricService extends ChangeNotifier {
       _lastEmittedLineIndexForHint = primaryIndex;
       _lastEmittedActiveIndices = activeIndices;
       _lastEmittedLayoutIndices = layoutIndices;
-      _lyricLineStreamController.add(LyricLineUpdate(
-        primaryIndex: primaryIndex,
-        activeIndices: activeIndices,
-        layoutIndices: layoutIndices,
-      ));
+      _lyricLineStreamController.add(
+        LyricLineUpdate(
+          primaryIndex: primaryIndex,
+          activeIndices: activeIndices,
+          layoutIndices: layoutIndices,
+        ),
+      );
     }
 
     if (primaryIndex >= lyric.lines.length) {
@@ -815,8 +888,10 @@ class LyricService extends ChangeNotifier {
             lyric.lines[primaryIndex],
             nextLine: nextLine,
             isWordByWord: lyric.isWordByWord,
-            highlightDeadlineMs:
-                lyricHighlightDeadlineMsForLine(lyric, primaryIndex),
+            highlightDeadlineMs: lyricHighlightDeadlineMsForLine(
+              lyric,
+              primaryIndex,
+            ),
           );
         });
       }
@@ -901,7 +976,7 @@ class LyricService extends ChangeNotifier {
   }
 
   ({List<int> activeIndices, List<int> layoutIndices})
-      _lineActivityForSwitchPosition(int lineIndex, int posMs) {
+  _lineActivityForSwitchPosition(int lineIndex, int posMs) {
     final lyric = _currLyric;
     if (lyric == null) {
       return (activeIndices: const [], layoutIndices: const []);
@@ -959,42 +1034,20 @@ class LyricService extends ChangeNotifier {
     final anchor = activeIndices.contains(preferredIndex)
         ? preferredIndex
         : activeIndices.last;
-    final layout = <int>{anchor};
-    final pending = Queue<int>()..add(anchor);
-    while (pending.isNotEmpty) {
-      final member = pending.removeFirst();
-      for (int candidate = 0; candidate < lyric.lines.length; candidate++) {
-        if (layout.contains(candidate)) continue;
-        final candidateStart = candidate < lineRenderStartMs.length
-            ? lineRenderStartMs[candidate]
-            : lyric.lines[candidate].start.inMilliseconds;
-        if (candidateStart - posMs > lyricWordPreSwitchMs) continue;
-        final formsParallelGroup = _formsParallelGroup(
-          firstIndex: member,
-          secondIndex: candidate,
-          lineRenderStartMs: lineRenderStartMs,
-          lineEndMs: lineEndMs,
-        );
-        if (!formsParallelGroup) continue;
-        layout.add(candidate);
-        pending.add(candidate);
-      }
+    final layout = activeIndices.toSet();
+    for (final group in _buildParallelLyricGroups(
+      lyric: lyric,
+      lineStartMs: lineRenderStartMs,
+      lineEndMs: lineEndMs,
+    )) {
+      if (!group.members.contains(anchor) || posMs >= group.endMs) continue;
+      final startedMembers = group.members.where(
+        (index) => lineRenderStartMs[index] - posMs <= lyricWordPreSwitchMs,
+      );
+      layout.addAll(startedMembers);
+      break;
     }
     return layout.toList()..sort();
-  }
-
-  bool _formsParallelGroup({
-    required int firstIndex,
-    required int secondIndex,
-    required List<int> lineRenderStartMs,
-    required List<int> lineEndMs,
-  }) {
-    final firstStart = lineRenderStartMs[firstIndex];
-    final secondStart = lineRenderStartMs[secondIndex];
-    final firstEnd = lineEndMs[firstIndex];
-    final secondEnd = lineEndMs[secondIndex];
-    final overlapMs = min(firstEnd, secondEnd) - max(firstStart, secondStart);
-    return overlapMs > lyricWordPreSwitchMs;
   }
 
   int _lowerBoundGreater(List<int> arr, int x) {
@@ -1013,38 +1066,13 @@ class LyricService extends ChangeNotifier {
   }
 
   List<int> _buildLineStarts(Lyric lyric) {
-    return lyric.lines.map((line) {
-      if (line is SyncLyricLine && line.words.isNotEmpty) {
-        return line.words.first.start.inMilliseconds;
-      }
-      return line.start.inMilliseconds;
-    }).toList();
+    return lyric.lines.map(_lyricLineRenderStartMs).toList();
   }
 
   List<int> _buildLineEnds(Lyric lyric) {
-    return lyric.lines.map((line) {
-      var end = line.start.inMilliseconds + line.length.inMilliseconds;
-      if (line is SyncLyricLine && line.words.isNotEmpty) {
-        final lastWord = line.words.last;
-        final wordEnd =
-            lastWord.start.inMilliseconds + lastWord.length.inMilliseconds;
-        if (lyric is! Ttml) return wordEnd;
-        end = max(end, wordEnd);
-      }
-      if (lyric is Ttml && line is SyncLyricLine) {
-        if (line.bgEnd != null) {
-          end = max(end, line.bgEnd!.inMilliseconds);
-        }
-        if (line.bgWords.isNotEmpty) {
-          final lastBgWord = line.bgWords.last;
-          end = max(
-            end,
-            lastBgWord.start.inMilliseconds + lastBgWord.length.inMilliseconds,
-          );
-        }
-      }
-      return end;
-    }).toList();
+    return lyric.lines
+        .map((line) => _lyricLineRenderEndMs(lyric, line))
+        .toList();
   }
 
   List<int> _buildLineSwitchStarts(
@@ -1053,43 +1081,35 @@ class LyricService extends ChangeNotifier {
     List<int> lineEndMs,
   ) {
     final switchStarts = List<int>.of(renderStartMs);
-    var overlapGroupEnd = lineEndMs.isEmpty ? 0 : lineEndMs.first;
-    final overlapGroupMembers = <int>[0];
+    final groupByLine = <int, _ParallelLyricGroup>{};
+    for (final group in _buildParallelLyricGroups(
+      lyric: lyric,
+      lineStartMs: renderStartMs,
+      lineEndMs: lineEndMs,
+    )) {
+      for (final member in group.members) {
+        groupByLine[member] = group;
+      }
+    }
     for (int i = 1; i < lyric.lines.length; i++) {
       final line = lyric.lines[i];
       final start = renderStartMs[i];
-      final end = i < lineEndMs.length ? lineEndMs[i] : start;
-      final joinsParallelGroup = lyric is Ttml &&
-          overlapGroupMembers.any(
-            (member) => _formsParallelGroup(
-              firstIndex: member,
-              secondIndex: i,
-              lineRenderStartMs: renderStartMs,
-              lineEndMs: lineEndMs,
-            ),
-          );
-      if (joinsParallelGroup) {
-        overlapGroupMembers.add(i);
-        overlapGroupEnd = max(overlapGroupEnd, end);
+      final previousGroup = groupByLine[i - 1];
+      if (previousGroup != null && identical(previousGroup, groupByLine[i])) {
         continue;
       }
       if (line is SyncLyricLine && line.words.isNotEmpty) {
         final previousLine = lyric.lines[i - 1];
         switchStarts[i] = lyricLineSwitchStartMs(
-          previousSwitchStartMs: lyric is Ttml && overlapGroupMembers.length > 1
-              ? overlapGroupEnd
-              : switchStarts[i - 1],
+          previousSwitchStartMs: previousGroup?.endMs ?? switchStarts[i - 1],
           previousLineEndMs: lineEndMs[i - 1],
           nextLineStartMs: start,
-          preserveSingleWordTiming: lyric is! Ttml &&
+          preserveSingleWordTiming:
+              lyric is! Ttml &&
               previousLine is SyncLyricLine &&
               previousLine.words.length == 1,
         );
       }
-      overlapGroupEnd = end;
-      overlapGroupMembers
-        ..clear()
-        ..add(i);
     }
     return switchStarts;
   }
@@ -1104,23 +1124,24 @@ class LyricService extends ChangeNotifier {
       final artists = nowPlaying == null
           ? const <String>[]
           : <String>{...nowPlaying.splitedArtists, nowPlaying.artist}
-              .where((artist) => artist.trim().isNotEmpty)
-              .toList(growable: false);
+                .where((artist) => artist.trim().isNotEmpty)
+                .toList(growable: false);
       blankMetadataLines(
         lyric.lines,
-        StripOptions(
-          matchTitle: nowPlaying?.title,
-          matchArtists: artists,
-        ),
+        StripOptions(matchTitle: nowPlaying?.title, matchArtists: artists),
       );
     }
 
     _currLyric = lyric;
     _lineRenderStartMs = _buildLineStarts(lyric);
     _lineEndMs = _buildLineEnds(lyric);
-    _lineSwitchStartMs =
-        _buildLineSwitchStarts(lyric, _lineRenderStartMs, _lineEndMs);
-    _hasOverlappingActiveLines = lyric is Ttml &&
+    _lineSwitchStartMs = _buildLineSwitchStarts(
+      lyric,
+      _lineRenderStartMs,
+      _lineEndMs,
+    );
+    _hasOverlappingActiveLines =
+        lyric is Ttml &&
         _detectOverlappingActiveLinesFor(_lineRenderStartMs, _lineEndMs);
     _lastEmittedLineIndexForHint = -1;
     _syncLineAdvanceTimer();
@@ -1168,11 +1189,7 @@ class LyricService extends ChangeNotifier {
     return _lyricRequestToken;
   }
 
-  bool _isCurrentLyricRequest(
-    int token,
-    String path,
-    Future<Lyric?> future,
-  ) {
+  bool _isCurrentLyricRequest(int token, String path, Future<Lyric?> future) {
     return token == _lyricRequestToken &&
         identical(currLyricFuture, future) &&
         _activeLyricPath == path &&
@@ -1202,7 +1219,8 @@ class LyricService extends ChangeNotifier {
     final lyricSource = lyricSources[audioPath];
     final isFromWeb =
         lyricSource != null && lyricSource.source != LyricSourceType.local;
-    final usesLocalLyric = lyricSource?.source == LyricSourceType.local ||
+    final usesLocalLyric =
+        lyricSource?.source == LyricSourceType.local ||
         (lyricSource == null && AppSettings.instance.localLyricFirst);
 
     if (lyricSource == null) {
@@ -1238,7 +1256,8 @@ class LyricService extends ChangeNotifier {
         currLyricFuture = _loadLocalLyric(audioPath);
       } else {
         logger.i(
-            '[updateLyric] source=${lyricSource.source.name}, using getOnlineLyric');
+          '[updateLyric] source=${lyricSource.source.name}, using getOnlineLyric',
+        );
         currLyricFuture = getOnlineLyric(
           qqSongId: lyricSource.qqSongId,
           kugouSongHash: lyricSource.kugouSongHash,
@@ -1339,13 +1358,15 @@ class LyricService extends ChangeNotifier {
   /// 用户选择写入标签 → 立即写入当前歌曲标签
   void _handlePromptWrite(String audioPath) {
     _lyricWritePromptHistory.markPromptShown(audioPath);
-    writeCurrentLyricToTag(expectedPath: audioPath).then((_) {
-      showTextOnSnackBar('歌词已写入标签', variant: ToastVariant.success);
-    }).catchError((e, trace) {
-      _lyricWritePromptHistory.markWriteFailed(audioPath);
-      logger.e('写入歌词标签失败', error: e, stackTrace: trace);
-      showTextOnSnackBar('写入标签失败，请查看日志', variant: ToastVariant.error);
-    });
+    writeCurrentLyricToTag(expectedPath: audioPath)
+        .then((_) {
+          showTextOnSnackBar('歌词已写入标签', variant: ToastVariant.success);
+        })
+        .catchError((e, trace) {
+          _lyricWritePromptHistory.markWriteFailed(audioPath);
+          logger.e('写入歌词标签失败', error: e, stackTrace: trace);
+          showTextOnSnackBar('写入标签失败，请查看日志', variant: ToastVariant.error);
+        });
   }
 
   /// 用户选择忽略 → 关闭整个提示功能，直到用户手动在设置页重新开启
@@ -1361,12 +1382,14 @@ class LyricService extends ChangeNotifier {
   void _handleAutoWrite(String audioPath) {
     _lyricWritePromptHistory.markPromptShown(audioPath);
 
-    writeCurrentLyricToTag(expectedPath: audioPath).then((_) {
-      // 静默成功，不打扰用户
-    }).catchError((e) {
-      _lyricWritePromptHistory.markWriteFailed(audioPath);
-      logger.e('自动写入歌词标签失败: $e');
-    });
+    writeCurrentLyricToTag(expectedPath: audioPath)
+        .then((_) {
+          // 静默成功，不打扰用户
+        })
+        .catchError((e) {
+          _lyricWritePromptHistory.markWriteFailed(audioPath);
+          logger.e('自动写入歌词标签失败: $e');
+        });
   }
 
   /// 重置写入标签提示状态（刷新已提示列表）
@@ -1380,7 +1403,8 @@ class LyricService extends ChangeNotifier {
   void prefetchLyric(Audio audio) {
     final path = audio.path;
     final lyricSource = lyricSources[path];
-    final usesLocalLyric = lyricSource?.source == LyricSourceType.local ||
+    final usesLocalLyric =
+        lyricSource?.source == LyricSourceType.local ||
         (lyricSource == null && AppSettings.instance.localLyricFirst);
     if (!usesLocalLyric) return;
     // 如果已缓存，跳过
@@ -1445,8 +1469,9 @@ class LyricService extends ChangeNotifier {
     final savedSource = lyricSources[audioPath];
     if (savedSource != null && savedSource.source != LyricSourceType.local) {
       _activeLyricSourceType = savedSource.source;
-      logger
-          .i('[useOnlineLyric] using saved source: ${savedSource.source.name}');
+      logger.i(
+        '[useOnlineLyric] using saved source: ${savedSource.source.name}',
+      );
       currLyricFuture = getOnlineLyric(
         qqSongId: savedSource.qqSongId,
         kugouSongHash: savedSource.kugouSongHash,
@@ -1519,8 +1544,9 @@ class LyricService extends ChangeNotifier {
   void dispose() {
     _cancelLyricWritePrompt();
     _lyricLineStreamController.close();
-    playService.playbackService.playerStateNotifier
-        .removeListener(_syncLineAdvanceTimer);
+    playService.playbackService.playerStateNotifier.removeListener(
+      _syncLineAdvanceTimer,
+    );
     _lineAdvanceTimer?.cancel();
     _lyricPrefetches.clear();
     _lyricCache.clear();

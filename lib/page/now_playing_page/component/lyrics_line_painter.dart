@@ -774,9 +774,9 @@ class LyricsLinePainter extends CustomPainter {
 
         final liftProgress = _calcLiftProgress(charProgress, wordProgress);
         final double yLift;
-        if (isMainLine && config.liftStyle == LyricLiftStyle.cosine) {
+        if (isHighlightActive && config.liftStyle == LyricLiftStyle.cosine) {
           yLift = 0.0;
-        } else if (isMainLine && liftProgress > 0.0) {
+        } else if (isHighlightActive && liftProgress > 0.0) {
           final elapsedMs = currentTimeMs - wordStartMs;
           final durationProgress = (elapsedMs / config.liftDurationMs)
               .clamp(0.0, 1.0)
@@ -1168,7 +1168,7 @@ class LyricsLinePainter extends CustomPainter {
       );
 
       // ── Cosine lift recomputation (needs final X + highlightR) ──
-      if (config.liftStyle == LyricLiftStyle.cosine && isMainLine) {
+      if (config.liftStyle == LyricLiftStyle.cosine && isHighlightActive) {
         for (final wc in words) {
           for (final info in wc.chars) {
             info.yLift = _calcCosineLift(

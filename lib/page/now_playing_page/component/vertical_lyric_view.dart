@@ -1440,38 +1440,76 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
         .toSet();
   }
 
-  int? _tailHighlightCatchUpLineFor(Set<int> candidates) {
-    if (candidates.length <= 1) return null;
+  double _lineHeightFor(int index) {
+    final lineHeight =
+        _cachedHeights != null && index >= 0 && index < _cachedHeights!.length
+        ? _cachedHeights![index]
+        : 96.0;
+    final backgroundHeight =
+        _cachedBackgroundVocalHeights != null &&
+            index >= 0 &&
+            index < _cachedBackgroundVocalHeights!.length
+        ? _cachedBackgroundVocalHeights![index]
+        : 0.0;
+    return lineHeight + backgroundHeight;
+  }
+
+  double? _parallelLineHeightBudget() {
     final viewportHeight = _cachedViewportHeight > 0
         ? _cachedViewportHeight
         : scrollController.hasClients
         ? scrollController.position.viewportDimension
         : 0.0;
     if (viewportHeight <= 0) return null;
+    return viewportHeight * 0.82;
+  }
 
-    final availableBelowMain =
-        viewportHeight * (1.0 - widget.currentLineAlignment);
-    final heightBudget = availableBelowMain * 0.82;
-
-    double heightFor(int index) {
-      final lineHeight =
-          _cachedHeights != null && index >= 0 && index < _cachedHeights!.length
-          ? _cachedHeights![index]
-          : 96.0;
-      final backgroundHeight =
-          _cachedBackgroundVocalHeights != null &&
-              index >= 0 &&
-              index < _cachedBackgroundVocalHeights!.length
-          ? _cachedBackgroundVocalHeights![index]
-          : 0.0;
-      return lineHeight + backgroundHeight;
-    }
+  int? _tailHighlightCatchUpLineFor(
+    Set<int> candidates, {
+    Set<int>? visibleCandidates,
+  }) {
+    if (candidates.length <= 1) return null;
+    final heightBudget = _parallelLineHeightBudget();
+    if (heightBudget == null) return null;
 
     final totalHeight = candidates.fold<double>(
       0.0,
-      (total, index) => total + heightFor(index),
+      (total, index) => total + _lineHeightFor(index),
     );
-    return totalHeight > heightBudget ? candidates.reduce(max) : null;
+    if (totalHeight <= heightBudget) return null;
+    final tail = candidates.reduce(max);
+    if (visibleCandidates == null || visibleCandidates.contains(tail)) {
+      return tail;
+    }
+    return visibleCandidates.isEmpty ? null : visibleCandidates.reduce(max);
+  }
+
+  Set<int> _fitParallelLines(Set<int> candidates, Set<int> activeLines) {
+    if (candidates.length <= 1) return candidates;
+    final heightBudget = _parallelLineHeightBudget();
+    if (heightBudget == null) return candidates;
+
+    final sorted = candidates.toList()..sort();
+    final totalHeight = sorted.fold<double>(
+      0.0,
+      (total, index) => total + _lineHeightFor(index),
+    );
+    if (totalHeight <= heightBudget) return candidates;
+
+    final activeCandidates = activeLines.where(candidates.contains);
+    final anchor = activeCandidates.isEmpty
+        ? sorted.last
+        : activeCandidates.reduce(max);
+    final anchorPosition = sorted.indexOf(anchor);
+    final selected = <int>[anchor];
+    var usedHeight = _lineHeightFor(anchor);
+    for (var i = anchorPosition - 1; i >= 0; i--) {
+      final lineHeight = _lineHeightFor(sorted[i]);
+      if (usedHeight + lineHeight > heightBudget) break;
+      selected.add(sorted[i]);
+      usedHeight += lineHeight;
+    }
+    return selected.toSet();
   }
 
   ({int primaryIndex, Set<int> groupLines, int? tailCatchUpLine})
@@ -1479,7 +1517,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     final lines = widget.lyric.lines;
     final layoutLines = _renderableLineIndices(update.layoutIndices);
     final activeLines = _renderableLineIndices(update.activeIndices);
-    final groupLines = layoutLines.isNotEmpty ? layoutLines : activeLines;
+    final groupCandidates = layoutLines.isNotEmpty ? layoutLines : activeLines;
+    final groupLines = _fitParallelLines(groupCandidates, activeLines);
     final primaryIndex = lyricDisplayPrimaryIndex(
       fallbackPrimaryIndex: update.primaryIndex,
       lineCount: lines.length,
@@ -1488,7 +1527,10 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     return (
       primaryIndex: primaryIndex,
       groupLines: groupLines,
-      tailCatchUpLine: _tailHighlightCatchUpLineFor(groupLines),
+      tailCatchUpLine: _tailHighlightCatchUpLineFor(
+        groupCandidates,
+        visibleCandidates: groupLines,
+      ),
     );
   }
 
