@@ -82,6 +82,11 @@ class _FakeSmtcBackend implements SmtcBackend {
   }
 
   @override
+  Future<void> refreshDisplay() async {
+    operations.add('refresh');
+  }
+
+  @override
   Future<void> close() async {
     closed = true;
     operations.add('close');
