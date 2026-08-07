@@ -262,6 +262,8 @@ class LyricsLinePainter extends CustomPainter {
   final LyricRenderConfig config;
   final ColorScheme scheme;
   final bool isMainLine;
+  final bool isHighlightActive;
+  final bool accelerateTailHighlight;
   final bool useMaterialYouColor;
   final String? fontFamily;
   final String? agent;
@@ -299,6 +301,8 @@ class LyricsLinePainter extends CustomPainter {
     required this.config,
     required this.scheme,
     this.isMainLine = false,
+    this.isHighlightActive = false,
+    this.accelerateTailHighlight = false,
     this.useMaterialYouColor = false,
     this.fontFamily,
     this.agent,
@@ -1048,7 +1052,7 @@ class LyricsLinePainter extends CustomPainter {
       }
       finishWord();
 
-      if (!isMainLine) {
+      if (!isHighlightActive) {
         for (final wc in words) {
           paintWord(wc, dimStyle, false);
         }
@@ -1946,11 +1950,14 @@ class LyricsLinePainter extends CustomPainter {
     final lastWordEnd =
         (lastWord.start.inMilliseconds + lastWord.length.inMilliseconds)
             .toDouble();
+    final deadlineMs = accelerateTailHighlight
+        ? lastWordEnd + lyricHighlightFinishLeadMs
+        : highlightDeadlineMs;
     return lyricHighlightTimeMs(
       currentTimeMs: currentMs,
       lineStartMs: syncLine.start.inMilliseconds.toDouble(),
       lastWordEndMs: lastWordEnd,
-      deadlineMs: highlightDeadlineMs,
+      deadlineMs: deadlineMs,
     );
   }
 
@@ -2027,7 +2034,9 @@ class LyricsLinePainter extends CustomPainter {
         fontFamily != oldDelegate.fontFamily ||
         agent != oldDelegate.agent ||
         highlightDeadlineMs != oldDelegate.highlightDeadlineMs ||
-        isMainLine != oldDelegate.isMainLine;
+        isMainLine != oldDelegate.isMainLine ||
+        isHighlightActive != oldDelegate.isHighlightActive ||
+        accelerateTailHighlight != oldDelegate.accelerateTailHighlight;
   }
 
   double measureHeight(

@@ -29,28 +29,28 @@ void main() {
     );
   });
 
-  test('TTML primary line follows the earliest actually active line', () {
+  test('TTML primary line follows the frozen parallel group', () {
     expect(
       lyricDisplayPrimaryIndex(
         fallbackPrimaryIndex: 82,
         lineCount: 88,
-        actualActiveLines: {84},
+        groupedLines: {82, 84, 85},
       ),
-      84,
+      82,
     );
     expect(
       lyricDisplayPrimaryIndex(
-        fallbackPrimaryIndex: 82,
+        fallbackPrimaryIndex: 85,
         lineCount: 88,
-        actualActiveLines: {84, 85},
+        groupedLines: {82, 84, 85},
       ),
-      84,
+      82,
     );
     expect(
       lyricDisplayPrimaryIndex(
-        fallbackPrimaryIndex: 82,
+        fallbackPrimaryIndex: 86,
         lineCount: 88,
-        actualActiveLines: {86},
+        groupedLines: {},
       ),
       86,
     );

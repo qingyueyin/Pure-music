@@ -45,11 +45,11 @@ bool shouldForceLyricScrollForPositionSync(PlayerState state) =>
 int lyricDisplayPrimaryIndex({
   required int fallbackPrimaryIndex,
   required int lineCount,
-  required Set<int> actualActiveLines,
+  required Set<int> groupedLines,
 }) {
   if (lineCount <= 0) return 0;
-  if (actualActiveLines.isNotEmpty) {
-    return actualActiveLines.reduce(min);
+  if (groupedLines.isNotEmpty) {
+    return groupedLines.reduce(min);
   }
   return fallbackPrimaryIndex.clamp(0, lineCount - 1).toInt();
 }
@@ -275,9 +275,9 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   bool _pendingStaggerScroll = false;
   bool _postDragSkipPending = false;
 
-  /// TTML 重叠行的额外透明度 boost，不决定“当前高亮行”。
-  /// 唯一当前行来源是 [_mainLine]。
-  final Set<int> _activeLines = {};
+  /// TTML 当前并行组；[_mainLine] 仍只负责主行布局。
+  final Set<int> _parallelGroupLines = {};
+  int? _tailHighlightCatchUpLine;
   int? _departingBackgroundVocalLine;
   double _backgroundVocalReflowOffset = 0.0;
   late final AnimationController _backgroundVocalExitController;
@@ -293,6 +293,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   /// forceEmitCurrentLine 与 _scrollToCurrent 不在同一时机就绪，
   /// 需要在收到歌词行更新后补一次滚动。
   bool _needsInitialScroll = true;
+  double _displayPositionMs = 0.0;
   int _lastPositionResyncMs = 0;
   int _positionResyncExtensionCount = 0;
   static const int _maxPositionResyncExtensions = 5;
@@ -302,7 +303,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
   GlobalKey? _keyForLine(int index) {
     if ((index - _mainLine).abs() > _lineKeyRetainRadius &&
-        !_activeLines.contains(index)) {
+        !_parallelGroupLines.contains(index)) {
       return null;
     }
     return _lineKeys[index] ??= GlobalKey();
@@ -312,7 +313,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     _lineKeys.removeWhere(
       (index, _) =>
           (index - _mainLine).abs() > _lineKeyRetainRadius &&
-          !_activeLines.contains(index),
+          !_parallelGroupLines.contains(index),
     );
   }
 
@@ -1070,13 +1071,15 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       _cachedBackgroundVocalHeights = null;
       _cachedViewportHeight = 0.0;
       _needsInitialScroll = true;
+      _displayPositionMs = playbackService.position * 1000.0;
       _pendingScrollRetries = 0;
       _mainLine = 0;
       _pendingStaggerScroll = false;
       _postDragSkipPending = false;
       _jumpDeltaY = 0;
       _jumpTriggerId++;
-      _activeLines.clear();
+      _parallelGroupLines.clear();
+      _tailHighlightCatchUpLine = null;
       _discardDepartingBackgroundVocal();
       _viewportRange = const LyricViewportRange(start: 0, end: 0);
       _lineKeys.clear();
@@ -1437,75 +1440,72 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
         .toSet();
   }
 
-  Set<int> _fitParallelLines(Set<int> candidates) {
-    if (candidates.length <= 1) return candidates;
+  int? _tailHighlightCatchUpLineFor(Set<int> candidates) {
+    if (candidates.length <= 1) return null;
     final viewportHeight = _cachedViewportHeight > 0
         ? _cachedViewportHeight
         : scrollController.hasClients
         ? scrollController.position.viewportDimension
         : 0.0;
-    if (viewportHeight <= 0) return candidates;
+    if (viewportHeight <= 0) return null;
 
     final availableBelowMain =
         viewportHeight * (1.0 - widget.currentLineAlignment);
     final heightBudget = availableBelowMain * 0.82;
-    final sorted = candidates.toList()..sort();
-    final selected = <int>[];
-    var usedHeight = 0.0;
 
-    double heightFor(int index) =>
-        _cachedHeights != null && index >= 0 && index < _cachedHeights!.length
-        ? _cachedHeights![index]
-        : 96.0;
-
-    for (final index in sorted) {
-      final height = heightFor(index);
-      if (selected.length < 2 || usedHeight + height <= heightBudget) {
-        selected.add(index);
-        usedHeight += height;
-      }
+    double heightFor(int index) {
+      final lineHeight =
+          _cachedHeights != null && index >= 0 && index < _cachedHeights!.length
+          ? _cachedHeights![index]
+          : 96.0;
+      final backgroundHeight =
+          _cachedBackgroundVocalHeights != null &&
+              index >= 0 &&
+              index < _cachedBackgroundVocalHeights!.length
+          ? _cachedBackgroundVocalHeights![index]
+          : 0.0;
+      return lineHeight + backgroundHeight;
     }
-    return selected.toSet();
+
+    final totalHeight = candidates.fold<double>(
+      0.0,
+      (total, index) => total + heightFor(index),
+    );
+    return totalHeight > heightBudget ? candidates.reduce(max) : null;
   }
 
-  ({int primaryIndex, Set<int> activeLines}) _displayLineUpdate(
-    LyricLineUpdate update,
-  ) {
+  ({int primaryIndex, Set<int> groupLines, int? tailCatchUpLine})
+  _displayLineUpdate(LyricLineUpdate update) {
     final lines = widget.lyric.lines;
-    final actualActiveLines = _renderableLineIndices(update.activeIndices);
-    final activeLines = _fitParallelLines(actualActiveLines);
+    final layoutLines = _renderableLineIndices(update.layoutIndices);
+    final activeLines = _renderableLineIndices(update.activeIndices);
+    final groupLines = layoutLines.isNotEmpty ? layoutLines : activeLines;
     final primaryIndex = lyricDisplayPrimaryIndex(
       fallbackPrimaryIndex: update.primaryIndex,
       lineCount: lines.length,
-      actualActiveLines: actualActiveLines,
+      groupedLines: groupLines,
     );
-    return (primaryIndex: primaryIndex, activeLines: activeLines);
+    return (
+      primaryIndex: primaryIndex,
+      groupLines: groupLines,
+      tailCatchUpLine: _tailHighlightCatchUpLineFor(groupLines),
+    );
   }
 
-  int? _firstParallelBackgroundVocalLine(List<LyricLine> lines) {
-    if (_activeLines.length < 2) return null;
-    final firstLine = _activeLines.reduce(min);
-    final line = lines[firstLine];
-    if (line is! SyncLyricLine) return null;
-    final hasBackground =
-        line.bgText?.isNotEmpty == true ||
+  bool _hasBackgroundVocal(LyricLine line) {
+    if (line is! SyncLyricLine) return false;
+    return line.bgText?.isNotEmpty == true ||
         (LyricViewController.instance.renderConfig.showRoman &&
             line.bg?.romanLyric?.isNotEmpty == true) ||
         line.bgTranslation?.isNotEmpty == true ||
         line.bgWords.isNotEmpty;
-    return hasBackground ? firstLine : null;
   }
 
   bool _hasStartedBackgroundVocal(LyricLine line) {
-    if (line is! SyncLyricLine) return false;
-    final hasBackground =
-        line.bgText?.isNotEmpty == true ||
-        (LyricViewController.instance.renderConfig.showRoman &&
-            line.bg?.romanLyric?.isNotEmpty == true) ||
-        line.bgTranslation?.isNotEmpty == true ||
-        line.bgWords.isNotEmpty;
-    if (!hasBackground) return false;
-    final start = (line.bgStart ?? line.bg?.start ?? line.start).inMilliseconds
+    if (!_hasBackgroundVocal(line)) return false;
+    final syncLine = line as SyncLyricLine;
+    final start = (syncLine.bgStart ?? syncLine.bg?.start ?? syncLine.start)
+        .inMilliseconds
         .toDouble();
     final positionMs = playbackService.position * 1000.0;
     return positionMs >= start;
@@ -1539,9 +1539,9 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     bool mainLineChanged,
   ) {
     if (!mainLineChanged) return _departingBackgroundVocalLine;
-    final previousActiveLines = _activeLines.toList()
+    final previousGroupLines = _parallelGroupLines.toList()
       ..sort((a, b) => b.compareTo(a));
-    for (final index in previousActiveLines) {
+    for (final index in previousGroupLines) {
       if (index != nextMainLine && _hasStartedBackgroundVocal(lines[index])) {
         return index;
       }
@@ -1599,8 +1599,13 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       preferForward: preferUpcoming,
     );
     if (nextMainLine == null) return;
+    final positionMs = position * 1000.0;
+    final positionChanged = (_displayPositionMs - positionMs).abs() > 0.5;
     if (nextMainLine == _mainLine &&
-        setEquals(_activeLines, displayUpdate.activeLines)) {
+        setEquals(_parallelGroupLines, displayUpdate.groupLines) &&
+        _tailHighlightCatchUpLine == displayUpdate.tailCatchUpLine &&
+        (playbackService.playerState == PlayerState.playing ||
+            !positionChanged)) {
       if (_needsInitialScroll) {
         _scrollToCurrent(Duration.zero);
       }
@@ -1619,7 +1624,10 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     if (lines.isEmpty) return;
 
     final displayUpdate = _displayLineUpdate(update);
-    final nextActiveLines = displayUpdate.activeLines;
+    final positionMs = playbackService.position * 1000.0;
+    final positionChanged = (_displayPositionMs - positionMs).abs() > 0.5;
+    final nextGroupLines = displayUpdate.groupLines;
+    final nextTailHighlightCatchUpLine = displayUpdate.tailCatchUpLine;
     final nextMainLine = displayUpdate.primaryIndex;
     final preferForward = forceScroll || _needsInitialScroll;
     final renderableMainLine = _nearestRenderableLineIndex(
@@ -1628,7 +1636,14 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     );
     if (renderableMainLine == null) return;
     if (renderableMainLine == _mainLine &&
-        setEquals(_activeLines, nextActiveLines)) {
+        setEquals(_parallelGroupLines, nextGroupLines) &&
+        _tailHighlightCatchUpLine == nextTailHighlightCatchUpLine) {
+      if (positionChanged &&
+          playbackService.playerState != PlayerState.playing) {
+        setState(() {
+          _displayPositionMs = positionMs;
+        });
+      }
       if (forceScroll || _needsInitialScroll) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (_disposed || !mounted) return;
@@ -1701,11 +1716,13 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
     setState(() {
       _mainLine = renderableMainLine;
+      _displayPositionMs = positionMs;
       _departingBackgroundVocalLine = departingBackgroundVocalLine;
       _backgroundVocalReflowOffset = backgroundVocalReflowOffset;
-      _activeLines
+      _parallelGroupLines
         ..clear()
-        ..addAll(nextActiveLines);
+        ..addAll(nextGroupLines);
+      _tailHighlightCatchUpLine = nextTailHighlightCatchUpLine;
       _pruneLineKeys();
       _viewportRange = forceScroll
           ? viewportStrategy.rangeForMainLine(
@@ -1745,9 +1762,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       overscanScreens: renderConfig.viewportOverscanScreens,
       userScrollHoldDuration: renderConfig.userScrollHoldDuration,
     );
-    final firstParallelBackgroundVocalLine = _firstParallelBackgroundVocalLine(
-      widget.lyric.lines,
-    );
+    final freezeParallelGroup = _parallelGroupLines.length > 1;
     return LayoutBuilder(
       builder: (context, constraints) {
         final needsOffsets =
@@ -1864,12 +1879,11 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
                         final signedDist = i - _mainLine;
                         final dist = signedDist.abs();
-                        final isActiveLine = _activeLines.contains(i);
-                        final highlightDistance = isActiveLine ? 0 : dist;
+                        final isGroupLine = _parallelGroupLines.contains(i);
                         final highlightDeadlineMs = _highlightDeadlineForLine(
                           i,
                         );
-                        final opacity = dist == 0 || isActiveLine
+                        final opacity = dist == 0 || isGroupLine
                             ? 1.0
                             : pow(_opacityBase, dist).toDouble().clamp(
                                 _opacityMinClamp,
@@ -1902,7 +1916,11 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                             ),
                             line: line,
                             opacity: opacity,
-                            distance: highlightDistance,
+                            distance: dist,
+                            positionMs: _displayPositionMs,
+                            isHighlightActive: isGroupLine,
+                            accelerateTailHighlight:
+                                i == _tailHighlightCatchUpLine,
                             lineOffsetY:
                                 _departingBackgroundVocalLine != null &&
                                     i > _departingBackgroundVocalLine!
@@ -1917,9 +1935,9 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                             jumpTriggerId: _jumpTriggerId,
                             jumpDeltaY: _jumpDeltaY,
                             isUserScrolling: userIsDragging,
-                            freezeHeight: i == firstParallelBackgroundVocalLine,
+                            freezeHeight: freezeParallelGroup && isGroupLine,
                             reserveBackgroundVocalHeight:
-                                (i == _mainLine || _activeLines.contains(i)) &&
+                                (i == _mainLine || isGroupLine) &&
                                 i != _departingBackgroundVocalLine,
                             highlightDeadlineMs: highlightDeadlineMs,
                             backgroundVocalVisibilityListenable:

@@ -25,6 +25,9 @@ class LyricsLineWidget extends StatefulWidget {
     required this.line,
     required this.opacity,
     this.distance,
+    this.positionMs,
+    this.isHighlightActive = false,
+    this.accelerateTailHighlight = false,
     this.lineOffsetY = 0.0,
     this.lineOffsetProgressListenable,
     this.staggerDelay = Duration.zero,
@@ -41,6 +44,9 @@ class LyricsLineWidget extends StatefulWidget {
   final LyricLine line;
   final double opacity;
   final int? distance;
+  final double? positionMs;
+  final bool isHighlightActive;
+  final bool accelerateTailHighlight;
   final double lineOffsetY;
   final ValueListenable<double>? lineOffsetProgressListenable;
   final Duration staggerDelay;
@@ -156,20 +162,22 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
   @override
   void initState() {
     super.initState();
+    _currentTimeMs = widget.positionMs ?? _readNativePositionMs();
+    _currentTimeNotifier.value = _currentTimeMs;
     _config = context.read<LyricViewController>().renderConfig;
     _scaleController = AnimationController.unbounded(vsync: this);
     _scaleController.value = widget.distance == 0
         ? _config.mainLineScale * _config.activeLineScaleMultiplier
         : _config.subLineScale * _config.inactiveLineScaleMultiplier;
-    _floatController = AnimationController.unbounded(
-      vsync: this,
-    );
+    _floatController = AnimationController.unbounded(vsync: this);
     _floatController.value = widget.distance == 0 ? 1.0 : 0.0;
-    widget.backgroundVocalVisibilityListenable
-        ?.addListener(_updateBackgroundVocalHeight);
+    widget.backgroundVocalVisibilityListenable?.addListener(
+      _updateBackgroundVocalHeight,
+    );
     _playerStateListener = _syncProgressTicker;
-    PlayService.instance.playbackService.playerStateNotifier
-        .addListener(_playerStateListener);
+    PlayService.instance.playbackService.playerStateNotifier.addListener(
+      _playerStateListener,
+    );
     _syncProgressTicker();
   }
 
@@ -234,7 +242,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
   }
 
   bool get _needsProgressTicker =>
-      widget.distance == 0 &&
+      (widget.distance == 0 || widget.isHighlightActive) &&
       widget.line is SyncLyricLine &&
       (widget.line as SyncLyricLine).words.isNotEmpty &&
       _config.displayMode == LyricDisplayMode.wordByWord;
@@ -247,7 +255,8 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
       _lastProgressPaintElapsed = Duration.zero;
       _pendingSeekMs = null;
       _pendingSeekAt = null;
-      final isPlaying = PlayService.instance.playbackService.playerState ==
+      final isPlaying =
+          PlayService.instance.playbackService.playerState ==
           PlayerState.playing;
       if (!isPlaying) {
         _ticker?.stop();
@@ -304,14 +313,14 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
     SyncLyricLine line,
     double currentTimeMs,
   ) {
-    final start = (line.bgStart ?? line.bg?.start ?? line.start)
-        .inMilliseconds
+    final start = (line.bgStart ?? line.bg?.start ?? line.start).inMilliseconds
         .toDouble();
     if (currentTimeMs < start) return 0.0;
-    final progress = ((currentTimeMs - start) /
-            lyricBackgroundVocalEntryDuration.inMilliseconds)
-        .clamp(0.0, 1.0)
-        .toDouble();
+    final progress =
+        ((currentTimeMs - start) /
+                lyricBackgroundVocalEntryDuration.inMilliseconds)
+            .clamp(0.0, 1.0)
+            .toDouble();
     return Curves.easeOutBack.transform(progress);
   }
 
@@ -328,7 +337,8 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
         : elapsed - _lastTickElapsed;
     _lastTickElapsed = elapsed;
 
-    final shouldSyncNative = _lastNativeSyncElapsed == Duration.zero ||
+    final shouldSyncNative =
+        _lastNativeSyncElapsed == Duration.zero ||
         elapsed - _lastNativeSyncElapsed >= _nativePositionSyncInterval;
     final rawMs = shouldSyncNative
         ? _readNativePositionMs()
@@ -402,10 +412,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
                 .toDouble();
         final bgEnd = _bgEndMs(syncLine);
         if (_currentTimeMs >= bgStart - 400 && _currentTimeMs < bgEnd + 5000) {
-          final factor = _backgroundVocalHeightFactor(
-            syncLine,
-            _currentTimeMs,
-          );
+          final factor = _backgroundVocalHeightFactor(syncLine, _currentTimeMs);
           if ((factor - _lastBackgroundVocalHeightFactor).abs() > 0.002 &&
               (_currentTimeMs - _lastBgHeightUpdateMs).abs() > 8) {
             _lastBgHeightUpdateMs = _currentTimeMs;
@@ -428,15 +435,16 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
   }
 
   double _bgEndMs(SyncLyricLine syncLine) {
-    var end = (syncLine.bgEnd ??
-            syncLine.bg?.end ??
-            (syncLine.start + syncLine.length))
-        .inMilliseconds
-        .toDouble();
+    var end =
+        (syncLine.bgEnd ??
+                syncLine.bg?.end ??
+                (syncLine.start + syncLine.length))
+            .inMilliseconds
+            .toDouble();
     if (syncLine.bgWords.isNotEmpty) {
       final last = syncLine.bgWords.last;
-      final lastEnd =
-          (last.start.inMilliseconds + last.length.inMilliseconds).toDouble();
+      final lastEnd = (last.start.inMilliseconds + last.length.inMilliseconds)
+          .toDouble();
       if (lastEnd > end) end = lastEnd;
     }
     return end;
@@ -445,6 +453,14 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
   @override
   void didUpdateWidget(covariant LyricsLineWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
+
+    if (widget.positionMs != oldWidget.positionMs &&
+        widget.positionMs != null &&
+        (widget.positionMs! - _currentTimeMs).abs() > 0.5) {
+      _pendingSeekMs = null;
+      _pendingSeekAt = null;
+      _setCurrentTimeMs(widget.positionMs!);
+    }
 
     if (widget.backgroundVocalVisibilityListenable != null &&
         oldWidget.backgroundVocalVisibilityListenable == null &&
@@ -464,8 +480,11 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
 
     final isActive = widget.distance == 0;
     final wasActive = oldWidget.distance == 0;
+    final isHighlightActive = isActive || widget.isHighlightActive;
+    final wasHighlightActive = wasActive || oldWidget.isHighlightActive;
 
-    if (isActive != wasActive || widget.line != oldWidget.line) {
+    if (isHighlightActive != wasHighlightActive ||
+        widget.line != oldWidget.line) {
       _syncProgressTicker();
     }
 
@@ -481,10 +500,12 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
 
     if (widget.backgroundVocalVisibilityListenable !=
         oldWidget.backgroundVocalVisibilityListenable) {
-      oldWidget.backgroundVocalVisibilityListenable
-          ?.removeListener(_updateBackgroundVocalHeight);
-      widget.backgroundVocalVisibilityListenable
-          ?.addListener(_updateBackgroundVocalHeight);
+      oldWidget.backgroundVocalVisibilityListenable?.removeListener(
+        _updateBackgroundVocalHeight,
+      );
+      widget.backgroundVocalVisibilityListenable?.addListener(
+        _updateBackgroundVocalHeight,
+      );
     }
 
     final oldKeepAlive = (oldWidget.distance ?? 999).abs() <= 2;
@@ -496,6 +517,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
     if (widget.line != oldWidget.line) {
       _cachedPainter = null;
       _clearHeightCache();
+      _frozenHeight = null;
       _pendingSeekMs = null;
       _pendingSeekAt = null;
       _lastBackgroundVocalHeightFactor = -1.0;
@@ -504,13 +526,15 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
 
   @override
   void dispose() {
-    PlayService.instance.playbackService.playerStateNotifier
-        .removeListener(_playerStateListener);
+    PlayService.instance.playbackService.playerStateNotifier.removeListener(
+      _playerStateListener,
+    );
     _ticker?.dispose();
     _scaleController.dispose();
     _floatController.dispose();
-    widget.backgroundVocalVisibilityListenable
-        ?.removeListener(_updateBackgroundVocalHeight);
+    widget.backgroundVocalVisibilityListenable?.removeListener(
+      _updateBackgroundVocalHeight,
+    );
     _currentTimeNotifier.dispose();
     _heightNotifier.dispose();
     _cachedPainter = null;
@@ -524,17 +548,18 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
 
     final dist = (widget.distance ?? 0).abs();
     final isCurrentLine = widget.distance == 0;
+    final isHighlightActive = isCurrentLine || widget.isHighlightActive;
 
     final renderConfig = context.watch<LyricViewController>().renderConfig;
 
     final effectiveTextAlign =
         renderConfig.hasMultipleAgents && widget.line is SyncLyricLine
-            ? switch ((widget.line as SyncLyricLine).agent) {
-                'v2' => LyricTextAlign.right,
-                'v1' => LyricTextAlign.left,
-                _ => renderConfig.textAlign,
-              }
-            : renderConfig.textAlign;
+        ? switch ((widget.line as SyncLyricLine).agent) {
+            'v2' => LyricTextAlign.right,
+            'v1' => LyricTextAlign.left,
+            _ => renderConfig.textAlign,
+          }
+        : renderConfig.textAlign;
 
     final scaleAlignment = switch (effectiveTextAlign) {
       LyricTextAlign.left => Alignment.centerLeft,
@@ -582,14 +607,12 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
           color: scheme.onSurface.withValues(alpha: 0.08),
           child: Padding(
             padding: EdgeInsets.only(
-                left: transitionTileMargin,
-                right: transitionTileMargin,
-                top: verticalPad,
-                bottom: verticalPad),
-            child: Align(
-              alignment: scaleAlignment,
-              child: transitionContent,
+              left: transitionTileMargin,
+              right: transitionTileMargin,
+              top: verticalPad,
+              bottom: verticalPad,
             ),
+            child: Align(alignment: scaleAlignment, child: transitionContent),
           ),
         ),
       );
@@ -608,8 +631,9 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
     final visualTransitionDuration = isSmoothTransition
         ? lyricSmoothTransitionDuration
         : const Duration(milliseconds: 600);
-    final visualTransitionCurve =
-        isSmoothTransition ? lyricSmoothTransitionCurve : Curves.easeOutCubic;
+    final visualTransitionCurve = isSmoothTransition
+        ? lyricSmoothTransitionCurve
+        : Curves.easeOutCubic;
 
     Widget inner = TweenAnimationBuilder<double>(
       tween: Tween<double>(end: effectiveOpacity),
@@ -624,7 +648,8 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
             return LayoutBuilder(
               builder: (context, constraints) {
                 final theme = Theme.of(context);
-                final fontFamily = theme.textTheme.bodyMedium?.fontFamily ??
+                final fontFamily =
+                    theme.textTheme.bodyMedium?.fontFamily ??
                     theme.textTheme.bodySmall?.fontFamily;
 
                 final lineWidth = constraints.maxWidth;
@@ -633,12 +658,14 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
                     : null;
                 final useMaterialYouColor =
                     AppSettings.instance.useMaterialYouForLyrics;
-                final currentTimeListenable =
-                    _needsProgressTicker ? _currentTimeNotifier : null;
+                final currentTimeListenable = _needsProgressTicker
+                    ? _currentTimeNotifier
+                    : null;
                 final backgroundVocalVisibilityListenable =
                     widget.backgroundVocalVisibilityListenable;
-                final lineMedianWordDuration =
-                    _lineMedianWordDuration(widget.line);
+                final lineMedianWordDuration = _lineMedianWordDuration(
+                  widget.line,
+                );
 
                 if (_cachedPainter == null ||
                     _cachedPainter!.line != widget.line ||
@@ -651,6 +678,9 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
                     _cachedPainter!.blurSigma != animatedBlurSigma ||
                     _cachedPainter!.config != renderConfig ||
                     _cachedPainter!.isMainLine != isCurrentLine ||
+                    _cachedPainter!.isHighlightActive != isHighlightActive ||
+                    _cachedPainter!.accelerateTailHighlight !=
+                        widget.accelerateTailHighlight ||
                     _cachedPainter!.useMaterialYouColor !=
                         useMaterialYouColor ||
                     _cachedPainter!.opacity != animatedOpacity ||
@@ -670,6 +700,8 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
                     config: renderConfig,
                     scheme: scheme,
                     isMainLine: isCurrentLine,
+                    isHighlightActive: isHighlightActive,
+                    accelerateTailHighlight: widget.accelerateTailHighlight,
                     useMaterialYouColor: useMaterialYouColor,
                     opacity: animatedOpacity,
                     fontFamily: fontFamily,
@@ -679,7 +711,8 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
                   );
                 }
 
-                final heightCacheValid = _cachedLineHeight != null &&
+                final heightCacheValid =
+                    _cachedLineHeight != null &&
                     _cachedLineWidth == lineWidth &&
                     identical(_heightLine, widget.line) &&
                     _heightConfig == renderConfig &&
@@ -697,6 +730,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
                             widget.reserveBackgroundVocalHeight,
                       );
                 if (!heightCacheValid) {
+                  if (widget.freezeHeight) _frozenHeight = null;
                   _cachedLineHeight = lineHeight;
                   _cachedLineWidth = lineWidth;
                   _heightLine = widget.line;
@@ -716,10 +750,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
                 return ValueListenableBuilder<double>(
                   valueListenable: _heightNotifier,
                   builder: (context, h, _) {
-                    final paintHeight = max(
-                      h,
-                      _departingPaintHeight ?? h,
-                    );
+                    final paintHeight = max(h, _departingPaintHeight ?? h);
                     return SizedBox(
                       height: h,
                       child: OverflowBox(
@@ -761,10 +792,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
       animation: _floatController,
       builder: (context, child) {
         final offsetY = _floatController.value * -4.0;
-        return Transform.translate(
-          offset: Offset(0, offsetY),
-          child: child!,
-        );
+        return Transform.translate(offset: Offset(0, offsetY), child: child!);
       },
       child: inner,
     );
@@ -793,7 +821,8 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
 
     inner = LyricStaggerTransition(
       key: ValueKey('stagger_${widget.jumpTriggerId}'),
-      enabled: renderConfig.enableStaggeredAnimation &&
+      enabled:
+          renderConfig.enableStaggeredAnimation &&
           renderConfig.staggerStyle == LyricStaggerStyle.spring,
       generation: widget.jumpTriggerId,
       shiftY: widget.jumpDeltaY,
@@ -801,10 +830,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
       child: inner,
     );
 
-    inner = GestureDetector(
-      onTap: widget.onTap,
-      child: inner,
-    );
+    inner = GestureDetector(onTap: widget.onTap, child: inner);
 
     if (widget.onTap != null) {
       inner = MouseRegion(
@@ -836,11 +862,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
 }
 
 class _LocalHoverMask extends StatefulWidget {
-  const _LocalHoverMask({
-    required this.child,
-    required this.color,
-    this.onTap,
-  });
+  const _LocalHoverMask({required this.child, required this.color, this.onTap});
 
   final Widget child;
   final Color color;
