@@ -1,4 +1,6 @@
 import 'package:pure_music/core/design_tokens.dart';
+import 'package:pure_music/core/list_action_state.dart';
+import 'package:pure_music/core/menu_styles.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/utils.dart';
@@ -90,7 +92,10 @@ class _FoldersPageState extends State<FoldersPage> {
         ],
       ),
       contentBuilder: (context, item, i, multiSelectController, view) =>
-          AudioFolderTile(audioFolder: item),
+          AudioFolderTile(
+            audioFolder: item,
+            onAliasChanged: () => setState(() {}),
+          ),
       enableShufflePlay: false,
       enableSortMethod: true,
       enableSortOrder: true,
@@ -98,14 +103,18 @@ class _FoldersPageState extends State<FoldersPage> {
       sortMethods: [
         SortMethodDesc<AudioFolder>(
           icon: Symbols.title,
-          name: '路径',
+          name: '名称',
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
-                list.sort((a, b) => a.path.localeCompareTo(b.path));
+                list.sort(
+                  (a, b) => a.displayName.localeCompareTo(b.displayName),
+                );
                 break;
               case SortOrder.decending:
-                list.sort((a, b) => b.path.localeCompareTo(a.path));
+                list.sort(
+                  (a, b) => b.displayName.localeCompareTo(a.displayName),
+                );
                 break;
             }
           },
@@ -145,43 +154,131 @@ class _FoldersPageState extends State<FoldersPage> {
 
 class AudioFolderTile extends StatelessWidget {
   final AudioFolder audioFolder;
+  final VoidCallback? onAliasChanged;
   const AudioFolderTile({
     super.key,
     required this.audioFolder,
+    this.onAliasChanged,
   });
+
+  Future<void> _editAlias(BuildContext context) async {
+    final key = pendingFolderKey(audioFolder.path);
+    final current = AppPreference.instance.folderAliases[key];
+    final existing = AppPreference.instance.folderAliases.entries
+        .where((e) => e.key != key)
+        .map((e) => e.value)
+        .toSet();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => _FolderAliasDialog(
+        currentAlias: current,
+        existingAliases: existing,
+      ),
+    );
+    if (result == null) return;
+    final old = AppPreference.instance.folderAliases[key];
+    if (result.trim().isEmpty) {
+      AppPreference.instance.folderAliases.remove(key);
+    } else {
+      AppPreference.instance.folderAliases[key] = result.trim();
+    }
+    final saved = await AppPreference.instance.save();
+    if (!saved) {
+      if (old == null) {
+        AppPreference.instance.folderAliases.remove(key);
+      } else {
+        AppPreference.instance.folderAliases[key] = old;
+      }
+      if (context.mounted) {
+        showTextOnSnackBar('保存别名失败', variant: ToastVariant.error);
+      }
+      return;
+    }
+    onAliasChanged?.call();
+  }
+
+  Future<void> _clearAlias(BuildContext context) async {
+    final key = pendingFolderKey(audioFolder.path);
+    AppPreference.instance.folderAliases.remove(key);
+    final saved = await AppPreference.instance.save();
+    if (!saved && context.mounted) {
+      showTextOnSnackBar('保存别名失败', variant: ToastVariant.error);
+    }
+    onAliasChanged?.call();
+  }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8.0),
-      child: InkWell(
-        borderRadius: AppRadius.smCircular,
-        onTap: () => context.push(
-          app_paths.FOLDER_DETAIL_PAGE,
-          extra: audioFolder,
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
-          child: Row(
-            children: [
-              Icon(Symbols.folder, color: scheme.onSurfaceVariant),
-              const SizedBox(width: 16.0),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+    return MenuTheme(
+      data: MenuThemeData(style: appMenuStyle),
+      child: MenuAnchor(
+        consumeOutsideTap: true,
+        style: appMenuStyle,
+        menuChildren: [
+          MenuItemButton(
+            style: appMenuItemStyle,
+            onPressed: () => _editAlias(context),
+            leadingIcon: const Icon(Symbols.label),
+            child: Text(audioFolder.alias?.isNotEmpty == true ? '修改别名' : '设置别名'),
+          ),
+          if (audioFolder.alias?.isNotEmpty == true)
+            MenuItemButton(
+              style: appMenuItemStyle,
+              onPressed: () => _clearAlias(context),
+              leadingIcon: const Icon(Symbols.label_off),
+              child: const Text('移除别名'),
+            ),
+        ],
+        builder: (context, controller, _) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+            child: InkWell(
+              borderRadius: AppRadius.smCircular,
+              onTap: () => context.push(
+                app_paths.FOLDER_DETAIL_PAGE,
+                extra: audioFolder,
+              ),
+              onSecondaryTapDown: (details) {
+                controller.open(
+                  position: details.localPosition.translate(0, -240),
+                );
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16.0,
+                  vertical: 10.0,
+                ),
+                child: Row(
                   children: [
-                    Text(
-                      p.basename(audioFolder.path),
-                      softWrap: false,
-                      maxLines: 1,
-                      style: TextStyle(color: scheme.onSurface),
+                    Icon(Symbols.folder, color: scheme.onSurfaceVariant),
+                    const SizedBox(width: 16.0),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            audioFolder.displayName,
+                            softWrap: false,
+                            maxLines: 1,
+                            style: TextStyle(color: scheme.onSurface),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            p.dirname(audioFolder.path),
+                            softWrap: false,
+                            maxLines: 1,
+                            style: TextStyle(
+                              color: scheme.onSurfaceVariant,
+                              fontSize: AppType.body,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(width: 12),
                     Text(
-                      p.dirname(audioFolder.path),
-                      softWrap: false,
-                      maxLines: 1,
+                      '${audioFolder.audios.length} 首',
                       style: TextStyle(
                         color: scheme.onSurfaceVariant,
                         fontSize: AppType.body,
@@ -190,13 +287,139 @@ class AudioFolderTile extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(width: 12),
-              Text(
-                '${audioFolder.audios.length} 首',
-                style: TextStyle(
-                  color: scheme.onSurfaceVariant,
-                  fontSize: AppType.body,
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _FolderAliasDialog extends StatefulWidget {
+  final String? currentAlias;
+  final Set<String> existingAliases;
+  const _FolderAliasDialog({
+    this.currentAlias,
+    required this.existingAliases,
+  });
+
+  @override
+  State<_FolderAliasDialog> createState() => _FolderAliasDialogState();
+}
+
+class _FolderAliasDialogState extends State<_FolderAliasDialog> {
+  late final _editingController = TextEditingController(
+    text: widget.currentAlias ?? '',
+  );
+  String? _errorText;
+
+  String get _trimmedAlias => _editingController.text.trim();
+
+  bool get _canSubmit {
+    final alias = _trimmedAlias;
+    // 空输入视为清除别名：当前已有别名时才允许
+    if (alias.isEmpty) return widget.currentAlias?.isNotEmpty ?? false;
+    return alias != (widget.currentAlias ?? '') &&
+        !hasEquivalentPlaylistName(
+          existingNames: widget.existingAliases,
+          targetName: alias,
+        );
+  }
+
+  void _onAliasChanged(String value) {
+    final alias = value.trim();
+    setState(() {
+      _errorText = alias.isNotEmpty &&
+              hasEquivalentPlaylistName(
+                existingNames: widget.existingAliases,
+                targetName: alias,
+              )
+          ? '该别名已存在'
+          : null;
+    });
+  }
+
+  void _submit() {
+    final alias = _trimmedAlias;
+    if (alias.isEmpty) {
+      Navigator.pop(context, '');
+      return;
+    }
+    if (hasEquivalentPlaylistName(
+      existingNames: widget.existingAliases,
+      targetName: alias,
+    )) {
+      setState(() => _errorText = '该别名已存在');
+      return;
+    }
+    if (alias == widget.currentAlias) return;
+    Navigator.pop(context, alias);
+  }
+
+  @override
+  void dispose() {
+    _editingController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final width = (MediaQuery.sizeOf(context).width - 48.0)
+        .clamp(280.0, 360.0)
+        .toDouble();
+
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(
+        horizontal: 24.0,
+        vertical: 24.0,
+      ),
+      shape: RoundedRectangleBorder(borderRadius: AppRadius.mdCircular),
+      child: SizedBox(
+        width: width,
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16.0),
+                child: Text(
+                  '设置文件夹别名',
+                  style: TextStyle(
+                    color: scheme.onSurface,
+                    fontSize: AppType.sectionTitle,
+                    fontWeight: AppType.weightBold,
+                  ),
                 ),
+              ),
+              TextField(
+                autofocus: true,
+                controller: _editingController,
+                onChanged: _onAliasChanged,
+                onSubmitted: (value) => _submit(),
+                decoration: InputDecoration(
+                  labelText: '别名（留空则清除）',
+                  border: const OutlineInputBorder(),
+                  errorText: _errorText,
+                ),
+              ),
+              const SizedBox(height: 16.0),
+              OverflowBar(
+                alignment: MainAxisAlignment.end,
+                spacing: 8.0,
+                overflowSpacing: 8.0,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('取消'),
+                  ),
+                  FilledButton(
+                    onPressed: _canSubmit ? _submit : null,
+                    child: const Text('确认'),
+                  ),
+                ],
               ),
             ],
           ),

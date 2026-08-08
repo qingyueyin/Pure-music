@@ -448,6 +448,12 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
                                     ),
                                   ),
                             );
+                            final removedKeys = removed
+                                .map(pendingFolderKey)
+                                .toSet();
+                            AppPreference.instance.folderAliases.removeWhere(
+                              (key, _) => removedKeys.contains(key),
+                            );
                             final saved = await AppPreference.instance.save();
                             if (!saved) {
                               AppPreference.instance.userFolders =
@@ -500,7 +506,9 @@ class _ManagedFolderTreeNode {
   final AudioFolder? sourceFolder;
   final bool pendingScan;
 
-  String get name => p.windows.basename(path);
+  String get name =>
+      AppPreference.instance.folderAliases[pendingFolderKey(path)] ??
+      p.windows.basename(path);
 
   int get audioCount =>
       directAudioCount +
@@ -566,7 +574,7 @@ class _ManagedFolderTile extends StatelessWidget {
         Icon(Symbols.folder, size: 20, color: scheme.onSurfaceVariant),
         const SizedBox(width: 8),
         Expanded(
-          child: Text(tree.path, maxLines: 1, overflow: TextOverflow.ellipsis),
+          child: Text(tree.name, maxLines: 1, overflow: TextOverflow.ellipsis),
         ),
       ],
     );

@@ -470,7 +470,7 @@ class AudioLibrary {
     final userFolders = AppPreference.instance.userFolders;
     if (instance.folders.isEmpty) {
       return userFolders
-          .map((folder) => AudioFolder([], folder, 0, 0))
+          .map((folder) => AudioFolder([], folder, 0, 0, _aliasFor(folder)))
           .toList();
     }
     // 从 instance.folders 反推出根目录（没有其他文件夹以它为前缀）
@@ -508,17 +508,22 @@ class AudioLibrary {
           allAudios.addAll(f.audios);
         }
       }
+      final resolvedPath = matchingFolder?.path ?? rootPath;
       result.add(
         AudioFolder(
           allAudios,
-          matchingFolder?.path ?? rootPath,
+          resolvedPath,
           matchingFolder?.modified ?? 0,
           matchingFolder?.latest ?? 0,
+          _aliasFor(resolvedPath),
         ),
       );
     }
     return result;
   }
+
+  static String? _aliasFor(String path) =>
+      AppPreference.instance.folderAliases[pendingFolderKey(path)];
 }
 
 class AudioFolder {
@@ -533,7 +538,13 @@ class AudioFolder {
   /// secs since UNIX EPOCH
   int latest;
 
-  AudioFolder(this.audios, this.path, this.modified, this.latest);
+  /// 用户设置的别名（来自 AppPreference.folderAliases，不写入索引）
+  String? alias;
+
+  AudioFolder(this.audios, this.path, this.modified, this.latest, [this.alias]);
+
+  /// 展示名：别名优先，否则目录名
+  String get displayName => alias ?? p.basename(path);
 
   factory AudioFolder.fromMap(Map map, List<Audio> audios) => AudioFolder(
     audios,

@@ -250,7 +250,10 @@ class _FolderSelectorViewState extends State<FolderSelectorView> {
                   itemCount: folders.length,
                   itemBuilder: (context, i) => ListTile(
                     title: Text(
-                      folders[i],
+                      AppPreference.instance.folderAliases[pendingFolderKey(
+                            folders[i],
+                          )] ??
+                          folders[i],
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
