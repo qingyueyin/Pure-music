@@ -47,6 +47,8 @@ dev_dependencies:
     sdk: flutter
   integration_test:
     sdk: flutter
+  # Melos 6.x：与根目录 melos.yaml 配套；可用 dart run melos …
+  melos: ^6.3.2
 
 flutter:
   uses-material-design: true

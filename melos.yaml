@@ -1,0 +1,20 @@
+# Melos 6.x 工作区配置（独立 melos.yaml，避免 Melos 7 pub workspace 大改）
+name: pure_music
+
+packages:
+  - .
+  - apps/**
+  - packages/**
+
+command:
+  bootstrap:
+    # 根应用已用 path 依赖 packages/desktop_lyric；bootstrap 负责统一 pub get
+    runPubGetInParallel: true
+
+scripts:
+  get:
+    description: 在所有 package 上执行 flutter/dart pub get
+    run: melos exec -- flutter pub get
+  analyze:
+    description: 静态分析全部 Dart package
+    run: melos exec -- flutter analyze

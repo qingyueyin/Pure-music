@@ -336,8 +336,14 @@ function New-AppPackage([string]$artifactRoot, [string]$version) {
     Invoke-Step "copy desktop_lyric" {
         $desktopLyricSrc = Join-Path $PSScriptRoot "desktop_lyric"
         $desktopLyricDest = Join-Path $finalAppDir "desktop_lyric"
-        if (-not (Test-Path $desktopLyricSrc)) {
-            throw "desktop_lyric directory not found in project root: $desktopLyricSrc"
+        $desktopLyricExe = Join-Path $desktopLyricSrc "desktop_lyric.exe"
+        if (-not (Test-Path $desktopLyricSrc) -or -not (Test-Path -LiteralPath $desktopLyricExe)) {
+            throw @"
+desktop_lyric artifacts missing under: $desktopLyricSrc
+Build them first (from monorepo root):
+  .\apps\pure_player_lyric\build_windows.ps1
+Then re-run this script. Artifacts sync to /desktop_lyric (gitignored).
+"@
         }
         Invoke-RoboCopy $desktopLyricSrc $desktopLyricDest
     }

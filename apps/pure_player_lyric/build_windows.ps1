@@ -4,7 +4,7 @@ param(
     [switch] $SkipSync,
     # 不重新编译，只把已有产物同步到 Pure-music（用 output/ 或 Release 构建目录）
     [switch] $SyncOnly,
-    # 主程序仓库根目录；默认假设与本仓同级：../Pure-music
+    # monorepo / 主程序仓库根目录；默认从 apps/pure_player_lyric 向上解析
     [string] $MusicRoot = ""
 )
 
@@ -28,6 +28,15 @@ function Write-Log {
     $Message | Tee-Object -FilePath $logFile -Append | Out-Null
 }
 
+function Test-IsMusicMonorepoRoot {
+    param([string]$Candidate)
+
+    if (-not $Candidate) { return $false }
+    $pubspec = Join-Path $Candidate "pubspec.yaml"
+    $lyricApp = Join-Path $Candidate "apps\pure_player_lyric"
+    return (Test-Path -LiteralPath $pubspec) -and (Test-Path -LiteralPath $lyricApp)
+}
+
 function Resolve-MusicRoot {
     param([string]$Override)
 
@@ -35,9 +44,27 @@ function Resolve-MusicRoot {
         return (Resolve-Path $Override).Path
     }
 
-    # 本地 meta-repo：pure-player-lyric 与 Pure-music 同级
+    # monorepo：apps/pure_player_lyric 的上两级即为仓根
+    $monorepoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+    if (Test-IsMusicMonorepoRoot -Candidate $monorepoRoot) {
+        return (Resolve-Path $monorepoRoot).Path
+    }
+
+    # 兼容：从当前目录向上查找含 pubspec.yaml + apps/pure_player_lyric 的根
+    $probe = $PSScriptRoot
+    while ($probe) {
+        if (Test-IsMusicMonorepoRoot -Candidate $probe) {
+            return (Resolve-Path $probe).Path
+        }
+        $parent = Split-Path $probe -Parent
+        if (-not $parent -or $parent -eq $probe) { break }
+        $probe = $parent
+    }
+
+    # 已废弃：旧 sibling 布局 pure-player-lyric 与 Pure-music 同级
     $sibling = Join-Path (Split-Path $PSScriptRoot -Parent) "Pure-music"
     if (Test-Path (Join-Path $sibling "pubspec.yaml")) {
+        Write-Warning "Using deprecated sibling layout ../Pure-music. Prefer monorepo apps/pure_player_lyric."
         return (Resolve-Path $sibling).Path
     }
 
@@ -95,7 +122,7 @@ function Sync-DesktopLyricToMusic {
     }
 
     Write-Host "Synced desktop lyric to $($destinations.Count) location(s) under Music repo." -ForegroundColor Green
-    Write-Host "Note: Pure-music/desktop_lyric is git-tracked; only commit when you intend to push the artifact." -ForegroundColor DarkYellow
+    Write-Host "Note: /desktop_lyric is gitignored build output; do not commit it." -ForegroundColor DarkYellow
 }
 
 # --- SyncOnly：跳过编译，复用已有产物 ---
@@ -103,7 +130,7 @@ if ($SyncOnly) {
     Write-Host "SyncOnly mode: skipping flutter build." -ForegroundColor Green
     $resolvedMusic = Resolve-MusicRoot -Override $MusicRoot
     if (-not $resolvedMusic) {
-        Write-Error "Cannot find Pure-music repo. Pass -MusicRoot <path> (expected sibling ../Pure-music)."
+        Write-Error "Cannot find monorepo root. Pass -MusicRoot <path> (expected repo root with pubspec.yaml + apps/pure_player_lyric)."
         if (-not $NoPause) { Read-Host "Press Enter to exit..." }
         exit 1
     }
@@ -255,11 +282,11 @@ if (-not $SkipSync) {
         Sync-DesktopLyricToMusic -SourceDir $finalOutputDir -MusicRepoRoot $resolvedMusic
     }
     else {
-        Write-Warning "Pure-music sibling not found; skipped auto-sync. Use -MusicRoot <path> or layout meta-repo as ../Pure-music."
+        Write-Warning "Monorepo root not found; skipped auto-sync. Use -MusicRoot <path> or run from apps/pure_player_lyric inside the Pure-music repo."
     }
 }
 else {
-    Write-Host "SkipSync set; not copying into Pure-music." -ForegroundColor DarkYellow
+    Write-Host "SkipSync set; not copying into monorepo desktop_lyric/." -ForegroundColor DarkYellow
 }
 
 Write-Host "`n========================================" -ForegroundColor Cyan

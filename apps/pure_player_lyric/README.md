@@ -53,6 +53,17 @@ Pure Music 的桌面歌词，跟随主播放器实时同步歌词与播放状态
 ## 快速开始
 
 <details>
+<summary>Monorepo 说明</summary>
+
+本应用位于 Pure Music monorepo 的 `apps/pure_player_lyric/`。请打开 **Pure-music 仓根**（含 `apps/` 与根 `pubspec.yaml`）进行开发，而不是单独打开本目录的旧 sibling 仓库布局。
+
+构建产物会同步到仓根 `/desktop_lyric/`（以及主应用 runner 下对应目录），该目录 **gitignore，不入库**。
+
+旧的「`pure-player-lyric` 与 `Pure-music` 同级」布局已废弃；若仍使用，可传 `-MusicRoot`，但推荐迁入 monorepo 后开发。
+
+</details>
+
+<details>
 <summary>构建流程</summary>
 
 ```bash
@@ -62,14 +73,14 @@ flutter run
 # 构建 Release
 flutter build windows --release
 
-# 推荐：项目构建脚本（清理、写版本号、输出到 output/，并默认同步到主程序）
+# 推荐：项目构建脚本（清理、写版本号、输出到 output/，并默认同步到 monorepo 根）
 .\build_windows.ps1
 ```
 
-本地与 `Pure-music` 同级放置时（meta-repo），`build_windows.ps1` 会在构建后自动把产物覆盖到：
+在 monorepo 内执行时，`build_windows.ps1` 会自动定位仓根，并将产物覆盖到：
 
-- `../Pure-music/desktop_lyric/`（主仓内嵌桌面歌词）
-- 若存在：`../Pure-music/build/windows/x64/runner/{Debug,Profile,Release}/desktop_lyric/`（便于 `flutter run` 联调）
+- `<repo>/desktop_lyric/`（主程序加载桌面歌词）
+- 若存在：`<repo>/build/windows/x64/runner/{Debug,Profile,Release}/desktop_lyric/`（便于 `flutter run` 联调）
 
 常用参数：
 
@@ -77,10 +88,10 @@ flutter build windows --release
 .\build_windows.ps1                 # 构建 + 同步
 .\build_windows.ps1 -SyncOnly       # 不编译，只同步已有 output/ 或 Release 产物
 .\build_windows.ps1 -SkipSync       # 只构建，不同步到主程序
-.\build_windows.ps1 -MusicRoot D:\path\to\Pure-music
+.\build_windows.ps1 -MusicRoot D:\path\to\Pure-music   # 覆盖仓根路径
 ```
 
-`Pure-music/desktop_lyric` 受 git 跟踪：本地开发可随时覆盖；只有确定要推到 fork 时再提交该目录。
+也可从仓根调用：`.\apps\pure_player_lyric\build_windows.ps1`。
 
 </details>
 

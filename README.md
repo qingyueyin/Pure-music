@@ -83,19 +83,49 @@
 ## 快速开始
 
 <details>
+<summary>Monorepo 布局</summary>
+
+本仓库为 **true monorepo**（单一 git 根）。请在 Cursor / IDE 中打开**本仓库根目录**（含 `pubspec.yaml`、`apps/`、`packages/`），而不是外层无 `.git` 的外壳目录。
+
+```
+Pure-music/                         # git 根
+├── lib/ …                          # 主应用
+├── apps/pure_player_lyric/         # 桌面歌词源码
+├── packages/desktop_lyric/         # 歌词 IPC 协议包
+├── desktop_lyric/                  # 构建产物（gitignore，不入库）
+├── melos.yaml
+└── …
+```
+
+依赖管理可用 Melos（见下方）。桌面歌词 exe 需先构建再运行主程序桌面歌词功能。
+
+</details>
+
+<details>
 <summary>构建流程</summary>
 
 ```bash
+# 安装依赖（任选其一）
 flutter pub get
+# 或 Melos 统一 bootstrap：
+dart run melos bootstrap
+# 若未把 melos 装进本仓依赖，也可：dart pub global activate melos 后执行 melos bootstrap
+
 flutter run
 
-# 构建 Release
+# 构建 Release（主应用）
 flutter build windows --release
+# 或使用根目录脚本：.\build_windows.ps1
+
+# 构建桌面歌词并同步到 /desktop_lyric（首次或缺产物时必做）
+.\apps\pure_player_lyric\build_windows.ps1
 
 # 修改 Rust 后重新生成 FRB 绑定
 # 需先安装: cargo install flutter_rust_bridge_codegen
 flutter_rust_bridge_codegen generate
 ```
+
+`/desktop_lyric/` 为运行时产物目录，**不要提交**；由歌词构建脚本写入，并可选同步到 `build/windows/x64/runner/*/desktop_lyric/`。
 
 </details>
 

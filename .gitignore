@@ -30,6 +30,9 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
+# Melos 6 bootstrap 生成的本地 path 覆盖（勿入库）
+pubspec_overrides.yaml
+**/pubspec_overrides.yaml
 
 # Symbolication related
 app.*.symbols
@@ -145,6 +148,11 @@ Thumbs.db
 # Build artifacts
 output/
 /output/
+
+# Desktop lyric runtime artifacts (built by apps/pure_player_lyric/build_windows.ps1)
+# Do NOT ignore apps/pure_player_lyric (source) or packages/desktop_lyric (protocol package).
+/desktop_lyric/
+build/windows/x64/runner/**/desktop_lyric/
 
 # Project notes / scratch
 todo/
