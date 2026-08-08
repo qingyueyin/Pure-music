@@ -1,0 +1,108 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+.svn/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+.trae/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/output/
+logs/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Local Environment / IDE
+.vscode/
+.vs/
+.tmp/
+
+# ---------------------------------------------------------------------------
+# AI agent harness (local-only — do not include in upstream PRs)
+# Same policy as the Pure-music fork: Trellis + coding-agent platform files.
+# ---------------------------------------------------------------------------
+.trellis/
+.agents/
+skills-lock.json
+AGENTS.md
+CLAUDE.md
+CLAUDE.local.md
+GEMINI.md
+CODEX.md
+.cursorrules
+.cursorignore
+.windsurfrules
+.clinerules
+.roomodes
+.aider.conf.yml
+.aider*
+
+.cursor/
+.claude/
+.agent/
+.codex/
+.opencode/
+.kiro/
+.gemini/
+.kilocode/
+.devin/
+.windsurf/
+.codebuddy/
+.qoder/
+.factory/
+.pi/
+.omp/
+.reasonix/
+.zcode/
+.grok/
+.kimi-code/
+.snow/
+.trae/
+.continue/
+.superpowers/
+.specstory/
+.augment/
+.amazonq/
+.firebender/
+
+.github/skills/
+.github/agents/
+.github/copilot/
+.github/prompts/
+
+.mcp.json
+**/mcp.local.json
+
