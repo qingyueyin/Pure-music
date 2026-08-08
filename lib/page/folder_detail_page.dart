@@ -67,7 +67,7 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
       primaryPic: _primaryPicFuture,
       backgroundPic: _backgroundPicFuture,
       picShape: PicShape.rrect,
-      title: p.basename(widget.folder.path),
+      title: widget.folder.displayName,
       subtitle: _searchQuery.isEmpty
           ? '${_contentList.length} 首乐曲'
           : '${contentList.length} / ${_contentList.length} 首乐曲',

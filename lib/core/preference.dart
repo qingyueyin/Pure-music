@@ -424,6 +424,19 @@ List<String> _normalizedFolderPathList(Object? value) {
   return appendUniquePendingFolders(current: const [], incoming: incoming);
 }
 
+Map<String, String> _folderAliasesFromStoredValue(Object? value) {
+  if (value is! Map) return {};
+  final result = <String, String>{};
+  for (final entry in value.entries) {
+    if (entry.key is! String || entry.value is! String) continue;
+    final key = pendingFolderKey(entry.key as String);
+    final alias = (entry.value as String).trim();
+    if (key.isEmpty || alias.isEmpty) continue;
+    result[key] = alias;
+  }
+  return result;
+}
+
 bool _looksLikeFolderPath(String value) {
   final normalized = value.trim();
   if (normalized.isEmpty) return false;
@@ -655,6 +668,9 @@ class AppPreference {
 
   List<String> excludedFolderPaths = [];
 
+  /// 用户为曲库根文件夹设置的自定义别名，key 为 pendingFolderKey 规范化路径
+  Map<String, String> folderAliases = {};
+
   /// 上次读取的原始 JSON，保存时保留未知字段
   Map? _rawPrefMap;
 
@@ -721,6 +737,7 @@ class AppPreference {
     excludedFolderPaths = _normalizedFolderPathList(
       prefMap['excludedFolderPaths'],
     );
+    folderAliases = _folderAliasesFromStoredValue(prefMap['folderAliases']);
   }
 
   Future<bool> save() async {
@@ -757,6 +774,7 @@ class AppPreference {
         'updateCheckUrls': updateCheckUrls,
         'userFolders': userFolders,
         'excludedFolderPaths': excludedFolderPaths,
+        'folderAliases': folderAliases,
       });
 
       final prefJson = json.encode(prefMap);
