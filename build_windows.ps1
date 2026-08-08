@@ -1,5 +1,11 @@
 param(
-    [switch] $NoPause
+    [switch] $NoPause,
+    # 跳过同步到主程序（仅构建 lyric 自身 output/）
+    [switch] $SkipSync,
+    # 不重新编译，只把已有产物同步到 Pure-music（用 output/ 或 Release 构建目录）
+    [switch] $SyncOnly,
+    # 主程序仓库根目录；默认假设与本仓同级：../Pure-music
+    [string] $MusicRoot = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -17,6 +23,113 @@ if (-not (Test-Path $logsDir)) {
     New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
 }
 
+function Write-Log {
+    param([string]$Message)
+    $Message | Tee-Object -FilePath $logFile -Append | Out-Null
+}
+
+function Resolve-MusicRoot {
+    param([string]$Override)
+
+    if ($Override -and (Test-Path $Override)) {
+        return (Resolve-Path $Override).Path
+    }
+
+    # 本地 meta-repo：pure-player-lyric 与 Pure-music 同级
+    $sibling = Join-Path (Split-Path $PSScriptRoot -Parent) "Pure-music"
+    if (Test-Path (Join-Path $sibling "pubspec.yaml")) {
+        return (Resolve-Path $sibling).Path
+    }
+
+    return $null
+}
+
+function Stop-DesktopLyricProcess {
+    $processName = "desktop_lyric"
+    if (Get-Process $processName -ErrorAction SilentlyContinue) {
+        Write-Host "Stopping running instance of $processName..." -ForegroundColor Yellow
+        Stop-Process -Name $processName -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 1
+    }
+}
+
+function Sync-DesktopLyricToMusic {
+    param(
+        [Parameter(Mandatory = $true)][string]$SourceDir,
+        [Parameter(Mandatory = $true)][string]$MusicRepoRoot
+    )
+
+    $exeName = "desktop_lyric.exe"
+    $srcExe = Join-Path $SourceDir $exeName
+    if (-not (Test-Path -LiteralPath $srcExe)) {
+        throw "Sync source missing $exeName under: $SourceDir"
+    }
+
+    Stop-DesktopLyricProcess
+
+    $destinations = New-Object System.Collections.Generic.List[string]
+    $destinations.Add((Join-Path $MusicRepoRoot "desktop_lyric"))
+
+    $runnerRoot = Join-Path $MusicRepoRoot "build\windows\x64\runner"
+    if (Test-Path $runnerRoot) {
+        foreach ($mode in @("Debug", "Profile", "Release")) {
+            $modeDir = Join-Path $runnerRoot $mode
+            if (Test-Path $modeDir) {
+                $destinations.Add((Join-Path $modeDir "desktop_lyric"))
+            }
+        }
+    }
+
+    foreach ($dest in $destinations) {
+        Write-Host "Syncing desktop lyric -> $dest" -ForegroundColor Cyan
+        if (Test-Path $dest) {
+            Remove-Item -Path $dest -Recurse -Force
+        }
+        New-Item -ItemType Directory -Force -Path $dest | Out-Null
+        Copy-Item -Path (Join-Path $SourceDir "*") -Destination $dest -Recurse -Force
+
+        $destExe = Join-Path $dest $exeName
+        if (-not (Test-Path -LiteralPath $destExe)) {
+            throw "Sync failed, missing $exeName at: $destExe"
+        }
+    }
+
+    Write-Host "Synced desktop lyric to $($destinations.Count) location(s) under Music repo." -ForegroundColor Green
+    Write-Host "Note: Pure-music/desktop_lyric is git-tracked; only commit when you intend to push the artifact." -ForegroundColor DarkYellow
+}
+
+# --- SyncOnly：跳过编译，复用已有产物 ---
+if ($SyncOnly) {
+    Write-Host "SyncOnly mode: skipping flutter build." -ForegroundColor Green
+    $resolvedMusic = Resolve-MusicRoot -Override $MusicRoot
+    if (-not $resolvedMusic) {
+        Write-Error "Cannot find Pure-music repo. Pass -MusicRoot <path> (expected sibling ../Pure-music)."
+        if (-not $NoPause) { Read-Host "Press Enter to exit..." }
+        exit 1
+    }
+
+    $syncSource = $null
+    if (Test-Path (Join-Path $finalOutputDir "desktop_lyric.exe")) {
+        $syncSource = $finalOutputDir
+    }
+    else {
+        $releaseDir = Join-Path $PSScriptRoot "build\windows\x64\runner\$BuildMode"
+        if (Test-Path (Join-Path $releaseDir "desktop_lyric.exe")) {
+            $syncSource = $releaseDir
+        }
+    }
+
+    if (-not $syncSource) {
+        Write-Error "No built desktop_lyric.exe found. Run a full build first, or point to artifacts."
+        if (-not $NoPause) { Read-Host "Press Enter to exit..." }
+        exit 1
+    }
+
+    Sync-DesktopLyricToMusic -SourceDir $syncSource -MusicRepoRoot $resolvedMusic
+    if (-not $NoPause) { Read-Host "Press Enter to exit..." }
+    exit 0
+}
+
 Write-Host "Starting build process ($BuildMode Mode)..." -ForegroundColor Green
 
 if (-not (Get-Command "flutter" -ErrorAction SilentlyContinue)) {
@@ -32,11 +145,6 @@ if (Test-Path $ephemeralDir) {
 
 $VerbosePreference = "Continue"
 $DebugPreference = "Continue"
-
-function Write-Log {
-    param([string]$Message)
-    $Message | Tee-Object -FilePath $logFile -Append | Out-Null
-}
 
 $needPubGet = $true
 $packageConfig = ".dart_tool\package_config.json"
@@ -64,35 +172,35 @@ $exePath = "build\windows\x64\runner\$BuildMode\desktop_lyric.exe"
 function Update-RcVersion {
     $pubspec = Join-Path $PSScriptRoot "pubspec.yaml"
     if (-not (Test-Path $pubspec)) { return }
-    
+
     $content = Get-Content -Path $pubspec -Raw -ErrorAction SilentlyContinue
     if (-not $content) { return }
-    
+
     $m = [regex]::Match($content, '(?m)^\s*version\s*:\s*([^\r\n]+)\s*$')
     if (-not $m.Success) { return }
-    
+
     $version = $m.Groups[1].Value.Trim()
-    
+
     $rcPath = Join-Path $PSScriptRoot "windows\runner\Runner.rc"
     if (-not (Test-Path $rcPath)) { return }
-    
+
     $rcContent = Get-Content -Path $rcPath -Raw
-    
+
     $parts = $version -split '\+'
     $verNum = $parts[0]
     $verParts = $verNum -split '\.'
-    
+
     $major = if ($verParts.Length -gt 0) { $verParts[0] } else { "0" }
     $minor = if ($verParts.Length -gt 1) { $verParts[1] } else { "0" }
     $patch = if ($verParts.Length -gt 2) { $verParts[2] } else { "0" }
     $build = if ($parts.Length -gt 1) { $parts[1] } else { "0" }
-    
+
     $newNumber = "$major,$minor,$patch,$build"
     $newString = """$version"""
-    
+
     $rcContent = $rcContent -replace '#define VERSION_AS_NUMBER .+', "#define VERSION_AS_NUMBER $newNumber"
     $rcContent = $rcContent -replace '#define VERSION_AS_STRING ".+"', "#define VERSION_AS_STRING $newString"
-    
+
     Set-Content -Path $rcPath -Value $rcContent -NoNewline -ErrorAction SilentlyContinue
     Write-Host "Updated Runner.rc version to $version" -ForegroundColor Green
 }
@@ -131,12 +239,7 @@ if (-not (Test-Path $buildDir)) {
 
 Write-Host "Preparing Output Directory: $finalOutputDir..." -ForegroundColor Cyan
 
-$processName = "desktop_lyric"
-if (Get-Process $processName -ErrorAction SilentlyContinue) {
-    Write-Host "Stopping running instance of $processName..." -ForegroundColor Yellow
-    Stop-Process -Name $processName -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 1
-}
+Stop-DesktopLyricProcess
 
 if (Test-Path $finalOutputDir) {
     Remove-Item -Path $finalOutputDir -Recurse -Force
@@ -145,6 +248,19 @@ New-Item -ItemType Directory -Force -Path $finalOutputDir | Out-Null
 
 Write-Host "Copying build artifacts to output directory..." -ForegroundColor Cyan
 Copy-Item -Path "$buildDir\*" -Destination $finalOutputDir -Recurse -Force
+
+if (-not $SkipSync) {
+    $resolvedMusic = Resolve-MusicRoot -Override $MusicRoot
+    if ($resolvedMusic) {
+        Sync-DesktopLyricToMusic -SourceDir $finalOutputDir -MusicRepoRoot $resolvedMusic
+    }
+    else {
+        Write-Warning "Pure-music sibling not found; skipped auto-sync. Use -MusicRoot <path> or layout meta-repo as ../Pure-music."
+    }
+}
+else {
+    Write-Host "SkipSync set; not copying into Pure-music." -ForegroundColor DarkYellow
+}
 
 Write-Host "`n========================================" -ForegroundColor Cyan
 Write-Host "Build completed successfully!" -ForegroundColor Green

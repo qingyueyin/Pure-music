@@ -62,9 +62,25 @@ flutter run
 # 构建 Release
 flutter build windows --release
 
-# 或使用项目自带构建脚本（自动清理、更新版本号、输出到 output/）
+# 推荐：项目构建脚本（清理、写版本号、输出到 output/，并默认同步到主程序）
 .\build_windows.ps1
 ```
+
+本地与 `Pure-music` 同级放置时（meta-repo），`build_windows.ps1` 会在构建后自动把产物覆盖到：
+
+- `../Pure-music/desktop_lyric/`（主仓内嵌桌面歌词）
+- 若存在：`../Pure-music/build/windows/x64/runner/{Debug,Profile,Release}/desktop_lyric/`（便于 `flutter run` 联调）
+
+常用参数：
+
+```powershell
+.\build_windows.ps1                 # 构建 + 同步
+.\build_windows.ps1 -SyncOnly       # 不编译，只同步已有 output/ 或 Release 产物
+.\build_windows.ps1 -SkipSync       # 只构建，不同步到主程序
+.\build_windows.ps1 -MusicRoot D:\path\to\Pure-music
+```
+
+`Pure-music/desktop_lyric` 受 git 跟踪：本地开发可随时覆盖；只有确定要推到 fork 时再提交该目录。
 
 </details>
 
