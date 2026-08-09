@@ -155,6 +155,17 @@ Say &lt;i&gt;hello&lt;/i&gt;
       expect(line.content, 'Say <i>hello</i>');
     });
 
+    test('keeps double-encoded entities as literal text', () {
+      final lyric = Vtt.fromVttText('''
+WEBVTT
+
+00:00.000 --> 00:02.000
+Save &amp;lt;b&amp;gt;raw&amp;lt;/b&amp;gt;
+''');
+      final line = lyric!.lines.single as VttLine;
+      expect(line.content, 'Save &lt;b&gt;raw&lt;/b&gt;');
+    });
+
     test('skips NOTE blocks and invalid timings', () {
       final lyric = Vtt.fromVttText('''
 WEBVTT
