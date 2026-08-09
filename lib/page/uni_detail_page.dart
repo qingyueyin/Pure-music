@@ -4,6 +4,7 @@ import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/enums.dart';
+import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/page/uni_page.dart';
 import 'package:pure_music/page/uni_page_components.dart';
@@ -546,13 +547,18 @@ class _CompactSearchBarState extends State<_CompactSearchBar> {
   void initState() {
     super.initState();
     _focusNode = FocusNode();
-    _focusNode.addListener(() {
-      setState(() => _isFocused = _focusNode.hasFocus);
-    });
+    _focusNode.addListener(_onFocusChanged);
+  }
+
+  void _onFocusChanged() {
+    setState(() => _isFocused = _focusNode.hasFocus);
+    HotkeysHelper.onFocusChanges(_focusNode.hasFocus);
   }
 
   @override
   void dispose() {
+    _focusNode.removeListener(_onFocusChanged);
+    if (_focusNode.hasFocus) HotkeysHelper.onFocusChanges(false);
     _focusNode.dispose();
     super.dispose();
   }
