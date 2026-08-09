@@ -22,9 +22,16 @@ class Vtt extends Lyric {
         }
 
         // NOTE / STYLE / REGION 块与注释头：整块跳过
-        if (line.startsWith('NOTE') ||
-            line.startsWith('STYLE') ||
-            line.startsWith('REGION')) {
+        // 用单词边界判断，避免 "NOTES" / "STYLE-1" 等同名 cue identifier 被误吞
+        if (line == 'NOTE' ||
+            line.startsWith('NOTE ') ||
+            line.startsWith('NOTE\t') ||
+            line == 'STYLE' ||
+            line.startsWith('STYLE ') ||
+            line.startsWith('STYLE\t') ||
+            line == 'REGION' ||
+            line.startsWith('REGION ') ||
+            line.startsWith('REGION\t')) {
           while (i < rawLines.length && rawLines[i].trim().isNotEmpty) i++;
           continue;
         }
@@ -156,7 +163,8 @@ class Vtt extends Lyric {
   static final RegExp _tagRe = RegExp(r'<[^>]*>');
 
   static String _stripTagsAndEntities(String text) {
-    return _decodeEntities(text).replaceAll(_tagRe, '');
+    // 先剥真实标签再解码实体，避免 &lt;i&gt; 等字面文本被当成标签误删
+    return _decodeEntities(text.replaceAll(_tagRe, ''));
   }
 }
 
