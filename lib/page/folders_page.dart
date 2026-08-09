@@ -252,7 +252,7 @@ class AudioFolderTile extends StatelessWidget {
               ),
               onSecondaryTapDown: (details) {
                 controller.open(
-                  position: details.localPosition.translate(0, -240),
+                  position: details.localPosition,
                 );
               },
               child: Padding(
