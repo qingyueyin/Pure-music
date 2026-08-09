@@ -143,6 +143,12 @@ BASS、flutter_rust_bridge、dio、lofty、provider、go_router、window_manager
 
 ---
 
+## 贡献者
+
+[![contrib.rocks](https://contrib.rocks/image?repo=qingyueyin/Pure-music&max=1000)](https://github.com/qingyueyin/Pure-music/graphs/contributors)
+
+---
+
 ## Star History
 
 [![Star History](assets/star-history.svg)](https://github.com/qingyueyin/Pure-music/stargazers)
