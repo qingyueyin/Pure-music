@@ -100,8 +100,7 @@ enum LyricDisplayMode {
 
 enum ThemeOption { system, light, dark }
 
-Set<NowPlayingMode> defaultWavyBarEnabledModes() =>
-    {NowPlayingMode.portrait, NowPlayingMode.landscape};
+Set<NowPlayingMode> defaultWavyBarEnabledModes() => {};
 
 ThemeOption normalizedThemeOption(Object? value) {
   final index = normalizedEnumIndex(
