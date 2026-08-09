@@ -6,4 +6,5 @@ export 'lyric_loader.dart';
 export 'lyric_source.dart';
 export 'qrc.dart';
 export 'ttml.dart';
+export 'vtt.dart';
 export 'yrc.dart';

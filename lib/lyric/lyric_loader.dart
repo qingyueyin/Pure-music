@@ -7,6 +7,7 @@ import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/lyric/ttml.dart';
+import 'package:pure_music/lyric/vtt.dart';
 import 'package:pure_music/lyric/karaok_parser.dart';
 import 'package:pure_music/lyric/lyric_stripper.dart';
 import 'package:pure_music/lyric/exclude_data.dart';
@@ -18,7 +19,7 @@ import 'package:fl_charset/fl_charset.dart';
 // ──────────────────────────────────────────────
 // 支持的歌词扩展名（按优先级从高到低）
 // ──────────────────────────────────────────────
-const _kLyricExts = ['.yrc', '.qrc', '.krc', '.ttml', '.lrc'];
+const _kLyricExts = ['.yrc', '.qrc', '.krc', '.ttml', '.lrc', '.vtt'];
 
 /// 编码检测优先级（仅用于 UTF-8 解码失败后的 fallback）
 /// 不包含 ascii——utf8 完全覆盖 ascii，且 ascii 检测会误判中文文件。
@@ -265,6 +266,8 @@ Lyric? _parseExternalToPureLyric(
           separator: separator);
     case '.ttml':
       return Ttml.fromTtmlText(result.content, separator: separator);
+    case '.vtt':
+      return Vtt.fromVttText(result.content, separator: separator);
     default:
       return null;
   }
@@ -273,9 +276,18 @@ Lyric? _parseExternalToPureLyric(
 // ──────────────────────────────────────────────
 // 将 Rust 内嵌歌词解析为 Pure Music 的 Lyric 类型
 // ──────────────────────────────────────────────
+@visibleForTesting
+bool isVttLyricText(String text) {
+  final withoutBom = text.startsWith('\uFEFF') ? text.substring(1) : text;
+  return withoutBom.trimLeft().startsWith('WEBVTT');
+}
+
 Lyric? _parseEmbeddedToPureLyric(String embeddedLyric,
     {String? separator = '┃'}) {
   // 先检测格式
+  if (isVttLyricText(embeddedLyric)) {
+    return Vtt.fromVttText(embeddedLyric, separator: separator);
+  }
   if (embeddedLyric.trimLeft().startsWith('<?xml') ||
       embeddedLyric.trimLeft().startsWith('<tt') ||
       embeddedLyric.contains('<body>')) {
@@ -295,7 +307,7 @@ Lyric? _parseEmbeddedToPureLyric(String embeddedLyric,
 /// 加载音频文件的歌词。
 ///
 /// 策略：
-/// 1. 在音频文件同目录搜索外挂歌词文件（.yrc > .qrc > .krc > .ttml > .lrc）
+/// 1. 在音频文件同目录搜索外挂歌词文件（.yrc > .qrc > .krc > .ttml > .lrc > .vtt）
 /// 2. 自动检测文件编码，解密加密的 KRC/QRC
 /// 3. 外挂 YRC/QRC 自动配对同目录 .lrc 作为翻译
 /// 4. 若无外挂文件，回退到 Rust FFI 读取音频标签内嵌歌词
