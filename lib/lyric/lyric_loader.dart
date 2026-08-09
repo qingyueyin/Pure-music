@@ -276,10 +276,16 @@ Lyric? _parseExternalToPureLyric(
 // ──────────────────────────────────────────────
 // 将 Rust 内嵌歌词解析为 Pure Music 的 Lyric 类型
 // ──────────────────────────────────────────────
+@visibleForTesting
+bool isVttLyricText(String text) {
+  final withoutBom = text.startsWith('\uFEFF') ? text.substring(1) : text;
+  return withoutBom.trimLeft().startsWith('WEBVTT');
+}
+
 Lyric? _parseEmbeddedToPureLyric(String embeddedLyric,
     {String? separator = '┃'}) {
   // 先检测格式
-  if (embeddedLyric.trimLeft().startsWith('WEBVTT')) {
+  if (isVttLyricText(embeddedLyric)) {
     return Vtt.fromVttText(embeddedLyric, separator: separator);
   }
   if (embeddedLyric.trimLeft().startsWith('<?xml') ||
