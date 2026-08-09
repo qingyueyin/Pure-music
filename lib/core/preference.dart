@@ -671,6 +671,20 @@ class AppPreference {
   /// 用户为曲库根文件夹设置的自定义别名，key 为 pendingFolderKey 规范化路径
   Map<String, String> folderAliases = {};
 
+  /// 保存失败时把 aliases 恢复为快照 old；saved 为 true 时什么都不做。
+  /// 独立成纯函数，便于单测覆盖「保存失败回滚」路径。
+  @visibleForTesting
+  static void restoreFolderAliasesOnSaveFailure(
+    Map<String, String> current,
+    Map<String, String> old,
+    bool saved,
+  ) {
+    if (saved) return;
+    current
+      ..clear()
+      ..addAll(old);
+  }
+
   /// 上次读取的原始 JSON，保存时保留未知字段
   Map? _rawPrefMap;
 

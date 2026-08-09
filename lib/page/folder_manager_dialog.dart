@@ -386,6 +386,9 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
                             final oldExcludedFolderPaths = List<String>.from(
                               AppPreference.instance.excludedFolderPaths,
                             );
+                            final oldFolderAliases = Map<String, String>.from(
+                              AppPreference.instance.folderAliases,
+                            );
 
                             final added = kept
                                 .where(
@@ -460,6 +463,12 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
                                   oldUserFolders;
                               AppPreference.instance.excludedFolderPaths =
                                   oldExcludedFolderPaths;
+                              AppPreference
+                                  .restoreFolderAliasesOnSaveFailure(
+                                    AppPreference.instance.folderAliases,
+                                    oldFolderAliases,
+                                    saved,
+                                  );
                               if (!context.mounted) return;
                               showTextOnSnackBar('保存文件夹设置失败');
                               return;
