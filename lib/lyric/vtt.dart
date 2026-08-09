@@ -133,10 +133,10 @@ class Vtt extends Lyric {
     }
   }
 
-  // 毫秒必须 3 位，小时段可选（VTT 标准允许 MM:SS.mmm），尾部可带 cue settings
+  // 毫秒必须 3 位，小时段可选且位数不限（VTT 标准允许 MM:SS.mmm 或 hh:mm:ss.mmm），尾部可带 cue settings
   static final RegExp _cueTimingRe = RegExp(
-    r'^(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\.(\d{3})[ \t]+-->[ \t]+'
-    r'(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\.(\d{3})(?:[ \t].*)?$',
+    r'^(?:(\d+):)?(\d{1,2}):(\d{2})\.(\d{3})[ \t]+-->[ \t]+'
+    r'(?:(\d+):)?(\d{1,2}):(\d{2})\.(\d{3})(?:[ \t].*)?$',
   );
 
   static Duration? _parseCueTime(RegExpMatch m, {required bool startSide}) {

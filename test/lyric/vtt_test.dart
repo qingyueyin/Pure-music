@@ -40,6 +40,26 @@ Second
       expect(lyric.lines[1].start, const Duration(seconds: 3));
     });
 
+    test('parses unlimited hour segment', () {
+      final lyric = Vtt.fromVttText('''
+WEBVTT
+
+00:00.000 --> 00:02.000
+Start
+
+999:59:59.000 --> 1000:00:00.000
+Long cue
+''');
+      final nonBlank = lyric!.lines
+          .where((l) => (l as VttLine).words.isNotEmpty)
+          .toList();
+      expect(nonBlank, hasLength(2));
+      expect(
+        (nonBlank[1] as VttLine).start,
+        const Duration(hours: 999, minutes: 59, seconds: 59),
+      );
+    });
+
     test('strips inline tags and voice spans', () {
       final lyric = Vtt.fromVttText('''
 WEBVTT
