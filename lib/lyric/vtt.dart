@@ -151,13 +151,15 @@ class Vtt extends Lyric {
   }
 
   static String _decodeEntities(String text) {
+    // &amp; 最后解码，避免 &amp;lt; 等双重编码被过度展开为 <
     return text
-        .replaceAll('&apos;', "'")
-        .replaceAll('&quot;', '"')
         .replaceAll('&lt;', '<')
         .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&apos;', "'")
+        .replaceAll('&nbsp;', ' ')
         .replaceAll('&amp;', '&')
-        .replaceAll('&nbsp;', ' ');
+        .replaceAll(' ', ' ');
   }
 
   static final RegExp _tagRe = RegExp(r'<[^>]*>');
