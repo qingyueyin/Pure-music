@@ -198,5 +198,106 @@ No header
       expect(Vtt.fromVttText(''), isNull);
       expect(Vtt.fromVttText('NOTE nothing here\n'), isNull);
     });
+
+    test('skips cue whose text becomes empty after tag stripping', () {
+      final lyric = Vtt.fromVttText('''
+WEBVTT
+
+00:00.000 --> 00:02.000
+<b></b>
+
+00:03.000 --> 00:04.000
+Real
+''');
+      expect(lyric!.lines, hasLength(1));
+      expect((lyric.lines.single as VttLine).content, 'Real');
+    });
+
+    test('skips cue whose text is only whitespace', () {
+      final lyric = Vtt.fromVttText('''
+WEBVTT
+
+00:00.000 --> 00:02.000
+
+
+00:03.000 --> 00:04.000
+Real
+''');
+      expect(lyric!.lines, hasLength(1));
+      expect((lyric.lines.single as VttLine).content, 'Real');
+    });
+
+    test('fills length from next start when end timestamp is invalid', () {
+      final lyric = Vtt.fromVttText('''
+WEBVTT
+
+00:00.000 --> 00:99.000
+Broken end
+
+00:03.000 --> 00:04.000
+Next
+''');
+      expect(lyric!.lines, hasLength(2));
+      expect(lyric.lines[0].length, const Duration(seconds: 3));
+    });
+
+    test('fills length when end is earlier than start', () {
+      final lyric = Vtt.fromVttText('''
+WEBVTT
+
+00:03.000 --> 00:01.000
+Reversed
+
+00:05.000 --> 00:06.000
+Next
+''');
+      expect(lyric!.lines, hasLength(2));
+      expect(lyric.lines[0].length, const Duration(seconds: 2));
+    });
+
+    test('parses two-segment MM:SS.mmm with non-zero minutes', () {
+      final lyric = Vtt.fromVttText('''
+WEBVTT
+
+00:00.000 --> 00:02.000
+Start
+
+01:03.000 --> 01:04.000
+Minute cue
+''');
+      final nonBlank = lyric!.lines
+          .where((l) => (l as VttLine).words.isNotEmpty)
+          .toList();
+      expect(nonBlank, hasLength(2));
+      expect((nonBlank[1] as VttLine).start, const Duration(seconds: 63));
+    });
+
+    test('strips BOM prefix', () {
+      final lyric = Vtt.fromVttText('\uFEFFWEBVTT\n\n00:00.000 --> 00:02.000\nBom line\n');
+      expect(lyric!.lines, hasLength(1));
+      expect((lyric.lines.single as VttLine).content, 'Bom line');
+    });
+
+    test('handles CRLF line endings', () {
+      final lyric = Vtt.fromVttText(
+        'WEBVTT\r\n\r\n00:00.000 --> 00:02.000\r\nCrlf line\r\n',
+      );
+      expect(lyric!.lines, hasLength(1));
+      expect((lyric.lines.single as VttLine).content, 'Crlf line');
+    });
+
+    test('rejects timings with non-dot millisecond separator', () {
+      final lyric = Vtt.fromVttText('''
+WEBVTT
+
+00:00.000 --> 00:02.000
+Real line
+
+00:01:02x500 --> 00:01:05x000
+Invalid dot
+''');
+      expect(lyric!.lines, hasLength(1));
+      expect((lyric.lines.single as VttLine).content, 'Real line');
+    });
   });
 }
