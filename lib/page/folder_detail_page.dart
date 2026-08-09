@@ -10,7 +10,6 @@ import 'package:pure_music/page/uni_page.dart';
 import 'package:pure_music/page/uni_page_components.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
-import 'package:path/path.dart' as p;
 
 class FolderDetailPage extends StatefulWidget {
   final AudioFolder folder;
@@ -67,7 +66,7 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
       primaryPic: _primaryPicFuture,
       backgroundPic: _backgroundPicFuture,
       picShape: PicShape.rrect,
-      title: p.basename(widget.folder.path),
+      title: widget.folder.displayName,
       subtitle: _searchQuery.isEmpty
           ? '${_contentList.length} 首乐曲'
           : '${contentList.length} / ${_contentList.length} 首乐曲',

@@ -386,6 +386,9 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
                             final oldExcludedFolderPaths = List<String>.from(
                               AppPreference.instance.excludedFolderPaths,
                             );
+                            final oldFolderAliases = Map<String, String>.from(
+                              AppPreference.instance.folderAliases,
+                            );
 
                             final added = kept
                                 .where(
@@ -448,12 +451,24 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
                                     ),
                                   ),
                             );
+                            final removedKeys = removed
+                                .map(pendingFolderKey)
+                                .toSet();
+                            AppPreference.instance.folderAliases.removeWhere(
+                              (key, _) => removedKeys.contains(key),
+                            );
                             final saved = await AppPreference.instance.save();
                             if (!saved) {
                               AppPreference.instance.userFolders =
                                   oldUserFolders;
                               AppPreference.instance.excludedFolderPaths =
                                   oldExcludedFolderPaths;
+                              AppPreference
+                                  .restoreFolderAliasesOnSaveFailure(
+                                    AppPreference.instance.folderAliases,
+                                    oldFolderAliases,
+                                    saved,
+                                  );
                               if (!context.mounted) return;
                               showTextOnSnackBar('保存文件夹设置失败');
                               return;
@@ -500,7 +515,9 @@ class _ManagedFolderTreeNode {
   final AudioFolder? sourceFolder;
   final bool pendingScan;
 
-  String get name => p.windows.basename(path);
+  String get name =>
+      AppPreference.instance.folderAliases[pendingFolderKey(path)] ??
+      p.windows.basename(path);
 
   int get audioCount =>
       directAudioCount +
@@ -566,7 +583,7 @@ class _ManagedFolderTile extends StatelessWidget {
         Icon(Symbols.folder, size: 20, color: scheme.onSurfaceVariant),
         const SizedBox(width: 8),
         Expanded(
-          child: Text(tree.path, maxLines: 1, overflow: TextOverflow.ellipsis),
+          child: Text(tree.name, maxLines: 1, overflow: TextOverflow.ellipsis),
         ),
       ],
     );
