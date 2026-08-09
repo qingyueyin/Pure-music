@@ -673,7 +673,6 @@ class AppPreference {
 
   /// 保存失败时把 aliases 恢复为快照 old；saved 为 true 时什么都不做。
   /// 独立成纯函数，便于单测覆盖「保存失败回滚」路径。
-  @visibleForTesting
   static void restoreFolderAliasesOnSaveFailure(
     Map<String, String> current,
     Map<String, String> old,
