@@ -176,7 +176,8 @@ class AudioFolderTile extends StatelessWidget {
       ),
     );
     if (result == null) return;
-    final old = AppPreference.instance.folderAliases[key];
+    final oldAliases =
+        Map<String, String>.from(AppPreference.instance.folderAliases);
     if (result.trim().isEmpty) {
       AppPreference.instance.folderAliases.remove(key);
     } else {
@@ -184,11 +185,11 @@ class AudioFolderTile extends StatelessWidget {
     }
     final saved = await AppPreference.instance.save();
     if (!saved) {
-      if (old == null) {
-        AppPreference.instance.folderAliases.remove(key);
-      } else {
-        AppPreference.instance.folderAliases[key] = old;
-      }
+      AppPreference.restoreFolderAliasesOnSaveFailure(
+        AppPreference.instance.folderAliases,
+        oldAliases,
+        saved,
+      );
       if (context.mounted) {
         showTextOnSnackBar('保存别名失败', variant: ToastVariant.error);
       }
@@ -199,10 +200,20 @@ class AudioFolderTile extends StatelessWidget {
 
   Future<void> _clearAlias(BuildContext context) async {
     final key = pendingFolderKey(audioFolder.path);
+    final oldAliases =
+        Map<String, String>.from(AppPreference.instance.folderAliases);
     AppPreference.instance.folderAliases.remove(key);
     final saved = await AppPreference.instance.save();
-    if (!saved && context.mounted) {
-      showTextOnSnackBar('保存别名失败', variant: ToastVariant.error);
+    if (!saved) {
+      AppPreference.restoreFolderAliasesOnSaveFailure(
+        AppPreference.instance.folderAliases,
+        oldAliases,
+        saved,
+      );
+      if (context.mounted) {
+        showTextOnSnackBar('保存别名失败', variant: ToastVariant.error);
+      }
+      return;
     }
     onAliasChanged?.call();
   }

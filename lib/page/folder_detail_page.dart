@@ -10,7 +10,6 @@ import 'package:pure_music/page/uni_page.dart';
 import 'package:pure_music/page/uni_page_components.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
-import 'package:path/path.dart' as p;
 
 class FolderDetailPage extends StatefulWidget {
   final AudioFolder folder;

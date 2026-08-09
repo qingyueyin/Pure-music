@@ -60,4 +60,35 @@ void main() {
     );
     expect(AppPreference.instance.folderAliases, hasLength(2));
   });
+
+  test('save failure restores alias map to snapshot', () {
+    final key = pendingFolderKey(r'D:\A');
+    AppPreference.instance.folderAliases[key] = '第一';
+    final old = Map<String, String>.from(AppPreference.instance.folderAliases);
+
+    AppPreference.instance.folderAliases.removeWhere((k, _) => true);
+    AppPreference.restoreFolderAliasesOnSaveFailure(
+      AppPreference.instance.folderAliases,
+      old,
+      false,
+    );
+
+    expect(AppPreference.instance.folderAliases, hasLength(1));
+    expect(AppPreference.instance.folderAliases[key], '第一');
+  });
+
+  test('restore is a no-op when save succeeds', () {
+    final key = pendingFolderKey(r'D:\A');
+    AppPreference.instance.folderAliases[key] = '第一';
+    final old = Map<String, String>.from(AppPreference.instance.folderAliases);
+
+    AppPreference.instance.folderAliases.removeWhere((k, _) => true);
+    AppPreference.restoreFolderAliasesOnSaveFailure(
+      AppPreference.instance.folderAliases,
+      old,
+      true,
+    );
+
+    expect(AppPreference.instance.folderAliases, isEmpty);
+  });
 }
