@@ -103,6 +103,38 @@ Second
       expect(interlude.length, const Duration(seconds: 12));
     });
 
+    test('does not treat NOTE-prefixed cue identifiers as comment blocks', () {
+      final lyric = Vtt.fromVttText('''
+WEBVTT
+
+00:00.000 --> 00:02.000
+Normal line
+
+NOTES
+00:03.000 --> 00:04.000
+Identified line
+
+STYLE-1
+00:05.000 --> 00:06.000
+Style cue
+''');
+      expect(lyric!.lines, hasLength(3));
+      expect((lyric.lines[0] as VttLine).content, 'Normal line');
+      expect((lyric.lines[1] as VttLine).content, 'Identified line');
+      expect((lyric.lines[2] as VttLine).content, 'Style cue');
+    });
+
+    test('keeps literal encoded tags as text', () {
+      final lyric = Vtt.fromVttText('''
+WEBVTT
+
+00:00.000 --> 00:02.000
+Say &lt;i&gt;hello&lt;/i&gt;
+''');
+      final line = lyric!.lines.single as VttLine;
+      expect(line.content, 'Say <i>hello</i>');
+    });
+
     test('skips NOTE blocks and invalid timings', () {
       final lyric = Vtt.fromVttText('''
 WEBVTT
