@@ -6,11 +6,11 @@ on:
     paths:
       - 'page/**'
       - '.github/workflows/deploy.yml'
+  workflow_dispatch:
   # GITHUB_TOKEN 的 push 不会触发本工作流，发版后由 sync-release-docs 完成时联动
   workflow_run:
     workflows: ['Sync release docs']
     types: [completed]
-    branches: [main]
 
 permissions:
   contents: read
