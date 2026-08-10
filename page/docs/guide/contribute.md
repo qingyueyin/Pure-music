@@ -8,9 +8,10 @@ outline: deep
 
 ## 报告问题
 
-- 设置中的「报告问题」可以生成并复制日志，需要手动粘贴到 Issue 正文
-- 也可在 [GitHub Issues](https://github.com/qingyueyin/Pure-music/issues) 提交
-- 附上复现步骤、系统版本与日志，能帮助更快定位
+- 先查看[常见问题](/guide/faq)并完成相关排查
+- 还不能确认是程序问题或需要询问使用方法时，先到 [Discussions](https://github.com/qingyueyin/Pure-music/discussions/categories/general) 交流
+- 能够复现的异常使用对应的 [Issue 模板](https://github.com/qingyueyin/Pure-music/issues/new/choose) 提交
+- 「设置 → 创建问题」可以生成并复制日志；请将完整日志、复现步骤、系统版本和相关样本附在 Issue 中
 
 ## 提交代码
 

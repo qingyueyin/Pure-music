@@ -292,6 +292,14 @@ outline: deep
 
 都没有的话，就是这首在这些源上没有注音，软件无法凭空生成。
 
+### 注音能像振假名那样标在每个字上面吗？
+
+取决于歌词文件本身。逐字注音要求文件里明确标出「这个假名属于哪个字」，只有 TTML 的 `tts:ruby` 提供这个信息，而实际带这个标记的文件很少。
+
+在线歌词源（QQ、网易、酷狗）给的罗马音是整行的一串文本，不含逐字对应关系，播放器无法反推——比如拿到 `kimi no`，没有信息能确定 `kimi` 对应的是「君」。硬猜会错行，所以不做。
+
+现在的做法是把罗马音作为独立一行显示，位置可在设置里调（原文上方 / 下方 / 翻译下方）。
+
 ### 原文 / 翻译 / 注音对得不准、对不齐？
 
 常见是**本地外挂或内嵌歌词**本身时间轴、分行、翻译对得就不好，不是显示开关的问题。可以：
@@ -487,7 +495,19 @@ TTML 等格式若文件里自己写了空白段，也会当间奏用，规则不
 
 ### 怎么反馈问题？
 
-设置 → 高级 → 报告问题：写清怎么复现 → 获取日志 → 贴到 Issue。怪声、回声可先开日志录制再写快照。
+先在本页搜索现象并按相关条目排查。常见问题没有答案、但还不能确认是程序问题时，可以先到 [Discussions](https://github.com/qingyueyin/Pure-music/discussions/categories/general) 交流；已经能够复现的异常，再使用对应的 [Issue 模板](https://github.com/qingyueyin/Pure-music/issues/new/choose) 提交。
+
+提交 Bug 前，在「设置 → 创建问题」中写清复现步骤并获取完整日志。音频、标签或歌词问题还要检查原文件和标签，并提供可复现样本；怪声、回声可先开日志录制再写快照。公开前记得遮盖账号、访问令牌和无关的私人路径。
+
+提交前可以按下面的顺序自查：
+
+1. **先确认问题类型**：已经能稳定说明异常行为和复现条件，使用 Bug 模板；还在确认原因或只是询问用法，先到 [Discussions](https://github.com/qingyueyin/Pure-music/discussions/categories/general)；功能请求、改进建议和文档问题分别使用对应模板。
+2. **确认版本和环境**：填写软件版本、Windows 版本、安装方式、复现频率和最后正常版本；自行构建或其他来源的版本还要写提交版本和本地改动。
+3. **确认不是文件或设置问题**：音频、标签和歌词问题先检查原文件能否读取、标签是否正确，并用一个已确认有效的文件做对照；只影响单个文件时，请附原文件或可复现样本。
+4. **准备对应材料**：播放问题写输出设备和音频格式；性能或崩溃问题写硬件、曲库规模和可量化数据；界面问题附分辨率、缩放和截图；在线服务问题写发生时间、网络环境、所用来源和手动查询结果。
+5. **保护公开信息**：日志和附件中遮盖访问令牌、账号、无关私人路径等敏感信息，但保留错误前后的上下文。
+
+完整的[Issue 提交规范](https://github.com/qingyueyin/Pure-music/blob/main/.github/ISSUE_GUIDELINES.md)包含字段说明和后续跟进方式。
 
 ---
 
@@ -519,4 +539,6 @@ U 盘或目标文件夹必须能写入。只读盘无法写 `data`。
 | 设置项 | [外观与设置](/guide/settings) |
 | 桌面歌词 | [桌面歌词](/guide/desktop-lyric) |
 | 鼠标操作 | [交互](/guide/interactions) |
-| 源码与反馈 | [GitHub](https://github.com/qingyueyin/Pure-music) · [Gitee 镜像](https://gitee.com/qingyueyin/Pure-music)（可能滞后） |
+| 使用问题与交流 | [Discussions](https://github.com/qingyueyin/Pure-music/discussions/categories/general) |
+| Bug、功能建议与文档问题 | [Issue 模板](https://github.com/qingyueyin/Pure-music/issues/new/choose) |
+| 源码 | [GitHub](https://github.com/qingyueyin/Pure-music) · [Gitee 镜像](https://gitee.com/qingyueyin/Pure-music)（可能滞后） |
