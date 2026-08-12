@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/component/motion.dart';
@@ -5,6 +7,9 @@ import 'package:pure_music/component/quiet_empty_state.dart';
 import 'package:pure_music/component/responsive_builder.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/list_action_state.dart';
+import 'package:pure_music/core/page_sort.dart';
+import 'package:pure_music/core/utils.dart';
+import 'package:pure_music/core/workload_policy.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/page/uni_page_components.dart';
@@ -22,16 +27,24 @@ typedef ContentBuilder<T> =
     );
 
 typedef SortMethod<T> = void Function(List<T> list, SortOrder order);
+typedef BackgroundSortMethod<T> =
+    Future<List<T>?> Function(
+      List<T> list,
+      SortOrder order,
+      PageSortControl control,
+    );
 
 class SortMethodDesc<T> {
   IconData icon;
   String name;
   SortMethod<T> method;
+  BackgroundSortMethod<T>? backgroundMethod;
 
   SortMethodDesc({
     required this.icon,
     required this.name,
     required this.method,
+    this.backgroundMethod,
   });
 }
 
@@ -53,6 +66,32 @@ const gridDelegate = SliverGridDelegateWithMaxCrossAxisExtent(
   mainAxisSpacing: 8.0,
   crossAxisSpacing: 8.0,
 );
+
+class LibraryPagePreparing extends StatelessWidget {
+  const LibraryPagePreparing({
+    super.key,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return PageScaffold(
+      title: title,
+      subtitle: subtitle,
+      actions: const <Widget>[],
+      body: const Center(
+        child: SizedBox.square(
+          dimension: 24,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      ),
+    );
+  }
+}
 
 class MultiSelectController<T> extends ChangeNotifier {
   final Set<T> selected = {};
@@ -113,6 +152,8 @@ class UniPage<T> extends StatefulWidget {
     this.multiSelectController,
     this.multiSelectViewActions,
     this.gridDelegate,
+    this.contentRevision,
+    this.contentIsPrepared = false,
   });
 
   final PagePreference pref;
@@ -138,12 +179,19 @@ class UniPage<T> extends StatefulWidget {
   final List<Widget>? multiSelectViewActions;
 
   final SliverGridDelegate? gridDelegate;
+  final Object? contentRevision;
+  final bool contentIsPrepared;
 
   @override
   State<UniPage<T>> createState() => _UniPageState<T>();
 }
 
+/// 诊断埋点：性能工具累计 UniPage 构建耗时；未安装观察者时零开销。
+int uniPageBuildMicros = 0;
+int uniPageContentAreaMicros = 0;
+
 class _UniPageState<T> extends State<UniPage<T>> {
+  static const int _backgroundSortItemThreshold = 4096;
   late SortMethodDesc<T>? currSortMethod = resolveSortMethod(
     widget.pref,
     widget.sortMethods,
@@ -154,25 +202,125 @@ class _UniPageState<T> extends State<UniPage<T>> {
       : ContentView.table;
   late final ScrollController listScrollController = ScrollController();
   late final ScrollController tableScrollController = ScrollController();
-  Map<String, int> _audioIndexByPath = const {};
   bool _showScrollToTop = false;
+  int _sortRequest = 0;
+  bool _backgroundSortPending = false;
+  bool _backgroundSortWorkerActive = false;
+  String _pendingSortReason = 'sort';
 
   ScrollController get scrollController => currContentView == ContentView.list
       ? listScrollController
       : tableScrollController;
 
-  void _refreshAudioIndexCache() {
-    if (widget.contentList is! List<Audio>) {
-      _audioIndexByPath = const {};
+  void _rememberPreparedPageOrder() {
+    AudioLibrary.instance.rememberPreparedPageOrder(
+      widget.contentList,
+      sortMethod: widget.pref.sortMethod,
+      sortOrder: currSortOrder,
+    );
+  }
+
+  void _prepareContent(String reason) {
+    final sortStopwatch = Stopwatch()..start();
+    currSortMethod?.method(widget.contentList, currSortOrder);
+    sortStopwatch.stop();
+    final indexStopwatch = Stopwatch()..start();
+    _rememberPreparedPageOrder();
+    indexStopwatch.stop();
+    logger.i(
+      '[perf] page prepare title=${widget.title} reason=$reason '
+      'items=${widget.contentList.length} '
+      'sort=${sortStopwatch.elapsedMicroseconds}us '
+      'pathIndex=${indexStopwatch.elapsedMicroseconds}us',
+    );
+  }
+
+  void _cancelBackgroundSort() {
+    _sortRequest++;
+    _backgroundSortPending = false;
+  }
+
+  void _scheduleBackgroundSort(String reason) {
+    _sortRequest++;
+    _backgroundSortPending = true;
+    _pendingSortReason = reason;
+    if (!_backgroundSortWorkerActive) {
+      unawaited(_runBackgroundSortWorker());
+    }
+  }
+
+  Future<void> _runBackgroundSortWorker() async {
+    _backgroundSortWorkerActive = true;
+    try {
+      while (mounted && _backgroundSortPending) {
+        _backgroundSortPending = false;
+        final request = _sortRequest;
+        final backgroundMethod = currSortMethod?.backgroundMethod;
+        if (backgroundMethod == null ||
+            widget.contentList.length < _backgroundSortItemThreshold) {
+          continue;
+        }
+        final reason = _pendingSortReason;
+        final order = currSortOrder;
+        final source = widget.contentList;
+        final sortStopwatch = Stopwatch()..start();
+        late final List<T>? sorted;
+        try {
+          sorted = await backgroundMethod(
+            source,
+            order,
+            PageSortControl(
+              isCurrent: () => mounted && request == _sortRequest,
+              batchSize: () => libraryObjectBatchSizeFor(
+                processorBudget: applicationProcessorBudget,
+                hasPlaybackSession: PlayService.instance.hasPlaybackSession,
+              ),
+            ),
+          );
+        } catch (error, trace) {
+          logger.e('后台页面排序失败', error: error, stackTrace: trace);
+          if (!mounted || request != _sortRequest) continue;
+          setState(() => _prepareContent(reason));
+          continue;
+        }
+        sortStopwatch.stop();
+        if (!mounted || request != _sortRequest) continue;
+        if (sorted == null || sorted.length != widget.contentList.length) {
+          setState(() => _prepareContent(reason));
+          continue;
+        }
+        final indexStopwatch = Stopwatch()..start();
+        widget.contentList.setAll(0, sorted);
+        _rememberPreparedPageOrder();
+        indexStopwatch.stop();
+        setState(() {});
+        logger.i(
+          '[perf] page prepare title=${widget.title} reason=$reason '
+          'items=${widget.contentList.length} '
+          'sort=${sortStopwatch.elapsedMicroseconds}us '
+          'pathIndex=${indexStopwatch.elapsedMicroseconds}us background=true',
+        );
+      }
+    } finally {
+      _backgroundSortWorkerActive = false;
+      if (mounted && _backgroundSortPending) {
+        unawaited(_runBackgroundSortWorker());
+      }
+    }
+  }
+
+  void _prepareIncomingContent(String reason) {
+    if (!widget.contentIsPrepared) {
+      _prepareContent(reason);
       return;
     }
-
-    final audios = widget.contentList as List<Audio>;
-    final next = <String, int>{};
-    for (var i = 0; i < audios.length; i++) {
-      next.putIfAbsent(audios[i].path, () => i);
-    }
-    _audioIndexByPath = next;
+    final indexStopwatch = Stopwatch()..start();
+    indexStopwatch.stop();
+    logger.i(
+      '[perf] page prepare title=${widget.title} reason=$reason '
+      'items=${widget.contentList.length} sort=0us '
+      'pathIndex=${indexStopwatch.elapsedMicroseconds}us cached=true',
+    );
   }
 
   void _scrollToIndex(int targetAt) {
@@ -213,7 +361,9 @@ class _UniPageState<T> extends State<UniPage<T>> {
         final nowPlaying = playbackService.nowPlaying;
         if (nowPlaying == null) return const SizedBox.shrink();
 
-        final targetAt = _audioIndexByPath[nowPlaying.path];
+        final targetAt = AudioLibrary.instance.audiosPageIndexForPath(
+          nowPlaying.path,
+        );
         if (targetAt == null) return const SizedBox.shrink();
 
         return ResponsiveBuilder(
@@ -320,13 +470,15 @@ class _UniPageState<T> extends State<UniPage<T>> {
   @override
   void initState() {
     super.initState();
-    currSortMethod?.method(widget.contentList, currSortOrder);
-    _refreshAudioIndexCache();
+    _prepareIncomingContent('init');
     listScrollController.addListener(_onScrollUpdate);
     tableScrollController.addListener(_onScrollUpdate);
     if (widget.locateTo == null) return;
 
-    int targetAt = widget.contentList.indexOf(widget.locateTo as T);
+    final locateTo = widget.locateTo;
+    final targetAt = locateTo is Audio
+        ? AudioLibrary.instance.audiosPageIndexForPath(locateTo.path) ?? -1
+        : widget.contentList.indexOf(locateTo as T);
     if (targetAt < 0) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!scrollController.hasClients) return;
@@ -347,6 +499,10 @@ class _UniPageState<T> extends State<UniPage<T>> {
   @override
   void didUpdateWidget(covariant UniPage<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final canReusePreparedContent =
+        widget.contentRevision != null &&
+        widget.contentRevision == oldWidget.contentRevision &&
+        identical(oldWidget.contentList, widget.contentList);
     final resolvedSortMethod = resolveSortMethod(
       widget.pref,
       widget.sortMethods,
@@ -360,32 +516,57 @@ class _UniPageState<T> extends State<UniPage<T>> {
       wasSwitchAvailable: oldWidget.enableContentViewSwitch,
       isSwitchAvailable: widget.enableContentViewSwitch,
     );
-    currSortMethod?.method(widget.contentList, currSortOrder);
-    _refreshAudioIndexCache();
+    if (!canReusePreparedContent) {
+      _cancelBackgroundSort();
+      _prepareIncomingContent('update');
+    }
   }
 
   @override
   void dispose() {
+    _cancelBackgroundSort();
     listScrollController.dispose();
     tableScrollController.dispose();
     super.dispose();
   }
 
   void setSortMethod(SortMethodDesc<T> sortMethod) {
+    final useBackground =
+        sortMethod.backgroundMethod != null &&
+        widget.contentList.length >= _backgroundSortItemThreshold;
+    if (useBackground) {
+      setState(() {
+        currSortMethod = sortMethod;
+        widget.pref.sortMethod = widget.sortMethods?.indexOf(sortMethod) ?? 0;
+      });
+      _scheduleBackgroundSort('sortMethod');
+      return;
+    }
+    _cancelBackgroundSort();
     setState(() {
       currSortMethod = sortMethod;
       widget.pref.sortMethod = widget.sortMethods?.indexOf(sortMethod) ?? 0;
-      currSortMethod?.method(widget.contentList, currSortOrder);
-      _refreshAudioIndexCache();
+      _prepareContent('sortMethod');
     });
   }
 
   void setSortOrder(SortOrder sortOrder) {
+    final useBackground =
+        currSortMethod?.backgroundMethod != null &&
+        widget.contentList.length >= _backgroundSortItemThreshold;
+    if (useBackground) {
+      setState(() {
+        currSortOrder = sortOrder;
+        widget.pref.sortOrder = sortOrder;
+      });
+      _scheduleBackgroundSort('sortOrder');
+      return;
+    }
+    _cancelBackgroundSort();
     setState(() {
       currSortOrder = sortOrder;
       widget.pref.sortOrder = sortOrder;
-      currSortMethod?.method(widget.contentList, currSortOrder);
-      _refreshAudioIndexCache();
+      _prepareContent('sortOrder');
     });
   }
 
@@ -404,93 +585,105 @@ class _UniPageState<T> extends State<UniPage<T>> {
 
   @override
   Widget build(BuildContext context) {
-    final List<Widget> actions = [];
-    if (widget.primaryAction != null) {
-      actions.add(widget.primaryAction!);
-    }
-    if (widget.enableShufflePlay) {
-      actions.add(ShufflePlay<T>(contentList: widget.contentList));
-    }
-    if (widget.enableSortMethod) {
-      actions.add(
-        SortMethodComboBox<T>(
-          sortMethods: widget.sortMethods!,
-          contentList: widget.contentList,
-          currSortMethod: currSortMethod!,
-          setSortMethod: setSortMethod,
-        ),
-      );
-    }
-    if (widget.enableSortOrder) {
-      actions.add(
-        SortOrderSwitch<T>(
-          sortOrder: currSortOrder,
-          setSortOrder: setSortOrder,
-        ),
-      );
-    }
-    if (widget.enableContentViewSwitch) {
-      actions.add(
-        ContentViewSwitch<T>(
-          contentView: currContentView,
-          setContentView: setContentView,
-        ),
-      );
-    }
+    final buildStopwatch = Stopwatch()..start();
+    try {
+      final List<Widget> actions = [];
+      if (widget.primaryAction != null) {
+        actions.add(widget.primaryAction!);
+      }
+      if (widget.enableShufflePlay) {
+        actions.add(ShufflePlay<T>(contentList: widget.contentList));
+      }
+      if (widget.enableSortMethod) {
+        actions.add(
+          SortMethodComboBox<T>(
+            sortMethods: widget.sortMethods!,
+            contentList: widget.contentList,
+            currSortMethod: currSortMethod!,
+            setSortMethod: setSortMethod,
+          ),
+        );
+      }
+      if (widget.enableSortOrder) {
+        actions.add(
+          SortOrderSwitch<T>(
+            sortOrder: currSortOrder,
+            setSortOrder: setSortOrder,
+          ),
+        );
+      }
+      if (widget.enableContentViewSwitch) {
+        actions.add(
+          ContentViewSwitch<T>(
+            contentView: currContentView,
+            setContentView: setContentView,
+          ),
+        );
+      }
 
-    return widget.multiSelectController == null
-        ? result(null, actions)
-        : ListenableBuilder(
-            listenable: widget.multiSelectController!,
-            builder: (context, _) =>
-                result(widget.multiSelectController!, actions),
-          );
+      return widget.multiSelectController == null
+          ? result(null, actions)
+          : ListenableBuilder(
+              listenable: widget.multiSelectController!,
+              builder: (context, _) =>
+                  result(widget.multiSelectController!, actions),
+            );
+    } finally {
+      buildStopwatch.stop();
+      uniPageBuildMicros += buildStopwatch.elapsed.inMicroseconds;
+    }
   }
 
   Widget _buildContentArea(MultiSelectController<T>? multiSelectController) {
-    if (widget.contentList.isEmpty) {
-      return _UniPageEmptyState(title: widget.title);
-    }
+    final stopwatch = Stopwatch()..start();
+    try {
+      if (widget.contentList.isEmpty) {
+        return _UniPageEmptyState(title: widget.title);
+      }
 
-    final listView = ListView.builder(
-      controller: listScrollController,
-      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
-      itemCount: widget.contentList.length,
-      itemExtent: 64,
-      itemBuilder: (context, i) => widget.contentBuilder(
-        context,
-        widget.contentList[i],
-        i,
-        multiSelectController,
-        ContentView.list,
-      ),
-    );
-    final tableView = GridView.builder(
-      controller: tableScrollController,
-      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
-      gridDelegate: widget.gridDelegate ?? gridDelegate,
-      itemCount: widget.contentList.length,
-      itemBuilder: (context, i) => widget.contentBuilder(
-        context,
-        widget.contentList[i],
-        i,
-        multiSelectController,
-        ContentView.table,
-      ),
-    );
-
-    return Row(
-      children: [
-        Expanded(
-          child: widget.enableContentViewSwitch
-              ? DirectionalTabView(
-                  index: currContentView == ContentView.list ? 0 : 1,
-                  children: [listView, tableView],
-                )
-              : tableView,
+      final listView = ListView.builder(
+        controller: listScrollController,
+        padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+        itemCount: widget.contentList.length,
+        itemExtent: 64,
+        itemBuilder: (context, i) => widget.contentBuilder(
+          context,
+          widget.contentList[i],
+          i,
+          multiSelectController,
+          ContentView.list,
         ),
-      ],
-    );
+      );
+      final tableView = GridView.builder(
+        controller: tableScrollController,
+        padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+        gridDelegate: widget.gridDelegate ?? gridDelegate,
+        itemCount: widget.contentList.length,
+        itemBuilder: (context, i) => widget.contentBuilder(
+          context,
+          widget.contentList[i],
+          i,
+          multiSelectController,
+          ContentView.table,
+        ),
+      );
+
+      return Row(
+        children: [
+          Expanded(
+            child: widget.enableContentViewSwitch
+                ? DirectionalTabView(
+                    index: currContentView == ContentView.list ? 0 : 1,
+                    children: [listView, tableView],
+                  )
+                : tableView,
+          ),
+        ],
+      );
+    } finally {
+      stopwatch.stop();
+      uniPageContentAreaMicros += stopwatch.elapsed.inMicroseconds;
+    }
   }
 
   Widget result(

@@ -1,12 +1,12 @@
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/list_action_state.dart';
+import 'package:pure_music/core/page_sort.dart';
 import 'package:pure_music/core/menu_styles.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/utils.dart';
-import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/library/audio_library.dart';
-import 'package:pure_music/library/playlist.dart';
+import 'package:pure_music/library/library_page_order_cache.dart';
 import 'package:pure_music/lyric/lyric_source.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/page/folder_manager_dialog.dart';
@@ -28,21 +28,43 @@ class FoldersPage extends StatefulWidget {
 
 class _FoldersPageState extends State<FoldersPage> {
   bool _updating = false;
+  int _contentVersion = -1;
+  List<AudioFolder> _contentList = [];
+
+  List<AudioFolder> _resolveContentList() {
+    final version = AudioLibrary.libraryVersion.value;
+    if (_contentVersion == version) return _contentList;
+    _contentVersion = version;
+    _contentList = AudioLibrary.aggregatedRootFolders();
+    return _contentList;
+  }
+
+  void _invalidateContentList() {
+    _contentVersion = -1;
+  }
 
   Future<void> _refreshIndex() async {
     setState(() => _updating = true);
     try {
       final dir = await getAppDataDir();
-      final stream = updateIndex(indexPath: dir.path);
+      final indexPath = p.join(dir.path, 'index.json');
+      final sourceBefore = await LibraryPageOrderCache.sourceSignature(
+        indexPath,
+      );
+      final stream = updateIndex(indexPath: dir.path, forceMetadataCheck: true);
       await for (final _ in stream) {}
-      await Future.wait([
-        AudioLibrary.initFromIndex(),
-        readPlaylists(),
-        readLyricSources(),
-      ]);
-      AlbumColorCache.instance
-          .prewarmAlbums(AudioLibrary.instance.albumCollection.values)
-          .ignore();
+      final sourceAfter = await LibraryPageOrderCache.sourceSignature(
+        indexPath,
+      );
+      if (sourceBefore != sourceAfter ||
+          AudioLibrary.instance.folders.isEmpty) {
+        await AudioLibrary.initFromIndex();
+        pruneLyricSourcesWhereMissing(
+          (path) => AudioLibrary.instance.audioByPath(path) != null,
+        );
+      } else {
+        logger.i('[perf] library refresh reload=skipped indexUnchanged=true');
+      }
       if (mounted) {
         showTextOnSnackBar('已刷新');
       }
@@ -54,18 +76,20 @@ class _FoldersPageState extends State<FoldersPage> {
 
   @override
   Widget build(BuildContext context) {
-    final contentList = AudioLibrary.aggregatedRootFolders();
+    final contentList = _resolveContentList();
     return UniPage<AudioFolder>(
       pref: AppPreference.instance.foldersPagePref,
       title: '文件夹',
       subtitle: '${contentList.length} 个文件夹',
       contentList: contentList,
+      contentRevision: AudioLibrary.libraryVersion.value,
       primaryAction: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (_updating)
             const SizedBox(
-              width: 20, height: 20,
+              width: 20,
+              height: 20,
               child: CircularProgressIndicator(strokeWidth: 2),
             )
           else
@@ -81,7 +105,7 @@ class _FoldersPageState extends State<FoldersPage> {
           FilledButton.icon(
             onPressed: () async {
               await showFolderManagerDialog(context);
-              setState(() {});
+              setState(_invalidateContentList);
             },
             icon: const Icon(Symbols.folder),
             label: const Text('文件夹管理'),
@@ -94,7 +118,7 @@ class _FoldersPageState extends State<FoldersPage> {
       contentBuilder: (context, item, i, multiSelectController, view) =>
           AudioFolderTile(
             audioFolder: item,
-            onAliasChanged: () => setState(() {}),
+            onAliasChanged: () => setState(_invalidateContentList),
           ),
       enableShufflePlay: false,
       enableSortMethod: true,
@@ -118,6 +142,13 @@ class _FoldersPageState extends State<FoldersPage> {
                 break;
             }
           },
+          backgroundMethod: (list, order, control) =>
+              sortPageByLocaleInBackground(
+                list,
+                (folder) => folder.displayName,
+                descending: order == SortOrder.decending,
+                control: control,
+              ),
         ),
         SortMethodDesc<AudioFolder>(
           icon: Symbols.edit,
@@ -132,6 +163,13 @@ class _FoldersPageState extends State<FoldersPage> {
                 break;
             }
           },
+          backgroundMethod: (list, order, control) =>
+              sortPageByIntegerInBackground(
+                list,
+                (folder) => folder.modified,
+                descending: order == SortOrder.decending,
+                control: control,
+              ),
         ),
         SortMethodDesc<AudioFolder>(
           icon: Symbols.music_note,
@@ -146,6 +184,13 @@ class _FoldersPageState extends State<FoldersPage> {
                 break;
             }
           },
+          backgroundMethod: (list, order, control) =>
+              sortPageByIntegerInBackground(
+                list,
+                (folder) => folder.audios.length,
+                descending: order == SortOrder.decending,
+                control: control,
+              ),
         ),
       ],
     );
@@ -170,14 +215,13 @@ class AudioFolderTile extends StatelessWidget {
         .toSet();
     final result = await showDialog<String>(
       context: context,
-      builder: (context) => _FolderAliasDialog(
-        currentAlias: current,
-        existingAliases: existing,
-      ),
+      builder: (context) =>
+          _FolderAliasDialog(currentAlias: current, existingAliases: existing),
     );
     if (result == null) return;
-    final oldAliases =
-        Map<String, String>.from(AppPreference.instance.folderAliases);
+    final oldAliases = Map<String, String>.from(
+      AppPreference.instance.folderAliases,
+    );
     if (result.trim().isEmpty) {
       AppPreference.instance.folderAliases.remove(key);
     } else {
@@ -200,8 +244,9 @@ class AudioFolderTile extends StatelessWidget {
 
   Future<void> _clearAlias(BuildContext context) async {
     final key = pendingFolderKey(audioFolder.path);
-    final oldAliases =
-        Map<String, String>.from(AppPreference.instance.folderAliases);
+    final oldAliases = Map<String, String>.from(
+      AppPreference.instance.folderAliases,
+    );
     AppPreference.instance.folderAliases.remove(key);
     final saved = await AppPreference.instance.save();
     if (!saved) {
@@ -231,7 +276,9 @@ class AudioFolderTile extends StatelessWidget {
             style: appMenuItemStyle,
             onPressed: () => _editAlias(context),
             leadingIcon: const Icon(Symbols.label),
-            child: Text(audioFolder.alias?.isNotEmpty == true ? '修改别名' : '设置别名'),
+            child: Text(
+              audioFolder.alias?.isNotEmpty == true ? '修改别名' : '设置别名',
+            ),
           ),
           if (audioFolder.alias?.isNotEmpty == true)
             MenuItemButton(
@@ -251,9 +298,7 @@ class AudioFolderTile extends StatelessWidget {
                 extra: audioFolder,
               ),
               onSecondaryTapDown: (details) {
-                controller.open(
-                  position: details.localPosition,
-                );
+                controller.open(position: details.localPosition);
               },
               child: Padding(
                 padding: const EdgeInsets.symmetric(
@@ -309,10 +354,7 @@ class AudioFolderTile extends StatelessWidget {
 class _FolderAliasDialog extends StatefulWidget {
   final String? currentAlias;
   final Set<String> existingAliases;
-  const _FolderAliasDialog({
-    this.currentAlias,
-    required this.existingAliases,
-  });
+  const _FolderAliasDialog({this.currentAlias, required this.existingAliases});
 
   @override
   State<_FolderAliasDialog> createState() => _FolderAliasDialogState();
@@ -340,7 +382,8 @@ class _FolderAliasDialogState extends State<_FolderAliasDialog> {
   void _onAliasChanged(String value) {
     final alias = value.trim();
     setState(() {
-      _errorText = alias.isNotEmpty &&
+      _errorText =
+          alias.isNotEmpty &&
               hasEquivalentPlaylistName(
                 existingNames: widget.existingAliases,
                 targetName: alias,
