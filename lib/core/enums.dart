@@ -95,10 +95,10 @@ enum DesktopLyricBrightnessMode {
 }
 
 enum PlayMode {
-  /// 顺序播放到播放列表结尾
+  /// 顺序循环整个播放列表
   forward,
 
-  /// 循环整个播放列表
+  /// 兼容旧版列表循环配置
   loop,
 
   /// 循环播放单曲
