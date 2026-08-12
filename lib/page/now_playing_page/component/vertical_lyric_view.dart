@@ -332,6 +332,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   @override
   void initState() {
     super.initState();
+    _displayPositionMs = playbackService.position * 1000.0;
     final initialOffset = _restoreCachedInitialPosition();
     scrollController = ScrollController(initialScrollOffset: initialOffset);
     _scrollTransition = ValueTransition<double>(
@@ -1681,7 +1682,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
         setEquals(_parallelGroupLines, nextGroupLines) &&
         _tailHighlightCatchUpLine == nextTailHighlightCatchUpLine) {
       if (positionChanged &&
-          playbackService.playerState != PlayerState.playing) {
+          (_needsInitialScroll ||
+              playbackService.playerState != PlayerState.playing)) {
         setState(() {
           _displayPositionMs = positionMs;
         });

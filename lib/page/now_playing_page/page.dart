@@ -794,15 +794,19 @@ class _NowPlayingPlaybackModeSwitchState
     setState(() => _isSaving = true);
     try {
       final playbackService = PlayService.instance.playbackService;
-      if (!shuffle && playMode != PlayMode.singleLoop) {
+      if (shuffle) {
         playbackService.useShuffle(false);
-        playbackService.setPlayMode(PlayMode.singleLoop);
-      } else if (!shuffle && playMode == PlayMode.singleLoop) {
         playbackService.setPlayMode(PlayMode.forward);
-        playbackService.useShuffle(true);
       } else {
-        playbackService.useShuffle(false);
-        playbackService.setPlayMode(PlayMode.forward);
+        switch (playMode) {
+          case PlayMode.forward:
+          case PlayMode.loop:
+            playbackService.setPlayMode(PlayMode.singleLoop);
+            break;
+          case PlayMode.singleLoop:
+            playbackService.useShuffle(true);
+            break;
+        }
       }
       await AppPreference.instance.savePlaybackOnly();
     } finally {
@@ -1016,23 +1020,7 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
   bool _showSystemCustomIndicator = false;
   bool _isHovering = false;
   bool _isSystemHovering = false;
-  MenuController? _menuController;
-  Timer? _autoCloseTimer;
-  int _lastVolumeHotkeySerial = 0;
-  late final VoidCallback _hotkeyListener;
   late final VoidCallback _nowPlayingListener;
-
-  void _scheduleAutoClose() {
-    _autoCloseTimer?.cancel();
-    _autoCloseTimer = Timer(const Duration(milliseconds: 950), () {
-      if (_disposed || !mounted) return;
-      if (isDragging || isSystemDragging || _isHovering || _isSystemHovering) {
-        _scheduleAutoClose();
-        return;
-      }
-      _menuController?.close();
-    });
-  }
 
   Future<double?> _readSystemVol({required Duration timeout}) async {
     return systemVolumeService.read(timeout: timeout);
@@ -1041,24 +1029,6 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
   @override
   void initState() {
     super.initState();
-    _hotkeyListener = () {
-      if (_disposed || !mounted) return;
-      final event = hotkeyUiFeedback.lastEvent;
-      if (event == null) return;
-      if (event.action != HotkeyUiAction.volumeStep) return;
-      if (event.serial == _lastVolumeHotkeySerial) return;
-      _lastVolumeHotkeySerial = event.serial;
-
-      if (_menuController?.isOpen != true) {
-        _menuController?.open();
-      }
-      if (!isDragging) {
-        dragVolDsp.value = playbackService.volumeDsp;
-      }
-      _triggerIndicator();
-      _scheduleAutoClose();
-    };
-    hotkeyUiFeedback.addListener(_hotkeyListener);
     _lastVolumeDsp = playbackService.volumeDsp;
     _nowPlayingListener = () {
       if (_disposed || !mounted) return;
@@ -1105,10 +1075,8 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
     _systemVolBoostTimer?.cancel();
     _indicatorTimer?.cancel();
     _systemIndicatorTimer?.cancel();
-    _autoCloseTimer?.cancel();
     playbackService.nowPlayingNotifier.removeListener(_nowPlayingListener);
     systemVolumeService.volume.removeListener(_systemVolValueListener);
-    hotkeyUiFeedback.removeListener(_hotkeyListener);
     super.dispose();
   }
 
@@ -1339,7 +1307,6 @@ class _NowPlayingVolDspSliderState extends State<_NowPlayingVolDspSlider> {
         ),
       ],
       builder: (context, controller, _) {
-        _menuController = controller;
         return IconButton(
           tooltip: '音量',
           onPressed: () {
