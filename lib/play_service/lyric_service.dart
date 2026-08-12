@@ -1119,7 +1119,7 @@ class LyricService extends ChangeNotifier {
     applyProfanityUncensor(lyric);
     if (lyric is Ttml && _activeLyricSourceType == LyricSourceType.amll) {
       blankAmllTtmlCreatorLines(lyric.lines);
-    } else {
+    } else if (!AppSettings.instance.keepLyricMetadata) {
       final nowPlaying = _getNowPlaying();
       final artists = nowPlaying == null
           ? const <String>[]
@@ -1263,6 +1263,10 @@ class LyricService extends ChangeNotifier {
           kugouSongHash: lyricSource.kugouSongHash,
           neSongId: lyricSource.neSongId,
           amllTtmlFile: lyricSource.amllTtmlFile,
+          title: nowPlaying.title,
+          album: nowPlaying.album,
+          artist: nowPlaying.artist,
+          durationSec: nowPlaying.duration,
         );
       }
     }
@@ -1477,6 +1481,10 @@ class LyricService extends ChangeNotifier {
         kugouSongHash: savedSource.kugouSongHash,
         neSongId: savedSource.neSongId,
         amllTtmlFile: savedSource.amllTtmlFile,
+        title: nowPlaying.title,
+        album: nowPlaying.album,
+        artist: nowPlaying.artist,
+        durationSec: nowPlaying.duration,
       );
     } else {
       // 无指定来源 → 使用首选在线源（单源搜索，不三源并行）
@@ -1557,5 +1565,11 @@ class LyricService extends ChangeNotifier {
     _prefetchGeneration++;
     _lyricPrefetches.clear();
     _lyricCache.clear();
+  }
+
+  void reloadAfterMetadataSettingChange() {
+    clearCache();
+    clearOnlineLyricCache();
+    updateLyric();
   }
 }

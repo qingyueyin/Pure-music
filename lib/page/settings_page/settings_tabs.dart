@@ -60,11 +60,14 @@ class _SettingsTabsState extends State<SettingsTabs> {
           runSpacing: 8.0,
           children: List.generate(_tabs.length, (i) {
             final selected = _currentIndex == i;
-            final canSwitch =
-                canSwitchTab(currentIndex: _currentIndex, targetIndex: i);
+            final canSwitch = canSwitchTab(
+              currentIndex: _currentIndex,
+              targetIndex: i,
+            );
             return OutlinedButton.icon(
-              onPressed:
-                  canSwitch ? () => setState(() => _currentIndex = i) : null,
+              onPressed: canSwitch
+                  ? () => setState(() => _currentIndex = i)
+                  : null,
               icon: Icon(_tabs[i].icon, size: 18),
               label: Text(_tabs[i].label),
               style: ButtonStyle(
@@ -77,9 +80,7 @@ class _SettingsTabsState extends State<SettingsTabs> {
                       : scheme.surfaceContainerHighest,
                 ),
                 side: WidgetStatePropertyAll(
-                  BorderSide(
-                    color: selected ? scheme.primary : scheme.outline,
-                  ),
+                  BorderSide(color: selected ? scheme.primary : scheme.outline),
                 ),
                 shape: WidgetStatePropertyAll(
                   RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
@@ -264,11 +265,7 @@ class _WavyProgressBarSwitchState extends State<_WavyProgressBarSwitch> {
             fontSize: AppType.body,
             fontWeight: AppType.weightMedium,
           ),
-          children: const [
-            Text('竖屏'),
-            Text('横屏'),
-            Text('横屏沉浸'),
-          ],
+          children: const [Text('竖屏'), Text('横屏'), Text('横屏沉浸')],
         ),
       ),
     );
@@ -534,28 +531,6 @@ class _LiftStyleSelectorState extends State<_LiftStyleSelector> {
             },
           ),
         ),
-        if (style == LyricLiftStyle.vertical) ...[
-          const SizedBox(height: 16.0),
-          SettingsTile(
-            description: '上抬持续时间',
-            subtitle: '${nowPlayingPagePref.liftDurationMs} ms',
-            action: SizedBox(
-              width: 140,
-              child: Slider(
-                value: nowPlayingPagePref.liftDurationMs.toDouble(),
-                min: 50,
-                max: 2000,
-                divisions: 39,
-                label: '${nowPlayingPagePref.liftDurationMs} ms',
-                onChanged: (v) {
-                  setState(() => nowPlayingPagePref.liftDurationMs = v.round());
-                  LyricViewController.instance.triggerRebuild();
-                  AppPreference.instance.save();
-                },
-              ),
-            ),
-          ),
-        ],
         if (style == LyricLiftStyle.vertical ||
             style == LyricLiftStyle.cosine) ...[
           const SizedBox(height: 16.0),
@@ -691,8 +666,10 @@ class _CoverColorExtractionSwitchState
               child: OutlinedButton.icon(
                 onPressed: _isPickingColor ? null : _pickCustomColor,
                 style: OutlinedButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: AppRadius.smCircular,
                   ),
@@ -704,9 +681,7 @@ class _CoverColorExtractionSwitchState
                         child: CircularProgressIndicator(strokeWidth: 2.0),
                       )
                     : const Icon(Symbols.palette),
-                label: Text(
-                  _isPickingColor ? '选择中' : '自定义',
-                ),
+                label: Text(_isPickingColor ? '选择中' : '自定义'),
               ),
             ),
           Switch(
@@ -736,8 +711,9 @@ class _ThemeColorPickerDialogState extends State<_ThemeColorPickerDialog> {
   void initState() {
     super.initState();
     final custom = AppSettings.instance.customCoverColor;
-    final color =
-        custom != null ? Color(custom) : Theme.of(context).colorScheme.primary;
+    final color = custom != null
+        ? Color(custom)
+        : Theme.of(context).colorScheme.primary;
     _hsv = HSVColor.fromColor(color);
     _hexCtrl = TextEditingController(text: _colorToHex(color));
   }
@@ -787,10 +763,7 @@ class _ThemeColorPickerDialogState extends State<_ThemeColorPickerDialog> {
                 child: SizedBox(
                   width: pickerSize,
                   height: pickerSize * 0.7,
-                  child: _HsvPicker(
-                    hsv: _hsv,
-                    onChanged: _updateColor,
-                  ),
+                  child: _HsvPicker(hsv: _hsv, onChanged: _updateColor),
                 ),
               ),
               const SizedBox(height: 12),
@@ -818,9 +791,7 @@ class _ThemeColorPickerDialogState extends State<_ThemeColorPickerDialog> {
                         height: 20,
                         child: _HueSlider(
                           hue: _hsv.hue,
-                          onChanged: (hue) => _updateColor(
-                            _hsv.withHue(hue),
-                          ),
+                          onChanged: (hue) => _updateColor(_hsv.withHue(hue)),
                         ),
                       ),
                     ),
@@ -856,8 +827,9 @@ class _ThemeColorPickerDialogState extends State<_ThemeColorPickerDialog> {
                           ),
                           hintText: 'RRGGBB',
                           hintStyle: TextStyle(
-                            color:
-                                scheme.onSurfaceVariant.withValues(alpha: 0.5),
+                            color: scheme.onSurfaceVariant.withValues(
+                              alpha: 0.5,
+                            ),
                           ),
                         ),
                         style: const TextStyle(
@@ -870,7 +842,8 @@ class _ThemeColorPickerDialogState extends State<_ThemeColorPickerDialog> {
                           UpperCaseTextFormatter(),
                           LengthLimitingTextInputFormatter(6),
                           FilteringTextInputFormatter.allow(
-                              RegExp(r'[0-9A-Fa-f]')),
+                            RegExp(r'[0-9A-Fa-f]'),
+                          ),
                         ],
                         onSubmitted: _onHexSubmitted,
                         onChanged: (text) {
@@ -895,8 +868,9 @@ class _ThemeColorPickerDialogState extends State<_ThemeColorPickerDialog> {
           child: const Text('取消'),
         ),
         FilledButton(
-          onPressed:
-              _hasValidHex ? () => Navigator.of(context).pop(color) : null,
+          onPressed: _hasValidHex
+              ? () => Navigator.of(context).pop(color)
+              : null,
           child: const Text('确定'),
         ),
       ],
@@ -922,9 +896,7 @@ class _HsvPicker extends StatelessWidget {
           onPanUpdate: (d) => _pick(d.localPosition, w, h),
           child: CustomPaint(
             painter: _HsvPainter(hsv),
-            child: const RepaintBoundary(
-              child: SizedBox.expand(),
-            ),
+            child: const RepaintBoundary(child: SizedBox.expand()),
           ),
         );
       },
@@ -1156,6 +1128,20 @@ class _LyricsTabContentState extends State<_LyricsTabContent> {
         // ),
         // const SizedBox(height: 16.0),
         SettingsTile(
+          description: '保留歌词歌曲信息',
+          subtitle: settings.keepLyricMetadata ? '显示词曲作者等信息' : '隐藏歌曲信息',
+          action: Switch(
+            value: settings.keepLyricMetadata,
+            onChanged: (value) {
+              setState(() => settings.keepLyricMetadata = value);
+              settings.saveSettings();
+              PlayService.instance.lyricService
+                  .reloadAfterMetadataSettingChange();
+            },
+          ),
+        ),
+        const SizedBox(height: 16.0),
+        SettingsTile(
           description: '歌词转换',
           action: Row(
             mainAxisSize: MainAxisSize.min,
@@ -1379,6 +1365,7 @@ class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
       showRoman: settings.showDesktopLyricRoman,
       romanPosition: settings.desktopLyricRomanPosition,
       showNowPlayingInfo: settings.desktopShowNowPlayingInfo,
+      hideOnPause: settings.desktopHideOnPause,
       lyricTextAlign: settings.desktopLyricTextAlign,
       lyricAnimation: settings.desktopLyricAnimation.index,
       enableStroke: settings.desktopEnableStroke,
@@ -1400,6 +1387,15 @@ class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
     _sendAll();
   }
 
+  Future<void> _toggleDesktopLyric(bool enabled) async {
+    if (_service.isKilling) return;
+    if (enabled) {
+      await _service.startDesktopLyric();
+    } else {
+      await _service.killDesktopLyric();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -1415,9 +1411,22 @@ class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
       listenable: _service,
       builder: (context, _) {
         final running = _service.isRunning;
+        final busy = _service.isKilling;
         return ListView(
           padding: const EdgeInsets.only(bottom: 96.0, right: 20),
           children: [
+            SettingsTile(
+              description: '桌面歌词',
+              action: Switch(
+                value: running,
+                onChanged: busy ? null : _toggleDesktopLyric,
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (running && _service.isLocked) ...[
+              _DesktopLyricUnlockTile(onUnlock: _service.sendUnlockMessage),
+              const SizedBox(height: 16),
+            ],
             if (!running)
               Padding(
                 padding: const EdgeInsets.only(bottom: 16),
@@ -1435,9 +1444,8 @@ class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
               description: '歌词翻译',
               action: Switch(
                 value: settings.desktopShowTranslation,
-                onChanged: (v) => _update(
-                  () => settings.desktopShowTranslation = v,
-                ),
+                onChanged: (v) =>
+                    _update(() => settings.desktopShowTranslation = v),
               ),
             ),
             const SizedBox(height: 16),
@@ -1445,9 +1453,8 @@ class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
               description: '注音',
               action: Switch(
                 value: settings.showDesktopLyricRoman,
-                onChanged: (v) => _update(
-                  () => settings.showDesktopLyricRoman = v,
-                ),
+                onChanged: (v) =>
+                    _update(() => settings.showDesktopLyricRoman = v),
               ),
             ),
             const SizedBox(height: 16),
@@ -1477,9 +1484,17 @@ class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
               subtitle: settings.desktopShowNowPlayingInfo ? '显示歌曲标题和艺人' : '隐藏',
               action: Switch(
                 value: settings.desktopShowNowPlayingInfo,
-                onChanged: (v) => _update(
-                  () => settings.desktopShowNowPlayingInfo = v,
-                ),
+                onChanged: (v) =>
+                    _update(() => settings.desktopShowNowPlayingInfo = v),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SettingsTile(
+              description: '暂停时隐藏桌面歌词',
+              action: Switch(
+                value: settings.desktopHideOnPause,
+                onChanged: (v) =>
+                    _update(() => settings.desktopHideOnPause = v),
               ),
             ),
             const SizedBox(height: 24),
@@ -1503,9 +1518,8 @@ class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
                   ButtonSegment(value: 2, label: Text('右')),
                 ],
                 selected: {settings.desktopLyricTextAlign},
-                onSelectionChanged: (v) => _update(
-                  () => settings.desktopLyricTextAlign = v.first,
-                ),
+                onSelectionChanged: (v) =>
+                    _update(() => settings.desktopLyricTextAlign = v.first),
               ),
             ),
             const SizedBox(height: 16),
@@ -1569,9 +1583,8 @@ class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
                   divisions: 34,
                   label:
                       '${settings.desktopTranslationFontSize.toStringAsFixed(0)}px',
-                  onChanged: (v) => setState(
-                    () => settings.desktopTranslationFontSize = v,
-                  ),
+                  onChanged: (v) =>
+                      setState(() => settings.desktopTranslationFontSize = v),
                   onChangeEnd: (_) => _saveAndSend(),
                 ),
               ),
@@ -1600,9 +1613,8 @@ class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
               description: '文字描边',
               action: Switch(
                 value: settings.desktopEnableStroke,
-                onChanged: (value) => _update(
-                  () => settings.desktopEnableStroke = value,
-                ),
+                onChanged: (value) =>
+                    _update(() => settings.desktopEnableStroke = value),
               ),
             ),
             const SizedBox(height: 24),
@@ -1687,6 +1699,21 @@ class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
   }
 }
 
+class _DesktopLyricUnlockTile extends StatelessWidget {
+  const _DesktopLyricUnlockTile({required this.onUnlock});
+
+  final VoidCallback onUnlock;
+
+  @override
+  Widget build(BuildContext context) {
+    return SettingsTile(
+      description: '桌面歌词已锁定',
+      subtitle: '锁定后不接收鼠标操作',
+      action: Switch(value: true, onChanged: (_) => onUnlock()),
+    );
+  }
+}
+
 class _DesktopColorSetting extends StatelessWidget {
   final String label;
   final int? color;
@@ -1703,8 +1730,9 @@ class _DesktopColorSetting extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final displayColor =
-        color != null ? Color((color! | 0xFF000000).toUnsigned(32)) : null;
+    final displayColor = color != null
+        ? Color((color! | 0xFF000000).toUnsigned(32))
+        : null;
 
     return SettingsTile(
       description: label,
@@ -1719,8 +1747,9 @@ class _DesktopColorSetting extends StatelessWidget {
               width: 32,
               height: 32,
               decoration: BoxDecoration(
-                color:
-                    (displayColor ?? scheme.primary).withValues(alpha: opacity),
+                color: (displayColor ?? scheme.primary).withValues(
+                  alpha: opacity,
+                ),
                 borderRadius: AppRadius.xsCircular,
                 border: displayColor == null
                     ? Border.all(color: scheme.outline.withValues(alpha: 0.4))
@@ -1740,9 +1769,7 @@ class _DesktopColorSetting extends StatelessWidget {
             onPressed: onPickColor,
             style: OutlinedButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              shape: RoundedRectangleBorder(
-                borderRadius: AppRadius.smCircular,
-              ),
+              shape: RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
             ),
             child: const Text('自定义'),
           ),
@@ -1783,9 +1810,7 @@ class _DesktopColorPickerDialogState extends State<_DesktopColorPickerDialog> {
   void initState() {
     super.initState();
     _hsv = HSVColor.fromColor(widget.initialColor);
-    _hexCtrl = TextEditingController(
-      text: _colorToHex(widget.initialColor),
-    );
+    _hexCtrl = TextEditingController(text: _colorToHex(widget.initialColor));
     _opacity = widget.initialOpacity;
   }
 
@@ -1833,10 +1858,7 @@ class _DesktopColorPickerDialogState extends State<_DesktopColorPickerDialog> {
                 child: SizedBox(
                   width: pickerSize,
                   height: pickerSize * 0.7,
-                  child: _HsvPicker(
-                    hsv: _hsv,
-                    onChanged: _updateColor,
-                  ),
+                  child: _HsvPicker(hsv: _hsv, onChanged: _updateColor),
                 ),
               ),
               const SizedBox(height: 12),
@@ -1861,9 +1883,7 @@ class _DesktopColorPickerDialogState extends State<_DesktopColorPickerDialog> {
                         height: 20,
                         child: _HueSlider(
                           hue: _hsv.hue,
-                          onChanged: (hue) => _updateColor(
-                            _hsv.withHue(hue),
-                          ),
+                          onChanged: (hue) => _updateColor(_hsv.withHue(hue)),
                         ),
                       ),
                     ),
@@ -1898,8 +1918,9 @@ class _DesktopColorPickerDialogState extends State<_DesktopColorPickerDialog> {
                           ),
                           hintText: 'RRGGBB',
                           hintStyle: TextStyle(
-                            color:
-                                scheme.onSurfaceVariant.withValues(alpha: 0.5),
+                            color: scheme.onSurfaceVariant.withValues(
+                              alpha: 0.5,
+                            ),
                           ),
                         ),
                         style: const TextStyle(
@@ -1912,7 +1933,8 @@ class _DesktopColorPickerDialogState extends State<_DesktopColorPickerDialog> {
                           UpperCaseTextFormatter(),
                           LengthLimitingTextInputFormatter(6),
                           FilteringTextInputFormatter.allow(
-                              RegExp(r'[0-9A-Fa-f]')),
+                            RegExp(r'[0-9A-Fa-f]'),
+                          ),
                         ],
                         onSubmitted: _onHexSubmitted,
                         onChanged: (text) {
@@ -1967,8 +1989,9 @@ class _DesktopColorPickerDialogState extends State<_DesktopColorPickerDialog> {
             ),
             FilledButton(
               onPressed: _hasValidHex
-                  ? () => Navigator.of(context)
-                      .pop(_DesktopColorResult(color, _opacity))
+                  ? () => Navigator.of(
+                      context,
+                    ).pop(_DesktopColorResult(color, _opacity))
                   : null,
               child: const Text('确定'),
             ),
@@ -2145,9 +2168,7 @@ class _FontSelector extends StatelessWidget {
         horizontal: 24.0,
         vertical: 24.0,
       ),
-      shape: RoundedRectangleBorder(
-        borderRadius: AppRadius.mdCircular,
-      ),
+      shape: RoundedRectangleBorder(borderRadius: AppRadius.mdCircular),
       child: SizedBox(
         width: width,
         height: height,
@@ -2186,8 +2207,8 @@ class _FontSelector extends StatelessWidget {
                         final selected = currentFont == null;
                         return ListTile(
                           selected: selected,
-                          selectedTileColor:
-                              scheme.secondaryContainer.withValues(alpha: 0.45),
+                          selectedTileColor: scheme.secondaryContainer
+                              .withValues(alpha: 0.45),
                           shape: RoundedRectangleBorder(
                             borderRadius: AppRadius.mdCircular,
                           ),
@@ -2201,15 +2222,16 @@ class _FontSelector extends StatelessWidget {
                           ),
                           title: const Text('默认字体'),
                           trailing: selected ? const Icon(Symbols.check) : null,
-                          onTap: !canResetOptionalSetting<String>(
-                            current: currentFont,
-                            isSaving: false,
-                          )
+                          onTap:
+                              !canResetOptionalSetting<String>(
+                                current: currentFont,
+                                isSaving: false,
+                              )
                               ? null
                               : () => Navigator.pop(
-                                    context,
-                                    const _FontSelection(null),
-                                  ),
+                                  context,
+                                  const _FontSelection(null),
+                                ),
                         );
                       }
 
@@ -2218,8 +2240,9 @@ class _FontSelector extends StatelessWidget {
                       final selected = font.fullName == currentFont;
                       return ListTile(
                         selected: selected,
-                        selectedTileColor:
-                            scheme.secondaryContainer.withValues(alpha: 0.45),
+                        selectedTileColor: scheme.secondaryContainer.withValues(
+                          alpha: 0.45,
+                        ),
                         shape: RoundedRectangleBorder(
                           borderRadius: AppRadius.mdCircular,
                         ),
@@ -2237,10 +2260,8 @@ class _FontSelector extends StatelessWidget {
                         trailing: selected ? const Icon(Symbols.check) : null,
                         onTap: selected
                             ? null
-                            : () => Navigator.pop(
-                                  context,
-                                  _FontSelection(font),
-                                ),
+                            : () =>
+                                  Navigator.pop(context, _FontSelection(font)),
                       );
                     },
                   ),
@@ -2345,18 +2366,12 @@ class _DefaultLyricSourceControlState extends State<DefaultLyricSourceControl> {
               action: SegmentedButton<LyricSourceType>(
                 showSelectedIcon: false,
                 segments: const [
-                  ButtonSegment(
-                    value: LyricSourceType.qq,
-                    label: Text('QQ'),
-                  ),
+                  ButtonSegment(value: LyricSourceType.qq, label: Text('QQ')),
                   ButtonSegment(
                     value: LyricSourceType.kugou,
                     label: Text('酷狗'),
                   ),
-                  ButtonSegment(
-                    value: LyricSourceType.ne,
-                    label: Text('网易'),
-                  ),
+                  ButtonSegment(value: LyricSourceType.ne, label: Text('网易')),
                   ButtonSegment(
                     value: LyricSourceType.amll,
                     label: Text('AMLL'),

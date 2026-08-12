@@ -64,7 +64,12 @@ Future<Directory> getSettingsDir() async {
   return Directory(path.join(root.path, 'settings')).create(recursive: true);
 }
 
-Future<void> writeTextFileAtomically(String filePath, String content) async {
+final Map<String, Future<void>> _atomicWriteQueues = <String, Future<void>>{};
+
+Future<void> _writeTextFileAtomicallyNow(
+  String filePath,
+  String content,
+) async {
   final target = File(filePath);
   await target.parent.create(recursive: true);
   final tmpPath = '$filePath.tmp.${DateTime.now().microsecondsSinceEpoch}.$pid';
@@ -77,6 +82,42 @@ Future<void> writeTextFileAtomically(String filePath, String content) async {
       if (await tmp.exists()) await tmp.delete();
     } catch (_) {}
     rethrow;
+  }
+}
+
+Future<void> writeTextFileAtomically(String filePath, String content) {
+  final queueKey = path.normalize(path.absolute(filePath)).toLowerCase();
+  final previous = _atomicWriteQueues[queueKey];
+  late Future<void> current;
+  current = _writeQueuedTextFile(
+    previous: previous,
+    filePath: filePath,
+    content: content,
+    queueKey: queueKey,
+    current: () => current,
+  );
+  _atomicWriteQueues[queueKey] = current;
+  return current;
+}
+
+Future<void> _writeQueuedTextFile({
+  required Future<void>? previous,
+  required String filePath,
+  required String content,
+  required String queueKey,
+  required Future<void> Function() current,
+}) async {
+  try {
+    if (previous != null) {
+      try {
+        await previous;
+      } catch (_) {}
+    }
+    await _writeTextFileAtomicallyNow(filePath, content);
+  } finally {
+    if (identical(_atomicWriteQueues[queueKey], current())) {
+      _atomicWriteQueues.remove(queueKey);
+    }
   }
 }
 
@@ -201,10 +242,12 @@ class AppSettings {
   LyricSourceType preferredOnlineSource = LyricSourceType.qq;
   bool showTranslation = true;
   bool showRomanization = true;
+  bool keepLyricMetadata = true;
   bool showDesktopLyricRoman = true;
   int desktopLyricRomanPosition = 1;
   bool desktopShowTranslation = true;
   bool desktopShowNowPlayingInfo = true;
+  bool desktopHideOnPause = false;
   bool desktopEnableStroke = true;
   bool desktopEnablePinTop = true;
   double desktopLyricFontSize = 22.0;
@@ -305,6 +348,13 @@ class AppSettings {
         defaultValue: true,
       );
     }
+    final klm = settingsMap['KeepLyricMetadata'];
+    if (klm != null) {
+      _instance.keepLyricMetadata = normalizedBoolSetting(
+        klm,
+        defaultValue: true,
+      );
+    }
 
     final sizeStr = settingsMap['WindowSize'];
     if (sizeStr != null) {
@@ -369,6 +419,13 @@ class AppSettings {
     if (sr != null) {
       _instance.showRomanization = normalizedBoolSetting(
         sr,
+        defaultValue: true,
+      );
+    }
+    final klm = settingsMap['KeepLyricMetadata'];
+    if (klm != null) {
+      _instance.keepLyricMetadata = normalizedBoolSetting(
+        klm,
         defaultValue: true,
       );
     }
@@ -552,6 +609,14 @@ class AppSettings {
       );
     }
 
+    final dhop = settingsMap['DesktopHideOnPause'];
+    if (dhop != null) {
+      _instance.desktopHideOnPause = normalizedBoolSetting(
+        dhop,
+        defaultValue: false,
+      );
+    }
+
     final des = settingsMap['DesktopEnableStroke'];
     if (des != null) {
       _instance.desktopEnableStroke = normalizedBoolSetting(
@@ -663,10 +728,12 @@ class AppSettings {
         'PreferredOnlineSource': preferredOnlineSource.name,
         'ShowTranslation': showTranslation,
         'ShowRomanization': showRomanization,
+        'KeepLyricMetadata': keepLyricMetadata,
         'ShowDesktopLyricRoman': showDesktopLyricRoman,
         'DesktopLyricRomanPosition': desktopLyricRomanPosition,
         'DesktopShowTranslation': desktopShowTranslation,
         'DesktopShowNowPlayingInfo': desktopShowNowPlayingInfo,
+        'DesktopHideOnPause': desktopHideOnPause,
         'DesktopEnableStroke': desktopEnableStroke,
         'DesktopEnablePinTop': desktopEnablePinTop,
         'DesktopLyricFontSize': desktopLyricFontSize,

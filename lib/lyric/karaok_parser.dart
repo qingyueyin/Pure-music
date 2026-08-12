@@ -1,4 +1,5 @@
 import 'package:pure_music/lyric/lyric.dart';
+import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/lyric/lrc.dart';
 
 // ──────────────────────────────────────────────
@@ -121,7 +122,10 @@ Lyric? parseKaraokToPureLyric(
   String ext,
   String content, [
   String? transContent,
+  bool? keepMetadata,
 ]) {
+  final shouldKeepMetadata =
+      keepMetadata ?? AppSettings.instance.keepLyricMetadata;
   final cfg = _configFor(ext);
   if (cfg == null) return null;
 
@@ -137,7 +141,11 @@ Lyric? parseKaraokToPureLyric(
     final words = _parseWords(lineContent, cfg, startMs, wordsAreAbsolute);
     // 过滤元数据行（作詞：xxx、作曲/編曲：xxx 等）
     final lineText = words.map((w) => w.text).join();
-    if (lineText.isNotEmpty && LrcLine.isLyricMetadataLine(lineText)) continue;
+    if (lineText.isNotEmpty &&
+        !shouldKeepMetadata &&
+        LrcLine.isLyricMetadataLine(lineText)) {
+      continue;
+    }
 
     lines.add(_LineData(
       start: Duration(milliseconds: startMs),

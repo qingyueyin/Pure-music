@@ -1,5 +1,6 @@
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/lyric/metadata_detector.dart';
+import 'package:pure_music/core/settings.dart';
 import 'dart:math';
 
 class Yrc extends Lyric {
@@ -11,7 +12,12 @@ class Yrc extends Lyric {
     return isLyricMetadataText(text);
   }
 
-  static Yrc fromYrcText(String yrc, [String? transRawStr]) {
+  static Yrc fromYrcText(String yrc, [
+    String? transRawStr,
+    bool? keepMetadata,
+  ]) {
+    final shouldKeepMetadata =
+        keepMetadata ?? AppSettings.instance.keepLyricMetadata;
     final List<YrcLine> lines = [];
     final splited = yrc.split('\n');
 
@@ -31,7 +37,9 @@ class Yrc extends Lyric {
 
       // 过滤主歌词中的元数据行（作曲、作词等）
       final lineContent = yrcLine.words.map((w) => w.content).join();
-      if (lineContent.isNotEmpty && _isMetadataLine(lineContent)) {
+      if (lineContent.isNotEmpty &&
+          !shouldKeepMetadata &&
+          _isMetadataLine(lineContent)) {
         continue;
       }
 

@@ -1,5 +1,6 @@
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/lyric/metadata_detector.dart';
+import 'package:pure_music/core/settings.dart';
 import 'dart:math';
 
 class Qrc extends Lyric {
@@ -11,7 +12,12 @@ class Qrc extends Lyric {
     return isLyricMetadataText(text);
   }
 
-  static Qrc fromQrcText(String qrc, [String? transRawStr]) {
+  static Qrc fromQrcText(String qrc, [
+    String? transRawStr,
+    bool? keepMetadata,
+  ]) {
+    final shouldKeepMetadata =
+        keepMetadata ?? AppSettings.instance.keepLyricMetadata;
     final List<QrcLine> lines = [];
     final splited = qrc.split('\n');
 
@@ -32,7 +38,9 @@ class Qrc extends Lyric {
 
       // 过滤主歌词中的元数据行（作曲、作词等）
       final lineContent = qrcLine.words.map((w) => w.content).join();
-      if (lineContent.isNotEmpty && _isMetadataLine(lineContent)) {
+      if (lineContent.isNotEmpty &&
+          !shouldKeepMetadata &&
+          _isMetadataLine(lineContent)) {
         continue;
       }
 

@@ -11,6 +11,7 @@ import 'package:pure_music/lyric/vtt.dart';
 import 'package:pure_music/lyric/karaok_parser.dart';
 import 'package:pure_music/lyric/lyric_stripper.dart';
 import 'package:pure_music/lyric/exclude_data.dart';
+import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart';
 import 'package:pure_music/services/online_lyric/api/krc_decryptor.dart';
 import 'package:pure_music/services/online_lyric/api/qrc_decryptor.dart';
@@ -383,6 +384,7 @@ Future<Lyric?> loadLyricFromAudio(
 }
 
 Lyric? _stripMetadata(Lyric lyric) {
+  if (AppSettings.instance.keepLyricMetadata) return lyric;
   final regList = defaultExcludeRegexes
       .map((p) => RegExp(p, caseSensitive: false))
       .toList();
