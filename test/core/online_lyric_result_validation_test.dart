@@ -1,7 +1,36 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pure_music/core/matcher.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/lyric/lyric.dart';
+
+Audio _audio({
+  String title = 'Song',
+  String artist = 'Artist',
+  int duration = 260,
+}) {
+  return Audio(
+    title,
+    artist,
+    '',
+    null,
+    1,
+    duration,
+    320,
+    44100,
+    r'C:\Music\song.flac',
+    1,
+    1,
+    'test',
+  );
+}
+
+Lyric _lineLyric([String content = 'line']) {
+  return Lyric([
+    UnsyncLyricLine(const Duration(seconds: 1), content),
+  ]);
+}
 
 void main() {
   test('joins multiple artists with spaces in online search queries', () {
@@ -136,5 +165,310 @@ void main() {
           .kugouSongHash,
       'usable',
     );
+  });
+
+  test('uses a version-qualified result when no exact lyric is usable',
+      () async {
+    final audio = Audio(
+      '夜に駆ける',
+      'YOASOBI',
+      'THE BOOK',
+      null,
+      1,
+      260,
+      320,
+      44100,
+      r'C:\Music\夜に駆ける.flac',
+      1,
+      1,
+      'test',
+    );
+    final results = [
+      SongSearchResult(
+        ResultSource.qq,
+        '夜に駆ける',
+        'YOASOBI',
+        'THE BOOK',
+        100,
+        qqSongId: 'empty',
+      ),
+      SongSearchResult(
+        ResultSource.qq,
+        '夜に駆ける（Live）',
+        'YOASOBI',
+        'Live Album',
+        80,
+        qqSongId: 'live',
+      ),
+    ];
+    final lineLyric = Lyric([
+      UnsyncLyricLine(const Duration(seconds: 1), 'line'),
+    ]);
+
+    final selected = await selectBestValidOnlineLyricResults(
+      audio,
+      results,
+      loadLyric: (result) async => result.qqSongId == 'live' ? lineLyric : null,
+    );
+
+    expect(selected, hasLength(1));
+    expect(selected.single.qqSongId, 'live');
+  });
+
+  test('puts title-only and compatible base-title queries in the first batch',
+      () {
+    final queries = buildOnlineLyricSearchQueries(
+      _audio(title: 'Song (Live)'),
+    );
+
+    expect(
+      queries.take(4),
+      ['Song Live Artist', 'Song Artist', 'Song Live', 'Song'],
+    );
+  });
+
+  test('rejects risky versions and incompatible live results', () async {
+    final audio = _audio();
+    final loadedIds = <String>[];
+    final candidates = [
+      SongSearchResult(
+        ResultSource.qq,
+        'Song (Remix)',
+        'Artist',
+        '',
+        120,
+        qqSongId: 'remix',
+        duration: 260,
+      ),
+      SongSearchResult(
+        ResultSource.qq,
+        'Song (Live)',
+        'Artist',
+        '',
+        110,
+        qqSongId: 'long-live',
+        duration: 400,
+      ),
+      SongSearchResult(
+        ResultSource.qq,
+        'Song (Live)',
+        'Other Artist',
+        '',
+        100,
+        qqSongId: 'wrong-artist',
+        duration: 262,
+      ),
+      SongSearchResult(
+        ResultSource.qq,
+        'Song (Live)',
+        'Artist',
+        '',
+        90,
+        qqSongId: 'usable-live',
+        duration: 262,
+      ),
+    ];
+
+    final selected = await selectBestValidOnlineLyricResults(
+      audio,
+      candidates,
+      loadLyric: (result) async {
+        loadedIds.add(result.qqSongId!);
+        return _lineLyric();
+      },
+    );
+
+    expect(selected.single.qqSongId, 'usable-live');
+    expect(loadedIds, ['usable-live']);
+  });
+
+  test('accepts a meaningful partial artist match', () async {
+    final selected = await selectBestValidOnlineLyricResults(
+      _audio(artist: 'Artist'),
+      [
+        SongSearchResult(
+          ResultSource.qq,
+          'Song',
+          'The Artist',
+          '',
+          80,
+          qqSongId: 'alias',
+          duration: 260,
+        ),
+      ],
+      loadLyric: (_) async => _lineLyric(),
+    );
+
+    expect(selected.single.qqSongId, 'alias');
+  });
+
+  test('uses exact title and close duration when artist metadata differs',
+      () async {
+    final selected = await selectBestValidOnlineLyricResults(
+      _audio(),
+      [
+        SongSearchResult(
+          ResultSource.qq,
+          'Song',
+          'Different Artist Field',
+          '',
+          80,
+          qqSongId: 'duration-confirmed',
+          duration: 262,
+        ),
+      ],
+      loadLyric: (_) async => _lineLyric(),
+    );
+
+    expect(selected.single.qqSongId, 'duration-confirmed');
+  });
+
+  test('aggregate manual-first sources keep their top usable search result',
+      () async {
+    final selected = await selectBestValidOnlineLyricResults(
+      _audio(),
+      [
+        SongSearchResult(
+          ResultSource.qq,
+          'Different QQ title',
+          'Different artist',
+          '',
+          90,
+          qqSongId: 'qq-first',
+        ),
+        SongSearchResult(
+          ResultSource.ne,
+          'Different NE title',
+          'Different artist',
+          '',
+          80,
+          neSongId: 1,
+        ),
+        SongSearchResult(
+          ResultSource.kugou,
+          'Different KG title',
+          'Different artist',
+          '',
+          70,
+          kugouSongHash: 'kg-first',
+        ),
+        SongSearchResult(
+          ResultSource.amll,
+          'Different AMLL title',
+          'Different artist',
+          '',
+          100,
+          amllTtmlFile: 'amll-rejected',
+        ),
+      ],
+      manualFirstSources: const {
+        ResultSource.qq,
+        ResultSource.ne,
+        ResultSource.kugou,
+      },
+      loadLyric: (_) async => _lineLyric(),
+    );
+
+    expect(
+      selected.map((result) => result.source).toSet(),
+      {ResultSource.qq, ResultSource.ne, ResultSource.kugou},
+    );
+  });
+
+  test('preferred search uses title-only results and stops after a valid batch',
+      () async {
+    final searchedQueries = <String>[];
+    final loadedIds = <String>[];
+    final lyric = await getLyricFromPreferredSource(
+      _audio(),
+      ResultSource.qq,
+      search: (query, audio, source) async {
+        searchedQueries.add(query);
+        if (query == 'Song Artist') throw StateError('primary query failed');
+        if (query != 'Song') return [];
+        return [
+          SongSearchResult(
+            source,
+            'Song',
+            'Artist',
+            '',
+            100,
+            qqSongId: 'empty',
+            duration: 260,
+          ),
+          SongSearchResult(
+            source,
+            'Song',
+            'Artist',
+            '',
+            90,
+            qqSongId: 'usable',
+            duration: 260,
+          ),
+          SongSearchResult(
+            source,
+            'Song',
+            'Artist',
+            '',
+            80,
+            qqSongId: 'unused',
+            duration: 260,
+          ),
+        ];
+      },
+      loadLyric: (result) async {
+        loadedIds.add(result.qqSongId!);
+        return result.qqSongId == 'usable' ? _lineLyric('usable') : null;
+      },
+    );
+
+    expect(lyric, isNotNull);
+    expect(searchedQueries.take(2), ['Song Artist', 'Song']);
+    expect(loadedIds, ['empty', 'usable']);
+  });
+
+  test('preferred search respects its total time limit', () async {
+    final stopwatch = Stopwatch()..start();
+    final lyric = await getLyricFromPreferredSource(
+      _audio(),
+      ResultSource.qq,
+      search: (_, _, _) => Completer<List<SongSearchResult>>().future,
+      loadLyric: (_) async => _lineLyric(),
+      timeLimit: const Duration(milliseconds: 30),
+    );
+    stopwatch.stop();
+
+    expect(lyric, isNull);
+    expect(stopwatch.elapsed, lessThan(const Duration(seconds: 1)));
+  });
+
+  test('preferred search loads the first source result as a last resort',
+      () async {
+    final loadedIds = <String>[];
+    final lyric = await getLyricFromPreferredSource(
+      _audio(),
+      ResultSource.qq,
+      search: (query, audio, source) async {
+        if (query != 'Song Artist') return [];
+        return [
+          SongSearchResult(
+            source,
+            'Different title',
+            'Different artist',
+            '',
+            1,
+            qqSongId: 'manual-first',
+            duration: 260,
+          ),
+        ];
+      },
+      loadLyric: (result) async {
+        loadedIds.add(result.qqSongId!);
+        return _lineLyric('fallback');
+      },
+    );
+
+    expect(lyric, isNotNull);
+    expect(loadedIds, ['manual-first']);
   });
 }

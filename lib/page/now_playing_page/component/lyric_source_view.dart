@@ -42,9 +42,34 @@ bool _isSavedLyricResult(String audioPath, SongSearchResult result) {
   };
 }
 
-void _applySavedOnlineLyricResult(Audio audio, SongSearchResult result) {
+@visibleForTesting
+Future<bool> applyValidatedOnlineLyricResult(
+  Audio audio,
+  SongSearchResult result, {
+  Future<Lyric?> Function(Audio audio, SongSearchResult result)? loadLyric,
+  Future<void> Function()? persist,
+  VoidCallback? activate,
+  Duration timeout = const Duration(seconds: 12),
+}) async {
+  final lyric =
+      await (loadLyric?.call(audio, result) ??
+              getOnlineLyric(
+                qqSongId: result.qqSongId,
+                kugouSongHash: result.kugouSongHash,
+                neSongId: result.neSongId,
+                amllTtmlFile: result.amllTtmlFile,
+                title: audio.title,
+                album: audio.album,
+                artist: audio.artist,
+                durationSec: audio.duration,
+              ))
+          .timeout(timeout);
+  if (lyric == null || lyric.lines.isEmpty) return false;
+
   lyricSources[audio.path] = result.toLyricSource();
-  saveLyricSources();
+  await (persist?.call() ?? saveLyricSources());
+  (activate ?? PlayService.instance.lyricService.useOnlineLyric)();
+  return true;
 }
 
 Widget? _buildLyricResultTrailing(
@@ -135,6 +160,7 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
   bool _isSearching = false;
   bool _isLoadingMore = false;
   bool _hasMore = true;
+  SongSearchResult? _applyingResult;
   int _searchGeneration = 0;
   static const int _pageSize = 12;
   static const int _apiPageSize = 12;
@@ -449,6 +475,34 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
     }
   }
 
+  Future<void> _selectResult(SongSearchResult result) async {
+    if (_applyingResult != null) return;
+    setState(() => _applyingResult = result);
+    try {
+      final applied = await applyValidatedOnlineLyricResult(
+        widget.audio,
+        result,
+      );
+      if (!mounted) return;
+      if (!applied) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('该歌词下载或解析失败，来源未更改')));
+        return;
+      }
+      Navigator.pop(context);
+    } catch (error, trace) {
+      logger.w('Apply lyric source failed: $error', stackTrace: trace);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('歌词加载失败，请稍后重试')));
+      }
+    } finally {
+      if (mounted) setState(() => _applyingResult = null);
+    }
+  }
+
   Widget _buildTab(ResultSource source, String label) {
     final isActive = _activeSource == source;
     final scheme = Theme.of(context).colorScheme;
@@ -559,6 +613,9 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
             itemBuilder: (context, i) => _ManualSearchTile(
               audio: widget.audio,
               searchResult: displayList[i],
+              isApplying: identical(_applyingResult, displayList[i]),
+              enabled: _applyingResult == null,
+              onTap: () => _selectResult(displayList[i]),
             ),
           ),
         ),
@@ -810,6 +867,7 @@ class SetLyricSourceDialog extends StatefulWidget {
 class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
   late final Future<List<SongSearchResult>> _searchFuture;
   List<SongSearchResult>? _results;
+  SongSearchResult? _applyingResult;
 
   @override
   void initState() {
@@ -881,6 +939,34 @@ class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
         .whenComplete(() {
           if (mounted) setState(() {});
         });
+  }
+
+  Future<void> _selectResult(SongSearchResult result) async {
+    if (_applyingResult != null) return;
+    setState(() => _applyingResult = result);
+    try {
+      final applied = await applyValidatedOnlineLyricResult(
+        widget.audio,
+        result,
+      );
+      if (!mounted) return;
+      if (!applied) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('该歌词下载或解析失败，来源未更改')));
+        return;
+      }
+      Navigator.pop(context);
+    } catch (error, trace) {
+      logger.w('Apply lyric source failed: $error', stackTrace: trace);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('歌词加载失败，请稍后重试')));
+      }
+    } finally {
+      if (mounted) setState(() => _applyingResult = null);
+    }
   }
 
   @override
@@ -990,8 +1076,7 @@ class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
                       );
                     }
                     final results = _results ?? snapshot.data!;
-                    // 搜索结果不足四个来源时提示手动搜索
-                    final showManualHint = results.length < 4;
+                    final showManualHint = results.isEmpty;
                     return ListView.builder(
                       shrinkWrap: true,
                       itemCount: results.length + (showManualHint ? 1 : 0),
@@ -1015,6 +1100,9 @@ class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
                         return _SearchResultItem(
                           audio: widget.audio,
                           searchResult: results[i],
+                          isApplying: identical(_applyingResult, results[i]),
+                          enabled: _applyingResult == null,
+                          onTap: () => _selectResult(results[i]),
                         );
                       },
                     );
@@ -1030,10 +1118,19 @@ class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
 }
 
 class _ManualSearchTile extends StatelessWidget {
-  const _ManualSearchTile({required this.searchResult, required this.audio});
+  const _ManualSearchTile({
+    required this.searchResult,
+    required this.audio,
+    required this.isApplying,
+    required this.enabled,
+    required this.onTap,
+  });
 
   final Audio audio;
   final SongSearchResult searchResult;
+  final bool isApplying;
+  final bool enabled;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1045,30 +1142,36 @@ class _ManualSearchTile extends StatelessWidget {
       selected: selected,
       selectedTileColor: scheme.secondaryContainer.withValues(alpha: 0.5),
       selectedColor: scheme.onSecondaryContainer,
-      trailing: _buildLyricResultTrailing(
-        context,
-        selected: selected,
-        lyricType: searchResult.lyricType,
-      ),
-      onTap: selected
-          ? null
-          : () {
-              _applySavedOnlineLyricResult(audio, searchResult);
-              Navigator.pop(context);
-
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                PlayService.instance.lyricService.useOnlineLyric();
-              });
-            },
+      trailing: isApplying
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : _buildLyricResultTrailing(
+              context,
+              selected: selected,
+              lyricType: searchResult.lyricType,
+            ),
+      onTap: enabled ? onTap : null,
     );
   }
 }
 
 class _SearchResultItem extends StatelessWidget {
-  const _SearchResultItem({required this.audio, required this.searchResult});
+  const _SearchResultItem({
+    required this.audio,
+    required this.searchResult,
+    required this.isApplying,
+    required this.enabled,
+    required this.onTap,
+  });
 
   final Audio audio;
   final SongSearchResult searchResult;
+  final bool isApplying;
+  final bool enabled;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1085,16 +1188,16 @@ class _SearchResultItem extends StatelessWidget {
       selected: selected,
       selectedTileColor: scheme.secondaryContainer.withValues(alpha: 0.5),
       selectedColor: scheme.onSecondaryContainer,
-      trailing: selected ? const Icon(Symbols.check) : null,
-      onTap: selected
-          ? null
-          : () {
-              _applySavedOnlineLyricResult(audio, searchResult);
-              Navigator.pop(context);
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                PlayService.instance.lyricService.useOnlineLyric();
-              });
-            },
+      trailing: isApplying
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : selected
+          ? const Icon(Symbols.check)
+          : null,
+      onTap: enabled ? onTap : null,
       leading: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
