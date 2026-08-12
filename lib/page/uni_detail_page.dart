@@ -31,6 +31,7 @@ class UniDetailPage<P, S, T> extends StatefulWidget {
     required this.subtitle,
     required this.secondaryContent,
     required this.secondaryContentBuilder,
+    this.secondaryContentSectionBuilder,
     this.tertiaryContentTitle,
     this.tertiaryContent,
     this.tertiaryContentBuilder,
@@ -71,6 +72,8 @@ class UniDetailPage<P, S, T> extends StatefulWidget {
 
   final List<S> secondaryContent;
   final ContentBuilder<S> secondaryContentBuilder;
+  final Widget? Function(BuildContext context, S content, int index)?
+  secondaryContentSectionBuilder;
 
   final String? tertiaryContentTitle;
   final List<T>? tertiaryContent;
@@ -333,6 +336,35 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
       child: CustomScrollView(
         slivers: [
           switch (currContentView) {
+            ContentView.list
+                when widget.secondaryContentSectionBuilder != null =>
+              SliverList.builder(
+                itemCount: widget.secondaryContent.length,
+                itemBuilder: (context, i) {
+                  final item = widget.secondaryContent[i];
+                  final section = widget.secondaryContentSectionBuilder!(
+                    context,
+                    item,
+                    i,
+                  );
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ?section,
+                      SizedBox(
+                        height: 64,
+                        child: widget.secondaryContentBuilder(
+                          context,
+                          item,
+                          i,
+                          multiSelectController,
+                          ContentView.list,
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
             ContentView.list => SliverFixedExtentList.builder(
               itemExtent: 64,
               itemCount: widget.secondaryContent.length,
@@ -405,6 +437,35 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
       child: CustomScrollView(
         slivers: [
           switch (currContentView) {
+            ContentView.list
+                when widget.secondaryContentSectionBuilder != null =>
+              SliverList.builder(
+                itemCount: widget.secondaryContent.length,
+                itemBuilder: (context, i) {
+                  final item = widget.secondaryContent[i];
+                  final section = widget.secondaryContentSectionBuilder!(
+                    context,
+                    item,
+                    i,
+                  );
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ?section,
+                      SizedBox(
+                        height: 64,
+                        child: widget.secondaryContentBuilder(
+                          context,
+                          item,
+                          i,
+                          multiSelectController,
+                          ContentView.list,
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
             ContentView.list => SliverFixedExtentList.builder(
               itemExtent: 64,
               itemCount: widget.secondaryContent.length,

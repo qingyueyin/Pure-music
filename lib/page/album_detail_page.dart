@@ -2,6 +2,7 @@ import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/core/enums.dart';
+import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/component/artist_tile.dart';
 import 'package:pure_music/component/audio_tile.dart';
@@ -12,6 +13,25 @@ import 'package:pure_music/page/uni_page_components.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+int _discNumber(Audio audio) {
+  final disc = audio.disc;
+  return disc != null && disc > 0 ? disc : 1;
+}
+
+String _trackNumber(Audio audio, {bool includeDisc = false}) {
+  final track = audio.track < 10 ? '0${audio.track}' : '${audio.track}';
+  return includeDisc ? '${_discNumber(audio)}-$track' : track;
+}
+
+int _compareWithinDisc(
+  Audio first,
+  Audio second,
+  int Function(Audio first, Audio second) compare,
+) {
+  final disc = _discNumber(first).compareTo(_discNumber(second));
+  return disc != 0 ? disc : compare(first, second);
+}
+
 class AlbumDetailPage extends StatelessWidget {
   const AlbumDetailPage({super.key, required this.album});
 
@@ -21,6 +41,12 @@ class AlbumDetailPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final secondaryContent = List<Audio>.from(album.works);
     final multiSelectController = MultiSelectController<Audio>();
+    final discNumbers = secondaryContent
+        .map(_discNumber)
+        .where((disc) => disc > 0)
+        .toSet();
+    final showDiscSections =
+        discNumbers.length > 1 || discNumbers.any((disc) => disc > 1);
 
     final canSortSongs = hasEnoughItemsToSort(secondaryContent.length);
 
@@ -35,20 +61,32 @@ class AlbumDetailPage extends StatelessWidget {
       title: album.name,
       subtitle: '${album.works.length} 首作品',
       secondaryContent: secondaryContent,
-      secondaryContentBuilder: (context, audio, i, multiSelectController, _) =>
-          AudioTile(
-        leading: Text(audio.track < 10 ? '0${audio.track}' : '${audio.track}'),
-        audioIndex: i,
-        playlist: secondaryContent,
-        multiSelectController: multiSelectController,
-      ),
+      secondaryContentBuilder:
+          (context, audio, i, multiSelectController, view) => AudioTile(
+            leading: Text(
+              _trackNumber(
+                audio,
+                includeDisc: showDiscSections && view == ContentView.table,
+              ),
+            ),
+            audioIndex: i,
+            playlist: secondaryContent,
+            multiSelectController: multiSelectController,
+          ),
+      secondaryContentSectionBuilder: showDiscSections
+          ? (context, audio, i) {
+              final disc = _discNumber(audio);
+              if (i > 0 && _discNumber(secondaryContent[i - 1]) == disc) {
+                return null;
+              }
+              return _DiscSectionHeader(disc: disc);
+            }
+          : null,
       tertiaryContentTitle: '艺术家',
       tertiaryContent: album.artistsMap.values.toList(),
       tertiaryContentBuilder:
-          (context, artist, i, multiSelectController, view) => ArtistTile(
-        artist: artist,
-        view: view,
-      ),
+          (context, artist, i, multiSelectController, view) =>
+              ArtistTile(artist: artist, view: view),
       enableShufflePlay: secondaryContent.isNotEmpty,
       enableSortMethod: canSortSongs,
       enableSortOrder: canSortSongs,
@@ -73,10 +111,24 @@ class AlbumDetailPage extends StatelessWidget {
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
-                list.sort((a, b) => a.title.naturalCompareTo(b.title));
+                list.sort(
+                  (a, b) => _compareWithinDisc(
+                    a,
+                    b,
+                    (first, second) =>
+                        first.title.naturalCompareTo(second.title),
+                  ),
+                );
                 break;
               case SortOrder.decending:
-                list.sort((a, b) => b.title.naturalCompareTo(a.title));
+                list.sort(
+                  (a, b) => _compareWithinDisc(
+                    b,
+                    a,
+                    (first, second) =>
+                        first.title.naturalCompareTo(second.title),
+                  ),
+                );
                 break;
             }
           },
@@ -87,10 +139,24 @@ class AlbumDetailPage extends StatelessWidget {
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
-                list.sort((a, b) => a.artist.naturalCompareTo(b.artist));
+                list.sort(
+                  (a, b) => _compareWithinDisc(
+                    a,
+                    b,
+                    (first, second) =>
+                        first.artist.naturalCompareTo(second.artist),
+                  ),
+                );
                 break;
               case SortOrder.decending:
-                list.sort((a, b) => b.artist.naturalCompareTo(a.artist));
+                list.sort(
+                  (a, b) => _compareWithinDisc(
+                    b,
+                    a,
+                    (first, second) =>
+                        first.artist.naturalCompareTo(second.artist),
+                  ),
+                );
                 break;
             }
           },
@@ -101,10 +167,22 @@ class AlbumDetailPage extends StatelessWidget {
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
-                list.sort((a, b) => a.track.compareTo(b.track));
+                list.sort(
+                  (a, b) => _compareWithinDisc(
+                    a,
+                    b,
+                    (first, second) => first.track.compareTo(second.track),
+                  ),
+                );
                 break;
               case SortOrder.decending:
-                list.sort((a, b) => b.track.compareTo(a.track));
+                list.sort(
+                  (a, b) => _compareWithinDisc(
+                    b,
+                    a,
+                    (first, second) => first.track.compareTo(second.track),
+                  ),
+                );
                 break;
             }
           },
@@ -115,10 +193,22 @@ class AlbumDetailPage extends StatelessWidget {
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
-                list.sort((a, b) => a.created.compareTo(b.created));
+                list.sort(
+                  (a, b) => _compareWithinDisc(
+                    a,
+                    b,
+                    (first, second) => first.created.compareTo(second.created),
+                  ),
+                );
                 break;
               case SortOrder.decending:
-                list.sort((a, b) => b.created.compareTo(a.created));
+                list.sort(
+                  (a, b) => _compareWithinDisc(
+                    b,
+                    a,
+                    (first, second) => first.created.compareTo(second.created),
+                  ),
+                );
                 break;
             }
           },
@@ -129,15 +219,60 @@ class AlbumDetailPage extends StatelessWidget {
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
-                list.sort((a, b) => a.modified.compareTo(b.modified));
+                list.sort(
+                  (a, b) => _compareWithinDisc(
+                    a,
+                    b,
+                    (first, second) =>
+                        first.modified.compareTo(second.modified),
+                  ),
+                );
                 break;
               case SortOrder.decending:
-                list.sort((a, b) => b.modified.compareTo(a.modified));
+                list.sort(
+                  (a, b) => _compareWithinDisc(
+                    b,
+                    a,
+                    (first, second) =>
+                        first.modified.compareTo(second.modified),
+                  ),
+                );
                 break;
             }
           },
         ),
       ],
+    );
+  }
+}
+
+class _DiscSectionHeader extends StatelessWidget {
+  const _DiscSectionHeader({required this.disc});
+
+  final int disc;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      height: 44,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+        child: Row(
+          children: [
+            Icon(Symbols.album, size: 18, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 8),
+            Text(
+              '唱片 $disc',
+              style: TextStyle(
+                color: scheme.onSurface,
+                fontSize: AppType.body,
+                fontWeight: AppType.weightSemibold,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
