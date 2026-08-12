@@ -1,7 +1,68 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+
+final _DeferredLoadQueue _deferredLoadQueue = _DeferredLoadQueue();
+
+class _DeferredLoadRequest {
+  _DeferredLoadRequest(this.callback);
+
+  void Function(bool force) callback;
+  int deferrals = 0;
+}
+
+class _DeferredLoadQueue {
+  static const _retryDelay = Duration(milliseconds: 64);
+  static const _maximumDeferral = Duration(milliseconds: 192);
+  static const _maximumForcedLoadsPerFlush = 2;
+
+  final LinkedHashMap<Object, _DeferredLoadRequest> _pending =
+      LinkedHashMap<Object, _DeferredLoadRequest>.identity();
+  Timer? _timer;
+
+  void enqueue(Object key, void Function(bool force) callback) {
+    final existing = _pending[key];
+    if (existing != null) {
+      existing.callback = callback;
+    } else {
+      _pending[key] = _DeferredLoadRequest(callback);
+    }
+    _timer ??= Timer(_retryDelay, _flush);
+  }
+
+  void remove(Object key) {
+    _pending.remove(key);
+    if (_pending.isEmpty) {
+      _timer?.cancel();
+      _timer = null;
+    }
+  }
+
+  void _flush() {
+    _timer = null;
+    if (_pending.isEmpty) return;
+    final requests = _pending.entries.toList(growable: false);
+    _pending.clear();
+    var forcedLoads = 0;
+    for (final entry in requests) {
+      final force =
+          forcedLoads < _maximumForcedLoadsPerFlush &&
+          entry.value.deferrals * _retryDelay.inMilliseconds >=
+              _maximumDeferral.inMilliseconds;
+      if (force) forcedLoads++;
+      entry.value.callback(force);
+      final requeued = _pending[entry.key];
+      if (requeued != null) {
+        requeued.deferrals = entry.value.deferrals + 1;
+      }
+    }
+    if (_pending.isNotEmpty && _timer == null) {
+      _timer = Timer(_retryDelay, _flush);
+    }
+  }
+}
 
 class ScrollAwareFutureBuilder<T> extends StatefulWidget {
   final Future<T> Function() future;
@@ -25,28 +86,27 @@ class ScrollAwareFutureBuilder<T> extends StatefulWidget {
 class _ScrollAwareFutureBuilderState<T>
     extends State<ScrollAwareFutureBuilder<T>> {
   Future<T>? _future;
-  Timer? _loadTimer;
   int _loadGeneration = 0;
 
   void _scheduleLoad() {
-    _loadTimer?.cancel();
+    _deferredLoadQueue.remove(this);
     final generation = ++_loadGeneration;
     SchedulerBinding.instance.addPostFrameCallback((_) {
-      _tryLoad(generation);
+      _tryLoad(generation, false);
     });
   }
 
-  void _tryLoad(int generation) {
+  void _tryLoad(int generation, bool force) {
     if (!mounted || generation != _loadGeneration) return;
-    if (Scrollable.recommendDeferredLoadingForContext(context)) {
-      _loadTimer = Timer(
-        const Duration(milliseconds: 64),
-        () => _tryLoad(generation),
-      );
+    if (!force && Scrollable.recommendDeferredLoadingForContext(context)) {
+      _deferredLoadQueue.enqueue(this, (force) => _tryLoad(generation, force));
       return;
     }
+    _deferredLoadQueue.remove(this);
     final future = widget.future();
-    setState(() => _future = future);
+    setState(() {
+      _future = future;
+    });
   }
 
   @override
@@ -59,6 +119,7 @@ class _ScrollAwareFutureBuilderState<T>
   void didUpdateWidget(ScrollAwareFutureBuilder<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.identity != oldWidget.identity) {
+      _deferredLoadQueue.remove(this);
       _future = null;
       _scheduleLoad();
     }
@@ -77,7 +138,7 @@ class _ScrollAwareFutureBuilderState<T>
   @override
   void dispose() {
     _loadGeneration++;
-    _loadTimer?.cancel();
+    _deferredLoadQueue.remove(this);
     super.dispose();
   }
 }
