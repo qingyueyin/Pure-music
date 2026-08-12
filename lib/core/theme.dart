@@ -1,10 +1,9 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:pure_music/core/color_extraction.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/library/audio_library.dart';
-import 'package:pure_music/native/rust/api/color_extraction.dart';
+import 'package:pure_music/native/rust/api/tag_reader.dart' as rust_tag_reader;
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:flutter/material.dart';
 
@@ -32,20 +31,51 @@ ColorScheme _applyDarkSurfacePalette(ColorScheme scheme) {
   );
 }
 
-class ThemeProvider extends ChangeNotifier {
-  ColorScheme lightScheme = _applyLightSurfacePalette(
-    ColorScheme.fromSeed(
-      seedColor: Color(AppSettings.getWindowsTheme()),
-      brightness: Brightness.light,
-    ),
-  );
+Color _selectThemeSeedColor(List<Color> palette) {
+  final dominant = palette.first;
+  final dominantHsv = HSVColor.fromColor(dominant);
+  final dominantHsl = HSLColor.fromColor(dominant);
+  if (dominantHsv.saturation * dominantHsv.value >= 0.06 &&
+      dominantHsl.saturation >= 0.18) {
+    return dominant;
+  }
 
-  ColorScheme darkScheme = _applyDarkSurfacePalette(
-    ColorScheme.fromSeed(
-      seedColor: Color(AppSettings.getWindowsTheme()),
-      brightness: Brightness.dark,
-    ),
-  );
+  Color? selected;
+  var bestScore = double.negativeInfinity;
+  for (var index = 1; index < palette.length; index++) {
+    final color = palette[index];
+    final hsv = HSVColor.fromColor(color);
+    final hsl = HSLColor.fromColor(color);
+    final chroma = hsv.saturation * hsv.value;
+    if (chroma < 0.06 || hsl.saturation < 0.18) continue;
+
+    final toneFit = 1.0 - (hsl.lightness - 0.5).abs() * 2.0;
+    final score = chroma * 0.65 +
+        hsl.saturation * 0.2 +
+        toneFit * 0.1 +
+        0.05 / (index + 1);
+    if (score > bestScore) {
+      bestScore = score;
+      selected = color;
+    }
+  }
+  return selected ?? palette.first;
+}
+
+Color _configuredThemeSeedColor() {
+  final settings = AppSettings.instance;
+  if (!settings.enableCoverColorExtraction) {
+    final customColor = settings.customCoverColor;
+    return customColor != null
+        ? Color(customColor)
+        : Color(AppSettings.getWindowsTheme());
+  }
+  return Color(AppSettings.getWindowsTheme());
+}
+
+class ThemeProvider extends ChangeNotifier {
+  late ColorScheme lightScheme;
+  late ColorScheme darkScheme;
 
   String? fontFamily = AppSettings.instance.fontFamily;
 
@@ -67,148 +97,19 @@ class ThemeProvider extends ChangeNotifier {
 
   static ThemeProvider? _instance;
 
-  ThemeProvider._();
+  ThemeProvider._() {
+    _appliedSeedColor = _configuredThemeSeedColor();
+    _updateColorSchemes(_appliedSeedColor);
+  }
 
   static ThemeProvider get instance {
     _instance ??= ThemeProvider._();
     return _instance!;
   }
 
-  Color? _lastAlbumSeedColor;
+  late Color _appliedSeedColor;
 
-  /// 封面提取的原始种子色（非 Material 3 衍生色）
-  Color? get lastAlbumSeedColor => _lastAlbumSeedColor;
-
-  void applyThemeOption(ThemeOption option) {
-    final seed = _lastAlbumSeedColor ?? Color(AppSettings.getWindowsTheme());
-    lightScheme = _applyLightSurfacePalette(ColorScheme.fromSeed(
-      seedColor: seed,
-      brightness: Brightness.light,
-    ));
-    darkScheme = _applyDarkSurfacePalette(ColorScheme.fromSeed(
-      seedColor: seed,
-      brightness: Brightness.dark,
-    ));
-    themeMode = switch (option) {
-      ThemeOption.system => ThemeMode.system,
-      ThemeOption.light => ThemeMode.light,
-      ThemeOption.dark => ThemeMode.dark,
-    };
-    notifyListeners();
-
-    PlayService.instance.desktopLyricService.canSendMessage.then((canSend) {
-      if (!canSend) return;
-      final scheme = currScheme;
-      PlayService.instance.desktopLyricService.sendThemeMessage(
-        scheme,
-        darkMode: scheme.brightness == Brightness.dark,
-      );
-    });
-  }
-
-  int _themeRequestToken = 0;
-  Timer? _themeDebounceTimer;
-
-  /// 缓存封面到种子色的映射，避免重复提取封面颜色
-  static const int _seedCacheSize = 50;
-  final Map<String, Color> _seedCache = {};
-  final List<String> _seedAccessOrder = [];
-
-  void _touchSeedCache(String key) {
-    _seedAccessOrder.remove(key);
-    _seedAccessOrder.add(key);
-  }
-
-  void _evictSeedCache() {
-    while (_seedAccessOrder.length >= _seedCacheSize) {
-      final oldest = _seedAccessOrder.removeAt(0);
-      _seedCache.remove(oldest);
-    }
-  }
-
-  void applyThemeMode(ThemeMode mode) {
-    themeMode = mode;
-    notifyListeners();
-
-    PlayService.instance.desktopLyricService.canSendMessage.then((canSend) {
-      if (!canSend) return;
-      final scheme = currScheme;
-      PlayService.instance.desktopLyricService.sendThemeMessage(
-        scheme,
-        darkMode: scheme.brightness == Brightness.dark,
-      );
-    });
-  }
-
-  void handlePlatformBrightnessChanged() {
-    if (themeMode != ThemeMode.system) return;
-    notifyListeners();
-
-    PlayService.instance.desktopLyricService.canSendMessage.then((canSend) {
-      if (!canSend) return;
-      final scheme = currScheme;
-      PlayService.instance.desktopLyricService.sendThemeMessage(
-        scheme,
-        darkMode: scheme.brightness == Brightness.dark,
-      );
-    });
-  }
-
-  /// 直接应用预计算好的种子色，避免重复解码。
-  void applySeedColorDirectly(Color seedColor, String cacheKey) {
-    final cached = _seedCache[cacheKey];
-    if (cached != null) {
-      _touchSeedCache(cacheKey);
-      _applySeedColor(cached);
-      return;
-    }
-
-    _evictSeedCache();
-    _seedCache[cacheKey] = seedColor;
-    _seedAccessOrder.add(cacheKey);
-    _applySeedColor(seedColor);
-  }
-
-  /// 从封面字节提取种子色，排序后的第一个颜色为主色。
-  Future<Color> _extractSeedColor(Uint8List bytes, String cacheKey) async {
-    final cached = _seedCache[cacheKey];
-    if (cached != null) {
-      _touchSeedCache(cacheKey);
-      return cached;
-    }
-
-    try {
-      final rustColors = await extractColorsFromImage(
-        imageBytes: bytes,
-        numColors: 4,
-      );
-      if (rustColors.isNotEmpty) {
-        ColorExtractionService().cachePaletteForPath(
-          cacheKey,
-          rustColors.map(Color.new).toList(growable: false),
-        );
-      }
-
-      final seedColor = rustColors.isNotEmpty
-          ? Color(rustColors.first)
-          : const Color(0xff27272a);
-
-      _evictSeedCache();
-      _seedCache[cacheKey] = seedColor;
-      _seedAccessOrder.add(cacheKey);
-
-      return seedColor;
-    } catch (e) {
-      debugPrint('Seed color extraction failed: $e');
-      return const Color(0xff27272a);
-    }
-  }
-
-  /// 用种子色同时生成 light/dark 两套 ColorScheme。
-  /// ColorScheme.fromSeed 是同步的，不需要 Future。
-  void _applySeedColor(Color seedColor, {bool notify = true}) {
-    if (_lastAlbumSeedColor == seedColor) return;
-    _lastAlbumSeedColor = seedColor;
+  void _updateColorSchemes(Color seedColor) {
     lightScheme = _applyLightSurfacePalette(
       ColorScheme.fromSeed(
         seedColor: seedColor,
@@ -221,7 +122,17 @@ class ThemeProvider extends ChangeNotifier {
         brightness: Brightness.dark,
       ),
     );
+  }
 
+  bool _setSeedColor(Color seedColor) {
+    if (_appliedSeedColor == seedColor) return false;
+    _appliedSeedColor = seedColor;
+    _updateColorSchemes(seedColor);
+    return true;
+  }
+
+  void _notifyThemeChanged() {
+    notifyListeners();
     PlayService.instance.desktopLyricService.canSendMessage.then((canSend) {
       if (!canSend) return;
       final scheme = currScheme;
@@ -230,16 +141,86 @@ class ThemeProvider extends ChangeNotifier {
         darkMode: scheme.brightness == Brightness.dark,
       );
     });
+  }
 
-    if (notify) notifyListeners();
+  void applyThemeOption(ThemeOption option) {
+    if (!AppSettings.instance.enableCoverColorExtraction ||
+        PlayService.instance.playbackService.nowPlaying == null) {
+      _setSeedColor(_configuredThemeSeedColor());
+    }
+    themeMode = switch (option) {
+      ThemeOption.system => ThemeMode.system,
+      ThemeOption.light => ThemeMode.light,
+      ThemeOption.dark => ThemeMode.dark,
+    };
+    _notifyThemeChanged();
+  }
+
+  int _themeRequestToken = 0;
+  Timer? _themeDebounceTimer;
+  final ColorExtractionService _colorService = ColorExtractionService();
+
+  void applyThemeMode(ThemeMode mode) {
+    themeMode = mode;
+    _notifyThemeChanged();
+  }
+
+  void handlePlatformBrightnessChanged() {
+    if (themeMode != ThemeMode.system) return;
+    _notifyThemeChanged();
+  }
+
+  Color? _getCachedSeedColor(String path) {
+    final palette = _colorService.getCachedPaletteForPath(path);
+    if (palette == null || palette.isEmpty) return null;
+    return _selectThemeSeedColor(palette);
+  }
+
+  /// 直接应用预计算好的种子色，避免重复解码。
+  void applySeedColorDirectly(Color seedColor, String cacheKey) {
+    if (!AppSettings.instance.enableCoverColorExtraction) {
+      _applySeedColor(_configuredThemeSeedColor());
+      return;
+    }
+
+    _applySeedColor(_getCachedSeedColor(cacheKey) ?? seedColor);
+  }
+
+  /// 从完整封面提取与播放页一致的种子色。
+  Future<Color> _extractSeedColor(String cacheKey) async {
+    final cachedSeedColor = _getCachedSeedColor(cacheKey);
+    if (cachedSeedColor != null) return cachedSeedColor;
+
+    try {
+      final (_, rustColors) = await rust_tag_reader.getPictureAndColors(
+        path: cacheKey,
+        width: 1,
+        height: 1,
+        numColors: 4,
+      );
+      final palette = rustColors.map(Color.new).toList(growable: false);
+      if (palette.isNotEmpty) {
+        _colorService.cachePaletteForPath(cacheKey, palette);
+      }
+
+      return palette.isNotEmpty
+          ? _selectThemeSeedColor(palette)
+          : const Color(0xff27272a);
+    } catch (e) {
+      debugPrint('Seed color extraction failed: $e');
+      return const Color(0xff27272a);
+    }
+  }
+
+  void _applySeedColor(Color seedColor) {
+    if (!_setSeedColor(seedColor)) return;
+    _notifyThemeChanged();
   }
 
   void applyThemeFromAudio(Audio audio) {
     if (!AppSettings.instance.enableCoverColorExtraction) {
-      final custom = AppSettings.instance.customCoverColor;
-      if (custom != null) {
-        _applySeedColor(Color(custom));
-      }
+      cancelPendingAudioTheme();
+      _applySeedColor(_configuredThemeSeedColor());
       return;
     }
 
@@ -247,14 +228,22 @@ class ThemeProvider extends ChangeNotifier {
     final token = _themeRequestToken;
 
     _themeDebounceTimer?.cancel();
-    _themeDebounceTimer = Timer(const Duration(milliseconds: 200), () async {
+    _themeDebounceTimer = null;
+
+    final cachedSeedColor = _getCachedSeedColor(audio.path);
+    if (cachedSeedColor != null) {
+      _applySeedColor(cachedSeedColor);
+      return;
+    }
+
+    _themeDebounceTimer = Timer(const Duration(milliseconds: 60), () async {
       if (token != _themeRequestToken) return;
 
-      final bytes = audio.smallCoverBytes;
-      if (bytes == null || token != _themeRequestToken) return;
-
-      final seedColor = await _extractSeedColor(bytes, audio.path);
-      if (token != _themeRequestToken) return;
+      final seedColor = await _extractSeedColor(audio.path);
+      if (token != _themeRequestToken ||
+          !AppSettings.instance.enableCoverColorExtraction) {
+        return;
+      }
 
       _applySeedColor(seedColor);
     });
@@ -274,8 +263,6 @@ class ThemeProvider extends ChangeNotifier {
   @override
   void dispose() {
     _themeDebounceTimer?.cancel();
-    _seedCache.clear();
-    _seedAccessOrder.clear();
     super.dispose();
   }
 }
