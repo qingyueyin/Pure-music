@@ -43,29 +43,47 @@ List<Color> _adjustMeshColors(List<Color> colors, Brightness brightness) {
     const levels = <double>[0.10, 0.19, 0.14, 0.07];
     return levels
         .map(
-          (level) => Color.from(
-            alpha: 1.0,
-            red: level,
-            green: level,
-            blue: level,
-          ),
+          (level) =>
+              Color.from(alpha: 1.0, red: level, green: level, blue: level),
         )
         .toList(growable: false);
   }
-  const darkLuminanceLimit = <double>[0.13, 0.22, 0.17, 0.20];
-  return colors.indexed.map((entry) {
-    final (index, color) = entry;
-    final hsl = HSLColor.fromColor(color);
-    const maxSaturation = 0.78;
-    final adjusted =
-        hsl.withSaturation(hsl.saturation.clamp(0.0, maxSaturation)).toColor();
-    if (isDark) {
-      return _capMeshLuminance(adjusted, darkLuminanceLimit[index]);
-    }
-    return HSLColor.fromColor(adjusted)
-        .withLightness((hsl.lightness * 0.82 + 0.12).clamp(0.34, 0.82))
-        .toColor();
-  }).toList(growable: false);
+  final luminances = colors.map((color) => color.computeLuminance()).toList();
+  final averageLuminance =
+      luminances.reduce((left, right) => left + right) / luminances.length;
+  final minLuminance = luminances.reduce(
+    (left, right) => left < right ? left : right,
+  );
+  final maxLuminance = luminances.reduce(
+    (left, right) => left > right ? left : right,
+  );
+  final hasNeutralAnchor = colors.any(
+    (color) => HSLColor.fromColor(color).saturation <= 0.18,
+  );
+  final hasBrightPalette =
+      averageLuminance >= 0.34 &&
+      minLuminance >= 0.16 &&
+      maxLuminance - minLuminance <= 0.24 &&
+      hasNeutralAnchor;
+  final darkLuminanceLimit = hasBrightPalette
+      ? const <double>[0.26, 0.34, 0.30, 0.32]
+      : const <double>[0.13, 0.22, 0.17, 0.20];
+  return colors.indexed
+      .map((entry) {
+        final (index, color) = entry;
+        final hsl = HSLColor.fromColor(color);
+        final maxSaturation = hasBrightPalette ? 0.50 : 0.78;
+        final adjusted = hsl
+            .withSaturation(hsl.saturation.clamp(0.0, maxSaturation))
+            .toColor();
+        if (isDark) {
+          return _capMeshLuminance(adjusted, darkLuminanceLimit[index]);
+        }
+        return HSLColor.fromColor(adjusted)
+            .withLightness((hsl.lightness * 0.82 + 0.12).clamp(0.34, 0.82))
+            .toColor();
+      })
+      .toList(growable: false);
 }
 
 Color _capMeshLuminance(Color color, double limit) {
@@ -338,8 +356,10 @@ class _MeshGradientBackgroundInternalState
           ? List.filled(_kMeshColorCount, widget.fallbackColor)
           : _paletteColors;
     }
-    final count =
-        _prevPaletteColors.length.clamp(0, _targetPaletteColors.length);
+    final count = _prevPaletteColors.length.clamp(
+      0,
+      _targetPaletteColors.length,
+    );
     if (count <= 0) {
       return _targetPaletteColors;
     }
@@ -362,7 +382,8 @@ class _MeshGradientBackgroundInternalState
   }
 
   void _syncMeshController() {
-    final shouldRun = widget.inputs.isVisible &&
+    final shouldRun =
+        widget.inputs.isVisible &&
         (widget.inputs.shouldAnimate || _isTransitioning);
     if (shouldRun) {
       _meshController.start();
@@ -385,23 +406,18 @@ class _MeshGradientBackgroundInternalState
 
   @override
   Widget build(BuildContext context) {
-    if (!TickerMode.valuesOf(context).enabled) {
-      return ColoredBox(color: widget.fallbackColor);
-    }
     final brightness = Theme.of(context).brightness;
-    final scrimColor =
-        brightness == Brightness.dark ? _kDarkMeshScrim : _kLightMeshScrim;
+    final scrimColor = brightness == Brightness.dark
+        ? _kDarkMeshScrim
+        : _kLightMeshScrim;
     final transitionFromColors = _isTransitioning
-        ? _meshShaderColors(
-            _adjustMeshColors(_prevPaletteColors, brightness),
-          )
+        ? _meshShaderColors(_adjustMeshColors(_prevPaletteColors, brightness))
         : null;
     final transitionToColors = _isTransitioning
-        ? _meshShaderColors(
-            _adjustMeshColors(_targetPaletteColors, brightness),
-          )
+        ? _meshShaderColors(_adjustMeshColors(_targetPaletteColors, brightness))
         : null;
-    final meshColors = transitionToColors ??
+    final meshColors =
+        transitionToColors ??
         _meshShaderColors(
           _adjustMeshColors(_currentDisplayedPalette(), brightness),
         );
@@ -442,8 +458,9 @@ class _MeshGradientBackgroundInternalState
               colors: colors,
               transitionFromColors: transitionFromColors,
               transitionToColors: transitionToColors,
-              colorTransition:
-                  _isTransitioning ? _transitionValueNotifier : null,
+              colorTransition: _isTransitioning
+                  ? _transitionValueNotifier
+                  : null,
               controller: _meshController,
               scrimColor: scrimColor,
             ),
@@ -483,6 +500,7 @@ class _SoftMeshGradientState extends State<_SoftMeshGradient> {
   Timer? _frameTimer;
   late final ValueNotifier<double> _time;
   VoidCallback? _controllerListener;
+  bool _tickerModeEnabled = true;
 
   void _onFrame(Timer _) {
     if (!mounted ||
@@ -490,14 +508,16 @@ class _SoftMeshGradientState extends State<_SoftMeshGradient> {
       _syncFrameTimer();
       return;
     }
-    _time.value += _meshFrameInterval.inMicroseconds /
+    _time.value +=
+        _meshFrameInterval.inMicroseconds /
         Duration.microsecondsPerSecond *
         _timeScale;
   }
 
   void _syncFrameTimer() {
     final shouldRun =
-        widget.controller == null || widget.controller!.isAnimating.value;
+        _tickerModeEnabled &&
+        (widget.controller == null || widget.controller!.isAnimating.value);
     if (shouldRun && _frameTimer == null) {
       _frameTimer = Timer.periodic(_meshFrameInterval, _onFrame);
     } else if (!shouldRun && _frameTimer != null) {
@@ -539,6 +559,15 @@ class _SoftMeshGradientState extends State<_SoftMeshGradient> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final tickerModeEnabled = TickerMode.valuesOf(context).enabled;
+    if (_tickerModeEnabled == tickerModeEnabled) return;
+    _tickerModeEnabled = tickerModeEnabled;
+    _syncFrameTimer();
+  }
+
+  @override
   void didUpdateWidget(covariant _SoftMeshGradient oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) {
@@ -558,24 +587,20 @@ class _SoftMeshGradientState extends State<_SoftMeshGradient> {
 
   @override
   Widget build(BuildContext context) {
-    return ShaderBuilder(
-      assetKey: _shaderAssetPath,
-      (context, shader, child) {
-        return CustomPaint(
-          painter: _SoftMeshGradientPainter(
-            shader: shader,
-            time: _time,
-            colors: widget.colors,
-            transitionFromColors: widget.transitionFromColors,
-            transitionToColors: widget.transitionToColors,
-            colorTransition: widget.colorTransition,
-            scrimColor: widget.scrimColor,
-          ),
-          child: child,
-        );
-      },
-      child: Container(),
-    );
+    return ShaderBuilder(assetKey: _shaderAssetPath, (context, shader, child) {
+      return CustomPaint(
+        painter: _SoftMeshGradientPainter(
+          shader: shader,
+          time: _time,
+          colors: widget.colors,
+          transitionFromColors: widget.transitionFromColors,
+          transitionToColors: widget.transitionToColors,
+          colorTransition: widget.colorTransition,
+          scrimColor: widget.scrimColor,
+        ),
+        child: child,
+      );
+    }, child: Container());
   }
 }
 
@@ -588,9 +613,9 @@ class _SoftMeshGradientPainter extends CustomPainter {
     this.transitionToColors,
     this.colorTransition,
     required this.scrimColor,
-  })  : _paint = Paint()
-          ..colorFilter = ColorFilter.mode(scrimColor, BlendMode.srcOver),
-        super(repaint: time);
+  }) : _paint = Paint()
+         ..colorFilter = ColorFilter.mode(scrimColor, BlendMode.srcOver),
+       super(repaint: time);
 
   final FragmentShader shader;
   final ValueListenable<double> time;
@@ -611,8 +636,9 @@ class _SoftMeshGradientPainter extends CustomPainter {
     final from = transitionFromColors;
     final to = transitionToColors;
     final transition = colorTransition;
-    final t =
-        transition == null ? 1.0 : _paletteTransitionCurve(transition.value);
+    final t = transition == null
+        ? 1.0
+        : _paletteTransitionCurve(transition.value);
     final colorCount = from != null && to != null && from.length == to.length
         ? from.length
         : colors.length;
@@ -640,9 +666,7 @@ class _SoftMeshGradientPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(
-    covariant _SoftMeshGradientPainter oldDelegate,
-  ) {
+  bool shouldRepaint(covariant _SoftMeshGradientPainter oldDelegate) {
     return oldDelegate.shader != shader ||
         oldDelegate.time != time ||
         oldDelegate.colorTransition != colorTransition ||
