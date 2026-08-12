@@ -12,7 +12,7 @@ import 'package:pure_music/core/utils.dart';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:path/path.dart' as p;
 
-List<Playlist> playlists = [];
+final List<Playlist> playlists = [];
 
 String _playlistPathKey(String value) {
   var normalized = value.trim().replaceAll('\\', '/');
@@ -52,7 +52,8 @@ String? findImportedPlaylistLibraryPath({
 }
 
 Future<void> readPlaylists() async {
-  playlists = [];
+  final stopwatch = Stopwatch()..start();
+  playlists.clear();
   try {
     final dir = await getAppDataDir();
     final jsonFile = File(p.join(dir.path, 'playlists.json'));
@@ -63,41 +64,61 @@ Future<void> readPlaylists() async {
     if (playlistCount == 0 && jsonFile.existsSync()) {
       final fromJson = _readPlaylistsFromJson(jsonFile);
       _writePlaylistsToDb(db, fromJson);
-      playlists = fromJson;
+      playlists.addAll(fromJson);
+      logger.i(
+        '[perf] playlists load=${stopwatch.elapsedMilliseconds}ms '
+        'count=${playlists.length} migrated=true',
+      );
       return;
     }
 
-    final loadedPlaylists = <Playlist>[];
-    final rows =
-        db.select('SELECT id, name, cover_source FROM playlists ORDER BY name');
-    for (final row in rows) {
-      final id = row['id'] as int;
-      final name = row['name'] as String;
-      final coverSource = row['cover_source'] as String?;
-      final paths = <String>[];
-      final addedAtMap = <String, DateTime>{};
-      final items = db.select(
-        'SELECT path, added_at FROM playlist_items WHERE playlist_id = ? ORDER BY sort_order, path',
-        [id],
-      );
-      for (final item in items) {
-        final path = item['path'] as String;
-        paths.add(path);
-        final addedAtStr = item['added_at'] as String?;
-        if (addedAtStr != null) {
-          final dt = DateTime.tryParse(addedAtStr);
-          if (dt != null) addedAtMap[_playlistPathKey(path)] = dt;
-        }
-      }
-      loadedPlaylists.add(Playlist(name, paths)
-          ..id = id
-          ..coverSource = coverSource
-        .._addedAt.addAll(addedAtMap));
-    }
-    playlists = loadedPlaylists;
+    playlists.addAll(readPlaylistsFromDatabase(db));
+    logger.i(
+      '[perf] playlists load=${stopwatch.elapsedMilliseconds}ms '
+      'count=${playlists.length} migrated=false',
+    );
   } catch (err, trace) {
     logger.e(err, stackTrace: trace);
   }
+}
+
+List<Playlist> readPlaylistsFromDatabase(Database db) {
+  final playlistRows = db.select(
+    'SELECT id, name, cover_source FROM playlists ORDER BY name',
+  );
+  if (playlistRows.isEmpty) return <Playlist>[];
+
+  final pathsByPlaylistId = <int, List<String>>{};
+  final addedAtByPlaylistId = <int, Map<String, DateTime>>{};
+  final itemRows = db.select(
+    'SELECT playlist_id, path, added_at FROM playlist_items '
+    'ORDER BY playlist_id, sort_order, path',
+  );
+  for (final item in itemRows) {
+    final playlistId = item['playlist_id'] as int;
+    final path = item['path'] as String;
+    pathsByPlaylistId.putIfAbsent(playlistId, () => <String>[]).add(path);
+    final addedAt = DateTime.tryParse(item['added_at'] as String? ?? '');
+    if (addedAt != null) {
+      addedAtByPlaylistId.putIfAbsent(
+        playlistId,
+        () => <String, DateTime>{},
+      )[_playlistPathKey(path)] = addedAt;
+    }
+  }
+
+  return playlistRows
+      .map((row) {
+        final id = row['id'] as int;
+        return Playlist(
+            row['name'] as String,
+            pathsByPlaylistId[id] ?? const [],
+          )
+          ..id = id
+          ..coverSource = row['cover_source'] as String?
+          .._addedAt.addAll(addedAtByPlaylistId[id] ?? const {});
+      })
+      .toList();
 }
 
 Future<bool> savePlaylists() async {
@@ -109,6 +130,48 @@ Future<bool> savePlaylists() async {
     logger.e(err, stackTrace: trace);
     return false;
   }
+}
+
+final class PlaylistAlreadyExistsException implements Exception {
+  const PlaylistAlreadyExistsException();
+}
+
+bool _isTransientPlaylistWriteError(SqliteException error) {
+  return error.resultCode == SqlError.SQLITE_BUSY ||
+      error.resultCode == SqlError.SQLITE_LOCKED;
+}
+
+Playlist createPlaylistInDatabase(Database db, String name) {
+  final playlist = Playlist(name.trim(), const []);
+  try {
+    final inserted = db.select(
+      'INSERT INTO playlists(name, cover_source) VALUES(?, NULL) RETURNING id',
+      [playlist.name],
+    );
+    playlist.id = inserted.single['id'] as int;
+    return playlist;
+  } on SqliteException catch (err) {
+    if (err.resultCode == SqlError.SQLITE_CONSTRAINT) {
+      throw const PlaylistAlreadyExistsException();
+    }
+    rethrow;
+  }
+}
+
+Future<Playlist> createPlaylist(String name) async {
+  for (var attempt = 0; attempt < 2; attempt++) {
+    final db = await AppDb.instance.db();
+    try {
+      return createPlaylistInDatabase(db, name);
+    } on SqliteException catch (err) {
+      if (attempt == 0 && _isTransientPlaylistWriteError(err)) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        continue;
+      }
+      rethrow;
+    }
+  }
+  throw StateError('Playlist creation retry exhausted');
 }
 
 List<Playlist> _readPlaylistsFromJson(File jsonFile) {
