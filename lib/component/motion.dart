@@ -1,3 +1,6 @@
+import 'dart:collection';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
@@ -11,12 +14,24 @@ const _listItemEntrySpring = SpringDescription(
 const _tabSwitchDistance = 20.0;
 const _tabExitDistance = 12.0;
 final Expando<double> _listItemEntryOffsets = Expando<double>();
-final Expando<Set<Object>> _listItemEnteredIdentities = Expando<Set<Object>>();
+const _maxListItemEnteredIdentities = 96;
+final Expando<LinkedHashSet<Object>> _listItemEnteredIdentities =
+    Expando<LinkedHashSet<Object>>();
 
 bool _claimListItemEntrance(ScrollPosition? scrollPosition, Object? identity) {
   if (scrollPosition == null || identity == null) return true;
-  return (_listItemEnteredIdentities[scrollPosition] ??= <Object>{})
-      .add(identity);
+  final identities = _listItemEnteredIdentities[scrollPosition] ??=
+      LinkedHashSet<Object>();
+  if (!identities.add(identity)) return false;
+  while (identities.length > _maxListItemEnteredIdentities) {
+    identities.remove(identities.first);
+  }
+  return true;
+}
+
+@visibleForTesting
+int listItemEntranceIdentityCount(ScrollPosition scrollPosition) {
+  return _listItemEnteredIdentities[scrollPosition]?.length ?? 0;
 }
 
 class MotionDuration {
@@ -53,8 +68,8 @@ class DirectionalListItemEntrance extends StatelessWidget {
     final offset = !animateEntrance
         ? 0.0
         : scrollPosition == null
-            ? _listItemEntryDistance
-            : _listItemEntryOffsets[scrollPosition] ?? _listItemEntryDistance;
+        ? _listItemEntryDistance
+        : _listItemEntryOffsets[scrollPosition] ?? _listItemEntryDistance;
     return _DirectionalListItemEntrance(
       key: identity == null ? null : ValueKey<Object>(identity),
       scrollPosition: scrollPosition,
@@ -81,9 +96,24 @@ class DirectionalTabView extends StatefulWidget {
   State<DirectionalTabView> createState() => _DirectionalTabViewState();
 }
 
+class _ListEntranceGate extends InheritedWidget {
+  const _ListEntranceGate({required this.ready, required super.child});
+
+  final ValueListenable<bool> ready;
+
+  static ValueListenable<bool>? maybeOf(BuildContext context) {
+    return context.getInheritedWidgetOfExactType<_ListEntranceGate>()?.ready;
+  }
+
+  @override
+  bool updateShouldNotify(_ListEntranceGate oldWidget) =>
+      ready != oldWidget.ready;
+}
+
 class _DirectionalTabViewState extends State<DirectionalTabView>
     with TickerProviderStateMixin {
   late final List<_TabMotionChannel> _channels;
+  int _transitionRequestId = 0;
 
   @override
   void initState() {
@@ -96,8 +126,9 @@ class _DirectionalTabViewState extends State<DirectionalTabView>
         offset: index == widget.index
             ? 0
             : index < widget.index
-                ? -_tabSwitchDistance
-                : _tabSwitchDistance,
+            ? -_tabSwitchDistance
+            : _tabSwitchDistance,
+        listMotionReady: index == widget.index,
       ),
     );
   }
@@ -108,19 +139,44 @@ class _DirectionalTabViewState extends State<DirectionalTabView>
     _syncChannelCount();
     if (oldWidget.index == widget.index) return;
     final direction = widget.index > oldWidget.index ? 1.0 : -1.0;
+    final requestId = ++_transitionRequestId;
     final incoming = _channels[widget.index];
+    incoming.listMotionReady.value = false;
+    if (oldWidget.index < _channels.length) {
+      _channels[oldWidget.index].listMotionReady.value = false;
+    }
     if (incoming.opacity.value <= 0.001) {
       incoming
         ..offset.value = _tabSwitchDistance * direction
         ..opacity.value = 0.78;
     }
-    incoming.animateTo(offset: 0, opacity: 1);
+    final incomingAnimations = incoming.animateTo(offset: 0, opacity: 1);
+    _releaseListMotionWhenSettled(
+      incoming,
+      incomingAnimations,
+      requestId,
+      widget.index,
+    );
 
     if (oldWidget.index < _channels.length) {
-      _channels[oldWidget.index].animateTo(
-        offset: -_tabExitDistance * direction,
-        opacity: 0,
-      );
+      final outgoing = _channels[oldWidget.index];
+      outgoing.animateTo(offset: -_tabExitDistance * direction, opacity: 0);
+    }
+  }
+
+  Future<void> _releaseListMotionWhenSettled(
+    _TabMotionChannel channel,
+    List<TickerFuture> animations,
+    int requestId,
+    int index,
+  ) async {
+    try {
+      await Future.wait(animations.map((animation) => animation.orCancel));
+    } on TickerCanceled {
+      return;
+    }
+    if (mounted && requestId == _transitionRequestId && widget.index == index) {
+      channel.listMotionReady.value = true;
     }
   }
 
@@ -134,6 +190,7 @@ class _DirectionalTabViewState extends State<DirectionalTabView>
           offset: index < widget.index
               ? -_tabSwitchDistance
               : _tabSwitchDistance,
+          listMotionReady: index == widget.index,
         ),
       );
     }
@@ -179,15 +236,15 @@ class _DirectionalTabViewState extends State<DirectionalTabView>
                 enabled: isCurrent,
                 child: ExcludeSemantics(
                   excluding: !isCurrent,
-                  child: IgnorePointer(
-                    ignoring: !isCurrent,
-                    child: result,
-                  ),
+                  child: IgnorePointer(ignoring: !isCurrent, child: result),
                 ),
               ),
             );
           },
-          child: widget.children[index],
+          child: _ListEntranceGate(
+            ready: channel.listMotionReady,
+            child: widget.children[index],
+          ),
         );
       }),
     );
@@ -199,34 +256,42 @@ class _TabMotionChannel {
     required TickerProvider vsync,
     required double opacity,
     required double offset,
-  })  : opacity = AnimationController.unbounded(vsync: vsync, value: opacity),
-        offset = AnimationController.unbounded(vsync: vsync, value: offset);
+    required bool listMotionReady,
+  }) : opacity = AnimationController.unbounded(vsync: vsync, value: opacity),
+       offset = AnimationController.unbounded(vsync: vsync, value: offset),
+       listMotionReady = ValueNotifier<bool>(listMotionReady);
 
   final AnimationController opacity;
   final AnimationController offset;
+  final ValueNotifier<bool> listMotionReady;
 
-  void animateTo({required double opacity, required double offset}) {
-    this.opacity.animateWith(
-          SpringSimulation(
-            _listItemEntrySpring,
-            this.opacity.value,
-            opacity,
-            this.opacity.velocity,
-          ),
-        );
-    this.offset.animateWith(
-          SpringSimulation(
-            _listItemEntrySpring,
-            this.offset.value,
-            offset,
-            this.offset.velocity,
-          ),
-        );
+  List<TickerFuture> animateTo({
+    required double opacity,
+    required double offset,
+  }) {
+    final opacityAnimation = this.opacity.animateWith(
+      SpringSimulation(
+        _listItemEntrySpring,
+        this.opacity.value,
+        opacity,
+        this.opacity.velocity,
+      ),
+    );
+    final offsetAnimation = this.offset.animateWith(
+      SpringSimulation(
+        _listItemEntrySpring,
+        this.offset.value,
+        offset,
+        this.offset.velocity,
+      ),
+    );
+    return [opacityAnimation, offsetAnimation];
   }
 
   void dispose() {
     opacity.dispose();
     offset.dispose();
+    listMotionReady.dispose();
   }
 }
 
@@ -258,6 +323,8 @@ class _DirectionalListItemEntranceState
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final double _entryOffset;
+  ValueListenable<bool>? _gate;
+  late final bool _shouldAnimate;
 
   void _rememberDirection(double scrollDelta) {
     final scrollPosition = widget.scrollPosition;
@@ -271,16 +338,44 @@ class _DirectionalListItemEntranceState
   void initState() {
     super.initState();
     _entryOffset = widget.offset;
-    final firstEntrance =
-        _claimListItemEntrance(widget.scrollPosition, widget.identity);
-    final shouldAnimate = widget.animateEntrance && firstEntrance;
+    final firstEntrance = _claimListItemEntrance(
+      widget.scrollPosition,
+      widget.identity,
+    );
+    _shouldAnimate = widget.animateEntrance && firstEntrance;
     _controller = AnimationController.unbounded(
       vsync: this,
-      value: shouldAnimate ? 0 : 1,
+      value: _shouldAnimate ? 0 : 1,
     );
-    if (shouldAnimate) {
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final gate = _ListEntranceGate.maybeOf(context);
+    if (identical(gate, _gate)) return;
+    _gate?.removeListener(_handleGateChanged);
+    _gate = gate;
+    gate?.addListener(_handleGateChanged);
+    _handleGateChanged();
+  }
+
+  void _handleGateChanged() {
+    if (!_shouldAnimate || widget.reduceMotion) return;
+    if (!(_gate?.value ?? true)) {
+      _controller
+        ..stop()
+        ..value = 1;
+      return;
+    }
+    if (_controller.value < 1 && !_controller.isAnimating) {
       _controller.animateWith(
-        SpringSimulation(_listItemEntrySpring, 0, 1, 0),
+        SpringSimulation(
+          _listItemEntrySpring,
+          _controller.value,
+          1,
+          _controller.velocity,
+        ),
       );
     }
   }
@@ -297,6 +392,7 @@ class _DirectionalListItemEntranceState
 
   @override
   void dispose() {
+    _gate?.removeListener(_handleGateChanged);
     _controller.dispose();
     super.dispose();
   }
