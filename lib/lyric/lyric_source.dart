@@ -24,7 +24,13 @@ class LyricSource {
   int? neSongId;
   String? amllTtmlFile;
 
-  LyricSource(this.source, {this.qqSongId, this.kugouSongHash, this.neSongId, this.amllTtmlFile});
+  LyricSource(
+    this.source, {
+    this.qqSongId,
+    this.kugouSongHash,
+    this.neSongId,
+    this.amllTtmlFile,
+  });
 
   static LyricSource? fromMap(Map? map) {
     if (map == null) return null;
@@ -79,11 +85,13 @@ class LyricSource {
 Map<String, LyricSource> lyricSources = {};
 
 Future<void> readLyricSources() async {
+  final stopwatch = Stopwatch()..start();
   lyricSources = {};
   try {
     final dir = await getAppDataDir();
-    final jsonFile =
-        File('${dir.path}${Platform.pathSeparator}lyric_source.json');
+    final jsonFile = File(
+      '${dir.path}${Platform.pathSeparator}lyric_source.json',
+    );
 
     final db = await AppDb.instance.db();
     final count =
@@ -92,6 +100,10 @@ Future<void> readLyricSources() async {
       final fromJson = _readLyricSourcesFromJson(jsonFile);
       _writeLyricSourcesToDb(db, fromJson);
       lyricSources = fromJson;
+      logger.i(
+        '[perf] lyric sources load=${stopwatch.elapsedMilliseconds}ms '
+        'count=${lyricSources.length} migrated=true',
+      );
       return;
     }
 
@@ -99,7 +111,6 @@ Future<void> readLyricSources() async {
     final rows = db.select('SELECT path, source, id FROM lyric_sources');
     for (final row in rows) {
       final p = row['path'] as String;
-      if (!File(p).existsSync()) continue;
       final source = row['source'] as String;
       final id = row['id'] as String?;
       final ls = _lyricSourceFromDb(source, id);
@@ -108,9 +119,17 @@ Future<void> readLyricSources() async {
       }
     }
     lyricSources = result;
+    logger.i(
+      '[perf] lyric sources load=${stopwatch.elapsedMilliseconds}ms '
+      'count=${lyricSources.length} migrated=false',
+    );
   } catch (err, trace) {
     logger.e(err, stackTrace: trace);
   }
+}
+
+void pruneLyricSourcesWhereMissing(bool Function(String path) containsPath) {
+  lyricSources.removeWhere((path, _) => !containsPath(path));
 }
 
 Future<void> saveLyricSources() async {
@@ -131,7 +150,6 @@ Map<String, LyricSource> _readLyricSourcesFromJson(File jsonFile) {
   for (final item in decoded.entries) {
     if (item.key is! String || item.value is! Map) continue;
     final p = item.key as String;
-    if (!File(p).existsSync()) continue;
     final source = LyricSource.fromMap(item.value as Map);
     if (source != null) {
       result[p] = source;
@@ -178,10 +196,7 @@ String? _lyricSourceId(LyricSource s) {
 LyricSource? _lyricSourceFromDb(String source, String? id) {
   final normalizedSource = _normalizedSourceName(source);
   if (normalizedSource == LyricSourceType.qq.name) {
-    return LyricSource(
-      LyricSourceType.qq,
-      qqSongId: id,
-    );
+    return LyricSource(LyricSourceType.qq, qqSongId: id);
   }
   if (normalizedSource == LyricSourceType.kugou.name) {
     return LyricSource(LyricSourceType.kugou, kugouSongHash: id);
@@ -193,10 +208,7 @@ LyricSource? _lyricSourceFromDb(String source, String? id) {
     );
   }
   if (normalizedSource == LyricSourceType.amll.name) {
-    return LyricSource(
-      LyricSourceType.amll,
-      amllTtmlFile: id,
-    );
+    return LyricSource(LyricSourceType.amll, amllTtmlFile: id);
   }
   return LyricSource(LyricSourceType.local);
 }
