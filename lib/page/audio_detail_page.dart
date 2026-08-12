@@ -247,6 +247,7 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
         artist: _controllers.artist.text,
         album: _controllers.album.text,
         track: int.tryParse(_controllers.track.text.trim()) ?? 0,
+        disc: int.tryParse(_controllers.disc.text.trim()),
       );
       if (mounted) {
         showTextOnSnackBar('标签已保存');
