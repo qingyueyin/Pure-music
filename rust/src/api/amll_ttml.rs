@@ -1,4 +1,5 @@
 use serde::{Deserialize, Deserializer};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
@@ -276,6 +277,22 @@ fn should_refresh_index(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+fn best_display_title(entry: &IndexEntry, terms: &[String]) -> String {
+    entry
+        .metadata
+        .titles
+        .iter()
+        .max_by_key(|title| {
+            let normalized = normalize_search_text(title);
+            terms
+                .iter()
+                .map(|term| field_match_score(&normalized, term, true))
+                .sum::<i32>()
+        })
+        .cloned()
+        .unwrap_or_default()
+}
+
 fn download_index_text() -> Result<String, String> {
     let mut errors = Vec::new();
     for url in [BIKONOO_INDEX_URL, GITHUB_INDEX_URL] {
@@ -303,7 +320,9 @@ pub fn amll_search_lyrics(
         .lock()
         .map_err(|_| "AMLL index cache lock poisoned".to_string())?;
     let entries = match cache_guard.as_ref() {
-        Some(cached) if cached.path == cache_file => Arc::clone(&cached.entries),
+        Some(cached) if cached.path == cache_file && !should_refresh_index(&cache_file) => {
+            Arc::clone(&cached.entries)
+        }
         None => {
             let loaded = resolve_index(
                 &cache_file,
@@ -344,13 +363,42 @@ pub fn amll_search_lyrics(
 
     scored.sort_by(|a, b| b.1.cmp(&a.1));
 
+    let mut seen = HashSet::new();
+    scored.retain(|(entry, _)| {
+        let key = format!(
+            "{}\u{1f}|{}\u{1f}|{}",
+            entry
+                .metadata
+                .titles
+                .iter()
+                .map(|title| normalize_search_text(title))
+                .collect::<Vec<_>>()
+                .join("\u{1f}"),
+            entry
+                .metadata
+                .artists
+                .iter()
+                .map(|artist| normalize_search_text(artist))
+                .collect::<Vec<_>>()
+                .join("\u{1f}"),
+            entry
+                .metadata
+                .albums
+                .iter()
+                .map(|album| normalize_search_text(album))
+                .collect::<Vec<_>>()
+                .join("\u{1f}"),
+        );
+        seen.insert(key)
+    });
+
     let start = ((page.max(1) - 1) * page_size) as usize;
     Ok(scored
         .into_iter()
         .skip(start)
         .take(page_size as usize)
         .map(|(e, s)| {
-            let title = e.metadata.titles.first().cloned().unwrap_or_default();
+            let title = best_display_title(e, &terms);
             let artist = e.metadata.artists.join(", ");
             let album = e.metadata.albums.first().cloned().unwrap_or_default();
             AmllSearchItem {
