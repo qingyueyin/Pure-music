@@ -59,6 +59,9 @@ features:
       <kbd>F1</kbd> 沉浸模式
     </div>
     <div class="home-card">
+      <kbd>F11</kbd> 最大化 / 还原窗口
+    </div>
+    <div class="home-card">
       <kbd>Esc</kbd> 关闭弹窗 / 返回
     </div>
     <div class="home-card">
