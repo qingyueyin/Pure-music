@@ -1,6 +1,7 @@
 // ignore_for_file: unnecessary_this
 
 import 'dart:async';
+import 'dart:collection';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:pure_music/core/design_tokens.dart';
@@ -33,23 +34,20 @@ extension StringHMMSS on Duration {
 }
 
 const int _pinyinCacheMaxSize = 2000;
-Map<String, String> _pinyinCache = {};
-List<String> _pinyinCacheAccessOrder = [];
+final LinkedHashMap<String, String> _pinyinCache = LinkedHashMap();
 
 extension PinyinCompare on String {
   /// convert str to pinyin, cache it when it hasn't been converted;
   String _getPinyin() {
-    final cachedPinyin = _pinyinCache[this];
+    final cachedPinyin = _pinyinCache.remove(this);
     if (cachedPinyin != null) {
-      _pinyinCacheAccessOrder.remove(this);
-      _pinyinCacheAccessOrder.add(this);
+      _pinyinCache[this] = cachedPinyin;
       return cachedPinyin;
     }
 
-    final splited = this.split('');
     final pinyinBuilder = StringBuffer();
-
-    for (var c in splited) {
+    for (final rune in runes) {
+      final c = String.fromCharCode(rune);
       if (ChineseHelper.isChinese(c)) {
         final pinyin = PinyinHelper.convertToPinyinArray(
           c,
@@ -65,11 +63,8 @@ extension PinyinCompare on String {
     final pinyin = pinyinBuilder.toString();
 
     _pinyinCache[this] = pinyin;
-    _pinyinCacheAccessOrder.add(this);
-
     while (_pinyinCache.length > _pinyinCacheMaxSize) {
-      final oldestKey = _pinyinCacheAccessOrder.removeAt(0);
-      _pinyinCache.remove(oldestKey);
+      _pinyinCache.remove(_pinyinCache.keys.first);
     }
 
     return pinyin;
@@ -91,71 +86,123 @@ extension PinyinCompare on String {
   }
 
   int naturalCompareTo(String other) {
-    final a = this;
-    final b = other;
-    final aTokens = _tokenizeForNaturalCompare(a);
-    final bTokens = _tokenizeForNaturalCompare(b);
+    final aTokens = _tokenizeForNaturalCompare(this);
+    final bTokens = _tokenizeForNaturalCompare(other);
+    return _compareNaturalTokens(aTokens, bTokens);
+  }
+}
 
-    final len =
-        aTokens.length < bTokens.length ? aTokens.length : bTokens.length;
-    for (int i = 0; i < len; i++) {
-      final ta = aTokens[i];
-      final tb = bTokens[i];
-      if (ta.isNumber && tb.isNumber) {
-        final cmp = ta.number!.compareTo(tb.number!);
-        if (cmp != 0) return cmp;
-        final lenCmp = ta.text.length.compareTo(tb.text.length);
-        if (lenCmp != 0) return lenCmp;
-        continue;
-      }
-      final cmp = ta.text.toLowerCase().localeCompareTo(tb.text.toLowerCase());
-      if (cmp != 0) return cmp;
+void sortNaturallyBy<T>(
+  List<T> list,
+  String Function(T item) valueOf, {
+  bool descending = false,
+  bool reuseEqualKeys = false,
+}) {
+  final tokenCache = reuseEqualKeys ? <String, List<_NaturalToken>>{} : null;
+  final prepared = List<(T, List<_NaturalToken>)>.generate(list.length, (
+    index,
+  ) {
+    final item = list[index];
+    final value = valueOf(item);
+    var tokens = tokenCache?[value];
+    if (tokens == null) {
+      tokens = _tokenizeForNaturalCompare(value);
+      tokenCache?[value] = tokens;
     }
-    return aTokens.length.compareTo(bTokens.length);
+    return (item, tokens);
+  }, growable: false);
+  prepared.sort((a, b) {
+    if (descending) {
+      return _compareNaturalTokens(b.$2, a.$2);
+    }
+    return _compareNaturalTokens(a.$2, b.$2);
+  });
+  for (var i = 0; i < prepared.length; i++) {
+    list[i] = prepared[i].$1;
   }
 }
 
 class _NaturalToken {
   final bool isNumber;
   final String text;
-  final BigInt? number;
-  const _NaturalToken._(this.isNumber, this.text, this.number);
-  factory _NaturalToken.text(String text) => _NaturalToken._(false, text, null);
-  factory _NaturalToken.number(String text) =>
-      _NaturalToken._(true, text, BigInt.tryParse(text) ?? BigInt.zero);
+  final int significantNumberStart;
+  late final String comparisonText = _localeComparisonKey(text.toLowerCase());
+
+  _NaturalToken._(this.isNumber, this.text, this.significantNumberStart);
+  factory _NaturalToken.text(String text) => _NaturalToken._(false, text, 0);
+  factory _NaturalToken.number(String text) {
+    var start = 0;
+    while (start < text.length - 1 && text.codeUnitAt(start) == 0x30) {
+      start++;
+    }
+    return _NaturalToken._(true, text, start);
+  }
+}
+
+String _localeComparisonKey(String value) =>
+    ChineseHelper.containsChinese(value) ? value._getPinyin() : value;
+
+int _compareNaturalTokens(
+  List<_NaturalToken> aTokens,
+  List<_NaturalToken> bTokens,
+) {
+  final len = aTokens.length < bTokens.length ? aTokens.length : bTokens.length;
+  for (var i = 0; i < len; i++) {
+    final a = aTokens[i];
+    final b = bTokens[i];
+    if (a.isNumber && b.isNumber) {
+      final numberComparison = _compareNaturalNumbers(a, b);
+      if (numberComparison != 0) return numberComparison;
+      final lengthComparison = a.text.length.compareTo(b.text.length);
+      if (lengthComparison != 0) return lengthComparison;
+      continue;
+    }
+    final textComparison = a.comparisonText.compareTo(b.comparisonText);
+    if (textComparison != 0) return textComparison;
+  }
+  return aTokens.length.compareTo(bTokens.length);
+}
+
+int _compareNaturalNumbers(_NaturalToken a, _NaturalToken b) {
+  final aLength = a.text.length - a.significantNumberStart;
+  final bLength = b.text.length - b.significantNumberStart;
+  final lengthComparison = aLength.compareTo(bLength);
+  if (lengthComparison != 0) return lengthComparison;
+  for (var offset = 0; offset < aLength; offset++) {
+    final comparison = a.text
+        .codeUnitAt(a.significantNumberStart + offset)
+        .compareTo(b.text.codeUnitAt(b.significantNumberStart + offset));
+    if (comparison != 0) return comparison;
+  }
+  return 0;
 }
 
 List<_NaturalToken> _tokenizeForNaturalCompare(String input) {
   if (input.isEmpty) return const [];
   final tokens = <_NaturalToken>[];
-  final buffer = StringBuffer();
-  bool? inNumber;
-
-  for (int i = 0; i < input.length; i++) {
+  var tokenStart = 0;
+  var inNumber = false;
+  for (var i = 0; i < input.length; i++) {
     final c = input.codeUnitAt(i);
     final isDigit = c >= 0x30 && c <= 0x39;
-    if (inNumber == null) {
+    if (i == 0) {
       inNumber = isDigit;
-      buffer.writeCharCode(c);
       continue;
     }
-
     if (isDigit == inNumber) {
-      buffer.writeCharCode(c);
       continue;
     }
-
-    final text = buffer.toString();
-    tokens
-        .add(inNumber ? _NaturalToken.number(text) : _NaturalToken.text(text));
-    buffer.clear();
+    final text = input.substring(tokenStart, i);
+    tokens.add(
+      inNumber ? _NaturalToken.number(text) : _NaturalToken.text(text),
+    );
+    tokenStart = i;
     inNumber = isDigit;
-    buffer.writeCharCode(c);
   }
-
-  final text = buffer.toString();
+  final text = input.substring(tokenStart);
   tokens.add(
-      inNumber == true ? _NaturalToken.number(text) : _NaturalToken.text(text));
+    inNumber == true ? _NaturalToken.number(text) : _NaturalToken.text(text),
+  );
   return tokens;
 }
 
@@ -282,10 +329,7 @@ Timer? _lyricWriteTimer;
 OverlayEntry? _hotkeyToastEntry;
 Timer? _hotkeyToastTimer;
 
-void showHotkeyToast({
-  required String text,
-  IconData? icon,
-}) {
+void showHotkeyToast({required String text, IconData? icon}) {
   final context =
       scaffoldMessengerKey.currentContext ?? routerKey.currentContext;
   final overlay = routerKey.currentState?.overlay;
