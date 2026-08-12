@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:pure_music/core/settings.dart';
-import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/lyric/lyric_source.dart';
@@ -130,8 +129,8 @@ class UpdatingStateView extends StatefulWidget {
 }
 
 class _UpdatingStateViewState extends State<UpdatingStateView> {
-  late final Stream<IndexActionState> updateIndexStream;
   StreamSubscription<IndexActionState>? _subscription;
+  IndexActionState? _latestAction;
   String? _errorMessage;
 
   void whenIndexUpdated() async {
@@ -142,9 +141,9 @@ class _UpdatingStateViewState extends State<UpdatingStateView> {
         readPlaylists(),
         readLyricSources(),
       ]);
-      AlbumColorCache.instance
-          .prewarmAlbums(AudioLibrary.instance.albumCollection.values)
-          .ignore();
+      pruneLyricSourcesWhereMissing(
+        (path) => AudioLibrary.instance.audioByPath(path) != null,
+      );
       await _subscription?.cancel();
       final ctx = context;
       if (ctx.mounted) {
@@ -161,23 +160,28 @@ class _UpdatingStateViewState extends State<UpdatingStateView> {
   @override
   void initState() {
     super.initState();
-    updateIndexStream = updateIndex(
-      indexPath: widget.indexPath.path,
-    ).asBroadcastStream();
-
-    _subscription = updateIndexStream.listen(
-      (action) {
-        logger.i('[update index] ${action.progress}: ${action.message}');
-      },
-      onError: (Object error, StackTrace stackTrace) {
-        logger.e('更新音乐库索引失败', error: error, stackTrace: stackTrace);
-        if (mounted) {
-          setState(() => _errorMessage = '音乐库索引失败，请查看日志');
-        }
-      },
-      onDone: whenIndexUpdated,
-      cancelOnError: true,
-    );
+    _subscription =
+        updateIndex(
+          indexPath: widget.indexPath.path,
+          forceMetadataCheck: false,
+        ).listen(
+          (action) {
+            if (action.message.isNotEmpty) {
+              logger.i('[update index] ${action.progress}: ${action.message}');
+            }
+            if (mounted) {
+              setState(() => _latestAction = action);
+            }
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            logger.e('更新音乐库索引失败', error: error, stackTrace: stackTrace);
+            if (mounted) {
+              setState(() => _errorMessage = '音乐库索引失败，请查看日志');
+            }
+          },
+          onDone: whenIndexUpdated,
+          cancelOnError: true,
+        );
   }
 
   @override
@@ -200,11 +204,7 @@ class _UpdatingStateViewState extends State<UpdatingStateView> {
               ? Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      Icons.error_outline,
-                      color: scheme.error,
-                      size: 40.0,
-                    ),
+                    Icon(Icons.error_outline, color: scheme.error, size: 40.0),
                     const SizedBox(height: 12.0),
                     Text(
                       '初始化失败',
@@ -230,64 +230,55 @@ class _UpdatingStateViewState extends State<UpdatingStateView> {
                     ),
                   ],
                 )
-              : StreamBuilder<IndexActionState>(
-                  stream: updateIndexStream,
-                  builder: (context, snapshot) {
-                    final progress = snapshot.data?.progress;
-                    final message = snapshot.data?.message ?? '正在初始化...';
-
-                    return Column(
-                      mainAxisSize: MainAxisSize.min,
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    LinearProgressIndicator(
+                      value: _latestAction?.progress,
+                      backgroundColor: scheme.onSurface.withValues(alpha: 0.1),
+                      color: scheme.primary,
+                      borderRadius: BorderRadius.circular(2.0),
+                      minHeight: 8,
+                    ),
+                    const SizedBox(height: 16.0),
+                    Row(
                       mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        LinearProgressIndicator(
-                          value: progress,
-                          backgroundColor:
-                              scheme.onSurface.withValues(alpha: 0.1),
-                          color: scheme.primary,
-                          borderRadius: BorderRadius.circular(2.0),
-                          minHeight: 8,
+                        Flexible(
+                          child: Text(
+                            _latestAction?.message ?? '正在初始化...',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: scheme.onSurface,
+                              fontSize: 14,
+                            ),
+                          ),
                         ),
-                        const SizedBox(height: 16.0),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Flexible(
-                              child: Text(
-                                message,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: scheme.onSurface,
-                                  fontSize: 14,
-                                ),
+                        if (_latestAction != null) ...[
+                          const SizedBox(width: 8.0),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8.0,
+                              vertical: 4.0,
+                            ),
+                            decoration: BoxDecoration(
+                              color: scheme.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(12.0),
+                            ),
+                            child: Text(
+                              '${(_latestAction!.progress.clamp(0.0, 1.0) * 100).round()}%',
+                              style: TextStyle(
+                                color: scheme.onSurfaceVariant,
+                                fontSize: 12.0,
                               ),
                             ),
-                            if (progress != null) ...[
-                              const SizedBox(width: 8.0),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8.0,
-                                  vertical: 4.0,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: scheme.surfaceContainerHighest,
-                                  borderRadius: BorderRadius.circular(12.0),
-                                ),
-                                child: Text(
-                                  '${(progress.clamp(0.0, 1.0) * 100).round()}%',
-                                  style: TextStyle(
-                                    color: scheme.onSurfaceVariant,
-                                    fontSize: 12.0,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
+                          ),
+                        ],
                       ],
-                    );
-                  },
+                    ),
+                  ],
                 ),
         ),
       ),
