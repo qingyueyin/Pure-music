@@ -2,12 +2,18 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
 import 'dart:convert';
+import 'dart:isolate';
+import 'dart:typed_data';
 import 'package:path/path.dart' as p;
+import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/cache.dart';
+import 'package:pure_music/core/workload_policy.dart';
+import 'package:pure_music/core/page_sort.dart';
 import 'package:pure_music/native/rust/api/library_db.dart' as library_db;
+import 'package:pure_music/library/library_page_order_cache.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:flutter/foundation.dart';
@@ -21,8 +27,252 @@ String _audioPathLookupKey(String value) {
   return normalized.toLowerCase();
 }
 
+Set<String> _folderPathKeySet(Iterable<String> paths) {
+  final result = <String>{};
+  for (final path in paths) {
+    final key = pendingFolderKey(path);
+    if (key.isNotEmpty) result.add(key);
+  }
+  return result;
+}
+
+int? _optionalInt(Object? value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return int.tryParse(value?.toString().trim() ?? '');
+}
+
+class _AudioLoadPool {
+  _AudioLoadPool(this._artistSplitRegex);
+
+  static const int _maxTexts = 65536;
+  static const int _maxArtistLists = 32768;
+  final RegExp _artistSplitRegex;
+  final Map<String, String> _texts = <String, String>{};
+  final Map<String, List<String>> _artistLists = <String, List<String>>{};
+
+  int get textCount => _texts.length;
+  int get artistListCount => _artistLists.length;
+
+  String text(String value) {
+    if (value.isEmpty) return '';
+    final existing = _texts[value];
+    if (existing != null) return existing;
+    if (_texts.length >= _maxTexts) return value;
+    _texts[value] = value;
+    return value;
+  }
+
+  String? optionalText(String? value) => value == null ? null : text(value);
+
+  List<String> artistList(String value) {
+    if (value.isEmpty) return const <String>[];
+    final canonicalValue = text(value);
+    final existing = _artistLists[canonicalValue];
+    if (existing != null) return existing;
+    final parts = Audio._splitAndDedup(canonicalValue, _artistSplitRegex);
+    for (var index = 0; index < parts.length; index++) {
+      parts[index] = text(parts[index]);
+    }
+    if (_artistLists.length >= _maxArtistLists) return parts;
+    final result = List<String>.unmodifiable(parts);
+    _artistLists[canonicalValue] = result;
+    return result;
+  }
+
+  void release() {
+    _artistLists.clear();
+    _texts.clear();
+  }
+}
+
+Audio _audioFromIndex(library_db.IndexAudio audio, _AudioLoadPool pool) =>
+    Audio._fromLoaded(
+      audio.title,
+      audio.artist,
+      audio.album,
+      audio.albumArtist,
+      audio.track,
+      audio.duration.toInt(),
+      audio.bitrate,
+      audio.sampleRate,
+      audio.path,
+      audio.modified.toInt(),
+      audio.created.toInt(),
+      audio.by,
+      pool,
+      disc: audio.disc,
+      playCount: audio.playCount,
+    );
+
+Audio _audioFromMap(Map map, _AudioLoadPool pool) => Audio._fromLoaded(
+  map['title'] ?? '',
+  map['artist'] ?? '',
+  map['album'] ?? '',
+  map['album_artist'],
+  map['track'] ?? 0,
+  map['duration'] ?? 0,
+  map['bitrate'],
+  map['sample_rate'],
+  map['path'] ?? '',
+  map['modified'] ?? 0,
+  map['created'] ?? 0,
+  map['by'],
+  pool,
+  disc: _optionalInt(map['disc']),
+  playCount: map['play_count'] ?? 0,
+);
+
+String _rssMegabytes(int bytes) => (bytes / (1024 * 1024)).toStringAsFixed(1);
+
+Uint32List _sortLibraryPageIndexes({
+  required int length,
+  required bool descending,
+  List<String>? naturalValues,
+  List<int>? integerValues,
+  bool reuseEqualKeys = false,
+}) {
+  final indexes = Uint32List(length);
+  for (var index = 0; index < length; index++) {
+    indexes[index] = index;
+  }
+  if (naturalValues != null) {
+    sortNaturallyBy(
+      indexes,
+      (index) => naturalValues[index],
+      descending: descending,
+      reuseEqualKeys: reuseEqualKeys,
+    );
+    return indexes;
+  }
+  final values = integerValues!;
+  if (descending) {
+    indexes.sort((a, b) => values[b].compareTo(values[a]));
+  } else {
+    indexes.sort((a, b) => values[a].compareTo(values[b]));
+  }
+  return indexes;
+}
+
+typedef _SecondaryPageSortRequest = ({
+  SendPort sendPort,
+  int artistCount,
+  List<String>? artistNaturalValues,
+  List<int>? artistIntegerValues,
+  bool artistDescending,
+  int albumCount,
+  List<String>? albumNaturalValues,
+  List<int>? albumIntegerValues,
+  bool albumDescending,
+});
+
+TransferableTypedData _transferPageOrder(Uint32List order) {
+  return TransferableTypedData.fromList([
+    order.buffer.asUint8List(order.offsetInBytes, order.lengthInBytes),
+  ]);
+}
+
+Uint32List _materializeTransferredPageOrder(TransferableTypedData data) {
+  final bytes = data.materialize().asUint8List();
+  return bytes.buffer.asUint32List(
+    bytes.offsetInBytes,
+    bytes.lengthInBytes ~/ Uint32List.bytesPerElement,
+  );
+}
+
+void _sortSecondaryPageIndexes(_SecondaryPageSortRequest request) {
+  try {
+    final artistOrder = _sortLibraryPageIndexes(
+      length: request.artistCount,
+      naturalValues: request.artistNaturalValues,
+      integerValues: request.artistIntegerValues,
+      descending: request.artistDescending,
+    );
+    request.sendPort.send(<Object?>[0, _transferPageOrder(artistOrder)]);
+    final albumOrder = _sortLibraryPageIndexes(
+      length: request.albumCount,
+      naturalValues: request.albumNaturalValues,
+      integerValues: request.albumIntegerValues,
+      descending: request.albumDescending,
+    );
+    request.sendPort.send(<Object?>[1, _transferPageOrder(albumOrder)]);
+    request.sendPort.send(const <Object?>[2]);
+  } catch (error, trace) {
+    request.sendPort.send(<Object?>[3, error.toString(), trace.toString()]);
+  }
+}
+
+Future<List<T>> _materializeSortedItems<T>(
+  List<T> source,
+  List<int> indexes,
+) async {
+  if (indexes.isEmpty) return <T>[];
+  final stopwatch = Stopwatch()..start();
+  try {
+    final result = List<T>.filled(
+      indexes.length,
+      source[indexes.first],
+      growable: false,
+    );
+    for (var index = 1; index < indexes.length; index++) {
+      result[index] = source[indexes[index]];
+      if ((index + 1) % AudioLibrary._pageSnapshotMaterializeBatchSize == 0) {
+        await Future<void>.delayed(Duration.zero);
+      }
+    }
+    return result;
+  } finally {
+    stopwatch.stop();
+    pageSortPhaseObserver?.call('LibraryMaterialize', stopwatch.elapsed);
+  }
+}
+
+class _CollectionBuildState {
+  _CollectionBuildState(this.generation);
+
+  final int generation;
+  final Set<Album> albumsUsingAlbumArtists = <Album>{};
+}
+
+class PreparedLibraryPage<T> {
+  const PreparedLibraryPage({
+    required this.items,
+    required this.sortMethod,
+    required this.sortOrder,
+  });
+
+  final List<T> items;
+  final int sortMethod;
+  final SortOrder sortOrder;
+}
+
+class _LibraryInstallMetrics {
+  const _LibraryInstallMetrics({
+    required this.collectionsMilliseconds,
+    required this.pagePreparationMilliseconds,
+  });
+
+  final int collectionsMilliseconds;
+  final int pagePreparationMilliseconds;
+}
+
+class _PageOrderCacheSpec {
+  const _PageOrderCacheSpec({
+    required this.sourcePath,
+    required this.cachePath,
+    required this.sourceSignature,
+    required this.context,
+  });
+
+  final String sourcePath;
+  final String cachePath;
+  final LibraryPageSourceSignature sourceSignature;
+  final String context;
+}
+
 /// from index.json
 class AudioLibrary {
+  static const int _pageSnapshotMaterializeBatchSize = 8192;
   List<AudioFolder> folders;
 
   AudioLibrary._(this.folders);
@@ -57,9 +307,90 @@ class AudioLibrary {
 
   static AudioLibrary? _instance;
 
-  /// Incremented on every initFromIndex call to notify pages
-  /// (e.g. AudiosPage) that library content has changed.
+  /// Incremented when the core library objects are installed.
   static final libraryVersion = ValueNotifier<int>(0);
+
+  /// Incremented after artist and album page data is ready for display.
+  static final artistAlbumVersion = ValueNotifier<int>(0);
+  static final artistPageVersion = ValueNotifier<int>(0);
+  static final albumPageVersion = ValueNotifier<int>(0);
+  static Future<void>? _collectionInstallInProgress;
+  int _collectionGeneration = 0;
+  int _publishedArtistAlbumGeneration = -1;
+  int _publishedArtistPageGeneration = -1;
+  int _publishedAlbumPageGeneration = -1;
+  PreparedLibraryPage<Audio>? _preparedAudiosPage;
+  PreparedLibraryPage<Artist>? _preparedArtistsPage;
+  PreparedLibraryPage<Album>? _preparedAlbumsPage;
+  Future<void>? _secondaryPagePreparation;
+  int? _secondaryPagePreparationGeneration;
+  Future<void>? _audioPagePreparation;
+  int? _audioPagePreparationGeneration;
+  Future<void>? _pageOrderCacheWrite;
+  int _pageOrderCacheWriteRequest = 0;
+  _PageOrderCacheSpec? _activePageOrderCacheSpec;
+  List<AudioFolder>? _aggregatedRootFoldersCache;
+  List<AudioFolder>? _aggregatedRootFoldersSource;
+  int _aggregatedRootFoldersSourceLength = -1;
+  List<String> _aggregatedRootFoldersUserPaths = const <String>[];
+
+  static Future<_LibraryInstallMetrics> _installLoadedFolders(
+    List<AudioFolder> loadedFolders, {
+    required String pageCacheSourcePath,
+    required String pageCachePath,
+    required int objectBatchSize,
+  }) async {
+    while (true) {
+      final pending = _collectionInstallInProgress;
+      if (pending == null) break;
+      await pending;
+    }
+
+    final completer = Completer<void>();
+    _collectionInstallInProgress = completer.future;
+    try {
+      _instance ??= AudioLibrary._([]);
+      final initialLoad = instance.folders.isEmpty;
+      final collectionStopwatch = Stopwatch()..start();
+      if (initialLoad) {
+        await instance._replaceFoldersForInitialLoad(
+          loadedFolders,
+          objectBatchSize,
+        );
+      } else {
+        instance.replaceFolders(loadedFolders);
+      }
+      collectionStopwatch.stop();
+      final pagePreparationStopwatch = Stopwatch()..start();
+      final cacheSpec = await instance._resolvePageOrderCacheSpec(
+        sourcePath: pageCacheSourcePath,
+        cachePath: pageCachePath,
+      );
+      instance._activePageOrderCacheSpec = cacheSpec;
+      final restored = cacheSpec == null
+          ? (audios: false, artists: false, albums: false)
+          : await instance._restorePreferredPageSnapshots(cacheSpec);
+      final restoredAll =
+          restored.audios && restored.artists && restored.albums;
+      await instance._preparePagesForLoad(
+        initialLoad: initialLoad,
+        cacheSpec: cacheSpec,
+        restoredAll: restoredAll,
+      );
+      CoverImageCache.instance.preloadPersistent(
+        List<Audio>.of(instance.audioCollection),
+      );
+      pagePreparationStopwatch.stop();
+      return _LibraryInstallMetrics(
+        collectionsMilliseconds: collectionStopwatch.elapsedMilliseconds,
+        pagePreparationMilliseconds:
+            pagePreparationStopwatch.elapsedMilliseconds,
+      );
+    } finally {
+      _collectionInstallInProgress = null;
+      completer.complete();
+    }
+  }
 
   /// 目前 index 结构：
   /// ```json
@@ -80,11 +411,18 @@ class AudioLibrary {
   static Future<void> initFromIndex() async {
     final stopwatch = Stopwatch()..start();
     try {
-      CoverImageCache.instance.clear();
-      PaintingBinding.instance.imageCache.clear();
       final supportPath = (await getAppDataDir()).path;
       final indexPath = p.join(supportPath, 'index.json');
       final sqlitePath = p.join(supportPath, 'library.sqlite');
+      final pageCachePath = p.join(
+        supportPath,
+        'cache',
+        'library_page_orders.bin',
+      );
+      final objectBatchSize = libraryObjectBatchSizeFor(
+        processorBudget: applicationProcessorBudget,
+        hasPlaybackSession: PlayService.instance.hasPlaybackSession,
+      );
 
       if (!File(sqlitePath).existsSync() && File(indexPath).existsSync()) {
         try {
@@ -95,30 +433,43 @@ class AudioLibrary {
       }
 
       try {
+        final sqliteReadStopwatch = Stopwatch()..start();
         final dbFolders = await library_db.readIndexFromSqlite(
           indexPath: supportPath,
         );
+        sqliteReadStopwatch.stop();
+        final rssAfterRead = ProcessInfo.currentRss;
+        final conversionStopwatch = Stopwatch()..start();
         final folders = <AudioFolder>[];
+        final loadPool = _AudioLoadPool(AppSettings.instance.artistSplitRegex);
+        var convertedAudioCount = 0;
         for (final folder in dbFolders) {
-          final audios = <Audio>[];
-          for (final audio in folder.audios) {
-            audios.add(
-              Audio.fromMap({
-                'title': audio.title,
-                'artist': audio.artist,
-                'album': audio.album,
-                'album_artist': audio.albumArtist,
-                'track': audio.track,
-                'duration': audio.duration.toInt(),
-                'bitrate': audio.bitrate,
-                'sample_rate': audio.sampleRate,
-                'path': audio.path,
-                'modified': audio.modified.toInt(),
-                'created': audio.created.toInt(),
-                'by': audio.by,
-                'play_count': audio.playCount,
-              }),
+          final sourceAudios = folder.audios;
+          final audioCount = sourceAudios.length;
+          final List<Audio> audios;
+          if (audioCount == 0) {
+            audios = <Audio>[];
+          } else {
+            final lastIndex = audioCount - 1;
+            final lastAudio = _audioFromIndex(
+              sourceAudios.removeLast(),
+              loadPool,
             );
+            audios = List<Audio>.filled(audioCount, lastAudio, growable: false);
+            convertedAudioCount++;
+            if (convertedAudioCount % objectBatchSize == 0) {
+              await Future<void>.delayed(Duration.zero);
+            }
+            for (var index = lastIndex - 1; index >= 0; index--) {
+              audios[index] = _audioFromIndex(
+                sourceAudios.removeLast(),
+                loadPool,
+              );
+              convertedAudioCount++;
+              if (convertedAudioCount % objectBatchSize == 0) {
+                await Future<void>.delayed(Duration.zero);
+              }
+            }
           }
           folders.add(
             AudioFolder(
@@ -129,36 +480,118 @@ class AudioLibrary {
             ),
           );
         }
+        final pooledTextCount = loadPool.textCount;
+        final pooledArtistListCount = loadPool.artistListCount;
+        loadPool.release();
+        dbFolders.clear();
+        conversionStopwatch.stop();
+        final rssAfterConversion = ProcessInfo.currentRss;
 
-        _instance ??= AudioLibrary._([]);
-        instance.replaceFolders(folders);
+        final installMetrics = await _installLoadedFolders(
+          folders,
+          pageCacheSourcePath: indexPath,
+          pageCachePath: pageCachePath,
+          objectBatchSize: objectBatchSize,
+        );
         logger.i(
-          'AudioLibrary init from sqlite: ${stopwatch.elapsedMilliseconds}ms, audios=${instance.audioCollection.length}',
+          '[perf] library sqlite total=${stopwatch.elapsedMilliseconds}ms '
+          'read=${sqliteReadStopwatch.elapsedMilliseconds}ms '
+          'convert=${conversionStopwatch.elapsedMilliseconds}ms '
+          'collections=${installMetrics.collectionsMilliseconds}ms '
+          'pages=${installMetrics.pagePreparationMilliseconds}ms '
+          'batch=$objectBatchSize '
+          'audios=${instance.audioCollection.length} '
+          'pooledTexts=$pooledTextCount '
+          'pooledArtistLists=$pooledArtistListCount '
+          'rssRead=${_rssMegabytes(rssAfterRead)}MB '
+          'rssConvert=${_rssMegabytes(rssAfterConversion)}MB',
         );
         libraryVersion.value++;
+        instance._publishArtistAlbumVersionIfReady(
+          instance._collectionGeneration,
+        );
         return;
-      } catch (_) {}
+      } catch (err, trace) {
+        logger.w('SQLite 曲库读取失败，回退到 JSON 索引', error: err, stackTrace: trace);
+      }
 
-      final indexStr = await File(indexPath).readAsString();
+      final jsonReadStopwatch = Stopwatch()..start();
+      var indexStr = await File(indexPath).readAsString();
+      jsonReadStopwatch.stop();
+      final jsonDecodeStopwatch = Stopwatch()..start();
       final Map indexJson = json.decode(indexStr);
+      indexStr = '';
+      jsonDecodeStopwatch.stop();
+      final rssAfterDecode = ProcessInfo.currentRss;
+      final conversionStopwatch = Stopwatch()..start();
       final List foldersJson = indexJson['folders'];
       final List<AudioFolder> folders = [];
+      final loadPool = _AudioLoadPool(AppSettings.instance.artistSplitRegex);
+      var convertedAudioCount = 0;
 
       for (Map folderMap in foldersJson) {
         final List audiosJson = folderMap['audios'];
-        final List<Audio> audios = [];
-        for (Map audioMap in audiosJson) {
-          audios.add(Audio.fromMap(audioMap));
+        final audioCount = audiosJson.length;
+        final List<Audio> audios;
+        if (audioCount == 0) {
+          audios = <Audio>[];
+        } else {
+          final lastIndex = audioCount - 1;
+          final lastAudio = _audioFromMap(
+            audiosJson.removeLast() as Map,
+            loadPool,
+          );
+          audios = List<Audio>.filled(audioCount, lastAudio, growable: false);
+          convertedAudioCount++;
+          if (convertedAudioCount % objectBatchSize == 0) {
+            await Future<void>.delayed(Duration.zero);
+          }
+          for (var index = lastIndex - 1; index >= 0; index--) {
+            audios[index] = _audioFromMap(
+              audiosJson.removeLast() as Map,
+              loadPool,
+            );
+            convertedAudioCount++;
+            if (convertedAudioCount % objectBatchSize == 0) {
+              await Future<void>.delayed(Duration.zero);
+            }
+          }
         }
         folders.add(AudioFolder.fromMap(folderMap, audios));
+        folderMap.clear();
       }
+      final pooledTextCount = loadPool.textCount;
+      final pooledArtistListCount = loadPool.artistListCount;
+      loadPool.release();
+      foldersJson.clear();
+      indexJson.clear();
+      conversionStopwatch.stop();
+      final rssAfterConversion = ProcessInfo.currentRss;
 
-      _instance ??= AudioLibrary._([]);
-      instance.replaceFolders(folders);
+      final installMetrics = await _installLoadedFolders(
+        folders,
+        pageCacheSourcePath: indexPath,
+        pageCachePath: pageCachePath,
+        objectBatchSize: objectBatchSize,
+      );
       logger.i(
-        'AudioLibrary init from json: ${stopwatch.elapsedMilliseconds}ms, audios=${instance.audioCollection.length}',
+        '[perf] library json total=${stopwatch.elapsedMilliseconds}ms '
+        'read=${jsonReadStopwatch.elapsedMilliseconds}ms '
+        'decode=${jsonDecodeStopwatch.elapsedMilliseconds}ms '
+        'convert=${conversionStopwatch.elapsedMilliseconds}ms '
+        'collections=${installMetrics.collectionsMilliseconds}ms '
+        'pages=${installMetrics.pagePreparationMilliseconds}ms '
+        'batch=$objectBatchSize '
+        'audios=${instance.audioCollection.length} '
+        'pooledTexts=$pooledTextCount '
+        'pooledArtistLists=$pooledArtistListCount '
+        'rssDecode=${_rssMegabytes(rssAfterDecode)}MB '
+        'rssConvert=${_rssMegabytes(rssAfterConversion)}MB',
       );
       libraryVersion.value++;
+      instance._publishArtistAlbumVersionIfReady(
+        instance._collectionGeneration,
+      );
     } catch (err, trace) {
       logger.e(err, stackTrace: trace);
     }
@@ -166,99 +599,888 @@ class AudioLibrary {
 
   void _filterExcludedFolders() {
     final excluded = AppPreference.instance.excludedFolderPaths;
-    if (excluded.isNotEmpty) {
-      folders.removeWhere(
-        (f) =>
-            isFolderPathExcluded(excludedPaths: excluded, folderPath: f.path),
-      );
-    }
+    if (excluded.isEmpty) return;
+    final excludedKeys = _folderPathKeySet(excluded);
+    if (excludedKeys.isEmpty) return;
+    folders.removeWhere((folder) {
+      final key = folder._pathLookupKey;
+      return key.isNotEmpty && excludedKeys.contains(key);
+    });
   }
 
-  void _buildCollections() {
-    final previousArtists = Map<String, Artist>.from(artistCollection);
-    final previousAlbums = Map<String, Album>.from(albumCollection);
-    for (final artist in previousArtists.values) {
+  _CollectionBuildState _beginCollectionBuild() {
+    _collectionGeneration++;
+    _publishedArtistAlbumGeneration = -1;
+    _publishedArtistPageGeneration = -1;
+    _publishedAlbumPageGeneration = -1;
+    _preparedAudiosPage = null;
+    _preparedArtistsPage = null;
+    _preparedAlbumsPage = null;
+    _activePageOrderCacheSpec = null;
+    final generation = _collectionGeneration;
+    for (final artist in artistCollection.values) {
       artist.works.clear();
       artist.albumsMap.clear();
     }
-    for (final album in previousAlbums.values) {
+    for (final album in albumCollection.values) {
       album.works.clear();
       album.artistsMap.clear();
     }
     audioCollection.clear();
     _audioByPath.clear();
-    artistCollection.clear();
-    albumCollection.clear();
+    return _CollectionBuildState(generation);
+  }
 
-    for (var f in folders) {
-      audioCollection.addAll(f.audios);
+  Artist _resolveArtist(String name, int generation) {
+    var artist = artistCollection[name];
+    if (artist == null) {
+      artist = Artist(name: name);
+      artistCollection[name] = artist;
+    }
+    artist._collectionGeneration = generation;
+    return artist;
+  }
+
+  void _addAudioToCollections(Audio audio, _CollectionBuildState state) {
+    audio._libraryIndex = audioCollection.length;
+    audioCollection.add(audio);
+    final pathKey = audio._pathLookupKey;
+    if (pathKey.isNotEmpty && _audioByPath[pathKey] == null) {
+      _audioByPath[pathKey] = audio;
     }
 
-    for (Audio audio in audioCollection) {
-      final pathKey = _audioPathLookupKey(audio.path);
-      if (pathKey.isNotEmpty) {
-        _audioByPath.putIfAbsent(pathKey, () => audio);
-      }
+    var album = albumCollection[audio.album];
+    if (album == null) {
+      album = Album(name: audio.album);
+      albumCollection[audio.album] = album;
+    }
+    album._collectionGeneration = state.generation;
+    album.works.add(audio);
 
-      final artistNames = <String>{
-        ...audio.splitedArtists,
-        ...audio.splitedAlbumArtists,
-      };
-      for (String artistName in artistNames) {
-        /// 如果artistCollection中有artistName指向的artist，putIfAbsent会返回该artist。
-        /// 随后往这个artist里添加该audio。
-        ///
-        /// 如果没有，创建一个名字为artistName的空艺术家，并将artistName与之相连。
-        /// 随后往这个artist里添加该audio。
-        artistCollection
-            .putIfAbsent(
-              artistName,
-              () => previousArtists[artistName] ?? Artist(name: artistName),
-            )
-            .works
-            .add(audio);
+    for (final artistName in audio.splitedArtists) {
+      final artist = _resolveArtist(artistName, state.generation);
+      artist.works.add(audio);
+      if (artist.albumsMap[audio.album] == null) {
+        artist.albumsMap[audio.album] = album;
       }
-
-      /// 如果albumCollection中有audio.album指向的album，putIfAbsent会返回该album。
-      /// 随后往这个album里添加该audio。
-      ///
-      /// 如果没有，创建一个名字为audio.album的空专辑，并将audio.album与之相连。
-      /// 随后往这个album里添加该audio。
-      albumCollection
-          .putIfAbsent(
-            audio.album,
-            () => previousAlbums[audio.album] ?? Album(name: audio.album),
-          )
-          .works
-          .add(audio);
+    }
+    for (final artistName in audio.splitedAlbumArtists) {
+      if (audio.splitedArtists.contains(artistName)) continue;
+      final artist = _resolveArtist(artistName, state.generation);
+      artist.works.add(audio);
+      if (artist.albumsMap[audio.album] == null) {
+        artist.albumsMap[audio.album] = album;
+      }
     }
 
-    /// 将艺术家和专辑链接起来
-    for (Artist artist in artistCollection.values) {
-      for (Audio audio in artist.works) {
-        artist.albumsMap.putIfAbsent(
-          audio.album,
-          () => albumCollection[audio.album] ?? Album(name: audio.album),
+    final albumArtistNames = audio.splitedAlbumArtists;
+    if (albumArtistNames.isNotEmpty) {
+      if (state.albumsUsingAlbumArtists.add(album)) {
+        album.artistsMap.clear();
+      }
+      for (final artistName in albumArtistNames) {
+        final artist = artistCollection[artistName];
+        if (artist != null && album.artistsMap[artistName] == null) {
+          album.artistsMap[artistName] = artist;
+        }
+      }
+    } else if (!state.albumsUsingAlbumArtists.contains(album)) {
+      for (final artistName in audio.splitedArtists) {
+        final artist = artistCollection[artistName];
+        if (artist != null && album.artistsMap[artistName] == null) {
+          album.artistsMap[artistName] = artist;
+        }
+      }
+    }
+  }
+
+  void _finishCollectionBuild(_CollectionBuildState state) {
+    artistCollection.removeWhere(
+      (_, artist) => artist._collectionGeneration != state.generation,
+    );
+    albumCollection.removeWhere(
+      (_, album) => album._collectionGeneration != state.generation,
+    );
+    var index = 0;
+    for (final artist in artistCollection.values) {
+      artist._libraryIndex = index++;
+    }
+    index = 0;
+    for (final album in albumCollection.values) {
+      album._libraryIndex = index++;
+    }
+  }
+
+  void _buildCollections() {
+    final state = _beginCollectionBuild();
+    for (final folder in folders) {
+      for (final audio in folder.audios) {
+        _addAudioToCollections(audio, state);
+      }
+    }
+    _finishCollectionBuild(state);
+  }
+
+  Future<void> _buildCollectionsForInitialLoad(int objectBatchSize) async {
+    final state = _beginCollectionBuild();
+    var processed = 0;
+    for (final folder in folders) {
+      for (final audio in folder.audios) {
+        _addAudioToCollections(audio, state);
+        processed++;
+        if (processed % objectBatchSize == 0) {
+          await Future<void>.delayed(Duration.zero);
+        }
+      }
+    }
+    _finishCollectionBuild(state);
+  }
+
+  Future<void> _replaceFoldersForInitialLoad(
+    List<AudioFolder> refreshedFolders,
+    int objectBatchSize,
+  ) async {
+    _invalidateAggregatedRootFolders();
+    folders = refreshedFolders;
+    _filterExcludedFolders();
+    await _buildCollectionsForInitialLoad(objectBatchSize);
+  }
+
+  PreparedLibraryPage<Audio>? get preparedAudiosPage {
+    final prepared = _preparedAudiosPage;
+    final preference = AppPreference.instance.audiosPagePref;
+    if (prepared == null ||
+        prepared.sortMethod != preference.sortMethod.clamp(0, 4).toInt() ||
+        prepared.sortOrder != preference.sortOrder) {
+      return null;
+    }
+    return prepared;
+  }
+
+  PreparedLibraryPage<Artist>? get preparedArtistsPage {
+    final prepared = _preparedArtistsPage;
+    final preference = AppPreference.instance.artistsPagePref;
+    if (prepared == null ||
+        prepared.sortMethod != preference.sortMethod.clamp(0, 1).toInt() ||
+        prepared.sortOrder != preference.sortOrder) {
+      return null;
+    }
+    return prepared;
+  }
+
+  PreparedLibraryPage<Album>? get preparedAlbumsPage {
+    final prepared = _preparedAlbumsPage;
+    final preference = AppPreference.instance.albumsPagePref;
+    if (prepared == null ||
+        prepared.sortMethod != preference.sortMethod.clamp(0, 1).toInt() ||
+        prepared.sortOrder != preference.sortOrder) {
+      return null;
+    }
+    return prepared;
+  }
+
+  String _pageOrderCacheContext() {
+    final excluded =
+        AppPreference.instance.excludedFolderPaths
+            .map(_audioPathLookupKey)
+            .toList(growable: false)
+          ..sort();
+    return json.encode({
+      'appVersion': AppSettings.version,
+      'artistSplitPattern': AppSettings.instance.artistSplitPattern,
+      'excludedFolders': excluded,
+    });
+  }
+
+  Future<_PageOrderCacheSpec?> _resolvePageOrderCacheSpec({
+    required String sourcePath,
+    required String cachePath,
+  }) async {
+    final signature = await LibraryPageOrderCache.sourceSignature(sourcePath);
+    if (signature == null) return null;
+    return _PageOrderCacheSpec(
+      sourcePath: sourcePath,
+      cachePath: cachePath,
+      sourceSignature: signature,
+      context: _pageOrderCacheContext(),
+    );
+  }
+
+  bool _cachedPageMatches(
+    PageOrderSnapshot cached,
+    PagePreference preference,
+    int maxSortMethod,
+  ) {
+    final sortMethod = preference.sortMethod.clamp(0, maxSortMethod).toInt();
+    return cached.sortMethod == sortMethod &&
+        cached.sortOrderIndex == preference.sortOrder.index;
+  }
+
+  Future<bool> _installPreparedAudioOrder({
+    required List<Audio> source,
+    required List<int> indexes,
+    required int sortMethod,
+    required SortOrder sortOrder,
+    required int generation,
+  }) async {
+    final preparedAudios = await _materializeSortedItems(source, indexes);
+    final preference = AppPreference.instance.audiosPagePref;
+    if (generation != _collectionGeneration ||
+        preference.sortMethod.clamp(0, 4).toInt() != sortMethod ||
+        preference.sortOrder != sortOrder) {
+      return false;
+    }
+    for (var position = 0; position < preparedAudios.length; position++) {
+      preparedAudios[position]._audiosPageIndex = position;
+    }
+    _preparedAudiosPage = PreparedLibraryPage(
+      items: preparedAudios,
+      sortMethod: sortMethod,
+      sortOrder: sortOrder,
+    );
+    return true;
+  }
+
+  Future<({bool audios, bool artists, bool albums})>
+  _restorePreferredPageSnapshots(_PageOrderCacheSpec spec) async {
+    final stopwatch = Stopwatch()..start();
+    final generation = _collectionGeneration;
+    final cached = await LibraryPageOrderCache.read(
+      cachePath: spec.cachePath,
+      sourceSignature: spec.sourceSignature,
+      context: spec.context,
+      audioCount: audioCollection.length,
+      artistCount: artistCollection.length,
+      albumCount: albumCollection.length,
+    );
+    if (cached == null ||
+        generation != _collectionGeneration ||
+        spec.context != _pageOrderCacheContext()) {
+      logger.i(
+        '[perf] page order cache miss elapsed=${stopwatch.elapsedMilliseconds}ms',
+      );
+      return (audios: false, artists: false, albums: false);
+    }
+
+    var restoredAudios = false;
+    var restoredArtists = false;
+    var restoredAlbums = false;
+    final audioPreference = AppPreference.instance.audiosPagePref;
+    if (_cachedPageMatches(cached.audios, audioPreference, 4)) {
+      restoredAudios = await _installPreparedAudioOrder(
+        source: audioCollection,
+        indexes: cached.audios.indexes,
+        sortMethod: cached.audios.sortMethod,
+        sortOrder: SortOrder.values[cached.audios.sortOrderIndex],
+        generation: generation,
+      );
+    }
+    final artistPreference = AppPreference.instance.artistsPagePref;
+    if (generation == _collectionGeneration &&
+        _cachedPageMatches(cached.artists, artistPreference, 1)) {
+      final artists = artistCollection.values.toList(growable: false);
+      final preparedArtists = await _materializeSortedItems(
+        artists,
+        cached.artists.indexes,
+      );
+      if (generation == _collectionGeneration) {
+        final currentPreference = AppPreference.instance.artistsPagePref;
+        if (currentPreference.sortMethod.clamp(0, 1).toInt() ==
+                cached.artists.sortMethod &&
+            currentPreference.sortOrder.index ==
+                cached.artists.sortOrderIndex) {
+          _preparedArtistsPage = PreparedLibraryPage(
+            items: preparedArtists,
+            sortMethod: cached.artists.sortMethod,
+            sortOrder: SortOrder.values[cached.artists.sortOrderIndex],
+          );
+          restoredArtists = true;
+        }
+      }
+    }
+    final albumPreference = AppPreference.instance.albumsPagePref;
+    if (generation == _collectionGeneration &&
+        _cachedPageMatches(cached.albums, albumPreference, 1)) {
+      final albums = albumCollection.values.toList(growable: false);
+      final preparedAlbums = await _materializeSortedItems(
+        albums,
+        cached.albums.indexes,
+      );
+      if (generation == _collectionGeneration) {
+        final currentPreference = AppPreference.instance.albumsPagePref;
+        if (currentPreference.sortMethod.clamp(0, 1).toInt() ==
+                cached.albums.sortMethod &&
+            currentPreference.sortOrder.index == cached.albums.sortOrderIndex) {
+          _preparedAlbumsPage = PreparedLibraryPage(
+            items: preparedAlbums,
+            sortMethod: cached.albums.sortMethod,
+            sortOrder: SortOrder.values[cached.albums.sortOrderIndex],
+          );
+          restoredAlbums = true;
+        }
+      }
+    }
+    stopwatch.stop();
+    logger.i(
+      '[perf] page order cache hit audios=$restoredAudios '
+      'artists=$restoredArtists albums=$restoredAlbums '
+      'elapsed=${stopwatch.elapsedMilliseconds}ms',
+    );
+    return (
+      audios: restoredAudios,
+      artists: restoredArtists,
+      albums: restoredAlbums,
+    );
+  }
+
+  Future<bool> preparePreferredPageSnapshotsUsingCache({
+    required String sourcePath,
+    required String cachePath,
+    bool initialLoad = true,
+  }) async {
+    final spec = await _resolvePageOrderCacheSpec(
+      sourcePath: sourcePath,
+      cachePath: cachePath,
+    );
+    _activePageOrderCacheSpec = spec;
+    final restored = spec == null
+        ? (audios: false, artists: false, albums: false)
+        : await _restorePreferredPageSnapshots(spec);
+    final restoredAll = restored.audios && restored.artists && restored.albums;
+    await _preparePagesForLoad(
+      initialLoad: initialLoad,
+      cacheSpec: spec,
+      restoredAll: restoredAll,
+    );
+    return restoredAll;
+  }
+
+  Future<void> _preparePagesForLoad({
+    required bool initialLoad,
+    required _PageOrderCacheSpec? cacheSpec,
+    required bool restoredAll,
+  }) async {
+    final protectPlayback = PlayService.instance.hasPlaybackSession;
+    if (shouldDeferSecondaryPagePreparation(
+      processorBudget: applicationProcessorBudget,
+      initialLoad: initialLoad,
+      hasPlaybackSession: protectPlayback,
+    )) {
+      await preparePreferredAudioPageSnapshot();
+      if (preparedArtistsPage == null || preparedAlbumsPage == null) {
+        unawaited(_prepareSecondaryPagesAndCache(cacheSpec));
+      } else if (!restoredAll && cacheSpec != null) {
+        _schedulePageOrderCacheWrite(cacheSpec);
+      }
+      return;
+    }
+    await preparePreferredPageSnapshots();
+    if (!restoredAll && cacheSpec != null) {
+      _schedulePageOrderCacheWrite(cacheSpec);
+    }
+  }
+
+  Future<void> waitForPreferredPageOrderCacheWrite() async {
+    while (true) {
+      final pending = _pageOrderCacheWrite;
+      if (pending == null) return;
+      await pending;
+      if (identical(_pageOrderCacheWrite, pending)) return;
+    }
+  }
+
+  Future<void> _prepareSecondaryPagesAndCache(_PageOrderCacheSpec? spec) async {
+    final generation = _collectionGeneration;
+    try {
+      final delay = deferredSecondaryPagePreparationDelayFor(
+        processorBudget: applicationProcessorBudget,
+        hasPlaybackSession: PlayService.instance.hasPlaybackSession,
+      );
+      if (delay > Duration.zero) {
+        logger.i(
+          '[perf] secondary page preparation deferred=${delay.inMilliseconds}ms '
+          'playback=${PlayService.instance.hasPlaybackSession}',
+        );
+        await Future<void>.delayed(delay);
+      }
+      if (generation != _collectionGeneration) return;
+      await preparePreferredSecondaryPageSnapshots();
+      _publishArtistAlbumVersion(generation);
+      if (generation == _collectionGeneration && spec != null) {
+        _schedulePageOrderCacheWrite(spec);
+      }
+    } catch (error, trace) {
+      logger.w('后台页面顺序准备失败', error: error, stackTrace: trace);
+    }
+  }
+
+  void _schedulePageOrderCacheWrite(_PageOrderCacheSpec spec) {
+    final generation = _collectionGeneration;
+    final request = ++_pageOrderCacheWriteRequest;
+    final previous = _pageOrderCacheWrite;
+    late final Future<void> future;
+    future = () async {
+      await Future<void>.delayed(Duration.zero);
+      try {
+        if (previous != null) await previous;
+        bool isCurrentRequest() =>
+            request == _pageOrderCacheWriteRequest &&
+            generation == _collectionGeneration;
+        if (!isCurrentRequest() || spec.context != _pageOrderCacheContext()) {
+          return;
+        }
+        final sourceSignature = await LibraryPageOrderCache.sourceSignature(
+          spec.sourcePath,
+        );
+        if (!isCurrentRequest() || sourceSignature != spec.sourceSignature) {
+          return;
+        }
+        final audios = preparedAudiosPage;
+        final artists = preparedArtistsPage;
+        final albums = preparedAlbumsPage;
+        if (audios == null || artists == null || albums == null) return;
+        final audioIndexes = await _pageIndexes(
+          audios.items,
+          (audio) => audio._libraryIndex,
+          isCurrentRequest,
+        );
+        if (audioIndexes == null) return;
+        final artistIndexes = await _pageIndexes(
+          artists.items,
+          (artist) => artist._libraryIndex,
+          isCurrentRequest,
+        );
+        if (artistIndexes == null) return;
+        final albumIndexes = await _pageIndexes(
+          albums.items,
+          (album) => album._libraryIndex,
+          isCurrentRequest,
+        );
+        if (albumIndexes == null) return;
+        final orders = LibraryPageOrders(
+          sourceSignature: spec.sourceSignature,
+          context: spec.context,
+          audios: PageOrderSnapshot(
+            sortMethod: audios.sortMethod,
+            sortOrderIndex: audios.sortOrder.index,
+            indexes: audioIndexes,
+          ),
+          artists: PageOrderSnapshot(
+            sortMethod: artists.sortMethod,
+            sortOrderIndex: artists.sortOrder.index,
+            indexes: artistIndexes,
+          ),
+          albums: PageOrderSnapshot(
+            sortMethod: albums.sortMethod,
+            sortOrderIndex: albums.sortOrder.index,
+            indexes: albumIndexes,
+          ),
+        );
+        await LibraryPageOrderCache.write(
+          cachePath: spec.cachePath,
+          orders: orders,
+        );
+      } catch (error, trace) {
+        logger.w('页面顺序缓存写入失败', error: error, stackTrace: trace);
+      } finally {
+        if (identical(_pageOrderCacheWrite, future)) {
+          _pageOrderCacheWrite = null;
+        }
+      }
+    }();
+    _pageOrderCacheWrite = future;
+  }
+
+  Future<Uint32List?> _pageIndexes<T>(
+    List<T> items,
+    int Function(T item) indexOf,
+    bool Function() isCurrent,
+  ) async {
+    if (!isCurrent()) return null;
+    final result = Uint32List(items.length);
+    var batchRemaining = libraryObjectBatchSizeFor(
+      processorBudget: applicationProcessorBudget,
+      hasPlaybackSession: PlayService.instance.hasPlaybackSession,
+    );
+    for (var position = 0; position < items.length; position++) {
+      final index = indexOf(items[position]);
+      if (index < 0 || index >= items.length) {
+        throw const FormatException('Invalid library page source index');
+      }
+      result[position] = index;
+      batchRemaining--;
+      if (batchRemaining == 0) {
+        await Future<void>.delayed(Duration.zero);
+        if (!isCurrent()) return null;
+        batchRemaining = libraryObjectBatchSizeFor(
+          processorBudget: applicationProcessorBudget,
+          hasPlaybackSession: PlayService.instance.hasPlaybackSession,
         );
       }
     }
+    return isCurrent() ? result : null;
+  }
 
-    /// 将专辑和艺术家链接起来
-    for (Album album in albumCollection.values) {
-      final albumArtistNames = <String>{};
-      for (Audio audio in album.works) {
-        albumArtistNames.addAll(audio.splitedAlbumArtists);
+  Future<void> preparePreferredPageSnapshots() async {
+    final concurrency = libraryPagePreparationConcurrencyFor(
+      processorBudget: applicationProcessorBudget,
+      hasPlaybackSession: PlayService.instance.hasPlaybackSession,
+    );
+    final prepareAudio = preparedAudiosPage == null;
+    if (prepareAudio && concurrency >= 2) {
+      await Future.wait([
+        preparePreferredAudioPageSnapshot(),
+        preparePreferredSecondaryPageSnapshots(
+          concurrencyLimit: concurrency - 1,
+        ),
+      ]);
+    } else {
+      await preparePreferredAudioPageSnapshot();
+      await preparePreferredSecondaryPageSnapshots(
+        concurrencyLimit: concurrency,
+      );
+    }
+  }
+
+  Future<void> preparePreferredAudioPageSnapshot() {
+    if (preparedAudiosPage != null) return Future<void>.value();
+    final generation = _collectionGeneration;
+    final pending = _audioPagePreparation;
+    if (pending != null && _audioPagePreparationGeneration == generation) {
+      return pending;
+    }
+
+    late final Future<void> future;
+    future = () async {
+      try {
+        await _preparePreferredAudioPageSnapshot(generation);
+      } finally {
+        if (identical(_audioPagePreparation, future)) {
+          _audioPagePreparation = null;
+          _audioPagePreparationGeneration = null;
+        }
       }
+    }();
+    _audioPagePreparation = future;
+    _audioPagePreparationGeneration = generation;
+    return future;
+  }
 
-      final namesToUse = albumArtistNames.isNotEmpty
-          ? albumArtistNames
-          : album.works.expand((a) => a.splitedArtists).toSet();
+  Future<void> _preparePreferredAudioPageSnapshot(int generation) async {
+    final audios = List<Audio>.from(audioCollection);
+    final preference = AppPreference.instance.audiosPagePref;
+    final sortMethod = preference.sortMethod.clamp(0, 4).toInt();
+    final sortOrder = preference.sortOrder;
+    final descending = sortOrder == SortOrder.decending;
+    final naturalValues = switch (sortMethod) {
+      0 => audios.map((audio) => audio.title).toList(growable: false),
+      1 => audios.map((audio) => audio.artist).toList(growable: false),
+      2 => audios.map((audio) => audio.album).toList(growable: false),
+      _ => null,
+    };
+    final integerValues = switch (sortMethod) {
+      3 => audios.map((audio) => audio.created).toList(growable: false),
+      4 => audios.map((audio) => audio.modified).toList(growable: false),
+      _ => null,
+    };
+    final audioCount = audios.length;
+    final order = await Isolate.run(
+      () => _sortLibraryPageIndexes(
+        length: audioCount,
+        naturalValues: naturalValues,
+        integerValues: integerValues,
+        descending: descending,
+        reuseEqualKeys: sortMethod == 1 || sortMethod == 2,
+      ),
+    );
+    if (generation != _collectionGeneration) return;
+    await _installPreparedAudioOrder(
+      source: audios,
+      indexes: order,
+      sortMethod: sortMethod,
+      sortOrder: sortOrder,
+      generation: generation,
+    );
+  }
 
-      for (String artistName in namesToUse) {
-        final artist = artistCollection[artistName];
-        if (artist == null) continue;
-        album.artistsMap.putIfAbsent(artistName, () => artist);
+  void rememberPreparedPageOrder<T>(
+    List<T> items, {
+    required int sortMethod,
+    required SortOrder sortOrder,
+  }) {
+    if (items is List<Audio> && items.length == audioCollection.length) {
+      final audios = items.cast<Audio>();
+      updateAudiosPageIndexes(audios);
+      _preparedAudiosPage = PreparedLibraryPage(
+        items: audios,
+        sortMethod: sortMethod.clamp(0, 4).toInt(),
+        sortOrder: sortOrder,
+      );
+    } else if (items is List<Artist> &&
+        items.length == artistCollection.length) {
+      final artists = items.cast<Artist>();
+      _preparedArtistsPage = PreparedLibraryPage(
+        items: artists,
+        sortMethod: sortMethod.clamp(0, 1).toInt(),
+        sortOrder: sortOrder,
+      );
+    } else if (items is List<Album> && items.length == albumCollection.length) {
+      final albums = items.cast<Album>();
+      _preparedAlbumsPage = PreparedLibraryPage(
+        items: albums,
+        sortMethod: sortMethod.clamp(0, 1).toInt(),
+        sortOrder: sortOrder,
+      );
+    } else {
+      return;
+    }
+    final cacheSpec = _activePageOrderCacheSpec;
+    if (cacheSpec != null) {
+      _schedulePageOrderCacheWrite(cacheSpec);
+    }
+  }
+
+  Future<void> preparePreferredSecondaryPageSnapshots({int? concurrencyLimit}) {
+    if (preparedArtistsPage != null && preparedAlbumsPage != null) {
+      return Future<void>.value();
+    }
+    final generation = _collectionGeneration;
+    final concurrency =
+        (concurrencyLimit ??
+                libraryPagePreparationConcurrencyFor(
+                  processorBudget: applicationProcessorBudget,
+                  hasPlaybackSession: PlayService.instance.hasPlaybackSession,
+                ))
+            .clamp(1, 2)
+            .toInt();
+    final pending = _secondaryPagePreparation;
+    if (pending != null && _secondaryPagePreparationGeneration == generation) {
+      return pending;
+    }
+
+    late final Future<void> future;
+    future = () async {
+      try {
+        await _preparePreferredSecondaryPageSnapshots(generation, concurrency);
+      } finally {
+        if (identical(_secondaryPagePreparation, future)) {
+          _secondaryPagePreparation = null;
+          _secondaryPagePreparationGeneration = null;
+        }
       }
+    }();
+    _secondaryPagePreparation = future;
+    _secondaryPagePreparationGeneration = generation;
+    return future;
+  }
+
+  Future<void> _preparePreferredSecondaryPageSnapshots(
+    int generation,
+    int concurrency,
+  ) async {
+    final prepareArtists = preparedArtistsPage == null;
+    final prepareAlbums = preparedAlbumsPage == null;
+    if (!prepareArtists && !prepareAlbums) return;
+    final artists = prepareArtists
+        ? artistCollection.values.toList(growable: false)
+        : const <Artist>[];
+    final albums = prepareAlbums
+        ? albumCollection.values.toList(growable: false)
+        : const <Album>[];
+    final artistPreference = AppPreference.instance.artistsPagePref;
+    final albumPreference = AppPreference.instance.albumsPagePref;
+    final artistSortMethod = artistPreference.sortMethod.clamp(0, 1).toInt();
+    final albumSortMethod = albumPreference.sortMethod.clamp(0, 1).toInt();
+    final artistSortOrder = artistPreference.sortOrder;
+    final albumSortOrder = albumPreference.sortOrder;
+    final artistDescending = artistSortOrder == SortOrder.decending;
+    final albumDescending = albumSortOrder == SortOrder.decending;
+    final artistNaturalValues = prepareArtists && artistSortMethod == 0
+        ? artists.map((artist) => artist.name).toList(growable: false)
+        : null;
+    final artistIntegerValues = prepareArtists && artistSortMethod == 1
+        ? artists.map((artist) => artist.works.length).toList(growable: false)
+        : null;
+    final albumNaturalValues = prepareAlbums && albumSortMethod == 0
+        ? albums.map((album) => album.name).toList(growable: false)
+        : null;
+    final albumIntegerValues = prepareAlbums && albumSortMethod == 1
+        ? albums.map((album) => album.works.length).toList(growable: false)
+        : null;
+    final artistCount = artists.length;
+    final albumCount = albums.length;
+    Uint32List? artistOrder;
+    Uint32List? albumOrder;
+    if (prepareArtists && prepareAlbums && concurrency >= 2) {
+      final orders = await Future.wait<Uint32List>([
+        Isolate.run(
+          () => _sortLibraryPageIndexes(
+            length: artistCount,
+            naturalValues: artistNaturalValues,
+            integerValues: artistIntegerValues,
+            descending: artistDescending,
+          ),
+        ),
+        Isolate.run(
+          () => _sortLibraryPageIndexes(
+            length: albumCount,
+            naturalValues: albumNaturalValues,
+            integerValues: albumIntegerValues,
+            descending: albumDescending,
+          ),
+        ),
+      ]);
+      artistOrder = orders[0];
+      albumOrder = orders[1];
+    } else if (prepareArtists && prepareAlbums) {
+      await _prepareSecondaryPageSnapshotsSerially(
+        generation: generation,
+        artists: artists,
+        albums: albums,
+        artistNaturalValues: artistNaturalValues,
+        artistIntegerValues: artistIntegerValues,
+        artistSortMethod: artistSortMethod,
+        artistSortOrder: artistSortOrder,
+        artistDescending: artistDescending,
+        albumNaturalValues: albumNaturalValues,
+        albumIntegerValues: albumIntegerValues,
+        albumSortMethod: albumSortMethod,
+        albumSortOrder: albumSortOrder,
+        albumDescending: albumDescending,
+      );
+      return;
+    } else if (prepareArtists) {
+      artistOrder = await Isolate.run(
+        () => _sortLibraryPageIndexes(
+          length: artistCount,
+          naturalValues: artistNaturalValues,
+          integerValues: artistIntegerValues,
+          descending: artistDescending,
+        ),
+      );
+    } else {
+      albumOrder = await Isolate.run(
+        () => _sortLibraryPageIndexes(
+          length: albumCount,
+          naturalValues: albumNaturalValues,
+          integerValues: albumIntegerValues,
+          descending: albumDescending,
+        ),
+      );
+    }
+    final preparedArtists = artistOrder == null
+        ? null
+        : await _materializeSortedItems(artists, artistOrder);
+    final preparedAlbums = albumOrder == null
+        ? null
+        : await _materializeSortedItems(albums, albumOrder);
+    if (generation != _collectionGeneration) return;
+    final currentArtistPreference = AppPreference.instance.artistsPagePref;
+    if (preparedArtists != null &&
+        currentArtistPreference.sortMethod.clamp(0, 1).toInt() ==
+            artistSortMethod &&
+        currentArtistPreference.sortOrder == artistSortOrder) {
+      _preparedArtistsPage = PreparedLibraryPage(
+        items: preparedArtists,
+        sortMethod: artistSortMethod,
+        sortOrder: artistSortOrder,
+      );
+      _publishArtistPageVersion(generation);
+    }
+    final currentAlbumPreference = AppPreference.instance.albumsPagePref;
+    if (preparedAlbums != null &&
+        currentAlbumPreference.sortMethod.clamp(0, 1).toInt() ==
+            albumSortMethod &&
+        currentAlbumPreference.sortOrder == albumSortOrder) {
+      _preparedAlbumsPage = PreparedLibraryPage(
+        items: preparedAlbums,
+        sortMethod: albumSortMethod,
+        sortOrder: albumSortOrder,
+      );
+      _publishAlbumPageVersion(generation);
+    }
+  }
+
+  Future<void> _prepareSecondaryPageSnapshotsSerially({
+    required int generation,
+    required List<Artist> artists,
+    required List<Album> albums,
+    required List<String>? artistNaturalValues,
+    required List<int>? artistIntegerValues,
+    required int artistSortMethod,
+    required SortOrder artistSortOrder,
+    required bool artistDescending,
+    required List<String>? albumNaturalValues,
+    required List<int>? albumIntegerValues,
+    required int albumSortMethod,
+    required SortOrder albumSortOrder,
+    required bool albumDescending,
+  }) async {
+    final receivePort = ReceivePort();
+    final isolate = await Isolate.spawn(_sortSecondaryPageIndexes, (
+      sendPort: receivePort.sendPort,
+      artistCount: artists.length,
+      artistNaturalValues: artistNaturalValues,
+      artistIntegerValues: artistIntegerValues,
+      artistDescending: artistDescending,
+      albumCount: albums.length,
+      albumNaturalValues: albumNaturalValues,
+      albumIntegerValues: albumIntegerValues,
+      albumDescending: albumDescending,
+    ));
+    try {
+      messageLoop:
+      await for (final rawMessage in receivePort) {
+        if (generation != _collectionGeneration) break messageLoop;
+        final message = rawMessage as List<Object?>;
+        switch (message.first as int) {
+          case 0:
+            if (preparedArtistsPage != null) continue messageLoop;
+            final order = _materializeTransferredPageOrder(
+              message[1]! as TransferableTypedData,
+            );
+            final items = await _materializeSortedItems(artists, order);
+            final preference = AppPreference.instance.artistsPagePref;
+            if (generation == _collectionGeneration &&
+                preparedArtistsPage == null &&
+                preference.sortMethod.clamp(0, 1).toInt() == artistSortMethod &&
+                preference.sortOrder == artistSortOrder) {
+              _preparedArtistsPage = PreparedLibraryPage(
+                items: items,
+                sortMethod: artistSortMethod,
+                sortOrder: artistSortOrder,
+              );
+              _publishArtistPageVersion(generation);
+            }
+          case 1:
+            if (preparedAlbumsPage != null) continue messageLoop;
+            final order = _materializeTransferredPageOrder(
+              message[1]! as TransferableTypedData,
+            );
+            final items = await _materializeSortedItems(albums, order);
+            final preference = AppPreference.instance.albumsPagePref;
+            if (generation == _collectionGeneration &&
+                preparedAlbumsPage == null &&
+                preference.sortMethod.clamp(0, 1).toInt() == albumSortMethod &&
+                preference.sortOrder == albumSortOrder) {
+              _preparedAlbumsPage = PreparedLibraryPage(
+                items: items,
+                sortMethod: albumSortMethod,
+                sortOrder: albumSortOrder,
+              );
+              _publishAlbumPageVersion(generation);
+            }
+          case 2:
+            break messageLoop;
+          case 3:
+            throw StateError(
+              'Secondary page sort failed: ${message[1]}\n${message[2]}',
+            );
+        }
+      }
+    } finally {
+      receivePort.close();
+      isolate.kill(priority: Isolate.immediate);
     }
   }
 
@@ -268,11 +1490,13 @@ class AudioLibrary {
     required String artist,
     required String album,
     required int track,
+    int? disc,
   }) {
     audio.title = title.trim();
     audio.artist = artist.trim();
     audio.album = album.trim();
     audio.track = track;
+    audio.disc = disc;
     audio.splitedArtists = Audio._splitAndDedup(
       audio.artist,
       AppSettings.instance.artistSplitRegex,
@@ -283,40 +1507,187 @@ class AudioLibrary {
     );
     _buildCollections();
     libraryVersion.value++;
+    artistPageVersion.value++;
+    albumPageVersion.value++;
+    _publishArtistAlbumVersion(_collectionGeneration);
+  }
+
+  void _publishArtistAlbumVersionIfReady(int generation) {
+    _publishArtistPageVersion(generation);
+    _publishAlbumPageVersion(generation);
+    if (preparedArtistsPage == null || preparedAlbumsPage == null) return;
+    _publishArtistAlbumVersion(generation);
+  }
+
+  void _publishArtistPageVersion(int generation) {
+    if (generation != _collectionGeneration ||
+        preparedArtistsPage == null ||
+        _publishedArtistPageGeneration == generation) {
+      return;
+    }
+    _publishedArtistPageGeneration = generation;
+    artistPageVersion.value++;
+  }
+
+  void _publishAlbumPageVersion(int generation) {
+    if (generation != _collectionGeneration ||
+        preparedAlbumsPage == null ||
+        _publishedAlbumPageGeneration == generation) {
+      return;
+    }
+    _publishedAlbumPageGeneration = generation;
+    albumPageVersion.value++;
+  }
+
+  void _publishArtistAlbumVersion(int generation) {
+    if (generation != _collectionGeneration ||
+        _publishedArtistAlbumGeneration == generation) {
+      return;
+    }
+    _publishedArtistAlbumGeneration = generation;
+    artistAlbumVersion.value++;
   }
 
   void replaceFolders(List<AudioFolder> refreshedFolders) {
-    final existingAudios = <String, Audio>{};
-    final existingFolders = <String, AudioFolder>{};
-    for (final folder in folders) {
-      existingFolders[_audioPathLookupKey(folder.path)] = folder;
-      for (final audio in folder.audios) {
-        existingAudios[_audioPathLookupKey(audio.path)] = audio;
-      }
+    _invalidateAggregatedRootFolders();
+    final excluded = AppPreference.instance.excludedFolderPaths;
+    final excludedKeys = _folderPathKeySet(excluded);
+    final includedRefreshedFolders = excludedKeys.isEmpty
+        ? refreshedFolders
+        : refreshedFolders
+              .where((folder) {
+                final key = folder._pathLookupKey;
+                return key.isEmpty || !excludedKeys.contains(key);
+              })
+              .toList(growable: false);
+    if (folders.isEmpty) {
+      folders = includedRefreshedFolders;
+      _buildCollections();
+      return;
     }
 
+    final existingFolders = <String, AudioFolder>{};
+    for (final folder in folders) {
+      existingFolders[folder._pathLookupKey] = folder;
+    }
+
+    var collectionsChanged = includedRefreshedFolders.length != folders.length;
     final mergedFolders = <AudioFolder>[];
-    for (final refreshedFolder in refreshedFolders) {
-      final mergedAudios = <Audio>[];
-      for (final refreshedAudio in refreshedFolder.audios) {
-        final existing =
-            existingAudios[_audioPathLookupKey(refreshedAudio.path)];
-        if (existing == null) {
-          mergedAudios.add(refreshedAudio);
-        } else {
-          existing._replaceMetadataFrom(refreshedAudio);
-          mergedAudios.add(existing);
+    Map<String, Audio>? fallbackAudios;
+    var fallbackAudiosBuilt = false;
+    Audio? resolveExistingAudio(String key) {
+      final indexed = _audioByPath[key];
+      if (indexed != null || _audioByPath.isNotEmpty) return indexed;
+      if (!fallbackAudiosBuilt) {
+        fallbackAudiosBuilt = true;
+        fallbackAudios = <String, Audio>{};
+        for (final folder in folders) {
+          for (final audio in folder.audios) {
+            fallbackAudios![_audioPathLookupKey(audio.path)] = audio;
+          }
+        }
+      }
+      return fallbackAudios![key];
+    }
+
+    for (
+      var folderIndex = 0;
+      folderIndex < includedRefreshedFolders.length;
+      folderIndex++
+    ) {
+      final refreshedFolder = includedRefreshedFolders[folderIndex];
+      final folderKey = refreshedFolder._pathLookupKey;
+      final existingFolder = existingFolders[folderKey];
+      if (existingFolder == null ||
+          folderIndex >= folders.length ||
+          folders[folderIndex]._pathLookupKey != folderKey) {
+        collectionsChanged = true;
+      }
+      final existingAudios = existingFolder?.audios;
+      if (existingAudios == null ||
+          existingAudios.length != refreshedFolder.audios.length) {
+        collectionsChanged = true;
+      }
+
+      final refreshedAudios = refreshedFolder.audios;
+      var canReuseExistingAudios =
+          existingFolder != null &&
+          existingAudios != null &&
+          existingAudios.length == refreshedAudios.length;
+      List<Audio>? mergedAudios;
+      void ensureMergedAudios() {
+        if (mergedAudios != null) return;
+        if (refreshedAudios.isEmpty) {
+          mergedAudios = <Audio>[];
+          return;
+        }
+        mergedAudios = List<Audio>.filled(
+          refreshedAudios.length,
+          refreshedAudios.first,
+          growable: false,
+        );
+        if (existingAudios == null) return;
+        final copyCount = existingAudios.length < mergedAudios!.length
+            ? existingAudios.length
+            : mergedAudios!.length;
+        for (var index = 0; index < copyCount; index++) {
+          mergedAudios![index] = existingAudios[index];
         }
       }
 
-      final existingFolder =
-          existingFolders[_audioPathLookupKey(refreshedFolder.path)];
+      for (
+        var audioIndex = 0;
+        audioIndex < refreshedAudios.length;
+        audioIndex++
+      ) {
+        final refreshedAudio = refreshedAudios[audioIndex];
+        final refreshedPathKey = _audioPathLookupKey(refreshedAudio.path);
+        final existing = resolveExistingAudio(refreshedPathKey);
+        if (existing == null) {
+          collectionsChanged = true;
+          canReuseExistingAudios = false;
+          ensureMergedAudios();
+          refreshedAudio._pathLookupKeyCache = refreshedPathKey;
+          mergedAudios![audioIndex] = refreshedAudio;
+        } else {
+          final metadataMatches = existing._metadataMatches(refreshedAudio);
+          final sameAudioSlot =
+              existingAudios != null &&
+              audioIndex < existingAudios.length &&
+              existingAudios[audioIndex]._pathLookupKey == refreshedPathKey;
+          final collectionMetadataMatches = existing._collectionMetadataMatches(
+            refreshedAudio,
+          );
+          if (!sameAudioSlot || !collectionMetadataMatches) {
+            collectionsChanged = true;
+          }
+          if (!sameAudioSlot) {
+            canReuseExistingAudios = false;
+            ensureMergedAudios();
+          }
+          if (!metadataMatches) {
+            if (existing.path != refreshedAudio.path) {
+              refreshedAudio._pathLookupKeyCache = refreshedPathKey;
+            }
+            existing._replaceMetadataFrom(refreshedAudio);
+          }
+          if (!canReuseExistingAudios) {
+            ensureMergedAudios();
+            mergedAudios![audioIndex] = existing;
+          }
+        }
+      }
+
+      if (!canReuseExistingAudios) ensureMergedAudios();
+      final resolvedAudios = canReuseExistingAudios
+          ? existingAudios!
+          : mergedAudios!;
       if (existingFolder == null) {
-        refreshedFolder.audios = mergedAudios;
+        refreshedFolder.audios = resolvedAudios;
         mergedFolders.add(refreshedFolder);
       } else {
         existingFolder
-          ..audios = mergedAudios
+          ..audios = resolvedAudios
           ..path = refreshedFolder.path
           ..modified = refreshedFolder.modified
           ..latest = refreshedFolder.latest;
@@ -324,15 +1695,35 @@ class AudioLibrary {
       }
     }
 
+    if (_audioByPath.isEmpty && fallbackAudiosBuilt) {
+      _audioByPath.addAll(fallbackAudios!);
+    }
     folders = mergedFolders;
-    _filterExcludedFolders();
-    _buildCollections();
+    if (collectionsChanged) {
+      _buildCollections();
+    } else {
+      logger.i(
+        '[perf] library collections rebuild=skipped '
+        'collectionMetadataOnly=true',
+      );
+    }
   }
 
   Audio? audioByPath(String path) {
     final key = _audioPathLookupKey(path);
     if (key.isEmpty) return null;
     return _audioByPath[key];
+  }
+
+  void updateAudiosPageIndexes(List<Audio> audios) {
+    for (var index = 0; index < audios.length; index++) {
+      audios[index]._audiosPageIndex = index;
+    }
+  }
+
+  int? audiosPageIndexForPath(String path) {
+    final index = audioByPath(path)?._audiosPageIndex ?? -1;
+    return index >= 0 ? index : null;
   }
 
   @override
@@ -455,9 +1846,15 @@ class AudioLibrary {
 
   /// 完全释放数据库资源
   void dispose() {
+    _collectionGeneration++;
+    _preparedAudiosPage = null;
+    _preparedArtistsPage = null;
+    _preparedAlbumsPage = null;
+    _activePageOrderCacheSpec = null;
     trimCollectionThumbnailRetention(0);
     _smallCoverOrder.clear();
     _coverCachePaths.clear();
+    _invalidateAggregatedRootFolders();
     _audioByPath.clear();
     audioCollection.clear();
     artistCollection.clear();
@@ -465,53 +1862,165 @@ class AudioLibrary {
     folders.clear();
   }
 
+  void _invalidateAggregatedRootFolders() {
+    _aggregatedRootFoldersCache = null;
+    _aggregatedRootFoldersSource = null;
+    _aggregatedRootFoldersSourceLength = -1;
+    _aggregatedRootFoldersUserPaths = const <String>[];
+  }
+
+  bool _canReuseAggregatedRootFolders(
+    List<String> userFolders,
+    Map<String, String> folderAliases,
+  ) {
+    final cached = _aggregatedRootFoldersCache;
+    if (cached == null ||
+        !identical(_aggregatedRootFoldersSource, folders) ||
+        _aggregatedRootFoldersSourceLength != folders.length ||
+        !listEquals(_aggregatedRootFoldersUserPaths, userFolders)) {
+      return false;
+    }
+    for (final folder in cached) {
+      if (folder.alias != folderAliases[folder._pathLookupKey]) return false;
+    }
+    return true;
+  }
+
+  List<AudioFolder> _cacheAggregatedRootFolders(
+    List<AudioFolder> result,
+    List<String> userFolders,
+  ) {
+    final cached = List<AudioFolder>.unmodifiable(result);
+    _aggregatedRootFoldersCache = cached;
+    _aggregatedRootFoldersSource = folders;
+    _aggregatedRootFoldersSourceLength = folders.length;
+    _aggregatedRootFoldersUserPaths = List<String>.unmodifiable(userFolders);
+    return List<AudioFolder>.of(cached);
+  }
+
   /// 只返回用户手动添加的根文件夹，每项聚合该根下所有子文件夹的音频。
   static List<AudioFolder> aggregatedRootFolders() {
+    final library = instance;
     final userFolders = AppPreference.instance.userFolders;
-    if (instance.folders.isEmpty) {
-      return userFolders
+    final folderAliases = AppPreference.instance.folderAliases;
+    if (library._canReuseAggregatedRootFolders(userFolders, folderAliases)) {
+      return List<AudioFolder>.of(library._aggregatedRootFoldersCache!);
+    }
+    if (library.folders.isEmpty) {
+      final result = userFolders
           .map((folder) => AudioFolder([], folder, 0, 0, _aliasFor(folder)))
           .toList();
+      return library._cacheAggregatedRootFolders(result, userFolders);
     }
-    // 从 instance.folders 反推出根目录（没有其他文件夹以它为前缀）
-    List<String> inferRoots() {
-      final keys = instance.folders
-          .map((f) => pendingFolderKey(f.path))
-          .toList();
+    // 从 instance.folders 反推出根目录（没有其他文件夹是它的父目录）
+    List<({String path, String key})> inferRoots() {
+      final keys = library.folders
+          .map((folder) => folder._pathLookupKey)
+          .toList(growable: false);
+      final keySet = keys.toSet();
       final roots = <int>[];
       for (var i = 0; i < keys.length; i++) {
         var isChild = false;
-        for (var j = 0; j < keys.length; j++) {
-          if (i == j) continue;
-          if (keys[i].startsWith('${keys[j]}/')) {
+        var ancestor = keys[i];
+        while (true) {
+          final separator = ancestor.lastIndexOf('/');
+          if (separator <= 0) break;
+          ancestor = ancestor.substring(0, separator);
+          if (keySet.contains(ancestor)) {
             isChild = true;
             break;
           }
         }
         if (!isChild) roots.add(i);
       }
-      return roots.map((i) => instance.folders[i].path).toList();
+      return roots
+          .map((i) => (path: library.folders[i].path, key: keys[i]))
+          .toList(growable: false);
     }
 
-    final targetRoots = userFolders.isNotEmpty ? userFolders : inferRoots();
-    if (targetRoots.isEmpty) return List.from(instance.folders);
+    final List<({String path, String key})> targetRoots = userFolders.isNotEmpty
+        ? userFolders
+              .map((path) => (path: path, key: pendingFolderKey(path)))
+              .toList(growable: false)
+        : inferRoots();
+    if (targetRoots.isEmpty) {
+      return library._cacheAggregatedRootFolders(
+        List<AudioFolder>.of(library.folders),
+        userFolders,
+      );
+    }
+
+    final rootIndexes = <String, List<int>>{};
+    for (var i = 0; i < targetRoots.length; i++) {
+      rootIndexes.putIfAbsent(targetRoots[i].key, () => <int>[]).add(i);
+    }
+    final matchingFolders = List<AudioFolder?>.filled(targetRoots.length, null);
+    final sourceFolders = List<List<AudioFolder>>.generate(
+      targetRoots.length,
+      (_) => <AudioFolder>[],
+    );
+    final audioCounts = List<int>.filled(targetRoots.length, 0);
+    for (final folder in library.folders) {
+      final folderKey = folder._pathLookupKey;
+      var ancestor = folderKey;
+      while (true) {
+        final indexes = rootIndexes[ancestor];
+        if (indexes != null) {
+          for (final index in indexes) {
+            sourceFolders[index].add(folder);
+            audioCounts[index] += folder.audios.length;
+            if (ancestor == folderKey) {
+              matchingFolders[index] = folder;
+            }
+          }
+        }
+        final separator = ancestor.lastIndexOf('/');
+        if (separator <= 0) break;
+        ancestor = ancestor.substring(0, separator);
+      }
+    }
+
+    List<Audio> aggregateAudios(int rootIndex) {
+      final sources = sourceFolders[rootIndex];
+      final audioCount = audioCounts[rootIndex];
+      if (audioCount == 0) return <Audio>[];
+      AudioFolder? onlyNonEmptySource;
+      for (final source in sources) {
+        if (source.audios.isEmpty) continue;
+        if (onlyNonEmptySource != null) {
+          onlyNonEmptySource = null;
+          break;
+        }
+        onlyNonEmptySource = source;
+      }
+      if (onlyNonEmptySource != null) return onlyNonEmptySource.audios;
+
+      final firstAudio = sources
+          .firstWhere((source) => source.audios.isNotEmpty)
+          .audios
+          .first;
+      final result = List<Audio>.filled(
+        audioCount,
+        firstAudio,
+        growable: false,
+      );
+      var offset = 0;
+      for (final source in sources) {
+        final audios = source.audios;
+        result.setRange(offset, offset + audios.length, audios);
+        offset += audios.length;
+      }
+      return result;
+    }
 
     final result = <AudioFolder>[];
-    for (final rootPath in targetRoots) {
-      final rootKey = pendingFolderKey(rootPath);
-      AudioFolder? matchingFolder;
-      final allAudios = <Audio>[];
-      for (final f in instance.folders) {
-        final fKey = pendingFolderKey(f.path);
-        if (fKey == rootKey) matchingFolder = f;
-        if (fKey == rootKey || fKey.startsWith('$rootKey/')) {
-          allAudios.addAll(f.audios);
-        }
-      }
+    for (var i = 0; i < targetRoots.length; i++) {
+      final matchingFolder = matchingFolders[i];
+      final rootPath = targetRoots[i].path;
       final resolvedPath = matchingFolder?.path ?? rootPath;
       result.add(
         AudioFolder(
-          allAudios,
+          aggregateAudios(i),
           resolvedPath,
           matchingFolder?.modified ?? 0,
           matchingFolder?.latest ?? 0,
@@ -519,7 +2028,7 @@ class AudioLibrary {
         ),
       );
     }
-    return result;
+    return library._cacheAggregatedRootFolders(result, userFolders);
   }
 
   static String? _aliasFor(String path) =>
@@ -527,10 +2036,19 @@ class AudioLibrary {
 }
 
 class AudioFolder {
+  String _path;
+  String? _pathLookupKeyCache;
   List<Audio> audios;
 
   /// absolute path
-  String path;
+  String get path => _path;
+  set path(String value) {
+    if (_path == value) return;
+    _path = value;
+    _pathLookupKeyCache = null;
+  }
+
+  String get _pathLookupKey => _pathLookupKeyCache ??= pendingFolderKey(_path);
 
   /// secs since UNIX EPOCH
   int modified;
@@ -541,7 +2059,13 @@ class AudioFolder {
   /// 用户设置的别名（来自 AppPreference.folderAliases，不写入索引）
   String? alias;
 
-  AudioFolder(this.audios, this.path, this.modified, this.latest, [this.alias]);
+  AudioFolder(
+    this.audios,
+    String path,
+    this.modified,
+    this.latest, [
+    this.alias,
+  ]) : _path = path;
 
   /// 展示名：别名优先，否则目录名
   String get displayName => alias ?? p.basename(path);
@@ -566,6 +2090,9 @@ class AudioFolder {
 }
 
 class Audio {
+  int _libraryIndex = -1;
+  int _audiosPageIndex = -1;
+  String? _pathLookupKeyCache;
   String title;
 
   /// 从音乐标签中读取的艺术家字符串，可能包含多个艺术家，以“、”，“/”等分隔。
@@ -582,6 +2109,9 @@ class Audio {
 
   /// 0: 没有track
   int track;
+
+  /// 0 or null: no disc number
+  int? disc;
 
   /// audio's duration in secs
   int duration;
@@ -623,6 +2153,7 @@ class Audio {
   String? _folderCoverDirectory;
   String? _folderCoverPath;
   bool _folderCoverResolved = false;
+  Future<String?>? _folderCoverResolution;
 
   void _touchCoverAccess() {
     _coverLastAccessMs = DateTime.now().millisecondsSinceEpoch;
@@ -630,6 +2161,11 @@ class Audio {
 
   /// split + trim + 去空 + 去重（保持首次出现顺序）
   static List<String> _splitAndDedup(String raw, RegExp regex) {
+    if (raw.isEmpty) return const [];
+    if (regex.firstMatch(raw) == null) {
+      final trimmed = raw.trim();
+      return trimmed.isEmpty ? const [] : [trimmed];
+    }
     final seen = <String>{};
     final result = <String>[];
     for (final part in raw.split(regex)) {
@@ -655,6 +2191,7 @@ class Audio {
     this.modified,
     this.created,
     this.by, {
+    this.disc,
     this.playCount = 0,
   }) : splitedArtists = _splitAndDedup(
          artist,
@@ -665,6 +2202,67 @@ class Audio {
          AppSettings.instance.artistSplitRegex,
        );
 
+  factory Audio._fromLoaded(
+    String title,
+    String artist,
+    String album,
+    String? albumArtist,
+    int track,
+    int duration,
+    int? bitrate,
+    int? sampleRate,
+    String path,
+    int modified,
+    int created,
+    String? by,
+    _AudioLoadPool pool, {
+    int? disc,
+    int playCount = 0,
+  }) {
+    final pooledArtist = pool.text(artist);
+    final pooledAlbumArtist = pool.optionalText(albumArtist);
+    return Audio._withArtistLists(
+      title,
+      pooledArtist,
+      pool.text(album),
+      pooledAlbumArtist,
+      track,
+      duration,
+      bitrate,
+      sampleRate,
+      path,
+      modified,
+      created,
+      pool.optionalText(by),
+      pool.artistList(pooledArtist),
+      pool.artistList(pooledAlbumArtist ?? ''),
+      disc: disc,
+      playCount: playCount,
+    );
+  }
+
+  Audio._withArtistLists(
+    this.title,
+    this.artist,
+    this.album,
+    this.albumArtist,
+    this.track,
+    this.duration,
+    this.bitrate,
+    this.sampleRate,
+    this.path,
+    this.modified,
+    this.created,
+    this.by,
+    this.splitedArtists,
+    this.splitedAlbumArtists, {
+    this.disc,
+    this.playCount = 0,
+  });
+
+  String get _pathLookupKey =>
+      _pathLookupKeyCache ??= _audioPathLookupKey(path);
+
   void _replaceMetadataFrom(Audio other) {
     if (modified != other.modified) {
       evictCoverCacheIfPresent();
@@ -673,12 +2271,15 @@ class Audio {
       _folderCoverDirectory = null;
       _folderCoverPath = null;
       _folderCoverResolved = false;
+      _folderCoverResolution = null;
+      _pathLookupKeyCache = other._pathLookupKeyCache;
     }
     title = other.title;
     artist = other.artist;
     album = other.album;
     albumArtist = other.albumArtist;
     track = other.track;
+    disc = other.disc;
     duration = other.duration;
     bitrate = other.bitrate;
     sampleRate = other.sampleRate;
@@ -687,15 +2288,34 @@ class Audio {
     created = other.created;
     by = other.by;
     playCount = other.playCount;
-    splitedArtists = _splitAndDedup(
-      artist,
-      AppSettings.instance.artistSplitRegex,
-    );
-    splitedAlbumArtists = _splitAndDedup(
-      albumArtist ?? '',
-      AppSettings.instance.artistSplitRegex,
-    );
+    splitedArtists = other.splitedArtists;
+    splitedAlbumArtists = other.splitedAlbumArtists;
   }
+
+  bool _metadataMatches(Audio other) =>
+      title == other.title &&
+      artist == other.artist &&
+      album == other.album &&
+      albumArtist == other.albumArtist &&
+      track == other.track &&
+      disc == other.disc &&
+      duration == other.duration &&
+      bitrate == other.bitrate &&
+      sampleRate == other.sampleRate &&
+      path == other.path &&
+      modified == other.modified &&
+      created == other.created &&
+      by == other.by &&
+      playCount == other.playCount &&
+      listEquals(splitedArtists, other.splitedArtists) &&
+      listEquals(splitedAlbumArtists, other.splitedAlbumArtists);
+
+  bool _collectionMetadataMatches(Audio other) =>
+      artist == other.artist &&
+      album == other.album &&
+      albumArtist == other.albumArtist &&
+      listEquals(splitedArtists, other.splitedArtists) &&
+      listEquals(splitedAlbumArtists, other.splitedAlbumArtists);
 
   factory Audio.fromMap(Map map) => Audio(
     map['title'] ?? '',
@@ -710,6 +2330,7 @@ class Audio {
     map['modified'] ?? 0,
     map['created'] ?? 0,
     map['by'],
+    disc: _optionalInt(map['disc']),
     playCount: map['play_count'] ?? 0,
   );
 
@@ -719,6 +2340,7 @@ class Audio {
     'album': album,
     'album_artist': albumArtist,
     'track': track,
+    'disc': disc,
     'duration': duration,
     'bitrate': bitrate,
     'sample_rate': sampleRate,
@@ -759,27 +2381,54 @@ class Audio {
     );
   }
 
-  Future<ImageProvider?> _getFolderCover({
-    required int width,
-    required int height,
-  }) async {
+  Future<String?> resolveFolderCoverPath() async {
     final directory = File(path).parent.path;
     if (_folderCoverResolved && _folderCoverDirectory == directory) {
-      return _getCachedFolderCover(width: width, height: height);
+      return _folderCoverPath;
+    }
+    final pending = _folderCoverResolution;
+    if (pending != null && _folderCoverDirectory == directory) {
+      return pending;
     }
 
     _folderCoverDirectory = directory;
     _folderCoverPath = null;
     _folderCoverResolved = false;
-    for (final name in const ['cover.jpg', 'cover.png']) {
-      final candidate = File(p.join(directory, name));
-      if (await candidate.exists()) {
-        _folderCoverPath = candidate.path;
-        break;
+    final future = () async {
+      String? resolvedPath;
+      for (final name in const ['cover.jpg', 'cover.png']) {
+        final candidate = File(p.join(directory, name));
+        if (await candidate.exists()) {
+          resolvedPath = candidate.path;
+          break;
+        }
+      }
+      if (_folderCoverDirectory != directory) return null;
+      _folderCoverPath = resolvedPath;
+      _folderCoverResolved = true;
+      return resolvedPath;
+    }();
+    _folderCoverResolution = future;
+    try {
+      return await future;
+    } finally {
+      if (identical(_folderCoverResolution, future)) {
+        _folderCoverResolution = null;
       }
     }
-    _folderCoverResolved = true;
-    return _getCachedFolderCover(width: width, height: height);
+  }
+
+  Future<ImageProvider?> _getFolderCover({
+    required int width,
+    required int height,
+  }) async {
+    final coverPath = await resolveFolderCoverPath();
+    if (coverPath == null) return null;
+    return _folderCoverProvider(
+      coverPath: coverPath,
+      width: width,
+      height: height,
+    );
   }
 
   /// 缓存ImageProvider实例，避免每次创建新实例导致Flutter ImageCache失效
@@ -974,6 +2623,8 @@ class Audio {
 
 class Artist {
   String name;
+  int _collectionGeneration = 0;
+  int _libraryIndex = -1;
 
   /// 所有专辑
   Map<String, Album> albumsMap = {};
@@ -1085,6 +2736,8 @@ class Artist {
 
 class Album {
   String name;
+  int _collectionGeneration = 0;
+  int _libraryIndex = -1;
 
   /// 参与的艺术家
   Map<String, Artist> artistsMap = {};

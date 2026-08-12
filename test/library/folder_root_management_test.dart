@@ -22,6 +22,12 @@ void main() {
     expect(roots, hasLength(1));
     expect(roots.single.path, r'D:\Music');
     expect(roots.single.audios, [first, second]);
+
+    final reusedRoots = AudioLibrary.aggregatedRootFolders();
+    expect(identical(roots, reusedRoots), isFalse);
+    expect(identical(roots.single.audios, reusedRoots.single.audios), isTrue);
+    roots.clear();
+    expect(reusedRoots, hasLength(1));
   });
 
   test('selected roots stay manageable when they contain no audio', () {
