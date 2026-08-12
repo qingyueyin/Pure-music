@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:pure_music/core/utils.dart';
+import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/lyric/ttml.dart';
@@ -54,8 +55,13 @@ class EnhancedLrc extends Lyric {
 }
 
 class EnhancedLrcLine extends SyncLyricLine {
-  EnhancedLrcLine(super.start, super.length, super.words,
-      [super.translation, super.romanLyric]);
+  EnhancedLrcLine(
+    super.start,
+    super.length,
+    super.words, [
+    super.translation,
+    super.romanLyric,
+  ]);
 }
 
 class _EnhancedLrcRawLine {
@@ -134,9 +140,7 @@ class LrcLine extends UnsyncLyricLine {
     final isMetadata = content.isNotEmpty && isLyricMetadataLine(content);
 
     return LrcLine(
-      Duration(
-        milliseconds: max(inMilliseconds - (offset ?? 0), 0),
-      ),
+      Duration(milliseconds: max(inMilliseconds - (offset ?? 0), 0)),
       content,
       requiredIsBlank: content.isEmpty,
       isMetadata: isMetadata,
@@ -174,7 +178,7 @@ class Lrc extends Lyric {
   /// 2. 纯拉丁字母无 CJK → 罗马音
   /// 3. 有 CJK/假名 → 原文或翻译
   /// 4. 都不是罗马音：第一行原文，其余翻译
-  Lrc _combineLrcLine(String separator) {
+  Lrc _combineLrcLine(String separator, {required bool keepMetadata}) {
     final grouped = <Duration, List<LyricLine>>{};
     for (final line in lines) {
       grouped.putIfAbsent(line.start, () => []).add(line);
@@ -184,9 +188,14 @@ class Lrc extends Lyric {
 
     for (final entry in grouped.entries) {
       final group = entry.value;
-      // 过滤显式标记的元数据行（词/曲/演唱者标注）
-      final validLines =
-          group.where((l) => l is LrcLine && !l.isMetadata).toList();
+      final metadataLines = group
+          .whereType<LrcLine>()
+          .where((line) => line.isMetadata)
+          .toList();
+      final validLines = group
+          .where((l) => l is LrcLine && !l.isMetadata)
+          .toList();
+      if (keepMetadata) combinedLines.addAll(metadataLines);
       if (validLines.isEmpty) continue;
       if (validLines.length == 1) {
         combinedLines.add(validLines[0] as LrcLine);
@@ -206,8 +215,9 @@ class Lrc extends Lyric {
   /// 判断文本是否包含逐词时间戳标签
   bool _hasWordTimestamps(String text) {
     return RegExp(r'<\d+:\d{2}(?:\.\d+)>').hasMatch(text) ||
-        RegExp(r'<\d+>[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]')
-            .hasMatch(text);
+        RegExp(
+          r'<\d+>[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]',
+        ).hasMatch(text);
   }
 
   /// 合并两行歌词（原文 + 翻译 或 罗马音 + 原文）
@@ -346,8 +356,8 @@ class Lrc extends Lyric {
   /// 检测文本是否含东方文字（CJK 汉字 / 日文假名 / 韩文 Hangul）
   /// 用于统一判断「这行是不是亚洲语言原文/翻译」
   static bool _hasAsianChars(String text) => RegExp(
-        r'[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]',
-      ).hasMatch(text);
+    r'[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]',
+  ).hasMatch(text);
 
   /// 在同一时间戳的歌词行组中，智能选择最佳的主歌词行（原文）。
   ///
@@ -405,10 +415,12 @@ class Lrc extends Lyric {
     if (stripped.isEmpty) return false;
 
     final cjkCount = RegExp(r'[\u4e00-\u9fff]').allMatches(stripped).length;
-    final hiraganaCount =
-        RegExp(r'[\u3040-\u309f]').allMatches(stripped).length;
-    final katakanaCount =
-        RegExp(r'[\u30a0-\u30ff]').allMatches(stripped).length;
+    final hiraganaCount = RegExp(
+      r'[\u3040-\u309f]',
+    ).allMatches(stripped).length;
+    final katakanaCount = RegExp(
+      r'[\u30a0-\u30ff]',
+    ).allMatches(stripped).length;
     final kanaCount = hiraganaCount + katakanaCount;
     final alphaCount = RegExp(r'[a-zA-Z]').allMatches(stripped).length;
 
@@ -437,11 +449,12 @@ class Lrc extends Lyric {
     // 例: "kimi no namae wa" → 7元音/13字母 = 0.54 → 罗马音 ✓
     // 例: "hello world" → 3元音/11字母 = 0.27 → 英文 ✓
     // 例: "no one knows" → 4元音/11字母 = 0.36 → 英文 ✓
-    final vowelCount =
-        RegExp(r'[aeiou]').allMatches(stripped.toLowerCase()).length;
-    final consCount = RegExp(r'[bcdfghjklmnpqrstvwxyz]')
-        .allMatches(stripped.toLowerCase())
-        .length;
+    final vowelCount = RegExp(
+      r'[aeiou]',
+    ).allMatches(stripped.toLowerCase()).length;
+    final consCount = RegExp(
+      r'[bcdfghjklmnpqrstvwxyz]',
+    ).allMatches(stripped.toLowerCase()).length;
     final totalLetters = vowelCount + consCount;
     if (totalLetters > 0) {
       final vowelRatio = vowelCount / totalLetters;
@@ -449,8 +462,10 @@ class Lrc extends Lyric {
     }
 
     // 分析单词
-    final words =
-        stripped.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+    final words = stripped
+        .split(RegExp(r'\s+'))
+        .where((w) => w.isNotEmpty)
+        .toList();
     if (words.isEmpty) return false;
 
     // 强英文指示词（罗马音不会用的词）
@@ -522,7 +537,9 @@ class Lrc extends Lyric {
     // 例: "can you feel my heart" (5词) → 会被 strongEnglishIndicators 拦截
     if (words.length >= 5) {
       final totalLetters = words.fold<int>(
-          0, (sum, w) => sum + w.replaceAll(RegExp(r'[^a-zA-Z]'), '').length);
+        0,
+        (sum, w) => sum + w.replaceAll(RegExp(r'[^a-zA-Z]'), '').length,
+      );
       final avgLen = totalLetters / words.length;
       if (avgLen > 3.0) return false;
     }
@@ -530,8 +547,9 @@ class Lrc extends Lyric {
     // 检测 3+ 连续辅音 → 不可能是罗马音
     // 罗马音几乎没有连续 3 个辅音的情况
     // 英文: "world"(rld), "night"(ght), "strong"(str)
-    if (RegExp(r'[bcdfghjklmnpqrstvwxyz]{3,}')
-        .hasMatch(stripped.toLowerCase())) {
+    if (RegExp(
+      r'[bcdfghjklmnpqrstvwxyz]{3,}',
+    ).hasMatch(stripped.toLowerCase())) {
       return false;
     }
 
@@ -584,7 +602,14 @@ class Lrc extends Lyric {
   }
 
   /// 如果separator为null，不合并歌词；否则，合并相同时间戳的歌词
-  static Lrc? fromLrcText(String lrc, LyricFormat source, {String? separator}) {
+  static Lrc? fromLrcText(
+    String lrc,
+    LyricFormat source, {
+    String? separator,
+    bool? keepMetadata,
+  }) {
+    final shouldKeepMetadata =
+        keepMetadata ?? AppSettings.instance.keepLyricMetadata;
     var lrcLines = lrc.split('\n');
 
     int? offsetInMilliseconds;
@@ -599,8 +624,6 @@ class Lrc extends Lyric {
     final metadataTagPattern = RegExp(r'^\[[a-zA-Z]+:');
 
     var lines = <LrcLine>[];
-    int? maxMetadataTimeMs; // 记录被过滤元数据行的最大时间戳
-
     for (int i = 0; i < lrcLines.length; i++) {
       var line = lrcLines[i].trim();
       if (line.isEmpty || line == '//') continue;
@@ -616,12 +639,7 @@ class Lrc extends Lyric {
         continue;
       }
 
-      // 如果是元数据行，记录时间戳但不添加到 lines
-      if (lyricLine.isMetadata) {
-        final ms = lyricLine.start.inMilliseconds;
-        if (maxMetadataTimeMs == null || ms > maxMetadataTimeMs) {
-          maxMetadataTimeMs = ms;
-        }
+      if (lyricLine.isMetadata && !shouldKeepMetadata) {
         continue;
       }
 
@@ -664,11 +682,8 @@ class Lrc extends Lyric {
       // 如果第一句歌词不在 0 时刻，插入前奏空白行
       if (firstRealStart > introStart) {
         linesWithInterludes.add(
-          LrcLine(
-            introStart,
-            '',
-            requiredIsBlank: true,
-          )..length = firstRealStart - introStart,
+          LrcLine(introStart, '', requiredIsBlank: true)
+            ..length = firstRealStart - introStart,
         );
       }
     }
@@ -686,11 +701,7 @@ class Lrc extends Lyric {
       // 间隙 ≥5s 时插入空白行
       if (gapLen >= gapThreshold) {
         linesWithInterludes.add(
-          LrcLine(
-            gapStart,
-            '',
-            requiredIsBlank: true,
-          )..length = gapLen,
+          LrcLine(gapStart, '', requiredIsBlank: true)..length = gapLen,
         );
       }
     }
@@ -705,7 +716,10 @@ class Lrc extends Lyric {
       return result;
     }
 
-    final combined = result._combineLrcLine(separator);
+    final combined = result._combineLrcLine(
+      separator,
+      keepMetadata: shouldKeepMetadata,
+    );
     combined._removeBlankLines();
     return combined;
   }
@@ -714,7 +728,10 @@ class Lrc extends Lyric {
     String lrc,
     LyricFormat source, {
     String? separator,
+    bool? keepMetadata,
   }) {
+    final shouldKeepMetadata =
+        keepMetadata ?? AppSettings.instance.keepLyricMetadata;
     if (_isTtml(lrc)) {
       logger.i('[lrc] fromLrcTextAuto: TTML detected');
       return Ttml.fromTtmlText(lrc, separator: separator);
@@ -723,7 +740,8 @@ class Lrc extends Lyric {
     // 智能检测 LRC 子格式（逐字 / 增强 / 普通）
     final lrcFormat = detectLrcFormat(lrc);
     logger.i(
-        '[lrc] fromLrcTextAuto: format=${lrcFormat.name} sep=${separator ?? 'null'}');
+      '[lrc] fromLrcTextAuto: format=${lrcFormat.name} sep=${separator ?? 'null'}',
+    );
     if (lrcFormat == LrcFormatType.wordByWord) {
       final rawLines = parseWordByWordLrc(lrc);
       if (rawLines.isNotEmpty) {
@@ -772,12 +790,16 @@ class Lrc extends Lyric {
         final withInterludes = _insertInterludesForWordByWord(combined);
         final result = Lyric(withInterludes, source);
         logger.i(
-            '[lrc] fromLrcTextAuto: wordByWord combined -> ${combined.length} lines, after interludes -> ${withInterludes.length} lines');
-        for (int i = 0;
-            i < (withInterludes.length > 3 ? 3 : withInterludes.length);
-            i++) {
+          '[lrc] fromLrcTextAuto: wordByWord combined -> ${combined.length} lines, after interludes -> ${withInterludes.length} lines',
+        );
+        for (
+          int i = 0;
+          i < (withInterludes.length > 3 ? 3 : withInterludes.length);
+          i++
+        ) {
           logger.i(
-              '[lrc]   line[$i] start=${withInterludes[i].start.inMilliseconds}ms trans=${withInterludes[i].translation ?? 'null'} roman=${withInterludes[i].romanLyric ?? 'null'}');
+            '[lrc]   line[$i] start=${withInterludes[i].start.inMilliseconds}ms trans=${withInterludes[i].translation ?? 'null'} roman=${withInterludes[i].romanLyric ?? 'null'}',
+          );
         }
         return result;
       }
@@ -788,32 +810,53 @@ class Lrc extends Lyric {
     if (!hasWordTags) {
       if (_isLyricifyFormat(lrc)) {
         logger.i('[lrc] fromLrcTextAuto: Lyricify format');
-        return _parseLyricify(lrc, source, separator: separator);
+        return _parseLyricify(
+          lrc,
+          source,
+          separator: separator,
+          keepMetadata: shouldKeepMetadata,
+        );
       }
       logger.i('[lrc] fromLrcTextAuto: standard LRC -> fromLrcText');
-      final result = fromLrcText(lrc, source, separator: separator);
+      final result = fromLrcText(
+        lrc,
+        source,
+        separator: separator,
+        keepMetadata: shouldKeepMetadata,
+      );
       if (result != null) {
         logger.i('[lrc] fromLrcText result: ${result.lines.length} lines');
-        for (int i = 0;
-            i < (result.lines.length > 3 ? 3 : result.lines.length);
-            i++) {
+        for (
+          int i = 0;
+          i < (result.lines.length > 3 ? 3 : result.lines.length);
+          i++
+        ) {
           final l = result.lines[i];
           logger.i(
-              '[lrc]   line[$i] start=${l.start.inMilliseconds}ms content="${l is LrcLine ? l.content : (l is SyncLyricLine ? l.words.map((w) => w.content).join() : (l is UnsyncLyricLine ? l.content : ''))}" trans=${l.translation ?? 'null'} roman=${l.romanLyric ?? 'null'}');
+            '[lrc]   line[$i] start=${l.start.inMilliseconds}ms content="${l is LrcLine ? l.content : (l is SyncLyricLine ? l.words.map((w) => w.content).join() : (l is UnsyncLyricLine ? l.content : ''))}" trans=${l.translation ?? 'null'} roman=${l.romanLyric ?? 'null'}',
+          );
         }
       }
       return result;
     }
     logger.i('[lrc] fromLrcTextAuto: enhanced LRC -> _parseEnhancedLrcText');
-    final result = _parseEnhancedLrcText(lrc, source, separator: separator);
+    final result = _parseEnhancedLrcText(
+      lrc,
+      source,
+      separator: separator,
+      keepMetadata: shouldKeepMetadata,
+    );
     if (result != null) {
       logger.i('[lrc] enhanced result: ${result.lines.length} lines');
-      for (int i = 0;
-          i < (result.lines.length > 3 ? 3 : result.lines.length);
-          i++) {
+      for (
+        int i = 0;
+        i < (result.lines.length > 3 ? 3 : result.lines.length);
+        i++
+      ) {
         final l = result.lines[i];
         logger.i(
-            '[lrc]   line[$i] start=${l.start.inMilliseconds}ms words=${l is SyncLyricLine ? l.words.length : 'N/A'} trans=${l.translation ?? 'null'} roman=${l.romanLyric ?? 'null'}');
+          '[lrc]   line[$i] start=${l.start.inMilliseconds}ms words=${l is SyncLyricLine ? l.words.length : 'N/A'} trans=${l.translation ?? 'null'} roman=${l.romanLyric ?? 'null'}',
+        );
       }
     }
     return result;
@@ -822,7 +865,8 @@ class Lrc extends Lyric {
   /// 为 wordByWord 格式插入开头前奏和中间间奏空白行
   /// 逻辑与 _parseLyricify / _parseEnhancedLrcText 的间奏插入对齐
   static List<SyncLyricLine> _insertInterludesForWordByWord(
-      List<SyncLyricLine> lines) {
+    List<SyncLyricLine> lines,
+  ) {
     if (lines.isEmpty) return lines;
 
     final result = <SyncLyricLine>[];
@@ -831,11 +875,7 @@ class Lrc extends Lyric {
     // 开头前奏：第一行前超过 5 秒则插入空白行
     final firstLine = lines.first;
     if (firstLine.start >= gapThreshold) {
-      result.add(SyncLyricLine(
-        Duration.zero,
-        firstLine.start,
-        [],
-      ));
+      result.add(SyncLyricLine(Duration.zero, firstLine.start, []));
     }
 
     // 中间间奏：基于最后一个字的实际结束时间计算间隙
@@ -851,11 +891,7 @@ class Lrc extends Lyric {
       final gapLen = nextStart - gapStart;
 
       if (gapLen >= gapThreshold) {
-        result.add(SyncLyricLine(
-          gapStart,
-          gapLen,
-          [],
-        ));
+        result.add(SyncLyricLine(gapStart, gapLen, []));
       }
     }
 
@@ -873,6 +909,7 @@ class Lrc extends Lyric {
     String lrc,
     LyricFormat source, {
     String? separator,
+    required bool keepMetadata,
   }) {
     final lrcLines = lrc.split('\n');
 
@@ -909,6 +946,7 @@ class Lrc extends Lyric {
     final useEdgeFilter = totalMs > edgeThresholdMs * 2;
 
     final rawLines = <_EnhancedLrcRawLine>[];
+    final metadataLines = <_EnhancedLrcRawLine>[];
     final filteredMetadataMs = <int>{};
     // 记录最大的元数据时间戳，用于计算间奏开始时间
     int? maxMetadataTimeMs;
@@ -924,6 +962,26 @@ class Lrc extends Lyric {
 
       // 过滤元数据行，只在歌曲首尾附近生效，防止中间歌词被误伤
       if (LrcLine.isLyricMetadataLine(contentRaw)) {
+        if (keepMetadata) {
+          for (final m in timeMatches) {
+            final mm = int.tryParse(m.group(1) ?? '');
+            final ss = double.tryParse(m.group(2) ?? '');
+            if (mm != null && ss != null) {
+              metadataLines.add(
+                _EnhancedLrcRawLine(
+                  Duration(
+                    milliseconds: max(
+                      ((mm * 60 + ss) * 1000).round() - offsetMs,
+                      0,
+                    ),
+                  ),
+                  contentRaw,
+                ),
+              );
+            }
+          }
+          continue;
+        }
         for (final m in timeMatches) {
           final mm = int.tryParse(m.group(1) ?? '');
           final ss = double.tryParse(m.group(2) ?? '');
@@ -948,19 +1006,20 @@ class Lrc extends Lyric {
         final minute = int.tryParse(m.group(1) ?? '');
         final sec = double.tryParse(m.group(2) ?? '');
         if (minute == null || sec == null) continue;
-        final lineStartMs =
-            max(((minute * 60 + sec) * 1000).round() - offsetMs, 0);
+        final lineStartMs = max(
+          ((minute * 60 + sec) * 1000).round() - offsetMs,
+          0,
+        );
 
         if (filteredMetadataMs.contains(lineStartMs)) continue;
 
-        rawLines.add(_EnhancedLrcRawLine(
-          Duration(milliseconds: lineStartMs),
-          contentRaw,
-        ));
+        rawLines.add(
+          _EnhancedLrcRawLine(Duration(milliseconds: lineStartMs), contentRaw),
+        );
       }
     }
 
-    if (rawLines.isEmpty) return null;
+    if (rawLines.isEmpty && metadataLines.isEmpty) return null;
 
     // Group by timestamp with tolerance
     final groupKeys = <List<String>>[];
@@ -1070,12 +1129,15 @@ class Lrc extends Lyric {
       // 元数据残留保护：primary 匹配元数据特征 → 整组跳过
       // 只在首尾附近生效，避免中间普通歌词被误伤
       final startMs = start.inMilliseconds;
-      final nearEdge = !useEdgeFilter ||
+      final nearEdge =
+          !useEdgeFilter ||
           startMs <= edgeThresholdMs ||
           startMs >= totalMs - edgeThresholdMs;
-      if (nearEdge &&
+      if (!keepMetadata &&
+          nearEdge &&
           LrcLine.isLyricMetadataLine(
-              primaryContent.replaceAll(RegExp(r'<[^>]*>'), '').trim())) {
+            primaryContent.replaceAll(RegExp(r'<[^>]*>'), '').trim(),
+          )) {
         continue;
       }
 
@@ -1089,6 +1151,22 @@ class Lrc extends Lyric {
       parsedLines.add(line);
     }
 
+    for (final metadata in metadataLines) {
+      final content = metadata.content
+          .replaceAll(RegExp(r'<[^>]*>'), '')
+          .trim();
+      if (content.isEmpty) continue;
+      parsedLines.add(
+        EnhancedLrcLine(metadata.start, const Duration(milliseconds: 500), [
+          EnhancedLrcWord(
+            metadata.start,
+            const Duration(milliseconds: 500),
+            content,
+          ),
+        ]),
+      );
+    }
+
     if (parsedLines.isEmpty) return null;
 
     parsedLines.sort((a, b) => a.start.compareTo(b.start));
@@ -1096,8 +1174,9 @@ class Lrc extends Lyric {
     // Calculate line durations
     for (int i = 0; i < parsedLines.length; i++) {
       final line = parsedLines[i];
-      final nextStart =
-          i < parsedLines.length - 1 ? parsedLines[i + 1].start : null;
+      final nextStart = i < parsedLines.length - 1
+          ? parsedLines[i + 1].start
+          : null;
       final lineLen = nextStart == null
           ? const Duration(seconds: 5)
           : (nextStart - line.start);
@@ -1108,8 +1187,9 @@ class Lrc extends Lyric {
       for (int j = 0; j < words.length; j++) {
         final curr = words[j];
         if (curr.length.inMilliseconds <= 0) {
-          final nextWordStart =
-              j < words.length - 1 ? words[j + 1].start : null;
+          final nextWordStart = j < words.length - 1
+              ? words[j + 1].start
+              : null;
 
           // 修复：最后一个词不要用 line.length（会拉长到下一行），而是用合理的估计值
           final end =
@@ -1119,8 +1199,8 @@ class Lrc extends Lyric {
           curr.length = d.isNegative
               ? Duration.zero
               : (d < const Duration(milliseconds: 50)
-                  ? const Duration(milliseconds: 50)
-                  : d);
+                    ? const Duration(milliseconds: 50)
+                    : d);
         }
       }
     }
@@ -1142,13 +1222,7 @@ class Lrc extends Lyric {
           : line.start + const Duration(milliseconds: 3500);
       final gapLen = nextStart - gapStart;
       if (gapLen >= gapThreshold) {
-        finalLines.add(
-          EnhancedLrcLine(
-            gapStart,
-            gapLen,
-            [],
-          ),
-        );
+        finalLines.add(EnhancedLrcLine(gapStart, gapLen, []));
       }
     }
 
@@ -1160,23 +1234,22 @@ class Lrc extends Lyric {
       const introStart = Duration.zero;
 
       logger.i(
-          '[lrc] _parseLyricify: maxMetadataTimeMs=$maxMetadataTimeMs, firstLineStart=${firstLineStart.inMilliseconds}ms, introStart=${introStart.inMilliseconds}ms');
+        '[lrc] _parseLyricify: maxMetadataTimeMs=$maxMetadataTimeMs, firstLineStart=${firstLineStart.inMilliseconds}ms, introStart=${introStart.inMilliseconds}ms',
+      );
 
       // 如果第一句歌词不在 0 时刻，且第一行不是已经从 0 开始的空白行，插入前奏空白行
-      final firstLineIsIntroBlank = firstLine is SyncLyricLine &&
+      final firstLineIsIntroBlank =
+          firstLine is SyncLyricLine &&
           firstLine.words.isEmpty &&
           firstLineStart == introStart;
 
       if (firstLineStart > introStart && !firstLineIsIntroBlank) {
         logger.i(
-            '[lrc] _parseLyricify: inserting intro blank line from ${introStart.inMilliseconds}ms to ${firstLineStart.inMilliseconds}ms');
+          '[lrc] _parseLyricify: inserting intro blank line from ${introStart.inMilliseconds}ms to ${firstLineStart.inMilliseconds}ms',
+        );
         finalLines.insert(
           0,
-          EnhancedLrcLine(
-            introStart,
-            firstLineStart - introStart,
-            [],
-          ),
+          EnhancedLrcLine(introStart, firstLineStart - introStart, []),
         );
       }
     }
@@ -1198,6 +1271,7 @@ class Lrc extends Lyric {
     String lrc,
     LyricFormat source, {
     String? separator,
+    required bool keepMetadata,
   }) {
     final lrcLines = lrc.split('\n');
 
@@ -1248,6 +1322,7 @@ class Lrc extends Lyric {
     final useEdgeFilter = totalMs > edgeThresholdMs * 2;
 
     final rawLines = <_EnhancedLrcRawLine>[];
+    final metadataLines = <_EnhancedLrcRawLine>[];
     // 记录被过滤元数据行的时间戳，后续同步过滤同时间戳的罗马音等残留行
     final filteredMetadataMs = <int>{};
     // 记录最大的元数据时间戳，用于计算间奏开始时间
@@ -1265,14 +1340,37 @@ class Lrc extends Lyric {
       // 从逐字时间戳中提取文本内容（不能直接用 replaceAll 删除标签，
       // 因为 wordTagRe 的匹配包含文本，删除标签的同时也会删除文本内容，
       // 导致「全部是逐字标签」的行得到空字符串，元数据检测失效）
-      final wordContent =
-          wordTagRe.allMatches(contentRaw).map((m) => m.group(2) ?? '').join();
-      final metadataCheckText =
-          wordContent.isNotEmpty ? wordContent.trim() : contentRaw;
+      final wordContent = wordTagRe
+          .allMatches(contentRaw)
+          .map((m) => m.group(2) ?? '')
+          .join();
+      final metadataCheckText = wordContent.isNotEmpty
+          ? wordContent.trim()
+          : contentRaw;
 
       // 过滤元数据行（"Adam Levine："、"词：xxx"、"Lyrics by："等），
       // 避免它们抢真实歌词的主位。只在歌曲首尾附近生效，防止中间歌词被误伤。
       if (LrcLine.isLyricMetadataLine(metadataCheckText)) {
+        if (keepMetadata) {
+          for (final m in timeMatches) {
+            final mm = int.tryParse(m.group(1) ?? '');
+            final ss = double.tryParse(m.group(2) ?? '');
+            if (mm != null && ss != null) {
+              metadataLines.add(
+                _EnhancedLrcRawLine(
+                  Duration(
+                    milliseconds: max(
+                      ((mm * 60 + ss) * 1000).round() - offsetMs,
+                      0,
+                    ),
+                  ),
+                  contentRaw,
+                ),
+              );
+            }
+          }
+          continue;
+        }
         // 记录该行所有时间戳，以便后续过滤同组的罗马音等残留行
         for (final m in timeMatches) {
           final mm = int.tryParse(m.group(1) ?? '');
@@ -1298,20 +1396,21 @@ class Lrc extends Lyric {
         final minute = int.tryParse(m.group(1) ?? '');
         final sec = double.tryParse(m.group(2) ?? '');
         if (minute == null || sec == null) continue;
-        final lineStartMs =
-            max(((minute * 60 + sec) * 1000).round() - offsetMs, 0);
+        final lineStartMs = max(
+          ((minute * 60 + sec) * 1000).round() - offsetMs,
+          0,
+        );
 
         // 检查该时间戳是否已被元数据过滤
         if (filteredMetadataMs.contains(lineStartMs)) continue;
 
-        rawLines.add(_EnhancedLrcRawLine(
-          Duration(milliseconds: lineStartMs),
-          contentRaw,
-        ));
+        rawLines.add(
+          _EnhancedLrcRawLine(Duration(milliseconds: lineStartMs), contentRaw),
+        );
       }
     }
 
-    if (rawLines.isEmpty) return null;
+    if (rawLines.isEmpty && metadataLines.isEmpty) return null;
 
     bool hasTimedContent(String raw) => wordTagRe
         .allMatches(raw)
@@ -1399,8 +1498,8 @@ class Lrc extends Lyric {
       Duration? nearestStart;
       var nearestDifferenceMs = 50;
       for (final start in groupedMap.keys) {
-        final differenceMs =
-            (entry.key.inMilliseconds - start.inMilliseconds).abs();
+        final differenceMs = (entry.key.inMilliseconds - start.inMilliseconds)
+            .abs();
         if (differenceMs < nearestDifferenceMs) {
           nearestStart = start;
           nearestDifferenceMs = differenceMs;
@@ -1415,6 +1514,8 @@ class Lrc extends Lyric {
 
     final parsedLines = <EnhancedLrcLine>[];
     final explicitLineEndMsByStart = <Duration, int>{};
+    Duration? firstLyricLineStart;
+    Duration? firstLyricWordStart;
 
     for (final entry in groupedMap.entries) {
       final start = entry.key;
@@ -1525,9 +1626,7 @@ class Lrc extends Lyric {
           : primaryRaw.split(separator);
       primaryText = primaryParts.first;
       if (primaryParts.length > 1) {
-        translations.add(
-          primaryParts.sublist(1).join(separator ?? '').trim(),
-        );
+        translations.add(primaryParts.sublist(1).join(separator ?? '').trim());
       }
 
       // Process other non-primary lines
@@ -1537,21 +1636,24 @@ class Lrc extends Lyric {
             ? <String>[otherContents[i]]
             : otherContents[i].split(separator);
         final inlinePrimary = parts.first;
-        final inlineTrans =
-            parts.length > 1 ? parts.sublist(1).join(separator ?? '┃') : null;
+        final inlineTrans = parts.length > 1
+            ? parts.sublist(1).join(separator ?? '┃')
+            : null;
         if (inlineTrans != null && inlineTrans.trim().isNotEmpty) {
           translations.add(inlineTrans.trim());
         } else {
-          final cleaned =
-              inlinePrimary.replaceAll(RegExp(r'<[^>]*>'), '').trim();
+          final cleaned = inlinePrimary
+              .replaceAll(RegExp(r'<[^>]*>'), '')
+              .trim();
           if (cleaned.isNotEmpty) translations.add(cleaned);
         }
       }
 
       // Extract romanization from identified roman lines
       // Only extract if different from primary (skip pure English lines that get misclassified)
-      String? primaryCleaned =
-          primaryText.replaceAll(RegExp(r'<[^>]*>'), '').trim();
+      String? primaryCleaned = primaryText
+          .replaceAll(RegExp(r'<[^>]*>'), '')
+          .trim();
 
       for (final r in romanContents) {
         final parts = separator == null ? <String>[r] : r.split(separator);
@@ -1573,8 +1675,8 @@ class Lrc extends Lyric {
       final translationText = translations.isEmpty
           ? null
           : translations
-              .where((e) => e.trim().isNotEmpty)
-              .join(separator ?? '┃');
+                .where((e) => e.trim().isNotEmpty)
+                .join(separator ?? '┃');
 
       final words = <EnhancedLrcWord>[];
       bool hasWordTimestamps = false;
@@ -1602,17 +1704,18 @@ class Lrc extends Lyric {
         hasWordTimestamps = true;
       }
 
+      // 行首纯空格时间锚点不参与歌词显示和跟随。
+      while (words.isNotEmpty && words.first.content.trim().isEmpty) {
+        words.removeAt(0);
+      }
+      hasWordTimestamps = words.isNotEmpty;
+
       if (!hasWordTimestamps && primaryText.isNotEmpty) {
-        final cleanedText =
-            primaryText.replaceAll(RegExp(r'<[^>]*>'), '').trim();
+        final cleanedText = primaryText
+            .replaceAll(RegExp(r'<[^>]*>'), '')
+            .trim();
         if (cleanedText.isNotEmpty) {
-          words.add(
-            EnhancedLrcWord(
-              start,
-              Duration.zero,
-              cleanedText,
-            ),
-          );
+          words.add(EnhancedLrcWord(start, Duration.zero, cleanedText));
         }
       }
 
@@ -1620,29 +1723,69 @@ class Lrc extends Lyric {
       // 使用 allMatches 提取文本内容，避免 wordTagRe 的 replaceAll 吞掉文本
       // 只在首尾附近生效，避免中间普通歌词被误伤
       final startMs = start.inMilliseconds;
-      final nearEdge = !useEdgeFilter ||
+      final nearEdge =
+          !useEdgeFilter ||
           startMs <= edgeThresholdMs ||
           startMs >= totalMs - edgeThresholdMs;
-      final primaryWordContent =
-          wordTagRe.allMatches(primaryText).map((m) => m.group(2) ?? '').join();
+      final primaryWordContent = wordTagRe
+          .allMatches(primaryText)
+          .map((m) => m.group(2) ?? '')
+          .join();
       final primaryCheckText = primaryWordContent.isNotEmpty
           ? primaryWordContent.trim()
           : primaryText;
       if (words.isEmpty ||
-          (nearEdge && LrcLine.isLyricMetadataLine(primaryCheckText))) {
+          (!keepMetadata &&
+              nearEdge &&
+              LrcLine.isLyricMetadataLine(primaryCheckText))) {
         continue;
       }
 
-      parsedLines.add(EnhancedLrcLine(
-        start,
-        Duration.zero,
-        words,
-        translationText?.isEmpty == true ? null : translationText,
-        romanText?.isEmpty == true ? null : romanText,
-      ));
+      parsedLines.add(
+        EnhancedLrcLine(
+          start,
+          Duration.zero,
+          words,
+          translationText?.isEmpty == true ? null : translationText,
+          romanText?.isEmpty == true ? null : romanText,
+        ),
+      );
+
+      Duration? meaningfulWordStart;
+      for (final word in words) {
+        if (word.content.trim().isEmpty) continue;
+        if (meaningfulWordStart == null || word.start < meaningfulWordStart) {
+          meaningfulWordStart = word.start;
+        }
+      }
+      if (firstLyricLineStart == null || start < firstLyricLineStart) {
+        firstLyricLineStart = start;
+        firstLyricWordStart = meaningfulWordStart;
+      } else if (start == firstLyricLineStart &&
+          meaningfulWordStart != null &&
+          (firstLyricWordStart == null ||
+              meaningfulWordStart < firstLyricWordStart)) {
+        firstLyricWordStart = meaningfulWordStart;
+      }
       if (explicitLineEndMs != null) {
         explicitLineEndMsByStart[start] = explicitLineEndMs;
       }
+    }
+
+    for (final metadata in metadataLines) {
+      final content = metadata.content
+          .replaceAll(RegExp(r'<[^>]*>'), '')
+          .trim();
+      if (content.isEmpty) continue;
+      parsedLines.add(
+        EnhancedLrcLine(metadata.start, const Duration(milliseconds: 500), [
+          EnhancedLrcWord(
+            metadata.start,
+            const Duration(milliseconds: 500),
+            content,
+          ),
+        ]),
+      );
     }
 
     if (parsedLines.isEmpty) return null;
@@ -1651,8 +1794,9 @@ class Lrc extends Lyric {
 
     for (int i = 0; i < parsedLines.length; i++) {
       final line = parsedLines[i];
-      final nextStart =
-          i < parsedLines.length - 1 ? parsedLines[i + 1].start : null;
+      final nextStart = i < parsedLines.length - 1
+          ? parsedLines[i + 1].start
+          : null;
       final lineLen = nextStart == null
           ? const Duration(seconds: 5)
           : (nextStart - line.start);
@@ -1668,7 +1812,8 @@ class Lrc extends Lyric {
         final explicitLineEnd = explicitLineEndMs == null
             ? null
             : Duration(milliseconds: explicitLineEndMs);
-        final end = nextWordStart ??
+        final end =
+            nextWordStart ??
             (explicitLineEnd != null && explicitLineEnd > curr.start
                 ? explicitLineEnd
                 : curr.start + const Duration(milliseconds: 500));
@@ -1677,8 +1822,8 @@ class Lrc extends Lyric {
         curr.length = d.isNegative
             ? Duration.zero
             : (d < const Duration(milliseconds: 50)
-                ? const Duration(milliseconds: 50)
-                : d);
+                  ? const Duration(milliseconds: 50)
+                  : d);
       }
     }
 
@@ -1698,13 +1843,7 @@ class Lrc extends Lyric {
           : line.start + const Duration(milliseconds: 3500);
       final gapLen = nextStart - gapStart;
       if (gapLen >= gapThreshold) {
-        finalLines.add(
-          EnhancedLrcLine(
-            gapStart,
-            gapLen,
-            [],
-          ),
-        );
+        finalLines.add(EnhancedLrcLine(gapStart, gapLen, []));
       }
     }
 
@@ -1712,27 +1851,32 @@ class Lrc extends Lyric {
     // 元数据行已被过滤，它们所占的时间应该合并进前奏间奏里显示。
     if (finalLines.isNotEmpty) {
       final firstLine = finalLines.first;
-      final firstLineStart = firstLine.start;
+      var firstLineStart = firstLyricLineStart ?? firstLine.start;
       const introStart = Duration.zero;
 
+      if (firstLineStart == introStart &&
+          firstLyricWordStart != null &&
+          firstLyricWordStart > introStart) {
+        firstLineStart = firstLyricWordStart;
+      }
+
       logger.i(
-          '[lrc] _parseEnhancedLrcText: maxMetadataTimeMs=$maxMetadataTimeMs, firstLineStart=${firstLineStart.inMilliseconds}ms, introStart=${introStart.inMilliseconds}ms');
+        '[lrc] _parseEnhancedLrcText: maxMetadataTimeMs=$maxMetadataTimeMs, firstLineStart=${firstLineStart.inMilliseconds}ms, introStart=${introStart.inMilliseconds}ms',
+      );
 
       // 如果第一句歌词不在 0 时刻，且第一行不是已经从 0 开始的空白行，插入前奏空白行
-      final firstLineIsIntroBlank = firstLine is SyncLyricLine &&
+      final firstLineIsIntroBlank =
+          firstLine is SyncLyricLine &&
           firstLine.words.isEmpty &&
           firstLineStart == introStart;
 
       if (firstLineStart > introStart && !firstLineIsIntroBlank) {
         logger.i(
-            '[lrc] _parseEnhancedLrcText: inserting intro blank line from ${introStart.inMilliseconds}ms to ${firstLineStart.inMilliseconds}ms');
+          '[lrc] _parseEnhancedLrcText: inserting intro blank line from ${introStart.inMilliseconds}ms to ${firstLineStart.inMilliseconds}ms',
+        );
         finalLines.insert(
           0,
-          EnhancedLrcLine(
-            introStart,
-            firstLineStart - introStart,
-            [],
-          ),
+          EnhancedLrcLine(introStart, firstLineStart - introStart, []),
         );
       }
     }
@@ -1757,13 +1901,17 @@ class Lrc extends Lyric {
   }) async {
     final raw = await getLyricFromPath(path: belongTo.path);
     logger.i(
-        'lrc: fromAudioPath raw=${raw?.substring(0, raw.length > 80 ? 80 : raw.length)}');
+      'lrc: fromAudioPath raw=${raw?.substring(0, raw.length > 80 ? 80 : raw.length)}',
+    );
     if (raw == null || raw.isEmpty) {
       logger.i('lrc: fromAudioPath -> null (no lyric)');
       return null;
     }
-    final parsed =
-        Lrc.fromLrcTextAuto(raw, LyricFormat.local, separator: separator);
+    final parsed = Lrc.fromLrcTextAuto(
+      raw,
+      LyricFormat.local,
+      separator: separator,
+    );
     logger.i('lrc: fromAudioPath parsed=${parsed?.lines.length} lines');
     return parsed;
   }

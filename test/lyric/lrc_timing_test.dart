@@ -11,39 +11,62 @@ void main() {
       LyricFormat.local,
       separator: '┃',
     )!;
-    final line = lyric.lines
-        .whereType<SyncLyricLine>()
-        .firstWhere((line) => line.content.trim() == 'Check');
+    final line = lyric.lines.whereType<SyncLyricLine>().firstWhere(
+      (line) => line.content.trim() == 'Check',
+    );
 
     expect(line.words, hasLength(1));
     expect(line.words.single.length, const Duration(milliseconds: 311));
   });
 
-  test('enhanced LRC keeps adjacent original and translation groups separate',
-      () {
+  test('enhanced LRC uses the first meaningful word for the opening interlude', () {
     final lyric = Lrc.fromLrcTextAuto(
-      '[01:04.190] <01:04.190>oh<01:04.220>\n'
-      '[01:04.190]我清楚我不能征服你\n'
-      '[01:04.220] <01:04.220>know <01:04.524>that <01:04.828>i '
-      '<01:05.132>can\'t <01:05.436>get <01:05.740>over '
-      '<01:06.044>you<01:06.350>\n'
-      '[01:04.220]因为我眼中只有你',
+      '[00:00.000] <00:00.000> <00:21.320>ぜ<00:21.550>ん<00:21.720>ぶ<00:22.200>\n'
+      '[00:23.930] <00:23.930>こ<00:24.150>の<00:24.280>気<00:24.470>ま<00:24.800>ず<00:25.000>',
       LyricFormat.local,
       separator: '┃',
+      keepMetadata: false,
     )!;
-    final lines = lyric.lines
-        .whereType<SyncLyricLine>()
-        .where((line) => line.words.isNotEmpty)
-        .toList();
 
-    expect(lines, hasLength(2));
-    expect(lines[0].content.trim(), 'oh');
-    expect(lines[0].translation, '我清楚我不能征服你');
-    expect(lines[0].bg, isNull);
-    expect(lines[1].content.trim(), "know that i can't get over you");
-    expect(lines[1].translation, '因为我眼中只有你');
-    expect(lines[1].bg, isNull);
+    final intro = lyric.lines.whereType<SyncLyricLine>().first;
+    expect(intro.words, isEmpty);
+    expect(intro.start, Duration.zero);
+    expect(intro.length, const Duration(milliseconds: 21320));
+
+    final firstLyric = lyric.lines.whereType<SyncLyricLine>().firstWhere(
+      (line) => line.words.isNotEmpty,
+    );
+    expect(firstLyric.words.first.content, 'ぜ');
+    expect(firstLyric.words.first.start, const Duration(milliseconds: 21320));
   });
+
+  test(
+    'enhanced LRC keeps adjacent original and translation groups separate',
+    () {
+      final lyric = Lrc.fromLrcTextAuto(
+        '[01:04.190] <01:04.190>oh<01:04.220>\n'
+        '[01:04.190]我清楚我不能征服你\n'
+        '[01:04.220] <01:04.220>know <01:04.524>that <01:04.828>i '
+        '<01:05.132>can\'t <01:05.436>get <01:05.740>over '
+        '<01:06.044>you<01:06.350>\n'
+        '[01:04.220]因为我眼中只有你',
+        LyricFormat.local,
+        separator: '┃',
+      )!;
+      final lines = lyric.lines
+          .whereType<SyncLyricLine>()
+          .where((line) => line.words.isNotEmpty)
+          .toList();
+
+      expect(lines, hasLength(2));
+      expect(lines[0].content.trim(), 'oh');
+      expect(lines[0].translation, '我清楚我不能征服你');
+      expect(lines[0].bg, isNull);
+      expect(lines[1].content.trim(), "know that i can't get over you");
+      expect(lines[1].translation, '因为我眼中只有你');
+      expect(lines[1].bg, isNull);
+    },
+  );
 
   test('enhanced LRC still groups a slightly offset translation', () {
     final lyric = Lrc.fromLrcTextAuto(
@@ -52,9 +75,9 @@ void main() {
       LyricFormat.local,
       separator: '┃',
     )!;
-    final line = lyric.lines
-        .whereType<SyncLyricLine>()
-        .singleWhere((line) => line.words.isNotEmpty);
+    final line = lyric.lines.whereType<SyncLyricLine>().singleWhere(
+      (line) => line.words.isNotEmpty,
+    );
 
     expect(line.content, 'hello');
     expect(line.translation, '你好');
@@ -67,9 +90,9 @@ void main() {
       LyricFormat.local,
       separator: '┃',
     )!;
-    final line = lyric.lines
-        .whereType<SyncLyricLine>()
-        .singleWhere((line) => line.words.isNotEmpty);
+    final line = lyric.lines.whereType<SyncLyricLine>().singleWhere(
+      (line) => line.words.isNotEmpty,
+    );
 
     expect(line.content, 'hello world');
     expect(line.translation, '你好');

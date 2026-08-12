@@ -32,7 +32,9 @@ class Vtt extends Lyric {
             line == 'REGION' ||
             line.startsWith('REGION ') ||
             line.startsWith('REGION\t')) {
-          while (i < rawLines.length && rawLines[i].trim().isNotEmpty) i++;
+          while (i < rawLines.length && rawLines[i].trim().isNotEmpty) {
+            i++;
+          }
           continue;
         }
 
@@ -71,8 +73,9 @@ class Vtt extends Lyric {
         final words = <SyncLyricWord>[
           SyncLyricWord(start, Duration.zero, wordContent),
         ];
-        final length =
-            (end != null && end > start) ? end - start : Duration.zero;
+        final length = (end != null && end > start)
+            ? end - start
+            : Duration.zero;
         lines.add(
           VttLine(
             start,
@@ -91,8 +94,7 @@ class Vtt extends Lyric {
       for (var j = 0; j < lines.length; j++) {
         final line = lines[j];
         if (line.length <= Duration.zero) {
-          final nextStart =
-              j < lines.length - 1 ? lines[j + 1].start : null;
+          final nextStart = j < lines.length - 1 ? lines[j + 1].start : null;
           if (nextStart != null) {
             final len = nextStart - line.start;
             line.length = len.isNegative ? Duration.zero : len;
@@ -101,8 +103,8 @@ class Vtt extends Lyric {
           }
         }
         if (line.words.isNotEmpty) {
-          line.words.first.length = line.length <
-                  const Duration(milliseconds: 50)
+          line.words.first.length =
+              line.length < const Duration(milliseconds: 50)
               ? const Duration(milliseconds: 50)
               : line.length;
         }
