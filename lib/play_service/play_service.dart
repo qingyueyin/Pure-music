@@ -31,6 +31,8 @@ class PlayService {
     return _instance!;
   }
 
+  bool get hasPlaybackSession => _playbackService?.nowPlaying != null;
+
   Future<void> close() async {
     // 按顺序关闭服务，每个操作带超时保护
     final desktopLyric = _desktopLyricService;

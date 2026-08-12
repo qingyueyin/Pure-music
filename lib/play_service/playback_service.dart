@@ -38,8 +38,14 @@ class PlaybackService extends ChangeNotifier {
   double _listenLastPositionSec = 0;
   double _thresholdSec = 0;
   bool _listenRecorded = false;
+  int _listenSessionToken = 0;
+  int? _listenRecordingToken;
   String? _supportPath;
   bool _closed = false;
+
+  final _playCountRevision = ValueNotifier<int>(0);
+
+  ValueListenable<int> get playCountRevision => _playCountRevision;
 
   PlaybackService(this.playService) {
     _player.onExclusiveModeChanged = (exclusive) {
@@ -47,6 +53,9 @@ class PlaybackService extends ChangeNotifier {
     };
 
     _playerStateStreamSub = playerStateStream.listen((event) {
+      if (event == PlayerState.completed) {
+        _updateSmtcPosition();
+      }
       _playerState.value = event;
       _notifyPositionSync();
       _syncSmtcPositionTimer();
@@ -76,8 +85,9 @@ class PlaybackService extends ChangeNotifier {
         case SMTCControlEvent.unknown:
       }
     });
-    _smtcPositionChangeStreamSub =
-        _smtc.positionChangeEvents.listen((position) {
+    _smtcPositionChangeStreamSub = _smtc.positionChangeEvents.listen((
+      position,
+    ) {
       final audio = nowPlaying;
       if (_closed || audio == null) return;
       final positionSeconds = (position / 1000).clamp(
@@ -143,19 +153,22 @@ class PlaybackService extends ChangeNotifier {
   void _readReplayGainFor(String path) {
     if (!_pref.replayGainEnabled) return;
     _replayGainForPath = path;
-    rust_tag_reader.readAudioExtraMetadata(path: path).then((meta) {
-      if (_replayGainForPath != path) return;
-      _replayGainForPath = null;
-      final raw = meta.replaygainTrackGain;
-      if (raw == null || raw.isEmpty) return;
-      final gainDb = double.tryParse(raw.replaceAll('dB', '').trim());
-      if (gainDb == null) return;
-      _player.replayGainDb = gainDb;
-      _eq.reapplyOutputGain();
-    }).catchError((_) {
-      if (_replayGainForPath != path) return;
-      _replayGainForPath = null;
-    });
+    rust_tag_reader
+        .readAudioExtraMetadata(path: path)
+        .then((meta) {
+          if (_replayGainForPath != path) return;
+          _replayGainForPath = null;
+          final raw = meta.replaygainTrackGain;
+          if (raw == null || raw.isEmpty) return;
+          final gainDb = double.tryParse(raw.replaceAll('dB', '').trim());
+          if (gainDb == null) return;
+          _player.replayGainDb = gainDb;
+          _eq.reapplyOutputGain();
+        })
+        .catchError((_) {
+          if (_replayGainForPath != path) return;
+          _replayGainForPath = null;
+        });
   }
 
   void savePreference() {
@@ -172,8 +185,10 @@ class PlaybackService extends ChangeNotifier {
   /// 独占模式
   void useExclusiveMode(bool exclusive) {
     logger.i('[action] useExclusiveMode=$exclusive');
-    AudioEchoLogRecorder.instance
-        .mark('useExclusiveMode', extra: {'exclusive': exclusive});
+    AudioEchoLogRecorder.instance.mark(
+      'useExclusiveMode',
+      extra: {'exclusive': exclusive},
+    );
     if (_player.useExclusiveMode(exclusive)) {
       _wasapiExclusive.value = exclusive;
     }
@@ -243,8 +258,10 @@ class PlaybackService extends ChangeNotifier {
   /// 修改解码时的音量（不影响 Windows 系统音量）
   void setVolumeDsp(double volume) {
     logger.i('[action] setVolumeDsp=$volume');
-    AudioEchoLogRecorder.instance
-        .mark('setVolumeDsp', extra: {'value': volume});
+    AudioEchoLogRecorder.instance.mark(
+      'setVolumeDsp',
+      extra: {'value': volume},
+    );
     _pref.volumeDsp = volume;
     _eq.reapplyOutputGain();
     _savePlaybackOnly();
@@ -261,10 +278,7 @@ class PlaybackService extends ChangeNotifier {
     _positionSyncRevision.value += 1;
   }
 
-  void _schedulePositionSyncBurst({
-    int? token,
-    String? path,
-  }) {
+  void _schedulePositionSyncBurst({int? token, String? path}) {
     _cancelPositionSyncBurst();
     _notifyPositionSync();
     const delays = [
@@ -338,9 +352,13 @@ class PlaybackService extends ChangeNotifier {
     final audio = nowPlaying;
     if (audio == null) return;
     unawaited(_smtc.refreshDisplay());
-    unawaited(_smtc.updateState(
-      playerState == PlayerState.playing ? SMTCState.playing : SMTCState.paused,
-    ));
+    unawaited(
+      _smtc.updateState(
+        playerState == PlayerState.playing
+            ? SMTCState.playing
+            : SMTCState.paused,
+      ),
+    );
     _updateSmtcPosition();
   }
 
@@ -354,33 +372,40 @@ class PlaybackService extends ChangeNotifier {
   bool get nowPlayingChangedRecently =>
       nowPlayingChangeAge.inMilliseconds < 220;
 
-  void _loadAndPlay(int audioIndex, List<Audio> playlist) {
+  bool _loadAndPlay(
+    int audioIndex,
+    List<Audio> playlist, {
+    bool reportFailure = true,
+  }) {
+    if (audioIndex < 0 || audioIndex >= playlist.length) return false;
+    final audio = playlist[audioIndex];
+    _songChangeTaskToken++;
+    _cancelSongChangeTasks();
+    ThemeProvider.instance.cancelPendingAudioTheme();
+    final token = _songChangeTaskToken;
     try {
-      _songChangeTaskToken++;
-      _cancelSongChangeTasks();
-      ThemeProvider.instance.cancelPendingAudioTheme();
-      final token = _songChangeTaskToken;
-      final audio = playlist[audioIndex];
+      _player.setSource(audio.path);
+      _eq.reapplyOutputGain();
+      _player.start();
+
       _playlistIndex = audioIndex;
       _nowPlaying.value = audio;
       _lastNowPlayingChangedMs = DateTime.now().millisecondsSinceEpoch;
       _resetListenAccumulator(audio.duration.toDouble());
       unawaited(audio.loadSmallCoverBytes());
 
-      _player.setSource(audio.path);
-      _eq.reapplyOutputGain();
-
       playService.lyricService.updateLyric();
 
-      _player.start();
       _playerState.value = PlayerState.playing;
-      unawaited(_smtc.updateDisplay(
-        title: audio.title,
-        artist: audio.artist,
-        album: audio.album,
-        duration: audio.duration * 1000,
-        path: audio.path,
-      ));
+      unawaited(
+        _smtc.updateDisplay(
+          title: audio.title,
+          artist: audio.artist,
+          album: audio.album,
+          duration: audio.duration * 1000,
+          path: audio.path,
+        ),
+      );
       unawaited(_smtc.updateState(SMTCState.playing));
       _syncSmtcPositionTimer();
       _schedulePositionSyncBurst(token: token, path: audio.path);
@@ -392,10 +417,53 @@ class PlaybackService extends ChangeNotifier {
         audioIndex: audioIndex,
         playlist: playlist,
       );
+      return true;
     } catch (err, trace) {
-      logger.e('加载并播放歌曲失败', error: err, stackTrace: trace);
-      showTextOnSnackBar('播放失败，请查看日志', variant: ToastVariant.error);
+      logger.e(
+        '加载并播放歌曲失败 index=$audioIndex title=${audio.title}',
+        error: err,
+        stackTrace: trace,
+      );
+      if (reportFailure) {
+        _reportPlaybackLoadFailure('播放失败，请查看日志');
+      }
+      return false;
     }
+  }
+
+  bool _loadAndPlayInDirection({
+    required int startIndex,
+    required List<Audio> playlist,
+    required int step,
+    required bool wrap,
+  }) {
+    if (playlist.isEmpty || step == 0) return false;
+
+    var index = startIndex;
+    var attempts = 0;
+    while (attempts < playlist.length) {
+      if (index < 0 || index >= playlist.length) {
+        if (!wrap) break;
+        index = (index % playlist.length + playlist.length) % playlist.length;
+      }
+      if (_loadAndPlay(index, playlist, reportFailure: false)) return true;
+      attempts++;
+      index += step;
+    }
+
+    if (attempts > 0) {
+      _reportPlaybackLoadFailure('播放列表中没有可播放的歌曲');
+    }
+    return false;
+  }
+
+  void _reportPlaybackLoadFailure(String message) {
+    _playerState.value = PlayerState.stopped;
+    _syncSmtcPositionTimer();
+    _notifyPositionSync();
+    unawaited(_smtc.updateState(SMTCState.paused));
+    notifyListeners();
+    showTextOnSnackBar(message, variant: ToastVariant.error);
   }
 
   bool _isCurrentSongChangeTask(int token, Audio audio) {
@@ -414,6 +482,7 @@ class PlaybackService extends ChangeNotifier {
   }
 
   void _resetListenAccumulator(double durationSec) {
+    _listenSessionToken++;
     _listenAccumulatedSec = 0;
     _listenLastPositionSec = 0;
     _listenRecorded = false;
@@ -433,17 +502,38 @@ class PlaybackService extends ChangeNotifier {
 
     _listenAccumulatedSec += delta;
     if (_listenAccumulatedSec >= _thresholdSec) {
-      _recordListen();
+      unawaited(_recordListen());
     }
   }
 
-  void _recordListen() {
+  Future<void> _recordListen() async {
     if (_listenRecorded) return;
-    _listenRecorded = true;
-    final audioPath = nowPlaying?.path;
-    if (_supportPath == null || audioPath == null) return;
-    rust_library_db.incrementPlayCount(
-        indexPath: _supportPath!, path: audioPath);
+    final audio = nowPlaying;
+    if (audio == null) return;
+    final audioPath = audio.path;
+
+    final sessionToken = _listenSessionToken;
+    if (_listenRecordingToken == sessionToken) return;
+    _listenRecordingToken = sessionToken;
+
+    try {
+      final supportPath = _supportPath ??= (await getAppDataDir()).path;
+      await rust_library_db.incrementPlayCount(
+        indexPath: supportPath,
+        path: audioPath,
+      );
+      audio.playCount++;
+      if (sessionToken == _listenSessionToken) {
+        _listenRecorded = true;
+      }
+      if (!_closed) _playCountRevision.value++;
+    } catch (err, trace) {
+      logger.w('记录播放次数失败', error: err, stackTrace: trace);
+    } finally {
+      if (_listenRecordingToken == sessionToken) {
+        _listenRecordingToken = null;
+      }
+    }
   }
 
   void _schedulePostSongChangeTasks({
@@ -509,8 +599,10 @@ class PlaybackService extends ChangeNotifier {
   /// 播放当前播放列表的第几项，只能用在播放列表界面
   void playIndexOfPlaylist(int audioIndex) {
     logger.i('[action] playIndexOfPlaylist=$audioIndex');
-    AudioEchoLogRecorder.instance
-        .mark('playIndexOfPlaylist', extra: {'index': audioIndex});
+    AudioEchoLogRecorder.instance.mark(
+      'playIndexOfPlaylist',
+      extra: {'index': audioIndex},
+    );
     _loadAndPlay(audioIndex, playlist.value);
   }
 
@@ -555,8 +647,10 @@ class PlaybackService extends ChangeNotifier {
   /// 播放 playlist[audioIndex] 并设置播放列表为 playlist
   void play(int audioIndex, List<Audio> playlist) {
     logger.i('[action] play index=$audioIndex playlistLen=${playlist.length}');
-    AudioEchoLogRecorder.instance.mark('play',
-        extra: {'index': audioIndex, 'playlistLen': playlist.length});
+    AudioEchoLogRecorder.instance.mark(
+      'play',
+      extra: {'index': audioIndex, 'playlistLen': playlist.length},
+    );
     if (shuffle.value) {
       final shuffled = List<Audio>.from(playlist);
       final willPlay = shuffled.removeAt(audioIndex);
@@ -574,13 +668,16 @@ class PlaybackService extends ChangeNotifier {
 
   void shuffleAndPlay(List<Audio> audios) {
     logger.i('[action] shuffleAndPlay len=${audios.length}');
-    AudioEchoLogRecorder.instance
-        .mark('shuffleAndPlay', extra: {'len': audios.length});
+    AudioEchoLogRecorder.instance.mark(
+      'shuffleAndPlay',
+      extra: {'len': audios.length},
+    );
     final shuffled = List<Audio>.from(audios);
     shuffled.shuffle();
     _playlist.value = shuffled;
     _playlistBackup = audios;
 
+    setPlayMode(PlayMode.forward);
     shuffle.value = true;
 
     _loadAndPlay(0, shuffled);
@@ -633,16 +730,19 @@ class PlaybackService extends ChangeNotifier {
   /// 从播放队列中移除指定索引的曲目
   void removeFromQueue(int index) {
     logger.i('[action] removeFromQueue index=$index');
-    AudioEchoLogRecorder.instance
-        .mark('removeFromQueue', extra: {'index': index});
+    AudioEchoLogRecorder.instance.mark(
+      'removeFromQueue',
+      extra: {'index': index},
+    );
     if (index < 0 || index >= _playlist.value.length) return;
     final removedAudio = _playlist.value[index];
     final wasPlaying = _playlistIndex == index;
     _playlist.value = [..._playlist.value]..removeAt(index);
     if (shuffle.value) {
       final backup = List<Audio>.from(_playlistBackup);
-      final backupIndex =
-          backup.indexWhere((audio) => audio.path == removedAudio.path);
+      final backupIndex = backup.indexWhere(
+        (audio) => audio.path == removedAudio.path,
+      );
       if (backupIndex >= 0) {
         backup.removeAt(backupIndex);
       }
@@ -686,6 +786,7 @@ class PlaybackService extends ChangeNotifier {
       _playlist.value = shuffled;
       _playlistIndex = 0;
       shuffle.value = true;
+      setPlayMode(PlayMode.forward);
     } else {
       _playlist.value = _playlistBackup;
       _playlistIndex = _playlist.value.indexOf(nowPlaying!);
@@ -710,8 +811,9 @@ class PlaybackService extends ChangeNotifier {
     _pref.lastPlaylistPaths = playlist.map((e) => e.path).toList();
     _pref.lastPlaylistIndex = playlistIndex;
     _pref.lastShuffleActive = shuffle.value;
-    _pref.lastOriginalPlaylistPaths =
-        shuffle.value ? _playlistBackup.map((e) => e.path).toList() : const [];
+    _pref.lastOriginalPlaylistPaths = shuffle.value
+        ? _playlistBackup.map((e) => e.path).toList()
+        : const [];
     _savePlaybackOnly();
   }
 
@@ -815,23 +917,15 @@ class PlaybackService extends ChangeNotifier {
     }
   }
 
-  void _nextAudioForward() {
-    if (_playlistIndex == null) return;
-
-    if (_playlistIndex! < _playlist.value.length - 1) {
-      _loadAndPlay(_playlistIndex! + 1, _playlist.value);
-    }
-  }
-
   void _nextAudioLoop() {
     if (_playlistIndex == null) return;
 
-    int newIndex = _playlistIndex! + 1;
-    if (newIndex >= _playlist.value.length) {
-      newIndex = 0;
-    }
-
-    _loadAndPlay(newIndex, _playlist.value);
+    _loadAndPlayInDirection(
+      startIndex: _playlistIndex! + 1,
+      playlist: _playlist.value,
+      step: 1,
+      wrap: true,
+    );
   }
 
   void _nextAudioSingleLoop() {
@@ -843,8 +937,6 @@ class PlaybackService extends ChangeNotifier {
   void _autoNextAudio() {
     switch (playMode.value) {
       case PlayMode.forward:
-        _nextAudioForward();
-        break;
       case PlayMode.loop:
         _nextAudioLoop();
         break;
@@ -867,12 +959,12 @@ class PlaybackService extends ChangeNotifier {
     AudioEchoLogRecorder.instance.mark('lastAudio');
     if (_playlistIndex == null) return;
 
-    int newIndex = _playlistIndex! - 1;
-    if (newIndex < 0) {
-      newIndex = _playlist.value.length - 1;
-    }
-
-    _loadAndPlay(newIndex, _playlist.value);
+    _loadAndPlayInDirection(
+      startIndex: _playlistIndex! - 1,
+      playlist: _playlist.value,
+      step: -1,
+      wrap: true,
+    );
   }
 
   /// 暂停
@@ -984,6 +1076,9 @@ class PlaybackService extends ChangeNotifier {
     } catch (_) {}
     try {
       _positionSyncRevision.dispose();
+    } catch (_) {}
+    try {
+      _playCountRevision.dispose();
     } catch (_) {}
 
     // 7. 最后释放 BASS 音频资源（此时所有回调和订阅已停止）
