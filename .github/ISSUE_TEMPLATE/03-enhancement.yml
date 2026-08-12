@@ -1,5 +1,5 @@
 name: 改进建议
-description: 对程序提供进一步改进的建议
+description: 对已有功能提出具体、可验证的改进方案
 title: "[改进] "
 labels: [enhancement]
 
@@ -7,37 +7,100 @@ body:
   - type: markdown
     attributes:
       value: |
-        **请描述你想要进行的改进**
+        项目会优先考虑能改善普遍使用体验、且与现有行为兼容的建议。只适用于个人审美、特殊操作习惯或单一环境的调整，一般不纳入主项目，更适合通过 Fork 按需维护。
 
   - type: dropdown
-    id: pull_request
+    id: category
     attributes:
-      label: 附带PR？
-      description: |
-        是否自行提交Pull Request解决此issue
-        如果你不是开发者，请忽略此项
+      label: 功能分类
       options:
-        - "否"
-        - "是"
+        - 播放
+        - 音乐库与音频标签
+        - 歌词
+        - 桌面歌词
+        - 界面与交互
+        - 设置与数据
+        - 启动与更新
+        - 其他
     validations:
       required: true
 
   - type: textarea
-    id: description
+    id: current_behavior
     attributes:
-      label: 功能描述
-      description: 描述你想要改进的功能
-      placeholder: |
-        描述你想要进行的改进
-        如果附带PR，请说明你要如何改进这个功能
+      label: 现有行为
+      description: 说明现有功能如何操作、当前会得到什么结果。
+      placeholder: 描述当前完整流程和结果。
     validations:
       required: true
 
-  - type: input
-    id: type
+  - type: textarea
+    id: problem
     attributes:
-      label: 被改进功能的分类（选填）
-      description: 功能属于哪个分类
-      placeholder: 如：UI、桌面歌词、专辑、播放列表等
+      label: 具体问题
+      description: 说明现有行为在哪个真实场景中造成了什么影响，不要只写“体验不好”“不够美观”。
+      placeholder: 描述具体场景、频率和影响。
+    validations:
+      required: true
+
+  - type: textarea
+    id: general_value
+    attributes:
+      label: 普适性说明
+      description: 说明除你之外还有哪些用户会遇到相同问题、适用范围有多大，以及改动是否会影响现有用户。
+      placeholder: 描述共同需求、适用人群和兼容现有行为的方式。
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 改进方案
+      description: 说明希望调整的入口、操作或显示方式，以及调整后的完整行为。
+      placeholder: 描述具体改法和目标结果。
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收标准
+      description: 列出改进完成后可以直接验证的结果。
+      placeholder: |
+        1. 在……条件下，程序应……
+        2. 原有的……行为应保持不变。
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: 影响与兼容性
+      description: 说明改进是否改变默认行为、现有设置或数据格式，以及对性能、界面复杂度和既有用户操作习惯的影响。
+      placeholder: 描述如何兼容现有行为，以及是否需要迁移或额外配置。
+    validations:
+      required: true
+
+  - type: textarea
+    id: references
+    attributes:
+      label: 补充材料
+      description: 界面改进请提供当前截图和标注；其他改进可附录屏、示例文件或草图。
     validations:
       required: false
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已搜索现有的开放和已关闭 Issue，确认没有相同建议。
+          required: true
+        - label: 我已说明现有行为、具体问题、改进方案和验收标准。
+          required: true
+        - label: 我已说明该改进的普遍使用价值，以及它对现有用户的影响。
+          required: true
+        - label: 我已考虑默认行为、兼容性和后续维护成本。
+          required: true
+        - label: 我愿意继续关注此 Issue，并及时补充评估建议所需的信息。
+          required: true

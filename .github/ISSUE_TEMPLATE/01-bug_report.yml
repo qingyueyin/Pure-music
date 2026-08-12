@@ -1,5 +1,5 @@
-name: 报告BUG
-description: 报告影响程序正常运行的问题
+name: 报告 Bug
+description: 报告经过自查后仍可复现的问题
 title: "[BUG] "
 labels: [bug]
 
@@ -7,27 +7,96 @@ body:
   - type: markdown
     attributes:
       value: |
-        **请填写以下信息来帮助我们快速定位和解决问题。**
-
-  - type: dropdown
-    id: pull_request
-    attributes:
-      label: 附带PR？
-      description: |
-        是否自行提交Pull Request解决此issue
-        如果你不是开发者，请忽略此项
-      options:
-        - "否"
-        - "是"
-    validations:
-      required: true
+        为了更快区分程序问题、配置问题和文件问题，请先阅读[常见问题](https://qingyueyin.github.io/Pure-music/guide/faq)，按文档完成排查，再搜索已有 Issue 并使用最新版本复现。还不能确认是程序问题时，更适合先到 [Discussions](https://github.com/qingyueyin/Pure-music/discussions/categories/general) 交流。暂时缺少日志、复现步骤、相关文件或自查结果时，Issue 可能会先关闭；补充完整后可以重新评估。
 
   - type: input
     id: version
     attributes:
-      label: 版本
-      description: 问题出现的版本
-      placeholder: 输入版本
+      label: 软件版本
+      description: 填写“关于”页面显示的完整版本号。自行构建时还需填写提交版本和本地改动。
+      placeholder: 例如：2.2.0；main@COMMIT，未修改源码
+    validations:
+      required: true
+
+  - type: input
+    id: windows_version
+    attributes:
+      label: Windows 版本
+      description: 填写 Windows 版本及系统内部版本号。
+      placeholder: 例如：Windows 11 24H2（26100.4652）
+    validations:
+      required: true
+
+  - type: dropdown
+    id: distribution
+    attributes:
+      label: 安装方式
+      options:
+        - 官方安装版
+        - 官方便携版
+        - 自行构建
+        - 其他来源
+    validations:
+      required: true
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: 问题分类
+      options:
+        - 播放
+        - 音乐库与音频标签
+        - 歌词
+        - 桌面歌词
+        - 界面与交互
+        - 性能与资源占用
+        - 网络与在线服务
+        - 设置与数据
+        - 启动、更新或崩溃
+        - 其他
+    validations:
+      required: true
+
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: 复现频率
+      options:
+        - 每次都能复现
+        - 大多数时候能复现
+        - 偶尔复现
+        - 只出现过一次
+        - 出现后暂时没有再次复现
+    validations:
+      required: true
+
+  - type: input
+    id: regression
+    attributes:
+      label: 最后正常的版本
+      description: 如果旧版本正常，请填写最后确认正常的版本；首次使用或不确定时请如实填写。
+      placeholder: 例如：2.1.1；首次使用；不确定
+    validations:
+      required: true
+
+  - type: textarea
+    id: troubleshooting
+    attributes:
+      label: 常见问题与自查结果
+      description: 阅读常见问题后，请写明参考了哪些条目、执行了哪些排查，以及每一步的结果。仅填写“看过了”或“没有用”通常不足以判断原因。
+      placeholder: |
+        1. 参考“……”条目，执行……，结果为……
+        2. 重启程序并恢复相关设置后，结果为……
+        3. 使用其他有效文件或默认配置对照，结果为……
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 与问题相关的环境信息
+      description: 请按问题类型补充关键条件。播放问题包括输出设备、共享或独占模式、音频格式和采样率；标签和歌词问题包括文件格式、标签内容、歌词源、搜索词和对照结果；性能或崩溃问题包括硬件、曲库规模、持续时间和可量化数据；界面问题包括分辨率、缩放和多显示器情况；网络问题包括发生时间、代理或网络环境以及所用在线源；设置或数据问题包括安装方式、数据目录和近期迁移；启动或更新问题包括安装包来源、安装路径和安全软件提示。
+      placeholder: 请填写与当前问题相关的项目，不相关的项目可以省略。
     validations:
       required: true
 
@@ -35,38 +104,82 @@ body:
     id: description
     attributes:
       label: 问题描述
-      description: 详细描述问题
-      placeholder: 输入问题描述
+      description: 说明问题发生在什么场景、影响哪些文件，以及出现频率。请尽量避免只写“有问题”或“用不了”。
+      placeholder: 请描述具体现象和发生条件。
     validations:
       required: true
 
   - type: textarea
     id: steps
     attributes:
-      label: 重现步骤
-      description: 请列出重现此问题的步骤
+      label: 复现步骤
+      description: 从启动程序开始，按实际操作顺序列出每一步，并说明需要使用的设置和文件。
       placeholder: |
-        1. 步骤 1
-        2. 步骤 2
-        3. 步骤 3
-        ...
+        1. 打开……
+        2. 选择……
+        3. 播放或点击……
+        4. 稳定出现……
     validations:
       required: true
 
-  - type: input
+  - type: textarea
+    id: actual_behavior
+    attributes:
+      label: 实际行为
+      description: 写明程序实际显示或执行了什么，包括完整报错文字。
+      placeholder: 实际发生的结果。
+    validations:
+      required: true
+
+  - type: textarea
     id: expected_behavior
     attributes:
       label: 预期行为
-      description: 你认为程序的正常行为是什么
-      placeholder: 输入预期行为
+      description: 写明你认为正确且可验证的结果。
+      placeholder: 预期发生的结果。
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 完整日志
+      description: 问题出现后请先不要退出程序，前往“设置 → 创建问题”，粘贴最下方文本框中的完整内容。若日志与问题确实无关，请说明原因，便于维护者判断。公开前请遮盖访问令牌、账号、无关的私人路径等敏感信息，同时保留错误上下文。
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 复现材料
+      description: 音频、标签或歌词问题请提供出现问题的原文件或可复现样本，并附音频详情页和标签内容；文件来源本身不足以确认文件和标签是否有效。请同时用其他已确认标签正确的文件进行对照，并写明结果。界面问题请上传截图或录屏。不支持直接上传的文件可压缩为 ZIP 或提供长期有效的下载链接；若此项不适用，请说明原因。
+      placeholder: 提供原文件、对照文件的测试结果、标签信息、截图或录屏。
     validations:
       required: true
 
   - type: textarea
     id: additional_context
     attributes:
-      label: 软件日志和其他信息
-      description: 添加任何有关此问题的其他上下文
-      placeholder: 建议附带软件日志（设置 -> 创建问题 -> 复制最底下的输入框里的文字）。因为软件不会持久保存日志，所以在退出后日志就会丢失。因此不强求你附带。你也可以输入其他任何相关的信息
+      label: 其他信息
+      description: 填写可能影响复现的设置、最近的操作或其他补充信息。
     validations:
       required: false
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已阅读常见问题并完成相关排查，文档中的现有方案没有解决此问题。
+          required: true
+        - label: 我已搜索现有的开放和已关闭 Issue，确认没有相同问题。
+          required: true
+        - label: 我已在最新版本中复现，并填写了真实、完整的信息。
+          required: true
+        - label: 如涉及音频、标签或歌词，我已确认原文件可正常读取、标签内容正确，并排除了文件自身问题。
+          required: true
+        - label: 我已检查正文、日志和附件，没有公开访问令牌、账号或其他敏感信息。
+          required: true
+        - label: 我愿意继续关注此 Issue，并及时补充定位问题所需的信息。
+          required: true

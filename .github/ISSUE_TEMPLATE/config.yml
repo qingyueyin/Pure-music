@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Issue 提交规范
+    url: https://github.com/qingyueyin/Pure-music/blob/main/.github/ISSUE_GUIDELINES.md
+    about: 提交前请先阅读完整的分类、自查和材料说明。
+  - name: 常见问题
+    url: https://qingyueyin.github.io/Pure-music/guide/faq
+    about: 提交 Bug 前请先按常见问题完成排查。
+  - name: 使用问题与交流
+    url: https://github.com/qingyueyin/Pure-music/discussions/categories/general
+    about: 还不能确认是程序问题，或者需要询问使用方法时，请先在这里交流。
+  - name: 参与贡献
+    url: https://qingyueyin.github.io/Pure-music/guide/contribute
+    about: 准备提交代码或文档改动时，请先阅读贡献指南。

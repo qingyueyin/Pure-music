@@ -1,0 +1,72 @@
+name: 文档问题
+description: 报告文档中的错误、过期内容或缺失说明
+title: "[文档] "
+labels: [documentation]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢帮助改进文档。请指出具体页面和内容，便于核对并完成修正；使用方法上的疑问更适合先到 [Discussions](https://github.com/qingyueyin/Pure-music/discussions/categories/general) 交流。
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: 问题类型
+      options:
+        - 内容错误
+        - 内容已经过期
+        - 说明缺失
+        - 表述不清
+        - 链接失效
+        - 排版或显示问题
+        - 其他
+    validations:
+      required: true
+
+  - type: input
+    id: location
+    attributes:
+      label: 文档位置
+      description: 请提供页面链接、文件路径和小节标题。
+      placeholder: 例如：https://.../guide/faq，“歌词加载”小节
+    validations:
+      required: true
+
+  - type: textarea
+    id: current_content
+    attributes:
+      label: 当前内容与问题
+      description: 引用相关原文，并说明哪里不准确、已过期、缺失或难以理解。
+      placeholder: 当前文档写的是……；实际情况是……
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected_content
+    attributes:
+      label: 建议内容
+      description: 说明希望补充或修正的内容。涉及事实判断时，请附可核对的依据。
+      placeholder: 建议改为……；依据是……
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 补充材料
+      description: 可附截图、相关 Issue、版本信息或其他参考资料。
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已搜索现有的开放和已关闭 Issue，确认没有相同的文档问题。
+          required: true
+        - label: 我提供了可以准确定位到页面和小节的信息。
+          required: true
+        - label: 我已检查正文和附件，没有公开账号或其他敏感信息。
+          required: true
