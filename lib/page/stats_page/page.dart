@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/settings.dart';
@@ -7,6 +5,7 @@ import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/native/rust/api/library_db.dart' as rust_library_db;
 import 'package:pure_music/page/page_scaffold.dart';
 import 'package:pure_music/play_service/play_service.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
@@ -21,14 +20,25 @@ class _StatsPageState extends State<StatsPage> {
   List<rust_library_db.PlayCountEntry>? _topPlayed;
   bool _loading = true;
   bool _loadFailed = false;
+  int _loadRequestToken = 0;
+  late final ValueListenable<int> _playCountRevision;
 
   @override
   void initState() {
     super.initState();
+    _playCountRevision = PlayService.instance.playbackService.playCountRevision;
+    _playCountRevision.addListener(_onStatsSourceChanged);
+    AudioLibrary.libraryVersion.addListener(_onStatsSourceChanged);
+    _loadStats();
+  }
+
+  void _onStatsSourceChanged() {
+    if (!mounted) return;
     _loadStats();
   }
 
   Future<void> _loadStats() async {
+    final requestToken = ++_loadRequestToken;
     if (!_loading) {
       setState(() {
         _loading = true;
@@ -37,23 +47,34 @@ class _StatsPageState extends State<StatsPage> {
     }
     try {
       final supportPath = (await getAppDataDir()).path;
-      final librarySize = AudioLibrary.instance.audioCollection.length;
       final top = await rust_library_db.getTopPlayed(
         indexPath: supportPath,
-        limit: librarySize > 100 ? librarySize : 100,
+        limit: -1,
       );
-      if (!mounted) return;
+      final visibleTop = top
+          .where(
+            (entry) => AudioLibrary.instance.audioByPath(entry.path) != null,
+          )
+          .toList(growable: false);
+      if (!mounted || requestToken != _loadRequestToken) return;
       setState(() {
-        _topPlayed = top;
+        _topPlayed = visibleTop;
         _loading = false;
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || requestToken != _loadRequestToken) return;
       setState(() {
         _loading = false;
         _loadFailed = true;
       });
     }
+  }
+
+  @override
+  void dispose() {
+    _playCountRevision.removeListener(_onStatsSourceChanged);
+    AudioLibrary.libraryVersion.removeListener(_onStatsSourceChanged);
+    super.dispose();
   }
 
   @override
