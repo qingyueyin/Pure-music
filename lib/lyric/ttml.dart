@@ -10,13 +10,24 @@ class Ttml extends Lyric {
     super.isDuet,
   ]);
 
-  static Ttml? fromTtmlText(String ttml, {String? separator}) {
+  static Ttml? fromTtmlText(
+    String ttml, {
+    String? separator,
+    String? preferredTranslationLanguage,
+  }) {
     try {
       final document = XmlDocument.parse(_preformatTtml(ttml));
       final root = document.rootElement;
+      final translationLanguage =
+          preferredTranslationLanguage ??
+          PlatformDispatcher.instance.locale.toLanguageTag();
 
       final agentAlignment = _parseAgentAlignment(root);
-      final translations = _parseTimedTextMap(root, 'translation');
+      final translations = _parseTimedTextMap(
+        root,
+        'translation',
+        translationLanguage,
+      );
       final transliterations = _parseTransliterations(root);
 
       final body = root.findAllElements('body').firstOrNull;
@@ -31,6 +42,7 @@ class Ttml extends Lyric {
             agentAlignment: agentAlignment,
             translations: translations,
             transliterations: transliterations,
+            preferredLanguage: translationLanguage,
           );
           if (line != null) lines.add(line);
         }
@@ -224,8 +236,12 @@ class Ttml extends Lyric {
     return result;
   }
 
-  static Map<String, String> _parseTimedTextMap(XmlElement root, String tag) {
-    final result = <String, String>{};
+  static Map<String, String> _parseTimedTextMap(
+    XmlElement root,
+    String tag,
+    String preferredLanguage,
+  ) {
+    final candidates = <String, List<_LocalizedText>>{};
     for (final container in root.descendantElements.where(
       (e) => e.name.local == tag,
     )) {
@@ -235,10 +251,74 @@ class Ttml extends Lyric {
         final key = _attr(textElem, 'for');
         if (key.isEmpty) continue;
         final value = _cleanText(textElem.innerText);
-        if (value.isNotEmpty) result[key] = value;
+        if (value.isNotEmpty) {
+          candidates
+              .putIfAbsent(key, () => [])
+              .add(_LocalizedText(value, _inheritedLanguage(textElem)));
+        }
       }
     }
-    return result;
+    return candidates.map(
+      (key, values) =>
+          MapEntry(key, _selectLocalizedText(values, preferredLanguage)!.text),
+    );
+  }
+
+  static String _inheritedLanguage(XmlElement element) {
+    XmlElement? current = element;
+    while (current != null) {
+      final language = _attr(current, 'xml:lang').trim();
+      if (language.isNotEmpty) return language;
+      current = current.parentElement;
+    }
+    return '';
+  }
+
+  static _LocalizedText? _selectLocalizedText(
+    Iterable<_LocalizedText> candidates,
+    String preferredLanguage,
+  ) {
+    final values = candidates.toList();
+    if (values.isEmpty) return null;
+
+    final preferred = _normalizeLanguageTag(preferredLanguage);
+    final exactTags = <String>{preferred};
+    final chineseScript = _preferredChineseScript(preferred);
+    if (chineseScript != null) exactTags.add(chineseScript);
+
+    for (final tag in exactTags) {
+      final match = values.where(
+        (value) => _normalizeLanguageTag(value.language) == tag,
+      );
+      if (match.isNotEmpty) return match.first;
+    }
+
+    final languageCode = preferred.split('-').first;
+    if (languageCode.isNotEmpty) {
+      final match = values.where(
+        (value) =>
+            _normalizeLanguageTag(value.language).split('-').first ==
+            languageCode,
+      );
+      if (match.isNotEmpty) return match.first;
+    }
+
+    final untagged = values.where((value) => value.language.trim().isEmpty);
+    return untagged.isNotEmpty ? untagged.first : values.first;
+  }
+
+  static String _normalizeLanguageTag(String language) =>
+      language.trim().replaceAll('_', '-').toLowerCase();
+
+  static String? _preferredChineseScript(String language) {
+    final parts = language.split('-');
+    if (parts.firstOrNull != 'zh') return null;
+    if (parts.contains('hans') || parts.contains('hant')) {
+      return parts.contains('hant') ? 'zh-hant' : 'zh-hans';
+    }
+    if (parts.any(const {'tw', 'hk', 'mo'}.contains)) return 'zh-hant';
+    if (parts.any(const {'cn', 'sg'}.contains)) return 'zh-hans';
+    return null;
   }
 
   static Map<String, _TtmlPronunciation> _parseTransliterations(
@@ -302,6 +382,7 @@ class Ttml extends Lyric {
     required Map<String, String> agentAlignment,
     required Map<String, String> translations,
     required Map<String, _TtmlPronunciation> transliterations,
+    required String preferredLanguage,
   }) {
     final begin = _parseTime(_attr(p, 'begin'));
     if (begin == null) return null;
@@ -365,10 +446,19 @@ class Ttml extends Lyric {
     final text = _collectMainText(mainNodes, words, end, parentBegin: begin);
     _mergeConsecutiveWords(words);
 
-    final inlineTranslation = translationSpans
-        .map((s) => _cleanText(s.innerText))
-        .where((t) => t.isNotEmpty && !_isMusicSymbolOnly(t))
-        .join(separator ?? '');
+    final inlineTranslation = _selectLocalizedText(
+      translationSpans
+          .map(
+            (span) => _LocalizedText(
+              _cleanText(span.innerText),
+              _inheritedLanguage(span),
+            ),
+          )
+          .where(
+            (value) => value.text.isNotEmpty && !_isMusicSymbolOnly(value.text),
+          ),
+      preferredLanguage,
+    )?.text;
     final String? lineTranslation = translations[key] != null
         ? _cleanText(translations[key]!)
         : null;
@@ -390,7 +480,7 @@ class Ttml extends Lyric {
     }
     if (pronunciation != null && pronunciation.isEmpty) pronunciation = null;
 
-    String? translation = inlineTranslation.isNotEmpty
+    String? translation = inlineTranslation?.isNotEmpty == true
         ? inlineTranslation
         : lineTranslation;
     if (translation != null && translation.isEmpty) translation = null;
@@ -419,6 +509,7 @@ class Ttml extends Lyric {
         line,
         end,
         translations[key],
+        preferredLanguage: preferredLanguage,
         fallbackRoman: transf?.backgroundText,
       );
     }
@@ -601,6 +692,7 @@ class Ttml extends Lyric {
     TtmlLine line,
     Duration? fallbackEnd,
     String? fallbackTranslation, {
+    required String preferredLanguage,
     String? fallbackRoman,
   }) {
     final bgWords = <SyncLyricWord>[];
@@ -630,10 +722,19 @@ class Ttml extends Lyric {
     final translationChildren = bgSpan.childElements
         .where((e) => _hasRole(e, 'x-translation'))
         .toList();
-    var bgTranslation = translationChildren
-        .map((e) => _cleanText(e.innerText))
-        .where((t) => t.isNotEmpty)
-        .join('');
+    var bgTranslation =
+        _selectLocalizedText(
+          translationChildren
+              .map(
+                (element) => _LocalizedText(
+                  _cleanText(element.innerText),
+                  _inheritedLanguage(element),
+                ),
+              )
+              .where((value) => value.text.isNotEmpty),
+          preferredLanguage,
+        )?.text ??
+        '';
     if (bgTranslation.isEmpty) bgTranslation = fallbackTranslation ?? '';
     if (bgTranslation.isEmpty) bgTranslation = '';
 
@@ -865,6 +966,13 @@ class _TtmlPronunciation {
     required this.words,
     this.backgroundText,
   });
+}
+
+class _LocalizedText {
+  const _LocalizedText(this.text, this.language);
+
+  final String text;
+  final String language;
 }
 
 extension on String {

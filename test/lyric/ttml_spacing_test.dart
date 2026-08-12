@@ -56,6 +56,25 @@ void main() {
       expect(line.bgWords.single.start, const Duration(milliseconds: 500));
       expect(line.bgWords.single.length, const Duration(seconds: 2));
     });
+
+    test('selects one translated language and keeps romanization separate', () {
+      final lyric = Ttml.fromTtmlText(
+        _ttml('''
+<p begin="00:00.000" end="00:03.000">
+  <span begin="00:00.000" end="00:03.000">春日影</span>
+  <span ttm:role="x-translation" xml:lang="zh-Hans">春日的影子</span>
+  <span ttm:role="x-translation" xml:lang="ko">봄날의 그림자</span>
+  <span ttm:role="x-translation" xml:lang="en">Spring Sunlight</span>
+  <span ttm:role="x-roman">Kasuhikage</span>
+</p>
+'''),
+        preferredTranslationLanguage: 'zh-CN',
+      );
+
+      final line = lyric!.lines.single as TtmlLine;
+      expect(line.translation, '春日的影子');
+      expect(line.romanLyric, 'Kasuhikage');
+    });
   });
 }
 
