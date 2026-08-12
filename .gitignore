@@ -104,3 +104,6 @@ skills-lock.json
 .agents/skills/*
 !.agents/skills/puremusic-dev/
 !.agents/skills/puremusic-dev/**
+
+# Reasonix task traces
+.reasonix/
