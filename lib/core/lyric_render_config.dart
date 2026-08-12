@@ -6,6 +6,8 @@ import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:flutter/foundation.dart';
 
+const lyricVerticalLiftDurationMs = 2000;
+
 @immutable
 class LyricRenderConfig {
   final LyricTextAlign textAlign;
@@ -60,7 +62,7 @@ class LyricRenderConfig {
     this.enableGlow = false,
     this.liftStyle = LyricLiftStyle.vertical,
     this.liftPeak = 2.0,
-    this.liftDurationMs = 300,
+    this.liftDurationMs = lyricVerticalLiftDurationMs,
     this.staggerStyle = LyricStaggerStyle.smooth,
     this.hasMultipleAgents = false,
     this.displayMode = LyricDisplayMode.wordByWord,

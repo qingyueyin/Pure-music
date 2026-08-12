@@ -67,7 +67,7 @@ class NowPlayingPagePreference {
     this.enableLyricGlow = false,
     this.liftStyle = LyricLiftStyle.vertical,
     this.liftPeak = 2.0,
-    this.liftDurationMs = 300,
+    this.liftDurationMs = lyricVerticalLiftDurationMs,
     this.staggerStyle = LyricStaggerStyle.smooth,
     this.backgroundMode = NowPlayingBackgroundMode.meshGradient,
     this.dynamicFlowingLight = true,
@@ -86,7 +86,7 @@ class NowPlayingPagePreference {
     enableGlow: enableLyricGlow,
     liftStyle: liftStyle,
     liftPeak: liftPeak,
-    liftDurationMs: liftDurationMs,
+    liftDurationMs: lyricVerticalLiftDurationMs,
     staggerStyle: staggerStyle,
   );
 
@@ -103,7 +103,7 @@ class NowPlayingPagePreference {
     'enableLyricGlow': enableLyricGlow,
     'liftStyle': liftStyle.name,
     'liftPeak': liftPeak,
-    'liftDurationMs': liftDurationMs,
+    'liftDurationMs': lyricVerticalLiftDurationMs,
     'staggerStyle': staggerStyle.name,
     'backgroundMode': backgroundMode.name,
     'dynamicFlowingLight': dynamicFlowingLight,
@@ -160,12 +160,7 @@ class NowPlayingPagePreference {
         min: 0.5,
         max: 6.0,
       ),
-      liftDurationMs: _normalizedBoundedInt(
-        map['liftDurationMs'],
-        defaultValue: 300,
-        min: 50,
-        max: 2000,
-      ),
+      liftDurationMs: lyricVerticalLiftDurationMs,
       staggerStyle:
           LyricStaggerStyle.fromString(
             (map['staggerStyle'] as String?) ?? '',
