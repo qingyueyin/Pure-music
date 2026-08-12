@@ -147,6 +147,7 @@ class _ImmersiveHelpOverlayState extends State<_ImmersiveHelpOverlay> {
                   _ImmersiveShortcutRow(keys: 'Ctrl + ↑', label: '提高音量'),
                   _ImmersiveShortcutRow(keys: 'Ctrl + ↓', label: '降低音量'),
                   _ImmersiveShortcutRow(keys: 'F1', label: '进入 / 退出沉浸模式'),
+                  _ImmersiveShortcutRow(keys: 'F11', label: '最大化 / 还原窗口'),
                   _ImmersiveShortcutRow(
                     keys: 'ESC',
                     label: '退出沉浸并回到主界面',

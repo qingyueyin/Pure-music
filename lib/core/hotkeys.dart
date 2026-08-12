@@ -10,9 +10,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:go_router/go_router.dart';
+import 'package:window_manager/window_manager.dart';
 
 class HotkeysHelper {
   static bool _registered = false;
+  static bool _windowToggleInProgress = false;
 
   static bool _canHandlePlaybackHotkey() => canHandleInAppPlaybackHotkey(
         textInputFocused: isTextInputFocusedForHotkeys(),
@@ -114,6 +116,26 @@ class HotkeysHelper {
         text: "沉浸：${ImmersiveModeController.instance.enabled ? "开" : "关"}",
         icon: Icons.fullscreen,
       );
+    },
+    HotKey(key: PhysicalKeyboardKey.f11, scope: HotKeyScope.inapp): (_) async {
+      if (_windowToggleInProgress) return;
+      _windowToggleInProgress = true;
+      try {
+        final isMaximized = await windowManager.isMaximized();
+        if (isMaximized) {
+          await windowManager.unmaximize();
+        } else {
+          await windowManager.maximize();
+        }
+        showHotkeyToast(
+          text: isMaximized ? '还原窗口' : '最大化窗口',
+          icon: isMaximized ? Icons.fullscreen_exit : Icons.fullscreen,
+        );
+      } catch (err, trace) {
+        logger.e('F11 窗口切换失败', error: err, stackTrace: trace);
+      } finally {
+        _windowToggleInProgress = false;
+      }
     },
   };
 
