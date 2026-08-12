@@ -10,19 +10,36 @@ class AppDb {
   static final AppDb instance = AppDb._();
 
   Database? _db;
+  Future<Database>? _opening;
 
-  Future<Database> db() async {
+  Future<Database> db() {
     final existing = _db;
-    if (existing != null) return existing;
+    if (existing != null) return Future<Database>.value(existing);
+    final opening = _opening;
+    if (opening != null) return opening;
 
-    final dir = await getDbDir();
-    final dbFile = File(path.join(dir.path, 'app.sqlite'));
-    dbFile.parent.createSync(recursive: true);
+    final future = _open();
+    _opening = future;
+    return future;
+  }
 
-    final opened = sqlite3.open(dbFile.path);
-    _initSchema(opened);
-    _db = opened;
-    return opened;
+  Future<Database> _open() async {
+    Database? opened;
+    try {
+      final dir = await getDbDir();
+      final dbFile = File(path.join(dir.path, 'app.sqlite'));
+      dbFile.parent.createSync(recursive: true);
+
+      opened = sqlite3.open(dbFile.path);
+      _initSchema(opened);
+      _db = opened;
+      return opened;
+    } catch (_) {
+      opened?.dispose();
+      rethrow;
+    } finally {
+      _opening = null;
+    }
   }
 
   void _initSchema(Database db) {
@@ -30,6 +47,7 @@ class AppDb {
 PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
 PRAGMA temp_store = MEMORY;
+PRAGMA busy_timeout = 3000;
 
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
