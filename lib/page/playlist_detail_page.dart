@@ -261,7 +261,10 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
           listenable: multiSelectController,
           builder: (context, _) => IconButton.filled(
             tooltip: '移除选中歌曲',
+            iconSize: 20,
             style: IconButton.styleFrom(
+              fixedSize: const Size(40, 40),
+              padding: EdgeInsets.zero,
               shape: RoundedRectangleBorder(
                 borderRadius: AppRadius.smCircular,
               ),

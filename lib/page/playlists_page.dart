@@ -34,8 +34,10 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
   bool _isImportingPlaylist = false;
   bool _isImportingFolder = false;
   bool _isDeletingSelected = false;
+  bool _isCreatingPlaylist = false;
 
-  void newPlaylist(BuildContext context) async {
+  Future<void> newPlaylist(BuildContext context) async {
+    if (_isCreatingPlaylist) return;
     final name = await showDialog<String>(
       context: context,
       builder: (context) => _NewPlaylistDialog(
@@ -44,18 +46,24 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
     );
     if (name == null) return;
     if (!mounted) return;
-    final playlist = Playlist(name, []);
-    setState(() {
+    setState(() => _isCreatingPlaylist = true);
+    try {
+      final playlist = await createPlaylist(name);
       playlists.add(playlist);
-    });
-    final saved = await savePlaylists();
-    if (!saved) {
-      playlists.remove(playlist);
       if (!mounted) return;
       setState(() {});
-      showTextOnSnackBar('保存歌单失败', variant: ToastVariant.error);
-    } else if (mounted) {
       showTextOnSnackBar('已创建歌单', variant: ToastVariant.success);
+    } on PlaylistAlreadyExistsException {
+      if (!mounted) return;
+      showTextOnSnackBar('该名称已存在', variant: ToastVariant.error);
+    } catch (err, trace) {
+      logger.e('创建歌单失败', error: err, stackTrace: trace);
+      if (!mounted) return;
+      showTextOnSnackBar('保存歌单失败', variant: ToastVariant.error);
+    } finally {
+      if (mounted) {
+        setState(() => _isCreatingPlaylist = false);
+      }
     }
   }
 
@@ -561,9 +569,15 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
             style: const ButtonStyle(
               padding: WidgetStatePropertyAll(EdgeInsets.all(12)),
             ),
-            leadingIcon: const Icon(Symbols.add),
-            onPressed: () => newPlaylist(context),
-            child: const Text('新建歌单'),
+            leadingIcon: _isCreatingPlaylist
+                ? const SizedBox(
+                    width: 18.0,
+                    height: 18.0,
+                    child: CircularProgressIndicator(strokeWidth: 2.0),
+                  )
+                : const Icon(Symbols.add),
+            onPressed: _isCreatingPlaylist ? null : () => newPlaylist(context),
+            child: Text(_isCreatingPlaylist ? '创建中' : '新建歌单'),
           ),
           MenuItemButton(
             style: const ButtonStyle(
@@ -641,13 +655,17 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
           listenable: multiSelectController,
           builder: (context, _) => IconButton.filled(
             tooltip: '删除选中歌单',
+            iconSize: 20,
             onPressed:
                 multiSelectController.selected.isEmpty || _isDeletingSelected
                 ? null
                 : _deleteSelectedPlaylists,
-            style: ButtonStyle(
-              backgroundColor: WidgetStatePropertyAll(scheme.error),
-              foregroundColor: WidgetStatePropertyAll(scheme.onError),
+            style: IconButton.styleFrom(
+              fixedSize: const Size(40, 40),
+              padding: EdgeInsets.zero,
+              backgroundColor: scheme.error,
+              foregroundColor: scheme.onError,
+              shape: RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
             ),
             icon: _isDeletingSelected
                 ? const SizedBox(
