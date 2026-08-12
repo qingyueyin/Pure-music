@@ -14,16 +14,18 @@ import 'package:pure_music/play_service/play_service.dart';
 
 typedef _GetCurrentProcessNative = ffi.IntPtr Function();
 typedef _GetCurrentProcessDart = int Function();
-typedef _SetProcessWorkingSetSizeNative = ffi.Int32 Function(
-  ffi.IntPtr process,
-  ffi.IntPtr minimumWorkingSetSize,
-  ffi.IntPtr maximumWorkingSetSize,
-);
-typedef _SetProcessWorkingSetSizeDart = int Function(
-  int process,
-  int minimumWorkingSetSize,
-  int maximumWorkingSetSize,
-);
+typedef _SetProcessWorkingSetSizeNative =
+    ffi.Int32 Function(
+      ffi.IntPtr process,
+      ffi.IntPtr minimumWorkingSetSize,
+      ffi.IntPtr maximumWorkingSetSize,
+    );
+typedef _SetProcessWorkingSetSizeDart =
+    int Function(
+      int process,
+      int minimumWorkingSetSize,
+      int maximumWorkingSetSize,
+    );
 
 class _WindowsWorkingSetTrimmer {
   static bool _loaded = false;
@@ -50,11 +52,15 @@ class _WindowsWorkingSetTrimmer {
     if (_loaded) return;
     _loaded = true;
     final kernel32 = ffi.DynamicLibrary.open('kernel32.dll');
-    _getCurrentProcess = kernel32.lookupFunction<_GetCurrentProcessNative,
-        _GetCurrentProcessDart>('GetCurrentProcess');
-    _setProcessWorkingSetSize = kernel32.lookupFunction<
-        _SetProcessWorkingSetSizeNative,
-        _SetProcessWorkingSetSizeDart>('SetProcessWorkingSetSize');
+    _getCurrentProcess = kernel32
+        .lookupFunction<_GetCurrentProcessNative, _GetCurrentProcessDart>(
+          'GetCurrentProcess',
+        );
+    _setProcessWorkingSetSize = kernel32
+        .lookupFunction<
+          _SetProcessWorkingSetSizeNative,
+          _SetProcessWorkingSetSizeDart
+        >('SetProcessWorkingSetSize');
   }
 }
 
@@ -123,11 +129,13 @@ class MemoryMonitorService {
             );
             clearLyricCaches();
           }
-          _trimWorkingSetIfDue();
-        } else if (rssMB > tier2Threshold) {
-          logger.w(
-            '[mem] RSS ${rssMB}MB > $tier2Threshold, tier-2 cleanup',
+          _trimWorkingSetIfDue(
+            cooldown: playing
+                ? const Duration(minutes: 2)
+                : const Duration(minutes: 1),
           );
+        } else if (rssMB > tier2Threshold) {
+          logger.w('[mem] RSS ${rssMB}MB > $tier2Threshold, tier-2 cleanup');
           CoverImageCache.instance.trimMemory(
             keepPath: PlayService.instance.playbackService.nowPlaying?.path,
           );
@@ -136,9 +144,6 @@ class MemoryMonitorService {
           LyricsLinePainter.trimPool();
           LyricsLineWidget.clearBlurFilterCache();
           AudioLibrary.instance.evictStaleCoverBytes();
-          if (playing) {
-            _trimWorkingSetIfDue();
-          }
         } else if (rssMB > tier1Threshold) {
           // tier-1: keep playback smooth; avoid forcing image reloads or OS working-set trim.
           AudioLibrary.instance.trimCollectionThumbnailRetention(128);
@@ -177,7 +182,6 @@ class MemoryMonitorService {
     }
     if (rssMB >= 235) {
       PaintingBinding.instance.imageCache.clear();
-      _trimWorkingSetIfDue(cooldown: const Duration(seconds: 45));
     }
   }
 
