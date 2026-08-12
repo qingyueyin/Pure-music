@@ -280,7 +280,7 @@ fn soften_color_for_background(r: u8, g: u8, b: u8) -> u32 {
             .min(0.78)
             .min(channel_spread as f32 / 255.0 * 3.0)
     };
-    let lightness = lightness.clamp(0.10, 0.70);
+    let lightness = lightness.clamp(0.10, 0.82);
     let (mut red, mut green, mut blue) = hsl_to_rgb(hue, saturation, lightness);
     red = contrast(red, 1.03);
     green = contrast(green, 1.03);
