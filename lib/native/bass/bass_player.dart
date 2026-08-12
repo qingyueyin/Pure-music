@@ -70,7 +70,7 @@ class BassPlayer {
     2000.0,
     4000.0,
     8000.0,
-    16000.0
+    16000.0,
   ];
 
   double _calculateBandwidth(double centerFreq) {
@@ -95,6 +95,7 @@ class BassPlayer {
 
   /// 是否启用 wasapi 独占模式
   bool wasapiExclusive = false;
+  String _wasapiOutputInfo = 'off';
 
   Timer? _fadeInTimer;
 
@@ -134,7 +135,7 @@ class BassPlayer {
     logger.i(
       '[bass] $tag | exclusive=$wasapiExclusive streamExclusive=$_streamWasapiExclusive '
       'wasapiStarted=$wasapiStarted handle=$_fstream eq=$eqCount eqFlat=${_isEqFlat ? 1 : 0} '
-      'rate=$_rate pitch=$_pitch',
+      'rate=$_rate pitch=$_pitch wasapi=$_wasapiOutputInfo',
     );
   }
 
@@ -144,7 +145,7 @@ class BassPlayer {
         (_bfxEqHandle != 0 ? 1 : 0) + _eqHandles.where((e) => e != 0).length;
     return 'exclusive=$wasapiExclusive streamExclusive=$_streamWasapiExclusive '
         'wasapiStarted=$wasapiStarted handle=$_fstream eq=$eqCount eqFlat=${_isEqFlat ? 1 : 0} '
-        'rate=$_rate pitch=$_pitch';
+        'rate=$_rate pitch=$_pitch wasapi=$_wasapiOutputInfo';
   }
 
   /// audio's length in seconds
@@ -173,8 +174,10 @@ class BassPlayer {
   double get position => _fstream == null ? 0.0 : _getPosition();
 
   double _getPosition() {
-    final posBytes =
-        _bass.BASS_ChannelGetPosition(_fstream!, bass.BASS_POS_BYTE);
+    final posBytes = _bass.BASS_ChannelGetPosition(
+      _fstream!,
+      bass.BASS_POS_BYTE,
+    );
     if (posBytes == -1) {
       final errCode = _bass.BASS_ErrorGetCode();
       if (errCode == bass.BASS_ERROR_HANDLE) {
@@ -195,8 +198,10 @@ class BassPlayer {
       }
     }
 
-    return _bass.BASS_ChannelBytes2Seconds(_fstream!, finalBytes)
-        .clamp(0.0, length);
+    return _bass.BASS_ChannelBytes2Seconds(
+      _fstream!,
+      finalBytes,
+    ).clamp(0.0, length);
   }
 
   PlayerState get playerState {
@@ -235,7 +240,10 @@ class BassPlayer {
     final volDsp = malloc.allocate<ffi.Float>(ffi.sizeOf<ffi.Float>());
     try {
       _bass.BASS_ChannelGetAttribute(
-          _fstream!, bass.BASS_ATTRIB_VOLDSP, volDsp);
+        _fstream!,
+        bass.BASS_ATTRIB_VOLDSP,
+        volDsp,
+      );
       return volDsp.value;
     } finally {
       malloc.free(volDsp);
@@ -372,7 +380,10 @@ class BassPlayer {
     final freqPtr = malloc.allocate<ffi.Float>(ffi.sizeOf<ffi.Float>());
     try {
       final ok = _bass.BASS_ChannelGetAttribute(
-          _fstream!, bass.BASS_ATTRIB_FREQ, freqPtr);
+        _fstream!,
+        bass.BASS_ATTRIB_FREQ,
+        freqPtr,
+      );
       if (ok != 0 && freqPtr.value.isFinite && freqPtr.value > 1.0) {
         final nextRate = freqPtr.value.toDouble();
         if ((_streamSampleRate - nextRate).abs() > 1e-3) {
@@ -393,6 +404,37 @@ class BassPlayer {
     if (_streamSampleRate <= 48000) return 0.12;
     if (_streamSampleRate <= 96000) return 0.15;
     return 0.20;
+  }
+
+  void _refreshWasapiOutputInfo(double requestedBufferSec) {
+    final info = calloc<bass_wasapi.BASS_WASAPI_INFO>();
+    try {
+      if (_bassWasapi.BASS_WASAPI_GetInfo(info) == bass.FALSE) {
+        _wasapiOutputInfo =
+            'unknown requested=2x${(requestedBufferSec * 1000).round()}ms async=1';
+        return;
+      }
+      final value = info.ref;
+      final format = switch (value.format) {
+        bass_wasapi.BASS_WASAPI_FORMAT_FLOAT => ('float32', 4),
+        bass_wasapi.BASS_WASAPI_FORMAT_8BIT => ('8bit', 1),
+        bass_wasapi.BASS_WASAPI_FORMAT_16BIT => ('16bit', 2),
+        bass_wasapi.BASS_WASAPI_FORMAT_24BIT => ('24bit', 3),
+        bass_wasapi.BASS_WASAPI_FORMAT_32BIT => ('32bit', 4),
+        _ => ('format${value.format}', 0),
+      };
+      final frameBytes = value.chans * format.$2;
+      final bufferMs = value.freq > 0 && frameBytes > 0
+          ? (value.buflen * 1000 / value.freq / frameBytes).round()
+          : 0;
+      _wasapiOutputInfo =
+          '${value.freq}Hz/${format.$1}/${value.chans}ch '
+          'buffer=${bufferMs}ms(${value.buflen}B) '
+          'requested=2x${(requestedBufferSec * 1000).round()}ms async=1';
+      logger.i('[bass] wasapi output $_wasapiOutputInfo');
+    } finally {
+      calloc.free(info);
+    }
   }
 
   void _maybeUpdateSpectrum({PlayerState? knownState}) {
@@ -429,8 +471,11 @@ class BassPlayer {
     if (getData == null) return;
 
     _fftBuffer ??= malloc.allocate<ffi.Float>(256 * ffi.sizeOf<ffi.Float>());
-    final bytesRead =
-        getData(handle, _fftBuffer!.cast<ffi.Void>(), _bassDataFft512);
+    final bytesRead = getData(
+      handle,
+      _fftBuffer!.cast<ffi.Void>(),
+      _bassDataFft512,
+    );
     if (bytesRead <= 0) return;
 
     final fft = _fftBuffer!.asTypedList(256);
@@ -441,8 +486,9 @@ class BassPlayer {
   void _emitWasapiSpectrumFrame() {
     if (!_spectrumStreamController.hasListener) return;
 
-    _wasapiFftBuffer ??=
-        malloc.allocate<ffi.Float>(256 * ffi.sizeOf<ffi.Float>());
+    _wasapiFftBuffer ??= malloc.allocate<ffi.Float>(
+      256 * ffi.sizeOf<ffi.Float>(),
+    );
     final bytesRead = _bassWasapi.BASS_WASAPI_GetData(
       _wasapiFftBuffer!.cast<ffi.Void>(),
       bass_wasapi.BASS_DATA_FFT512,
@@ -507,8 +553,10 @@ class BassPlayer {
       final fa = minF * math.pow(ratio, a).toDouble();
       final fb = minF * math.pow(ratio, b).toDouble();
       final start = ((fa / sampleRate) * fftSize).floor().clamp(1, 255).toInt();
-      final end =
-          ((fb / sampleRate) * fftSize).ceil().clamp(start + 1, 255).toInt();
+      final end = ((fb / sampleRate) * fftSize)
+          .ceil()
+          .clamp(start + 1, 255)
+          .toInt();
       _spectrumBandStarts[i] = start;
       _spectrumBandEnds[i] = end;
     }
@@ -583,17 +631,18 @@ class BassPlayer {
     if (_fstream == null) return;
 
     if (_bassFx != null) {
-      _bfxEqHandle =
-          _bass.BASS_ChannelSetFX(_fstream!, bass.BASS_FX_BFX_PEAKEQ, 0);
+      _bfxEqHandle = _bass.BASS_ChannelSetFX(
+        _fstream!,
+        bass.BASS_FX_BFX_PEAKEQ,
+        0,
+      );
       if (_bfxEqHandle != 0) {
         for (int i = 0; i < 10; i++) {
           _updateEQ(i);
         }
         return;
       }
-      logger.w(
-        'Failed to set BFX EQ: BASS Error ${_bass.BASS_ErrorGetCode()}',
-      );
+      logger.w('Failed to set BFX EQ: BASS Error ${_bass.BASS_ErrorGetCode()}');
       _bfxEqHandle = 0;
       return;
     }
@@ -604,8 +653,11 @@ class BassPlayer {
 
     try {
       for (int i = 0; i < 10; i++) {
-        final fx =
-            _bass.BASS_ChannelSetFX(_fstream!, bass.BASS_FX_DX8_PARAMEQ, 0);
+        final fx = _bass.BASS_ChannelSetFX(
+          _fstream!,
+          bass.BASS_FX_DX8_PARAMEQ,
+          0,
+        );
 
         if (fx == 0) {
           final err = _bass.BASS_ErrorGetCode();
@@ -646,8 +698,9 @@ class BassPlayer {
 
         if (result == 0) {
           final err = _bass.BASS_ErrorGetCode();
-          logger
-              .w('Failed to set BFX EQ parameters for band $band: Error $err');
+          logger.w(
+            'Failed to set BFX EQ parameters for band $band: Error $err',
+          );
         }
 
         calloc.free(params);
@@ -710,14 +763,7 @@ class BassPlayer {
     _bassFx = null;
     _loadBassFx();
 
-    if (_bass.BASS_Init(
-          -1,
-          44100,
-          0,
-          ffi.nullptr,
-          ffi.nullptr,
-        ) ==
-        0) {
+    if (_bass.BASS_Init(-1, 44100, 0, ffi.nullptr, ffi.nullptr) == 0) {
       switch (_bass.BASS_ErrorGetCode()) {
         case bass.BASS_ERROR_DEVICE:
           throw const FormatException('device is invalid.');
@@ -752,6 +798,12 @@ class BassPlayer {
 
     _bass.BASS_SetConfig(bass.BASS_CONFIG_BUFFER, 500);
     _bass.BASS_SetConfig(bass.BASS_CONFIG_DEV_BUFFER, 500);
+    if (_bass.BASS_SetConfig(bass.BASS_CONFIG_ASYNCFILE_BUFFER, 1024 * 1024) ==
+        bass.FALSE) {
+      logger.w('[bass] failed to set async file buffer to 1MB');
+    } else {
+      logger.i('[bass] async file buffer=1MB');
+    }
   }
 
   void _startDevice() {
@@ -791,14 +843,21 @@ class BassPlayer {
     );
 
     // ─── 1. 确定 BASS DLL 目录 ─────────────────────────────────────────────
-    final exeBassDir =
-        path.join(path.dirname(Platform.resolvedExecutable), 'dll', 'BASS');
+    final exeBassDir = path.join(
+      path.dirname(Platform.resolvedExecutable),
+      'dll',
+      'BASS',
+    );
     final cwdBassDir = path.join(Directory.current.path, 'dll', 'BASS');
+    final sourceBassDir = path.join(Directory.current.path, 'BASS');
     final exeBassDll = File(path.join(exeBassDir, 'bass.dll'));
     final cwdBassDll = File(path.join(cwdBassDir, 'bass.dll'));
+    final sourceBassDll = File(path.join(sourceBassDir, 'bass.dll'));
     _bassDir = exeBassDll.existsSync()
         ? exeBassDir
-        : (cwdBassDll.existsSync() ? cwdBassDir : exeBassDir);
+        : (cwdBassDll.existsSync()
+            ? cwdBassDir
+            : (sourceBassDll.existsSync() ? sourceBassDir : exeBassDir));
 
     // ─── 2. 确保 Windows 能找到 BASS 目录下的依赖 DLL ──────────────────────
     if (Platform.isWindows) {
@@ -806,12 +865,16 @@ class BassPlayer {
       bool dllDirSet = false;
       try {
         final kernel32 = ffi.DynamicLibrary.open('kernel32.dll');
-        _windowsSleep = kernel32.lookupFunction<ffi.Void Function(ffi.Uint32),
-            void Function(int)>('Sleep');
+        _windowsSleep = kernel32
+            .lookupFunction<ffi.Void Function(ffi.Uint32), void Function(int)>(
+              'Sleep',
+            );
 
-        final setDllDirectory = kernel32.lookupFunction<
-            ffi.Int32 Function(ffi.Pointer<Utf16>),
-            int Function(ffi.Pointer<Utf16>)>('SetDllDirectoryW');
+        final setDllDirectory = kernel32
+            .lookupFunction<
+              ffi.Int32 Function(ffi.Pointer<Utf16>),
+              int Function(ffi.Pointer<Utf16>)
+            >('SetDllDirectoryW');
         final bassDir = _bassDir.toNativeUtf16();
         dllDirSet = setDllDirectory(bassDir) != 0;
         malloc.free(bassDir);
@@ -831,10 +894,11 @@ class BassPlayer {
             final newPath = '$_bassDir;$currentPath';
             // 通过 SetEnvironmentVariableW 设置
             final kernel32 = ffi.DynamicLibrary.open('kernel32.dll');
-            final setEnv = kernel32.lookupFunction<
-                ffi.Int32 Function(ffi.Pointer<Utf16>, ffi.Pointer<Utf16>),
-                int Function(ffi.Pointer<Utf16>,
-                    ffi.Pointer<Utf16>)>('SetEnvironmentVariableW');
+            final setEnv = kernel32
+                .lookupFunction<
+                  ffi.Int32 Function(ffi.Pointer<Utf16>, ffi.Pointer<Utf16>),
+                  int Function(ffi.Pointer<Utf16>, ffi.Pointer<Utf16>)
+                >('SetEnvironmentVariableW');
             final nameP = 'PATH'.toNativeUtf16();
             final valueP = newPath.toNativeUtf16();
             setEnv(nameP, valueP);
@@ -859,21 +923,24 @@ class BassPlayer {
     _bassLib = bassLib;
     _bass = bass.Bass(bassLib);
     try {
-      _bassChannelGetData = bassLib.lookupFunction<
-          ffi.UnsignedLong Function(
-            ffi.UnsignedLong,
-            ffi.Pointer<ffi.Void>,
-            ffi.UnsignedLong,
-          ),
-          int Function(int, ffi.Pointer<ffi.Void>, int)>('BASS_ChannelGetData');
+      _bassChannelGetData = bassLib
+          .lookupFunction<
+            ffi.UnsignedLong Function(
+              ffi.UnsignedLong,
+              ffi.Pointer<ffi.Void>,
+              ffi.UnsignedLong,
+            ),
+            int Function(int, ffi.Pointer<ffi.Void>, int)
+          >('BASS_ChannelGetData');
     } catch (_) {
       _bassChannelGetData = null;
     }
 
     // ─── 4. 加载 basswasapi.dll ─────────────────────────────────────────────
     try {
-      final wasapiLib =
-          ffi.DynamicLibrary.open(path.join(_bassDir, 'basswasapi.dll'));
+      final wasapiLib = ffi.DynamicLibrary.open(
+        path.join(_bassDir, 'basswasapi.dll'),
+      );
       _bassWasapiLib = wasapiLib;
       _bassWasapi = bass_wasapi.BassWasapi(wasapiLib);
     } catch (e) {
@@ -882,11 +949,7 @@ class BassPlayer {
     }
 
     // ─── 5. 加载其他 BASS 插件（bassflac.dll 等，通过 BASS_PluginLoad） ─────
-    final coreDlls = {
-      'bass.dll',
-      'basswasapi.dll',
-      'bass_fx.dll',
-    };
+    final coreDlls = {'bass.dll', 'basswasapi.dll', 'bass_fx.dll'};
     if (Directory(_bassDir).existsSync()) {
       final entries = Directory(_bassDir).listSync(followLinks: false);
       for (final e in entries) {
@@ -901,8 +964,9 @@ class BassPlayer {
         final hplugin = _bass.BASS_PluginLoad(pluginPathP, bass.BASS_UNICODE);
         if (hplugin == 0) {
           final errCode = _bass.BASS_ErrorGetCode();
-          logger
-              .w('[bass] Plugin load failed: $pluginFullPath (error $errCode)');
+          logger.w(
+            '[bass] Plugin load failed: $pluginFullPath (error $errCode)',
+          );
         } else {
           logger.i('[bass] Plugin loaded: $name');
         }
@@ -940,8 +1004,10 @@ class BassPlayer {
     try {
       if (exclusive && !_isEqFlat) {
         logger.w('[bass] Cannot enable exclusive mode while EQ is enabled');
-        showTextOnSnackBar('独占模式与均衡器冲突，请先关闭均衡器（全部归零）',
-            variant: ToastVariant.error);
+        showTextOnSnackBar(
+          '独占模式与均衡器冲突，请先关闭均衡器（全部归零）',
+          variant: ToastVariant.error,
+        );
         return false;
       }
       final lastPos = position;
@@ -1018,11 +1084,7 @@ class BassPlayer {
       onExclusiveModeChanged?.call(wasapiExclusive);
       return wasapiExclusive == exclusive;
     } catch (err, trace) {
-      logger.e(
-        '切换独占模式失败',
-        error: err,
-        stackTrace: trace,
-      );
+      logger.e('切换独占模式失败', error: err, stackTrace: trace);
       showTextOnSnackBar('切换独占模式失败，请查看日志');
       _playerStateStreamController.add(playerState);
     }
@@ -1034,6 +1096,7 @@ class BassPlayer {
     if (!wasapiExclusive && !_streamWasapiExclusive) return;
     _bassWasapi.BASS_WASAPI_Stop(bass.TRUE);
     _bassWasapi.BASS_WASAPI_Free();
+    _wasapiOutputInfo = 'off';
   }
 
   /// Rebuilds the audio stream after output-mode changes.
@@ -1064,13 +1127,19 @@ class BassPlayer {
   }
 
   int _createDecodeStream(String path) {
-    const flags = bass.BASS_UNICODE |
+    const flags =
+        bass.BASS_UNICODE |
         bass.BASS_SAMPLE_FLOAT |
         bass.BASS_ASYNCFILE |
         bass.BASS_STREAM_DECODE;
     final pathPointer = path.toNativeUtf16() as ffi.Pointer<ffi.Void>;
-    final handle =
-        _bass.BASS_StreamCreateFile(bass.FALSE, pathPointer, 0, 0, flags);
+    final handle = _bass.BASS_StreamCreateFile(
+      bass.FALSE,
+      pathPointer,
+      0,
+      0,
+      flags,
+    );
     malloc.free(pathPointer);
     return handle;
   }
@@ -1116,8 +1185,10 @@ class BassPlayer {
     // 创建 Tempo 流以支持变速/变调
     try {
       if (_bassFx != null) {
-        final tempoHandle =
-            _bassFx!.BASS_FX_TempoCreate(handle, BASS_FX_FREESOURCE);
+        final tempoHandle = _bassFx!.BASS_FX_TempoCreate(
+          handle,
+          BASS_FX_FREESOURCE,
+        );
         if (tempoHandle != 0) {
           handle = tempoHandle;
         } else {
@@ -1248,11 +1319,7 @@ class BassPlayer {
       } else {
         // Crossfade shared-mode streams only; release exclusive streams immediately.
         // WASAPI can still own the old decode stream while it is running.
-        _fadeOutOldStream(
-          oldHandle,
-          durationMs: 300,
-          delayCleanup: true,
-        );
+        _fadeOutOldStream(oldHandle, durationMs: 300, delayCleanup: true);
       }
       _fstream = null;
       _cachedLengthSeconds = null;
@@ -1280,8 +1347,10 @@ class BassPlayer {
       // 如果没有加载 bass_fx 或者创建失败，就回退到原始流（但原始流是 decode 的，不能直接播，需要重新创建）
       try {
         if (_bassFx != null) {
-          final tempoHandle =
-              _bassFx!.BASS_FX_TempoCreate(handle, BASS_FX_FREESOURCE);
+          final tempoHandle = _bassFx!.BASS_FX_TempoCreate(
+            handle,
+            BASS_FX_FREESOURCE,
+          );
           if (tempoHandle != 0) {
             handle = tempoHandle;
           } else {
@@ -1427,19 +1496,19 @@ class BassPlayer {
     final tempo = (_rate - 1.0) * 100.0;
 
     // 优先尝试使用 BASS_FX 的 Tempo 属性
-    if (_bass.BASS_ChannelSetAttribute(
-          _fstream!,
-          BASS_ATTRIB_TEMPO,
-          tempo,
-        ) ==
+    if (_bass.BASS_ChannelSetAttribute(_fstream!, BASS_ATTRIB_TEMPO, tempo) ==
         0) {
       final freqPtr = malloc.allocate<ffi.Float>(ffi.sizeOf<ffi.Float>());
       try {
         if (_bass.BASS_ChannelGetAttribute(
-                _fstream!, bass.BASS_ATTRIB_FREQ, freqPtr) !=
+              _fstream!,
+              bass.BASS_ATTRIB_FREQ,
+              freqPtr,
+            ) !=
             0) {
           logger.w(
-              'BASS_ATTRIB_TEMPO failed, and fallback implementation is skipped.');
+            'BASS_ATTRIB_TEMPO failed, and fallback implementation is skipped.',
+          );
         }
       } finally {
         malloc.free(freqPtr);
@@ -1453,31 +1522,31 @@ class BassPlayer {
 
     // bass_fx.dll 已在构造时预加载，直接使用
     if (wasapiExclusive && _pitch != 0.0) {
-      logger
-          .w('[bass] pitch change in exclusive mode, fallback to shared mode');
+      logger.w(
+        '[bass] pitch change in exclusive mode, fallback to shared mode',
+      );
       useExclusiveMode(false);
       return;
     }
 
-    _bass.BASS_ChannelSetAttribute(
-      _fstream!,
-      BASS_ATTRIB_TEMPO_PITCH,
-      pitch,
-    );
+    _bass.BASS_ChannelSetAttribute(_fstream!, BASS_ATTRIB_TEMPO_PITCH, pitch);
   }
 
   void _bassWasapiInit() {
     if (_fstream == null) return;
 
     // 重置WASAPI状态
+    _wasapiOutputInfo = 'initializing';
     _bassWasapi.BASS_WASAPI_Stop(bass.TRUE);
     _bassWasapi.BASS_WASAPI_Free();
 
     // 添加 AUTOFORMAT 和 BUFFER 标志
-    const flags = bass_wasapi.BASS_WASAPI_EXCLUSIVE |
+    const flags =
+        bass_wasapi.BASS_WASAPI_EXCLUSIVE |
         bass_wasapi.BASS_WASAPI_AUTOFORMAT |
         bass_wasapi.BASS_WASAPI_EVENT |
-        bass_wasapi.BASS_WASAPI_BUFFER;
+        bass_wasapi.BASS_WASAPI_BUFFER |
+        bass_wasapi.BASS_WASAPI_ASYNC;
     // 根据音频采样率动态计算缓冲区，高码率文件自动获得更大缓冲
     final bufferSec = _computeWasapiBufferSec();
     const initFreq = 0; // 让 WASAPI 自动选择合适的采样率
@@ -1553,6 +1622,8 @@ class BassPlayer {
         case bass.BASS_ERROR_UNKNOWN:
           throw const FormatException('Some other mystery problem!');
       }
+    } else {
+      _refreshWasapiOutputInfo(bufferSec);
     }
   }
 
@@ -1594,6 +1665,7 @@ class BassPlayer {
     final seekPos = position;
     _bassWasapi.BASS_WASAPI_Stop(bass.TRUE);
     _bassWasapi.BASS_WASAPI_Free();
+    _wasapiOutputInfo = 'off';
     if (_fstream != null) {
       _bass.BASS_StreamFree(_fstream!);
       _fstream = null;
@@ -1615,8 +1687,9 @@ class BassPlayer {
     const steps = 10;
     const stepMs = 20;
     int step = 0;
-    _fadeInTimer =
-        Timer.periodic(const Duration(milliseconds: stepMs), (timer) {
+    _fadeInTimer = Timer.periodic(const Duration(milliseconds: stepMs), (
+      timer,
+    ) {
       step++;
       if (step >= steps) {
         setVolumeDsp(target);
@@ -1644,11 +1717,7 @@ class BassPlayer {
     // BASS_ChannelStart, the first output buffer can escape at full volume,
     // which is heard as a short click when switching tracks.
     final fadeTargetVolume = volumeDsp;
-    _bass.BASS_ChannelSetAttribute(
-      _fstream!,
-      bass.BASS_ATTRIB_VOLDSP,
-      0.0,
-    );
+    _bass.BASS_ChannelSetAttribute(_fstream!, bass.BASS_ATTRIB_VOLDSP, 0.0);
 
     if (_bass.BASS_ChannelStart(_fstream!) == 0) {
       switch (_bass.BASS_ErrorGetCode()) {

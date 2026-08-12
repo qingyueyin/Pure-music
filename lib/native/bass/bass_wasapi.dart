@@ -13,6 +13,14 @@ const int BASS_WASAPI_EVENT = 16;
 
 const int BASS_WASAPI_SAMPLES = 32;
 
+const int BASS_WASAPI_ASYNC = 0x100;
+
+const int BASS_WASAPI_FORMAT_FLOAT = 0;
+const int BASS_WASAPI_FORMAT_8BIT = 1;
+const int BASS_WASAPI_FORMAT_16BIT = 2;
+const int BASS_WASAPI_FORMAT_24BIT = 3;
+const int BASS_WASAPI_FORMAT_32BIT = 4;
+
 const int BASS_DATA_AVAILABLE = 0;
 
 // FFT flags (same as BASS_ChannelGetData flags, used with BASS_WASAPI_GetData)
@@ -41,24 +49,54 @@ const int BASS_ERROR_WASAPI_DENIED = 5003;
 
 typedef BOOL = ffi.Int;
 
-typedef WASAPIPROC = ffi.NativeFunction<
-    DWORD Function(ffi.Pointer<ffi.Void> buffer, DWORD length,
-        ffi.Pointer<ffi.Void> user)>;
+final class BASS_WASAPI_INFO extends ffi.Struct {
+  @ffi.Uint32()
+  external int initflags;
+
+  @ffi.Uint32()
+  external int freq;
+
+  @ffi.Uint32()
+  external int chans;
+
+  @ffi.Uint32()
+  external int format;
+
+  @ffi.Uint32()
+  external int buflen;
+
+  @ffi.Uint32()
+  external int volmax;
+
+  @ffi.Uint32()
+  external int volmin;
+
+  @ffi.Uint32()
+  external int volstep;
+}
+
+typedef WASAPIPROC =
+    ffi.NativeFunction<
+      DWORD Function(
+        ffi.Pointer<ffi.Void> buffer,
+        DWORD length,
+        ffi.Pointer<ffi.Void> user,
+      )
+    >;
 
 class BassWasapi {
   /// Holds the symbol lookup function.
   final ffi.Pointer<T> Function<T extends ffi.NativeType>(String symbolName)
-      _lookup;
+  _lookup;
 
   /// The symbols are looked up in [dynamicLibrary].
   BassWasapi(ffi.DynamicLibrary dynamicLibrary)
-      : _lookup = dynamicLibrary.lookup;
+    : _lookup = dynamicLibrary.lookup;
 
   /// The symbols are looked up with [lookup].
   BassWasapi.fromLookup(
-      ffi.Pointer<T> Function<T extends ffi.NativeType>(String symbolName)
-          lookup)
-      : _lookup = lookup;
+    ffi.Pointer<T> Function<T extends ffi.NativeType>(String symbolName) lookup,
+  ) : _lookup = lookup;
 
   int BASS_WASAPI_IsStarted() {
     return _BASS_WASAPI_IsStarted();
@@ -78,12 +116,8 @@ class BassWasapi {
   late final _BASS_WASAPI_Start =
       _BASS_WASAPI_StartPtr.asFunction<int Function()>();
 
-  int BASS_WASAPI_Stop(
-    int reset,
-  ) {
-    return _BASS_WASAPI_Stop(
-      reset,
-    );
+  int BASS_WASAPI_Stop(int reset) {
+    return _BASS_WASAPI_Stop(reset);
   }
 
   late final _BASS_WASAPI_StopPtr =
@@ -113,20 +147,34 @@ class BassWasapi {
     );
   }
 
-  late final _BASS_WASAPI_InitPtr = _lookup<
-      ffi.NativeFunction<
+  late final _BASS_WASAPI_InitPtr =
+      _lookup<
+        ffi.NativeFunction<
           BOOL Function(
-              ffi.Int,
-              DWORD,
-              DWORD,
-              DWORD,
-              ffi.Float,
-              ffi.Float,
-              ffi.Pointer<WASAPIPROC>,
-              ffi.Pointer<ffi.Void>)>>('BASS_WASAPI_Init');
-  late final _BASS_WASAPI_Init = _BASS_WASAPI_InitPtr.asFunction<
-      int Function(int, int, int, int, double, double, ffi.Pointer<WASAPIPROC>,
-          ffi.Pointer<ffi.Void>)>();
+            ffi.Int,
+            DWORD,
+            DWORD,
+            DWORD,
+            ffi.Float,
+            ffi.Float,
+            ffi.Pointer<WASAPIPROC>,
+            ffi.Pointer<ffi.Void>,
+          )
+        >
+      >('BASS_WASAPI_Init');
+  late final _BASS_WASAPI_Init =
+      _BASS_WASAPI_InitPtr.asFunction<
+        int Function(
+          int,
+          int,
+          int,
+          int,
+          double,
+          double,
+          ffi.Pointer<WASAPIPROC>,
+          ffi.Pointer<ffi.Void>,
+        )
+      >();
 
   int BASS_WASAPI_Free() {
     return _BASS_WASAPI_Free();
@@ -137,19 +185,29 @@ class BassWasapi {
   late final _BASS_WASAPI_Free =
       _BASS_WASAPI_FreePtr.asFunction<int Function()>();
 
-  int BASS_WASAPI_GetData(
-    ffi.Pointer<ffi.Void> buffer,
-    int length,
-  ) {
-    return _BASS_WASAPI_GetData(
-      buffer,
-      length,
-    );
+  int BASS_WASAPI_GetInfo(ffi.Pointer<BASS_WASAPI_INFO> info) {
+    return _BASS_WASAPI_GetInfo(info);
   }
 
-  late final _BASS_WASAPI_GetDataPtr = _lookup<
-      ffi.NativeFunction<DWORD Function(ffi.Pointer<ffi.Void>, DWORD)>>(
-          'BASS_WASAPI_GetData');
-  late final _BASS_WASAPI_GetData = _BASS_WASAPI_GetDataPtr.asFunction<
-      int Function(ffi.Pointer<ffi.Void>, int)>();
+  late final _BASS_WASAPI_GetInfoPtr =
+      _lookup<ffi.NativeFunction<BOOL Function(ffi.Pointer<BASS_WASAPI_INFO>)>>(
+        'BASS_WASAPI_GetInfo',
+      );
+  late final _BASS_WASAPI_GetInfo =
+      _BASS_WASAPI_GetInfoPtr.asFunction<
+        int Function(ffi.Pointer<BASS_WASAPI_INFO>)
+      >();
+
+  int BASS_WASAPI_GetData(ffi.Pointer<ffi.Void> buffer, int length) {
+    return _BASS_WASAPI_GetData(buffer, length);
+  }
+
+  late final _BASS_WASAPI_GetDataPtr =
+      _lookup<ffi.NativeFunction<DWORD Function(ffi.Pointer<ffi.Void>, DWORD)>>(
+        'BASS_WASAPI_GetData',
+      );
+  late final _BASS_WASAPI_GetData =
+      _BASS_WASAPI_GetDataPtr.asFunction<
+        int Function(ffi.Pointer<ffi.Void>, int)
+      >();
 }
