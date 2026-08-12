@@ -5,6 +5,20 @@ import 'package:pure_music/play_service/desktop_lyric_service.dart';
 import 'package:pure_music/play_service/lyric_service.dart';
 
 void main() {
+  test('decodes fragmented and coalesced desktop lyric frames in order', () {
+    final decoder = MessageFrameDecoder();
+    final messages = <String>[];
+    const first = ControlEventMessage(ControlEvent.pause);
+    const second = ControlEventMessage(ControlEvent.nextAudio);
+    final firstJson = first.buildMessageJson();
+    final secondJson = second.buildMessageJson();
+
+    decoder.add(firstJson.substring(0, 8), messages.add);
+    decoder.add('${firstJson.substring(8)}\r\n$secondJson\n', messages.add);
+
+    expect(messages, [firstJson, secondJson]);
+  });
+
   test('serializes the explicit lyric type', () {
     const message = LyricLineChangedMessage(
       'line',
@@ -56,17 +70,13 @@ void main() {
 
   test('keeps the full opening interlude when desktop lyric starts late', () {
     final lyric = Lyric([
-      SyncLyricLine(
-        const Duration(seconds: 8),
-        const Duration(seconds: 3),
-        [
-          SyncLyricWord(
-            const Duration(seconds: 8),
-            const Duration(seconds: 3),
-            'line',
-          ),
-        ],
-      ),
+      SyncLyricLine(const Duration(seconds: 8), const Duration(seconds: 3), [
+        SyncLyricWord(
+          const Duration(seconds: 8),
+          const Duration(seconds: 3),
+          'line',
+        ),
+      ]),
     ]);
 
     final prelude = desktopLyricPreludeLineAt(lyric, 3000);
@@ -105,33 +115,25 @@ void main() {
 
   test('uses the next renderable line as the highlight deadline', () {
     final lyric = Lyric([
-      SyncLyricLine(
-        const Duration(seconds: 8),
-        const Duration(seconds: 3),
-        [
-          SyncLyricWord(
-            const Duration(seconds: 8),
-            const Duration(seconds: 1),
-            'first',
-          ),
-          SyncLyricWord(
-            const Duration(seconds: 9),
-            const Duration(seconds: 2),
-            'line',
-          ),
-        ],
-      ),
-      SyncLyricLine(
-        const Duration(seconds: 10),
-        const Duration(seconds: 2),
-        [
-          SyncLyricWord(
-            const Duration(seconds: 10),
-            const Duration(seconds: 2),
-            'next',
-          ),
-        ],
-      ),
+      SyncLyricLine(const Duration(seconds: 8), const Duration(seconds: 3), [
+        SyncLyricWord(
+          const Duration(seconds: 8),
+          const Duration(seconds: 1),
+          'first',
+        ),
+        SyncLyricWord(
+          const Duration(seconds: 9),
+          const Duration(seconds: 2),
+          'line',
+        ),
+      ]),
+      SyncLyricLine(const Duration(seconds: 10), const Duration(seconds: 2), [
+        SyncLyricWord(
+          const Duration(seconds: 10),
+          const Duration(seconds: 2),
+          'next',
+        ),
+      ]),
     ]);
 
     expect(lyricHighlightDeadlineMsForLine(lyric, 0), 9680);

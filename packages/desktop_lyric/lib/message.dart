@@ -13,6 +13,32 @@ abstract class Message {
       });
 }
 
+class MessageFrameDecoder {
+  MessageFrameDecoder({this.maxBufferLength = 65536, this.onOverflow});
+
+  final int maxBufferLength;
+  final void Function()? onOverflow;
+  String _buffer = '';
+
+  void add(String chunk, void Function(String line) onLine) {
+    if (chunk.isEmpty) return;
+    _buffer += chunk;
+    if (_buffer.length > maxBufferLength) {
+      _buffer = _buffer.substring(_buffer.length ~/ 2);
+      onOverflow?.call();
+    }
+    while (true) {
+      final index = _buffer.indexOf('\n');
+      if (index < 0) return;
+      final line = _buffer.substring(0, index).trimRight();
+      _buffer = _buffer.substring(index + 1);
+      if (line.isNotEmpty) onLine(line);
+    }
+  }
+
+  void clear() => _buffer = '';
+}
+
 class InitArgsMessage {
   final bool isPlaying;
   final String title;
@@ -302,6 +328,7 @@ class DesktopLyricConfigMessage extends Message {
   final bool? showRoman;
   final int? romanPosition;
   final bool? showNowPlayingInfo;
+  final bool? hideOnPause;
   final int? lyricTextAlign;
   final int? lyricAnimation;
   final bool? enableStroke;
@@ -319,6 +346,7 @@ class DesktopLyricConfigMessage extends Message {
     this.showRoman,
     this.romanPosition,
     this.showNowPlayingInfo,
+    this.hideOnPause,
     this.lyricTextAlign,
     this.lyricAnimation,
     this.enableStroke,
@@ -341,6 +369,7 @@ class DesktopLyricConfigMessage extends Message {
         if (romanPosition != null) 'romanPosition': romanPosition,
         if (showNowPlayingInfo != null)
           'showNowPlayingInfo': showNowPlayingInfo,
+        if (hideOnPause != null) 'hideOnPause': hideOnPause,
         if (lyricTextAlign != null) 'lyricTextAlign': lyricTextAlign,
         if (lyricAnimation != null) 'lyricAnimation': lyricAnimation,
         if (enableStroke != null) 'enableStroke': enableStroke,
