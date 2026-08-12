@@ -4,11 +4,23 @@ import 'dart:io';
 import 'dart:isolate';
 
 const _kgSearchUrl = 'http://mobilecdn.kugou.com/api/v3/search/song';
+const _kgSearchFallbackUrl = 'https://songsearch.kugou.com/song_search_v2';
 const _kgSearchLrcUrl = 'http://lyrics.kugou.com/search';
 const _kgDownloadLrcUrl = 'http://lyrics.kugou.com/download';
 const _neSearchUrl = 'https://music.163.com/api/cloudsearch/pc';
 const _neLrcUrl = 'https://music.163.com/api/song/lyric';
 const _qmSearchUrl = 'https://u.y.qq.com/cgi-bin/musicu.fcg';
+const _musicApiHeaders = {
+  'User-Agent':
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/138.0.0.0 Safari/537.36',
+  'Accept': 'application/json,text/plain,*/*',
+  'Referer': 'https://music.163.com/',
+};
+const _kgApiHeaders = {
+  'User-Agent':
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/138.0.0.0 Safari/537.36',
+  'Accept': 'application/json,text/plain,*/*',
+};
 
 Future<String?> _httpPost(
   String urlStr,
@@ -38,33 +50,86 @@ Future<String?> _httpPost(
 }
 
 Future<List<dynamic>> _kgSearchInIsolate(Map<String, dynamic> params) async {
-  final body = await _httpGet(_kgSearchUrl, {
+  final Map<String, String> queryParameters = {
     'format': 'json',
-    'keyword': params['text'],
+    'keyword': params['text'].toString(),
     'page': params['offset'].toString(),
     'pagesize': params['limit'].toString(),
     if (params['cacheBust'] != null) '_': params['cacheBust'].toString(),
-  }, null);
+  };
+  var body = await _httpGet(_kgSearchUrl, queryParameters, _kgApiHeaders);
+  var useFallbackShape = false;
+  if (body == null || body.isEmpty) {
+    body = await _httpGet(_kgSearchFallbackUrl, {
+      'keyword': params['text'].toString(),
+      'page': params['offset'].toString(),
+      'pagesize': params['limit'].toString(),
+      if (params['cacheBust'] != null) '_': params['cacheBust'].toString(),
+    }, _kgApiHeaders);
+    useFallbackShape = true;
+  }
   if (body == null || body.isEmpty) return [];
   try {
-    final Map<String, dynamic> data = jsonDecode(body);
-    final songList = data['data']?['info'];
+    var data = jsonDecode(body) as Map<String, dynamic>;
+    var dataBody = data['data'];
+    var songList = dataBody is Map
+        ? (useFallbackShape ? dataBody['lists'] : dataBody['info'])
+        : null;
+    if ((songList is! List || songList.isEmpty) && !useFallbackShape) {
+      final fallbackBody = await _httpGet(_kgSearchFallbackUrl, {
+        'keyword': params['text'].toString(),
+        'page': params['offset'].toString(),
+        'pagesize': params['limit'].toString(),
+        if (params['cacheBust'] != null) '_': params['cacheBust'].toString(),
+      }, _kgApiHeaders);
+      if (fallbackBody != null && fallbackBody.isNotEmpty) {
+        data = jsonDecode(fallbackBody) as Map<String, dynamic>;
+        dataBody = data['data'];
+        useFallbackShape = true;
+        songList = dataBody is Map ? dataBody['lists'] : null;
+      }
+    }
     if (songList is! List) return [];
-    return songList.map((item) {
-      final groupList = item['group'] as List?;
+    final normalized = <Map<String, dynamic>>[];
+    for (final rawItem in songList) {
+      if (rawItem is! Map) continue;
+      final item = rawItem;
+      final groupList = !useFallbackShape && item['group'] is List
+          ? item['group'] as List
+          : null;
       String? albumName;
       if (groupList != null && groupList.isNotEmpty) {
-        albumName = groupList.first['album_name']?.toString();
+        final firstGroup = groupList.first;
+        if (firstGroup is Map) {
+          albumName = firstGroup['album_name']?.toString();
+        }
       }
-      return {
-        'hash': item['hash']?.toString() ?? '',
-        'id': item['id']?.toString() ?? '',
-        'songname': item['songname'] ?? 'UNKNOWN',
-        'singername': item['singername'] ?? 'UNKNOWN',
-        'album_name': albumName ?? item['album_name']?.toString() ?? '',
-        'duration': int.tryParse(item['duration']?.toString() ?? '0') ?? 0,
+      final result = <String, dynamic>{
+        'hash': (useFallbackShape ? item['FileHash'] : item['hash'])
+                ?.toString() ??
+            '',
+        'id': (useFallbackShape ? item['ID'] : item['id'])?.toString() ?? '',
+        'songname': (useFallbackShape ? item['SongName'] : item['songname'])
+                ?.toString() ??
+            'UNKNOWN',
+        'singername':
+            (useFallbackShape ? item['SingerName'] : item['singername'])
+                    ?.toString() ??
+                'UNKNOWN',
+        'album_name': albumName ??
+            (useFallbackShape ? item['AlbumName'] : item['album_name'])
+                ?.toString() ??
+            '',
+        'duration': int.tryParse(
+              (useFallbackShape ? item['Duration'] : item['duration'])
+                      ?.toString() ??
+                  '0',
+            ) ??
+            0,
       };
-    }).toList();
+      if ((result['hash'] as String).isNotEmpty) normalized.add(result);
+    }
+    return normalized;
   } catch (_) {
     return [];
   }
@@ -132,33 +197,39 @@ Future<Map<String, String?>> _kgLyricInIsolate(
     'man': 'yes',
     'client': 'pc',
     'hash': hash,
-  }, null);
+  }, _kgApiHeaders);
   if (body1 == null || body1.isEmpty) return {'encrypted': null};
-  final candidate = jsonDecode(body1)?['candidates'];
-  if (candidate is! List || candidate.isEmpty) return {'encrypted': null};
-  final String? id_ = candidate.first['id'];
-  final String? accesskey = candidate.first['accesskey'];
-  if (id_ == null || accesskey == null || id_.isEmpty || accesskey.isEmpty) {
-    return {'encrypted': null};
-  }
-
-  // 下载选中的歌词。
-  final body2 = await _httpGet(_kgDownloadLrcUrl, {
-    'ver': '1',
-    'client': 'pc',
-    'id': id_,
-    'accesskey': accesskey,
-    'fmt': 'krc',
-    'charset': 'utf8',
-  }, null);
-  if (body2 == null || body2.isEmpty) return {'encrypted': null};
+  dynamic decoded;
   try {
-    final String? content = jsonDecode(body2)?['content'];
-    if (content == null || content.isEmpty) return {'encrypted': null};
-    return {'encrypted': content};
+    decoded = jsonDecode(body1);
   } catch (_) {
     return {'encrypted': null};
   }
+  if (decoded is! Map) return {'encrypted': null};
+  final candidate = decoded['candidates'];
+  if (candidate is! List || candidate.isEmpty) return {'encrypted': null};
+  for (final rawItem in candidate.take(5)) {
+    if (rawItem is! Map) continue;
+    final item = rawItem;
+    final id = item['id']?.toString() ?? '';
+    final accesskey = item['accesskey']?.toString() ?? '';
+    if (id.isEmpty || accesskey.isEmpty) continue;
+
+    final body2 = await _httpGet(_kgDownloadLrcUrl, {
+      'ver': '1',
+      'client': 'pc',
+      'id': id,
+      'accesskey': accesskey,
+      'fmt': 'krc',
+      'charset': 'utf8',
+    }, _kgApiHeaders);
+    if (body2 == null || body2.isEmpty) continue;
+    try {
+      final content = jsonDecode(body2)?['content']?.toString() ?? '';
+      if (content.isNotEmpty) return {'encrypted': content};
+    } catch (_) {}
+  }
+  return {'encrypted': null};
 }
 
 Future<Map<String, String?>> kgLyricIsolate({required String hash}) async {
@@ -169,32 +240,43 @@ Future<Map<String, String?>> kgLyricIsolate({required String hash}) async {
 
 Future<List<dynamic>> _neSearchInIsolate(Map<String, dynamic> params) async {
   final body = await _httpGet(_neSearchUrl, {
-    's': params['text'],
+    's': params['text'].toString(),
     'type': '1',
     'offset': params['offset'].toString(),
     'total': 'true',
     'limit': params['limit'].toString(),
     if (params['cacheBust'] != null) '_': params['cacheBust'].toString(),
-  }, null);
+  }, _musicApiHeaders);
   if (body == null || body.isEmpty) return [];
   try {
     final Map<String, dynamic> data = jsonDecode(body);
     final songs = data['result']?['songs'];
     if (songs is! List) return [];
-    return songs.map((item) {
+    final normalized = <Map<String, dynamic>>[];
+    for (final rawItem in songs) {
+      if (rawItem is! Map) continue;
+      final item = rawItem;
       final artistList = item['ar'];
       String? artist;
       if (artistList is List && artistList.isNotEmpty) {
-        artist = artistList.map((a) => a['name']?.toString()).join('、');
+        artist = artistList
+            .whereType<Map>()
+            .map((a) => a['name']?.toString())
+            .whereType<String>()
+            .where((name) => name.isNotEmpty)
+            .join('、');
       }
-      return {
+      final id = item['id']?.toString() ?? '';
+      if (id.isEmpty) continue;
+      normalized.add({
         'id': item['id']?.toString() ?? '',
-        'name': item['name'] ?? 'UNKNOWN',
+        'name': item['name']?.toString() ?? 'UNKNOWN',
         'artist': artist ?? 'UNKNOWN',
         'album': item['al']?['name']?.toString() ?? '',
-        'dt': (item['dt'] ?? 0) as int,
-      };
-    }).toList();
+        'dt': int.tryParse(item['dt']?.toString() ?? '0') ?? 0,
+      });
+    }
+    return normalized;
   } catch (_) {
     return [];
   }
@@ -226,7 +308,7 @@ Future<Map<String, String?>> _neLyricInIsolate(
     'tv': '-1',
     'rv': '-1',
     'os': 'pc',
-  }, null);
+  }, _musicApiHeaders);
   if (body == null || body.isEmpty) {
     return {'main': null, 'trans': null, 'roma': null, 'format': 'lrc'};
   }
