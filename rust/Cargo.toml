@@ -9,6 +9,11 @@ crate-type = ["cdylib", "staticlib"]
 [dependencies]
 flutter_rust_bridge = "=2.12.0"
 lofty = "0.22.4"
+dsf-meta = "0.2.7"
+id3 = "1.17.1"
+ndsd-read = "0.1.2"
+ratag = "0.1.1"
+midly = "0.5.3"
 serde_json = "1.0.117"
 phf = { version = "0.11", features = ["macros"] }
 windows-core = "0.57.0"
@@ -52,6 +57,21 @@ reqwest = { version = "0.12.0", default-features = false, features = ["json", "b
 serde = { version = "1.0", features = ["derive"] }
 kmeans_colors = "0.7"
 palette = "0.7"
+symphonia = { version = "0.6.0", default-features = false, features = [
+    "ape",
+    "caf",
+    "flac",
+    "id3v1",
+    "id3v2",
+    "isomp4",
+    "mkv",
+    "mp1",
+    "mp2",
+    "mp3",
+    "ogg",
+    "aiff",
+    "wav",
+] }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
