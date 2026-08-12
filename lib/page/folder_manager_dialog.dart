@@ -1,5 +1,4 @@
 import 'package:pure_music/core/design_tokens.dart';
-import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/preference.dart';
@@ -7,7 +6,6 @@ import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/component/build_index_state_view.dart';
 import 'package:pure_music/component/danger_confirm_dialog.dart';
 import 'package:pure_music/library/audio_library.dart';
-import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/lyric/lyric_source.dart';
 import 'package:pure_music/native/folder_picker_windows.dart';
 import 'package:flutter/material.dart';
@@ -31,6 +29,8 @@ class FolderManagerDialog extends StatefulWidget {
 
 class _FolderManagerDialogState extends State<FolderManagerDialog> {
   List<AudioFolder> folders = [];
+  List<_ManagedFolderGroup>? _managedFolderGroupsCache;
+  int _managedFolderGroupsLibraryVersion = -1;
 
   final applicationSupportDirectory = getAppDataDir();
 
@@ -64,6 +64,7 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
               existing[pendingFolderKey(path)] ?? AudioFolder([], path, 0, 0),
         )
         .toList();
+    _managedFolderGroupsCache = null;
   }
 
   bool get _hasFolderChanges {
@@ -86,6 +87,12 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
   }
 
   List<_ManagedFolderGroup> _managedFolderGroups() {
+    final libraryVersion = AudioLibrary.libraryVersion.value;
+    final cached = _managedFolderGroupsCache;
+    if (cached != null &&
+        _managedFolderGroupsLibraryVersion == libraryVersion) {
+      return cached;
+    }
     final foldersByParent = <String, List<AudioFolder>>{};
     final parentPaths = <String, String>{};
     for (final folder in folders) {
@@ -99,7 +106,7 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
     }
 
     final groupedParents = <String>{};
-    final result = <_ManagedFolderGroup>[];
+    final drafts = <({String path, List<AudioFolder> sourceFolders})>[];
     for (final folder in folders) {
       final parentPath = p.windows.dirname(folder.path);
       final parentKey = pendingFolderKey(parentPath);
@@ -107,29 +114,56 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
       if (siblings != null && siblings.length > 1) {
         if (!groupedParents.add(parentKey)) continue;
         final rootPath = parentPaths[parentKey]!;
-        result.add(
-          _ManagedFolderGroup(
-            path: rootPath,
-            sourceFolders: siblings,
-            tree: _buildFolderTree(rootPath, siblings),
-          ),
-        );
+        drafts.add((path: rootPath, sourceFolders: siblings));
         continue;
       }
-      result.add(
-        _ManagedFolderGroup(
-          path: folder.path,
-          sourceFolders: [folder],
-          tree: _buildFolderTree(folder.path, [folder]),
+      drafts.add((path: folder.path, sourceFolders: [folder]));
+    }
+
+    final draftIndexesByRoot = <String, List<int>>{};
+    for (var index = 0; index < drafts.length; index++) {
+      final rootKey = pendingFolderKey(drafts[index].path);
+      if (rootKey.isEmpty) continue;
+      draftIndexesByRoot.putIfAbsent(rootKey, () => <int>[]).add(index);
+    }
+    final scannedFolders = List<List<AudioFolder>>.generate(
+      drafts.length,
+      (_) => <AudioFolder>[],
+    );
+    for (final folder in AudioLibrary.instance.folders) {
+      var ancestor = pendingFolderKey(folder.path);
+      while (ancestor.isNotEmpty) {
+        final indexes = draftIndexesByRoot[ancestor];
+        if (indexes != null) {
+          for (final index in indexes) {
+            scannedFolders[index].add(folder);
+          }
+        }
+        final separator = ancestor.lastIndexOf('/');
+        if (separator <= 0) break;
+        ancestor = ancestor.substring(0, separator);
+      }
+    }
+    final result = List<_ManagedFolderGroup>.generate(drafts.length, (index) {
+      final draft = drafts[index];
+      return _ManagedFolderGroup(
+        path: draft.path,
+        sourceFolders: draft.sourceFolders,
+        tree: _buildFolderTree(
+          draft.path,
+          draft.sourceFolders,
+          scannedFolders[index],
         ),
       );
-    }
-    return result;
+    }, growable: false);
+    _managedFolderGroupsLibraryVersion = libraryVersion;
+    return _managedFolderGroupsCache = result;
   }
 
   _ManagedFolderTreeNode _buildFolderTree(
     String rootPath,
     Iterable<AudioFolder> sourceFolders,
+    Iterable<AudioFolder> scannedFolders,
   ) {
     final rootKey = pendingFolderKey(rootPath);
     final root = _MutableManagedFolderTreeNode(rootPath);
@@ -162,7 +196,7 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
       return current;
     }
 
-    for (final folder in AudioLibrary.instance.folders) {
+    for (final folder in scannedFolders) {
       nodeForPath(folder.path)?.directAudioCount += folder.audios.length;
     }
     for (final folder in sourceFolders) {
@@ -206,6 +240,7 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
     final removedFolders = sourceFolders.toSet();
     setState(() {
       folders.removeWhere(removedFolders.contains);
+      _managedFolderGroupsCache = null;
     });
   }
 
@@ -223,14 +258,10 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
             indexPath: snapshot.data!,
             folders: folders.map((f) => f.path).toList(),
             whenIndexBuilt: () async {
-              await Future.wait([
-                AudioLibrary.initFromIndex(),
-                readPlaylists(),
-                readLyricSources(),
-              ]);
-              AlbumColorCache.instance
-                  .prewarmAlbums(AudioLibrary.instance.albumCollection.values)
-                  .ignore();
+              await AudioLibrary.initFromIndex();
+              pruneLyricSourcesWhereMissing(
+                (path) => AudioLibrary.instance.audioByPath(path) != null,
+              );
               if (context.mounted) {
                 Navigator.pop(context);
               }
@@ -463,12 +494,11 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
                                   oldUserFolders;
                               AppPreference.instance.excludedFolderPaths =
                                   oldExcludedFolderPaths;
-                              AppPreference
-                                  .restoreFolderAliasesOnSaveFailure(
-                                    AppPreference.instance.folderAliases,
-                                    oldFolderAliases,
-                                    saved,
-                                  );
+                              AppPreference.restoreFolderAliasesOnSaveFailure(
+                                AppPreference.instance.folderAliases,
+                                oldFolderAliases,
+                                saved,
+                              );
                               if (!context.mounted) return;
                               showTextOnSnackBar('保存文件夹设置失败');
                               return;
