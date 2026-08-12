@@ -14,9 +14,9 @@ abstract final class AppRadius {
   static const double sm = 8;
   static const double md = 12;
 
-  static BorderRadius get xsCircular => BorderRadius.circular(xs);
-  static BorderRadius get smCircular => BorderRadius.circular(sm);
-  static BorderRadius get mdCircular => BorderRadius.circular(md);
+  static final BorderRadius xsCircular = BorderRadius.circular(xs);
+  static final BorderRadius smCircular = BorderRadius.circular(sm);
+  static final BorderRadius mdCircular = BorderRadius.circular(md);
 }
 
 abstract final class AppType {
