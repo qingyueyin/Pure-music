@@ -2,14 +2,15 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
 import 'dart:math';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:pure_music/core/database.dart';
 import 'package:pure_music/core/utils.dart';
+import 'package:pure_music/core/workload_policy.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/native/rust/api/library_db.dart' as library_db;
 import 'package:pure_music/native/rust/api/tag_reader.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:path/path.dart' as path;
@@ -41,10 +42,12 @@ class AlbumColorCache {
     } catch (_) {}
   }
 
-  Future<AlbumColor?> getAlbumColor(Album album,
-      {bool forceRecompute = false}) async {
+  Future<AlbumColor?> getAlbumColor(
+    Album album, {
+    bool forceRecompute = false,
+  }) async {
     await init();
-    final keySig = _albumKeyAndSignature(album);
+    final keySig = await _albumKeyAndSignature(album);
     final key = keySig.$1;
     final signature = keySig.$2;
     if (!forceRecompute) {
@@ -73,7 +76,7 @@ class AlbumColorCache {
   }
 
   AlbumColor? getAlbumColorSync(Album album) {
-    final keySig = _albumKeyAndSignature(album);
+    final keySig = _albumKeyAndSignatureSync(album);
     final key = keySig.$1;
     final signature = keySig.$2;
     final cached = _entries[key];
@@ -99,14 +102,16 @@ class AlbumColorCache {
     final sem = _AsyncSemaphore(concurrency);
     final futures = <Future<void>>[];
     for (final album in list) {
-      futures.add(sem.run(() async {
-        await getAlbumColor(album);
-        done += 1;
-        onProgress?.call(done, total);
-        if (done % 12 == 0) {
-          await Future<void>.delayed(Duration.zero);
-        }
-      }));
+      futures.add(
+        sem.run(() async {
+          await getAlbumColor(album);
+          done += 1;
+          onProgress?.call(done, total);
+          if (done % 12 == 0) {
+            await Future<void>.delayed(Duration.zero);
+          }
+        }),
+      );
     }
     await Future.wait(futures);
   }
@@ -124,14 +129,16 @@ class AlbumColorCache {
     final sem = _AsyncSemaphore(concurrency);
     final futures = <Future<void>>[];
     for (final album in list) {
-      futures.add(sem.run(() async {
-        await getAlbumColor(album, forceRecompute: true);
-        done += 1;
-        onProgress?.call(done, total);
-        if (done % 8 == 0) {
-          await Future<void>.delayed(Duration.zero);
-        }
-      }));
+      futures.add(
+        sem.run(() async {
+          await getAlbumColor(album, forceRecompute: true);
+          done += 1;
+          onProgress?.call(done, total);
+          if (done % 8 == 0) {
+            await Future<void>.delayed(Duration.zero);
+          }
+        }),
+      );
     }
     await Future.wait(futures);
   }
@@ -238,7 +245,7 @@ class AlbumColorCache {
     }
   }
 
-  File? _findLocalCoverFile(Directory parent) {
+  File? _findLocalCoverFileSync(Directory parent) {
     final candidates = [
       File(path.join(parent.path, 'cover.jpg')),
       File(path.join(parent.path, 'cover.png')),
@@ -249,11 +256,27 @@ class AlbumColorCache {
     return null;
   }
 
-  (String, String) _albumKeyAndSignature(Album album) {
+  Future<(String, String)> _albumKeyAndSignature(Album album) async {
+    final audio = album.works.isEmpty ? null : album.works.first;
+    if (audio == null) return ('album:${album.name}', 'nomedia');
+    final coverPath = await audio.resolveFolderCoverPath();
+    if (coverPath != null) {
+      final cover = File(coverPath);
+      final mod = (await cover.stat()).modified.millisecondsSinceEpoch;
+      final key = 'file:$coverPath';
+      final sig = '$key|$mod';
+      return (key, sig);
+    }
+    final key = 'audio:${audio.path}';
+    final sig = '$key|${audio.modified}';
+    return (key, sig);
+  }
+
+  (String, String) _albumKeyAndSignatureSync(Album album) {
     final audio = album.works.isEmpty ? null : album.works.first;
     if (audio == null) return ('album:${album.name}', 'nomedia');
     final parent = Directory(File(audio.path).parent.path);
-    final cover = _findLocalCoverFile(parent);
+    final cover = _findLocalCoverFileSync(parent);
     if (cover != null) {
       final mod = cover.statSync().modified.millisecondsSinceEpoch;
       final key = 'file:${cover.path}';
@@ -268,9 +291,8 @@ class AlbumColorCache {
   Future<Uint8List?> _getAlbumCoverBytes(Album album) async {
     final audio = album.works.isEmpty ? null : album.works.first;
     if (audio == null) return null;
-    final parent = Directory(File(audio.path).parent.path);
-    final cover = _findLocalCoverFile(parent);
-    if (cover != null) return cover.readAsBytes();
+    final coverPath = await audio.resolveFolderCoverPath();
+    if (coverPath != null) return File(coverPath).readAsBytes();
 
     final bytes = await CoverImageCache.instance.loadBytes(
       path: audio.path,
@@ -281,8 +303,11 @@ class AlbumColorCache {
   }
 
   Future<int?> _computeAverageRgb(Uint8List bytes) async {
-    final codec = await ui.instantiateImageCodec(bytes,
-        targetWidth: 40, targetHeight: 40);
+    final codec = await ui.instantiateImageCodec(
+      bytes,
+      targetWidth: 40,
+      targetHeight: 40,
+    );
     final frame = await codec.getNextFrame();
     final img = frame.image;
     codec.dispose();
@@ -448,22 +473,113 @@ class CacheStats {
 /// 统一封面 ImageProvider 缓存
 /// 按尺寸分层：小(48x48)、中(200x200)、大(400x400)
 /// 缓存 ImageProvider 而非 bytes，避免重复解码
+@immutable
+class _StableCoverKey {
+  const _StableCoverKey({
+    required this.path,
+    required this.width,
+    required this.height,
+    required this.pixelRatio,
+    required this.generation,
+  });
+
+  final String path;
+  final int width;
+  final int height;
+  final double pixelRatio;
+  final int generation;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _StableCoverKey &&
+      other.path == path &&
+      other.width == width &&
+      other.height == height &&
+      other.pixelRatio == pixelRatio &&
+      other.generation == generation;
+
+  @override
+  int get hashCode => Object.hash(path, width, height, pixelRatio, generation);
+}
+
+@immutable
+class _StableCoverImage extends ImageProvider<_StableCoverKey> {
+  const _StableCoverImage({
+    required this.path,
+    required this.width,
+    required this.height,
+    required this.pixelRatio,
+    required this.generation,
+    this.initialBytes,
+  });
+
+  final String path;
+  final int width;
+  final int height;
+  final double pixelRatio;
+  final int generation;
+  final Uint8List? initialBytes;
+
+  int get byteLength => initialBytes?.length ?? 0;
+  _StableCoverKey get cacheKey => _StableCoverKey(
+    path: path,
+    width: width,
+    height: height,
+    pixelRatio: pixelRatio,
+    generation: generation,
+  );
+
+  @override
+  Future<_StableCoverKey> obtainKey(ImageConfiguration configuration) =>
+      SynchronousFuture<_StableCoverKey>(cacheKey);
+
+  @override
+  ImageStreamCompleter loadImage(
+    _StableCoverKey key,
+    ImageDecoderCallback decode,
+  ) {
+    return MultiFrameImageStreamCompleter(
+      codec: _loadAsync(key, decode),
+      scale: 1,
+      debugLabel: 'CoverImage(${key.path}, ${key.width}x${key.height})',
+    );
+  }
+
+  Future<ui.Codec> _loadAsync(
+    _StableCoverKey key,
+    ImageDecoderCallback decode,
+  ) async {
+    final bytes =
+        initialBytes ??
+        await CoverImageCache.instance._loadBytesAt(
+          path: key.path,
+          width: key.width,
+          height: key.height,
+          pixelRatio: key.pixelRatio,
+        );
+    if (bytes == null) {
+      throw StateError('Cover image is unavailable: ${key.path}');
+    }
+    return decode(await ui.ImmutableBuffer.fromUint8List(bytes));
+  }
+}
+
 class CoverImageCache {
   static final instance = CoverImageCache._();
   CoverImageCache._();
 
   late final _small = _LruMap<String, ImageProvider>(
-    96,
+    512,
     onRemove: (key, _) => _smallBytes.remove(key),
     onEvict: (_, provider) => unawaited(provider.evict()),
   );
   late final _medium = _LruMap<String, ImageProvider>(
-    64,
+    256,
     onRemove: (key, _) => _mediumBytes.remove(key),
     onEvict: (_, provider) => unawaited(provider.evict()),
   );
   late final _large = _LruMap<String, ImageProvider>(
-    1,
+    4,
     onRemove: (key, _) => _largeBytes.remove(key),
     onEvict: (_, provider) => unawaited(provider.evict()),
   );
@@ -472,8 +588,14 @@ class CoverImageCache {
   final _largeBytes = <String, int>{};
   final _pending = <String, Future<ImageProvider?>>{};
   final _pendingBytes = <String, Future<Uint8List?>>{};
-  final _coverLoadSemaphore = _AsyncSemaphore(4);
+  final _persistentWarmCompleted = <String>{};
+  final _persistentWarmPending = <String>{};
+  final _coverLoadSemaphore = _AsyncSemaphore(
+    backgroundWorkerConcurrencyFor(applicationProcessorBudget),
+  );
   int _generation = 0;
+  int _stableImageGeneration = 0;
+  final Set<(int, int, double)> _stableImageConfigurations = {};
   int _hitCount = 0;
   int _missCount = 0;
   String? _indexPath;
@@ -498,7 +620,13 @@ class CoverImageCache {
     final key = '$path|${width}x$height';
     final tier = _tierFor(width, height);
 
-    final cached = _getCached(key, tier);
+    final cached = _getCached(
+      key,
+      tier,
+      path: path,
+      width: width,
+      height: height,
+    );
     if (cached != null) {
       return cached;
     }
@@ -534,16 +662,34 @@ class CoverImageCache {
     required int height,
   }) {
     final key = '$path|${width}x$height';
-    return _getCached(key, _tierFor(width, height));
+    return _getCached(
+      key,
+      _tierFor(width, height),
+      path: path,
+      width: width,
+      height: height,
+    );
   }
 
   ImageProvider? _getCached(
     String key,
-    _LruMap<String, ImageProvider> tier,
-  ) {
+    _LruMap<String, ImageProvider> tier, {
+    required String path,
+    required int width,
+    required int height,
+  }) {
     final cached = tier.get(key);
-    if (cached != null) _hitCount++;
-    return cached;
+    if (cached != null) {
+      _hitCount++;
+      return cached;
+    }
+    final stable = _stableImage(path: path, width: width, height: height);
+    final status = PaintingBinding.instance.imageCache.statusForKey(
+      stable.cacheKey,
+    );
+    if (!status.pending && !status.keepAlive && !status.live) return null;
+    _hitCount++;
+    return stable;
   }
 
   void _trackBytes(
@@ -551,7 +697,11 @@ class CoverImageCache {
     _LruMap<String, ImageProvider> tier,
     ImageProvider provider,
   ) {
-    final bytes = provider is MemoryImage ? provider.bytes.length : 0;
+    final bytes = switch (provider) {
+      MemoryImage image => image.bytes.length,
+      _StableCoverImage image => image.byteLength,
+      _ => 0,
+    };
     final bytesMap = _bytesMapFor(tier);
     bytesMap.remove(key);
     bytesMap[key] = bytes;
@@ -566,17 +716,73 @@ class CoverImageCache {
   Future<ImageProvider?> _fetch(String path, int width, int height) async {
     final bytes = await loadBytes(path: path, width: width, height: height);
     if (bytes == null) return null;
-    return MemoryImage(bytes);
+    return _stableImage(
+      path: path,
+      width: width,
+      height: height,
+      initialBytes: bytes,
+    );
   }
+
+  _StableCoverImage _stableImage({
+    required String path,
+    required int width,
+    required int height,
+    Uint8List? initialBytes,
+  }) {
+    final pixelRatio =
+        ui.PlatformDispatcher.instance.views.first.devicePixelRatio;
+    _stableImageConfigurations.add((width, height, pixelRatio));
+    return _StableCoverImage(
+      path: path,
+      width: width,
+      height: height,
+      pixelRatio: pixelRatio,
+      generation: _stableImageGeneration,
+      initialBytes: initialBytes,
+    );
+  }
+
+  @visibleForTesting
+  ImageProvider stableImageForTesting({
+    required String path,
+    required int width,
+    required int height,
+    required Uint8List bytes,
+  }) => _stableImage(
+    path: path,
+    width: width,
+    height: height,
+    initialBytes: bytes,
+  );
+
+  @visibleForTesting
+  int get stableImageConfigurationCountForTesting =>
+      _stableImageConfigurations.length;
 
   Future<Uint8List?> loadBytes({
     required String path,
     required int width,
     required int height,
   }) async {
-    final ratio = ui.PlatformDispatcher.instance.views.first.devicePixelRatio;
-    final physicalWidth = (width * ratio).round();
-    final physicalHeight = (height * ratio).round();
+    final pixelRatio =
+        ui.PlatformDispatcher.instance.views.first.devicePixelRatio;
+    return _loadBytesAt(
+      path: path,
+      width: width,
+      height: height,
+      pixelRatio: pixelRatio,
+    );
+  }
+
+  Future<Uint8List?> _loadBytesAt({
+    required String path,
+    required int width,
+    required int height,
+    required double pixelRatio,
+  }) async {
+    final physicalWidth = (width * pixelRatio).round();
+    final physicalHeight = (height * pixelRatio).round();
     final key = '$path|${physicalWidth}x$physicalHeight';
     final pending = _pendingBytes[key];
     if (pending != null) return pending;
@@ -629,6 +835,47 @@ class CoverImageCache {
     );
   }
 
+  /// 后台预生成常用缩略图，字节写入磁盘后立即释放。
+  void preloadPersistent(Iterable<Audio> audios) {
+    if (_indexPath == null) return;
+    final targets = <String, int>{};
+    for (final audio in audios) {
+      if (audio.path.isNotEmpty) targets[audio.path] = audio.modified;
+    }
+    if (targets.isEmpty) return;
+    unawaited(_warmPersistent(targets));
+  }
+
+  Future<void> _warmPersistent(Map<String, int> targets) async {
+    var processed = 0;
+    for (final entry in targets.entries) {
+      for (final size in const [48, 200]) {
+        final key = '${entry.key}|${entry.value}|${size}x$size';
+        if (_persistentWarmCompleted.contains(key) ||
+            !_persistentWarmPending.add(key)) {
+          continue;
+        }
+        try {
+          await loadBytes(
+            path: entry.key,
+            width: size,
+            height: size,
+          );
+          _persistentWarmCompleted.add(key);
+        } catch (error, trace) {
+          logger.d(
+            '[cache] persistent cover warm skipped: $error',
+            stackTrace: trace,
+          );
+        } finally {
+          _persistentWarmPending.remove(key);
+        }
+        processed++;
+        if (processed % 8 == 0) await Future<void>.delayed(Duration.zero);
+      }
+    }
+  }
+
   void preload(String? path, {int width = 48, int height = 48}) {
     if (path == null) return;
     get(path: path, width: width, height: height).ignore();
@@ -636,11 +883,14 @@ class CoverImageCache {
 
   void clear() {
     _generation++;
+    _stableImageGeneration++;
     _small.clear();
     _medium.clear();
     _large.clear();
     _pending.clear();
     _pendingBytes.clear();
+    _persistentWarmCompleted.clear();
+    _persistentWarmPending.clear();
   }
 
   /// 释放不常用的缓存层，保留小图缓存以维持列表流畅滚动
@@ -675,25 +925,39 @@ class CoverImageCache {
     _large.removeWhere(matches);
     _pending.removeWhere((key, _) => matches(key));
     _pendingBytes.removeWhere((key, _) => matches(key));
+    _persistentWarmCompleted.removeWhere((key) => key.startsWith('$path|'));
+    _persistentWarmPending.removeWhere((key) => key.startsWith('$path|'));
+    for (final configuration in _stableImageConfigurations) {
+      unawaited(
+        _StableCoverImage(
+          path: path,
+          width: configuration.$1,
+          height: configuration.$2,
+          pixelRatio: configuration.$3,
+          generation: _stableImageGeneration,
+        ).evict(),
+      );
+    }
   }
 
   CacheStats get stats => CacheStats(
-        smallEntries: _small.length,
-        mediumEntries: _medium.length,
-        largeEntries: _large.length,
-        pendingRequests: _pending.length + _pendingBytes.length,
-        hits: _hitCount,
-        misses: _missCount,
-        smallBytes: _smallBytes.values.fold(0, (a, b) => a + b),
-        mediumBytes: _mediumBytes.values.fold(0, (a, b) => a + b),
-        largeBytes: _largeBytes.values.fold(0, (a, b) => a + b),
-      );
+    smallEntries: _small.length,
+    mediumEntries: _medium.length,
+    largeEntries: _large.length,
+    pendingRequests: _pending.length + _pendingBytes.length,
+    hits: _hitCount,
+    misses: _missCount,
+    smallBytes: _smallBytes.values.fold(0, (a, b) => a + b),
+    mediumBytes: _mediumBytes.values.fold(0, (a, b) => a + b),
+    largeBytes: _largeBytes.values.fold(0, (a, b) => a + b),
+  );
 
   void logStats() {
     final s = stats;
     final hitRate = s.hitRate;
-    final hitRateText =
-        hitRate == null ? '-' : '${(hitRate * 100).toStringAsFixed(0)}%';
+    final hitRateText = hitRate == null
+        ? '-'
+        : '${(hitRate * 100).toStringAsFixed(0)}%';
     logger.d(
       '[cache] CoverImageCache '
       '${s.hits}h/${s.misses}m '
@@ -712,5 +976,7 @@ class CoverImageCache {
     _large.clear();
     _pending.clear();
     _pendingBytes.clear();
+    _persistentWarmCompleted.clear();
+    _persistentWarmPending.clear();
   }
 }
