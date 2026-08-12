@@ -44,12 +44,16 @@ class KgCryptoUtils {
     return digest.toString();
   }
 
-  static String signParams(Map<String, dynamic> params,
-      {String body = '', String salt = signSalt}) {
+  static String signParams(
+    Map<String, dynamic> params, {
+    String body = '',
+    String salt = signSalt,
+  }) {
     final sortedEntries = params.entries.toList()
       ..sort((a, b) => a.key.compareTo(b.key));
-    final sortedString =
-        sortedEntries.map((e) => '${e.key}=${e.value}').join('');
+    final sortedString = sortedEntries
+        .map((e) => '${e.key}=${e.value}')
+        .join('');
     final raw = '$salt$sortedString$body$salt';
     return md5(raw);
   }
@@ -76,7 +80,7 @@ class KgCryptoUtils {
         206,
         210,
         110,
-        105
+        105,
       ];
 
       for (int i = 0; i < dataBytes.length; i++) {
@@ -98,13 +102,10 @@ Future<void> _ensureInit() async {
     if (_session.isValid()) return;
 
     try {
-      final deviceMid =
-          KgCryptoUtils.md5(DateTime.now().millisecondsSinceEpoch.toString());
-      final params = {
-        'appid': '1014',
-        'platid': '4',
-        'mid': deviceMid,
-      };
+      final deviceMid = KgCryptoUtils.md5(
+        DateTime.now().millisecondsSinceEpoch.toString(),
+      );
+      final params = {'appid': '1014', 'platid': '4', 'mid': deviceMid};
 
       final sortedValues = params.values.where((v) => v.isNotEmpty).toList()
         ..sort();
@@ -112,10 +113,12 @@ Future<void> _ensureInit() async {
       final signature = KgCryptoUtils.md5('1014${sortedString}1014');
       params['signature'] = signature;
 
-      final queryStr =
-          params.entries.map((e) => '${e.key}=${e.value}').join('&');
+      final queryStr = params.entries
+          .map((e) => '${e.key}=${e.value}')
+          .join('&');
       final uri = Uri.parse(
-          'https://userservice.kugou.com/risk/v1/r_register_dev?$queryStr');
+        'https://userservice.kugou.com/risk/v1/r_register_dev?$queryStr',
+      );
 
       final client = HttpClient()
         ..connectionTimeout = const Duration(seconds: 10);
@@ -182,8 +185,9 @@ Map<String, String> _buildSignedParams(
 
   final sortedEntries = baseParams.entries.toList()
     ..sort((a, b) => a.key.compareTo(b.key));
-  final sortedParamStr =
-      sortedEntries.map((e) => '${e.key}=${e.value}').join('');
+  final sortedParamStr = sortedEntries
+      .map((e) => '${e.key}=${e.value}')
+      .join('');
 
   final raw =
       '${KgCryptoUtils.signSalt}$sortedParamStr${KgCryptoUtils.signSalt}';
@@ -192,8 +196,10 @@ Map<String, String> _buildSignedParams(
   return baseParams;
 }
 
-Future<List<Map<String, dynamic>>> kgSearch(String keyword,
-    {int limit = 10}) async {
+Future<List<Map<String, dynamic>>> kgSearch(
+  String keyword, {
+  int limit = 10,
+}) async {
   try {
     logger.d('[KG] search started: limit=$limit');
     await _ensureInit();
@@ -205,13 +211,16 @@ Future<List<Map<String, dynamic>>> kgSearch(String keyword,
     }, module: 'Search');
 
     final queryStr = params.entries.map((e) => '${e.key}=${e.value}').join('&');
-    final uri =
-        Uri.parse('http://complexsearch.kugou.com/v2/search/song?$queryStr');
+    final uri = Uri.parse(
+      'http://complexsearch.kugou.com/v2/search/song?$queryStr',
+    );
     final client = HttpClient()
       ..connectionTimeout = const Duration(seconds: 10);
     final request = await client.getUrl(uri);
-    request.headers.set('User-Agent',
-        'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.101 Safari/537.36');
+    request.headers.set(
+      'User-Agent',
+      'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.101 Safari/537.36',
+    );
     final response = await request.close();
     logger.d('[KG] status: ${response.statusCode}');
 
@@ -228,7 +237,8 @@ Future<List<Map<String, dynamic>>> kgSearch(String keyword,
     final respStr = utf8.decode(responseBodyBytes);
     final resp = jsonDecode(respStr);
     logger.d(
-        '[KG] status=${resp['status']}, data=${resp['data'] != null ? "present" : "null"}');
+      '[KG] status=${resp['status']}, data=${resp['data'] != null ? "present" : "null"}',
+    );
     if (resp['status'] != 1 || resp['data'] == null) {
       logger.e('[KG] API error: status=${resp['status']}');
       return [];
@@ -252,8 +262,9 @@ Future<List<Map<String, dynamic>>> kgSearch(String keyword,
             'singername': singername,
             'hash': song['FileHash'] ?? '',
             'id': song['ID']?.toString() ?? '',
-            'duration':
-                song['Duration'] != null ? (song['Duration'] as int) * 1000 : 0,
+            'duration': song['Duration'] != null
+                ? (song['Duration'] as int) * 1000
+                : 0,
             'publishDate': song['PublishDate'] ?? '',
           };
         })
@@ -281,13 +292,16 @@ Future<Map<String, dynamic>?> kgLyric(String hash) async {
       'man': 'no',
     }, module: 'Lyric');
 
-    final queryStr =
-        searchParams.entries.map((e) => '${e.key}=${e.value}').join('&');
+    final queryStr = searchParams.entries
+        .map((e) => '${e.key}=${e.value}')
+        .join('&');
     final searchUri = Uri.parse('https://lyrics.kugou.com/v1/search?$queryStr');
     var client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
     var request = await client.getUrl(searchUri);
-    request.headers.set('User-Agent',
-        'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.101 Safari/537.36');
+    request.headers.set(
+      'User-Agent',
+      'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.101 Safari/537.36',
+    );
     var response = await request.close();
     logger.d('[KG] lyric: search HTTP ${response.statusCode}');
     var responseBodyBytes = await response
@@ -322,14 +336,18 @@ Future<Map<String, dynamic>?> kgLyric(String hash) async {
       'ver': '1',
     }, module: 'Lyric');
 
-    final downloadQueryStr =
-        downloadParams.entries.map((e) => '${e.key}=${e.value}').join('&');
-    final downloadUri =
-        Uri.parse('http://lyrics.kugou.com/download?$downloadQueryStr');
+    final downloadQueryStr = downloadParams.entries
+        .map((e) => '${e.key}=${e.value}')
+        .join('&');
+    final downloadUri = Uri.parse(
+      'http://lyrics.kugou.com/download?$downloadQueryStr',
+    );
     client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
     request = await client.getUrl(downloadUri);
-    request.headers.set('User-Agent',
-        'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.101 Safari/537.36');
+    request.headers.set(
+      'User-Agent',
+      'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.101 Safari/537.36',
+    );
     response = await request.close();
     logger.d('[KG] lyric: download HTTP ${response.statusCode}');
     responseBodyBytes = await response
@@ -344,11 +362,13 @@ Future<Map<String, dynamic>?> kgLyric(String hash) async {
 
     final downloadResp = jsonDecode(utf8.decode(responseBodyBytes));
     logger.d(
-        '[KG] lyric: resp keys=${downloadResp.keys.toList()}, code=${downloadResp['code']}');
+      '[KG] lyric: resp keys=${downloadResp.keys.toList()}, code=${downloadResp['code']}',
+    );
     final content = downloadResp['content'];
     final contentType = downloadResp['contenttype'];
     logger.d(
-        '[KG] lyric: content length=${content?.toString().length}, contentType=$contentType');
+      '[KG] lyric: content length=${content?.toString().length}, contentType=$contentType',
+    );
 
     if (content == null || content.isEmpty) {
       logger.d('[KG] lyric: content null or empty');

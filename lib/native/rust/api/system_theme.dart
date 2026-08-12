@@ -15,10 +15,7 @@ class SystemTheme {
   /// a, r, g, b
   final (int, int, int, int) accent;
 
-  const SystemTheme({
-    required this.fore,
-    required this.accent,
-  });
+  const SystemTheme({required this.fore, required this.accent});
 
   static Future<SystemTheme> default_() =>
       RustLib.instance.api.crateApiSystemThemeSystemThemeDefault();

@@ -13,9 +13,10 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 Future<String> neLyric({required PlatformInt64 songId}) =>
     RustLib.instance.api.crateApiNeNeLyric(songId: songId);
 
-Future<List<Map<String, String>>> neSearch(
-        {required String keyword, required int limit}) =>
-    RustLib.instance.api.crateApiNeNeSearch(keyword: keyword, limit: limit);
+Future<List<Map<String, String>>> neSearch({
+  required String keyword,
+  required int limit,
+}) => RustLib.instance.api.crateApiNeNeSearch(keyword: keyword, limit: limit);
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<NetEaseCloud>>
 abstract class NetEaseCloud implements RustOpaqueInterface {
@@ -31,18 +32,17 @@ abstract class NetEaseCloud implements RustOpaqueInterface {
       RustLib.instance.api.crateApiNeNetEaseCloudNew();
 
   /// Search NeSource
-  Future<List<Map<String, String>>> search(
-      {required String keyword, required int limit});
+  Future<List<Map<String, String>>> search({
+    required String keyword,
+    required int limit,
+  });
 }
 
 class LyricContent {
   final int version;
   final String lyric;
 
-  const LyricContent({
-    required this.version,
-    required this.lyric,
-  });
+  const LyricContent({required this.version, required this.lyric});
 
   @override
   int get hashCode => version.hashCode ^ lyric.hashCode;
@@ -102,9 +102,7 @@ class LyricResult {
 class LyricUser {
   final String nickname;
 
-  const LyricUser({
-    required this.nickname,
-  });
+  const LyricUser({required this.nickname});
 
   @override
   int get hashCode => nickname.hashCode;

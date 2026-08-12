@@ -41,9 +41,7 @@ class QmRequestBody {
   QmRequestBody({required this.comm, this.req_0});
 
   String toJson() {
-    final map = {
-      'comm': comm.toJson(),
-    };
+    final map = {'comm': comm.toJson()};
     if (req_0 != null) {
       map['req_0'] = req_0!.toJson();
     }
@@ -100,11 +98,7 @@ class QmRequestModule {
   });
 
   Map<String, dynamic> toJson() {
-    return {
-      'module': module,
-      'method': method,
-      'param': param,
-    };
+    return {'module': module, 'method': method, 'param': param};
   }
 }
 
@@ -137,8 +131,10 @@ Future<String> _doRequest(QmRequestBody body) async {
     final request = await client.postUrl(uri);
 
     request.headers.set('Content-Type', 'application/json');
-    request.headers.set('User-Agent',
-        'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Safari/537.36 Chrome/91.0.4472.164');
+    request.headers.set(
+      'User-Agent',
+      'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Safari/537.36 Chrome/91.0.4472.164',
+    );
     request.headers.set('Referer', 'https://y.qq.com/');
     request.headers.set('Accept', '*/*');
 
@@ -164,8 +160,10 @@ Future<String> _doRequest(QmRequestBody body) async {
   }
 }
 
-Future<List<Map<String, dynamic>>> qqSearch(String keyword,
-    {int limit = 10}) async {
+Future<List<Map<String, dynamic>>> qqSearch(
+  String keyword, {
+  int limit = 10,
+}) async {
   try {
     logger.d('[QQ] search started: limit=$limit');
     await _ensureInit();
@@ -205,7 +203,8 @@ Future<List<Map<String, dynamic>>> qqSearch(String keyword,
             'id': song['id']?.toString() ?? '',
             'mid': song['mid'] ?? '',
             'name': song['title'] ?? '',
-            'artists': (song['singer'] as List?)
+            'artists':
+                (song['singer'] as List?)
                     ?.map((s) => s['name']?.toString() ?? '')
                     .toList() ??
                 [],
@@ -324,10 +323,7 @@ Future<Map<String, dynamic>?> qqLyric(String songId) async {
       format = 'lrc';
     }
 
-    final result = <String, dynamic>{
-      'lyric': decryptedLyric,
-      'format': format,
-    };
+    final result = <String, dynamic>{'lyric': decryptedLyric, 'format': format};
     if (decryptedTrans != null && decryptedTrans.isNotEmpty) {
       result['trans'] = decryptedTrans;
     }
@@ -348,10 +344,13 @@ final _lrcMetadataRegex = RegExp(
 );
 
 String _stripLrcMetadata(String text) {
-  return text.split('\n').where((line) {
-    final trimmed = line.trim();
-    if (trimmed.isEmpty) return true;
-    if (_lrcMetadataRegex.hasMatch(trimmed)) return false;
-    return true;
-  }).join('\n');
+  return text
+      .split('\n')
+      .where((line) {
+        final trimmed = line.trim();
+        if (trimmed.isEmpty) return true;
+        if (_lrcMetadataRegex.hasMatch(trimmed)) return false;
+        return true;
+      })
+      .join('\n');
 }

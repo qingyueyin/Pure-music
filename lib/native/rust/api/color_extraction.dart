@@ -6,9 +6,12 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `_extract_colors_from_image`, `lab_distance_squared`, `pack_argb`
+// These functions are ignored because they are not marked as `pub`: `_extract_colors_from_image`, `contrast`, `extract_colors_from_decoded_image`, `extract_mesh_colors_from_decoded_image`, `hsl_to_rgb`, `hue_to_rgb`, `is_meaningful_candidate`, `lab_distance_squared`, `pack_argb`, `pair_palette_candidates`, `rgb_to_hsl`, `select_palette_candidates`, `soften_color_for_background`, `visual_sample_weight`
 
-Future<Uint32List> extractColorsFromImage(
-        {required List<int> imageBytes, required int numColors}) =>
-    RustLib.instance.api.crateApiColorExtractionExtractColorsFromImage(
-        imageBytes: imageBytes, numColors: numColors);
+Future<Uint32List> extractColorsFromImage({
+  required List<int> imageBytes,
+  required int numColors,
+}) => RustLib.instance.api.crateApiColorExtractionExtractColorsFromImage(
+  imageBytes: imageBytes,
+  numColors: numColors,
+);

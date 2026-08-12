@@ -10,13 +10,17 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `CachedIndex`, `IndexEntry`, `Metadata`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `fmt`, `fmt`
 
-Future<List<AmllSearchItem>> amllSearchLyrics(
-        {required String keyword,
-        required int page,
-        required int pageSize,
-        required String cacheDir}) =>
-    RustLib.instance.api.crateApiAmllTtmlAmllSearchLyrics(
-        keyword: keyword, page: page, pageSize: pageSize, cacheDir: cacheDir);
+Future<List<AmllSearchItem>> amllSearchLyrics({
+  required String keyword,
+  required int page,
+  required int pageSize,
+  required String cacheDir,
+}) => RustLib.instance.api.crateApiAmllTtmlAmllSearchLyrics(
+  keyword: keyword,
+  page: page,
+  pageSize: pageSize,
+  cacheDir: cacheDir,
+);
 
 Future<String?> amllGetTtml({required String id}) =>
     RustLib.instance.api.crateApiAmllTtmlAmllGetTtml(id: id);

@@ -6,9 +6,10 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `_get_lyric_from_lofty`, `_get_picture_by_lofty`, `_get_picture_by_windows`, `_picture_cache_key`, `_update_index_below_1_1_0`, `add_missing_audio_files`, `count_subdirs`, `discover_new_audio_folders`, `get_embedded_picture_from_path`, `join_deduped`, `new_with_path`, `read_by_lofty`, `read_by_win_music_properties`, `read_from_folder_recursively`, `read_from_folder`, `read_from_path`, `should_scan_indexed_audio_files`, `should_show_recording_date`, `to_json_value`, `to_json_value`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `AudioFolder`, `Audio`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `fmt`, `fmt`
+// These functions are ignored because they are not marked as `pub`: `_get_lyric_from_lofty`, `_get_picture_by_lofty`, `_get_picture_by_windows`, `_picture_cache_key`, `_update_index_below_1_1_0`, `add_missing_audio_files`, `build_alternative_extra_metadata`, `collect_audio_files_by_folder`, `collect_symphonia_tags`, `discover_new_audio_folders`, `estimated_bitrate`, `file_name`, `get_embedded_picture_from_path`, `id3_tag_items`, `indexed_audio_needs_update`, `initialize`, `is_asf_path`, `is_dff_path`, `is_dsf_path`, `is_generic_id3_path`, `is_image_attachment`, `is_lyric_item_key`, `is_midi_path`, `is_supported_audio_path`, `is_symphonia_path`, `join_deduped`, `merge_symphonia_field`, `midi_metrical_micros`, `midi_payload`, `midi_text`, `midi_track_info`, `midi_track_micros`, `new_with_path`, `optional_nonempty`, `parse_alternative_number`, `parse_midi_metadata`, `push_dsf_item`, `read_alternative_extra_metadata`, `read_asf_extra_metadata`, `read_asf_picture`, `read_audio_paths_parallel`, `read_by_alternative`, `read_by_asf`, `read_by_dff`, `read_by_dsf`, `read_by_id3`, `read_by_lofty`, `read_by_midi`, `read_by_symphonia`, `read_by_win_music_properties`, `read_dff_metadata`, `read_dff_picture`, `read_dsf_audio_properties`, `read_dsf_extra_metadata`, `read_dsf_picture`, `read_from_folder`, `read_from_path`, `read_id3_from_bytes`, `read_id3_picture`, `read_midi_metadata`, `read_picture_by_alternative`, `read_symphonia_metadata`, `should_emit_index_progress`, `should_scan_indexed_audio_files`, `should_show_recording_date`, `symphonia_raw_value`, `symphonia_standard_value`, `tag_reader_worker_count`, `take_extra_item`, `to_json_value`, `to_json_value`, `unknown_if_empty`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `AudioFolder`, `Audio`, `DffMetadata`, `DsfAudioProperties`, `MidiMetadata`, `SymphoniaMetadata`, `SymphoniaTagCollection`, `WinRtWorkerGuard`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `drop`, `fmt`, `fmt`
+// These functions are ignored (category: IgnoreBecauseOwnerTyShouldIgnore): `default`
 
 /// for Flutter
 Future<AudioExtraMetadata> readAudioExtraMetadata({required String path}) =>
@@ -16,20 +17,29 @@ Future<AudioExtraMetadata> readAudioExtraMetadata({required String path}) =>
 
 /// for Flutter
 /// 一次调用完成封面读取+颜色提取，避免 image bytes 穿越 FFI 两次
-Future<(Uint8List?, Uint32List)> getPictureAndColors(
-        {required String path,
-        required int width,
-        required int height,
-        required int numColors}) =>
-    RustLib.instance.api.crateApiTagReaderGetPictureAndColors(
-        path: path, width: width, height: height, numColors: numColors);
+Future<(Uint8List?, Uint32List)> getPictureAndColors({
+  required String path,
+  required int width,
+  required int height,
+  required int numColors,
+}) => RustLib.instance.api.crateApiTagReaderGetPictureAndColors(
+  path: path,
+  width: width,
+  height: height,
+  numColors: numColors,
+);
 
 /// for Flutter
 /// 如果无法通过 Lofty 获取则通过 Windows 获取
-Future<Uint8List?> getPictureFromPath(
-        {required String path, required int width, required int height}) =>
-    RustLib.instance.api.crateApiTagReaderGetPictureFromPath(
-        path: path, width: width, height: height);
+Future<Uint8List?> getPictureFromPath({
+  required String path,
+  required int width,
+  required int height,
+}) => RustLib.instance.api.crateApiTagReaderGetPictureFromPath(
+  path: path,
+  width: width,
+  height: height,
+);
 
 /// for Flutter
 /// 只读取 ID3V2、VorbisComment、Mp4Ilst 存储的内嵌歌词
@@ -38,38 +48,48 @@ Future<String?> getLyricFromPath({required String path}) =>
 
 /// for Flutter
 /// 通用标签写入函数。only_changed=true 时只写非 None 字段
-Future<void> writeAudioTags(
-        {required String path,
-        required WriteTagPayload payload,
-        required bool onlyChanged}) =>
-    RustLib.instance.api.crateApiTagReaderWriteAudioTags(
-        path: path, payload: payload, onlyChanged: onlyChanged);
+Future<void> writeAudioTags({
+  required String path,
+  required WriteTagPayload payload,
+  required bool onlyChanged,
+}) => RustLib.instance.api.crateApiTagReaderWriteAudioTags(
+  path: path,
+  payload: payload,
+  onlyChanged: onlyChanged,
+);
 
 /// for Flutter
 /// 写入歌词到音频文件标签（ID3/VorbisComment/MP4 等），使用 Lofty 的 `ItemKey::Lyrics` 映射
 /// 使用 ParsingMode::Relaxed 兼容更多有问题的标签文件
 Future<void> writeLyricToPath({required String path, required String lyric}) =>
-    RustLib.instance.api
-        .crateApiTagReaderWriteLyricToPath(path: path, lyric: lyric);
+    RustLib.instance.api.crateApiTagReaderWriteLyricToPath(
+      path: path,
+      lyric: lyric,
+    );
 
 /// for Flutter
 /// 扫描给定路径下所有子文件夹（包括自己）的音乐文件并把索引保存在 index_path/index.json。
-Stream<IndexActionState> buildIndexFromFoldersRecursively(
-        {required List<String> folders, required String indexPath}) =>
-    RustLib.instance.api.crateApiTagReaderBuildIndexFromFoldersRecursively(
-        folders: folders, indexPath: indexPath);
+Stream<IndexActionState> buildIndexFromFoldersRecursively({
+  required List<String> folders,
+  required String indexPath,
+}) => RustLib.instance.api.crateApiTagReaderBuildIndexFromFoldersRecursively(
+  folders: folders,
+  indexPath: indexPath,
+);
 
-Stream<IndexActionState> updateIndex({required String indexPath}) =>
-    RustLib.instance.api.crateApiTagReaderUpdateIndex(indexPath: indexPath);
+Stream<IndexActionState> updateIndex({
+  required String indexPath,
+  required bool forceMetadataCheck,
+}) => RustLib.instance.api.crateApiTagReaderUpdateIndex(
+  indexPath: indexPath,
+  forceMetadataCheck: forceMetadataCheck,
+);
 
 class AudioExtraItem {
   final String key;
   final String value;
 
-  const AudioExtraItem({
-    required this.key,
-    required this.value,
-  });
+  const AudioExtraItem({required this.key, required this.value});
 
   @override
   int get hashCode => key.hashCode ^ value.hashCode;
@@ -141,10 +161,7 @@ class IndexActionState {
   /// describe action state
   final String message;
 
-  const IndexActionState({
-    required this.progress,
-    required this.message,
-  });
+  const IndexActionState({required this.progress, required this.message});
 
   @override
   int get hashCode => progress.hashCode ^ message.hashCode;

@@ -15,10 +15,7 @@ class InstalledFont {
   final String path;
   final String fullName;
 
-  const InstalledFont({
-    required this.path,
-    required this.fullName,
-  });
+  const InstalledFont({required this.path, required this.fullName});
 
   @override
   int get hashCode => path.hashCode ^ fullName.hashCode;
