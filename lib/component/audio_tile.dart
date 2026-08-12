@@ -1,9 +1,9 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:pure_music/component/danger_confirm_dialog.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/scroll_aware_future_builder.dart';
+import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/core/design_tokens.dart';
@@ -47,6 +47,7 @@ class AudioTile extends StatefulWidget {
 class _AudioTileState extends State<AudioTile> {
   bool _isRemovingFromPlaylist = false;
   Playlist? _addingToPlaylist;
+  bool _menuRequested = false;
   int? _dragStartIndex;
   int? _lastDragTargetIndex;
   final Set<Audio> _dragRange = {};
@@ -135,98 +136,185 @@ class _AudioTileState extends State<AudioTile> {
           child: MenuAnchor(
             consumeOutsideTap: true,
             style: menuStyle,
-            menuChildren: [
-              /// artists
-              ...List.generate(audio.splitedArtists.length, (i) {
-                final name = audio.splitedArtists[i];
-                final artist = AudioLibrary.instance.artistCollection[name];
-                return MenuItemButton(
-                  style: menuItemStyle,
-                  onPressed: artist == null
-                      ? null
-                      : () {
-                          context.push(
-                            app_paths.ARTIST_DETAIL_PAGE,
-                            extra: artist,
-                          );
-                        },
-                  leadingIcon: const Icon(Symbols.artist),
-                  child: Text(name),
-                );
-              }),
-
-              /// album
-              MenuItemButton(
-                style: menuItemStyle,
-                onPressed: album == null
-                    ? null
-                    : () {
-                        context.push(app_paths.ALBUM_DETAIL_PAGE, extra: album);
-                      },
-                leadingIcon: const Icon(Symbols.album),
-                child: Text(audio.album),
-              ),
-
-              /// 下一首播放
-              MenuItemButton(
-                style: menuItemStyle,
-                onPressed:
-                    canAddAudioToNext(
-                      hasNowPlaying:
-                          PlayService.instance.playbackService.nowPlaying !=
-                          null,
-                      isPendingFeedback: false,
-                    )
-                    ? () {
-                        PlayService.instance.playbackService.addToNext(audio);
-                        showTextOnSnackBar(
-                          '已加入下一首',
-                          variant: ToastVariant.success,
-                        );
-                      }
-                    : null,
-                leadingIcon: const Icon(Symbols.plus_one),
-                child: const Text('下一首播放'),
-              ),
-
-              /// 多选
-              if (widget.multiSelectController != null)
-                MenuItemButton(
-                  style: menuItemStyle,
-                  onPressed: () {
-                    widget.multiSelectController!.useMultiSelectView(true);
-                    widget.multiSelectController!.select(audio);
-                  },
-                  leadingIcon: const Icon(Symbols.select),
-                  child: const Text('多选'),
-                ),
-
-              /// add to playlist
-              if (playlists.isEmpty)
-                MenuItemButton(
-                  style: menuItemStyle,
-                  onPressed: null,
-                  leadingIcon: const Icon(Symbols.queue_music),
-                  child: const Text('添加到歌单'),
-                )
-              else
-                Builder(
-                  builder: (_) {
-                    final playlistMemberships = playlists
-                        .map((playlist) => playlist.containsPath(audio.path))
-                        .toList(growable: false);
-                    final isBusy =
-                        _addingToPlaylist != null || _isRemovingFromPlaylist;
-                    final canOpenAddMenu = canOpenSingleAudioAddToPlaylistMenu(
-                      hasAudio: true,
-                      isBusy: isBusy,
-                      alreadyInPlaylists: playlistMemberships,
-                    );
-                    if (!canOpenAddMenu) {
+            onClose: () {
+              if (mounted && _menuRequested) {
+                setState(() => _menuRequested = false);
+              }
+            },
+            menuChildren: _menuRequested
+                ? [
+                    /// artists
+                    ...List.generate(audio.splitedArtists.length, (i) {
+                      final name = audio.splitedArtists[i];
+                      final artist =
+                          AudioLibrary.instance.artistCollection[name];
                       return MenuItemButton(
                         style: menuItemStyle,
+                        onPressed: artist == null
+                            ? null
+                            : () {
+                                context.push(
+                                  app_paths.ARTIST_DETAIL_PAGE,
+                                  extra: artist,
+                                );
+                              },
+                        leadingIcon: const Icon(Symbols.artist),
+                        child: Text(name),
+                      );
+                    }),
+
+                    /// album
+                    MenuItemButton(
+                      style: menuItemStyle,
+                      onPressed: album == null
+                          ? null
+                          : () {
+                              context.push(
+                                app_paths.ALBUM_DETAIL_PAGE,
+                                extra: album,
+                              );
+                            },
+                      leadingIcon: const Icon(Symbols.album),
+                      child: Text(audio.album),
+                    ),
+
+                    /// 下一首播放
+                    MenuItemButton(
+                      style: menuItemStyle,
+                      onPressed:
+                          canAddAudioToNext(
+                            hasNowPlaying:
+                                PlayService
+                                    .instance
+                                    .playbackService
+                                    .nowPlaying !=
+                                null,
+                            isPendingFeedback: false,
+                          )
+                          ? () {
+                              PlayService.instance.playbackService.addToNext(
+                                audio,
+                              );
+                              showTextOnSnackBar(
+                                '已加入下一首',
+                                variant: ToastVariant.success,
+                              );
+                            }
+                          : null,
+                      leadingIcon: const Icon(Symbols.plus_one),
+                      child: const Text('下一首播放'),
+                    ),
+
+                    /// 多选
+                    if (widget.multiSelectController != null)
+                      MenuItemButton(
+                        style: menuItemStyle,
+                        onPressed: () {
+                          widget.multiSelectController!.useMultiSelectView(
+                            true,
+                          );
+                          widget.multiSelectController!.select(audio);
+                        },
+                        leadingIcon: const Icon(Symbols.select),
+                        child: const Text('多选'),
+                      ),
+
+                    /// add to playlist
+                    if (playlists.isEmpty)
+                      MenuItemButton(
+                        style: menuItemStyle,
                         onPressed: null,
-                        leadingIcon: _addingToPlaylist != null
+                        leadingIcon: const Icon(Symbols.queue_music),
+                        child: const Text('添加到歌单'),
+                      )
+                    else
+                      Builder(
+                        builder: (_) {
+                          final playlistMemberships = playlists
+                              .map(
+                                (playlist) => playlist.containsPath(audio.path),
+                              )
+                              .toList(growable: false);
+                          final isBusy =
+                              _addingToPlaylist != null ||
+                              _isRemovingFromPlaylist;
+                          final canOpenAddMenu =
+                              canOpenSingleAudioAddToPlaylistMenu(
+                                hasAudio: true,
+                                isBusy: isBusy,
+                                alreadyInPlaylists: playlistMemberships,
+                              );
+                          if (!canOpenAddMenu) {
+                            return MenuItemButton(
+                              style: menuItemStyle,
+                              onPressed: null,
+                              leadingIcon: _addingToPlaylist != null
+                                  ? const SizedBox(
+                                      width: 18.0,
+                                      height: 18.0,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2.0,
+                                      ),
+                                    )
+                                  : Icon(
+                                      playlistMemberships.every(
+                                            (alreadyIn) => alreadyIn,
+                                          )
+                                          ? Symbols.check
+                                          : Symbols.queue_music,
+                                    ),
+                              child: const Text('添加到歌单'),
+                            );
+                          }
+                          return SubmenuButton(
+                            style: menuItemStyle,
+                            menuChildren: List.generate(playlists.length, (i) {
+                              final playlist = playlists[i];
+                              final isAdding = identical(
+                                _addingToPlaylist,
+                                playlist,
+                              );
+                              final alreadyInPlaylist = playlistMemberships[i];
+                              return MenuItemButton(
+                                style: menuItemStyle,
+                                onPressed: isBusy || alreadyInPlaylist
+                                    ? null
+                                    : () => addToPlaylist(playlist),
+                                leadingIcon: isAdding
+                                    ? const SizedBox(
+                                        width: 18.0,
+                                        height: 18.0,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2.0,
+                                        ),
+                                      )
+                                    : Icon(
+                                        alreadyInPlaylist
+                                            ? Symbols.check
+                                            : Symbols.queue_music,
+                                      ),
+                                child: Text(playlist.name),
+                              );
+                            }),
+                            child: const Text('添加到歌单'),
+                          );
+                        },
+                      ),
+
+                    /// remove from playlist
+                    if (widget.onRemoveFromPlaylist != null)
+                      MenuItemButton(
+                        style: menuItemStyle,
+                        onPressed:
+                            canStartSinglePlaylistRemoval(
+                              hasRemoveAction:
+                                  widget.onRemoveFromPlaylist != null,
+                              isRemoving: _isRemovingFromPlaylist,
+                              isAddingToPlaylist: _addingToPlaylist != null,
+                            )
+                            ? removeFromPlaylist
+                            : null,
+                        leadingIcon: _isRemovingFromPlaylist
                             ? const SizedBox(
                                 width: 18.0,
                                 height: 18.0,
@@ -234,80 +322,21 @@ class _AudioTileState extends State<AudioTile> {
                                   strokeWidth: 2.0,
                                 ),
                               )
-                            : Icon(
-                                playlistMemberships.every(
-                                      (alreadyIn) => alreadyIn,
-                                    )
-                                    ? Symbols.check
-                                    : Symbols.queue_music,
-                              ),
-                        child: const Text('添加到歌单'),
-                      );
-                    }
-                    return SubmenuButton(
+                            : Icon(Symbols.remove_circle, color: scheme.error),
+                        child: Text(_isRemovingFromPlaylist ? '移除中' : '从歌单移除'),
+                      ),
+
+                    /// to detail page
+                    MenuItemButton(
                       style: menuItemStyle,
-                      menuChildren: List.generate(playlists.length, (i) {
-                        final playlist = playlists[i];
-                        final isAdding = identical(_addingToPlaylist, playlist);
-                        final alreadyInPlaylist = playlistMemberships[i];
-                        return MenuItemButton(
-                          style: menuItemStyle,
-                          onPressed: isBusy || alreadyInPlaylist
-                              ? null
-                              : () => addToPlaylist(playlist),
-                          leadingIcon: isAdding
-                              ? const SizedBox(
-                                  width: 18.0,
-                                  height: 18.0,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2.0,
-                                  ),
-                                )
-                              : Icon(
-                                  alreadyInPlaylist
-                                      ? Symbols.check
-                                      : Symbols.queue_music,
-                                ),
-                          child: Text(playlist.name),
-                        );
-                      }),
-                      child: const Text('添加到歌单'),
-                    );
-                  },
-                ),
-
-              /// remove from playlist
-              if (widget.onRemoveFromPlaylist != null)
-                MenuItemButton(
-                  style: menuItemStyle,
-                  onPressed:
-                      canStartSinglePlaylistRemoval(
-                        hasRemoveAction: widget.onRemoveFromPlaylist != null,
-                        isRemoving: _isRemovingFromPlaylist,
-                        isAddingToPlaylist: _addingToPlaylist != null,
-                      )
-                      ? removeFromPlaylist
-                      : null,
-                  leadingIcon: _isRemovingFromPlaylist
-                      ? const SizedBox(
-                          width: 18.0,
-                          height: 18.0,
-                          child: CircularProgressIndicator(strokeWidth: 2.0),
-                        )
-                      : Icon(Symbols.remove_circle, color: scheme.error),
-                  child: Text(_isRemovingFromPlaylist ? '移除中' : '从歌单移除'),
-                ),
-
-              /// to detail page
-              MenuItemButton(
-                style: menuItemStyle,
-                onPressed: () {
-                  context.push(app_paths.AUDIO_DETAIL_PAGE, extra: audio);
-                },
-                leadingIcon: const Icon(Symbols.info),
-                child: const Text('详细信息'),
-              ),
-            ],
+                      onPressed: () {
+                        context.push(app_paths.AUDIO_DETAIL_PAGE, extra: audio);
+                      },
+                      leadingIcon: const Icon(Symbols.info),
+                      child: const Text('详细信息'),
+                    ),
+                  ]
+                : const <Widget>[],
             builder: (context, controller, _) {
               final titleColor = effectiveFocus
                   ? scheme.primary
@@ -431,9 +460,19 @@ class _AudioTileState extends State<AudioTile> {
                           return;
                         }
 
-                        controller.open(
-                          position: details.localPosition.translate(0, -240),
+                        final position = details.localPosition.translate(
+                          0,
+                          -240,
                         );
+                        if (_menuRequested) {
+                          controller.open(position: position);
+                          return;
+                        }
+                        setState(() => _menuRequested = true);
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (!mounted || !_menuRequested) return;
+                          controller.open(position: position);
+                        });
                       },
                       child: InkWell(
                         focusColor: Colors.transparent,
@@ -562,18 +601,22 @@ class _SmallCoverWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final initialBytes = audio.smallCoverBytes;
-    return ScrollAwareFutureBuilder<Uint8List?>(
+    final initialProvider = CoverImageCache.instance.getCached(
+      path: audio.path,
+      width: 48,
+      height: 48,
+    );
+    return ScrollAwareFutureBuilder<ImageProvider?>(
       identity: '${audio.path}|${audio.modified}',
-      initialData: initialBytes,
-      future: audio.loadSmallCoverBytes,
+      initialData: initialProvider,
+      future: () => audio.cover,
       builder: (context, snapshot) {
-        final bytes = snapshot.data;
-        if (bytes == null) return _placeholder(context);
+        final provider = snapshot.data;
+        if (provider == null) return _placeholder(context);
         return ClipRRect(
           borderRadius: AppRadius.smCircular,
-          child: Image.memory(
-            bytes,
+          child: Image(
+            image: provider,
             width: 48.0,
             height: 48.0,
             fit: BoxFit.cover,
