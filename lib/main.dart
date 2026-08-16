@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show PlatformDispatcher;
 
+import 'package:pure_music/core/application_log.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/setting_action_state.dart';
 import 'package:pure_music/core/settings.dart';
@@ -81,13 +83,51 @@ Future<void> loadPrefFont() async {
   }
 }
 
+void _installGlobalErrorLogging() {
+  final previousFlutterError = FlutterError.onError;
+  FlutterError.onError = (details) {
+    applicationLogOutput.recordUnhandledSync(
+      source: 'flutter',
+      error: details.exception,
+      stackTrace: details.stack,
+    );
+    logger.e(
+      '[flutter] unhandled framework error',
+      error: details.exception,
+      stackTrace: details.stack,
+    );
+    previousFlutterError?.call(details);
+  };
+  final previousPlatformError = PlatformDispatcher.instance.onError;
+  PlatformDispatcher.instance.onError = (error, stackTrace) {
+    applicationLogOutput.recordUnhandledSync(
+      source: 'platform',
+      error: error,
+      stackTrace: stackTrace,
+    );
+    logger.f(
+      '[platform] unhandled asynchronous error',
+      error: error,
+      stackTrace: stackTrace,
+    );
+    return previousPlatformError?.call(error, stackTrace) ?? false;
+  };
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await logger.init;
+  _installGlobalErrorLogging();
   try {
     await _runApplication();
   } catch (error, stackTrace) {
+    applicationLogOutput.recordUnhandledSync(
+      source: 'startup',
+      error: error,
+      stackTrace: stackTrace,
+    );
     logger.f('[startup] unhandled error', error: error, stackTrace: stackTrace);
+    await applicationLogOutput.flush();
     rethrow;
   }
 }
@@ -153,4 +193,5 @@ Future<void> disposeRuntimeResources() async {
   MemoryMonitorService.instance.stop();
   await _rustLoggerSub?.cancel();
   _rustLoggerSub = null;
+  await applicationLogOutput.flush();
 }

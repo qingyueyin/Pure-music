@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:logger/logger.dart';
+import 'package:pure_music/core/application_log.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/setting_action_state.dart';
 import 'package:pure_music/core/settings.dart';
@@ -69,8 +70,8 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
     const mode = kReleaseMode
         ? 'release'
         : kProfileMode
-            ? 'profile'
-            : 'debug';
+        ? 'profile'
+        : 'debug';
     return [
       'App Version: ${AppSettings.version}',
       'Build Mode: $mode',
@@ -89,6 +90,10 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
         'eqAutoGainEnabled': pb.eqAutoGainEnabled,
         'eqAutoHeadroomDb': pb.eqAutoHeadroomDb,
         'reinitOnSetSource': pb.reinitOnSetSource,
+        'replayGainEnabled': pb.replayGainEnabled,
+        'transitionMode': pb.transitionMode.name,
+        'transitionFadeOutMs': pb.transitionFadeOutMs,
+        'transitionFadeInMs': pb.transitionFadeInMs,
       },
       'nowPlaying': {
         'nowPlayingViewMode': np.nowPlayingViewMode.name,
@@ -99,9 +104,23 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
         'showLyricTranslation': np.showLyricTranslation,
         'lyricFontWeight': np.lyricFontWeight,
         'enableLyricBlur': np.enableLyricBlur,
-      }
+      },
     };
     return const JsonEncoder.withIndent('  ').convert(map);
+  }
+
+  String _buildSettingsSnapshot() {
+    final s = AppSettings.instance;
+    return const JsonEncoder.withIndent('  ').convert({
+      'appBackgroundImagePath': s.appBackgroundImagePath,
+      'appBackgroundImageOpacity': s.appBackgroundImageOpacity,
+      'appBackgroundImageBlur': s.appBackgroundImageBlur,
+      'themeOption': s.themeOption.name,
+      'themeColorMode': s.themeColorMode.name,
+      'enableCoverColorExtraction': s.enableCoverColorExtraction,
+      'customCoverColor': s.customCoverColor,
+      'windowCloseBehavior': s.windowCloseBehavior.name,
+    });
   }
 
   String _buildNowPlayingSnapshot() {
@@ -118,6 +137,7 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
       'playlistIndex': pb.playlistIndex,
       'playlistLen': pb.playlist.value.length,
       'bass': pb.bassDebugStateLine,
+      'smartTransition': pb.smartTransitionDiagnostics,
     };
     if (now == null) {
       base['nowPlaying'] = null;
@@ -175,10 +195,24 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
     parts.add('');
     parts.add('== AUDIO_ECHO_LOG ==');
     final echoLog = await AudioEchoLogRecorder.instance.readLatestLog();
+    parts.add(
+      redactDiagnosticData(
+        'AUDIO_ECHO_LOG_PATH=${AudioEchoLogRecorder.instance.latestLogPath ?? '-'}',
+      ),
+    );
     parts.add(echoLog == null ? '-' : redactDiagnosticData(echoLog));
+    parts.add('');
+    parts.add('== APPLICATION_LOG ==');
+    final applicationLog = await applicationLogOutput.readForExport();
+    parts.add(
+      applicationLog == null ? '-' : redactDiagnosticData(applicationLog),
+    );
     parts.add('');
     parts.add('== PREF ==');
     parts.add(_buildPreferenceSnapshot());
+    parts.add('');
+    parts.add('== SETTINGS ==');
+    parts.add(_buildSettingsSnapshot());
     parts.add('');
     parts.add('== NOW_PLAYING ==');
     parts.add(_buildNowPlayingSnapshot());
@@ -242,14 +276,10 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
       '',
       '（建议先点击“获取日志”，日志会复制到剪贴板，粘贴到 Issue 正文中）',
     ].join('\n');
-    final uri = Uri.https(
-      'github.com',
-      '/$owner/$repo/issues/new',
-      {
-        'title': title,
-        'body': body,
-      },
-    );
+    final uri = Uri.https('github.com', '/$owner/$repo/issues/new', {
+      'title': title,
+      'body': body,
+    });
     final opened = await rust_utils.launchInBrowser(uri: uri.toString());
     if (!opened) {
       showTextOnSnackBar('打开链接失败');
@@ -272,19 +302,14 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return ColoredBox(
-      color: scheme.surface,
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final wideEnough =
-                constraints.maxWidth.isFinite && constraints.maxWidth >= 760.0;
-            return wideEnough
-                ? _buildLandscape(scheme)
-                : _buildPortrait(scheme);
-          },
-        ),
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final wideEnough =
+              constraints.maxWidth.isFinite && constraints.maxWidth >= 760.0;
+          return wideEnough ? _buildLandscape(scheme) : _buildPortrait(scheme);
+        },
       ),
     );
   }
@@ -422,10 +447,11 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
                 label: Text(_isPreparingLog ? '获取中' : '获取日志'),
               ),
               TextButton.icon(
-                onPressed: !canClearTextValue(
-                  text: value.text,
-                  isBusy: _isPreparingLog,
-                )
+                onPressed:
+                    !canClearTextValue(
+                      text: value.text,
+                      isBusy: _isPreparingLog,
+                    )
                     ? null
                     : () => logEditingController.clear(),
                 icon: const Icon(Symbols.clear, size: 18.0),
@@ -446,21 +472,12 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               titleView(),
-              Align(
-                alignment: Alignment.centerRight,
-                child: actionsView(),
-              ),
+              Align(alignment: Alignment.centerRight, child: actionsView()),
             ],
           );
         }
 
-        return Row(
-          children: [
-            titleView(),
-            const Spacer(),
-            actionsView(),
-          ],
-        );
+        return Row(children: [titleView(), const Spacer(), actionsView()]);
       },
     );
   }

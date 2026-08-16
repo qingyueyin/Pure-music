@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:pure_music/core/application_log.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:logger/logger.dart';
 import 'package:pinyin/pinyin.dart';
@@ -594,6 +595,11 @@ class _BoundedMemoryOutput extends LogOutput {
   int get firstEventIndex => _firstEventIndex;
   int get nextEventIndex => _nextEventIndex;
 
+  @override
+  Future<void> init() async {
+    await secondOutput?.init();
+  }
+
   OutputEvent? eventAt(int index) {
     final localIndex = index - _firstEventIndex;
     if (localIndex < 0 || localIndex >= _buffer.length) return null;
@@ -611,6 +617,11 @@ class _BoundedMemoryOutput extends LogOutput {
     secondOutput?.output(event);
   }
 
+  @override
+  Future<void> destroy() async {
+    await secondOutput?.destroy();
+  }
+
   void clear() {
     _buffer.clear();
     _firstEventIndex = _nextEventIndex;
@@ -618,7 +629,10 @@ class _BoundedMemoryOutput extends LogOutput {
 }
 
 final loggerMemoryOutput = _BoundedMemoryOutput(
-  secondOutput: kDebugMode ? ConsoleOutput() : null,
+  secondOutput: MultiOutput([
+    if (kDebugMode) ConsoleOutput(),
+    applicationLogOutput,
+  ]),
 );
 final logger = Logger(
   filter: ProductionFilter(),
