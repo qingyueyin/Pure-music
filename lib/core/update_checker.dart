@@ -11,35 +11,30 @@ class UpdateInfo {
   final String? body;
   final String? htmlUrl;
 
-  const UpdateInfo({
-    required this.tagName,
-    this.name,
-    this.body,
-    this.htmlUrl,
-  });
+  const UpdateInfo({required this.tagName, this.name, this.body, this.htmlUrl});
 
   /// 从远程发布数据转换
   factory UpdateInfo.fromGitHubRelease(gh.Release release) => UpdateInfo(
-        tagName: release.tagName ?? '',
-        name: release.name,
-        body: release.body,
-        htmlUrl: release.htmlUrl,
-      );
+    tagName: release.tagName ?? '',
+    name: release.name,
+    body: release.body,
+    htmlUrl: release.htmlUrl,
+  );
 
   /// 从 JSON Map 转换（用于 fallback 源）
   factory UpdateInfo.fromJson(Map<String, dynamic> json) => UpdateInfo(
-        tagName: _normalizedRequiredString(json['tag_name']),
-        name: _normalizedOptionalString(json['name']),
-        body: _normalizedOptionalString(json['body']),
-        htmlUrl: _normalizedOptionalString(json['html_url']),
-      );
+    tagName: _normalizedRequiredString(json['tag_name']),
+    name: _normalizedOptionalString(json['name']),
+    body: _normalizedOptionalString(json['body']),
+    htmlUrl: _normalizedOptionalString(json['html_url']),
+  );
 
   Map<String, dynamic> toJson() => {
-        'tag_name': tagName,
-        'name': name,
-        'body': body,
-        'html_url': htmlUrl,
-      };
+    'tag_name': tagName,
+    'name': name,
+    'body': body,
+    'html_url': htmlUrl,
+  };
 }
 
 String _normalizedRequiredString(Object? value) {
@@ -83,8 +78,9 @@ class UpdateChecker {
   /// 通过主发布接口检查更新
   static Future<UpdateInfo?> _checkGitHub() async {
     try {
-      final slug =
-          gh.RepositorySlug.full(AppPreference.instance.updateRepoSlug);
+      final slug = gh.RepositorySlug.full(
+        AppPreference.instance.updateRepoSlug,
+      );
       final release = await AppSettings.github.repositories
           .listReleases(slug)
           .first
@@ -125,23 +121,12 @@ class UpdateChecker {
     return compareSemVer(remoteTag, currentVersion) > 0;
   }
 
-  /// Semantic version comparison (提取数字部分比较)
+  /// 比较语义化版本；无效版本不触发更新。
   static int compareSemVer(String a, String b) {
-    final cleanA = a.replaceAll(RegExp(r'[^0-9.]'), '');
-    final cleanB = b.replaceAll(RegExp(r'[^0-9.]'), '');
-
-    final partsA = cleanA.split('.').where((s) => s.isNotEmpty).toList();
-    final partsB = cleanB.split('.').where((s) => s.isNotEmpty).toList();
-
-    final maxLen =
-        partsA.length > partsB.length ? partsA.length : partsB.length;
-
-    for (int i = 0; i < maxLen; i++) {
-      final numA = i < partsA.length ? int.tryParse(partsA[i]) ?? 0 : 0;
-      final numB = i < partsB.length ? int.tryParse(partsB[i]) ?? 0 : 0;
-      if (numA != numB) return numA.compareTo(numB);
-    }
-    return 0;
+    final versionA = _SemVer.tryParse(a);
+    final versionB = _SemVer.tryParse(b);
+    if (versionA == null || versionB == null) return 0;
+    return versionA.compareTo(versionB);
   }
 
   /// 是否需要提醒用户（版本不同且未被用户忽略）
@@ -150,5 +135,65 @@ class UpdateChecker {
     return remoteTag.isNotEmpty &&
         remoteTag != lastSeen &&
         hasNewVersion(remoteTag, AppSettings.version);
+  }
+}
+
+class _SemVer implements Comparable<_SemVer> {
+  const _SemVer(this.major, this.minor, this.patch, this.preRelease);
+
+  final int major;
+  final int minor;
+  final int patch;
+  final List<String> preRelease;
+
+  static final _pattern = RegExp(
+    r'^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)'
+    r'(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?'
+    r'(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$',
+    caseSensitive: false,
+  );
+
+  static _SemVer? tryParse(String value) {
+    final match = _pattern.firstMatch(value.trim());
+    if (match == null) return null;
+    final major = int.tryParse(match.group(1)!);
+    final minor = int.tryParse(match.group(2)!);
+    final patch = int.tryParse(match.group(3)!);
+    if (major == null || minor == null || patch == null) return null;
+    return _SemVer(major, minor, patch, match.group(4)?.split('.') ?? const []);
+  }
+
+  @override
+  int compareTo(_SemVer other) {
+    for (final comparison in [
+      major.compareTo(other.major),
+      minor.compareTo(other.minor),
+      patch.compareTo(other.patch),
+    ]) {
+      if (comparison != 0) return comparison;
+    }
+
+    if (preRelease.isEmpty || other.preRelease.isEmpty) {
+      return preRelease.isEmpty == other.preRelease.isEmpty
+          ? 0
+          : (preRelease.isEmpty ? 1 : -1);
+    }
+    final length = preRelease.length < other.preRelease.length
+        ? preRelease.length
+        : other.preRelease.length;
+    for (var i = 0; i < length; i++) {
+      final left = preRelease[i];
+      final right = other.preRelease[i];
+      if (left == right) continue;
+      final leftNumber = int.tryParse(left);
+      final rightNumber = int.tryParse(right);
+      if (leftNumber != null && rightNumber != null) {
+        return leftNumber.compareTo(rightNumber);
+      }
+      if (leftNumber != null) return -1;
+      if (rightNumber != null) return 1;
+      return left.compareTo(right);
+    }
+    return preRelease.length.compareTo(other.preRelease.length);
   }
 }
