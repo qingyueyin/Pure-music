@@ -23,6 +23,7 @@ class LyricSource {
   String? kugouSongHash;
   int? neSongId;
   String? amllTtmlFile;
+  String? localLyricPath;
 
   LyricSource(
     this.source, {
@@ -30,6 +31,7 @@ class LyricSource {
     this.kugouSongHash,
     this.neSongId,
     this.amllTtmlFile,
+    this.localLyricPath,
   });
 
   static LyricSource? fromMap(Map? map) {
@@ -61,6 +63,11 @@ class LyricSource {
         LyricSourceType.amll,
         amllTtmlFile: _normalizedTextSongId(map['id']),
       );
+    } else if (source == 'local') {
+      return LyricSource(
+        LyricSourceType.local,
+        localLyricPath: _normalizedLocalLyricPath(map['id']),
+      );
     } else {
       return LyricSource(LyricSourceType.local);
     }
@@ -77,7 +84,7 @@ class LyricSource {
       case LyricSourceType.amll:
         return {'source': source.name, 'id': amllTtmlFile};
       case LyricSourceType.local:
-        return {'source': source.name, 'id': null};
+        return {'source': source.name, 'id': localLyricPath};
     }
   }
 }
@@ -138,6 +145,27 @@ Future<void> saveLyricSources() async {
     _writeLyricSourcesToDb(db, lyricSources);
   } catch (err, trace) {
     logger.e(err, stackTrace: trace);
+    rethrow;
+  }
+}
+
+Future<void> persistLyricSource(
+  String audioPath,
+  LyricSource source, {
+  Future<void> Function()? persist,
+}) async {
+  final hadPrevious = lyricSources.containsKey(audioPath);
+  final previous = lyricSources[audioPath];
+  lyricSources[audioPath] = source;
+  try {
+    await (persist?.call() ?? saveLyricSources());
+  } catch (_) {
+    if (hadPrevious) {
+      lyricSources[audioPath] = previous!;
+    } else {
+      lyricSources.remove(audioPath);
+    }
+    rethrow;
   }
 }
 
@@ -189,7 +217,7 @@ String? _lyricSourceId(LyricSource s) {
     case LyricSourceType.amll:
       return s.amllTtmlFile;
     case LyricSourceType.local:
-      return null;
+      return s.localLyricPath;
   }
 }
 
@@ -209,6 +237,12 @@ LyricSource? _lyricSourceFromDb(String source, String? id) {
   }
   if (normalizedSource == LyricSourceType.amll.name) {
     return LyricSource(LyricSourceType.amll, amllTtmlFile: id);
+  }
+  if (normalizedSource == LyricSourceType.local.name) {
+    return LyricSource(
+      LyricSourceType.local,
+      localLyricPath: _normalizedLocalLyricPath(id),
+    );
   }
   return LyricSource(LyricSourceType.local);
 }
@@ -246,4 +280,9 @@ String? _normalizedTextSongId(Object? value) {
   }
   final normalized = value.toString().trim();
   return normalized.isEmpty ? null : normalized;
+}
+
+String? _normalizedLocalLyricPath(Object? value) {
+  final normalized = value?.toString().trim();
+  return normalized == null || normalized.isEmpty ? null : normalized;
 }

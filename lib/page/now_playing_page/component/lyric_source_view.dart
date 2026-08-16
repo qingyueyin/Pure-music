@@ -1,11 +1,12 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/lyric_action_state.dart';
 import 'package:pure_music/library/audio_library.dart';
-import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/lyric/lyric_source.dart';
+import 'package:pure_music/lyric/lyric_loader.dart';
 import 'package:pure_music/core/matcher.dart';
 import 'package:pure_music/page/now_playing_page/component/vertical_lyric_view.dart';
 import 'package:pure_music/play_service/play_service.dart';
@@ -13,6 +14,7 @@ import 'package:pure_music/services/online_lyric/api/net_lyric_api.dart'
     as net_api;
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:path/path.dart' as p;
 
 LyricSourceType _lyricSourceTypeFromResultSource(ResultSource source) {
   return switch (source) {
@@ -66,10 +68,63 @@ Future<bool> applyValidatedOnlineLyricResult(
           .timeout(timeout);
   if (lyric == null || lyric.lines.isEmpty) return false;
 
-  lyricSources[audio.path] = result.toLyricSource();
-  await (persist?.call() ?? saveLyricSources());
+  await persistLyricSource(
+    audio.path,
+    result.toLyricSource(),
+    persist: persist,
+  );
   (activate ?? PlayService.instance.lyricService.useOnlineLyric)();
   return true;
+}
+
+@visibleForTesting
+Future<bool> applyValidatedLocalLyricFile(
+  Audio audio,
+  String lyricPath, {
+  Future<Lyric?> Function(String lyricPath)? loadLyric,
+  Future<void> Function()? persist,
+  void Function(Lyric lyric)? activate,
+  bool Function()? canActivate,
+}) async {
+  final normalizedPath = lyricPath.trim();
+  if (normalizedPath.isEmpty) return false;
+  final lyric =
+      await (loadLyric?.call(normalizedPath) ??
+          loadLyricFromFile(normalizedPath));
+  if (lyric == null || lyric.lines.isEmpty) return false;
+
+  await persistLyricSource(
+    audio.path,
+    LyricSource(LyricSourceType.local, localLyricPath: normalizedPath),
+    persist: persist,
+  );
+  final shouldActivate =
+      canActivate?.call() ??
+      PlayService.instance.playbackService.nowPlaying?.path == audio.path;
+  if (shouldActivate) {
+    (activate ?? PlayService.instance.lyricService.useSpecificLyric)(lyric);
+  }
+  return true;
+}
+
+@visibleForTesting
+Future<void> restoreAutomaticLocalLyric(
+  Audio audio, {
+  Future<void> Function()? persist,
+  VoidCallback? activate,
+  bool Function()? canActivate,
+}) async {
+  await persistLyricSource(
+    audio.path,
+    LyricSource(LyricSourceType.local),
+    persist: persist,
+  );
+  final shouldActivate =
+      canActivate?.call() ??
+      PlayService.instance.playbackService.nowPlaying?.path == audio.path;
+  if (shouldActivate) {
+    (activate ?? PlayService.instance.lyricService.useLocalLyric)();
+  }
 }
 
 Widget? _buildLyricResultTrailing(
@@ -774,10 +829,14 @@ class SetLyricSourceBtn extends StatelessWidget {
             ),
           );
           final lyricNullable = snapshot.data;
+          final nowPlaying = PlayService.instance.playbackService.nowPlaying;
+          final savedSource = nowPlaying == null
+              ? null
+              : lyricSources[nowPlaying.path];
           final isLocal = lyricNullable == null
               ? null
-              : (lyricNullable is Lrc &&
-                    lyricNullable.source == LyricFormat.local);
+              : savedSource?.source == LyricSourceType.local ||
+                    lyricNullable.source == LyricFormat.local;
           return switch (snapshot.connectionState) {
             ConnectionState.none => loadingWidget,
             ConnectionState.waiting => loadingWidget,
@@ -868,6 +927,7 @@ class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
   late final Future<List<SongSearchResult>> _searchFuture;
   List<SongSearchResult>? _results;
   SongSearchResult? _applyingResult;
+  bool _isApplyingLocal = false;
 
   @override
   void initState() {
@@ -942,7 +1002,7 @@ class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
   }
 
   Future<void> _selectResult(SongSearchResult result) async {
-    if (_applyingResult != null) return;
+    if (_applyingResult != null || _isApplyingLocal) return;
     setState(() => _applyingResult = result);
     try {
       final applied = await applyValidatedOnlineLyricResult(
@@ -969,11 +1029,85 @@ class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
     }
   }
 
+  Future<void> _selectLocalLyricFile() async {
+    if (_applyingResult != null || _isApplyingLocal) return;
+    final savedPath = lyricSources[widget.audio.path]?.localLyricPath;
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: [
+        for (final ext in supportedLyricFileExtensions) ext.substring(1),
+      ],
+      dialogTitle: '选择歌词文件',
+      initialDirectory: savedPath == null
+          ? p.dirname(widget.audio.path)
+          : p.dirname(savedPath),
+      lockParentWindow: true,
+    );
+    if (!mounted || result == null || result.files.single.path == null) return;
+
+    setState(() => _isApplyingLocal = true);
+    try {
+      final applied = await applyValidatedLocalLyricFile(
+        widget.audio,
+        result.files.single.path!,
+      );
+      if (!mounted) return;
+      final nowPlaying = PlayService.instance.playbackService.nowPlaying;
+      if (nowPlaying == null || nowPlaying.path != widget.audio.path) return;
+      if (!applied) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('歌词文件读取或解析失败，来源未更改')));
+        return;
+      }
+      Navigator.pop(context);
+    } catch (error, trace) {
+      logger.w('Apply local lyric file failed: $error', stackTrace: trace);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('歌词来源保存失败，来源未更改')));
+      }
+    } finally {
+      if (mounted) setState(() => _isApplyingLocal = false);
+    }
+  }
+
+  Future<void> _restoreAutomaticLocalLyric() async {
+    if (_applyingResult != null || _isApplyingLocal) return;
+    setState(() => _isApplyingLocal = true);
+    try {
+      await restoreAutomaticLocalLyric(widget.audio);
+      if (!mounted) return;
+      final nowPlaying = PlayService.instance.playbackService.nowPlaying;
+      if (nowPlaying == null || nowPlaying.path != widget.audio.path) return;
+      Navigator.pop(context);
+    } catch (error, trace) {
+      logger.w(
+        'Restore automatic local lyric failed: $error',
+        stackTrace: trace,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('歌词来源保存失败，来源未更改')));
+      }
+    } finally {
+      if (mounted) setState(() => _isApplyingLocal = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final savedSource = lyricSources[widget.audio.path];
-    final isLocalSelected = savedSource?.source == LyricSourceType.local;
+    final selectedLocalPath = savedSource?.source == LyricSourceType.local
+        ? savedSource?.localLyricPath
+        : null;
+    final isAutomaticLocalSelected =
+        savedSource?.source == LyricSourceType.local &&
+        selectedLocalPath == null;
+    final localActionsEnabled = _applyingResult == null && !_isApplyingLocal;
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: AppRadius.mdCircular),
@@ -1010,26 +1144,51 @@ class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
                 ],
               ),
               ListTile(
-                title: const Text('使用本地歌词'),
-                selected: isLocalSelected,
+                leading: const Icon(Symbols.folder_open),
+                title: const Text('选择本地歌词文件'),
+                subtitle: selectedLocalPath == null
+                    ? null
+                    : Text(
+                        p.basename(selectedLocalPath),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                selected: selectedLocalPath != null,
                 selectedTileColor: scheme.secondaryContainer.withValues(
                   alpha: 0.5,
                 ),
                 selectedColor: scheme.onSecondaryContainer,
-                trailing: isLocalSelected ? const Icon(Symbols.check) : null,
+                trailing: _isApplyingLocal
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : selectedLocalPath != null
+                    ? const Icon(Symbols.check)
+                    : null,
                 shape: RoundedRectangleBorder(
                   borderRadius: AppRadius.smCircular,
                 ),
-                onTap: isLocalSelected
-                    ? null
-                    : () {
-                        lyricSources[widget.audio.path] = LyricSource(
-                          LyricSourceType.local,
-                        );
-                        saveLyricSources();
-                        PlayService.instance.lyricService.useLocalLyric();
-                        Navigator.pop(context);
-                      },
+                onTap: localActionsEnabled ? _selectLocalLyricFile : null,
+              ),
+              ListTile(
+                leading: const Icon(Symbols.restart_alt),
+                title: const Text('自动匹配本地歌词'),
+                selected: isAutomaticLocalSelected,
+                selectedTileColor: scheme.secondaryContainer.withValues(
+                  alpha: 0.5,
+                ),
+                selectedColor: scheme.onSecondaryContainer,
+                trailing: isAutomaticLocalSelected
+                    ? const Icon(Symbols.check)
+                    : null,
+                shape: RoundedRectangleBorder(
+                  borderRadius: AppRadius.smCircular,
+                ),
+                onTap: localActionsEnabled && !isAutomaticLocalSelected
+                    ? _restoreAutomaticLocalLyric
+                    : null,
               ),
               const Divider(),
               Flexible(
@@ -1101,7 +1260,7 @@ class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
                           audio: widget.audio,
                           searchResult: results[i],
                           isApplying: identical(_applyingResult, results[i]),
-                          enabled: _applyingResult == null,
+                          enabled: localActionsEnabled,
                           onTap: () => _selectResult(results[i]),
                         );
                       },

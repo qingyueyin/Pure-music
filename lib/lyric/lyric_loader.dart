@@ -20,7 +20,14 @@ import 'package:fl_charset/fl_charset.dart';
 // ──────────────────────────────────────────────
 // 支持的歌词扩展名（按优先级从高到低）
 // ──────────────────────────────────────────────
-const _kLyricExts = ['.yrc', '.qrc', '.krc', '.ttml', '.lrc', '.vtt'];
+const supportedLyricFileExtensions = [
+  '.yrc',
+  '.qrc',
+  '.krc',
+  '.ttml',
+  '.lrc',
+  '.vtt',
+];
 
 /// 编码检测优先级（仅用于 UTF-8 解码失败后的 fallback）
 /// 不包含 ascii——utf8 完全覆盖 ascii，且 ascii 检测会误判中文文件。
@@ -189,14 +196,15 @@ Future<String?> _safeReadFile(String filePath) async {
 // 读取外挂歌词文件（按优先级搜索）
 // ──────────────────────────────────────────────
 Future<_ExternalLyricResult?> _loadExternalLyric(String audioPath) async {
-  final paths = _candidatePaths(audioPath, _kLyricExts);
+  final paths = _candidatePaths(audioPath, supportedLyricFileExtensions);
   final songName = p.basenameWithoutExtension(audioPath);
 
   logger.i('lyric_loader: checking ${paths.length} candidate paths');
   for (final path in paths) {
     final content = await _safeReadFile(path);
     logger.i(
-        'lyric_loader: candidate ${content != null ? 'found(len=${content.length})' : 'not found'}');
+      'lyric_loader: candidate ${content != null ? 'found(len=${content.length})' : 'not found'}',
+    );
     if (content == null || content.trim().isEmpty) continue;
 
     final ext = p.extension(path).toLowerCase();
@@ -217,8 +225,7 @@ Future<_ExternalLyricResult?> _loadExternalLyric(String audioPath) async {
         Directory(p.dirname(audioPath)),
         songName,
         ['.lrc'],
-      ))
-          ?.content;
+      ))?.content;
     }
 
     return _ExternalLyricResult(
@@ -231,14 +238,21 @@ Future<_ExternalLyricResult?> _loadExternalLyric(String audioPath) async {
   logger.i('lyric_loader: exact match failed, trying fuzzy match...（all exts）');
   // ── 精确同名文件未找到，尝试同目录模糊匹配（所有支持格式，按优先级）──
   final dir = Directory(p.dirname(audioPath));
-  final fuzzy = await _findLyricInDirectory(dir, songName, _kLyricExts);
+  final fuzzy = await _findLyricInDirectory(
+    dir,
+    songName,
+    supportedLyricFileExtensions,
+  );
   if (fuzzy != null) return fuzzy;
 
   // ── 同目录模糊匹配失败，尝试父目录模糊匹配 ──
   final parent = dir.parent;
   if (parent.path != dir.path) {
-    final parentFuzzy =
-        await _findLyricInDirectory(parent, songName, _kLyricExts);
+    final parentFuzzy = await _findLyricInDirectory(
+      parent,
+      songName,
+      supportedLyricFileExtensions,
+    );
     if (parentFuzzy != null) return parentFuzzy;
   }
 
@@ -263,8 +277,11 @@ Lyric? _parseExternalToPureLyric(
         result.transContent,
       );
     case '.lrc':
-      return Lrc.fromLrcTextAuto(result.content, LyricFormat.local,
-          separator: separator);
+      return Lrc.fromLrcTextAuto(
+        result.content,
+        LyricFormat.local,
+        separator: separator,
+      );
     case '.ttml':
       return Ttml.fromTtmlText(result.content, separator: separator);
     case '.vtt':
@@ -283,8 +300,10 @@ bool isVttLyricText(String text) {
   return withoutBom.trimLeft().startsWith('WEBVTT');
 }
 
-Lyric? _parseEmbeddedToPureLyric(String embeddedLyric,
-    {String? separator = '┃'}) {
+Lyric? _parseEmbeddedToPureLyric(
+  String embeddedLyric, {
+  String? separator = '┃',
+}) {
   // 先检测格式
   if (isVttLyricText(embeddedLyric)) {
     return Vtt.fromVttText(embeddedLyric, separator: separator);
@@ -297,8 +316,11 @@ Lyric? _parseEmbeddedToPureLyric(String embeddedLyric,
   }
 
   // 按 LRC 及其变体解析
-  return Lrc.fromLrcTextAuto(embeddedLyric, LyricFormat.local,
-      separator: separator);
+  return Lrc.fromLrcTextAuto(
+    embeddedLyric,
+    LyricFormat.local,
+    separator: separator,
+  );
 }
 
 // ──────────────────────────────────────────────
@@ -330,21 +352,25 @@ Future<Lyric?> loadLyricFromAudio(
     try {
       embeddedRaw = await getLyricFromPath(path: audioPath);
     } catch (_) {}
-    embeddedHasWordTags = embeddedRaw != null &&
+    embeddedHasWordTags =
+        embeddedRaw != null &&
         RegExp(r'<(\d+:\d+\.\d+|\d+)>').hasMatch(embeddedRaw);
 
     if (embeddedHasWordTags) {
-      logger
-          .i('lyric_loader: embedded has word tags, preferring over external');
+      logger.i(
+        'lyric_loader: embedded has word tags, preferring over external',
+      );
     } else {
       logger.i(
-          'lyric_loader: found external ${external.ext}, content len=${external.content.length}');
+        'lyric_loader: found external ${external.ext}, content len=${external.content.length}',
+      );
       final lyric = _parseExternalToPureLyric(external, separator: separator);
       if (lyric != null && lyric.lines.isNotEmpty) {
         logger.i('lyric_loader: loaded external ${external.ext}');
         final stripped = _stripMetadata(lyric);
         logger.i(
-            'lyric_loader: external return lines=${stripped?.lines.length ?? "null"}');
+          'lyric_loader: external return lines=${stripped?.lines.length ?? "null"}',
+        );
         return stripped;
       } else {
         logger.i('lyric_loader: external ${external.ext} parse FAILED');
@@ -364,10 +390,12 @@ Future<Lyric?> loadLyricFromAudio(
       final lyric = _parseEmbeddedToPureLyric(embedded, separator: separator);
       if (lyric != null && lyric.lines.isNotEmpty) {
         logger.i(
-            'lyric_loader: loaded embedded lyric, lines=${lyric.lines.length}');
+          'lyric_loader: loaded embedded lyric, lines=${lyric.lines.length}',
+        );
         final stripped = _stripMetadata(lyric);
         logger.i(
-            'lyric_loader: embedded return lines=${stripped?.lines.length ?? "null"}');
+          'lyric_loader: embedded return lines=${stripped?.lines.length ?? "null"}',
+        );
         return stripped;
       } else {
         logger.i('lyric_loader: embedded lyric parse FAILED');
@@ -381,6 +409,25 @@ Future<Lyric?> loadLyricFromAudio(
 
   logger.i('lyric_loader: returning null');
   return null;
+}
+
+/// 只加载指定的歌词文件，不搜索其他文件或回退到音频内嵌歌词。
+Future<Lyric?> loadLyricFromFile(
+  String lyricPath, {
+  String? separator = '┃',
+}) async {
+  final ext = p.extension(lyricPath).toLowerCase();
+  if (!supportedLyricFileExtensions.contains(ext)) return null;
+
+  final content = await _safeReadFile(lyricPath);
+  if (content == null || content.trim().isEmpty) return null;
+
+  final lyric = _parseExternalToPureLyric(
+    _ExternalLyricResult(content: content, ext: ext),
+    separator: separator,
+  );
+  if (lyric == null || lyric.lines.isEmpty) return null;
+  return _stripMetadata(lyric);
 }
 
 Lyric? _stripMetadata(Lyric lyric) {

@@ -123,11 +123,13 @@ Future<List<QmSearchItem>> qqSearchLyric({
   int page = 1,
   int pageSize = 8,
   bool forceRefresh = false,
+  Duration? timeout,
 }) async {
   final rawResults = await iso.qqSearchIsolate(
     text: keyword,
     offset: page,
     limit: pageSize,
+    timeout: timeout,
   );
   return rawResults.map((e) {
     final item = e as Map;
@@ -148,6 +150,7 @@ Future<NetLyricResult?> qqGetLyric({
   String? album,
   String? artist,
   int? durationSec,
+  Duration? timeout,
 }) async {
   final lyricData = await iso.qqLyricIsolate(
     id: id,
@@ -155,6 +158,7 @@ Future<NetLyricResult?> qqGetLyric({
     album: album,
     artist: artist,
     durationSec: durationSec,
+    timeout: timeout,
   );
 
   Future<String?> decrypt(String? raw) async {
@@ -186,12 +190,14 @@ Future<List<NeSearchItem>> neSearchLyric({
   int page = 1,
   int pageSize = 8,
   bool forceRefresh = false,
+  Duration? timeout,
 }) async {
   final rawResults = await iso.neSearchIsolate(
     text: keyword,
     offset: (page - 1) * pageSize,
     limit: pageSize,
     cacheBust: forceRefresh ? DateTime.now().microsecondsSinceEpoch : null,
+    timeout: timeout,
   );
   return rawResults.map((e) {
     final item = e as Map<String, dynamic>;
@@ -206,8 +212,8 @@ Future<List<NeSearchItem>> neSearchLyric({
   }).toList();
 }
 
-Future<NetLyricResult?> neGetLyric({required int id}) async {
-  final result = await iso.neLyricIsolate(id: id);
+Future<NetLyricResult?> neGetLyric({required int id, Duration? timeout}) async {
+  final result = await iso.neLyricIsolate(id: id, timeout: timeout);
   final main = result['main'];
   if (main == null || main.isEmpty) return null;
   final format = result['format'] == 'yrc' ? LyricFormat.yrc : LyricFormat.lrc;
@@ -233,12 +239,14 @@ Future<List<KgSearchItem>> kgSearchLyric({
   int page = 1,
   int pageSize = 8,
   bool forceRefresh = false,
+  Duration? timeout,
 }) async {
   final rawResults = await iso.kgSearchIsolate(
     text: keyword,
     offset: page,
     limit: pageSize,
     cacheBust: forceRefresh ? DateTime.now().microsecondsSinceEpoch : null,
+    timeout: timeout,
   );
   return rawResults.map((e) {
     final item = e as Map;
@@ -254,8 +262,11 @@ Future<List<KgSearchItem>> kgSearchLyric({
   }).toList();
 }
 
-Future<NetLyricResult?> kgGetLyric({required String hash}) async {
-  final result = await iso.kgLyricIsolate(hash: hash);
+Future<NetLyricResult?> kgGetLyric({
+  required String hash,
+  Duration? timeout,
+}) async {
+  final result = await iso.kgLyricIsolate(hash: hash, timeout: timeout);
   final encrypted = result['encrypted'];
   if (encrypted == null || encrypted.isEmpty) return null;
 

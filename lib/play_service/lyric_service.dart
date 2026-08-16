@@ -1196,11 +1196,95 @@ class LyricService extends ChangeNotifier {
         playService.playbackService.nowPlaying?.path == path;
   }
 
-  Future<Lyric?> _loadLocalLyric(String path) {
-    final cached = _lyricCache.get(path);
-    return cached != null
-        ? SynchronousFuture<Lyric?>(cached)
-        : _lyricPrefetches[path] ?? loadLyricFromAudio(path);
+  String _localLyricCacheKey(String audioPath) {
+    final selectedPath = lyricSources[audioPath]?.localLyricPath;
+    return selectedPath == null ? audioPath : '$audioPath\n$selectedPath';
+  }
+
+  Future<Lyric?> _loadLocalLyric(
+    String audioPath, {
+    bool notifyFailure = false,
+  }) async {
+    final cacheKey = _localLyricCacheKey(audioPath);
+    final selectedPath = lyricSources[audioPath]?.localLyricPath;
+    if (selectedPath != null && !await File(selectedPath).exists()) {
+      _lyricCache.remove(cacheKey);
+      _lyricPrefetches.remove(cacheKey);
+      if (notifyFailure) {
+        showTextOnSnackBar('指定的歌词文件不存在', variant: ToastVariant.error);
+      }
+      return null;
+    }
+    final cached = _lyricCache.get(cacheKey);
+    if (cached != null) return cached;
+    return _lyricPrefetches[cacheKey] ??
+        _readLocalLyric(audioPath, notifyFailure: notifyFailure);
+  }
+
+  Future<Lyric?> _readLocalLyric(
+    String audioPath, {
+    required bool notifyFailure,
+  }) async {
+    final selectedPath = lyricSources[audioPath]?.localLyricPath;
+    if (selectedPath == null) return loadLyricFromAudio(audioPath);
+    if (!await File(selectedPath).exists()) {
+      if (notifyFailure) {
+        showTextOnSnackBar('指定的歌词文件不存在', variant: ToastVariant.error);
+      }
+      return null;
+    }
+
+    final lyric = await loadLyricFromFile(selectedPath);
+    if (lyric == null && notifyFailure) {
+      showTextOnSnackBar('指定的歌词文件读取或解析失败', variant: ToastVariant.error);
+    }
+    return lyric;
+  }
+
+  static LyricSourceType _lyricSourceTypeFromResultSource(ResultSource source) {
+    return switch (source) {
+      ResultSource.qq => LyricSourceType.qq,
+      ResultSource.kugou => LyricSourceType.kugou,
+      ResultSource.ne => LyricSourceType.ne,
+      ResultSource.amll => LyricSourceType.amll,
+    };
+  }
+
+  Future<({Lyric lyric, ResultSource source, SongSearchResult? result})?>
+  _loadOnlineLyricWithFallback(
+    Audio audio,
+    ResultSource preferredSource,
+  ) => getLyricWithSourceFallback(audio, preferredSource);
+
+  /// 启动带源切换的在线搜索：命中非首选源时固化该单曲来源，
+  /// 避免下次播放重复等待首选源超时。返回歌词加载 future。
+  Future<Lyric?> _startOnlineLyricWithFallback({
+    required Audio audio,
+    required ResultSource preferredSource,
+    required int requestToken,
+    required String audioPath,
+  }) {
+    final fallbackFuture = _loadOnlineLyricWithFallback(audio, preferredSource);
+    final lyricFuture = fallbackFuture.then((result) => result?.lyric);
+    final future = lyricFuture;
+    fallbackFuture.then((result) {
+      if (result == null ||
+          !_isCurrentLyricRequest(requestToken, audioPath, future)) {
+        return;
+      }
+      _activeLyricSourceType = _lyricSourceTypeFromResultSource(result.source);
+      final hitResult = result.result;
+      if (hitResult == null || result.source == preferredSource) return;
+      persistLyricSource(audioPath, hitResult.toLyricSource()).catchError(
+        (error, trace) {
+          logger.w(
+            '[lyric] persist fallback source failed: $error',
+            stackTrace: trace,
+          );
+        },
+      );
+    });
+    return lyricFuture;
   }
 
   /// 根据默认歌词来源获取歌词：
@@ -1222,13 +1306,16 @@ class LyricService extends ChangeNotifier {
     final usesLocalLyric =
         lyricSource?.source == LyricSourceType.local ||
         (lyricSource == null && AppSettings.instance.localLyricFirst);
+    final localCacheKey = usesLocalLyric
+        ? _localLyricCacheKey(audioPath)
+        : null;
 
     if (lyricSource == null) {
       // 未指定单曲来源 → 使用全局「首选歌词来源」设置
       if (AppSettings.instance.localLyricFirst) {
         // 本地模式：只看内嵌/外置，绝不搜索网络
         logger.i('[updateLyric] local mode: loadLyricFromAudio only');
-        currLyricFuture = _loadLocalLyric(audioPath);
+        currLyricFuture = _loadLocalLyric(audioPath, notifyFailure: true);
       } else {
         // 在线模式：只看用户选的那个源，不看内嵌/外置
         final preferredSource = AppSettings.instance.preferredOnlineSource;
@@ -1240,20 +1327,20 @@ class LyricService extends ChangeNotifier {
           LyricSourceType.local =>
             ResultSource.qq, // unreachable in online mode
         };
-        _activeLyricSourceType = switch (rs) {
-          ResultSource.qq => LyricSourceType.qq,
-          ResultSource.kugou => LyricSourceType.kugou,
-          ResultSource.ne => LyricSourceType.ne,
-          ResultSource.amll => LyricSourceType.amll,
-        };
+        _activeLyricSourceType = _lyricSourceTypeFromResultSource(rs);
         logger.i('[updateLyric] online mode: preferred=$rs');
-        currLyricFuture = getLyricFromPreferredSource(nowPlaying, rs);
+        currLyricFuture = _startOnlineLyricWithFallback(
+          audio: nowPlaying,
+          preferredSource: rs,
+          requestToken: requestToken,
+          audioPath: audioPath,
+        );
       }
     } else {
       _activeLyricSourceType = lyricSource.source;
       if (lyricSource.source == LyricSourceType.local) {
         logger.i('[updateLyric] source=local, using loadLyricFromAudio');
-        currLyricFuture = _loadLocalLyric(audioPath);
+        currLyricFuture = _loadLocalLyric(audioPath, notifyFailure: true);
       } else {
         logger.i(
           '[updateLyric] source=${lyricSource.source.name}, using getOnlineLyric',
@@ -1279,7 +1366,7 @@ class LyricService extends ChangeNotifier {
         _nextLyricLine = 0;
         _setCurrLyric(value);
         if (usesLocalLyric) {
-          _lyricCache.put(audioPath, value);
+          _lyricCache.put(localCacheKey!, value);
         }
         // 网络歌词加载成功后，安排写入标签提示
         if (isFromWeb || value.source == LyricFormat.web) {
@@ -1411,8 +1498,10 @@ class LyricService extends ChangeNotifier {
         lyricSource?.source == LyricSourceType.local ||
         (lyricSource == null && AppSettings.instance.localLyricFirst);
     if (!usesLocalLyric) return;
+    final cacheKey = _localLyricCacheKey(path);
     // 如果已缓存，跳过
-    if (_lyricCache.containsKey(path) || _lyricPrefetches.containsKey(path)) {
+    if (_lyricCache.containsKey(cacheKey) ||
+        _lyricPrefetches.containsKey(cacheKey)) {
       return;
     }
     final generation = _prefetchGeneration;
@@ -1421,18 +1510,18 @@ class LyricService extends ChangeNotifier {
     late final Future<Lyric?> future;
     future = (() async {
       try {
-        final value = await loadLyricFromAudio(audio.path);
+        final value = await _readLocalLyric(path, notifyFailure: false);
         if (value != null && generation == _prefetchGeneration) {
-          _lyricCache.put(path, value);
+          _lyricCache.put(cacheKey, value);
         }
         return value;
       } finally {
-        if (identical(_lyricPrefetches[path], future)) {
-          _lyricPrefetches.remove(path);
+        if (identical(_lyricPrefetches[cacheKey], future)) {
+          _lyricPrefetches.remove(cacheKey);
         }
       }
     })();
-    _lyricPrefetches[path] = future;
+    _lyricPrefetches[cacheKey] = future;
     future.ignore();
   }
 
@@ -1445,12 +1534,14 @@ class LyricService extends ChangeNotifier {
     final requestToken = _beginLyricRequest(audioPath);
     _activeLyricSourceType = LyricSourceType.local;
 
-    currLyricFuture = loadLyricFromAudio(audioPath);
+    final cacheKey = _localLyricCacheKey(audioPath);
+    currLyricFuture = _loadLocalLyric(audioPath, notifyFailure: true);
     final future = currLyricFuture;
     future.then((value) {
       if (!_isCurrentLyricRequest(requestToken, audioPath, future)) return;
       if (value != null) {
         _setCurrLyric(value);
+        _lyricCache.put(cacheKey, value);
       } else {
         _currLyric = null;
       }
@@ -1495,14 +1586,14 @@ class LyricService extends ChangeNotifier {
         LyricSourceType.amll => ResultSource.amll,
         LyricSourceType.local => ResultSource.qq,
       };
-      _activeLyricSourceType = switch (rs) {
-        ResultSource.qq => LyricSourceType.qq,
-        ResultSource.kugou => LyricSourceType.kugou,
-        ResultSource.ne => LyricSourceType.ne,
-        ResultSource.amll => LyricSourceType.amll,
-      };
+      _activeLyricSourceType = _lyricSourceTypeFromResultSource(rs);
       logger.i('[useOnlineLyric] no saved source, searching preferred: $rs');
-      currLyricFuture = getLyricFromPreferredSource(nowPlaying, rs);
+      currLyricFuture = _startOnlineLyricWithFallback(
+        audio: nowPlaying,
+        preferredSource: rs,
+        requestToken: requestToken,
+        audioPath: audioPath,
+      );
     }
 
     final future = currLyricFuture;

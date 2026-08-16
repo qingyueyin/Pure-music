@@ -3,10 +3,10 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
-const _kgSearchUrl = 'http://mobilecdn.kugou.com/api/v3/search/song';
+const _kgSearchUrl = 'https://mobilecdn.kugou.com/api/v3/search/song';
 const _kgSearchFallbackUrl = 'https://songsearch.kugou.com/song_search_v2';
-const _kgSearchLrcUrl = 'http://lyrics.kugou.com/search';
-const _kgDownloadLrcUrl = 'http://lyrics.kugou.com/download';
+const _kgSearchLrcUrl = 'https://lyrics.kugou.com/search';
+const _kgDownloadLrcUrl = 'https://lyrics.kugou.com/download';
 const _neSearchUrl = 'https://music.163.com/api/cloudsearch/pc';
 const _neLrcUrl = 'https://music.163.com/api/song/lyric';
 const _qmSearchUrl = 'https://u.y.qq.com/cgi-bin/musicu.fcg';
@@ -22,14 +22,53 @@ const _kgApiHeaders = {
   'Accept': 'application/json,text/plain,*/*',
 };
 
+Future<T> _runCancelable<T>(
+  Future<T> Function() operation, {
+  required Duration timeout,
+  required T timeoutValue,
+}) async {
+  if (timeout <= Duration.zero) return timeoutValue;
+  final receivePort = ReceivePort();
+  final isolate = await Isolate.spawn(_runCancelableEntry<T>, (
+    sendPort: receivePort.sendPort,
+    operation: operation,
+  ));
+  try {
+    final result = await receivePort.first.timeout(timeout);
+    if (result case (true, final T value)) return value;
+    throw StateError((result as (bool, Object?)).$2.toString());
+  } on TimeoutException {
+    return timeoutValue;
+  } finally {
+    isolate.kill(priority: Isolate.immediate);
+    receivePort.close();
+  }
+}
+
+Future<void> _runCancelableEntry<T>(
+  ({SendPort sendPort, Future<T> Function() operation}) message,
+) async {
+  try {
+    message.sendPort.send((true, await message.operation()));
+  } catch (error, trace) {
+    message.sendPort.send((false, '$error\n$trace'));
+  }
+}
+
+Duration _effectiveTimeout(Duration? requested, Duration fallback) {
+  if (requested == null) return fallback;
+  return requested < fallback ? requested : fallback;
+}
+
 Future<String?> _httpPost(
   String urlStr,
   String body,
   Map<String, String> headers,
 ) async {
+  HttpClient? client;
   try {
     final uri = Uri.parse(urlStr);
-    final client = HttpClient();
+    client = HttpClient();
     client.connectionTimeout = const Duration(seconds: 4);
     final request = await client.postUrl(uri);
     for (final entry in headers.entries) {
@@ -37,15 +76,12 @@ Future<String?> _httpPost(
     }
     request.write(body);
     final response = await request.close();
-    if (response.statusCode != 200) {
-      client.close();
-      return null;
-    }
-    final result = await response.transform(utf8.decoder).join();
-    client.close();
-    return result;
+    if (response.statusCode != 200) return null;
+    return await response.transform(utf8.decoder).join();
   } catch (_) {
     return null;
+  } finally {
+    client?.close(force: true);
   }
 }
 
@@ -105,22 +141,25 @@ Future<List<dynamic>> _kgSearchInIsolate(Map<String, dynamic> params) async {
         }
       }
       final result = <String, dynamic>{
-        'hash': (useFallbackShape ? item['FileHash'] : item['hash'])
-                ?.toString() ??
+        'hash':
+            (useFallbackShape ? item['FileHash'] : item['hash'])?.toString() ??
             '',
         'id': (useFallbackShape ? item['ID'] : item['id'])?.toString() ?? '',
-        'songname': (useFallbackShape ? item['SongName'] : item['songname'])
+        'songname':
+            (useFallbackShape ? item['SongName'] : item['songname'])
                 ?.toString() ??
             'UNKNOWN',
         'singername':
             (useFallbackShape ? item['SingerName'] : item['singername'])
-                    ?.toString() ??
-                'UNKNOWN',
-        'album_name': albumName ??
+                ?.toString() ??
+            'UNKNOWN',
+        'album_name':
+            albumName ??
             (useFallbackShape ? item['AlbumName'] : item['album_name'])
                 ?.toString() ??
             '',
-        'duration': int.tryParse(
+        'duration':
+            int.tryParse(
               (useFallbackShape ? item['Duration'] : item['duration'])
                       ?.toString() ??
                   '0',
@@ -141,6 +180,7 @@ Future<String?> _httpGet(
   Map<String, String>? headers, {
   String? uriSuffix,
 }) async {
+  HttpClient? client;
   try {
     Uri uri;
     if (uriSuffix != null) {
@@ -148,7 +188,7 @@ Future<String?> _httpGet(
     } else {
       uri = Uri.parse(urlStr).replace(queryParameters: queryParameters);
     }
-    final client = HttpClient();
+    client = HttpClient();
     client.connectionTimeout = const Duration(seconds: 4);
     final request = await client.getUrl(uri);
     request.headers.removeAll(HttpHeaders.acceptEncodingHeader);
@@ -158,15 +198,12 @@ Future<String?> _httpGet(
       }
     }
     final response = await request.close();
-    if (response.statusCode != 200) {
-      client.close();
-      return null;
-    }
-    final res = await response.transform(utf8.decoder).join();
-    client.close();
-    return res;
+    if (response.statusCode != 200) return null;
+    return await response.transform(utf8.decoder).join();
   } catch (_) {
     return null;
+  } finally {
+    client?.close(force: true);
   }
 }
 
@@ -175,15 +212,18 @@ Future<List<dynamic>> kgSearchIsolate({
   required int offset,
   required int limit,
   int? cacheBust,
+  Duration? timeout,
 }) async {
-  return Isolate.run(
+  return _runCancelable(
     () => _kgSearchInIsolate({
       'text': text,
       'offset': offset,
       'limit': limit,
       'cacheBust': cacheBust,
     }),
-  ).timeout(const Duration(seconds: 8), onTimeout: () => []);
+    timeout: _effectiveTimeout(timeout, const Duration(seconds: 8)),
+    timeoutValue: const [],
+  );
 }
 
 Future<Map<String, String?>> _kgLyricInIsolate(
@@ -232,10 +272,15 @@ Future<Map<String, String?>> _kgLyricInIsolate(
   return {'encrypted': null};
 }
 
-Future<Map<String, String?>> kgLyricIsolate({required String hash}) async {
-  return Isolate.run(
+Future<Map<String, String?>> kgLyricIsolate({
+  required String hash,
+  Duration? timeout,
+}) async {
+  return _runCancelable(
     () => _kgLyricInIsolate({'hash': hash}),
-  ).timeout(const Duration(seconds: 8), onTimeout: () => {'encrypted': null});
+    timeout: _effectiveTimeout(timeout, const Duration(seconds: 8)),
+    timeoutValue: const {'encrypted': null},
+  );
 }
 
 Future<List<dynamic>> _neSearchInIsolate(Map<String, dynamic> params) async {
@@ -287,15 +332,18 @@ Future<List<dynamic>> neSearchIsolate({
   required int offset,
   required int limit,
   int? cacheBust,
+  Duration? timeout,
 }) async {
-  return Isolate.run(
+  return _runCancelable(
     () => _neSearchInIsolate({
       'text': text,
       'offset': offset,
       'limit': limit,
       'cacheBust': cacheBust,
     }),
-  ).timeout(const Duration(seconds: 8), onTimeout: () => []);
+    timeout: _effectiveTimeout(timeout, const Duration(seconds: 8)),
+    timeoutValue: const [],
+  );
 }
 
 Future<Map<String, String?>> _neLyricInIsolate(
@@ -330,10 +378,14 @@ Future<Map<String, String?>> _neLyricInIsolate(
   }
 }
 
-Future<Map<String, String?>> neLyricIsolate({required int id}) async {
-  return Isolate.run(() => _neLyricInIsolate({'id': id})).timeout(
-    const Duration(seconds: 8),
-    onTimeout: () => {
+Future<Map<String, String?>> neLyricIsolate({
+  required int id,
+  Duration? timeout,
+}) async {
+  return _runCancelable(
+    () => _neLyricInIsolate({'id': id}),
+    timeout: _effectiveTimeout(timeout, const Duration(seconds: 8)),
+    timeoutValue: const {
       'main': null,
       'trans': null,
       'roma': null,
@@ -414,10 +466,13 @@ Future<List<dynamic>> qqSearchIsolate({
   required String text,
   required int offset,
   required int limit,
+  Duration? timeout,
 }) async {
-  return Isolate.run(
+  return _runCancelable(
     () => _qqSearchInIsolate({'text': text, 'offset': offset, 'limit': limit}),
-  ).timeout(const Duration(seconds: 8), onTimeout: () => []);
+    timeout: _effectiveTimeout(timeout, const Duration(seconds: 8)),
+    timeoutValue: const [],
+  );
 }
 
 Future<Map<String, String?>> _qqLyricInIsolate(
@@ -544,8 +599,9 @@ Future<Map<String, String?>> qqLyricIsolate({
   String? album,
   String? artist,
   int? durationSec,
+  Duration? timeout,
 }) async {
-  return Isolate.run(
+  return _runCancelable(
     () => _qqLyricInIsolate({
       'id': id,
       'title': title,
@@ -553,10 +609,11 @@ Future<Map<String, String?>> qqLyricIsolate({
       'artist': artist,
       'durationSec': durationSec ?? 0,
     }),
-  ).timeout(
-    const Duration(seconds: 12),
-    onTimeout: () {
-      return {'encryptedLyric': null, 'encryptedTrans': null, 'roma': null};
+    timeout: _effectiveTimeout(timeout, const Duration(seconds: 12)),
+    timeoutValue: const {
+      'encryptedLyric': null,
+      'encryptedTrans': null,
+      'roma': null,
     },
   );
 }
