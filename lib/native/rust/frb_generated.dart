@@ -9,6 +9,7 @@ import 'api/installed_font.dart';
 import 'api/library_db.dart';
 import 'api/logger.dart';
 import 'api/ne.dart';
+import 'api/smart_transition.dart';
 import 'api/smtc_flutter.dart';
 import 'api/system_theme.dart';
 import 'api/system_volume.dart';
@@ -74,7 +75,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 1232832874;
+  int get rustContentHash => -1282059799;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -147,6 +148,14 @@ abstract class RustLibApi extends BaseApi {
     required int progress,
   });
 
+  bool crateApiSmartTransitionAcknowledgeNativeSmartTransition({
+    required BigInt transitionId,
+  });
+
+  String crateApiSmartTransitionAdoptNativeSmartTransitionJson({
+    required BigInt transitionId,
+  });
+
   Future<void> crateApiAmllTtmlAmllClearCache();
 
   Future<String?> crateApiAmllTtmlAmllGetTtml({required String id});
@@ -158,10 +167,33 @@ abstract class RustLibApi extends BaseApi {
     required String cacheDir,
   });
 
+  Future<String> crateApiSmartTransitionAnalyzeSmartTransitionTrack({
+    required BigInt jobId,
+    required String path,
+    String? mediaId,
+    required String libraryRoot,
+  });
+
+  String crateApiSmartTransitionArmSmartTransitionJson({
+    required String bassDir,
+    required String requestJson,
+  });
+
   Stream<IndexActionState> crateApiTagReaderBuildIndexFromFoldersRecursively({
     required List<String> folders,
     required String indexPath,
   });
+
+  String crateApiSmartTransitionCancelNativeSmartTransitionJson({
+    required BigInt transitionId,
+    required String reason,
+  });
+
+  bool crateApiSmartTransitionCancelSmartTransitionAnalysis({
+    required BigInt jobId,
+  });
+
+  void crateApiSmartTransitionCloseSmartTransitionEvents();
 
   Future<Uint32List> crateApiColorExtractionExtractColorsFromImage({
     required List<int> imageBytes,
@@ -209,10 +241,18 @@ abstract class RustLibApi extends BaseApi {
 
   Stream<String> crateApiLoggerInitRustLogger();
 
+  Stream<String> crateApiSmartTransitionInitSmartTransitionEvents({
+    required String bassDir,
+  });
+
   Future<bool> crateApiUtilsLaunchInBrowser({required String uri});
 
   Future<void> crateApiLibraryDbMigrateIndexJsonToSqlite({
     required String indexPath,
+  });
+
+  String crateApiSmartTransitionNativeSmartTransitionSnapshotJson({
+    required BigInt transitionId,
   });
 
   Future<String> crateApiNeNeLyric({required PlatformInt64 songId});
@@ -224,6 +264,17 @@ abstract class RustLibApi extends BaseApi {
 
   Future<String?> crateApiUtilsPickSingleFolder();
 
+  Future<String> crateApiSmartTransitionPlanSmartTransitionJson({
+    required String outgoingProfileJson,
+    required String incomingProfileJson,
+    required bool isGaplessCandidate,
+    required double userSpeed,
+    required double pitch,
+    required bool tempoAtCueAvailable,
+    required double outgoingReplayGainDb,
+    required double incomingReplayGainDb,
+  });
+
   Future<AudioExtraMetadata> crateApiTagReaderReadAudioExtraMetadata({
     required String path,
   });
@@ -233,6 +284,14 @@ abstract class RustLibApi extends BaseApi {
   });
 
   Future<bool> crateApiUtilsShowInExplorer({required String path});
+
+  String crateApiSmartTransitionSmartTransitionAnalysisConfigJson();
+
+  String crateApiSmartTransitionSmartTransitionCapabilitiesJson({
+    required String bassDir,
+  });
+
+  String crateApiSmartTransitionSmartTransitionDiagnosticsJson();
 
   Future<SystemTheme> crateApiSystemThemeSystemThemeDefault();
 
@@ -827,6 +886,66 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  bool crateApiSmartTransitionAcknowledgeNativeSmartTransition({
+    required BigInt transitionId,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(transitionId, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 16)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta:
+            kCrateApiSmartTransitionAcknowledgeNativeSmartTransitionConstMeta,
+        argValues: [transitionId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta
+  get kCrateApiSmartTransitionAcknowledgeNativeSmartTransitionConstMeta =>
+      const TaskConstMeta(
+        debugName: 'acknowledge_native_smart_transition',
+        argNames: ['transitionId'],
+      );
+
+  @override
+  String crateApiSmartTransitionAdoptNativeSmartTransitionJson({
+    required BigInt transitionId,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(transitionId, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 17)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta:
+            kCrateApiSmartTransitionAdoptNativeSmartTransitionJsonConstMeta,
+        argValues: [transitionId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta
+  get kCrateApiSmartTransitionAdoptNativeSmartTransitionJsonConstMeta =>
+      const TaskConstMeta(
+        debugName: 'adopt_native_smart_transition_json',
+        argNames: ['transitionId'],
+      );
+
+  @override
   Future<void> crateApiAmllTtmlAmllClearCache() {
     return handler.executeNormal(
       NormalTask(
@@ -835,7 +954,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 16,
+            funcId: 18,
             port: port_,
           );
         },
@@ -863,7 +982,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 17,
+            funcId: 19,
             port: port_,
           );
         },
@@ -899,7 +1018,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 18,
+            funcId: 20,
             port: port_,
           );
         },
@@ -921,6 +1040,76 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<String> crateApiSmartTransitionAnalyzeSmartTransitionTrack({
+    required BigInt jobId,
+    required String path,
+    String? mediaId,
+    required String libraryRoot,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(jobId, serializer);
+          sse_encode_String(path, serializer);
+          sse_encode_opt_String(mediaId, serializer);
+          sse_encode_String(libraryRoot, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 21,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSmartTransitionAnalyzeSmartTransitionTrackConstMeta,
+        argValues: [jobId, path, mediaId, libraryRoot],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta
+  get kCrateApiSmartTransitionAnalyzeSmartTransitionTrackConstMeta =>
+      const TaskConstMeta(
+        debugName: 'analyze_smart_transition_track',
+        argNames: ['jobId', 'path', 'mediaId', 'libraryRoot'],
+      );
+
+  @override
+  String crateApiSmartTransitionArmSmartTransitionJson({
+    required String bassDir,
+    required String requestJson,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(bassDir, serializer);
+          sse_encode_String(requestJson, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 22)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiSmartTransitionArmSmartTransitionJsonConstMeta,
+        argValues: [bassDir, requestJson],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSmartTransitionArmSmartTransitionJsonConstMeta =>
+      const TaskConstMeta(
+        debugName: 'arm_smart_transition_json',
+        argNames: ['bassDir', 'requestJson'],
+      );
+
+  @override
   Stream<IndexActionState> crateApiTagReaderBuildIndexFromFoldersRecursively({
     required List<String> folders,
     required String indexPath,
@@ -937,7 +1126,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 19,
+              funcId: 23,
               port: port_,
             );
           },
@@ -963,6 +1152,94 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  String crateApiSmartTransitionCancelNativeSmartTransitionJson({
+    required BigInt transitionId,
+    required String reason,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(transitionId, serializer);
+          sse_encode_String(reason, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 24)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta:
+            kCrateApiSmartTransitionCancelNativeSmartTransitionJsonConstMeta,
+        argValues: [transitionId, reason],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta
+  get kCrateApiSmartTransitionCancelNativeSmartTransitionJsonConstMeta =>
+      const TaskConstMeta(
+        debugName: 'cancel_native_smart_transition_json',
+        argNames: ['transitionId', 'reason'],
+      );
+
+  @override
+  bool crateApiSmartTransitionCancelSmartTransitionAnalysis({
+    required BigInt jobId,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(jobId, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 25)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta:
+            kCrateApiSmartTransitionCancelSmartTransitionAnalysisConstMeta,
+        argValues: [jobId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta
+  get kCrateApiSmartTransitionCancelSmartTransitionAnalysisConstMeta =>
+      const TaskConstMeta(
+        debugName: 'cancel_smart_transition_analysis',
+        argNames: ['jobId'],
+      );
+
+  @override
+  void crateApiSmartTransitionCloseSmartTransitionEvents() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 26)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiSmartTransitionCloseSmartTransitionEventsConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta
+  get kCrateApiSmartTransitionCloseSmartTransitionEventsConstMeta =>
+      const TaskConstMeta(
+        debugName: 'close_smart_transition_events',
+        argNames: [],
+      );
+
+  @override
   Future<Uint32List> crateApiColorExtractionExtractColorsFromImage({
     required List<int> imageBytes,
     required int numColors,
@@ -976,7 +1253,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 20,
+            funcId: 27,
             port: port_,
           );
         },
@@ -1015,7 +1292,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 21,
+            funcId: 28,
             port: port_,
           );
         },
@@ -1045,7 +1322,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 22,
+            funcId: 29,
             port: port_,
           );
         },
@@ -1073,7 +1350,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 23,
+            funcId: 30,
             port: port_,
           );
         },
@@ -1109,7 +1386,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 24,
+            funcId: 31,
             port: port_,
           );
         },
@@ -1147,7 +1424,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 25,
+            funcId: 32,
             port: port_,
           );
         },
@@ -1182,7 +1459,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 26,
+            funcId: 33,
             port: port_,
           );
         },
@@ -1217,7 +1494,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 27,
+            funcId: 34,
             port: port_,
           );
         },
@@ -1252,7 +1529,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 28,
+            funcId: 35,
             port: port_,
           );
         },
@@ -1285,7 +1562,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 29,
+              funcId: 36,
               port: port_,
             );
           },
@@ -1306,6 +1583,45 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: 'init_rust_logger', argNames: ['sink']);
 
   @override
+  Stream<String> crateApiSmartTransitionInitSmartTransitionEvents({
+    required String bassDir,
+  }) {
+    final sink = RustStreamSink<String>();
+    unawaited(
+      handler.executeNormal(
+        NormalTask(
+          callFfi: (port_) {
+            final serializer = SseSerializer(generalizedFrbRustBinding);
+            sse_encode_String(bassDir, serializer);
+            sse_encode_StreamSink_String_Sse(sink, serializer);
+            pdeCallFfi(
+              generalizedFrbRustBinding,
+              serializer,
+              funcId: 37,
+              port: port_,
+            );
+          },
+          codec: SseCodec(
+            decodeSuccessData: sse_decode_unit,
+            decodeErrorData: sse_decode_String,
+          ),
+          constMeta: kCrateApiSmartTransitionInitSmartTransitionEventsConstMeta,
+          argValues: [bassDir, sink],
+          apiImpl: this,
+        ),
+      ),
+    );
+    return sink.stream;
+  }
+
+  TaskConstMeta
+  get kCrateApiSmartTransitionInitSmartTransitionEventsConstMeta =>
+      const TaskConstMeta(
+        debugName: 'init_smart_transition_events',
+        argNames: ['bassDir', 'sink'],
+      );
+
+  @override
   Future<bool> crateApiUtilsLaunchInBrowser({required String uri}) {
     return handler.executeNormal(
       NormalTask(
@@ -1315,7 +1631,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 30,
+            funcId: 38,
             port: port_,
           );
         },
@@ -1345,7 +1661,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 31,
+            funcId: 39,
             port: port_,
           );
         },
@@ -1367,6 +1683,36 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  String crateApiSmartTransitionNativeSmartTransitionSnapshotJson({
+    required BigInt transitionId,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(transitionId, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 40)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta:
+            kCrateApiSmartTransitionNativeSmartTransitionSnapshotJsonConstMeta,
+        argValues: [transitionId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta
+  get kCrateApiSmartTransitionNativeSmartTransitionSnapshotJsonConstMeta =>
+      const TaskConstMeta(
+        debugName: 'native_smart_transition_snapshot_json',
+        argNames: ['transitionId'],
+      );
+
+  @override
   Future<String> crateApiNeNeLyric({required PlatformInt64 songId}) {
     return handler.executeNormal(
       NormalTask(
@@ -1376,7 +1722,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 32,
+            funcId: 41,
             port: port_,
           );
         },
@@ -1408,7 +1754,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 33,
+            funcId: 42,
             port: port_,
           );
         },
@@ -1437,7 +1783,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 34,
+            funcId: 43,
             port: port_,
           );
         },
@@ -1456,6 +1802,71 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: 'pick_single_folder', argNames: []);
 
   @override
+  Future<String> crateApiSmartTransitionPlanSmartTransitionJson({
+    required String outgoingProfileJson,
+    required String incomingProfileJson,
+    required bool isGaplessCandidate,
+    required double userSpeed,
+    required double pitch,
+    required bool tempoAtCueAvailable,
+    required double outgoingReplayGainDb,
+    required double incomingReplayGainDb,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(outgoingProfileJson, serializer);
+          sse_encode_String(incomingProfileJson, serializer);
+          sse_encode_bool(isGaplessCandidate, serializer);
+          sse_encode_f_64(userSpeed, serializer);
+          sse_encode_f_64(pitch, serializer);
+          sse_encode_bool(tempoAtCueAvailable, serializer);
+          sse_encode_f_64(outgoingReplayGainDb, serializer);
+          sse_encode_f_64(incomingReplayGainDb, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 44,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSmartTransitionPlanSmartTransitionJsonConstMeta,
+        argValues: [
+          outgoingProfileJson,
+          incomingProfileJson,
+          isGaplessCandidate,
+          userSpeed,
+          pitch,
+          tempoAtCueAvailable,
+          outgoingReplayGainDb,
+          incomingReplayGainDb,
+        ],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSmartTransitionPlanSmartTransitionJsonConstMeta =>
+      const TaskConstMeta(
+        debugName: 'plan_smart_transition_json',
+        argNames: [
+          'outgoingProfileJson',
+          'incomingProfileJson',
+          'isGaplessCandidate',
+          'userSpeed',
+          'pitch',
+          'tempoAtCueAvailable',
+          'outgoingReplayGainDb',
+          'incomingReplayGainDb',
+        ],
+      );
+
+  @override
   Future<AudioExtraMetadata> crateApiTagReaderReadAudioExtraMetadata({
     required String path,
   }) {
@@ -1467,7 +1878,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 35,
+            funcId: 45,
             port: port_,
           );
         },
@@ -1500,7 +1911,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 36,
+            funcId: 46,
             port: port_,
           );
         },
@@ -1531,7 +1942,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 37,
+            funcId: 47,
             port: port_,
           );
         },
@@ -1550,6 +1961,90 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: 'show_in_explorer', argNames: ['path']);
 
   @override
+  String crateApiSmartTransitionSmartTransitionAnalysisConfigJson() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 48)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta:
+            kCrateApiSmartTransitionSmartTransitionAnalysisConfigJsonConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta
+  get kCrateApiSmartTransitionSmartTransitionAnalysisConfigJsonConstMeta =>
+      const TaskConstMeta(
+        debugName: 'smart_transition_analysis_config_json',
+        argNames: [],
+      );
+
+  @override
+  String crateApiSmartTransitionSmartTransitionCapabilitiesJson({
+    required String bassDir,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(bassDir, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 49)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta:
+            kCrateApiSmartTransitionSmartTransitionCapabilitiesJsonConstMeta,
+        argValues: [bassDir],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta
+  get kCrateApiSmartTransitionSmartTransitionCapabilitiesJsonConstMeta =>
+      const TaskConstMeta(
+        debugName: 'smart_transition_capabilities_json',
+        argNames: ['bassDir'],
+      );
+
+  @override
+  String crateApiSmartTransitionSmartTransitionDiagnosticsJson() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 50)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta:
+            kCrateApiSmartTransitionSmartTransitionDiagnosticsJsonConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta
+  get kCrateApiSmartTransitionSmartTransitionDiagnosticsJsonConstMeta =>
+      const TaskConstMeta(
+        debugName: 'smart_transition_diagnostics_json',
+        argNames: [],
+      );
+
+  @override
   Future<SystemTheme> crateApiSystemThemeSystemThemeDefault() {
     return handler.executeNormal(
       NormalTask(
@@ -1558,7 +2053,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 38,
+            funcId: 51,
             port: port_,
           );
         },
@@ -1582,7 +2077,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 39)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 52)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_system_theme,
@@ -1607,7 +2102,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 40)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 53)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -1629,7 +2124,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 41)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 54)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_f_64,
@@ -1653,7 +2148,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_StreamSink_f_64_Sse(sink, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 42)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 55)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_f_64,
@@ -1677,7 +2172,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_f_64(val, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 43)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 56)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -1710,7 +2205,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 44,
+              funcId: 57,
               port: port_,
             );
           },
@@ -1749,7 +2244,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 45,
+            funcId: 58,
             port: port_,
           );
         },
@@ -1784,7 +2279,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 46,
+            funcId: 59,
             port: port_,
           );
         },

@@ -9,6 +9,7 @@ import 'api/installed_font.dart';
 import 'api/library_db.dart';
 import 'api/logger.dart';
 import 'api/ne.dart';
+import 'api/smart_transition.dart';
 import 'api/smtc_flutter.dart';
 import 'api/system_theme.dart';
 import 'api/system_volume.dart';
