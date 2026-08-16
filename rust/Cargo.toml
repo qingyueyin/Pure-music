@@ -55,6 +55,7 @@ base64 = "0.22.1"
 hex = "0.4.3"
 reqwest = { version = "0.12.0", default-features = false, features = ["json", "blocking", "rustls-tls"] }
 serde = { version = "1.0", features = ["derive"] }
+unicode-normalization = "0.1.24"
 kmeans_colors = "0.7"
 palette = "0.7"
 symphonia = { version = "0.6.0", default-features = false, features = [
@@ -98,6 +99,6 @@ opt-level = 3          # 最高优化
 lto = "thin"           # 链接时优化
 codegen-units = 1      # 单个编译单元，生成最优代码
 strip = true           # 移除调试符号
-panic = "abort"        # panic 时直接退出（减小体积）
+panic = "unwind"       # FFI 捕获 panic 并返回 Dart，避免整个进程直接退出
 
 

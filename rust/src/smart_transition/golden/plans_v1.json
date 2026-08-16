@@ -1,0 +1,793 @@
+{
+  "beat_aligned": {
+    "bass_tempo_percent": 0.0,
+    "confidence": 0.8,
+    "confidence_tier": 2,
+    "diagnostics": [
+      {
+        "code": "mode",
+        "detail": "beat_aligned"
+      },
+      {
+        "code": "grid",
+        "detail": "grid=16 beats=8 activity=0.3000 intro=0.5132"
+      }
+    ],
+    "duration_ms": 4000,
+    "fold_factor": 1.0,
+    "gain_curve": [
+      {
+        "incoming": 0.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 0.00409096925550288,
+        "outgoing": 0.9999898476902247
+      },
+      {
+        "incoming": 0.01602855942683693,
+        "outgoing": 0.9998444054921752
+      },
+      {
+        "incoming": 0.03532159125412534,
+        "outgoing": 0.9992462534094436
+      },
+      {
+        "incoming": 0.061481036659769714,
+        "outgoing": 0.9977230666441916
+      },
+      {
+        "incoming": 0.09400113940754533,
+        "outgoing": 0.994693571192717
+      },
+      {
+        "incoming": 0.13234061091220883,
+        "outgoing": 0.9895115136793552
+      },
+      {
+        "incoming": 0.17590620738246207,
+        "outgoing": 0.9815078806407034
+      },
+      {
+        "incoming": 0.22404052788903794,
+        "outgoing": 0.970031253194544
+      },
+      {
+        "incoming": 0.27601542344766794,
+        "outgoing": 0.9544858051222058
+      },
+      {
+        "incoming": 0.33103194488284776,
+        "outgoing": 0.9343661149437259
+      },
+      {
+        "incoming": 0.3882272679444739,
+        "outgoing": 0.9092877195350556
+      },
+      {
+        "incoming": 0.4466885205611767,
+        "outgoing": 0.8790122264286335
+      },
+      {
+        "incoming": 0.5054729174483591,
+        "outgoing": 0.8434658453267545
+      },
+      {
+        "incoming": 0.5636331119623718,
+        "outgoing": 0.8027503996280692
+      },
+      {
+        "incoming": 0.6202462417222376,
+        "outgoing": 0.7571462208645137
+      },
+      {
+        "incoming": 0.6744448118567598,
+        "outgoing": 0.7071067811865476
+      },
+      {
+        "incoming": 0.7254473612968807,
+        "outgoing": 0.6532454364406881
+      },
+      {
+        "incoming": 0.7725868158294555,
+        "outgoing": 0.5963151816757438
+      },
+      {
+        "incoming": 0.8153345538172693,
+        "outgoing": 0.537182806656378
+      },
+      {
+        "incoming": 0.8533184861643508,
+        "outgoing": 0.47679923006332225
+      },
+      {
+        "incoming": 0.8863338535889524,
+        "outgoing": 0.416168046710386
+      },
+      {
+        "incoming": 0.9143459294190202,
+        "outgoing": 0.35631441627440236
+      },
+      {
+        "incoming": 0.9374843332678017,
+        "outgoing": 0.2982563458171754
+      },
+      {
+        "incoming": 0.9560291551894474,
+        "outgoing": 0.24298017990326398
+      },
+      {
+        "incoming": 0.9703895099737133,
+        "outgoing": 0.19142173398074447
+      },
+      {
+        "incoming": 0.9810754458316397,
+        "outgoing": 0.14445402139086044
+      },
+      {
+        "incoming": 0.9886642947580264,
+        "outgoing": 0.10288196842926008
+      },
+      {
+        "incoming": 0.9937625659575903,
+        "outgoing": 0.0674439195636641
+      },
+      {
+        "incoming": 0.9969643620038101,
+        "outgoing": 0.038819132488888956
+      },
+      {
+        "incoming": 0.9988070737563509,
+        "outgoing": 0.017639864115082195
+      },
+      {
+        "incoming": 0.9997248385398867,
+        "outgoing": 0.004506053315402474
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 0.0
+      }
+    ],
+    "incoming_bpm": 120.0,
+    "incoming_cue_ms": 0,
+    "matched_ratio": 1.0,
+    "mode": "beat_aligned",
+    "outgoing_bpm": 120.0,
+    "outgoing_cue_ms": 232000,
+    "outgoing_effective_speed": 1.0,
+    "raw_ratio": 1.0
+  },
+  "beat_matched": {
+    "bass_tempo_percent": 2.5,
+    "confidence": 0.8,
+    "confidence_tier": 3,
+    "diagnostics": [
+      {
+        "code": "mode",
+        "detail": "beat_matched"
+      },
+      {
+        "code": "grid",
+        "detail": "grid=16 beats=8 activity=0.3000 intro=0.5132"
+      }
+    ],
+    "duration_ms": 3902,
+    "fold_factor": 1.0,
+    "gain_curve": [
+      {
+        "incoming": 0.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 0.00409096925550288,
+        "outgoing": 0.9999898476902247
+      },
+      {
+        "incoming": 0.01602855942683693,
+        "outgoing": 0.9998444054921752
+      },
+      {
+        "incoming": 0.03532159125412534,
+        "outgoing": 0.9992462534094436
+      },
+      {
+        "incoming": 0.061481036659769714,
+        "outgoing": 0.9977230666441916
+      },
+      {
+        "incoming": 0.09400113940754533,
+        "outgoing": 0.994693571192717
+      },
+      {
+        "incoming": 0.13234061091220883,
+        "outgoing": 0.9895115136793552
+      },
+      {
+        "incoming": 0.17590620738246207,
+        "outgoing": 0.9815078806407034
+      },
+      {
+        "incoming": 0.22404052788903794,
+        "outgoing": 0.970031253194544
+      },
+      {
+        "incoming": 0.27601542344766794,
+        "outgoing": 0.9544858051222058
+      },
+      {
+        "incoming": 0.33103194488284776,
+        "outgoing": 0.9343661149437259
+      },
+      {
+        "incoming": 0.3882272679444739,
+        "outgoing": 0.9092877195350556
+      },
+      {
+        "incoming": 0.4466885205611767,
+        "outgoing": 0.8790122264286335
+      },
+      {
+        "incoming": 0.5054729174483591,
+        "outgoing": 0.8434658453267545
+      },
+      {
+        "incoming": 0.5636331119623718,
+        "outgoing": 0.8027503996280692
+      },
+      {
+        "incoming": 0.6202462417222376,
+        "outgoing": 0.7571462208645137
+      },
+      {
+        "incoming": 0.6744448118567598,
+        "outgoing": 0.7071067811865476
+      },
+      {
+        "incoming": 0.7254473612968807,
+        "outgoing": 0.6532454364406881
+      },
+      {
+        "incoming": 0.7725868158294555,
+        "outgoing": 0.5963151816757438
+      },
+      {
+        "incoming": 0.8153345538172693,
+        "outgoing": 0.537182806656378
+      },
+      {
+        "incoming": 0.8533184861643508,
+        "outgoing": 0.47679923006332225
+      },
+      {
+        "incoming": 0.8863338535889524,
+        "outgoing": 0.416168046710386
+      },
+      {
+        "incoming": 0.9143459294190202,
+        "outgoing": 0.35631441627440236
+      },
+      {
+        "incoming": 0.9374843332678017,
+        "outgoing": 0.2982563458171754
+      },
+      {
+        "incoming": 0.9560291551894474,
+        "outgoing": 0.24298017990326398
+      },
+      {
+        "incoming": 0.9703895099737133,
+        "outgoing": 0.19142173398074447
+      },
+      {
+        "incoming": 0.9810754458316397,
+        "outgoing": 0.14445402139086044
+      },
+      {
+        "incoming": 0.9886642947580264,
+        "outgoing": 0.10288196842926008
+      },
+      {
+        "incoming": 0.9937625659575903,
+        "outgoing": 0.0674439195636641
+      },
+      {
+        "incoming": 0.9969643620038101,
+        "outgoing": 0.038819132488888956
+      },
+      {
+        "incoming": 0.9988070737563509,
+        "outgoing": 0.017639864115082195
+      },
+      {
+        "incoming": 0.9997248385398867,
+        "outgoing": 0.004506053315402474
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 0.0
+      }
+    ],
+    "incoming_bpm": 123.0,
+    "incoming_cue_ms": 0,
+    "matched_ratio": 1.025,
+    "mode": "beat_matched",
+    "outgoing_bpm": 120.0,
+    "outgoing_cue_ms": 232000,
+    "outgoing_effective_speed": 1.025,
+    "raw_ratio": 1.025
+  },
+  "energy": {
+    "bass_tempo_percent": 0.0,
+    "confidence": 0.7,
+    "confidence_tier": 1,
+    "diagnostics": [
+      {
+        "code": "mode",
+        "detail": "energy_crossfade"
+      },
+      {
+        "code": "beat_admission",
+        "detail": "matched_ratio deviates more than 0.06"
+      }
+    ],
+    "duration_ms": 3692,
+    "fold_factor": 1.0,
+    "gain_curve": [
+      {
+        "incoming": 0.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 0.00409096925550288,
+        "outgoing": 0.9999898476902247
+      },
+      {
+        "incoming": 0.01602855942683693,
+        "outgoing": 0.9998444054921752
+      },
+      {
+        "incoming": 0.03532159125412534,
+        "outgoing": 0.9992462534094436
+      },
+      {
+        "incoming": 0.061481036659769714,
+        "outgoing": 0.9977230666441916
+      },
+      {
+        "incoming": 0.09400113940754533,
+        "outgoing": 0.994693571192717
+      },
+      {
+        "incoming": 0.13234061091220883,
+        "outgoing": 0.9895115136793552
+      },
+      {
+        "incoming": 0.17590620738246207,
+        "outgoing": 0.9815078806407034
+      },
+      {
+        "incoming": 0.22404052788903794,
+        "outgoing": 0.970031253194544
+      },
+      {
+        "incoming": 0.27601542344766794,
+        "outgoing": 0.9544858051222058
+      },
+      {
+        "incoming": 0.33103194488284776,
+        "outgoing": 0.9343661149437259
+      },
+      {
+        "incoming": 0.3882272679444739,
+        "outgoing": 0.9092877195350556
+      },
+      {
+        "incoming": 0.4466885205611767,
+        "outgoing": 0.8790122264286335
+      },
+      {
+        "incoming": 0.5054729174483591,
+        "outgoing": 0.8434658453267545
+      },
+      {
+        "incoming": 0.5636331119623718,
+        "outgoing": 0.8027503996280692
+      },
+      {
+        "incoming": 0.6202462417222376,
+        "outgoing": 0.7571462208645137
+      },
+      {
+        "incoming": 0.6744448118567598,
+        "outgoing": 0.7071067811865476
+      },
+      {
+        "incoming": 0.7254473612968807,
+        "outgoing": 0.6532454364406881
+      },
+      {
+        "incoming": 0.7725868158294555,
+        "outgoing": 0.5963151816757438
+      },
+      {
+        "incoming": 0.8153345538172693,
+        "outgoing": 0.537182806656378
+      },
+      {
+        "incoming": 0.8533184861643508,
+        "outgoing": 0.47679923006332225
+      },
+      {
+        "incoming": 0.8863338535889524,
+        "outgoing": 0.416168046710386
+      },
+      {
+        "incoming": 0.9143459294190202,
+        "outgoing": 0.35631441627440236
+      },
+      {
+        "incoming": 0.9374843332678017,
+        "outgoing": 0.2982563458171754
+      },
+      {
+        "incoming": 0.9560291551894474,
+        "outgoing": 0.24298017990326398
+      },
+      {
+        "incoming": 0.9703895099737133,
+        "outgoing": 0.19142173398074447
+      },
+      {
+        "incoming": 0.9810754458316397,
+        "outgoing": 0.14445402139086044
+      },
+      {
+        "incoming": 0.9886642947580264,
+        "outgoing": 0.10288196842926008
+      },
+      {
+        "incoming": 0.9937625659575903,
+        "outgoing": 0.0674439195636641
+      },
+      {
+        "incoming": 0.9969643620038101,
+        "outgoing": 0.038819132488888956
+      },
+      {
+        "incoming": 0.9988070737563509,
+        "outgoing": 0.017639864115082195
+      },
+      {
+        "incoming": 0.9997248385398867,
+        "outgoing": 0.004506053315402474
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 0.0
+      }
+    ],
+    "incoming_bpm": 100.0,
+    "incoming_cue_ms": 0,
+    "matched_ratio": 0.7692307692307693,
+    "mode": "energy_crossfade",
+    "outgoing_bpm": 130.0,
+    "outgoing_cue_ms": 236308,
+    "outgoing_effective_speed": 1.0,
+    "raw_ratio": 0.7692307692307693
+  },
+  "gapless": {
+    "bass_tempo_percent": 0.0,
+    "confidence": 1.0,
+    "confidence_tier": 3,
+    "diagnostics": [
+      {
+        "code": "mode",
+        "detail": "gapless"
+      }
+    ],
+    "duration_ms": 0,
+    "fold_factor": 1.0,
+    "gain_curve": [
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      }
+    ],
+    "incoming_bpm": 120.0,
+    "incoming_cue_ms": 0,
+    "matched_ratio": 1.0,
+    "mode": "gapless",
+    "outgoing_bpm": 120.0,
+    "outgoing_cue_ms": 240000,
+    "outgoing_effective_speed": 1.0,
+    "raw_ratio": 1.0
+  },
+  "silence_trim": {
+    "bass_tempo_percent": 0.0,
+    "confidence": 1.0,
+    "confidence_tier": 1,
+    "diagnostics": [
+      {
+        "code": "mode",
+        "detail": "silence_trim"
+      },
+      {
+        "code": "reason",
+        "detail": "region shorter than 2000 ms"
+      }
+    ],
+    "duration_ms": 0,
+    "fold_factor": 1.0,
+    "gain_curve": [
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      },
+      {
+        "incoming": 1.0,
+        "outgoing": 1.0
+      }
+    ],
+    "incoming_bpm": 120.0,
+    "incoming_cue_ms": 200,
+    "matched_ratio": 1.0,
+    "mode": "silence_trim",
+    "outgoing_bpm": 120.0,
+    "outgoing_cue_ms": 239000,
+    "outgoing_effective_speed": 1.0,
+    "raw_ratio": 1.0
+  }
+}

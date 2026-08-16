@@ -322,13 +322,13 @@ function New-AppPackage([string]$artifactRoot, [string]$version) {
             throw "BASS directory not found in project root: $bassSrcDir"
         }
         New-Item -ItemType Directory -Force -Path $bassDestDir | Out-Null
-        foreach ($dll in @("bass.dll", "basswasapi.dll", "bass_fx.dll")) {
+        foreach ($dll in @("bass.dll", "basswasapi.dll", "bass_fx.dll", "bassmix.dll")) {
             $src = Join-Path $bassSrcDir $dll
             if (-not (Test-Path $src)) { throw "$dll not found in source BASS folder: $bassSrcDir" }
             Copy-Item -Path $src -Destination (Join-Path $bassDestDir $dll) -Force
         }
         Invoke-RoboCopy $bassSrcDir $bassDestDir
-        foreach ($dll in @("bass.dll", "basswasapi.dll", "bass_fx.dll")) {
+        foreach ($dll in @("bass.dll", "basswasapi.dll", "bass_fx.dll", "bassmix.dll")) {
             if (-not (Test-Path "$bassDestDir\$dll")) { throw "Missing BASS DLL: $dll" }
         }
     }
@@ -354,6 +354,7 @@ function Test-KeyFiles([string]$appDir) {
         "dll\BASS\bass.dll",
         "dll\BASS\basswasapi.dll",
         "dll\BASS\bass_fx.dll",
+        "dll\BASS\bassmix.dll",
         "desktop_lyric\desktop_lyric.exe"
     )
     $missing = @()
@@ -406,7 +407,8 @@ function New-PortablePackage([string]$version, [bool]$buildFirst, [bool]$makeZip
             }
         }
 
-        Move-Item -LiteralPath $artifactRoot -Destination $publishedRoot
+        # 文件监视器可能锁定项目目录下新建目录的重命名，复制后由 finally 清理暂存目录。
+        Copy-Item -LiteralPath $artifactRoot -Destination $publishedRoot -Recurse -Force
     }
     finally {
         Remove-StagingContainer

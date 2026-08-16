@@ -1,0 +1,157 @@
+{
+  "curve": [
+    {
+      "incoming": 0.0,
+      "outgoing": 1.0
+    },
+    {
+      "incoming": 0.00349963220450129,
+      "outgoing": 0.9999898476902247
+    },
+    {
+      "incoming": 0.01371306544458213,
+      "outgoing": 0.9998444054921752
+    },
+    {
+      "incoming": 0.03022392874821802,
+      "outgoing": 0.9992462534094436
+    },
+    {
+      "incoming": 0.05261953783094111,
+      "outgoing": 0.9977230666441916
+    },
+    {
+      "incoming": 0.0804741803136648,
+      "outgoing": 0.994693571192717
+    },
+    {
+      "incoming": 0.11333247320610916,
+      "outgoing": 0.9895115136793552
+    },
+    {
+      "incoming": 0.15069475992628115,
+      "outgoing": 0.9815078806407034
+    },
+    {
+      "incoming": 0.19200612349991925,
+      "outgoing": 0.970031253194544
+    },
+    {
+      "incoming": 0.23665021729904542,
+      "outgoing": 0.9544858051222058
+    },
+    {
+      "incoming": 0.2839487274281794,
+      "outgoing": 0.9343661149437259
+    },
+    {
+      "incoming": 0.33316686815745133,
+      "outgoing": 0.9092877195350556
+    },
+    {
+      "incoming": 0.3835248749077214,
+      "outgoing": 0.8790122264286335
+    },
+    {
+      "incoming": 0.434215013225054,
+      "outgoing": 0.8434658453267545
+    },
+    {
+      "incoming": 0.4844231928901214,
+      "outgoing": 0.8027503996280692
+    },
+    {
+      "incoming": 0.53335389642542,
+      "outgoing": 0.7571462208645137
+    },
+    {
+      "incoming": 0.5802568348781763,
+      "outgoing": 0.7071067811865476
+    },
+    {
+      "incoming": 0.6244535608653826,
+      "outgoing": 0.6532454364406881
+    },
+    {
+      "incoming": 0.6653622202627769,
+      "outgoing": 0.5963151816757438
+    },
+    {
+      "incoming": 0.7028396999482398,
+      "outgoing": 0.537182806656378
+    },
+    {
+      "incoming": 0.7390172346305287,
+      "outgoing": 0.47679923006332225
+    },
+    {
+      "incoming": 0.7741078700509048,
+      "outgoing": 0.416168046710386
+    },
+    {
+      "incoming": 0.80779273781581,
+      "outgoing": 0.35631441627440236
+    },
+    {
+      "incoming": 0.8397500461842048,
+      "outgoing": 0.2982563458171754
+    },
+    {
+      "incoming": 0.8696649304876046,
+      "outgoing": 0.24298017990326398
+    },
+    {
+      "incoming": 0.8972361942560184,
+      "outgoing": 0.19142173398074447
+    },
+    {
+      "incoming": 0.9221783609072233,
+      "outgoing": 0.14445402139086044
+    },
+    {
+      "incoming": 0.9442175233605627,
+      "outgoing": 0.10288196842926008
+    },
+    {
+      "incoming": 0.9630798014596688,
+      "outgoing": 0.0674439195636641
+    },
+    {
+      "incoming": 0.9784718601939775,
+      "outgoing": 0.038819132488888956
+    },
+    {
+      "incoming": 0.99005395633035,
+      "outgoing": 0.017639864115082195
+    },
+    {
+      "incoming": 0.9974073887300674,
+      "outgoing": 0.004506053315402474
+    },
+    {
+      "incoming": 1.0,
+      "outgoing": 0.0
+    }
+  ],
+  "inputs": {
+    "incoming_entrance": {
+      "average_energy_dbfs": -8.0,
+      "boundary_confidence": 0.75,
+      "end_ms": 8000.0,
+      "onset_density": 0.3,
+      "start_ms": 0.0
+    },
+    "incoming_integrated_rms_dbfs": -14.0,
+    "incoming_peak_dbfs": -2.0,
+    "incoming_replay_gain_db": 0.0,
+    "outgoing_exit": {
+      "average_energy_dbfs": -10.0,
+      "boundary_confidence": 0.7,
+      "end_ms": 240000.0,
+      "onset_density": 0.3,
+      "start_ms": 232000.0
+    },
+    "outgoing_peak_dbfs": -2.0,
+    "outgoing_replay_gain_db": 0.0
+  }
+}
