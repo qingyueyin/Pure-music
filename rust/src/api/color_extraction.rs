@@ -11,6 +11,7 @@ const MIN_VISUAL_PERCENTAGE: f32 = 0.012;
 const MIN_RELATED_PERCENTAGE: f32 = 0.025;
 const MIN_RELATED_CLUSTER_PERCENTAGE: f32 = 0.0075;
 const RELATED_COLOR_DISTANCE: f32 = 38.0;
+const DOMINANT_FAMILY_CHROMA_DISTANCE: f32 = 8.0;
 
 pub fn extract_colors_from_image(image_bytes: Vec<u8>, num_colors: i32) -> Vec<u32> {
     let num_colors = num_colors.clamp(2, 8) as usize;
@@ -120,16 +121,16 @@ fn extract_colors_from_decoded_image(
         .iter()
         .map(|entry| visual_percentages[entry.index as usize])
         .collect::<Vec<_>>();
-    Ok(
-        select_palette_candidates(&candidates, &candidate_visual_percentages, num_colors)
-            .iter()
-            .map(|entry| {
-                let rgb: Srgb = entry.centroid.into_color();
-                let rgb_u8: Srgb<u8> = rgb.into_format();
-                soften_color_for_background(rgb_u8.red, rgb_u8.green, rgb_u8.blue)
-            })
-            .collect(),
-    )
+    let selected =
+        select_palette_candidates(&candidates, &candidate_visual_percentages, num_colors);
+    Ok(selected
+        .iter()
+        .map(|entry| {
+            let rgb: Srgb = entry.centroid.into_color();
+            let rgb_u8: Srgb<u8> = rgb.into_format();
+            soften_color_for_background(rgb_u8.red, rgb_u8.green, rgb_u8.blue)
+        })
+        .collect())
 }
 
 fn visual_sample_weight(x: u32, y: u32, width: u32, height: u32) -> f32 {
@@ -144,7 +145,12 @@ fn select_palette_candidates(
     target_count: usize,
 ) -> Vec<CentroidData<Lab>> {
     if candidates.len() <= target_count {
-        return pair_palette_candidates(candidates.to_vec());
+        return spread_palette_candidates(candidates.to_vec());
+    }
+    if let Some(slots) =
+        allocate_dominant_palette_slots(candidates, visual_percentages, target_count)
+    {
+        return spread_palette_candidates(slots);
     }
 
     let mut selected_indices = Vec::with_capacity(target_count);
@@ -174,8 +180,14 @@ fn select_palette_candidates(
                     .unwrap_or(entry.percentage);
                 let effective_percentage = entry.percentage.max(visual_percentage);
                 let chroma = entry.centroid.a.hypot(entry.centroid.b);
-                let chroma_weight = 1.0 + (chroma / 80.0).min(0.45);
-                let score = nearest_distance * effective_percentage.sqrt() * chroma_weight;
+                let score = if selected_indices.len() == 2 {
+                    let separation_weight = 0.5 + (nearest_distance / 40.0).min(1.0);
+                    chroma * effective_percentage.sqrt() * separation_weight
+                } else {
+                    nearest_distance
+                        * effective_percentage.sqrt()
+                        * (1.0 + (chroma / 100.0).min(0.2))
+                };
                 (index, score)
             })
             .max_by(|left, right| left.1.total_cmp(&right.1))
@@ -197,12 +209,124 @@ fn select_palette_candidates(
         }
     }
 
-    pair_palette_candidates(
+    spread_palette_candidates(
         selected_indices
             .into_iter()
             .map(|index| candidates[index].clone())
             .collect(),
     )
+}
+
+fn allocate_dominant_palette_slots(
+    candidates: &[CentroidData<Lab>],
+    visual_percentages: &[f32],
+    target_count: usize,
+) -> Option<Vec<CentroidData<Lab>>> {
+    if target_count != 4 || candidates.is_empty() {
+        return None;
+    }
+    let family_indices = candidates
+        .iter()
+        .enumerate()
+        .filter(|(_, candidate)| {
+            let a_distance = candidates[0].centroid.a - candidate.centroid.a;
+            let b_distance = candidates[0].centroid.b - candidate.centroid.b;
+            a_distance.hypot(b_distance) <= DOMINANT_FAMILY_CHROMA_DISTANCE
+        })
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    let family_percentage = family_indices
+        .iter()
+        .map(|index| candidates[*index].percentage)
+        .sum::<f32>();
+    let outside_family_percentage = 1.0 - family_percentage;
+    let mut family_slot_count = if outside_family_percentage < MIN_DIVERSITY_PERCENTAGE {
+        4
+    } else if family_percentage >= 0.78 {
+        3
+    } else if family_percentage >= 0.55 {
+        2
+    } else {
+        return None;
+    };
+    let meaningful_accents = candidates
+        .iter()
+        .enumerate()
+        .filter(|(index, candidate)| {
+            !family_indices.contains(index)
+                && is_meaningful_candidate(candidates, visual_percentages, *index, candidate)
+        })
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    let has_two_accent_families = meaningful_accents
+        .iter()
+        .enumerate()
+        .any(|(position, left)| {
+            meaningful_accents[position + 1..].iter().any(|right| {
+                lab_distance_squared(&candidates[*left].centroid, &candidates[*right].centroid)
+                    .sqrt()
+                    > RELATED_COLOR_DISTANCE
+            })
+        });
+    if has_two_accent_families {
+        family_slot_count = 2;
+    }
+
+    let mut selected = family_indices
+        .iter()
+        .take(family_slot_count)
+        .map(|index| candidates[*index].clone())
+        .collect::<Vec<_>>();
+    while selected.len() < family_slot_count {
+        selected.push(candidates[family_indices[0]].clone());
+    }
+
+    while selected.len() < target_count {
+        let next = candidates
+            .iter()
+            .enumerate()
+            .filter(|(index, candidate)| {
+                !family_indices.contains(index)
+                    && !selected.iter().any(|entry| entry.index == candidate.index)
+                    && is_meaningful_candidate(candidates, visual_percentages, *index, candidate)
+            })
+            .map(|(index, candidate)| {
+                let nearest_distance = selected
+                    .iter()
+                    .map(|entry| lab_distance_squared(&candidate.centroid, &entry.centroid))
+                    .fold(f32::INFINITY, f32::min)
+                    .sqrt();
+                let visual_percentage = visual_percentages
+                    .get(index)
+                    .copied()
+                    .unwrap_or(candidate.percentage);
+                let effective_percentage = candidate.percentage.max(visual_percentage);
+                let chroma = candidate.centroid.a.hypot(candidate.centroid.b);
+                let score = nearest_distance
+                    * effective_percentage.sqrt()
+                    * (1.0 + (chroma / 60.0).min(0.5));
+                (index, score)
+            })
+            .max_by(|left, right| left.1.total_cmp(&right.1))
+            .map(|(index, _)| index)
+            .or_else(|| {
+                candidates
+                    .iter()
+                    .enumerate()
+                    .position(|(index, candidate)| {
+                        !family_indices.contains(&index)
+                            && !selected.iter().any(|entry| entry.index == candidate.index)
+                    })
+            });
+        let Some(next) = next else {
+            break;
+        };
+        selected.push(candidates[next].clone());
+    }
+    while selected.len() < target_count {
+        selected.push(candidates[family_indices[0]].clone());
+    }
+    Some(selected)
 }
 
 fn is_meaningful_candidate(
@@ -230,7 +354,7 @@ fn is_meaningful_candidate(
         >= MIN_RELATED_PERCENTAGE
 }
 
-fn pair_palette_candidates(candidates: Vec<CentroidData<Lab>>) -> Vec<CentroidData<Lab>> {
+fn spread_palette_candidates(candidates: Vec<CentroidData<Lab>>) -> Vec<CentroidData<Lab>> {
     if candidates.len() != 4 {
         return candidates;
     }
@@ -238,7 +362,7 @@ fn pair_palette_candidates(candidates: Vec<CentroidData<Lab>>) -> Vec<CentroidDa
     let pairings = [[0, 1, 2, 3], [0, 2, 1, 3], [0, 3, 1, 2]];
     let pairing = pairings
         .into_iter()
-        .min_by(|left, right| {
+        .max_by(|left, right| {
             let score = |pairing: &[usize; 4]| {
                 lab_distance_squared(
                     &candidates[pairing[0]].centroid,
@@ -417,7 +541,7 @@ mod tests {
     }
 
     #[test]
-    fn palette_pairs_related_colors_for_shader_layers() {
+    fn palette_spreads_related_colors_between_shader_layers() {
         let candidates = vec![
             candidate(0, 0.45, 50.0, 0.0, 0.0),
             candidate(1, 0.25, 55.0, 60.0, 0.0),
@@ -425,11 +549,45 @@ mod tests {
             candidate(3, 0.12, 48.0, 5.0, 0.0),
         ];
 
-        let paired = super::pair_palette_candidates(candidates);
+        let paired = super::spread_palette_candidates(candidates);
         assert_eq!(
             paired.iter().map(|entry| entry.index).collect::<Vec<_>>(),
-            vec![0, 3, 1, 2]
+            vec![0, 1, 2, 3]
         );
+    }
+
+    #[test]
+    fn dominant_color_family_uses_more_shader_slots() {
+        let candidates = vec![
+            candidate(0, 0.55, 16.5, 1.9, -1.0),
+            candidate(1, 0.34, 19.5, 2.1, -0.7),
+            candidate(2, 0.04, 28.1, 2.0, 0.1),
+            candidate(3, 0.02, 36.4, 2.8, 1.6),
+            candidate(4, 0.018, 86.0, 5.5, 16.5),
+            candidate(5, 0.014, 71.4, 11.7, 16.4),
+        ];
+        let visual_percentages = [0.49, 0.30, 0.07, 0.03, 0.04, 0.03];
+
+        let selected = super::select_palette_candidates(&candidates, &visual_percentages, 4);
+        let dominant_slots = selected.iter().filter(|entry| entry.index <= 3).count();
+        assert_eq!(dominant_slots, 3);
+        assert!(selected.iter().any(|entry| entry.index == 4));
+    }
+
+    #[test]
+    fn medium_dominant_color_keeps_two_accents() {
+        let candidates = vec![
+            candidate(0, 0.64, 93.2, -3.2, 7.2),
+            candidate(1, 0.071, 15.2, 21.1, -25.7),
+            candidate(2, 0.062, 25.2, 26.4, -44.0),
+            candidate(3, 0.057, 59.8, 24.3, 20.5),
+            candidate(4, 0.054, 45.2, 29.7, 14.5),
+        ];
+        let visual_percentages = [0.49, 0.10, 0.06, 0.09, 0.09];
+
+        let selected = super::select_palette_candidates(&candidates, &visual_percentages, 4);
+        assert_eq!(selected.iter().filter(|entry| entry.index == 0).count(), 2);
+        assert_eq!(selected.iter().filter(|entry| entry.index != 0).count(), 2);
     }
 
     #[test]
@@ -449,6 +607,24 @@ mod tests {
         assert!(indices.contains(&0));
         assert!(indices.contains(&1));
         assert!(indices.iter().any(|index| (3..=5).contains(index)));
+    }
+
+    #[test]
+    fn gray_cover_keeps_a_meaningful_purple_region() {
+        let candidates = vec![
+            candidate(0, 0.21, 17.6, 7.9, -8.1),
+            candidate(1, 0.20, 35.6, 3.5, -3.9),
+            candidate(2, 0.15, 5.4, 2.8, -1.8),
+            candidate(3, 0.14, 56.3, 2.7, -1.6),
+            candidate(4, 0.13, 28.0, 19.1, -17.8),
+            candidate(5, 0.08, 78.0, 0.1, -2.4),
+            candidate(6, 0.05, 30.2, 12.0, 7.3),
+            candidate(7, 0.04, 49.4, 4.8, 15.4),
+        ];
+        let visual_percentages = [0.16, 0.24, 0.10, 0.20, 0.07, 0.10, 0.06, 0.05];
+
+        let selected = super::select_palette_candidates(&candidates, &visual_percentages, 4);
+        assert!(selected.iter().any(|entry| entry.index == 4));
     }
 
     #[test]
