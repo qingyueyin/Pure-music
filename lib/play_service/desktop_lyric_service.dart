@@ -52,11 +52,18 @@ class _WinJobObject {
         int Function(Pointer<Void>, int, Pointer<Void>, int)
       >('SetInformationJobObject');
 
-  static final int Function(Pointer<Void>, int) _assignProcessToJobObject =
-      _kernel32.lookupFunction<
-        Int32 Function(Pointer<Void>, IntPtr),
-        int Function(Pointer<Void>, int)
+  static final int Function(Pointer<Void>, Pointer<Void>)
+  _assignProcessToJobObject = _kernel32
+      .lookupFunction<
+        Int32 Function(Pointer<Void>, Pointer<Void>),
+        int Function(Pointer<Void>, Pointer<Void>)
       >('AssignProcessToJobObject');
+
+  static final Pointer<Void> Function(int, int, int) _openProcess = _kernel32
+      .lookupFunction<
+        Pointer<Void> Function(Uint32, Int32, Uint32),
+        Pointer<Void> Function(int, int, int)
+      >('OpenProcess');
 
   static final int Function(Pointer<Void>) _closeHandle = _kernel32
       .lookupFunction<
@@ -66,6 +73,8 @@ class _WinJobObject {
 
   static const int _jobObjectExtendedLimitInformation = 9;
   static const int _jobObjectLimitKillOnJobClose = 0x2000;
+  static const int _processTerminate = 0x0001;
+  static const int _processSetQuota = 0x0100;
 
   /// 创建 Job Object 并将子进程加入。
   /// 当主进程终止（包括崩溃），Windows 会自动终止该 Job 内的所有进程。
@@ -106,20 +115,35 @@ class _WinJobObject {
       }
 
       // 3) 将子进程加入 Job
-      final assignRet = _assignProcessToJobObject(job, childPid);
-      if (assignRet == 0) {
-        logger.w(
-          '[desktop lyric] AssignProcessToJobObject failed '
-          '(进程可能已属于其他 Job)，退化至仅靠心跳超时',
-        );
+      final process = _openProcess(
+        _processSetQuota | _processTerminate,
+        0,
+        childPid,
+      );
+      if (process == nullptr) {
+        logger.w('[desktop lyric] OpenProcess failed, closing job');
         _closeHandle(job);
         return null;
       }
 
-      logger.i(
-        '[desktop lyric] Job Object created, child PID=$childPid secured',
-      );
-      return job;
+      try {
+        final assignRet = _assignProcessToJobObject(job, process);
+        if (assignRet == 0) {
+          logger.w(
+            '[desktop lyric] AssignProcessToJobObject failed '
+            '(进程可能已属于其他 Job)，退化至仅靠心跳超时',
+          );
+          _closeHandle(job);
+          return null;
+        }
+
+        logger.i(
+          '[desktop lyric] Job Object created, child PID=$childPid secured',
+        );
+        return job;
+      } finally {
+        _closeHandle(process);
+      }
     } catch (e) {
       logger.w('[desktop lyric] WinJobObject init error: $e');
       return null;
