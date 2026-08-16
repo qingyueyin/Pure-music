@@ -68,6 +68,8 @@ const int BASS_ACTIVE_STALLED = 2;
 
 const int BASS_ATTRIB_FREQ = 1;
 
+const int BASS_ATTRIB_VOL = 2;
+
 const int BASS_ATTRIB_VOLDSP = 19;
 
 const int BASS_DEVICE_REINIT = 128;
@@ -97,6 +99,32 @@ typedef HPLUGIN = DWORD;
 typedef HSAMPLE = DWORD;
 typedef HSTREAM = DWORD;
 typedef HFX = DWORD;
+
+final class BASS_INFO extends ffi.Struct {
+  @ffi.UnsignedLong()
+  external int flags;
+
+  @ffi.Array(7)
+  external ffi.Array<ffi.UnsignedLong> reserved;
+
+  @ffi.UnsignedLong()
+  external int minbuf;
+
+  @ffi.UnsignedLong()
+  external int dsver;
+
+  @ffi.UnsignedLong()
+  external int latency;
+
+  @ffi.UnsignedLong()
+  external int initflags;
+
+  @ffi.UnsignedLong()
+  external int speakers;
+
+  @ffi.UnsignedLong()
+  external int freq;
+}
 
 const int BASS_FX_DX8_PARAMEQ = 3;
 
@@ -213,6 +241,17 @@ class Bass {
       );
   late final _BASS_ChannelSetPosition =
       _BASS_ChannelSetPositionPtr.asFunction<int Function(int, int, int)>();
+
+  int BASS_ChannelRemoveSync(int channel, int sync) {
+    return _BASS_ChannelRemoveSync(channel, sync);
+  }
+
+  late final _BASS_ChannelRemoveSyncPtr =
+      _lookup<ffi.NativeFunction<BOOL Function(DWORD, DWORD)>>(
+        'BASS_ChannelRemoveSync',
+      );
+  late final _BASS_ChannelRemoveSync =
+      _BASS_ChannelRemoveSyncPtr.asFunction<int Function(int, int)>();
 
   int BASS_ChannelStop(int handle) {
     return _BASS_ChannelStop(handle);
@@ -379,6 +418,17 @@ class Bass {
       _BASS_InitPtr.asFunction<
         int Function(int, int, int, HWND, ffi.Pointer<ffi.Void>)
       >();
+
+  int BASS_GetInfo(ffi.Pointer<BASS_INFO> info) {
+    return _BASS_GetInfo(info);
+  }
+
+  late final _BASS_GetInfoPtr =
+      _lookup<ffi.NativeFunction<BOOL Function(ffi.Pointer<BASS_INFO>)>>(
+        'BASS_GetInfo',
+      );
+  late final _BASS_GetInfo =
+      _BASS_GetInfoPtr.asFunction<int Function(ffi.Pointer<BASS_INFO>)>();
 
   int BASS_ChannelGetAttribute(
     int handle,
