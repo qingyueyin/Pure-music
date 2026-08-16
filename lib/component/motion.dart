@@ -61,24 +61,8 @@ class DirectionalListItemEntrance extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scrollPosition = Scrollable.maybeOf(context)?.position;
-    final reduceMotion = MediaQuery.disableAnimationsOf(context);
-    final identity = this.identity;
-    final animateEntrance = !reduceMotion;
-    final offset = !animateEntrance
-        ? 0.0
-        : scrollPosition == null
-        ? _listItemEntryDistance
-        : _listItemEntryOffsets[scrollPosition] ?? _listItemEntryDistance;
-    return _DirectionalListItemEntrance(
-      key: identity == null ? null : ValueKey<Object>(identity),
-      scrollPosition: scrollPosition,
-      identity: identity,
-      offset: offset,
-      animateEntrance: animateEntrance,
-      reduceMotion: reduceMotion,
-      child: child,
-    );
+    // 入场动画已禁用：与堆叠滚动效果叠加时视觉冲突。
+    return child;
   }
 }
 

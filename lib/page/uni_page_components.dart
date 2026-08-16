@@ -19,21 +19,25 @@ class ShufflePlay<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     final enabled = contentList.isNotEmpty;
 
-    return FilledButton.icon(
-      onPressed: enabled
-          ? () {
-              PlayService.instance.playbackService.shuffleAndPlay(
-                contentList as List<Audio>,
-              );
-              showTextOnSnackBar('已随机播放', variant: ToastVariant.success);
-            }
-          : null,
-      icon: const Icon(Symbols.shuffle, size: 20),
-      label: const Text('随机播放'),
-      style: const ButtonStyle(
-        fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
-        padding: WidgetStatePropertyAll(
-          EdgeInsets.symmetric(horizontal: 16),
+    return Focus(
+      canRequestFocus: false,
+      descendantsAreFocusable: false,
+      child: FilledButton.icon(
+        onPressed: enabled
+            ? () {
+                PlayService.instance.playbackService.shuffleAndPlay(
+                  contentList as List<Audio>,
+                );
+                showTextOnSnackBar('已随机播放', variant: ToastVariant.success);
+              }
+            : null,
+        icon: const Icon(Symbols.shuffle, size: 20),
+        label: const Text('随机播放'),
+        style: const ButtonStyle(
+          fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
+          padding: WidgetStatePropertyAll(
+            EdgeInsets.symmetric(horizontal: 16),
+          ),
         ),
       ),
     );
@@ -55,63 +59,67 @@ class SortMethodComboBox<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MenuAnchor(
-      style: appMenuStyle,
-      menuChildren: List.generate(
-        sortMethods.length,
-        (i) {
-          final sortMethod = sortMethods[i];
-          final selected = identical(sortMethod, currSortMethod);
-          return MenuItemButton(
-            style: const ButtonStyle(
-              padding: WidgetStatePropertyAll(EdgeInsets.all(12)),
+    return Focus(
+      canRequestFocus: false,
+      descendantsAreFocusable: false,
+      child: MenuAnchor(
+        style: appMenuStyle,
+        menuChildren: List.generate(
+          sortMethods.length,
+          (i) {
+            final sortMethod = sortMethods[i];
+            final selected = identical(sortMethod, currSortMethod);
+            return MenuItemButton(
+              style: const ButtonStyle(
+                padding: WidgetStatePropertyAll(EdgeInsets.all(12)),
+              ),
+              leadingIcon: Icon(sortMethod.icon),
+              trailingIcon: selected ? const Icon(Symbols.check) : null,
+              onPressed: selected ? null : () => setSortMethod(sortMethod),
+              child: Text(sortMethod.name),
+            );
+          },
+        ),
+        builder: (context, menuController, _) {
+          final scheme = Theme.of(context).colorScheme;
+          return FilledButton.tonal(
+            onPressed: () {
+              if (menuController.isOpen) {
+                menuController.close();
+              } else {
+                menuController.open();
+              }
+            },
+            style: ButtonStyle(
+              backgroundColor: WidgetStatePropertyAll(scheme.secondaryContainer),
+              foregroundColor:
+                  WidgetStatePropertyAll(scheme.onSecondaryContainer),
+              fixedSize: const WidgetStatePropertyAll(Size.fromHeight(40)),
+              padding: const WidgetStatePropertyAll(
+                EdgeInsets.symmetric(horizontal: 16),
+              ),
+              shape: WidgetStatePropertyAll(
+                RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
+              ),
             ),
-            leadingIcon: Icon(sortMethod.icon),
-            trailingIcon: selected ? const Icon(Symbols.check) : null,
-            onPressed: selected ? null : () => setSortMethod(sortMethod),
-            child: Text(sortMethod.name),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Symbols.sort, size: 20),
+                const SizedBox(width: 4.0),
+                Text(currSortMethod.name),
+                const SizedBox(width: 4.0),
+                AnimatedRotation(
+                  duration: MotionDuration.fast,
+                  curve: MotionCurve.standard,
+                  turns: menuController.isOpen ? 0.5 : 0.0,
+                  child: const Icon(Symbols.arrow_drop_down, size: 20),
+                ),
+              ],
+            ),
           );
         },
       ),
-      builder: (context, menuController, _) {
-        final scheme = Theme.of(context).colorScheme;
-        return FilledButton.tonal(
-          onPressed: () {
-            if (menuController.isOpen) {
-              menuController.close();
-            } else {
-              menuController.open();
-            }
-          },
-          style: ButtonStyle(
-            backgroundColor: WidgetStatePropertyAll(scheme.secondaryContainer),
-            foregroundColor:
-                WidgetStatePropertyAll(scheme.onSecondaryContainer),
-            fixedSize: const WidgetStatePropertyAll(Size.fromHeight(40)),
-            padding: const WidgetStatePropertyAll(
-              EdgeInsets.symmetric(horizontal: 16),
-            ),
-            shape: WidgetStatePropertyAll(
-              RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Symbols.sort, size: 20),
-              const SizedBox(width: 4.0),
-              Text(currSortMethod.name),
-              const SizedBox(width: 4.0),
-              AnimatedRotation(
-                duration: MotionDuration.fast,
-                curve: MotionCurve.standard,
-                turns: menuController.isOpen ? 0.5 : 0.0,
-                child: const Icon(Symbols.arrow_drop_down, size: 20),
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 }
@@ -125,32 +133,36 @@ class SortOrderSwitch<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     var isAscending = sortOrder == SortOrder.ascending;
-    return IconButton.filledTonal(
-      tooltip: "切换排序顺序（${isAscending ? "升序" : "降序"}）",
-      onPressed: () => setSortOrder(
-        isAscending ? SortOrder.decending : SortOrder.ascending,
-      ),
-      iconSize: 20,
-      style: ButtonStyle(
-        fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
-        padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-        shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
+    return Focus(
+      canRequestFocus: false,
+      descendantsAreFocusable: false,
+      child: IconButton.filledTonal(
+        tooltip: "切换排序顺序（${isAscending ? "升序" : "降序"}）",
+        onPressed: () => setSortOrder(
+          isAscending ? SortOrder.decending : SortOrder.ascending,
         ),
-      ),
-      icon: AnimatedSwitcher(
-        duration: MediaQuery.disableAnimationsOf(context)
-            ? Duration.zero
-            : MotionDuration.fast,
-        switchInCurve: MotionCurve.standard,
-        switchOutCurve: MotionCurve.standard,
-        transitionBuilder: (child, animation) => FadeTransition(
-          opacity: animation,
-          child: ScaleTransition(scale: animation, child: child),
+        iconSize: 20,
+        style: ButtonStyle(
+          fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
+          padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+          shape: WidgetStatePropertyAll(
+            RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
+          ),
         ),
-        child: Icon(
-          isAscending ? Symbols.arrow_upward : Symbols.arrow_downward,
-          key: ValueKey(isAscending),
+        icon: AnimatedSwitcher(
+          duration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : MotionDuration.fast,
+          switchInCurve: MotionCurve.standard,
+          switchOutCurve: MotionCurve.standard,
+          transitionBuilder: (child, animation) => FadeTransition(
+            opacity: animation,
+            child: ScaleTransition(scale: animation, child: child),
+          ),
+          child: Icon(
+            isAscending ? Symbols.arrow_upward : Symbols.arrow_downward,
+            key: ValueKey(isAscending),
+          ),
         ),
       ),
     );
@@ -166,11 +178,14 @@ class ContentViewSwitch<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     var isListView = contentView == ContentView.list;
-    return IconButton.filledTonal(
-      tooltip: "切换页面视图（${isListView ? "列表" : "表格"}）",
-      onPressed: () => setContentView(
-        isListView ? ContentView.table : ContentView.list,
-      ),
+    return Focus(
+      canRequestFocus: false,
+      descendantsAreFocusable: false,
+      child: IconButton.filledTonal(
+        tooltip: "切换页面视图（${isListView ? "列表" : "表格"}）",
+        onPressed: () => setContentView(
+          isListView ? ContentView.table : ContentView.list,
+        ),
       iconSize: 20,
       style: ButtonStyle(
         fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
@@ -193,6 +208,7 @@ class ContentViewSwitch<T> extends StatelessWidget {
           isListView ? Symbols.list : Symbols.table,
           key: ValueKey(isListView),
         ),
+      ),
       ),
     );
   }

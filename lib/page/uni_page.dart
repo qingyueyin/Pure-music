@@ -1,10 +1,12 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart' show PointerScrollEvent;
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/quiet_empty_state.dart';
 import 'package:pure_music/component/responsive_builder.dart';
+import 'package:pure_music/component/stacked_list_view.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/page_sort.dart';
@@ -154,6 +156,7 @@ class UniPage<T> extends StatefulWidget {
     this.gridDelegate,
     this.contentRevision,
     this.contentIsPrepared = false,
+    this.enableStackedList = false,
   });
 
   final PagePreference pref;
@@ -182,6 +185,9 @@ class UniPage<T> extends StatefulWidget {
   final Object? contentRevision;
   final bool contentIsPrepared;
 
+  /// 列表视图启用堆叠滚动效果（滚出顶部缩小淡出、底部进入渐显）。
+  final bool enableStackedList;
+
   @override
   State<UniPage<T>> createState() => _UniPageState<T>();
 }
@@ -200,7 +206,9 @@ class _UniPageState<T> extends State<UniPage<T>> {
   late ContentView currContentView = widget.enableContentViewSwitch
       ? widget.pref.contentView
       : ContentView.table;
-  late final ScrollController listScrollController = ScrollController();
+  late final ScrollController listScrollController = widget.enableStackedList
+      ? SmoothScrollController()
+      : ScrollController();
   late final ScrollController tableScrollController = ScrollController();
   bool _showScrollToTop = false;
   int _sortRequest = 0;
@@ -323,6 +331,32 @@ class _UniPageState<T> extends State<UniPage<T>> {
     );
   }
 
+  /// 平滑滚动到指定位置；非平滑控制器回退到默认动画滚动。
+  void _smoothScrollTo(double offset) {
+    if (!scrollController.hasClients) return;
+    final position = scrollController.position;
+    if (position is SmoothScrollPosition) {
+      position.smoothScrollTo(offset);
+    } else {
+      scrollController.animateTo(
+        offset,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.fastOutSlowIn,
+      );
+    }
+  }
+
+  /// 按钮浮层不拦截滚轮：鼠标停留在浮层按钮上滚动时，
+  /// 把滚轮位移转发给列表的平滑滚动。
+  void _forwardWheelToList(double delta) {
+    if (currContentView != ContentView.list) return;
+    if (!scrollController.hasClients) return;
+    final position = scrollController.position;
+    if (position is SmoothScrollPosition) {
+      position.pointerScroll(delta);
+    }
+  }
+
   void _scrollToIndex(int targetAt) {
     if (targetAt < 0 || targetAt >= widget.contentList.length) return;
 
@@ -330,22 +364,14 @@ class _UniPageState<T> extends State<UniPage<T>> {
       if (!mounted || !scrollController.hasClients) return;
 
       if (currContentView == ContentView.list) {
-        scrollController.animateTo(
-          targetAt * 64.0,
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.fastOutSlowIn,
-        );
+        _smoothScrollTo(targetAt * 64.0);
       } else {
         final renderObject = context.findRenderObject();
         if (renderObject is RenderBox) {
           final width = renderObject.size.width;
           final crossAxisCount = (width / 300).ceil().clamp(1, 100);
           final offset = (targetAt ~/ crossAxisCount) * (64.0 + 8.0);
-          scrollController.animateTo(
-            offset,
-            duration: const Duration(milliseconds: 250),
-            curve: Curves.fastOutSlowIn,
-          );
+          _smoothScrollTo(offset);
         }
       }
     });
@@ -374,39 +400,50 @@ class _UniPageState<T> extends State<UniPage<T>> {
             return Positioned(
               right: right,
               bottom: bottom,
-              child: TweenAnimationBuilder<double>(
-                key: ValueKey(nowPlaying.path),
-                tween: Tween(begin: 0.0, end: 1.0),
-                duration: MotionDuration.fast,
-                curve: MotionCurve.standard,
-                builder: (context, t, child) => Opacity(
-                  opacity: t,
-                  child: Transform.scale(
-                    scale: reduceMotion ? 1.0 : 0.7 + t * 0.3,
-                    filterQuality: FilterQuality.low,
-                    child: child,
-                  ),
-                ),
-                child: IconButton.filledTonal(
-                  tooltip: '定位正在播放',
-                  onPressed: () => _scrollToIndex(targetAt),
-                  style: ButtonStyle(
-                    fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
-                    padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-                    shape: WidgetStatePropertyAll(
-                      RoundedRectangleBorder(
-                        borderRadius: AppRadius.smCircular,
-                      ),
+              child: Listener(
+                onPointerSignal: (event) {
+                  if (event is PointerScrollEvent) {
+                    _forwardWheelToList(event.scrollDelta.dy);
+                  }
+                },
+                child: TweenAnimationBuilder<double>(
+                  key: ValueKey(nowPlaying.path),
+                  tween: Tween(begin: 0.0, end: 1.0),
+                  duration: MotionDuration.fast,
+                  curve: MotionCurve.standard,
+                  builder: (context, t, child) => Opacity(
+                    opacity: t,
+                    child: Transform.scale(
+                      scale: reduceMotion ? 1.0 : 0.7 + t * 0.3,
+                      filterQuality: FilterQuality.low,
+                      child: child,
                     ),
                   ),
-                  icon: const Icon(Symbols.my_location),
+                  child: Focus(
+                    canRequestFocus: false,
+                    descendantsAreFocusable: false,
+                    child: IconButton.filledTonal(
+                      tooltip: '定位正在播放',
+                      onPressed: () => _scrollToIndex(targetAt),
+                      style: ButtonStyle(
+                        fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
+                        padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+                        shape: WidgetStatePropertyAll(
+                          RoundedRectangleBorder(
+                          borderRadius: AppRadius.smCircular,
+                        ),
+                      ),
+                    ),
+                    icon: const Icon(Symbols.my_location),
+                  ),
                 ),
               ),
-            );
-          },
-        );
-      },
-    );
+            ),
+          );
+        },
+      );
+    },
+  );
   }
 
   Widget _scrollToTopButton() {
@@ -418,40 +455,46 @@ class _UniPageState<T> extends State<UniPage<T>> {
         return Positioned(
           right: right,
           bottom: bottom + 56.0,
-          child: TweenAnimationBuilder<double>(
-            tween: Tween(begin: 0.0, end: _showScrollToTop ? 1.0 : 0.0),
-            duration: MotionDuration.fast,
-            curve: MotionCurve.standard,
-            builder: (context, t, child) => IgnorePointer(
-              ignoring: t <= 0.01,
-              child: Opacity(
-                opacity: t,
-                child: Transform.scale(
-                  scale: reduceMotion ? 1.0 : 0.7 + t * 0.3,
-                  filterQuality: FilterQuality.low,
-                  child: child,
+          child: Listener(
+            onPointerSignal: (event) {
+              if (event is PointerScrollEvent) {
+                _forwardWheelToList(event.scrollDelta.dy);
+              }
+            },
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0.0, end: _showScrollToTop ? 1.0 : 0.0),
+              duration: MotionDuration.fast,
+              curve: MotionCurve.standard,
+              builder: (context, t, child) => IgnorePointer(
+                ignoring: t <= 0.01,
+                child: Opacity(
+                  opacity: t,
+                  child: Transform.scale(
+                    scale: reduceMotion ? 1.0 : 0.7 + t * 0.3,
+                    filterQuality: FilterQuality.low,
+                    child: child,
+                  ),
                 ),
               ),
-            ),
-            child: IconButton.filledTonal(
-              tooltip: '回到顶部',
-              onPressed: () {
-                if (!scrollController.hasClients) return;
-                scrollController.animateTo(
-                  0.0,
-                  duration: const Duration(milliseconds: 250),
-                  curve: Curves.fastOutSlowIn,
-                );
-              },
-              style: ButtonStyle(
-                fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
-                padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-                shape: WidgetStatePropertyAll(
-                  RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
+              child: Focus(
+                canRequestFocus: false,
+                descendantsAreFocusable: false,
+                child: IconButton.filledTonal(
+                  tooltip: '回到顶部',
+                  onPressed: () => _smoothScrollTo(0.0),
+                style: ButtonStyle(
+                  fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
+                  padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+                  shape: WidgetStatePropertyAll(
+                    RoundedRectangleBorder(
+                      borderRadius: AppRadius.smCircular,
+                    ),
+                  ),
                 ),
+                icon: const Icon(Symbols.vertical_align_top),
               ),
-              icon: const Icon(Symbols.vertical_align_top),
             ),
+          ),
           ),
         );
       },
@@ -641,19 +684,33 @@ class _UniPageState<T> extends State<UniPage<T>> {
         return _UniPageEmptyState(title: widget.title);
       }
 
-      final listView = ListView.builder(
-        controller: listScrollController,
-        padding: const EdgeInsets.only(bottom: 96.0, right: 20),
-        itemCount: widget.contentList.length,
-        itemExtent: 64,
-        itemBuilder: (context, i) => widget.contentBuilder(
-          context,
-          widget.contentList[i],
-          i,
-          multiSelectController,
-          ContentView.list,
-        ),
-      );
+      final listView = widget.enableStackedList
+          ? StackedListView(
+              controller: listScrollController,
+              itemExtent: 64,
+              itemCount: widget.contentList.length,
+              padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+              itemBuilder: (context, i) => widget.contentBuilder(
+                context,
+                widget.contentList[i],
+                i,
+                multiSelectController,
+                ContentView.list,
+              ),
+            )
+          : ListView.builder(
+              controller: listScrollController,
+              padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+              itemCount: widget.contentList.length,
+              itemExtent: 64,
+              itemBuilder: (context, i) => widget.contentBuilder(
+                context,
+                widget.contentList[i],
+                i,
+                multiSelectController,
+                ContentView.list,
+              ),
+            );
       final tableView = GridView.builder(
         controller: tableScrollController,
         padding: const EdgeInsets.only(bottom: 96.0, right: 20),
