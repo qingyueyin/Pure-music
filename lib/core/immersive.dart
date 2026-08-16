@@ -37,4 +37,3 @@ class ImmersiveModeController with ChangeNotifier {
     notifyListeners();
   }
 }
-

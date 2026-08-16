@@ -160,11 +160,11 @@ const minimumWindowSizeSetting = (width: 360.0, height: 240.0);
   final width = _normalizedWindowSizeNumber(parts[0]);
   final height = _normalizedWindowSizeNumber(parts[1]);
   if (width == null || height == null) return defaultWindowSizeSetting;
-  if (width <= 0 || height <= 0) return defaultWindowSizeSetting;
-  return (
-    width: width.clamp(minimumWindowSizeSetting.width, double.infinity),
-    height: height.clamp(minimumWindowSizeSetting.height, double.infinity),
-  );
+  if (width < minimumWindowSizeSetting.width ||
+      height < minimumWindowSizeSetting.height) {
+    return defaultWindowSizeSetting;
+  }
+  return (width: width, height: height);
 }
 
 String _normalizedWindowSizeString(String value) {
