@@ -337,6 +337,25 @@ PlayMode? _playModeFromStoredValue(Object? value) {
   return name == null ? null : PlayMode.fromString(name);
 }
 
+TransitionMode _transitionModeFromStored(Map map) {
+  final stored = map['transitionMode'];
+  if (stored is String) {
+    final parsed = TransitionMode.fromString(stored);
+    if (parsed != null) return parsed;
+  }
+  final oldCrossfade = map['crossfadeMs'];
+  if (oldCrossfade is num && oldCrossfade > 0) {
+    return TransitionMode.crossfade;
+  }
+  final oldFadeOut = map['fadeOutMs'];
+  final oldFadeIn = map['fadeInMs'];
+  if (oldFadeOut is num && oldFadeOut > 0 ||
+      oldFadeIn is num && oldFadeIn > 0) {
+    return TransitionMode.fade;
+  }
+  return TransitionMode.seamless;
+}
+
 int? _normalizedEnumIndex(Object? value, int length) {
   final index = _normalizedInteger(value);
   if (index == null || index < 0 || index >= length) return null;
@@ -486,6 +505,9 @@ class PlaybackPreference {
   List<String> lastOriginalPlaylistPaths;
   bool reinitOnSetSource;
   bool replayGainEnabled;
+  TransitionMode transitionMode;
+  int transitionFadeOutMs;
+  int transitionFadeInMs;
 
   PlaybackPreference(
     this.playMode,
@@ -502,6 +524,9 @@ class PlaybackPreference {
     this.lastShuffleActive = false,
     this.lastOriginalPlaylistPaths = const [],
     this.reinitOnSetSource = false,
+    this.transitionMode = TransitionMode.seamless,
+    this.transitionFadeOutMs = 300,
+    this.transitionFadeInMs = 200,
   });
 
   Map<String, dynamic> toMap() => {
@@ -519,6 +544,9 @@ class PlaybackPreference {
     'lastOriginalPlaylistPaths': lastOriginalPlaylistPaths,
     'reinitOnSetSource': reinitOnSetSource,
     'replayGainEnabled': replayGainEnabled,
+    'transitionMode': transitionMode.name,
+    'transitionFadeOutMs': transitionFadeOutMs,
+    'transitionFadeInMs': transitionFadeInMs,
   };
 
   factory PlaybackPreference.fromMap(Object? value) {
@@ -568,6 +596,19 @@ class PlaybackPreference {
       replayGainEnabled: _normalizedBool(
         map['replayGainEnabled'],
         defaultValue: false,
+      ),
+      transitionMode: _transitionModeFromStored(map),
+      transitionFadeOutMs: _normalizedBoundedInt(
+        map['transitionFadeOutMs'],
+        defaultValue: 300,
+        min: 0,
+        max: 10000,
+      ),
+      transitionFadeInMs: _normalizedBoundedInt(
+        map['transitionFadeInMs'],
+        defaultValue: 200,
+        min: 0,
+        max: 10000,
       ),
     );
   }
@@ -633,6 +674,9 @@ class AppPreference {
   int startPage = 0;
 
   bool sidebarExpanded = true;
+
+  /// 任务栏悬停缩略图显示歌曲封面（关闭则显示窗口实时预览）
+  bool taskbarThumbnailCover = true;
 
   var playbackPref = PlaybackPreference(
     PlayMode.forward,
@@ -712,6 +756,10 @@ class AppPreference {
       prefMap['sidebarExpanded'],
       defaultValue: true,
     );
+    taskbarThumbnailCover = _normalizedBool(
+      prefMap['taskbarThumbnailCover'],
+      defaultValue: true,
+    );
     playbackPref = PlaybackPreference.fromMap(prefMap['playbackPref']);
     nowPlayingPagePref = NowPlayingPagePreference.fromMap(
       prefMap['nowPlayingPagePref'],
@@ -772,6 +820,7 @@ class AppPreference {
         'playlistDetailPagePref': playlistDetailPagePref.toMap(),
         'startPage': startPage,
         'sidebarExpanded': sidebarExpanded,
+        'taskbarThumbnailCover': taskbarThumbnailCover,
         'playbackPref': playbackPref.toMap(),
         'nowPlayingPagePref': nowPlayingPagePref.toMap(),
         'customCpFeedbackKey': customCpFeedbackKey,

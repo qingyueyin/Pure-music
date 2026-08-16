@@ -1,8 +1,9 @@
 bool _matchesStoredEnumName(String stored, String name) {
   final normalized = stored.trim().toLowerCase();
   final separator = normalized.lastIndexOf('.');
-  final storedName =
-      separator < 0 ? normalized : normalized.substring(separator + 1);
+  final storedName = separator < 0
+      ? normalized
+      : normalized.substring(separator + 1);
   return storedName == name.toLowerCase();
 }
 
@@ -112,6 +113,27 @@ enum PlayMode {
   }
 }
 
+enum TransitionMode {
+  /// 曲尾零间隙无缝衔接（gapless）
+  seamless,
+
+  /// 曲尾旧歌淡出后新歌淡入（顺序）
+  fade,
+
+  /// 曲尾两首歌重叠混音
+  crossfade,
+
+  /// 根据歌曲内容自动选择衔接方式
+  smart;
+
+  static TransitionMode? fromString(String name) {
+    for (final value in TransitionMode.values) {
+      if (_matchesStoredEnumName(name, value.name)) return value;
+    }
+    return null;
+  }
+}
+
 enum TopBarLyricAnimation {
   slideUp,
   slideDown,
@@ -182,7 +204,7 @@ enum LyricLineTrack {
 const defaultLyricLineOrder = [
   LyricLineTrack.original,
   LyricLineTrack.romanization,
-  LyricLineTrack.translation
+  LyricLineTrack.translation,
 ];
 
 List<LyricLineTrack> normalizedLyricLineOrder(List<LyricLineTrack> order) {
@@ -234,28 +256,28 @@ enum RubyPosition {
   }
 
   String get displayName => switch (this) {
-        RubyPosition.above => '在原文上',
-        RubyPosition.below => '在原文下',
-        RubyPosition.belowTranslation => '在翻译下',
-      };
+    RubyPosition.above => '在原文上',
+    RubyPosition.below => '在原文下',
+    RubyPosition.belowTranslation => '在翻译下',
+  };
 
   List<LyricLineTrack> toLineOrder() => switch (this) {
-        RubyPosition.above => [
-            LyricLineTrack.romanization,
-            LyricLineTrack.original,
-            LyricLineTrack.translation,
-          ],
-        RubyPosition.below => [
-            LyricLineTrack.original,
-            LyricLineTrack.romanization,
-            LyricLineTrack.translation,
-          ],
-        RubyPosition.belowTranslation => [
-            LyricLineTrack.original,
-            LyricLineTrack.translation,
-            LyricLineTrack.romanization,
-          ],
-      };
+    RubyPosition.above => [
+      LyricLineTrack.romanization,
+      LyricLineTrack.original,
+      LyricLineTrack.translation,
+    ],
+    RubyPosition.below => [
+      LyricLineTrack.original,
+      LyricLineTrack.romanization,
+      LyricLineTrack.translation,
+    ],
+    RubyPosition.belowTranslation => [
+      LyricLineTrack.original,
+      LyricLineTrack.translation,
+      LyricLineTrack.romanization,
+    ],
+  };
 }
 
 enum NowPlayingMode {
