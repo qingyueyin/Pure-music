@@ -2,7 +2,6 @@ import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/preference.dart';
-import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/component/build_index_state_view.dart';
 import 'package:pure_music/component/danger_confirm_dialog.dart';
 import 'package:pure_music/library/audio_library.dart';
@@ -244,7 +243,11 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
     });
   }
 
-  void _startBuild() {
+  void _startBuild({
+    required List<String> userFolders,
+    required List<String> excludedFolderPaths,
+    required Map<String, String> folderAliases,
+  }) {
     building = true;
     _buildView = FutureBuilder(
       future: applicationSupportDirectory,
@@ -258,7 +261,32 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
             indexPath: snapshot.data!,
             folders: folders.map((f) => f.path).toList(),
             whenIndexBuilt: () async {
-              await AudioLibrary.initFromIndex();
+              final preference = AppPreference.instance;
+              final oldUserFolders = List<String>.from(preference.userFolders);
+              final oldExcludedFolderPaths = List<String>.from(
+                preference.excludedFolderPaths,
+              );
+              final oldFolderAliases = Map<String, String>.from(
+                preference.folderAliases,
+              );
+              preference.userFolders = userFolders;
+              preference.excludedFolderPaths = excludedFolderPaths;
+              preference.folderAliases = folderAliases;
+              try {
+                await AudioLibrary.initFromIndex();
+              } catch (_) {
+                preference.userFolders = oldUserFolders;
+                preference.excludedFolderPaths = oldExcludedFolderPaths;
+                preference.folderAliases = oldFolderAliases;
+                rethrow;
+              }
+              final saved = await preference.save();
+              if (!saved) {
+                preference.userFolders = oldUserFolders;
+                preference.excludedFolderPaths = oldExcludedFolderPaths;
+                preference.folderAliases = oldFolderAliases;
+                throw StateError('保存文件夹设置失败');
+              }
               pruneLyricSourcesWhereMissing(
                 (path) => AudioLibrary.instance.audioByPath(path) != null,
               );
@@ -411,13 +439,13 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
                             final original = List<String>.from(
                               AppPreference.instance.userFolders,
                             );
-                            final oldUserFolders = List<String>.from(
+                            final nextUserFolders = List<String>.from(
                               AppPreference.instance.userFolders,
                             );
-                            final oldExcludedFolderPaths = List<String>.from(
+                            final nextExcludedFolderPaths = List<String>.from(
                               AppPreference.instance.excludedFolderPaths,
                             );
-                            final oldFolderAliases = Map<String, String>.from(
+                            final nextFolderAliases = Map<String, String>.from(
                               AppPreference.instance.folderAliases,
                             );
 
@@ -438,35 +466,29 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
                                 )
                                 .toList();
 
-                            final userFolderKeys = AppPreference
-                                .instance
-                                .userFolders
+                            final userFolderKeys = nextUserFolders
                                 .map(pendingFolderKey)
                                 .toSet();
-                            AppPreference.instance.userFolders.addAll(
+                            nextUserFolders.addAll(
                               added.where(
                                 (f) => userFolderKeys.add(pendingFolderKey(f)),
                               ),
                             );
-                            AppPreference.instance.userFolders.removeWhere(
+                            nextUserFolders.removeWhere(
                               (f) => !containsEquivalentFolderPath(
                                 paths: kept,
                                 target: f,
                               ),
                             );
-                            AppPreference.instance.excludedFolderPaths
-                                .removeWhere(
-                                  (excluded) => kept.any(
-                                    (root) =>
-                                        _folderPathsOverlap(excluded, root),
-                                  ),
-                                );
-                            final excludedFolderKeys = AppPreference
-                                .instance
-                                .excludedFolderPaths
+                            nextExcludedFolderPaths.removeWhere(
+                              (excluded) => kept.any(
+                                (root) => _folderPathsOverlap(excluded, root),
+                              ),
+                            );
+                            final excludedFolderKeys = nextExcludedFolderPaths
                                 .map(pendingFolderKey)
                                 .toSet();
-                            AppPreference.instance.excludedFolderPaths.addAll(
+                            nextExcludedFolderPaths.addAll(
                               removed
                                   .where(
                                     (removedPath) => !kept.any(
@@ -485,26 +507,14 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
                             final removedKeys = removed
                                 .map(pendingFolderKey)
                                 .toSet();
-                            AppPreference.instance.folderAliases.removeWhere(
+                            nextFolderAliases.removeWhere(
                               (key, _) => removedKeys.contains(key),
                             );
-                            final saved = await AppPreference.instance.save();
-                            if (!saved) {
-                              AppPreference.instance.userFolders =
-                                  oldUserFolders;
-                              AppPreference.instance.excludedFolderPaths =
-                                  oldExcludedFolderPaths;
-                              AppPreference.restoreFolderAliasesOnSaveFailure(
-                                AppPreference.instance.folderAliases,
-                                oldFolderAliases,
-                                saved,
-                              );
-                              if (!context.mounted) return;
-                              showTextOnSnackBar('保存文件夹设置失败');
-                              return;
-                            }
-
-                            _startBuild();
+                            _startBuild(
+                              userFolders: nextUserFolders,
+                              excludedFolderPaths: nextExcludedFolderPaths,
+                              folderAliases: nextFolderAliases,
+                            );
                           },
                     child: const Text('确定'),
                   ),
