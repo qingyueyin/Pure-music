@@ -14,6 +14,7 @@ import 'package:pure_music/native/rust/api/logger.dart';
 import 'package:pure_music/native/rust/frb_generated.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/utils.dart';
+import 'package:pure_music/core/window_lifecycle.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
@@ -31,10 +32,12 @@ Future<void> initWindow() async {
   final display = view.display;
   final displayW = display.size.width / display.devicePixelRatio;
   final displayH = display.size.height / display.devicePixelRatio;
-  final maxW =
-      (displayW - 16.0).clamp(minimumSize.width, double.infinity).toDouble();
-  final maxH =
-      (displayH - 16.0).clamp(minimumSize.height, double.infinity).toDouble();
+  final maxW = (displayW - 16.0)
+      .clamp(minimumSize.width, double.infinity)
+      .toDouble();
+  final maxH = (displayH - 16.0)
+      .clamp(minimumSize.height, double.infinity)
+      .toDouble();
   targetSize = Size(
     targetSize.width.clamp(minimumSize.width, maxW),
     targetSize.height.clamp(minimumSize.height, maxH),
@@ -48,9 +51,12 @@ Future<void> initWindow() async {
     titleBarStyle: TitleBarStyle.hidden,
   );
   windowManager.waitUntilReadyToShow(windowOptions, () async {
+    if (WindowLifecycleService.instance.isExiting) return;
     await windowManager.show();
+    if (WindowLifecycleService.instance.isExiting) return;
     if (AppSettings.instance.isWindowMaximized) {
       await windowManager.maximize();
+      if (WindowLifecycleService.instance.isExiting) return;
     }
     await windowManager.focus();
   });
@@ -77,7 +83,16 @@ Future<void> loadPrefFont() async {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await logger.init;
+  try {
+    await _runApplication();
+  } catch (error, stackTrace) {
+    logger.f('[startup] unhandled error', error: error, stackTrace: stackTrace);
+    rethrow;
+  }
+}
 
+Future<void> _runApplication() async {
   // 覆盖多屏缩略图，避免滚动回来时反复解码；内存监控仍会分级回收。
   PaintingBinding.instance.imageCache.maximumSize = 96;
   PaintingBinding.instance.imageCache.maximumSizeBytes = 32 << 20;
@@ -92,6 +107,7 @@ Future<void> main() async {
     await RustLib.init();
   } catch (e, s) {
     logger.e('RustLib.init failed: $e\n$s');
+    rethrow;
   }
 
   _rustLoggerSub = initRustLogger().listen((msg) {
@@ -117,7 +133,14 @@ Future<void> main() async {
   final welcome = !File(path.join(supportPath, 'index.json')).existsSync();
 
   await initWindow();
+  await WindowLifecycleService.instance.init(
+    disposeRuntimeResources: disposeRuntimeResources,
+  );
+  if (WindowLifecycleService.instance.isExiting) return;
+  FlutterSingleInstance.onFocus = (_) =>
+      WindowLifecycleService.instance.showWindow();
   await ImmersiveModeController.instance.init();
+  if (WindowLifecycleService.instance.isExiting) return;
 
   MemoryMonitorService.instance.start();
 
@@ -126,8 +149,8 @@ Future<void> main() async {
 
 StreamSubscription<String>? _rustLoggerSub;
 
-void disposeMemoryMonitor() {
+Future<void> disposeRuntimeResources() async {
   MemoryMonitorService.instance.stop();
-  _rustLoggerSub?.cancel();
+  await _rustLoggerSub?.cancel();
   _rustLoggerSub = null;
 }

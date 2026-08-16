@@ -141,6 +141,10 @@ enum LyricDisplayMode {
 
 enum ThemeOption { system, light, dark }
 
+enum ThemeColorMode { material3, independent }
+
+enum WindowCloseBehavior { exit, minimizeToTray }
+
 Set<NowPlayingMode> defaultWavyBarEnabledModes() => {};
 
 ThemeOption normalizedThemeOption(Object? value) {
@@ -156,6 +160,21 @@ ThemeOption normalizedThemeOption(Object? value) {
     if (option.name == name) return option;
   }
   return ThemeOption.system;
+}
+
+ThemeColorMode normalizedThemeColorMode(Object? value) {
+  final index = normalizedEnumIndex(
+    value,
+    length: ThemeColorMode.values.length,
+    defaultIndex: -1,
+  );
+  if (index >= 0) return ThemeColorMode.values[index];
+
+  return switch (normalizedSettingEnumName(value)) {
+    'seed' || 'material3' => ThemeColorMode.material3,
+    'monochrome' || 'independent' => ThemeColorMode.independent,
+    _ => ThemeColorMode.material3,
+  };
 }
 
 Set<NowPlayingMode> normalizedWavyBarEnabledModes(Object? value) {
@@ -218,6 +237,7 @@ class RebuildNotifier extends ChangeNotifier {
 
 class AppSettings {
   static final rebuildNotifier = RebuildNotifier();
+  static final backgroundNotifier = RebuildNotifier();
   static const String version = String.fromEnvironment(
     'APP_VERSION',
     defaultValue: '2.2.2',
@@ -235,6 +255,7 @@ class AppSettings {
   }
 
   ThemeOption themeOption = ThemeOption.system;
+  ThemeColorMode themeColorMode = ThemeColorMode.material3;
 
   List<String> artistSeparator = ['/', '、'];
 
@@ -276,8 +297,12 @@ class AppSettings {
   TopBarLyricAnimation topBarLyricAnimation = TopBarLyricAnimation.slideUp;
   bool enableCoverColorExtraction = true;
   int? customCoverColor;
+  String? appBackgroundImagePath;
+  double appBackgroundImageOpacity = 0.22;
+  double appBackgroundImageBlur = 0;
   Size windowSize = const Size(1280, 756);
   bool isWindowMaximized = false;
+  WindowCloseBehavior windowCloseBehavior = WindowCloseBehavior.exit;
 
   String? fontFamily;
   String? fontPath;
@@ -296,7 +321,8 @@ class AppSettings {
   static ThemeMode getWindowsThemeMode() {
     final systemTheme = SystemTheme.getSystemTheme();
 
-    final isDarkMode = (((5 * systemTheme.fore.$3) +
+    final isDarkMode =
+        (((5 * systemTheme.fore.$3) +
             (2 * systemTheme.fore.$2) +
             systemTheme.fore.$4) >
         (8 * 128));
@@ -320,6 +346,20 @@ class AppSettings {
     if (to != null) {
       _instance.themeOption = normalizedThemeOption(to);
     }
+    _instance.themeColorMode = normalizedThemeColorMode(
+      settingsMap['ThemeColorMode'],
+    );
+    _instance.appBackgroundImagePath = normalizedPathSetting(
+      settingsMap['AppBackgroundImagePath'],
+    );
+    final backgroundOpacity = settingsMap['AppBackgroundImageOpacity'];
+    _instance.appBackgroundImageOpacity = backgroundOpacity is num
+        ? backgroundOpacity.clamp(0.1, 0.6).toDouble()
+        : 0.22;
+    final backgroundBlur = settingsMap['AppBackgroundImageBlur'];
+    _instance.appBackgroundImageBlur = backgroundBlur is num
+        ? backgroundBlur.clamp(0.0, 30.0).toDouble()
+        : 0.0;
     final oldSep = settingsMap['ArtistSeparator'];
     if (oldSep != null) {
       _instance.artistSeparator = normalizedArtistSeparators(oldSep);
@@ -336,10 +376,7 @@ class AppSettings {
 
     final st = settingsMap['ShowTranslation'];
     if (st != null) {
-      _instance.showTranslation = normalizedBoolSetting(
-        st,
-        defaultValue: true,
-      );
+      _instance.showTranslation = normalizedBoolSetting(st, defaultValue: true);
     }
     final sr = settingsMap['ShowRomanization'];
     if (sr != null) {
@@ -369,6 +406,13 @@ class AppSettings {
         defaultValue: false,
       );
     }
+
+    _instance.windowCloseBehavior =
+        normalizedSettingEnumValue(
+          settingsMap['WindowCloseBehavior'],
+          WindowCloseBehavior.values,
+        ) ??
+        WindowCloseBehavior.exit;
   }
 
   @visibleForTesting
@@ -384,6 +428,9 @@ class AppSettings {
     if (to != null) {
       _instance.themeOption = normalizedThemeOption(to);
     }
+    _instance.themeColorMode = normalizedThemeColorMode(
+      settingsMap['ThemeColorMode'],
+    );
 
     final sep = settingsMap['ArtistSeparator'];
     if (sep != null) {
@@ -410,10 +457,7 @@ class AppSettings {
 
     final st = settingsMap['ShowTranslation'];
     if (st != null) {
-      _instance.showTranslation = normalizedBoolSetting(
-        st,
-        defaultValue: true,
-      );
+      _instance.showTranslation = normalizedBoolSetting(st, defaultValue: true);
     }
     final sr = settingsMap['ShowRomanization'];
     if (sr != null) {
@@ -435,11 +479,11 @@ class AppSettings {
       final modeName = normalizedSettingEnumName(zcm);
       _instance.zhConversionMode =
           normalizedSettingEnumValue(zcm, ZhConversionMode.values) ??
-              switch (modeName) {
-                't2s' => ZhConversionMode.traditionalToSimplified,
-                's2t' => ZhConversionMode.simplifiedToTraditional,
-                _ => ZhConversionMode.none,
-              };
+          switch (modeName) {
+            't2s' => ZhConversionMode.traditionalToSimplified,
+            's2t' => ZhConversionMode.simplifiedToTraditional,
+            _ => ZhConversionMode.none,
+          };
     }
 
     final pwt = settingsMap['PromptWriteLyricToTag'];
@@ -521,10 +565,7 @@ class AppSettings {
 
     final kp = settingsMap['KeepPitch'];
     if (kp != null) {
-      _instance.keepPitch = normalizedBoolSetting(
-        kp,
-        defaultValue: true,
-      );
+      _instance.keepPitch = normalizedBoolSetting(kp, defaultValue: true);
     }
 
     if (settingsMap.containsKey('WavyBarEnabledModes')) {
@@ -540,10 +581,10 @@ class AppSettings {
         'flipx' => TopBarLyricAnimation.slideLeft,
         'flipy' => TopBarLyricAnimation.slideRight,
         _ => normalizedSettingEnumValue(
-            tbla,
-            TopBarLyricAnimation.values,
-            fallback: TopBarLyricAnimation.slideUp,
-          )!,
+          tbla,
+          TopBarLyricAnimation.values,
+          fallback: TopBarLyricAnimation.slideUp,
+        )!,
       };
     }
 
@@ -561,6 +602,18 @@ class AppSettings {
       );
     }
 
+    _instance.appBackgroundImagePath = normalizedPathSetting(
+      settingsMap['AppBackgroundImagePath'],
+    );
+    final backgroundOpacity = settingsMap['AppBackgroundImageOpacity'];
+    _instance.appBackgroundImageOpacity = backgroundOpacity is num
+        ? backgroundOpacity.clamp(0.1, 0.6).toDouble()
+        : 0.22;
+    final backgroundBlur = settingsMap['AppBackgroundImageBlur'];
+    _instance.appBackgroundImageBlur = backgroundBlur is num
+        ? backgroundBlur.clamp(0.0, 30.0).toDouble()
+        : 0.0;
+
     final sizeStr = settingsMap['WindowSize'];
     if (sizeStr != null) {
       final size = normalizedWindowSizeSetting(sizeStr);
@@ -574,6 +627,13 @@ class AppSettings {
         defaultValue: false,
       );
     }
+
+    _instance.windowCloseBehavior =
+        normalizedSettingEnumValue(
+          settingsMap['WindowCloseBehavior'],
+          WindowCloseBehavior.values,
+        ) ??
+        WindowCloseBehavior.exit;
 
     final sdlr = settingsMap['ShowDesktopLyricRoman'];
     if (sdlr != null) {
@@ -640,20 +700,24 @@ class AppSettings {
 
     final dts = settingsMap['DesktopTranslationFontSize'];
     if (dts != null) {
-      _instance.desktopTranslationFontSize =
-          (dts as num).clamp(8, 48).toDouble();
+      _instance.desktopTranslationFontSize = (dts as num)
+          .clamp(8, 48)
+          .toDouble();
     }
 
     final dlfw = settingsMap['DesktopLyricFontWeight'];
     if (dlfw != null) {
-      _instance.desktopLyricFontWeight =
-          ((dlfw as num).toInt()).clamp(100, 900);
+      _instance.desktopLyricFontWeight = ((dlfw as num).toInt()).clamp(
+        100,
+        900,
+      );
     }
 
     final dbo = settingsMap['DesktopBackgroundOpacity'];
     if (dbo != null) {
-      _instance.desktopBackgroundOpacity =
-          (dbo as num).clamp(0.0, 1.0).toDouble();
+      _instance.desktopBackgroundOpacity = (dbo as num)
+          .clamp(0.0, 1.0)
+          .toDouble();
     }
 
     final dlta = settingsMap['DesktopLyricTextAlign'];
@@ -661,7 +725,8 @@ class AppSettings {
       _instance.desktopLyricTextAlign = ((dlta as num).toInt()).clamp(0, 2);
     }
 
-    _instance.desktopLyricAnimation = DesktopLyricAnimation.fromString(
+    _instance.desktopLyricAnimation =
+        DesktopLyricAnimation.fromString(
           settingsMap['DesktopLyricAnimation']?.toString() ?? '',
         ) ??
         DesktopLyricAnimation.slideUp;
@@ -679,15 +744,17 @@ class AppSettings {
 
     final dftc = settingsMap['DesktopFollowThemeColor'];
     if (dftc != null) {
-      _instance.desktopFollowThemeColor =
-          normalizedBoolSetting(dftc, defaultValue: true);
+      _instance.desktopFollowThemeColor = normalizedBoolSetting(
+        dftc,
+        defaultValue: true,
+      );
     }
 
     _instance.desktopLyricBrightnessMode =
         DesktopLyricBrightnessMode.fromString(
-              settingsMap['DesktopLyricBrightnessMode']?.toString(),
-            ) ??
-            DesktopLyricBrightnessMode.follow;
+          settingsMap['DesktopLyricBrightnessMode']?.toString(),
+        ) ??
+        DesktopLyricBrightnessMode.follow;
 
     final ff = settingsMap['FontFamily'];
     final fp = settingsMap['FontPath'];
@@ -720,9 +787,12 @@ class AppSettings {
   Future<bool> saveSettings() async {
     try {
       final isMaximized = await windowManager.isMaximized();
+      final isFullScreen = await windowManager.isFullScreen();
+      final isMinimized = await windowManager.isMinimized();
       final settingsMap = {
         'Version': version,
         'ThemeOption': themeOption.index,
+        'ThemeColorMode': themeColorMode.name,
         'ArtistSeparator': artistSeparator,
         'LocalLyricFirst': localLyricFirst,
         'PreferredOnlineSource': preferredOnlineSource.name,
@@ -761,15 +831,29 @@ class AppSettings {
         'TopBarLyricAnimation': topBarLyricAnimation.name,
         'EnableCoverColorExtraction': enableCoverColorExtraction,
         'CustomCoverColor': customCoverColor,
+        'AppBackgroundImagePath': appBackgroundImagePath,
+        'AppBackgroundImageOpacity': appBackgroundImageOpacity,
+        'AppBackgroundImageBlur': appBackgroundImageBlur,
         'IsWindowMaximized': isMaximized,
+        'WindowCloseBehavior': windowCloseBehavior.name,
         'FontFamily': fontFamily,
         'FontPath': fontPath,
       };
 
       Size sizeToSave = windowSize;
-      if (!isMaximized) {
-        sizeToSave = await windowManager.getSize();
+      if (!isMaximized && !isFullScreen && !isMinimized) {
+        final currentSize = await windowManager.getSize();
+        if (currentSize.width >= minimumWindowSizeSetting.width &&
+            currentSize.height >= minimumWindowSizeSetting.height) {
+          sizeToSave = currentSize;
+        }
       }
+      final normalizedSize = normalizedWindowSizeSetting([
+        sizeToSave.width,
+        sizeToSave.height,
+      ]);
+      sizeToSave = Size(normalizedSize.width, normalizedSize.height);
+      windowSize = sizeToSave;
       settingsMap['WindowSize'] =
           '${sizeToSave.width.toStringAsFixed(1)},${sizeToSave.height.toStringAsFixed(1)}';
 

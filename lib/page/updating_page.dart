@@ -7,6 +7,7 @@ import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/lyric/lyric_source.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart';
 import 'package:pure_music/core/utils.dart';
+import 'package:pure_music/core/window_lifecycle.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
@@ -101,7 +102,7 @@ class _UpdatingPageState extends State<UpdatingPage> {
                       ),
                       const SizedBox(height: 16.0),
                       FilledButton.icon(
-                        onPressed: () => exit(1),
+                        onPressed: WindowLifecycleService.instance.exitApp,
                         icon: const Icon(Icons.close),
                         label: const Text('退出'),
                       ),
@@ -141,12 +142,14 @@ class _UpdatingStateViewState extends State<UpdatingStateView> {
         readPlaylists(),
         readLyricSources(),
       ]);
+      if (WindowLifecycleService.instance.isExiting) return;
       pruneLyricSourcesWhereMissing(
         (path) => AudioLibrary.instance.audioByPath(path) != null,
       );
+      WindowLifecycleService.instance.markLibraryReady();
       await _subscription?.cancel();
       final ctx = context;
-      if (ctx.mounted) {
+      if (ctx.mounted && !WindowLifecycleService.instance.isExiting) {
         ctx.go(app_paths.AUDIOS_PAGE);
       }
     } catch (e, trace) {
@@ -224,7 +227,7 @@ class _UpdatingStateViewState extends State<UpdatingStateView> {
                     ),
                     const SizedBox(height: 16.0),
                     FilledButton.icon(
-                      onPressed: () => exit(1),
+                      onPressed: WindowLifecycleService.instance.exitApp,
                       icon: const Icon(Icons.close),
                       label: const Text('退出'),
                     ),

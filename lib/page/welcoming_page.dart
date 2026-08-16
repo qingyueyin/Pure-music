@@ -4,9 +4,11 @@ import 'package:pure_music/native/folder_picker_windows.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/preference.dart';
-import 'package:pure_music/core/hotkeys.dart';
+import 'package:pure_music/core/window_lifecycle.dart';
 import 'package:pure_music/component/build_index_state_view.dart';
 import 'package:pure_music/library/audio_library.dart';
+import 'package:pure_music/library/playlist.dart';
+import 'package:pure_music/lyric/lyric_source.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -119,12 +121,30 @@ class _FolderSelectorViewState extends State<FolderSelectorView> {
                     indexPath: snapshot.data!,
                     folders: folders,
                     whenIndexBuilt: () async {
+                      final preference = AppPreference.instance;
                       await Future.wait([
-                        AppSettings.instance.saveSettings(),
                         AudioLibrary.initFromIndex(),
+                        readPlaylists(),
+                        readLyricSources(),
                       ]);
-                      AppPreference.instance.userFolders = List.from(folders);
-                      await AppPreference.instance.save();
+                      if (WindowLifecycleService.instance.isExiting) return;
+                      final settingsSaved = await AppSettings.instance
+                          .saveSettings();
+                      if (!settingsSaved) {
+                        throw StateError('保存应用设置失败');
+                      }
+                      if (WindowLifecycleService.instance.isExiting) return;
+                      final oldUserFolders = List<String>.from(
+                        preference.userFolders,
+                      );
+                      preference.userFolders = List.from(folders);
+                      final preferenceSaved = await preference.save();
+                      if (!preferenceSaved) {
+                        preference.userFolders = oldUserFolders;
+                        throw StateError('保存文件夹设置失败');
+                      }
+                      if (WindowLifecycleService.instance.isExiting) return;
+                      WindowLifecycleService.instance.markLibraryReady();
                       if (context.mounted) {
                         context.go(app_paths.AUDIOS_PAGE);
                       }
@@ -187,10 +207,23 @@ class _FolderSelectorViewState extends State<FolderSelectorView> {
                     : () async {
                         setState(() => _isCommittingChoice = true);
                         try {
-                          AppPreference.instance.userFolders = List.from(
-                            folders,
+                          await Future.wait([
+                            readPlaylists(),
+                            readLyricSources(),
+                          ]);
+                          if (WindowLifecycleService.instance.isExiting) return;
+                          final preference = AppPreference.instance;
+                          final oldUserFolders = List<String>.from(
+                            preference.userFolders,
                           );
-                          await AppPreference.instance.save();
+                          preference.userFolders = List.from(folders);
+                          final saved = await preference.save();
+                          if (!saved) {
+                            preference.userFolders = oldUserFolders;
+                            throw StateError('保存文件夹设置失败');
+                          }
+                          if (WindowLifecycleService.instance.isExiting) return;
+                          WindowLifecycleService.instance.markLibraryReady();
                           if (mounted) {
                             context.go(app_paths.AUDIOS_PAGE);
                           }
@@ -216,10 +249,6 @@ class _FolderSelectorViewState extends State<FolderSelectorView> {
                     : () async {
                         setState(() => _isCommittingChoice = true);
                         try {
-                          AppPreference.instance.userFolders = List.from(
-                            folders,
-                          );
-                          await AppPreference.instance.save();
                           if (mounted) {
                             setState(() {
                               selecting = false;
@@ -388,7 +417,6 @@ class _WindowControlls extends StatefulWidget {
 class __WindowControllsState extends State<_WindowControlls>
     with WindowListener {
   bool _isMaximized = false;
-  bool _isClosing = false;
 
   @override
   void initState() {
@@ -406,44 +434,10 @@ class __WindowControllsState extends State<_WindowControlls>
     }
   }
 
-  Future<void> _exitApp() async {
-    if (_isClosing) return;
-    _isClosing = true;
-
-    try {
-      await windowManager.hide().timeout(const Duration(milliseconds: 500));
-    } catch (_) {}
-
-    try {
-      await HotkeysHelper.unregisterAll().timeout(
-        const Duration(milliseconds: 300),
-      );
-    } catch (_) {}
-
-    try {
-      await AppSettings.instance.saveSettings().timeout(
-        const Duration(seconds: 1),
-      );
-    } catch (_) {}
-
-    try {
-      await AppPreference.instance.save().timeout(const Duration(seconds: 1));
-    } catch (_) {}
-
-    try {
-      await windowManager.destroy().timeout(const Duration(seconds: 2));
-    } catch (_) {}
-  }
-
   @override
   void dispose() {
     windowManager.removeListener(this);
     super.dispose();
-  }
-
-  @override
-  void onWindowClose() {
-    _exitApp();
   }
 
   @override
@@ -486,7 +480,7 @@ class __WindowControllsState extends State<_WindowControlls>
         ),
         IconButton(
           tooltip: '退出',
-          onPressed: _exitApp,
+          onPressed: WindowLifecycleService.instance.requestClose,
           icon: const Icon(Symbols.close),
         ),
       ],
