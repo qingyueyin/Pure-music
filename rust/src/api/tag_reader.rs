@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     fs::{self},
-    io::{self, Cursor, Write},
+    io::{self, Cursor},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -1753,25 +1753,21 @@ impl AudioFolder {
     /// 扫描路径为 path 的文件夹
     fn read_from_folder(path: impl AsRef<Path>) -> Result<AudioFolder, io::Error> {
         let path = path.as_ref();
-
-        let dir = match fs::read_dir(path) {
-            Ok(val) => val,
-            Err(err) => {
-                log_to_dart(format!("folder scan failed: {}", err));
-                return Err(err);
+        let mut paths = Vec::new();
+        for entry in fs::read_dir(path)? {
+            let entry = entry?;
+            if entry.file_type()?.is_file() && is_supported_audio_path(&entry.path()) {
+                paths.push(entry.path());
             }
-        };
-
-        let paths: Vec<PathBuf> = dir
-            .filter_map(Result::ok)
-            .filter(|entry| entry.file_type().is_ok_and(|file_type| file_type.is_file()))
-            .map(|entry| entry.path())
-            .filter(|path| is_supported_audio_path(path))
-            .collect();
-        let audios: Vec<Audio> = read_audio_paths_parallel(&paths, |_| {})
-            .into_iter()
-            .flatten()
-            .collect();
+        }
+        let read_results = read_audio_paths_parallel(&paths, |_| {});
+        if let Some(failed_index) = read_results.iter().position(Option::is_none) {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!("failed to read audio: {}", paths[failed_index].display()),
+            ));
+        }
+        let audios: Vec<Audio> = read_results.into_iter().flatten().collect();
         let latest = audios.iter().map(|audio| audio.created).max().unwrap_or(0);
 
         if !audios.is_empty() {
@@ -2302,27 +2298,25 @@ fn collect_audio_files_by_folder(
     count: &mut u64,
     by_folder: &mut HashMap<String, Vec<PathBuf>>,
     seen: &mut HashSet<String>,
-) {
+) -> io::Result<()> {
     let folder_str = folder.as_ref().to_string_lossy().to_string();
     if !seen.insert(folder_str.clone()) {
-        return;
+        return Ok(());
     }
-    if let Ok(dir) = fs::read_dir(folder.as_ref()) {
-        for entry in dir.flatten() {
-            let Ok(file_type) = entry.file_type() else {
-                continue;
-            };
-            if file_type.is_dir() {
-                collect_audio_files_by_folder(entry.path(), count, by_folder, seen);
-            } else if file_type.is_file() && is_supported_audio_path(&entry.path()) {
-                *count += 1;
-                by_folder
-                    .entry(folder_str.clone())
-                    .or_default()
-                    .push(entry.path());
-            }
+    for entry in fs::read_dir(folder.as_ref())? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() {
+            collect_audio_files_by_folder(entry.path(), count, by_folder, seen)?;
+        } else if file_type.is_file() && is_supported_audio_path(&entry.path()) {
+            *count += 1;
+            by_folder
+                .entry(folder_str.clone())
+                .or_default()
+                .push(entry.path());
         }
     }
+    Ok(())
 }
 
 /// for Flutter  
@@ -2339,7 +2333,7 @@ pub fn build_index_from_folders_recursively(
     let mut total: u64 = 0;
     let mut by_folder: HashMap<String, Vec<PathBuf>> = HashMap::new();
     for item in &folders {
-        collect_audio_files_by_folder(Path::new(item), &mut total, &mut by_folder, &mut seen);
+        collect_audio_files_by_folder(Path::new(item), &mut total, &mut by_folder, &mut seen)?;
     }
 
     for (dir_path, file_paths) in &by_folder {
@@ -2353,7 +2347,7 @@ pub fn build_index_from_folders_recursively(
         });
 
         let scanned_before = scanned;
-        let audios: Vec<Audio> = read_audio_paths_parallel(file_paths, |completed| {
+        let read_results = read_audio_paths_parallel(file_paths, |completed| {
             let completed = scanned_before + completed as u64;
             if should_emit_index_progress(completed as usize, total as usize) {
                 let _ = sink.add(IndexActionState {
@@ -2365,27 +2359,32 @@ pub fn build_index_from_folders_recursively(
                     message: String::new(),
                 });
             }
-        })
-        .into_iter()
-        .flatten()
-        .collect();
+        });
+        if let Some(failed_index) = read_results.iter().position(Option::is_none) {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!(
+                    "failed to read audio while building index: {}",
+                    file_paths[failed_index].display()
+                ),
+            ));
+        }
+        let audios: Vec<Audio> = read_results.into_iter().flatten().collect();
         scanned += file_paths.len() as u64;
         let latest = audios.iter().map(|audio| audio.created).max().unwrap_or(0);
 
         if !audios.is_empty() {
-            if let Ok(metadata) = fs::metadata(dir_path) {
-                if let Ok(modified) = metadata.modified() {
-                    audio_folders.push(AudioFolder {
-                        path: dir_path.clone(),
-                        modified: modified
-                            .duration_since(UNIX_EPOCH)
-                            .unwrap_or(Duration::ZERO)
-                            .as_secs(),
-                        latest,
-                        audios,
-                    });
-                }
-            }
+            let modified = fs::metadata(dir_path)?
+                .modified()?
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or(Duration::ZERO)
+                .as_secs();
+            audio_folders.push(AudioFolder {
+                path: dir_path.clone(),
+                modified,
+                latest,
+                audios,
+            });
         }
     }
 
@@ -2398,13 +2397,7 @@ pub fn build_index_from_folders_recursively(
         "folders": audio_folders_json,
     });
 
-    let mut index_path = PathBuf::from(index_path);
-    index_path.push("index.json");
-    fs::File::create(index_path)?.write_all(json_value.to_string().as_bytes())?;
-
-    if let Err(err) = library_db::write_index_value_to_sqlite(&index_dir, &json_value) {
-        log_to_dart(format!("sqlite index write failed: {}", err));
-    }
+    library_db::write_index_snapshot(&index_dir, &json_value).map_err(io::Error::other)?;
 
     Ok(())
 }
@@ -2427,30 +2420,24 @@ fn _update_index_below_1_1_0(
             message: String::from("正在扫描 ") + path,
         });
         let folder_path = Path::new(path);
-        if let Ok(audio_folder) = AudioFolder::read_from_folder(folder_path) {
-            audio_folders_json.push(audio_folder.to_json_value());
-            let _ = sink.add(IndexActionState {
-                progress: audio_folders_json.len() as f64 / folders.len() as f64,
-                message: String::new(),
-            });
+        match AudioFolder::read_from_folder(folder_path) {
+            Ok(audio_folder) => audio_folders_json.push(audio_folder.to_json_value()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error),
         }
+        let _ = sink.add(IndexActionState {
+            progress: audio_folders_json.len() as f64 / folders.len() as f64,
+            message: String::new(),
+        });
     }
-    fs::File::create(index_path)?.write_all(
-        serde_json::json!({
-            "version": CURRENT_INDEX_VERSION,
-            "folders": audio_folders_json,
-        })
-        .to_string()
-        .as_bytes(),
-    )?;
-
-    if let Some(index_dir) = index_path.parent() {
-        if let Err(err) =
-            library_db::migrate_index_json_to_sqlite(index_dir.to_string_lossy().to_string())
-        {
-            log_to_dart(format!("sqlite index migrate failed: {}", err));
-        }
-    }
+    let index_dir = index_path
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "index path has no parent"))?;
+    let migrated = serde_json::json!({
+        "version": CURRENT_INDEX_VERSION,
+        "folders": audio_folders_json,
+    });
+    library_db::write_index_snapshot(index_dir, &migrated).map_err(io::Error::other)?;
 
     Ok(())
 }
@@ -2460,33 +2447,42 @@ fn discover_new_audio_folders(
     existing_paths: &HashSet<String>,
     new_entries: &mut Vec<serde_json::Value>,
     scanned: &mut HashSet<String>,
-) {
+) -> io::Result<()> {
     let dir_str = root.to_string_lossy().to_string();
     if !scanned.insert(dir_str.clone()) {
-        return;
+        return Ok(());
     }
 
     if !existing_paths.contains(&dir_str) {
-        if let Ok(audio_folder) = AudioFolder::read_from_folder(root) {
-            new_entries.push(audio_folder.to_json_value());
-            return;
+        match AudioFolder::read_from_folder(root) {
+            Ok(audio_folder) => {
+                new_entries.push(audio_folder.to_json_value());
+                return Ok(());
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
         }
     }
 
-    if let Ok(entries) = fs::read_dir(root) {
-        for entry in entries.flatten() {
-            if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                discover_new_audio_folders(&entry.path(), existing_paths, new_entries, scanned);
-            }
+    let entries = match fs::read_dir(root) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    for entry in entries {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            discover_new_audio_folders(&entry.path(), existing_paths, new_entries, scanned)?;
         }
     }
+    Ok(())
 }
 
 fn add_missing_audio_files(
     folder_path: &str,
     audios: &mut Vec<serde_json::Value>,
     latest: u64,
-) -> (u64, bool) {
+) -> io::Result<(u64, bool)> {
     let existing_audio_paths: HashSet<String> = audios
         .iter()
         .filter_map(|item| item["path"].as_str().map(|path| path.to_string()))
@@ -2494,27 +2490,40 @@ fn add_missing_audio_files(
     let mut new_latest = latest;
     let dir = match fs::read_dir(folder_path) {
         Ok(value) => value,
-        Err(_) => return (new_latest, false),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Ok((new_latest, false));
+        }
+        Err(error) => return Err(error),
     };
-    let paths: Vec<PathBuf> = dir
-        .filter_map(Result::ok)
-        .filter(|entry| entry.file_type().is_ok_and(|file_type| file_type.is_file()))
-        .map(|entry| entry.path())
-        .filter(|path| is_supported_audio_path(path))
-        .filter(|path| !existing_audio_paths.contains(&path.to_string_lossy().to_string()))
-        .collect();
+    let mut paths = Vec::new();
+    for entry in dir {
+        let entry = entry?;
+        if entry.file_type()?.is_file()
+            && is_supported_audio_path(&entry.path())
+            && !existing_audio_paths.contains(&entry.path().to_string_lossy().to_string())
+        {
+            paths.push(entry.path());
+        }
+    }
+    let read_results = read_audio_paths_parallel(&paths, |_| {});
+    if let Some(failed_index) = read_results.iter().position(Option::is_none) {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!(
+                "failed to read new audio while updating index: {}",
+                paths[failed_index].display()
+            ),
+        ));
+    }
     let mut added = false;
-    for new_audio in read_audio_paths_parallel(&paths, |_| {})
-        .into_iter()
-        .flatten()
-    {
+    for new_audio in read_results.into_iter().flatten() {
         if new_audio.created > new_latest {
             new_latest = new_audio.created;
         }
         audios.push(new_audio.to_json_value());
         added = true;
     }
-    (new_latest, added)
+    Ok((new_latest, added))
 }
 
 /// for Flutter   
@@ -2556,13 +2565,21 @@ fn indexed_audio_needs_update(audio_item: &serde_json::Value, metadata: &fs::Met
     new_audio_modified != old_audio_modified
 }
 
+fn probe_indexed_path<T>(result: io::Result<T>) -> io::Result<Option<T>> {
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
 #[cfg(test)]
 mod tag_reader_tests {
     use lofty::file::FileType;
     use lofty::prelude::ItemKey;
 
     use super::{
-        is_lyric_item_key, parse_midi_metadata, should_emit_index_progress,
+        is_lyric_item_key, parse_midi_metadata, probe_indexed_path, should_emit_index_progress,
         should_scan_indexed_audio_files, should_show_recording_date, tag_reader_worker_count_for,
         SUPPORTED_FORMATS,
     };
@@ -2585,6 +2602,20 @@ mod tag_reader_tests {
     #[test]
     fn scans_folder_when_timestamp_moves_backwards() {
         assert!(should_scan_indexed_audio_files(101, 100, false));
+    }
+
+    #[test]
+    fn only_not_found_marks_an_indexed_path_missing() {
+        assert!(
+            probe_indexed_path::<()>(Err(std::io::Error::from(std::io::ErrorKind::NotFound)))
+                .unwrap()
+                .is_none()
+        );
+        let error = probe_indexed_path::<()>(Err(std::io::Error::from(
+            std::io::ErrorKind::PermissionDenied,
+        )))
+        .unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
     }
 
     #[test]
@@ -2689,9 +2720,7 @@ pub fn update_index(
     sink: StreamSink<IndexActionState>,
 ) -> anyhow::Result<()> {
     let index_dir = PathBuf::from(&index_path);
-    let sqlite_snapshot = library_db::read_current_index_snapshot(&index_dir)
-        .ok()
-        .flatten();
+    let sqlite_snapshot = library_db::read_current_index_snapshot(&index_dir)?;
     let sqlite_snapshot_current = sqlite_snapshot.is_some();
     if !force_metadata_check {
         if let Some(snapshot) = sqlite_snapshot.as_ref() {
@@ -2724,14 +2753,27 @@ pub fn update_index(
         .as_array_mut()
         .ok_or_else(|| anyhow::anyhow!("missing 'folders' field"))?;
     let previous_folder_count = folders.len();
+    let mut folder_probe_error = None;
     folders.retain(|item| {
-        let path = match item["path"].as_str() {
-            Some(p) => p,
-            None => return false,
+        let Some(path) = item["path"].as_str() else {
+            folder_probe_error = Some(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "indexed folder is missing path",
+            ));
+            return true;
         };
-
-        Path::new(path).exists()
+        match probe_indexed_path(fs::metadata(path)) {
+            Ok(Some(_)) => true,
+            Ok(None) => false,
+            Err(error) => {
+                folder_probe_error = Some(error);
+                true
+            }
+        }
     });
+    if let Some(error) = folder_probe_error {
+        return Err(error.into());
+    }
     index_changed |= folders.len() != previous_folder_count;
     let total = folders
         .iter()
@@ -2749,16 +2791,11 @@ pub fn update_index(
         let latest = folder_item["latest"].as_u64().unwrap_or(0);
         let old_folder_modified = folder_item["modified"].as_u64().unwrap_or(0);
 
-        let new_folder_modified = match fs::metadata(&folder_path) {
-            Ok(value) => match value.modified() {
-                Ok(value) => value
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or(Duration::ZERO)
-                    .as_secs(),
-                Err(_) => continue,
-            },
-            Err(_) => continue,
-        };
+        let new_folder_modified = fs::metadata(&folder_path)?
+            .modified()?
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or(Duration::ZERO)
+            .as_secs();
 
         let folder_audio_count = folder_item["audios"]
             .as_array()
@@ -2795,19 +2832,34 @@ pub fn update_index(
         let previous_audio_count = audios.len();
         let mut refresh_jobs: Vec<(usize, PathBuf)> = Vec::new();
         let mut retained_index = 0_usize;
+        let mut audio_probe_error = None;
         audios.retain(|audio_item| {
             let Some(path) = audio_item["path"].as_str() else {
-                return false;
+                audio_probe_error = Some(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "indexed audio is missing path",
+                ));
+                return true;
             };
-            let Ok(metadata) = fs::metadata(path) else {
-                return false;
-            };
-            if refresh_all_metadata || indexed_audio_needs_update(audio_item, &metadata) {
-                refresh_jobs.push((retained_index, PathBuf::from(path)));
+            match probe_indexed_path(fs::metadata(path)) {
+                Ok(Some(metadata)) => {
+                    if refresh_all_metadata || indexed_audio_needs_update(audio_item, &metadata) {
+                        refresh_jobs.push((retained_index, PathBuf::from(path)));
+                    }
+                    retained_index += 1;
+                    true
+                }
+                Ok(None) => false,
+                Err(error) => {
+                    audio_probe_error = Some(error);
+                    retained_index += 1;
+                    true
+                }
             }
-            retained_index += 1;
-            true
         });
+        if let Some(error) = audio_probe_error {
+            return Err(error.into());
+        }
         let removed_count = previous_audio_count - audios.len();
         if removed_count > 0 {
             checked += removed_count as u64;
@@ -2831,6 +2883,12 @@ pub fn update_index(
                 });
             }
         });
+        if let Some(failed_index) = refreshed.iter().position(Option::is_none) {
+            return Err(anyhow::anyhow!(
+                "failed to refresh audio while updating index: {}",
+                refresh_paths[failed_index].display()
+            ));
+        }
         checked += refresh_jobs.len() as u64;
         for ((audio_index, _), modified_audio) in refresh_jobs.into_iter().zip(refreshed) {
             if let Some(modified_audio) = modified_audio {
@@ -2849,7 +2907,7 @@ pub fn update_index(
             });
         }
 
-        let (new_latest, added) = add_missing_audio_files(&folder_path, audios, latest);
+        let (new_latest, added) = add_missing_audio_files(&folder_path, audios, latest)?;
         if added || new_latest != latest {
             folder_item["latest"] = serde_json::json!(new_latest);
             index_changed = true;
@@ -2877,7 +2935,7 @@ pub fn update_index(
                 &existing_paths,
                 &mut new_entries,
                 &mut scanned_dirs,
-            );
+            )?;
         }
         if !new_entries.is_empty() {
             index_changed = true;
@@ -2885,13 +2943,8 @@ pub fn update_index(
         }
     }
 
-    if index_changed {
-        fs::File::create(index_path)?.write_all(index.to_string().as_bytes())?;
-    }
     if index_changed || !sqlite_snapshot_current {
-        if let Err(err) = library_db::write_index_value_to_sqlite(&index_dir, &index) {
-            log_to_dart(format!("sqlite index write failed: {}", err));
-        }
+        library_db::write_index_snapshot(&index_dir, &index)?;
     }
 
     let _ = sink.add(IndexActionState {

@@ -6,9 +6,9 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `audio_identity`, `backfill_audio_identities`, `cover_source_signature`, `init_schema`, `metadata_match_key`, `normalize_identity_part`, `open_connection`, `path_lookup_key`, `read_cover_thumbnail`, `sqlite_path`, `stable_file_id`, `unique_play_count`, `with_cover_connection`, `write_cover_thumbnail`, `write_index_value_to_sqlite`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `AudioIdentity`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`
+// These functions are ignored because they are not marked as `pub`: `atomic_write_with_replace`, `audio_identity`, `backfill_audio_identities`, `cover_access_timestamp`, `cover_source_signature`, `cover_tier_exceeds_limit`, `cover_tier`, `ensure_database_layout`, `ensure_index_source_current`, `file_source_signature`, `has_database_layout_marker`, `index_source_signature`, `index_temp_file`, `init_schema`, `legacy_sqlite_path`, `metadata_match_key`, `migrating_sqlite_path`, `normalize_identity_part`, `open_connection`, `open_raw_connection`, `path_lookup_key`, `prune_cover_thumbnail_tier`, `read_cover_thumbnail`, `read_current_index_snapshot`, `rebuild_database_from_legacy`, `remove_database_file`, `remove_database_files`, `replace_file_atomically`, `should_rebuild_database`, `sqlite_path`, `sqlite_sidecar_path`, `stable_file_id`, `stored_index_source_signature`, `unique_play_count`, `with_cover_connection`, `with_index_write_lock`, `write_cover_thumbnail`, `write_index_json`, `write_index_snapshot_with`, `write_index_snapshot`, `write_index_value_to_sqlite`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `AudioIdentity`, `CoverTier`, `IndexFolderSnapshot`, `IndexSnapshot`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`
 // These functions are ignored (category: IgnoreBecauseOwnerTyShouldIgnore): `default`
 
 Future<Uint8List?> getCachedCover({

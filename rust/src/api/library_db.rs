@@ -1,6 +1,11 @@
 use std::collections::{HashMap, HashSet};
+use std::fs::{self, OpenOptions};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Mutex, OnceLock,
+};
 use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use anyhow::{anyhow, Result};
@@ -19,6 +24,8 @@ const COVER_PRUNE_READ_BATCH: i64 = 2;
 const COVER_PRUNE_WRITE_BATCH: i64 = 16;
 const COVER_ACCESS_REFRESH_INTERVAL_MS: i64 = 6 * 60 * 60 * 1000;
 const DATABASE_LAYOUT_VERSION: &str = "2";
+static INDEX_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+static INDEX_WRITE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 #[derive(Clone)]
 pub struct IndexAudio {
@@ -81,6 +88,117 @@ fn sqlite_sidecar_path(path: &Path, suffix: &str) -> PathBuf {
     let mut value = path.as_os_str().to_os_string();
     value.push(suffix);
     PathBuf::from(value)
+}
+
+fn index_temp_file(index_path: &Path) -> io::Result<(PathBuf, std::fs::File)> {
+    let parent = index_path
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "index path has no parent"))?;
+    fs::create_dir_all(parent)?;
+    loop {
+        let sequence = INDEX_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let mut name = index_path
+            .file_name()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "index path has no name"))?
+            .to_os_string();
+        name.push(format!(".{}.{}.tmp", std::process::id(), sequence));
+        let path = parent.join(name);
+        match OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(file) => return Ok((path, file)),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        }
+    }
+}
+
+#[cfg(windows)]
+fn replace_file_atomically(source: &Path, target: &Path) -> io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::core::PCWSTR;
+    use windows::Win32::Storage::FileSystem::{
+        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    };
+
+    let source = source
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let target = target
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    unsafe {
+        MoveFileExW(
+            PCWSTR(source.as_ptr()),
+            PCWSTR(target.as_ptr()),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    }
+    .map_err(io::Error::other)
+}
+
+#[cfg(not(windows))]
+fn replace_file_atomically(source: &Path, target: &Path) -> io::Result<()> {
+    fs::rename(source, target)
+}
+
+fn atomic_write_with_replace<F>(index_path: &Path, bytes: &[u8], replace: F) -> io::Result<()>
+where
+    F: FnOnce(&Path, &Path) -> io::Result<()>,
+{
+    let (temp_path, mut temp_file) = index_temp_file(index_path)?;
+    let write_result = temp_file
+        .write_all(bytes)
+        .and_then(|()| temp_file.flush())
+        .and_then(|()| temp_file.sync_all());
+    drop(temp_file);
+    if let Err(error) = write_result {
+        let _ = fs::remove_file(&temp_path);
+        return Err(error);
+    }
+    if let Err(error) = replace(&temp_path, index_path) {
+        let _ = fs::remove_file(&temp_path);
+        return Err(error);
+    }
+    Ok(())
+}
+
+fn write_index_json(index_dir: &Path, index: &serde_json::Value) -> io::Result<()> {
+    let bytes = serde_json::to_vec(index).map_err(io::Error::other)?;
+    atomic_write_with_replace(
+        &index_dir.join("index.json"),
+        &bytes,
+        replace_file_atomically,
+    )
+}
+
+fn with_index_write_lock<T>(operation: impl FnOnce() -> Result<T>) -> Result<T> {
+    let _guard = INDEX_WRITE_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .map_err(|_| anyhow!("index write lock poisoned"))?;
+    operation()
+}
+
+fn write_index_snapshot_with<F>(
+    index_dir: &Path,
+    index: &serde_json::Value,
+    after_json_write: F,
+) -> Result<()>
+where
+    F: FnOnce(),
+{
+    with_index_write_lock(|| {
+        write_index_json(index_dir, index)?;
+        after_json_write();
+        write_index_value_to_sqlite(index_dir, index)
+    })
+}
+
+pub(crate) fn write_index_snapshot(index_dir: &Path, index: &serde_json::Value) -> Result<()> {
+    write_index_snapshot_with(index_dir, index, || {})
 }
 
 #[derive(Clone, Default)]
@@ -281,6 +399,7 @@ fn rebuild_database_from_legacy(index_dir: &Path) -> Result<()> {
 
     let migration_result = (|| -> Result<()> {
         let mut conn = open_raw_connection(&migrating_path)?;
+        conn.pragma_update(None, "auto_vacuum", "INCREMENTAL")?;
         init_schema(&conn)?;
         conn.execute(
             "ATTACH DATABASE ?1 AS legacy",
@@ -390,26 +509,15 @@ fn open_connection(index_dir: &Path) -> Result<Connection> {
 pub(crate) fn read_current_index_snapshot(index_dir: &Path) -> Result<Option<IndexSnapshot>> {
     let conn = open_connection(index_dir)?;
     init_schema(&conn)?;
-    let stored_modified: Option<i64> = conn
-        .query_row(
-            "SELECT value FROM meta WHERE key = 'index_source_modified'",
-            [],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()?
-        .and_then(|value| value.parse().ok());
-    let stored_size: Option<i64> = conn
-        .query_row(
-            "SELECT value FROM meta WHERE key = 'index_source_size'",
-            [],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()?
-        .and_then(|value| value.parse().ok());
-    let Ok(current_signature) = index_source_signature(index_dir) else {
+    let Some(stored_signature) = stored_index_source_signature(&conn)? else {
         return Ok(None);
     };
-    if Some(current_signature) != stored_modified.zip(stored_size) {
+    let current_signature = match index_source_signature(index_dir) {
+        Ok(signature) => signature,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    if current_signature != stored_signature {
         return Ok(None);
     }
     let version: Option<u64> = conn
@@ -584,7 +692,7 @@ fn init_schema(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-fn file_source_signature(path: &Path) -> Result<(i64, i64)> {
+fn file_source_signature(path: &Path) -> io::Result<(i64, i64)> {
     let metadata = std::fs::metadata(path)?;
     let modified = metadata
         .modified()?
@@ -596,12 +704,50 @@ fn file_source_signature(path: &Path) -> Result<(i64, i64)> {
     Ok((modified, size))
 }
 
-fn cover_source_signature(path: &Path) -> Result<(i64, i64)> {
+fn cover_source_signature(path: &Path) -> io::Result<(i64, i64)> {
     file_source_signature(path)
 }
 
-fn index_source_signature(index_dir: &Path) -> Result<(i64, i64)> {
+fn index_source_signature(index_dir: &Path) -> io::Result<(i64, i64)> {
     file_source_signature(&index_dir.join("index.json"))
+}
+
+fn stored_index_source_signature(conn: &Connection) -> Result<Option<(i64, i64)>> {
+    let stored_modified: Option<String> = conn
+        .query_row(
+            "SELECT value FROM meta WHERE key = 'index_source_modified'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let stored_size: Option<String> = conn
+        .query_row(
+            "SELECT value FROM meta WHERE key = 'index_source_size'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    match (stored_modified, stored_size) {
+        (None, None) => Ok(None),
+        (Some(modified), Some(size)) => Ok(Some((
+            modified
+                .parse()
+                .map_err(|_| anyhow!("invalid sqlite index modified signature"))?,
+            size.parse()
+                .map_err(|_| anyhow!("invalid sqlite index size signature"))?,
+        ))),
+        _ => Err(anyhow!("incomplete sqlite index source signature")),
+    }
+}
+
+fn ensure_index_source_current(conn: &Connection, index_dir: &Path) -> Result<()> {
+    let stored = stored_index_source_signature(conn)?
+        .ok_or_else(|| anyhow!("sqlite index source signature missing"))?;
+    let current = index_source_signature(index_dir)?;
+    if stored != current {
+        return Err(anyhow!("sqlite index source signature mismatch"));
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -853,10 +999,7 @@ fn unique_play_count(candidates: &HashMap<String, Vec<i64>>, key: &str) -> Optio
     }
 }
 
-pub(crate) fn write_index_value_to_sqlite(
-    index_dir: &Path,
-    index: &serde_json::Value,
-) -> Result<()> {
+fn write_index_value_to_sqlite(index_dir: &Path, index: &serde_json::Value) -> Result<()> {
     let stopwatch = Instant::now();
     let folders = index
         .get("folders")
@@ -864,7 +1007,7 @@ pub(crate) fn write_index_value_to_sqlite(
         .ok_or_else(|| anyhow!("missing folders"))?;
 
     let version = index.get("version").and_then(|v| v.as_u64()).unwrap_or(0);
-    let index_signature = index_source_signature(index_dir).ok();
+    let (index_modified, index_size) = index_source_signature(index_dir)?;
 
     let mut current_audio_paths = HashSet::<String>::new();
     let mut current_audio_exact_paths = HashSet::<String>::new();
@@ -1027,16 +1170,9 @@ pub(crate) fn write_index_value_to_sqlite(
          WHERE meta.value IS NOT excluded.value",
     )?;
     meta_changes += meta_stmt.execute(params!["version", version.to_string()])?;
-    if let Some((modified, size)) = index_signature {
-        meta_changes +=
-            meta_stmt.execute(params!["index_source_modified", modified.to_string()])?;
-        meta_changes += meta_stmt.execute(params!["index_source_size", size.to_string()])?;
-    } else {
-        meta_changes += tx.execute(
-            "DELETE FROM meta WHERE key IN ('index_source_modified', 'index_source_size')",
-            [],
-        )?;
-    }
+    meta_changes +=
+        meta_stmt.execute(params!["index_source_modified", index_modified.to_string()])?;
+    meta_changes += meta_stmt.execute(params!["index_source_size", index_size.to_string()])?;
     drop(meta_stmt);
 
     let mut folder_changes = 0_usize;
@@ -1216,16 +1352,19 @@ pub(crate) fn write_index_value_to_sqlite(
 
 pub fn migrate_index_json_to_sqlite(index_path: String) -> Result<()> {
     let index_dir = PathBuf::from(index_path);
-    let index_json_path = index_dir.join("index.json");
-    let bytes = std::fs::read(index_json_path)?;
-    let index: serde_json::Value = serde_json::from_slice(&bytes)?;
-    write_index_value_to_sqlite(&index_dir, &index)
+    with_index_write_lock(|| {
+        let index_json_path = index_dir.join("index.json");
+        let bytes = std::fs::read(index_json_path)?;
+        let index: serde_json::Value = serde_json::from_slice(&bytes)?;
+        write_index_value_to_sqlite(&index_dir, &index)
+    })
 }
 
 pub fn read_index_from_sqlite(index_path: String) -> Result<Vec<IndexFolder>> {
     let index_dir = PathBuf::from(index_path);
     let conn = open_connection(&index_dir)?;
     init_schema(&conn)?;
+    ensure_index_source_current(&conn, &index_dir)?;
 
     let version: Option<String> = conn
         .query_row("SELECT value FROM meta WHERE key = 'version'", [], |row| {
@@ -1356,6 +1495,10 @@ mod tests {
         })
     }
 
+    fn sync_test_index(base: &Path, index: &serde_json::Value) {
+        write_index_snapshot(base, index).unwrap();
+    }
+
     #[test]
     fn roundtrip_index() {
         let base = std::env::temp_dir().join(format!(
@@ -1421,6 +1564,115 @@ mod tests {
         std::io::Write::write_all(&mut file, b" ").unwrap();
         drop(file);
         assert!(read_current_index_snapshot(&base).unwrap().is_none());
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn sqlite_read_requires_matching_json_signature() {
+        let base = test_dir("sqlite_read_signature");
+        let index = test_index(&base, vec![test_audio(&base.join("track.flac"))]);
+        sync_test_index(&base, &index);
+        assert_eq!(
+            read_index_from_sqlite(base.to_string_lossy().to_string())
+                .unwrap()
+                .len(),
+            1
+        );
+
+        let mut changed = index;
+        changed["folders"][0]["audios"][0]["title"] = serde_json::json!("Changed");
+        write_index_json(&base, &changed).unwrap();
+        assert!(read_index_from_sqlite(base.to_string_lossy().to_string()).is_err());
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn failed_atomic_replace_keeps_previous_index() {
+        let base = test_dir("atomic_index_replace");
+        let index_path = base.join("index.json");
+        std::fs::write(&index_path, b"old index").unwrap();
+        let error = atomic_write_with_replace(&index_path, b"new index", |_, _| {
+            Err(io::Error::new(io::ErrorKind::PermissionDenied, "blocked"))
+        })
+        .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+        assert_eq!(std::fs::read(&index_path).unwrap(), b"old index");
+        assert_eq!(
+            std::fs::read_dir(&base).unwrap().count(),
+            1,
+            "temporary index file should be removed"
+        );
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn index_write_lock_covers_json_and_sqlite_sync() {
+        let base = test_dir("serialized_index_write");
+        let index = test_index(&base, vec![test_audio(&base.join("track.flac"))]);
+        let (json_written_tx, json_written_rx) = std::sync::mpsc::channel();
+        let (continue_tx, continue_rx) = std::sync::mpsc::channel();
+        let writer_base = base.clone();
+        let writer = std::thread::spawn(move || {
+            write_index_snapshot_with(&writer_base, &index, || {
+                json_written_tx.send(()).unwrap();
+                continue_rx.recv().unwrap();
+            })
+            .unwrap();
+        });
+
+        json_written_rx.recv().unwrap();
+        let lock_is_held = matches!(
+            INDEX_WRITE_LOCK.get().unwrap().try_lock(),
+            Err(std::sync::TryLockError::WouldBlock)
+        );
+        continue_tx.send(()).unwrap();
+        writer.join().unwrap();
+
+        assert!(lock_is_held);
+        assert_eq!(
+            read_index_from_sqlite(base.to_string_lossy().to_string())
+                .unwrap()
+                .len(),
+            1
+        );
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn sqlite_sync_requires_the_source_index() {
+        let base = test_dir("sqlite_sync_source");
+        let index = test_index(&base, Vec::new());
+        assert!(write_index_value_to_sqlite(&base, &index).is_err());
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn failed_sqlite_sync_keeps_old_rows_hidden() {
+        let base = test_dir("sqlite_sync_failure");
+        let audio_path = base.join("track.flac");
+        std::fs::write(&audio_path, [1, 2, 3, 4]).unwrap();
+        let mut index = test_index(&base, vec![test_audio(&audio_path)]);
+        sync_test_index(&base, &index);
+        let conn = open_connection(&base).unwrap();
+        conn.execute_batch(
+            "CREATE TRIGGER reject_audio_update BEFORE UPDATE OF title ON audios
+               BEGIN SELECT RAISE(FAIL, 'blocked'); END;",
+        )
+        .unwrap();
+        drop(conn);
+
+        index["folders"][0]["audios"][0]["title"] = serde_json::json!("Changed");
+        write_index_json(&base, &index).unwrap();
+        assert!(write_index_value_to_sqlite(&base, &index).is_err());
+        let conn = open_raw_connection(&sqlite_path(&base)).unwrap();
+        assert_eq!(
+            conn.query_row("SELECT title FROM audios", [], |row| row
+                .get::<_, String>(0))
+                .unwrap(),
+            "Track"
+        );
+        drop(conn);
+        assert!(read_index_from_sqlite(base.to_string_lossy().to_string()).is_err());
         std::fs::remove_dir_all(base).unwrap();
     }
 
@@ -1569,7 +1821,7 @@ mod tests {
         let audio_path = base.join("track.flac");
         std::fs::write(&audio_path, [1, 2, 3, 4]).unwrap();
         let index = test_index(&base, vec![test_audio(&audio_path)]);
-        write_index_value_to_sqlite(&base, &index).unwrap();
+        sync_test_index(&base, &index);
         std::fs::remove_file(&audio_path).unwrap();
 
         let conn = open_connection(&base).unwrap();
@@ -1591,7 +1843,7 @@ mod tests {
         .unwrap();
         drop(conn);
 
-        write_index_value_to_sqlite(&base, &index).unwrap();
+        sync_test_index(&base, &index);
         let conn = open_connection(&base).unwrap();
         assert_eq!(
             conn.query_row("SELECT COUNT(*) FROM sync_audit", [], |row| {
@@ -1604,7 +1856,7 @@ mod tests {
 
         let mut changed = index;
         changed["folders"][0]["audios"][0]["title"] = serde_json::json!("Changed");
-        write_index_value_to_sqlite(&base, &changed).unwrap();
+        sync_test_index(&base, &changed);
         let conn = open_connection(&base).unwrap();
         assert_eq!(
             conn.query_row("SELECT COUNT(*) FROM sync_audit", [], |row| {
@@ -1623,8 +1875,7 @@ mod tests {
         let old_path = base.join("old.flac");
         let new_path = base.join("renamed.flac");
         std::fs::write(&old_path, [1, 2, 3, 4]).unwrap();
-        write_index_value_to_sqlite(&base, &test_index(&base, vec![test_audio(&old_path)]))
-            .unwrap();
+        sync_test_index(&base, &test_index(&base, vec![test_audio(&old_path)]));
         increment_play_count(
             base.to_string_lossy().to_string(),
             old_path.to_string_lossy().to_string(),
@@ -1632,8 +1883,7 @@ mod tests {
         .unwrap();
 
         std::fs::rename(&old_path, &new_path).unwrap();
-        write_index_value_to_sqlite(&base, &test_index(&base, vec![test_audio(&new_path)]))
-            .unwrap();
+        sync_test_index(&base, &test_index(&base, vec![test_audio(&new_path)]));
 
         assert_eq!(
             get_play_count(
@@ -1660,16 +1910,14 @@ mod tests {
         let new_path = moved_dir.join("new.flac");
         std::fs::write(&old_path, [1, 2, 3, 4]).unwrap();
         std::fs::write(&new_path, [1, 2, 3, 4]).unwrap();
-        write_index_value_to_sqlite(&base, &test_index(&base, vec![test_audio(&old_path)]))
-            .unwrap();
+        sync_test_index(&base, &test_index(&base, vec![test_audio(&old_path)]));
         increment_play_count(
             base.to_string_lossy().to_string(),
             old_path.to_string_lossy().to_string(),
         )
         .unwrap();
 
-        write_index_value_to_sqlite(&base, &test_index(&moved_dir, vec![test_audio(&new_path)]))
-            .unwrap();
+        sync_test_index(&base, &test_index(&moved_dir, vec![test_audio(&new_path)]));
 
         assert_eq!(
             get_play_count(
@@ -1691,22 +1939,20 @@ mod tests {
         for path in [&old_path, &first_path, &second_path] {
             std::fs::write(path, [1, 2, 3, 4]).unwrap();
         }
-        write_index_value_to_sqlite(&base, &test_index(&base, vec![test_audio(&old_path)]))
-            .unwrap();
+        sync_test_index(&base, &test_index(&base, vec![test_audio(&old_path)]));
         increment_play_count(
             base.to_string_lossy().to_string(),
             old_path.to_string_lossy().to_string(),
         )
         .unwrap();
 
-        write_index_value_to_sqlite(
+        sync_test_index(
             &base,
             &test_index(
                 &base,
                 vec![test_audio(&first_path), test_audio(&second_path)],
             ),
-        )
-        .unwrap();
+        );
 
         assert_eq!(
             get_play_count(
