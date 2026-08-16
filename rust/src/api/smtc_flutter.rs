@@ -25,7 +25,8 @@ use windows::{
             },
         },
         UI::WindowsAndMessaging::{
-            CreateWindowExW, DefWindowProcW, RegisterClassW, WINDOW_EX_STYLE, WNDCLASSW, WS_POPUP,
+            CreateWindowExW, DefWindowProcW, DestroyWindow, RegisterClassW, WINDOW_EX_STYLE,
+            WNDCLASSW, WS_POPUP,
         },
     },
 };
@@ -55,6 +56,7 @@ unsafe extern "system" fn hidden_window_proc(
 
 pub struct SMTCFlutter {
     _smtc: SystemMediaTransportControls,
+    hidden_window: Option<HWND>,
     duration_ms: Mutex<u32>,
     progress_ms: AtomicU64,
     last_path: Mutex<Option<String>>,
@@ -245,11 +247,32 @@ impl SMTCFlutter {
             *pending = None;
             self.thumbnail_wake.notify_one();
         }
-        self._clear_display().map_err(|error| error.to_string())
+        let clear_result = self._clear_display().map_err(|error| error.to_string());
+        clear_result
+    }
+}
+
+impl Drop for SMTCFlutter {
+    fn drop(&mut self) {
+        self.thumbnail_closed.store(true, Ordering::Release);
+        if let Ok(mut pending) = self.thumbnail_pending.lock() {
+            *pending = None;
+            self.thumbnail_wake.notify_one();
+        }
+        self.destroy_hidden_window();
     }
 }
 
 impl SMTCFlutter {
+    fn destroy_hidden_window(&mut self) {
+        let Some(hwnd) = self.hidden_window.take() else {
+            return;
+        };
+        if let Err(error) = unsafe { DestroyWindow(hwnd) } {
+            log_to_dart(format!("SMTC: hidden window destroy failed: {}", error));
+        }
+    }
+
     /// 创建隐藏窗口，SMTC 绑定到它而不是可见主窗口：
     /// 主窗口最小化后系统端不会冻结媒体会话显示
     fn _create_hidden_smtc_window() -> Result<HWND, windows::core::Error> {
@@ -313,6 +336,7 @@ impl SMTCFlutter {
 
         Ok(Self {
             _smtc,
+            hidden_window: Some(hwnd),
             duration_ms: Mutex::new(0),
             progress_ms: AtomicU64::new(0),
             last_path: Mutex::new(None),
@@ -506,11 +530,7 @@ impl SMTCFlutter {
         updater.Update()?;
         log_to_dart(format!("SMTC: Display refreshed - {}", title));
 
-        let path = self
-            .last_path
-            .lock()
-            .ok()
-            .and_then(|guard| guard.clone());
+        let path = self.last_path.lock().ok().and_then(|guard| guard.clone());
         if let Some(path) = path {
             self._queue_thumbnail_update(HSTRING::from(path), revision);
         }

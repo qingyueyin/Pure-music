@@ -199,7 +199,7 @@ class SmtcBridge {
     final backend = _backend;
     if (backend == null) return;
     try {
-      await backend.close().timeout(const Duration(milliseconds: 750));
+      await backend.close();
     } catch (error, stackTrace) {
       logger.w('[smtc] close failed: $error\n$stackTrace');
     }
@@ -212,6 +212,7 @@ class SmtcBridge {
     final backend = _backend;
     if (_closed || backend == null) return Future<void>.value();
     _operationChain = _operationChain.then((_) async {
+      if (_closed) return;
       try {
         await operation(backend).timeout(_operationTimeout);
       } catch (error, stackTrace) {

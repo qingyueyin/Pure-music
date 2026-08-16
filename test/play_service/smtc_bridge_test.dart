@@ -21,13 +21,15 @@ void main() {
     final backend = _FakeSmtcBackend();
     final bridge = SmtcBridge.withBackend(backend);
 
-    unawaited(bridge.updateDisplay(
-      title: 'title',
-      artist: 'artist',
-      album: 'album',
-      duration: 1000,
-      path: 'track.wav',
-    ));
+    unawaited(
+      bridge.updateDisplay(
+        title: 'title',
+        artist: 'artist',
+        album: 'album',
+        duration: 1000,
+        path: 'track.wav',
+      ),
+    );
     unawaited(bridge.updateState(SMTCState.playing));
     await bridge.flush();
 
@@ -59,6 +61,23 @@ void main() {
     await bridge.updateState(SMTCState.playing);
 
     expect(backend.closed, isTrue);
+    expect(backend.operations, <String>['close']);
+  });
+
+  test('close skips work that was queued before shutdown', () async {
+    final backend = _FakeSmtcBackend();
+    final firstCall = Completer<void>();
+    backend.timelineGate = firstCall.future;
+    final bridge = SmtcBridge.withBackend(backend);
+
+    unawaited(bridge.updateTimeProperties(10));
+    await backend.firstTimelineCall.future;
+    unawaited(bridge.updateState(SMTCState.playing));
+    final close = bridge.close();
+    firstCall.complete();
+    await close;
+
+    expect(backend.progressUpdates, <int>[10]);
     expect(backend.operations, <String>['close']);
   });
 }
