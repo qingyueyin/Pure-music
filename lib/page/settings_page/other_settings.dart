@@ -1,4 +1,5 @@
 import 'package:pure_music/core/design_tokens.dart';
+import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/component/settings_tile.dart';
@@ -33,6 +34,103 @@ class _ReplayGainControlState extends State<ReplayGainControl> {
   }
 }
 
+class TransitionControl extends StatefulWidget {
+  const TransitionControl({super.key});
+
+  @override
+  State<TransitionControl> createState() => _TransitionControlState();
+}
+
+class _TransitionControlState extends State<TransitionControl> {
+  final pref = AppPreference.instance.playbackPref;
+
+  Future<void> _apply(void Function() mutate) async {
+    setState(mutate);
+    PlayService.instance.playbackService.refreshTransitionPreparation();
+    await AppPreference.instance.save();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mode = pref.transitionMode;
+    return Column(
+      children: [
+        SettingsTile(
+          description: '切歌过渡',
+          subtitle: switch (mode) {
+            TransitionMode.seamless => '曲尾零间隙无缝衔接',
+            TransitionMode.fade =>
+              '淡出 ${pref.transitionFadeOutMs}ms / 淡入 ${pref.transitionFadeInMs}ms',
+            TransitionMode.crossfade =>
+              '淡出 ${pref.transitionFadeOutMs}ms / 淡入 ${pref.transitionFadeInMs}ms',
+            TransitionMode.smart => '根据歌曲内容自动选择衔接方式',
+          },
+          action: SegmentedButton<TransitionMode>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(
+                value: TransitionMode.seamless,
+                label: Text('无缝衔接'),
+              ),
+              ButtonSegment(value: TransitionMode.fade, label: Text('淡入淡出')),
+              ButtonSegment(
+                value: TransitionMode.crossfade,
+                label: Text('交叉淡化'),
+              ),
+              ButtonSegment(value: TransitionMode.smart, label: Text('智能衔接')),
+            ],
+            selected: {mode},
+            onSelectionChanged: (selection) => _apply(() {
+              pref.transitionMode = selection.first;
+            }),
+          ),
+        ),
+        if (mode != TransitionMode.seamless &&
+            mode != TransitionMode.smart) ...[
+          const SizedBox(height: 16),
+          SettingsTile(
+            description: '淡出时长',
+            subtitle: '${pref.transitionFadeOutMs}ms',
+            action: SizedBox(
+              width: 160,
+              child: Slider(
+                value: pref.transitionFadeOutMs.toDouble(),
+                min: 0,
+                max: 10000,
+                divisions: 20,
+                label: '${pref.transitionFadeOutMs}ms',
+                onChanged: (v) =>
+                    setState(() => pref.transitionFadeOutMs = v.round()),
+                onChangeEnd: (v) =>
+                    _apply(() => pref.transitionFadeOutMs = v.round()),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          SettingsTile(
+            description: '淡入时长',
+            subtitle: '${pref.transitionFadeInMs}ms',
+            action: SizedBox(
+              width: 160,
+              child: Slider(
+                value: pref.transitionFadeInMs.toDouble(),
+                min: 0,
+                max: 10000,
+                divisions: 20,
+                label: '${pref.transitionFadeInMs}ms',
+                onChanged: (v) =>
+                    setState(() => pref.transitionFadeInMs = v.round()),
+                onChangeEnd: (v) =>
+                    _apply(() => pref.transitionFadeInMs = v.round()),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 class AudioEchoLogRecordControl extends StatefulWidget {
   const AudioEchoLogRecordControl({super.key});
 
@@ -52,11 +150,11 @@ class _AudioEchoLogRecordControlState extends State<AudioEchoLogRecordControl> {
     final isBusy = _isChangingRecording;
     final statusLabel = isBusy
         ? isRecording
-            ? '正在停止'
-            : '正在开启'
+              ? '正在停止'
+              : '正在开启'
         : isRecording
-            ? '录制中'
-            : '未开启';
+        ? '录制中'
+        : '未开启';
 
     return SettingsTile(
       description: '回声排查日志录制',

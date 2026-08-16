@@ -5,9 +5,11 @@ import 'dart:ffi' as ffi;
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
+import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/native/bass/bass.dart' as bass;
 import 'package:pure_music/native/bass/bass_fx.dart';
+import 'package:pure_music/native/bass/bass_mix.dart';
 import 'package:pure_music/native/bass/bass_wasapi.dart' as bass_wasapi;
 import 'package:pure_music/core/utils.dart';
 import 'package:ffi/ffi.dart';
@@ -39,21 +41,86 @@ enum PlayerState {
 
 enum SpectrumUpdateMode { auto, hz60, hz90, hz120 }
 
+final class GaplessTransition {
+  const GaplessTransition({
+    required this.id,
+    required this.path,
+    required this.replayGainDb,
+  });
+
+  final int id;
+  final String path;
+  final double? replayGainDb;
+}
+
+final class SmartTransitionPreparation {
+  const SmartTransitionPreparation({
+    required this.transitionId,
+    required this.sourceGeneration,
+    required this.mixerHandle,
+    required this.outgoingHandle,
+    required this.incomingHandle,
+    required this.path,
+    required this.lengthSeconds,
+    required this.replayGainDb,
+  });
+
+  final int transitionId;
+  final int sourceGeneration;
+  final int mixerHandle;
+  final int outgoingHandle;
+  final int incomingHandle;
+  final String path;
+  final double? lengthSeconds;
+  final double? replayGainDb;
+}
+
 class BassPlayer {
   late final ffi.DynamicLibrary _bassLib;
   late final ffi.DynamicLibrary _bassWasapiLib;
   late final bass.Bass _bass;
   late final bass_wasapi.BassWasapi _bassWasapi;
+  ffi.DynamicLibrary? _bassFxLib;
   BassFx? _bassFx;
+  ffi.DynamicLibrary? _bassMixLib;
+  BassMix? _bassMix;
+  BassSync? _bassSync;
+  BassChannel? _bassChannel;
+  ffi.NativeCallable<BassSyncProc>? _queueSyncCallback;
+  ffi.NativeCallable<BassSyncProc>? _posSyncCallback;
   bool get isBassFxLoaded => _bassFx != null;
 
   late final String _bassDir;
 
   String? _fPath;
   int? _fstream;
+  int? _mixerStream;
+  bool _mixerUsesQueue = false;
+  int? _queuedStream;
+  bool _queuedStreamAttached = false;
+  String? _queuedPath;
+  double? _queuedLengthSeconds;
+  double? _queuedReplayGainDb;
+  int? _queuedTransitionId;
+  TransitionMode? _queuedTransitionMode;
+  int? _activeGaplessTransitionId;
+  GaplessTransition? _unreportedGaplessTransition;
+  SmartTransitionPreparation? _smartPreparation;
+  bool _smartIncomingNativeOwned = false;
+  int? _activeSmartTransitionId;
+  int? _smartOutgoingStream;
+  int _mixerGeneration = 0;
   bool _streamWasapiExclusive = false;
 
-  double? replayGainDb;
+  double? _replayGainDb;
+  double _baseOutputVolume = 1.0;
+
+  double? get replayGainDb => _replayGainDb;
+
+  set replayGainDb(double? value) {
+    _replayGainDb = value;
+    _applyPlaybackGains();
+  }
 
   // Equalizer
   final List<int> _eqHandles = [];
@@ -102,6 +169,14 @@ class BassPlayer {
   /// 淡出旧流时延迟释放资源的定时器
   Timer? _fadeOutTimer;
   int? _fadeOutHandle;
+  bool _fadeOutRemoveFromMixer = false;
+
+  /// 自动切歌过渡（淡入淡出/交叉淡化）状态
+  Timer? _transitionTimer;
+  int? _transitionOldStream;
+  int? _transitionSyncHandle;
+  int? _transitionSyncChannel;
+  int _transitionGeneration = 0;
 
   /// 独占模式状态变化回调
   Function(bool)? onExclusiveModeChanged;
@@ -125,8 +200,33 @@ class BassPlayer {
   int _positionUpdaterVersion = 0;
   late final StreamController<double> _positionStreamController;
   late final StreamController<Float32List> _spectrumStreamController;
+  late final StreamController<GaplessTransition>
+  _gaplessTransitionStreamController;
   final _playerStateStreamController =
       StreamController<PlayerState>.broadcast();
+
+  int? get _sharedOutputHandle => _mixerStream ?? _fstream;
+  int? get _effectHandle => _mixerStream ?? _fstream;
+  int? _eqChannel;
+
+  bool get canUseGaplessPlayback =>
+      _mixerStream != null && !wasapiExclusive && !_streamWasapiExclusive;
+
+  bool get canUseSmartTransition =>
+      canUseGaplessPlayback &&
+      !_mixerUsesQueue &&
+      _queuedStream == null &&
+      _smartPreparation == null &&
+      _activeSmartTransitionId == null;
+
+  String get bassDirectory => _bassDir;
+
+  int get sourceGeneration => _mixerGeneration;
+
+  bool get hasGaplessMixer => _mixerStream != null;
+
+  Stream<GaplessTransition> get gaplessTransitionStream =>
+      _gaplessTransitionStreamController.stream;
 
   void _logAudioState(String tag) {
     final wasapiStarted = _bassWasapi.BASS_WASAPI_IsStarted() == bass.TRUE;
@@ -134,7 +234,9 @@ class BassPlayer {
         (_bfxEqHandle != 0 ? 1 : 0) + _eqHandles.where((e) => e != 0).length;
     logger.i(
       '[bass] $tag | exclusive=$wasapiExclusive streamExclusive=$_streamWasapiExclusive '
-      'wasapiStarted=$wasapiStarted handle=$_fstream eq=$eqCount eqFlat=${_isEqFlat ? 1 : 0} '
+      'wasapiStarted=$wasapiStarted handle=$_fstream mixer=$_mixerStream queued=$_queuedStream '
+      'smart=${_smartPreparation?.transitionId ?? _activeSmartTransitionId} '
+      'eq=$eqCount eqFlat=${_isEqFlat ? 1 : 0} '
       'rate=$_rate pitch=$_pitch wasapi=$_wasapiOutputInfo',
     );
   }
@@ -144,12 +246,15 @@ class BassPlayer {
     final eqCount =
         (_bfxEqHandle != 0 ? 1 : 0) + _eqHandles.where((e) => e != 0).length;
     return 'exclusive=$wasapiExclusive streamExclusive=$_streamWasapiExclusive '
-        'wasapiStarted=$wasapiStarted handle=$_fstream eq=$eqCount eqFlat=${_isEqFlat ? 1 : 0} '
+        'wasapiStarted=$wasapiStarted handle=$_fstream mixer=$_mixerStream queued=$_queuedStream '
+        'smart=${_smartPreparation?.transitionId ?? _activeSmartTransitionId} '
+        'eq=$eqCount eqFlat=${_isEqFlat ? 1 : 0} '
         'rate=$_rate pitch=$_pitch wasapi=$_wasapiOutputInfo';
   }
 
   /// audio's length in seconds
   double get length {
+    _promoteDequeuedSource();
     if (_fstream == null) return 1.0;
     final cached = _cachedLengthSeconds;
     if (cached != null && cached > 0) return cached;
@@ -171,17 +276,24 @@ class BassPlayer {
   }
 
   /// current position in seconds
-  double get position => _fstream == null ? 0.0 : _getPosition();
+  double get position {
+    _promoteDequeuedSource();
+    return _fstream == null ? 0.0 : _getPosition();
+  }
 
   double _getPosition() {
-    final posBytes = _bass.BASS_ChannelGetPosition(
-      _fstream!,
-      bass.BASS_POS_BYTE,
-    );
+    final source = _fstream!;
+    final posBytes = _mixerStream == null
+        ? _bass.BASS_ChannelGetPosition(source, bass.BASS_POS_BYTE)
+        : _bassMix!.channelGetPosition(source, bass.BASS_POS_BYTE);
     if (posBytes == -1) {
       final errCode = _bass.BASS_ErrorGetCode();
       if (errCode == bass.BASS_ERROR_HANDLE) {
-        freeFStream();
+        if (_mixerStream != null) {
+          if (_promoteDequeuedSource() != null) return _getPosition();
+        } else {
+          freeFStream();
+        }
       }
       return 0.0;
     }
@@ -205,11 +317,12 @@ class BassPlayer {
   }
 
   PlayerState get playerState {
+    _promoteDequeuedSource();
     if (_fstream == null) {
       return PlayerState.unknown;
     }
 
-    switch (_bass.BASS_ChannelIsActive(_fstream!)) {
+    switch (_bass.BASS_ChannelIsActive(_sharedOutputHandle!)) {
       case bass.BASS_ACTIVE_STOPPED:
         return PlayerState.stopped;
       case bass.BASS_ACTIVE_PLAYING:
@@ -235,19 +348,7 @@ class BassPlayer {
   }
 
   double get volumeDsp {
-    if (_fstream == null) return 0;
-
-    final volDsp = malloc.allocate<ffi.Float>(ffi.sizeOf<ffi.Float>());
-    try {
-      _bass.BASS_ChannelGetAttribute(
-        _fstream!,
-        bass.BASS_ATTRIB_VOLDSP,
-        volDsp,
-      );
-      return volDsp.value;
-    } finally {
-      malloc.free(volDsp);
-    }
+    return _baseOutputVolume;
   }
 
   /// update every 33ms
@@ -376,11 +477,12 @@ class BassPlayer {
   }
 
   void _refreshStreamSampleRate() {
-    if (_fstream == null) return;
+    final handle = _sharedOutputHandle;
+    if (handle == null) return;
     final freqPtr = malloc.allocate<ffi.Float>(ffi.sizeOf<ffi.Float>());
     try {
       final ok = _bass.BASS_ChannelGetAttribute(
-        _fstream!,
+        handle,
         bass.BASS_ATTRIB_FREQ,
         freqPtr,
       );
@@ -464,7 +566,7 @@ class BassPlayer {
   }
 
   void _emitSpectrumFrame() {
-    final handle = _fstream;
+    final handle = _sharedOutputHandle;
     if (handle == null) return;
     if (!_spectrumStreamController.hasListener) return;
     final getData = _bassChannelGetData;
@@ -628,11 +730,13 @@ class BassPlayer {
   }
 
   void _initEQ() {
-    if (_fstream == null) return;
+    final channel = _effectHandle;
+    if (channel == null) return;
+    _eqChannel = channel;
 
     if (_bassFx != null) {
       _bfxEqHandle = _bass.BASS_ChannelSetFX(
-        _fstream!,
+        channel,
         bass.BASS_FX_BFX_PEAKEQ,
         0,
       );
@@ -654,7 +758,7 @@ class BassPlayer {
     try {
       for (int i = 0; i < 10; i++) {
         final fx = _bass.BASS_ChannelSetFX(
-          _fstream!,
+          channel,
           bass.BASS_FX_DX8_PARAMEQ,
           0,
         );
@@ -742,26 +846,68 @@ class BassPlayer {
   }
 
   void _removeEQ() {
-    if (_fstream == null) return;
+    final channel = _eqChannel;
+    if (channel == null) {
+      _bfxEqHandle = 0;
+      _eqHandles.clear();
+      return;
+    }
     if (_bfxEqHandle != 0) {
-      _bass.BASS_ChannelRemoveFX(_fstream!, _bfxEqHandle);
+      _bass.BASS_ChannelRemoveFX(channel, _bfxEqHandle);
       _bfxEqHandle = 0;
     }
     for (final fx in _eqHandles) {
       if (fx == 0) continue;
-      _bass.BASS_ChannelRemoveFX(_fstream!, fx);
+      _bass.BASS_ChannelRemoveFX(channel, fx);
     }
+    _eqHandles.clear();
+    _eqChannel = null;
+  }
+
+  void _resetBassHandles() {
+    _fadeInTimer?.cancel();
+    _fadeInTimer = null;
+    _fadeOutTimer?.cancel();
+    _fadeOutTimer = null;
+    _fadeOutHandle = null;
+    _fadeOutRemoveFromMixer = false;
+    _transitionGeneration++;
+    _transitionTimer?.cancel();
+    _transitionTimer = null;
+    _transitionOldStream = null;
+    _positionUpdaterVersion++;
+    _positionUpdater?.cancel();
+    _positionUpdater = null;
+    _mixerGeneration++;
+    _unreportedGaplessTransition = null;
+    _mixerStream = null;
+    _mixerUsesQueue = false;
+    _queuedStream = null;
+    _queuedStreamAttached = false;
+    _queuedPath = null;
+    _queuedLengthSeconds = null;
+    _queuedReplayGainDb = null;
+    _queuedTransitionId = null;
+    _queuedTransitionMode = null;
+    _activeGaplessTransitionId = null;
+    _smartPreparation = null;
+    _smartIncomingNativeOwned = false;
+    _activeSmartTransitionId = null;
+    _smartOutgoingStream = null;
+    _fstream = null;
+    _cachedLengthSeconds = null;
+    _streamWasapiExclusive = false;
+    wasapiExclusive = false;
+    _wasapiOutputInfo = 'off';
+    _eqChannel = null;
+    _bfxEqHandle = 0;
     _eqHandles.clear();
   }
 
-  void _bassInit() {
+  void _bassInit({bool resetHandles = true}) {
     // 先释放旧设备，确保可以使用 -1 (默认设备) 重新初始化
     _bass.BASS_Free();
-
-    // BASS_Free() 会释放所有 BASS 对象，包括 bass_fx.dll 创建的 tempo 流
-    // 需要重新加载 bass_fx.dll 以确保后续 tempo/pitch 操作正常
-    _bassFx = null;
-    _loadBassFx();
+    if (resetHandles) _resetBassHandles();
 
     if (_bass.BASS_Init(-1, 44100, 0, ffi.nullptr, ffi.nullptr) == 0) {
       switch (_bass.BASS_ErrorGetCode()) {
@@ -796,6 +942,12 @@ class BassPlayer {
       }
     }
 
+    // BASS_Free() 会释放所有 BASS 对象，包括 bass_fx.dll 创建的 tempo 流。
+    _bassFx = null;
+    _bassFxLib?.close();
+    _bassFxLib = null;
+    _loadBassFx();
+
     _bass.BASS_SetConfig(bass.BASS_CONFIG_BUFFER, 500);
     _bass.BASS_SetConfig(bass.BASS_CONFIG_DEV_BUFFER, 500);
     if (_bass.BASS_SetConfig(bass.BASS_CONFIG_ASYNCFILE_BUFFER, 1024 * 1024) ==
@@ -806,13 +958,12 @@ class BassPlayer {
     }
   }
 
-  void _startDevice() {
+  bool _startDevice() {
     if (_bass.BASS_Start() == bass.FALSE) {
       switch (_bass.BASS_ErrorGetCode()) {
         case bass.BASS_ERROR_INIT:
           _bassInit();
-          _startDevice();
-          break;
+          return false;
         case bass.BASS_ERROR_BUSY:
           throw const FormatException(
             "The app's audio has been interrupted and cannot be resumed yet. (iOS only)",
@@ -827,6 +978,12 @@ class BassPlayer {
           );
       }
     }
+    return true;
+  }
+
+  void _restoreSharedSource(String audioPath, double position) {
+    _fPath = audioPath;
+    _createSharedStream(audioPath, position);
   }
 
   /// load bass.dll from the exe's path\\dll\\BASS
@@ -841,6 +998,8 @@ class BassPlayer {
       onListen: _syncPositionUpdaterPeriod,
       onCancel: _syncPositionUpdaterPeriod,
     );
+    _gaplessTransitionStreamController =
+        StreamController<GaplessTransition>.broadcast();
 
     // ─── 1. 确定 BASS DLL 目录 ─────────────────────────────────────────────
     final exeBassDir = path.join(
@@ -856,8 +1015,8 @@ class BassPlayer {
     _bassDir = exeBassDll.existsSync()
         ? exeBassDir
         : (cwdBassDll.existsSync()
-            ? cwdBassDir
-            : (sourceBassDll.existsSync() ? sourceBassDir : exeBassDir));
+              ? cwdBassDir
+              : (sourceBassDll.existsSync() ? sourceBassDir : exeBassDir));
 
     // ─── 2. 确保 Windows 能找到 BASS 目录下的依赖 DLL ──────────────────────
     if (Platform.isWindows) {
@@ -949,7 +1108,12 @@ class BassPlayer {
     }
 
     // ─── 5. 加载其他 BASS 插件（bassflac.dll 等，通过 BASS_PluginLoad） ─────
-    final coreDlls = {'bass.dll', 'basswasapi.dll', 'bass_fx.dll'};
+    final coreDlls = {
+      'bass.dll',
+      'basswasapi.dll',
+      'bass_fx.dll',
+      'bassmix.dll',
+    };
     if (Directory(_bassDir).existsSync()) {
       final entries = Directory(_bassDir).listSync(followLinks: false);
       for (final e in entries) {
@@ -976,26 +1140,816 @@ class BassPlayer {
 
     // ─── 6. BASS 初始化 ─────────────────────────────────────────────────────
     try {
-      _bassInit();
+      _bassInit(resetHandles: false);
     } catch (err) {
       logger.e('[bass] Init failed: $err');
     }
 
     // ─── 7. 预加载 BASS_FX（在 bass.dll 已就绪时加载，避免后续依赖解析问题） ─
     _loadBassFx();
+    _loadBassMix();
   }
 
   void _loadBassFx() {
     if (_bassFx != null) return; // 已加载，跳过
     final bassFxLibPath = path.join(_bassDir, 'bass_fx.dll');
+    ffi.DynamicLibrary? bassFxLib;
     try {
-      final bassFxLib = ffi.DynamicLibrary.open(bassFxLibPath);
-      _bassFx = BassFx(bassFxLib);
-      final version = _bassFx!.BASS_FX_GetVersion();
+      bassFxLib = ffi.DynamicLibrary.open(bassFxLibPath);
+      final bassFx = BassFx(bassFxLib);
+      final version = bassFx.BASS_FX_GetVersion();
+      _bassFxLib = bassFxLib;
+      _bassFx = bassFx;
       logger.i('BASS_FX loaded (version: ${version.toRadixString(16)})');
     } catch (e) {
+      bassFxLib?.close();
+      _bassFxLib = null;
+      _bassFx = null;
       logger.w('BASS_FX not available: $e; tempo/pitch control disabled');
     }
+  }
+
+  void _loadBassMix() {
+    if (_bassMix != null) return;
+    ffi.DynamicLibrary? mixLib;
+    ffi.NativeCallable<BassSyncProc>? queueSyncCallback;
+    ffi.NativeCallable<BassSyncProc>? posSyncCallback;
+    try {
+      mixLib = ffi.DynamicLibrary.open(path.join(_bassDir, 'bassmix.dll'));
+      final mix = BassMix(mixLib);
+      final version = mix.getVersion();
+      if (version < 0x02040c00) {
+        throw UnsupportedError(
+          'BASSmix 2.4.12 or newer is required for queued playback',
+        );
+      }
+      final sync = BassSync(_bassLib);
+      final channel = BassChannel(_bassLib);
+      final queueCallback = ffi.NativeCallable<BassSyncProc>.listener(
+        _onMixerSourceDequeued,
+      )..keepIsolateAlive = false;
+      queueSyncCallback = queueCallback;
+      final posCallback = ffi.NativeCallable<BassSyncProc>.listener(
+        _onAutoTransitionPos,
+      )..keepIsolateAlive = false;
+      posSyncCallback = posCallback;
+      logger.i('BASSmix loaded (version: ${version.toRadixString(16)})');
+      _bassMixLib = mixLib;
+      _bassMix = mix;
+      _bassSync = sync;
+      _bassChannel = channel;
+      _queueSyncCallback = queueCallback;
+      _posSyncCallback = posCallback;
+    } catch (error) {
+      queueSyncCallback?.close();
+      posSyncCallback?.close();
+      mixLib?.close();
+      _queueSyncCallback = null;
+      _posSyncCallback = null;
+      _bassMixLib = null;
+      _bassMix = null;
+      _bassSync = null;
+      _bassChannel = null;
+      logger.w('BASSmix not available: $error; gapless playback disabled');
+    }
+  }
+
+  double _dbToLinear(double db) => math.pow(10.0, db / 20.0).toDouble();
+
+  double _sourceGain(double? gainDb) {
+    if (!AppPreference.instance.playbackPref.replayGainEnabled) return 1.0;
+    return _dbToLinear(gainDb ?? 0.0).clamp(0.0, 8.0).toDouble();
+  }
+
+  void _applySourceGain(int stream, double? gainDb) {
+    _bass.BASS_ChannelSetAttribute(
+      stream,
+      bass.BASS_ATTRIB_VOLDSP,
+      _sourceGain(gainDb),
+    );
+  }
+
+  void _applyPlaybackGains() {
+    final current = _fstream;
+    if (current == null) return;
+    if (_mixerStream == null || wasapiExclusive || _streamWasapiExclusive) {
+      _bass.BASS_ChannelSetAttribute(
+        current,
+        bass.BASS_ATTRIB_VOLDSP,
+        _baseOutputVolume * _sourceGain(_replayGainDb),
+      );
+      return;
+    }
+    _bass.BASS_ChannelSetAttribute(
+      _mixerStream!,
+      bass.BASS_ATTRIB_VOLDSP,
+      _baseOutputVolume,
+    );
+    _applySourceGain(current, _replayGainDb);
+    final queued = _queuedStream;
+    if (queued != null) {
+      _applySourceGain(queued, _queuedReplayGainDb);
+    }
+    final smartIncoming = _smartPreparation?.incomingHandle;
+    if (smartIncoming != null) {
+      _applySourceGain(smartIncoming, _smartPreparation?.replayGainDb);
+    }
+  }
+
+  int _createSharedSource(String audioPath) {
+    const flags =
+        bass.BASS_UNICODE |
+        bass.BASS_SAMPLE_FLOAT |
+        bass.BASS_ASYNCFILE |
+        bass.BASS_STREAM_DECODE;
+    final pathPointer = audioPath.toNativeUtf16() as ffi.Pointer<ffi.Void>;
+    var handle = _bass.BASS_StreamCreateFile(
+      bass.FALSE,
+      pathPointer,
+      0,
+      0,
+      flags,
+    );
+    malloc.free(pathPointer);
+    if (handle == 0) return 0;
+
+    if (_bassFx != null) {
+      final tempoHandle = _bassFx!.BASS_FX_TempoCreate(
+        handle,
+        BASS_FX_FREESOURCE | bass.BASS_STREAM_DECODE,
+      );
+      if (tempoHandle != 0) {
+        handle = tempoHandle;
+      }
+    }
+    if (_rate != 1.0) {
+      _bass.BASS_ChannelSetAttribute(
+        handle,
+        BASS_ATTRIB_TEMPO,
+        (_rate - 1.0) * 100.0,
+      );
+    }
+    if (_pitch != 0.0) {
+      _bass.BASS_ChannelSetAttribute(handle, BASS_ATTRIB_TEMPO_PITCH, _pitch);
+    }
+    return handle;
+  }
+
+  int _createDirectSharedStream(String audioPath) {
+    const playableFlags =
+        bass.BASS_UNICODE | bass.BASS_SAMPLE_FLOAT | bass.BASS_ASYNCFILE;
+
+    if (_bassFx != null) {
+      final source = _createDecodeStream(audioPath);
+      if (source != 0) {
+        try {
+          final tempoHandle = _bassFx!.BASS_FX_TempoCreate(
+            source,
+            BASS_FX_FREESOURCE,
+          );
+          if (tempoHandle != 0) {
+            if (_rate != 1.0) {
+              _bass.BASS_ChannelSetAttribute(
+                tempoHandle,
+                BASS_ATTRIB_TEMPO,
+                (_rate - 1.0) * 100.0,
+              );
+            }
+            if (_pitch != 0.0) {
+              _bass.BASS_ChannelSetAttribute(
+                tempoHandle,
+                BASS_ATTRIB_TEMPO_PITCH,
+                _pitch,
+              );
+            }
+            return tempoHandle;
+          }
+        } catch (error) {
+          logger.w('[bass] direct tempo stream unavailable: $error');
+        }
+        _bass.BASS_StreamFree(source);
+      }
+    }
+
+    final pathPointer = audioPath.toNativeUtf16() as ffi.Pointer<ffi.Void>;
+    final handle = _bass.BASS_StreamCreateFile(
+      bass.FALSE,
+      pathPointer,
+      0,
+      0,
+      playableFlags,
+    );
+    malloc.free(pathPointer);
+    return handle;
+  }
+
+  int _createSharedPlaybackSource(String audioPath) {
+    if (_bassMix != null) {
+      final source = _createSharedSource(audioPath);
+      if (source == 0) return 0;
+      if (_createMixerForSource(source)) {
+        _muteSharedOutputForFadeIn();
+        return source;
+      }
+      _bass.BASS_StreamFree(source);
+      logger.w('[bass] mixer creation failed; using direct shared output');
+    }
+    final direct = _createDirectSharedStream(audioPath);
+    if (direct != 0) {
+      _bass.BASS_ChannelSetAttribute(direct, bass.BASS_ATTRIB_VOL, 0.0);
+    }
+    return direct;
+  }
+
+  void _muteSharedOutputForFadeIn() {
+    final output = _sharedOutputHandle;
+    if (output != null) {
+      _bass.BASS_ChannelSetAttribute(output, bass.BASS_ATTRIB_VOL, 0.0);
+    }
+  }
+
+  bool _createMixerForSource(int source) {
+    final mix = _bassMix;
+    final channel = _bassChannel;
+    final sync = _bassSync;
+    final callback = _queueSyncCallback;
+    if (mix == null || channel == null || sync == null || callback == null) {
+      return false;
+    }
+
+    final info = calloc<BassChannelInfo>();
+    try {
+      if (!channel.getInfo(source, info)) return false;
+      final frequency = info.ref.frequency;
+      final sourceChannels = info.ref.channels;
+      if (frequency <= 0 || sourceChannels <= 0) return false;
+
+      var outputFrequency = frequency;
+      var outputChannels = 2;
+      final deviceInfo = calloc<bass.BASS_INFO>();
+      try {
+        if (_bass.BASS_GetInfo(deviceInfo) != 0) {
+          if (deviceInfo.ref.freq > 0) outputFrequency = deviceInfo.ref.freq;
+          if (deviceInfo.ref.speakers > 0) {
+            outputChannels = deviceInfo.ref.speakers;
+          }
+        }
+      } finally {
+        calloc.free(deviceInfo);
+      }
+
+      final seamless =
+          AppPreference.instance.playbackPref.transitionMode ==
+          TransitionMode.seamless;
+      final flags =
+          bass.BASS_SAMPLE_FLOAT |
+          bassMixerPosex |
+          bassMixerResume |
+          bassMixerEnd |
+          (seamless ? bassMixerQueue : 0);
+      final output = mix.streamCreate(outputFrequency, outputChannels, flags);
+      if (output == 0) return false;
+      _mixerGeneration++;
+      int? syncHandle;
+      if (seamless) {
+        syncHandle = sync.channelSetSync(
+          output,
+          bassSyncMixerQueue,
+          0,
+          callback.nativeFunction,
+          ffi.Pointer<ffi.Void>.fromAddress(_mixerGeneration),
+        );
+        if (syncHandle == 0) {
+          _bass.BASS_StreamFree(output);
+          return false;
+        }
+      }
+      if (!mix.streamAddChannel(
+        output,
+        source,
+        bassMixerChanDownmix |
+            bassMixerChanNoRampIn |
+            (seamless ? bassStreamAutofree : 0),
+      )) {
+        _bass.BASS_StreamFree(output);
+        return false;
+      }
+
+      _mixerStream = output;
+      _mixerUsesQueue = seamless;
+      _bass.BASS_ChannelSetAttribute(
+        output,
+        bass.BASS_ATTRIB_VOLDSP,
+        _baseOutputVolume,
+      );
+      _applySourceGain(source, _replayGainDb);
+      return true;
+    } finally {
+      calloc.free(info);
+    }
+  }
+
+  bool prepareGaplessSource(
+    String audioPath, {
+    required int transitionId,
+    double? replayGainDb,
+    TransitionMode? transitionMode,
+  }) {
+    if (!canUseGaplessPlayback || _fstream == null) return false;
+    if (_queuedTransitionId == transitionId && _queuedStream != null) {
+      _queuedReplayGainDb = replayGainDb;
+      if (transitionMode != null) _queuedTransitionMode = transitionMode;
+      _applySourceGain(_queuedStream!, replayGainDb);
+      return true;
+    }
+
+    final selectedMode =
+        transitionMode ?? AppPreference.instance.playbackPref.transitionMode;
+    final seamless = selectedMode == TransitionMode.seamless;
+    clearGaplessSource();
+    _cancelTransition();
+    if (seamless != _mixerUsesQueue) {
+      logger.i(
+        '[bass] transition mode will apply after the next source rebuild',
+      );
+      return false;
+    }
+    final nextStream = _createSharedSource(audioPath);
+    if (nextStream == 0) return false;
+    final nextLength = _bass.BASS_ChannelBytes2Seconds(
+      nextStream,
+      _bass.BASS_ChannelGetLength(nextStream, bass.BASS_POS_BYTE),
+    );
+    _applySourceGain(nextStream, replayGainDb);
+    var ownedByMixer = false;
+
+    try {
+      if (_mixerStream == null) {
+        _bass.BASS_StreamFree(nextStream);
+        return false;
+      }
+      if (!seamless) {
+        // 淡化模式只预建解码流，避免它在触发前静音播放。
+        _bass.BASS_ChannelSetAttribute(nextStream, bass.BASS_ATTRIB_VOL, 0.0);
+      }
+      if (seamless) {
+        final added = _bassMix!.streamAddChannel(
+          _mixerStream!,
+          nextStream,
+          bassMixerChanDownmix |
+              bassMixerChanNoRampIn |
+              (seamless ? bassStreamAutofree : 0),
+        );
+        if (!added) {
+          _bass.BASS_StreamFree(nextStream);
+          return false;
+        }
+        ownedByMixer = true;
+      }
+      _queuedStream = nextStream;
+      _queuedStreamAttached = ownedByMixer;
+      _queuedPath = audioPath;
+      _queuedLengthSeconds = nextLength > 0 ? nextLength : null;
+      _queuedReplayGainDb = replayGainDb;
+      _queuedTransitionId = transitionId;
+      _queuedTransitionMode = selectedMode;
+      if (!seamless) {
+        _scheduleAutoTransition();
+      }
+      return true;
+    } catch (error, trace) {
+      logger.w(
+        '[bass] preparing gapless source failed: $error',
+        stackTrace: trace,
+      );
+      if (_queuedStream == nextStream) {
+        _queuedStream = null;
+        _queuedStreamAttached = false;
+        _queuedPath = null;
+        _queuedLengthSeconds = null;
+        _queuedReplayGainDb = null;
+        _queuedTransitionId = null;
+        _queuedTransitionMode = null;
+      }
+      if (ownedByMixer) {
+        _bassMix?.channelRemove(nextStream);
+      } else {
+        _bass.BASS_StreamFree(nextStream);
+      }
+      return false;
+    }
+  }
+
+  SmartTransitionPreparation? prepareSmartTransition(
+    String audioPath, {
+    required int transitionId,
+    double? replayGainDb,
+  }) {
+    if (!canUseSmartTransition || _fstream == null || _mixerStream == null) {
+      return null;
+    }
+    _cancelTransition();
+    final incoming = _createSharedSource(audioPath);
+    if (incoming == 0) return null;
+    final incomingLength = _bass.BASS_ChannelBytes2Seconds(
+      incoming,
+      _bass.BASS_ChannelGetLength(incoming, bass.BASS_POS_BYTE),
+    );
+    _applySourceGain(incoming, replayGainDb);
+    final preparation = SmartTransitionPreparation(
+      transitionId: transitionId,
+      sourceGeneration: _mixerGeneration,
+      mixerHandle: _mixerStream!,
+      outgoingHandle: _fstream!,
+      incomingHandle: incoming,
+      path: audioPath,
+      lengthSeconds: incomingLength > 0 ? incomingLength : null,
+      replayGainDb: replayGainDb,
+    );
+    _smartPreparation = preparation;
+    _smartIncomingNativeOwned = false;
+    return preparation;
+  }
+
+  bool markSmartTransitionTransferred(int transitionId) {
+    if (_smartPreparation?.transitionId != transitionId) return false;
+    _smartIncomingNativeOwned = true;
+    return true;
+  }
+
+  void discardSmartTransition(
+    int transitionId, {
+    required bool incomingReleasedByNative,
+  }) {
+    final preparation = _smartPreparation;
+    if (preparation == null || preparation.transitionId != transitionId) return;
+    if (!incomingReleasedByNative && !_smartIncomingNativeOwned) {
+      _bass.BASS_StreamFree(preparation.incomingHandle);
+    }
+    _smartPreparation = null;
+    _smartIncomingNativeOwned = false;
+  }
+
+  GaplessTransition? adoptSmartTransition(int transitionId) {
+    final preparation = _smartPreparation;
+    if (preparation == null || preparation.transitionId != transitionId) {
+      return null;
+    }
+    _fstream = preparation.incomingHandle;
+    _fPath = preparation.path;
+    _cachedLengthSeconds = preparation.lengthSeconds;
+    _replayGainDb = preparation.replayGainDb;
+    _smartOutgoingStream = preparation.outgoingHandle;
+    _activeSmartTransitionId = transitionId;
+    _activeGaplessTransitionId = null;
+    _smartPreparation = null;
+    _smartIncomingNativeOwned = false;
+    _refreshStreamSampleRate();
+    _resetSpectrumSmoothing();
+    _emitPositionSnapshot();
+    return GaplessTransition(
+      id: transitionId,
+      path: preparation.path,
+      replayGainDb: preparation.replayGainDb,
+    );
+  }
+
+  void completeSmartTransition(int transitionId) {
+    if (_activeSmartTransitionId != transitionId) return;
+    final outgoing = _smartOutgoingStream;
+    _smartOutgoingStream = null;
+    _activeSmartTransitionId = null;
+    if (outgoing != null && outgoing != _fstream) {
+      _bass.BASS_ChannelStop(outgoing);
+      _bass.BASS_StreamFree(outgoing);
+    }
+  }
+
+  int? _detachGaplessMixer() {
+    final mixer = _mixerStream;
+    if (mixer == null) return null;
+    final detachedQueuedStream = _queuedStreamAttached ? null : _queuedStream;
+    _mixerGeneration++;
+    _unreportedGaplessTransition = null;
+    _cancelTransition();
+    _mixerStream = null;
+    _mixerUsesQueue = false;
+    _queuedStream = null;
+    _queuedStreamAttached = false;
+    _queuedPath = null;
+    _queuedLengthSeconds = null;
+    _queuedReplayGainDb = null;
+    _queuedTransitionId = null;
+    _queuedTransitionMode = null;
+    _queuedTransitionMode = null;
+    _activeGaplessTransitionId = null;
+    _fstream = null;
+    _eqChannel = null;
+    if (detachedQueuedStream != null) {
+      _bass.BASS_StreamFree(detachedQueuedStream);
+    }
+    return mixer;
+  }
+
+  void _dropGaplessMixer() {
+    final mixer = _detachGaplessMixer();
+    if (mixer == null) return;
+    _bass.BASS_ChannelStop(mixer);
+    _bass.BASS_StreamFree(mixer);
+  }
+
+  GaplessTransition? clearGaplessSource() {
+    final transition =
+        _promoteDequeuedSource(emit: false) ?? _unreportedGaplessTransition;
+    _unreportedGaplessTransition = null;
+    _cancelTransition();
+    if (transition != null) return transition;
+    final queued = _queuedStream;
+    final queuedWasAttached = _queuedStreamAttached;
+    _queuedStream = null;
+    _queuedStreamAttached = false;
+    _queuedPath = null;
+    _queuedLengthSeconds = null;
+    _queuedReplayGainDb = null;
+    _queuedTransitionId = null;
+    _queuedTransitionMode = null;
+    if (queued == null) return null;
+    if (queuedWasAttached) {
+      _bassMix?.channelRemove(queued);
+    } else {
+      _bass.BASS_StreamFree(queued);
+    }
+    return null;
+  }
+
+  bool _attachQueuedStream(int generation, int stream) {
+    if (generation != _mixerGeneration || stream != _queuedStream) {
+      return false;
+    }
+    if (_queuedStreamAttached) return true;
+    final mixer = _mixerStream;
+    if (mixer == null) return false;
+    final added = _bassMix!.streamAddChannel(
+      mixer,
+      stream,
+      bassMixerChanDownmix |
+          bassMixerChanNoRampIn |
+          (_mixerUsesQueue ? bassStreamAutofree : 0),
+    );
+    if (added) {
+      _queuedStreamAttached = true;
+      return true;
+    }
+    logger.w(
+      '[bass] attaching prepared transition source failed: '
+      '${_bass.BASS_ErrorGetCode()}',
+    );
+    _bass.BASS_StreamFree(stream);
+    _queuedStream = null;
+    _queuedStreamAttached = false;
+    _queuedPath = null;
+    _queuedLengthSeconds = null;
+    _queuedReplayGainDb = null;
+    _queuedTransitionId = null;
+    _queuedTransitionMode = null;
+    return false;
+  }
+
+  void _onMixerSourceDequeued(
+    int handle,
+    int channel,
+    int data,
+    ffi.Pointer<ffi.Void> user,
+  ) {
+    final generation = user.address;
+    if (generation != _mixerGeneration || data != _queuedStream) return;
+    _activateQueuedStream(generation, data);
+  }
+
+  void _cancelTransition() {
+    _transitionGeneration++;
+    final syncHandle = _transitionSyncHandle;
+    final syncChannel = _transitionSyncChannel;
+    _transitionSyncHandle = null;
+    _transitionSyncChannel = null;
+    if (syncHandle != null && syncChannel != null) {
+      _bassSync?.channelRemoveSync(syncChannel, syncHandle);
+    }
+    _transitionTimer?.cancel();
+    _transitionTimer = null;
+    final oldStream = _transitionOldStream;
+    _transitionOldStream = null;
+    if (oldStream != null && oldStream == _fstream) {
+      _bass.BASS_ChannelSetAttribute(oldStream, bass.BASS_ATTRIB_VOL, 1.0);
+    }
+  }
+
+  void _scheduleAutoTransition() {
+    final current = _fstream;
+    final sync = _bassSync;
+    final callback = _posSyncCallback;
+    final queuedPath = _queuedPath;
+    if (current == null ||
+        sync == null ||
+        callback == null ||
+        queuedPath == null) {
+      return;
+    }
+    final pref = AppPreference.instance.playbackPref;
+    final mode = _queuedTransitionMode ?? pref.transitionMode;
+    final fadeOutMs = pref.transitionFadeOutMs;
+    final fadeInMs = pref.transitionFadeInMs;
+    final crossfade = mode == TransitionMode.crossfade;
+    final leadMs = crossfade ? math.max(fadeOutMs, fadeInMs) : fadeOutMs;
+    // 触发位置基于当前播放流自身的长度
+    final currentLength = _bass.BASS_ChannelBytes2Seconds(
+      current,
+      _bass.BASS_ChannelGetLength(current, bass.BASS_POS_BYTE),
+    );
+    if (currentLength <= 0) return;
+    final triggerPos = math.max(
+      0.0,
+      currentLength - math.max(1, leadMs) / 1000.0,
+    );
+
+    _transitionGeneration++;
+    final generation = _transitionGeneration;
+    final currentPositionBytes = _bassMix!.channelGetPosition(
+      current,
+      bass.BASS_POS_BYTE,
+    );
+    final currentPosition = currentPositionBytes < 0
+        ? 0.0
+        : _bass.BASS_ChannelBytes2Seconds(current, currentPositionBytes);
+    if (triggerPos <= currentPosition) {
+      scheduleMicrotask(() => _beginAutoTransition(generation, current));
+      return;
+    }
+    final triggerBytes = _bass.BASS_ChannelSeconds2Bytes(current, triggerPos);
+    final syncHandle = sync.channelSetSync(
+      current,
+      bassSyncPos | bassSyncOnetime,
+      triggerBytes,
+      callback.nativeFunction,
+      ffi.Pointer<ffi.Void>.fromAddress(generation),
+    );
+    if (syncHandle == 0) {
+      logger.w(
+        '[bass] auto transition sync failed: ${_bass.BASS_ErrorGetCode()}',
+      );
+      return;
+    }
+    _transitionSyncHandle = syncHandle;
+    _transitionSyncChannel = current;
+    logger.i(
+      '[bass] auto transition scheduled: mode=${mode.name} '
+      'fadeOut=${fadeOutMs}ms fadeIn=${fadeInMs}ms '
+      'triggerAt=${triggerPos.toStringAsFixed(2)}s len=${currentLength.toStringAsFixed(2)}s',
+    );
+  }
+
+  void _onAutoTransitionPos(
+    int syncHandle,
+    int channel,
+    int data,
+    ffi.Pointer<ffi.Void> user,
+  ) {
+    if (_transitionSyncHandle == syncHandle) {
+      _transitionSyncHandle = null;
+      _transitionSyncChannel = null;
+    }
+    _beginAutoTransition(user.address, channel);
+  }
+
+  void _beginAutoTransition(int generation, int channel) {
+    if (generation != _transitionGeneration) return;
+    if (channel != _fstream) return;
+    final newStream = _queuedStream;
+    if (newStream == null) return;
+    _transitionTimer?.cancel();
+    final pref = AppPreference.instance.playbackPref;
+    final mode = _queuedTransitionMode ?? pref.transitionMode;
+    logger.i('[bass] auto transition triggered: mode=${mode.name}');
+    final fadeOutMs = pref.transitionFadeOutMs;
+    final fadeInMs = pref.transitionFadeInMs;
+    final crossfade = mode == TransitionMode.crossfade;
+    final oldStream = _fstream!;
+    final gen = generation;
+
+    if (crossfade) {
+      if (!_attachQueuedStream(_mixerGeneration, newStream)) return;
+      _transitionOldStream = oldStream;
+      _fadeOutOldStream(
+        oldStream,
+        durationMs: fadeOutMs,
+        delayCleanup: true,
+        removeFromMixer: true,
+      );
+      _fadeInNewStream(newStream, durationMs: fadeInMs);
+      _transitionTimer = Timer(Duration(milliseconds: fadeOutMs + 50), () {
+        if (gen != _transitionGeneration) return;
+        _transitionTimer = null;
+        _activateQueuedStream(_mixerGeneration, newStream);
+      });
+    } else {
+      _transitionOldStream = oldStream;
+      _fadeOutOldStream(
+        oldStream,
+        durationMs: fadeOutMs,
+        delayCleanup: true,
+        removeFromMixer: true,
+      );
+      _transitionTimer = Timer(Duration(milliseconds: fadeOutMs), () {
+        if (gen != _transitionGeneration) return;
+        _transitionTimer = null;
+        if (!_attachQueuedStream(_mixerGeneration, newStream)) {
+          _cancelTransition();
+          return;
+        }
+        _fadeInNewStream(newStream, durationMs: fadeInMs);
+        _activateQueuedStream(_mixerGeneration, newStream);
+      });
+    }
+  }
+
+  GaplessTransition? _promoteDequeuedSource({bool emit = true}) {
+    final queued = _queuedStream;
+    if (queued == null ||
+        !_queuedStreamAttached ||
+        (_bassMix?.channelGetPosition(queued, bass.BASS_POS_BYTE) ?? -1) <= 0) {
+      return null;
+    }
+    return _activateQueuedStream(_mixerGeneration, queued, emit: emit);
+  }
+
+  GaplessTransition? _activateQueuedStream(
+    int generation,
+    int stream, {
+    bool emit = true,
+  }) {
+    if (generation != _mixerGeneration ||
+        stream != _queuedStream ||
+        !_queuedStreamAttached) {
+      return null;
+    }
+    final queuedPath = _queuedPath;
+    final queuedReplayGainDb = _queuedReplayGainDb;
+    final transitionId = _queuedTransitionId;
+    if (queuedPath == null || transitionId == null || _mixerStream == null) {
+      return null;
+    }
+
+    _fstream = stream;
+    _fPath = queuedPath;
+    _cachedLengthSeconds = _queuedLengthSeconds;
+    _queuedStream = null;
+    _queuedStreamAttached = false;
+    _queuedPath = null;
+    _queuedLengthSeconds = null;
+    _queuedReplayGainDb = null;
+    _queuedTransitionId = null;
+    _queuedTransitionMode = null;
+    _activeGaplessTransitionId = transitionId;
+    _transitionOldStream = null;
+    _replayGainDb = queuedReplayGainDb;
+    _refreshStreamSampleRate();
+    _resetSpectrumSmoothing();
+    final transition = GaplessTransition(
+      id: transitionId,
+      path: queuedPath,
+      replayGainDb: queuedReplayGainDb,
+    );
+    _unreportedGaplessTransition = transition;
+    if (emit) {
+      scheduleMicrotask(() {
+        if (_unreportedGaplessTransition != transition) return;
+        _gaplessTransitionStreamController.add(transition);
+      });
+    }
+    _emitPositionSnapshot();
+    return transition;
+  }
+
+  void acknowledgeGaplessTransition(int transitionId) {
+    if (_unreportedGaplessTransition?.id == transitionId) {
+      _unreportedGaplessTransition = null;
+    }
+  }
+
+  bool updateGaplessReplayGain(int transitionId, double? replayGainDb) {
+    final queued = _queuedStream;
+    if (_queuedTransitionId == transitionId && queued != null) {
+      _queuedReplayGainDb = replayGainDb;
+      _applySourceGain(queued, replayGainDb);
+      return true;
+    }
+
+    if (_activeGaplessTransitionId != transitionId || _fstream == null) {
+      return false;
+    }
+    _replayGainDb = replayGainDb;
+    _applyPlaybackGains();
+    return true;
   }
 
   /// true: 操作成功；false: 操作失败
@@ -1011,21 +1965,23 @@ class BassPlayer {
         return false;
       }
       final lastPos = position;
+      final wasPlaying = playerState == PlayerState.playing;
+      final targetVolume = _baseOutputVolume;
 
       if (exclusive && !prevState) {
         if (_fstream == null || _fPath == null) return false;
         // 1) 建解码流（旧流仍在播放，文件 I/O 对用户透明）
-        final decodeHandle = _createDecodeStream(_fPath!);
+        final decodeHandle = _createSharedSource(_fPath!);
         if (decodeHandle == 0) {
           throw Exception('Failed to create decode stream');
         }
 
         // 2) 预初始化 WASAPI，旧流继续通过 BASS 播放
-        _removeEQ();
         _positionUpdaterVersion++;
         _positionUpdater?.cancel();
         _positionUpdater = null;
-        final oldHandle = _fstream!;
+        final oldHandle = _sharedOutputHandle!;
+        final oldSource = _fstream!;
         _fstream = decodeHandle;
         _streamWasapiExclusive = true;
         wasapiExclusive = true;
@@ -1033,32 +1989,50 @@ class BassPlayer {
           _bassWasapiInit();
         } catch (err) {
           _bass.BASS_StreamFree(decodeHandle);
-          _fstream = oldHandle;
+          _fstream = oldSource;
           _streamWasapiExclusive = false;
           wasapiExclusive = false;
+          refreshEQ();
+          if (wasPlaying) _startPositionUpdater();
           showTextOnSnackBar('独占模式初始化失败', variant: ToastVariant.error);
           return false;
         }
 
         // 3) WASAPI 准备就绪，停旧流（间隙极短，仅 Start 耗时）
         _fadeOutOldStream(oldHandle);
-        _bass.BASS_ChannelStop(oldHandle);
-        _bass.BASS_StreamFree(oldHandle);
+        _removeEQ();
+        if (_mixerStream != null) {
+          _dropGaplessMixer();
+        } else {
+          _bass.BASS_ChannelStop(oldHandle);
+          _bass.BASS_StreamFree(oldHandle);
+        }
 
         // 4) 启动 WASAPI 输出
-        setVolumeDsp(0.0);
+        _fstream = decodeHandle;
+        _bass.BASS_ChannelSetAttribute(
+          decodeHandle,
+          bass.BASS_ATTRIB_VOLDSP,
+          0.0,
+        );
         if (lastPos > 0) seek(lastPos);
-        if (_bassWasapi.BASS_WASAPI_Start() == bass.FALSE) {
+        if (wasPlaying && _bassWasapi.BASS_WASAPI_Start() == bass.FALSE) {
           _fallbackFromExclusive();
           onExclusiveModeChanged?.call(false);
           return false;
         }
-        _fadeInWasapiVolume();
-        _playerStateStreamController.add(playerState);
+        if (wasPlaying) {
+          _fadeInWasapiVolume(targetVolume);
+        } else {
+          setVolumeDsp(targetVolume);
+        }
+        _playerStateStreamController.add(
+          wasPlaying ? playerState : PlayerState.paused,
+        );
         _refreshStreamSampleRate();
         _spectrumTickPeriod = _computeSpectrumTickPeriod();
         _lastSpectrumUpdateUs = 0;
-        _startPositionUpdater();
+        if (wasPlaying) _startPositionUpdater();
       } else if (!exclusive && prevState) {
         _removeEQ();
         _positionUpdaterVersion++;
@@ -1070,14 +2044,14 @@ class BassPlayer {
         _fstream = null;
         _streamWasapiExclusive = false;
         wasapiExclusive = false;
-        _bassInit();
+        _bassInit(resetHandles: false);
         if (_fPath != null) {
-          _createSharedStream(_fPath!, lastPos);
+          _createSharedStream(_fPath!, lastPos, startPlayback: wasPlaying);
         }
       } else {
         wasapiExclusive = exclusive;
         if (_fstream != null && _fPath != null) {
-          _rebuildStream(_fPath!, lastPos);
+          _rebuildStream(_fPath!, lastPos, startPlayback: wasPlaying);
         }
       }
 
@@ -1088,7 +2062,8 @@ class BassPlayer {
       showTextOnSnackBar('切换独占模式失败，请查看日志');
       _playerStateStreamController.add(playerState);
     }
-    wasapiExclusive = prevState;
+    wasapiExclusive = _fstream != null && _streamWasapiExclusive;
+    onExclusiveModeChanged?.call(wasapiExclusive);
     return false;
   }
 
@@ -1100,13 +2075,17 @@ class BassPlayer {
   }
 
   /// Rebuilds the audio stream after output-mode changes.
-  void _rebuildStream(String path, double seekTo) {
+  void _rebuildStream(
+    String path,
+    double seekTo, {
+    required bool startPlayback,
+  }) {
     _logAudioState('_rebuildStream(begin)');
     _positionUpdaterVersion++;
     _positionUpdater?.cancel();
     _positionUpdater = null;
 
-    final oldHandle = _fstream!;
+    final oldHandle = _sharedOutputHandle!;
     final oldWasapiExclusive = wasapiExclusive || _streamWasapiExclusive;
     if (oldWasapiExclusive) {
       _fadeInTimer?.cancel();
@@ -1115,14 +2094,19 @@ class BassPlayer {
     } else {
       _fadeOutOldStream(oldHandle);
     }
-    _bass.BASS_ChannelStop(oldHandle);
-    _bass.BASS_StreamFree(oldHandle);
-    _fstream = null;
+    _removeEQ();
+    if (_mixerStream != null) {
+      _dropGaplessMixer();
+    } else {
+      _bass.BASS_ChannelStop(oldHandle);
+      _bass.BASS_StreamFree(oldHandle);
+      _fstream = null;
+    }
     _cachedLengthSeconds = null;
 
     wasapiExclusive
-        ? _createWasapiStream(path, seekTo)
-        : _createSharedStream(path, seekTo);
+        ? _createWasapiStream(path, seekTo, startPlayback: startPlayback)
+        : _createSharedStream(path, seekTo, startPlayback: startPlayback);
     _logAudioState('_rebuildStream(done)');
   }
 
@@ -1145,8 +2129,12 @@ class BassPlayer {
   }
 
   /// 创建独占模式流
-  void _createWasapiStream(String path, double seekTo) {
-    var handle = _createDecodeStream(path);
+  void _createWasapiStream(
+    String path,
+    double seekTo, {
+    bool startPlayback = true,
+  }) {
+    final handle = _createDecodeStream(path);
     if (handle == 0) {
       throw Exception('Failed to create WASAPI exclusive stream');
     }
@@ -1155,101 +2143,43 @@ class BassPlayer {
     _streamWasapiExclusive = true;
     _refreshCachedLength();
 
-    setVolumeDsp(0.0);
     if (seekTo > 0.0) {
       seek(seekTo);
     }
-    start();
+    if (startPlayback) {
+      start();
+    } else {
+      _applyPlaybackGains();
+      _playerStateStreamController.add(PlayerState.paused);
+    }
   }
 
   /// 创建共享模式流
-  void _createSharedStream(String path, double seekTo) {
-    const flags =
-        bass.BASS_UNICODE | bass.BASS_SAMPLE_FLOAT | bass.BASS_ASYNCFILE;
-    const decodeFlags = flags | bass.BASS_STREAM_DECODE;
-
-    final pathPointer = path.toNativeUtf16() as ffi.Pointer<ffi.Void>;
-    var handle = _bass.BASS_StreamCreateFile(
-      bass.FALSE,
-      pathPointer,
-      0,
-      0,
-      decodeFlags,
-    );
-
+  void _createSharedStream(
+    String path,
+    double seekTo, {
+    bool startPlayback = true,
+  }) {
+    final handle = _createSharedPlaybackSource(path);
     if (handle == 0) {
-      malloc.free(pathPointer);
-      throw Exception('Failed to create shared stream');
-    }
-
-    // 创建 Tempo 流以支持变速/变调
-    try {
-      if (_bassFx != null) {
-        final tempoHandle = _bassFx!.BASS_FX_TempoCreate(
-          handle,
-          BASS_FX_FREESOURCE,
-        );
-        if (tempoHandle != 0) {
-          handle = tempoHandle;
-        } else {
-          _bass.BASS_StreamFree(handle);
-          handle = _bass.BASS_StreamCreateFile(
-            bass.FALSE,
-            pathPointer,
-            0,
-            0,
-            flags,
-          );
-        }
-      } else {
-        _bass.BASS_StreamFree(handle);
-        handle = _bass.BASS_StreamCreateFile(
-          bass.FALSE,
-          pathPointer,
-          0,
-          0,
-          flags,
-        );
-      }
-    } catch (e) {
-      _bass.BASS_StreamFree(handle);
-      handle = _bass.BASS_StreamCreateFile(
-        bass.FALSE,
-        pathPointer,
-        0,
-        0,
-        flags,
-      );
-    }
-
-    malloc.free(pathPointer);
-
-    if (handle == 0) {
-      throw Exception('Failed to create shared stream with fallback');
+      throw Exception('Failed to create shared source');
     }
 
     _fstream = handle;
     _streamWasapiExclusive = false;
     _refreshCachedLength();
-
-    // 恢复 EQ（只在 EQ 启用时）
-    if (!_isEqFlat) {
-      refreshEQ();
-    }
-
-    // 恢复变速/变调
-    if (_rate != 1.0) {
-      setRate(_rate);
-    }
-    if (_pitch != 0.0) {
-      setPitch(_pitch);
-    }
-
-    setVolumeDsp(AppPreference.instance.playbackPref.volumeDsp);
     if (seekTo > 0.0) {
       seek(seekTo);
     }
-    start();
+    if (!_isEqFlat) {
+      refreshEQ();
+    }
+    _applyPlaybackGains();
+    if (startPlayback) {
+      start();
+    } else {
+      _playerStateStreamController.add(PlayerState.paused);
+    }
   }
 
   /// Crossfade: 淡出旧流
@@ -1258,56 +2188,75 @@ class BassPlayer {
     int handle, {
     int durationMs = 100,
     bool delayCleanup = false,
+    bool removeFromMixer = false,
   }) {
-    _bass.BASS_ChannelSlideAttribute(
+    final sliding = _bass.BASS_ChannelSlideAttribute(
       handle,
-      bass.BASS_ATTRIB_VOLDSP,
+      bass.BASS_ATTRIB_VOL,
       0.0,
       durationMs,
     );
+    if (sliding == bass.FALSE) {
+      _bass.BASS_ChannelSetAttribute(handle, bass.BASS_ATTRIB_VOL, 0.0);
+    }
 
     if (!delayCleanup) return;
 
     // 清理上一条未释放的旧流
     _fadeOutTimer?.cancel();
     if (_fadeOutHandle != null && _fadeOutHandle != handle) {
+      if (_fadeOutRemoveFromMixer) {
+        _bassMix?.channelRemove(_fadeOutHandle!);
+      }
       _bass.BASS_ChannelStop(_fadeOutHandle!);
       _bass.BASS_StreamFree(_fadeOutHandle!);
     }
     _fadeOutHandle = handle;
+    _fadeOutRemoveFromMixer = removeFromMixer;
 
     _fadeOutTimer = Timer(Duration(milliseconds: durationMs + 20), () {
       if (_fadeOutHandle == handle) {
+        if (_fadeOutRemoveFromMixer) {
+          _bassMix?.channelRemove(handle);
+        }
         _bass.BASS_ChannelStop(handle);
         _bass.BASS_StreamFree(handle);
         _fadeOutHandle = null;
+        _fadeOutRemoveFromMixer = false;
         _fadeOutTimer = null;
       }
     });
   }
 
-  /// Crossfade: 淡入新流 - 200ms 从静音滑到目标音量
-  void _fadeInNewStream(int handle, double targetVolume) {
-    _bass.BASS_ChannelSetAttribute(handle, bass.BASS_ATTRIB_VOLDSP, 0.0);
-    _bass.BASS_ChannelSlideAttribute(
+  /// Crossfade: 淡入新流 - 从静音滑到正常播放音量（手动切歌防爆音用，固定短时长）
+  void _fadeInNewStream(int handle, {int durationMs = 200}) {
+    if (_bass.BASS_ChannelSetAttribute(handle, bass.BASS_ATTRIB_VOL, 0.0) ==
+        bass.FALSE) {
+      return;
+    }
+    final sliding = _bass.BASS_ChannelSlideAttribute(
       handle,
-      bass.BASS_ATTRIB_VOLDSP,
-      targetVolume,
-      200,
+      bass.BASS_ATTRIB_VOL,
+      1.0,
+      durationMs,
     );
+    if (sliding == bass.FALSE) {
+      _bass.BASS_ChannelSetAttribute(handle, bass.BASS_ATTRIB_VOL, 1.0);
+    }
   }
 
   /// if setSource has been called once,
   /// it will pause current channel and free current stream.
   void setSource(String path) {
-    replayGainDb = null;
+    _replayGainDb = null;
+    _activeGaplessTransitionId = null;
     _logAudioState('setSource(begin)');
     if (_fstream != null) {
       _positionUpdaterVersion++;
       _positionUpdater?.cancel();
       _positionUpdater = null;
       _removeEQ();
-      final oldHandle = _fstream!;
+      final oldHandle = _sharedOutputHandle!;
       final oldWasapiExclusive = wasapiExclusive || _streamWasapiExclusive;
 
       if (oldWasapiExclusive) {
@@ -1317,79 +2266,19 @@ class BassPlayer {
         _bass.BASS_ChannelStop(oldHandle);
         _bass.BASS_StreamFree(oldHandle);
       } else {
-        // Crossfade shared-mode streams only; release exclusive streams immediately.
-        // WASAPI can still own the old decode stream while it is running.
-        _fadeOutOldStream(oldHandle, durationMs: 300, delayCleanup: true);
+        final output = _mixerStream == null
+            ? oldHandle
+            : _detachGaplessMixer()!;
+        // 手动切歌防爆音：固定短淡出（300ms），新歌立即淡入
+        _fadeOutOldStream(output, durationMs: 300, delayCleanup: true);
       }
       _fstream = null;
       _cachedLengthSeconds = null;
       _streamWasapiExclusive = false;
     }
-    final pathPointer = path.toNativeUtf16() as ffi.Pointer<ffi.Void>;
-
-    /// 设置 flags 为 BASS_UNICODE 才可以找到文件。
-    const flags =
-        bass.BASS_UNICODE | bass.BASS_SAMPLE_FLOAT | bass.BASS_ASYNCFILE;
-    const exclusiveFlags = flags | bass.BASS_STREAM_DECODE;
-    // 如果要使用 FX，源流必须是 DECODE 的
-    const decodeFlags = flags | bass.BASS_STREAM_DECODE;
-
-    var handle = _bass.BASS_StreamCreateFile(
-      bass.FALSE,
-      pathPointer,
-      0,
-      0,
-      wasapiExclusive ? exclusiveFlags : decodeFlags,
-    );
-
-    if (handle != 0 && !wasapiExclusive) {
-      // 创建 Tempo 流（只在非独占模式下）
-      // 如果没有加载 bass_fx 或者创建失败，就回退到原始流（但原始流是 decode 的，不能直接播，需要重新创建）
-      try {
-        if (_bassFx != null) {
-          final tempoHandle = _bassFx!.BASS_FX_TempoCreate(
-            handle,
-            BASS_FX_FREESOURCE,
-          );
-          if (tempoHandle != 0) {
-            handle = tempoHandle;
-          } else {
-            // FX 创建失败，回退
-            _bass.BASS_StreamFree(handle);
-            handle = _bass.BASS_StreamCreateFile(
-              bass.FALSE,
-              pathPointer,
-              0,
-              0,
-              flags,
-            );
-          }
-        } else {
-          // bass_fx 未加载
-          _bass.BASS_StreamFree(handle);
-          handle = _bass.BASS_StreamCreateFile(
-            bass.FALSE,
-            pathPointer,
-            0,
-            0,
-            flags,
-          );
-        }
-      } catch (e) {
-        // bass_fx 未加载等情况
-        _bass.BASS_StreamFree(handle);
-        handle = _bass.BASS_StreamCreateFile(
-          bass.FALSE,
-          pathPointer,
-          0,
-          0,
-          flags,
-        );
-      }
-    }
-
-    // BASS_StreamCreateFile 已复制路径字符串，释放 Dart 侧的 native 内存
-    malloc.free(pathPointer);
+    final handle = wasapiExclusive
+        ? _createDecodeStream(path)
+        : _createSharedPlaybackSource(path);
 
     if (handle != 0) {
       _fstream = handle;
@@ -1404,12 +2293,7 @@ class BassPlayer {
         logger.e('SetSource refreshEQ failed: $e');
       }
 
-      if (_rate != 1.0 && !wasapiExclusive) {
-        setRate(_rate);
-      }
-      if (_pitch != 0.0 && !wasapiExclusive) {
-        setPitch(_pitch);
-      }
+      _applyPlaybackGains();
       _logAudioState('setSource(ok)');
     } else {
       _fstream = null;
@@ -1461,23 +2345,8 @@ class BassPlayer {
 
   /// [BASS_ATTRIB_VOLDSP] attribute does have direct effect on decoding/recording channels.
   void setVolumeDsp(double volume) {
-    if (_fstream == null) return;
-
-    if (_bass.BASS_ChannelSetAttribute(
-          _fstream!,
-          bass.BASS_ATTRIB_VOLDSP,
-          volume,
-        ) ==
-        0) {
-      switch (_bass.BASS_ErrorGetCode()) {
-        case bass.BASS_ERROR_HANDLE:
-          throw const FormatException('handle is not a valid channel.');
-        case bass.BASS_ERROR_ILLTYPE:
-          throw const FormatException('attrib is not valid.');
-        case bass.BASS_ERROR_ILLPARAM:
-          throw const FormatException('value is not valid.');
-      }
-    }
+    _baseOutputVolume = volume;
+    _applyPlaybackGains();
   }
 
   void setRate(double rate) {
@@ -1514,6 +2383,10 @@ class BassPlayer {
         malloc.free(freqPtr);
       }
     }
+    final queued = _queuedStream;
+    if (queued != null) {
+      _bass.BASS_ChannelSetAttribute(queued, BASS_ATTRIB_TEMPO, tempo);
+    }
   }
 
   void setPitch(double pitch) {
@@ -1530,6 +2403,10 @@ class BassPlayer {
     }
 
     _bass.BASS_ChannelSetAttribute(_fstream!, BASS_ATTRIB_TEMPO_PITCH, pitch);
+    final queued = _queuedStream;
+    if (queued != null) {
+      _bass.BASS_ChannelSetAttribute(queued, BASS_ATTRIB_TEMPO_PITCH, pitch);
+    }
   }
 
   void _bassWasapiInit() {
@@ -1604,9 +2481,7 @@ class BassPlayer {
             'The device is already in use, eg. another process may have initialized it in exclusive mode.',
           );
         case bass.BASS_ERROR_INIT:
-          _bassInit();
-          _bassWasapiInit();
-          break;
+          throw const FormatException('BASS is not initialized.');
         case bass_wasapi.BASS_ERROR_WASAPI_BUFFER:
           throw const FormatException(
             'buffer is too large or small (exclusive mode only).',
@@ -1649,8 +2524,8 @@ class BassPlayer {
       }
     }
 
-    // 正常启动（切歌/恢复），直接设音量，不做淡入
-    setVolumeDsp(AppPreference.instance.playbackPref.volumeDsp);
+    // 正常启动（切歌/恢复），直接应用当前输出增益，不做淡入
+    _applyPlaybackGains();
 
     _playerStateStreamController.add(playerState);
     _positionUpdater?.cancel();
@@ -1663,6 +2538,7 @@ class BassPlayer {
 
   void _fallbackFromExclusive() {
     final seekPos = position;
+    final sourcePath = _fPath;
     _bassWasapi.BASS_WASAPI_Stop(bass.TRUE);
     _bassWasapi.BASS_WASAPI_Free();
     _wasapiOutputInfo = 'off';
@@ -1673,17 +2549,16 @@ class BassPlayer {
     wasapiExclusive = false;
     _streamWasapiExclusive = false;
     _bassInit();
-    if (_fPath != null) {
+    if (sourcePath != null) {
       _positionUpdaterVersion++;
       _positionUpdater?.cancel();
       _positionUpdater = null;
-      _createSharedStream(_fPath!, seekPos);
+      _restoreSharedSource(sourcePath, seekPos);
     }
   }
 
-  void _fadeInWasapiVolume() {
+  void _fadeInWasapiVolume(double target) {
     _fadeInTimer?.cancel();
-    final target = AppPreference.instance.playbackPref.volumeDsp;
     const steps = 10;
     const stepMs = 20;
     int step = 0;
@@ -1713,13 +2588,10 @@ class BassPlayer {
     }
     _logAudioState('start(normal)');
 
-    // Start the channel already muted. If we mute only after
-    // BASS_ChannelStart, the first output buffer can escape at full volume,
-    // which is heard as a short click when switching tracks.
-    final fadeTargetVolume = volumeDsp;
-    _bass.BASS_ChannelSetAttribute(_fstream!, bass.BASS_ATTRIB_VOLDSP, 0.0);
+    final output = _sharedOutputHandle!;
+    _bass.BASS_ChannelSetAttribute(output, bass.BASS_ATTRIB_VOL, 0.0);
 
-    if (_bass.BASS_ChannelStart(_fstream!) == 0) {
+    if (_bass.BASS_ChannelStart(output) == 0) {
       switch (_bass.BASS_ErrorGetCode()) {
         case bass.BASS_ERROR_HANDLE:
           throw const FormatException('handle is not a valid channel.');
@@ -1728,8 +2600,16 @@ class BassPlayer {
             'handle is a decoding channel, so cannot be played.',
           );
         case bass.BASS_ERROR_START:
-          _startDevice();
-          if (_bass.BASS_ChannelStart(_fstream!) == 0) {
+          final restartPath = _fPath;
+          final restartPosition = position;
+          if (!_startDevice()) {
+            if (restartPath == null) {
+              throw const FormatException('BASS source is unavailable.');
+            }
+            _restoreSharedSource(restartPath, restartPosition);
+            return;
+          }
+          if (_bass.BASS_ChannelStart(output) == 0) {
             throw const FormatException('Failed to start output device.');
           }
           break;
@@ -1737,7 +2617,7 @@ class BassPlayer {
     }
 
     // Crossfade: fade in the new stream.
-    _fadeInNewStream(_fstream!, fadeTargetVolume);
+    _fadeInNewStream(output);
 
     _playerStateStreamController.add(playerState);
     _positionUpdater?.cancel();
@@ -1769,7 +2649,8 @@ class BassPlayer {
     }
     _logAudioState('pause(normal)');
 
-    if (_bass.BASS_ChannelPause(_fstream!) == 0) {
+    final output = _sharedOutputHandle!;
+    if (_bass.BASS_ChannelPause(output) == 0) {
       switch (_bass.BASS_ErrorGetCode()) {
         case bass.BASS_ERROR_HANDLE:
           throw const FormatException('handle is not a valid channel.');
@@ -1796,12 +2677,16 @@ class BassPlayer {
     if (_fstream == null) return;
     _logAudioState('seek(begin,$position)');
 
-    if (_bass.BASS_ChannelSetPosition(
-          _fstream!,
-          _bass.BASS_ChannelSeconds2Bytes(_fstream!, position),
-          bass.BASS_POS_BYTE,
-        ) ==
-        0) {
+    final source = _fstream!;
+    final pos = _bass.BASS_ChannelSeconds2Bytes(source, position);
+    final positioned = _mixerStream == null
+        ? _bass.BASS_ChannelSetPosition(source, pos, bass.BASS_POS_BYTE) != 0
+        : _bassMix!.channelSetPosition(
+            source,
+            pos,
+            bass.BASS_POS_BYTE | bassPosMixerReset,
+          );
+    if (!positioned) {
       switch (_bass.BASS_ErrorGetCode()) {
         case bass.BASS_ERROR_HANDLE:
           throw const FormatException('handle is not a valid channel.');
@@ -1834,14 +2719,41 @@ class BassPlayer {
     _fadeOutTimer?.cancel();
     _fadeOutTimer = null;
     if (_fadeOutHandle != null) {
+      if (_fadeOutRemoveFromMixer) {
+        _bassMix?.channelRemove(_fadeOutHandle!);
+      }
       _bass.BASS_ChannelStop(_fadeOutHandle!);
       _bass.BASS_StreamFree(_fadeOutHandle!);
       _fadeOutHandle = null;
+      _fadeOutRemoveFromMixer = false;
+    }
+    _cancelTransition();
+    final smartPreparation = _smartPreparation;
+    if (smartPreparation != null && !_smartIncomingNativeOwned) {
+      _bass.BASS_StreamFree(smartPreparation.incomingHandle);
+    }
+    _smartPreparation = null;
+    _smartIncomingNativeOwned = false;
+    final smartOutgoing = _smartOutgoingStream;
+    _smartOutgoingStream = null;
+    _activeSmartTransitionId = null;
+    if (smartOutgoing != null && smartOutgoing != _fstream) {
+      _bass.BASS_StreamFree(smartOutgoing);
     }
 
     if (_fstream == null) return;
 
     _stopWasapiOutputIfNeeded();
+
+    if (_mixerStream != null) {
+      _removeEQ();
+      _dropGaplessMixer();
+      _fPath = null;
+      _cachedLengthSeconds = null;
+      _streamWasapiExclusive = false;
+      _eqHandles.clear();
+      return;
+    }
 
     if (_bass.BASS_StreamFree(_fstream!) == 0) {
       switch (_bass.BASS_ErrorGetCode()) {
@@ -1871,16 +2783,36 @@ class BassPlayer {
     _fadeOutTimer?.cancel();
     _fadeOutTimer = null;
     if (_fadeOutHandle != null) {
+      if (_fadeOutRemoveFromMixer) {
+        _bassMix?.channelRemove(_fadeOutHandle!);
+      }
       _bass.BASS_ChannelStop(_fadeOutHandle!);
       _bass.BASS_StreamFree(_fadeOutHandle!);
       _fadeOutHandle = null;
+      _fadeOutRemoveFromMixer = false;
     }
     _positionUpdaterVersion++;
     _positionUpdater?.cancel();
     _positionUpdater = null;
+    final smartPreparation = _smartPreparation;
+    if (smartPreparation != null && !_smartIncomingNativeOwned) {
+      _bass.BASS_StreamFree(smartPreparation.incomingHandle);
+    }
+    _smartPreparation = null;
+    _smartIncomingNativeOwned = false;
+    final smartOutgoing = _smartOutgoingStream;
+    _smartOutgoingStream = null;
+    _activeSmartTransitionId = null;
+    if (smartOutgoing != null && smartOutgoing != _fstream) {
+      _bass.BASS_StreamFree(smartOutgoing);
+    }
 
     // 如果当前是独占模式，需要先清理 WASAPI
     _stopWasapiOutputIfNeeded();
+    if (_mixerStream != null) {
+      _removeEQ();
+      _dropGaplessMixer();
+    }
     wasapiExclusive = false;
     _streamWasapiExclusive = false;
     _fstream = null;
@@ -1899,12 +2831,21 @@ class BassPlayer {
       }
     }
 
+    _queueSyncCallback?.close();
+    _queueSyncCallback = null;
+    _posSyncCallback?.close();
+    _posSyncCallback = null;
+    _bassMixLib?.close();
+    _bassMixLib = null;
+    _bassFxLib?.close();
+    _bassFxLib = null;
+    _bassFx = null;
     _bassWasapiLib.close();
     _bassLib.close();
-
     _playerStateStreamController.close();
     _positionStreamController.close();
     _spectrumStreamController.close();
+    _gaplessTransitionStreamController.close();
     if (_fftBuffer != null) {
       malloc.free(_fftBuffer!);
       _fftBuffer = null;

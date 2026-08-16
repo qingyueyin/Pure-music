@@ -26,6 +26,14 @@ class PlayService {
   PlayService._();
 
   static PlayService? _instance;
+  static bool get isInitialized => _instance != null;
+  static PlaybackService? get existingPlaybackService =>
+      _instance?._playbackService;
+  static DesktopLyricService? get existingDesktopLyricService =>
+      _instance?._desktopLyricService;
+  static bool get hasInitializedPlaybackSession =>
+      _instance?._playbackService?.nowPlaying != null;
+
   static PlayService get instance {
     _instance ??= PlayService._();
     return _instance!;
@@ -34,7 +42,7 @@ class PlayService {
   bool get hasPlaybackSession => _playbackService?.nowPlaying != null;
 
   Future<void> close() async {
-    // 按顺序关闭服务，每个操作带超时保护
+    // 按顺序关闭服务，播放器必须完成资源释放后才能销毁窗口。
     final desktopLyric = _desktopLyricService;
     if (desktopLyric != null) {
       try {
@@ -74,12 +82,7 @@ class PlayService {
     final playback = _playbackService;
     if (playback != null) {
       try {
-        await playback.close().timeout(
-          const Duration(seconds: 2),
-          onTimeout: () {
-            logger.w('playbackService.close timeout');
-          },
-        );
+        await playback.close();
       } catch (e) {
         logger.w('playbackService.close error: $e');
       }

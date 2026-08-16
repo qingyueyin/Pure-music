@@ -53,9 +53,7 @@ class EqualizerService {
   }
 
   void _applyOutputGain() {
-    final rgDb = _pref.replayGainEnabled ? (_player.replayGainDb ?? 0.0) : 0.0;
-    final totalDb =
-        eqPreampDb + (eqAutoGainEnabled ? eqAutoGainDb : 0.0) + rgDb;
+    final totalDb = eqPreampDb + (eqAutoGainEnabled ? eqAutoGainDb : 0.0);
     final volume = (_pref.volumeDsp * _dbToLinear(totalDb)).clamp(0.0, 8.0);
     _player.setVolumeDsp(volume.toDouble());
   }
@@ -67,8 +65,10 @@ class EqualizerService {
 
   void setEQ(int band, double gain) {
     logger.i('[action] setEQ band=$band gain=$gain');
-    AudioEchoLogRecorder.instance
-        .mark('setEQ', extra: {'band': band, 'gain': gain});
+    AudioEchoLogRecorder.instance.mark(
+      'setEQ',
+      extra: {'band': band, 'gain': gain},
+    );
     _player.setEQ(band, gain);
     if (band < _pref.eqGains.length) {
       _pref.eqGains[band] = gain;
@@ -95,8 +95,9 @@ class EqualizerService {
     final oldPresets = List<EqPreset>.from(_pref.eqPresets);
     final gains = List<double>.from(_player.eqGains);
     final key = eqPresetNameKey(presetName);
-    final existingIndex =
-        _pref.eqPresets.indexWhere((e) => eqPresetNameKey(e.name) == key);
+    final existingIndex = _pref.eqPresets.indexWhere(
+      (e) => eqPresetNameKey(e.name) == key,
+    );
     if (existingIndex >= 0) {
       _pref.eqPresets[existingIndex] = EqPreset(
         normalizedEqPresetName(_pref.eqPresets[existingIndex].name),
