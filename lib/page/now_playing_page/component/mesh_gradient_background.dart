@@ -72,10 +72,10 @@ List<Color> _adjustMeshColors(List<Color> colors, Brightness brightness) {
       .map((entry) {
         final (index, color) = entry;
         final hsl = HSLColor.fromColor(color);
-        final maxSaturation = hasBrightPalette ? 0.50 : 0.78;
-        final adjusted = hsl
-            .withSaturation(hsl.saturation.clamp(0.0, maxSaturation))
-            .toColor();
+        final saturation = hasBrightPalette && hsl.saturation > 0.08
+            ? (hsl.saturation * 1.18 + 0.04).clamp(0.0, 0.68)
+            : hsl.saturation.clamp(0.0, 0.78);
+        final adjusted = hsl.withSaturation(saturation).toColor();
         if (isDark) {
           return _capMeshLuminance(adjusted, darkLuminanceLimit[index]);
         }

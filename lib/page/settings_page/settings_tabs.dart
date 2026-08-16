@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/desktop_lyric_colors.dart';
 import 'package:pure_music/core/enums.dart';
@@ -9,6 +10,7 @@ import 'package:pure_music/core/setting_action_state.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/update_checker.dart';
 import 'package:pure_music/core/utils.dart';
+import 'package:pure_music/core/window_lifecycle.dart';
 import 'package:pure_music/core/zh_converter.dart';
 import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/core/preference.dart';
@@ -18,18 +20,20 @@ import 'package:pure_music/lyric/lyric_tag_word_format.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/settings_tile.dart';
 import 'package:pure_music/play_service/play_service.dart';
+import 'package:pure_music/play_service/taskbar_thumbnail_service.dart';
 import 'package:pure_music/play_service/desktop_lyric_service.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.dart';
 import 'package:pure_music/page/settings_page/check_update.dart';
 import 'package:pure_music/page/settings_page/create_issue.dart';
 import 'package:pure_music/page/settings_page/artist_separator_editor.dart';
 import 'package:pure_music/page/settings_page/other_settings.dart'
-    show AudioEchoLogRecordControl, ReplayGainControl;
+    show AudioEchoLogRecordControl, ReplayGainControl, TransitionControl;
 import 'package:pure_music/native/rust/api/utils.dart' as rust_utils;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
+import 'package:path/path.dart' as path;
 
 class SettingsTabs extends StatefulWidget {
   const SettingsTabs({super.key});
@@ -124,10 +128,22 @@ class _AppearanceTabContent extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.only(bottom: 96.0, right: 20),
       children: const [
+        _SettingsSectionHeader('显示模式'),
+        SizedBox(height: 4.0),
         _ThemeOptionControl(),
+        SizedBox(height: 24.0),
+        _SettingsSectionHeader('配色'),
+        SizedBox(height: 4.0),
+        _ThemeColorModeControl(),
         SizedBox(height: 16.0),
-        _CoverColorExtractionSwitch(),
-        SizedBox(height: 16.0),
+        _ThemeColorSourceControl(),
+        SizedBox(height: 24.0),
+        _SettingsSectionHeader('应用背景'),
+        SizedBox(height: 4.0),
+        _AppBackgroundControl(),
+        SizedBox(height: 24.0),
+        _SettingsSectionHeader('主题色应用'),
+        SizedBox(height: 4.0),
         _MonetProgressBarSwitch(),
         SizedBox(height: 16.0),
         _MonetLyricsSwitch(),
@@ -135,7 +151,9 @@ class _AppearanceTabContent extends StatelessWidget {
         _MonetTransitionSwitch(),
         SizedBox(height: 16.0),
         _MonetControlsSwitch(),
-        SizedBox(height: 16.0),
+        SizedBox(height: 24.0),
+        _SettingsSectionHeader('播放效果'),
+        SizedBox(height: 4.0),
         _WavyProgressBarSwitch(),
         SizedBox(height: 16.0),
         _TopBarLyricAnimationSelector(),
@@ -163,7 +181,7 @@ class _ThemeOptionControlState extends State<_ThemeOptionControl> {
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      description: '主题',
+      description: '明暗模式',
       action: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -179,6 +197,244 @@ class _ThemeOptionControlState extends State<_ThemeOptionControl> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ThemeColorModeControl extends StatefulWidget {
+  const _ThemeColorModeControl();
+
+  @override
+  State<_ThemeColorModeControl> createState() => _ThemeColorModeControlState();
+}
+
+class _ThemeColorModeControlState extends State<_ThemeColorModeControl> {
+  final settings = AppSettings.instance;
+  bool _updating = false;
+
+  Future<void> _setColorMode(ThemeColorMode mode) async {
+    if (_updating || mode == settings.themeColorMode) return;
+    final previous = settings.themeColorMode;
+    setState(() {
+      _updating = true;
+      settings.themeColorMode = mode;
+    });
+    ThemeProvider.instance.applyThemeColorMode(mode);
+    try {
+      if (!await settings.saveSettings()) {
+        settings.themeColorMode = previous;
+        ThemeProvider.instance.applyThemeColorMode(previous);
+        if (mounted) {
+          showTextOnSnackBar('配色设置保存失败', variant: ToastVariant.error);
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _updating = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SettingsTile(
+      description: '配色方式',
+      subtitle: settings.themeColorMode == ThemeColorMode.independent
+          ? '直接使用主题色'
+          : '按 MD3 规则生成配色',
+      action: SegmentedButton<ThemeColorMode>(
+        showSelectedIcon: false,
+        segments: const [
+          ButtonSegment(value: ThemeColorMode.material3, label: Text('MD3')),
+          ButtonSegment(value: ThemeColorMode.independent, label: Text('独立')),
+        ],
+        selected: {settings.themeColorMode},
+        onSelectionChanged: _updating
+            ? null
+            : (selected) => _setColorMode(selected.first),
+      ),
+    );
+  }
+}
+
+class _AppBackgroundControl extends StatefulWidget {
+  const _AppBackgroundControl();
+
+  @override
+  State<_AppBackgroundControl> createState() => _AppBackgroundControlState();
+}
+
+class _AppBackgroundControlState extends State<_AppBackgroundControl> {
+  final settings = AppSettings.instance;
+  bool _updating = false;
+  double? _opacityBeforeDrag;
+  double? _blurBeforeDrag;
+
+  Future<void> _pickImage() async {
+    if (_updating) return;
+    setState(() => _updating = true);
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+      );
+      final selectedPath = result == null || result.files.isEmpty
+          ? null
+          : result.files.single.path;
+      if (selectedPath == null || !mounted) return;
+
+      final previous = settings.appBackgroundImagePath;
+      settings.appBackgroundImagePath = selectedPath;
+      AppSettings.backgroundNotifier.rebuild();
+      setState(() {});
+      if (!await settings.saveSettings()) {
+        settings.appBackgroundImagePath = previous;
+        AppSettings.backgroundNotifier.rebuild();
+        if (mounted) {
+          setState(() {});
+          showTextOnSnackBar('背景图片保存失败', variant: ToastVariant.error);
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _updating = false);
+    }
+  }
+
+  Future<void> _clearImage() async {
+    final previous = settings.appBackgroundImagePath;
+    if (previous == null || _updating) return;
+    setState(() => _updating = true);
+    settings.appBackgroundImagePath = null;
+    AppSettings.backgroundNotifier.rebuild();
+    try {
+      if (!await settings.saveSettings()) {
+        settings.appBackgroundImagePath = previous;
+        AppSettings.backgroundNotifier.rebuild();
+        if (mounted) {
+          showTextOnSnackBar('背景设置保存失败', variant: ToastVariant.error);
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _updating = false);
+    }
+  }
+
+  void _setOpacity(double value) {
+    if (_updating) return;
+    _opacityBeforeDrag ??= settings.appBackgroundImageOpacity;
+    setState(() => settings.appBackgroundImageOpacity = value);
+    AppSettings.backgroundNotifier.rebuild();
+  }
+
+  Future<void> _saveOpacity(double value) async {
+    final previous = _opacityBeforeDrag;
+    _opacityBeforeDrag = null;
+    if (previous == null) return;
+    setState(() => _updating = true);
+    try {
+      if (await settings.saveSettings()) return;
+      settings.appBackgroundImageOpacity = previous;
+      AppSettings.backgroundNotifier.rebuild();
+      if (mounted) {
+        showTextOnSnackBar('背景强度保存失败', variant: ToastVariant.error);
+      }
+    } finally {
+      if (mounted) setState(() => _updating = false);
+    }
+  }
+
+  void _setBlur(double value) {
+    if (_updating) return;
+    _blurBeforeDrag ??= settings.appBackgroundImageBlur;
+    setState(() => settings.appBackgroundImageBlur = value);
+    AppSettings.backgroundNotifier.rebuild();
+  }
+
+  Future<void> _saveBlur(double value) async {
+    final previous = _blurBeforeDrag;
+    _blurBeforeDrag = null;
+    if (previous == null) return;
+    setState(() => _updating = true);
+    try {
+      if (await settings.saveSettings()) return;
+      settings.appBackgroundImageBlur = previous;
+      AppSettings.backgroundNotifier.rebuild();
+      if (mounted) {
+        showTextOnSnackBar('背景模糊保存失败', variant: ToastVariant.error);
+      }
+    } finally {
+      if (mounted) setState(() => _updating = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final imagePath = settings.appBackgroundImagePath;
+    return Column(
+      children: [
+        SettingsTile(
+          description: '背景图片',
+          subtitle: imagePath == null ? '使用当前主题背景' : path.basename(imagePath),
+          action: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                tooltip: '选择背景图片',
+                onPressed: _updating ? null : _pickImage,
+                icon: _updating
+                    ? const SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Symbols.wallpaper),
+              ),
+              IconButton(
+                tooltip: '恢复默认背景',
+                onPressed: imagePath == null || _updating ? null : _clearImage,
+                icon: const Icon(Symbols.restart_alt),
+              ),
+            ],
+          ),
+        ),
+        if (imagePath != null) ...[
+          const SizedBox(height: 16),
+          SettingsTile(
+            description: '背景强度',
+            subtitle: '${(settings.appBackgroundImageOpacity * 100).round()}%',
+            action: SizedBox(
+              width: 160,
+              child: Slider(
+                value: settings.appBackgroundImageOpacity,
+                min: 0.1,
+                max: 0.6,
+                divisions: 10,
+                label: '${(settings.appBackgroundImageOpacity * 100).round()}%',
+                onChanged: _updating ? null : _setOpacity,
+                onChangeEnd: _updating ? null : _saveOpacity,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          SettingsTile(
+            description: '背景模糊',
+            subtitle: settings.appBackgroundImageBlur == 0
+                ? '不模糊'
+                : '${settings.appBackgroundImageBlur.round()}',
+            action: SizedBox(
+              width: 160,
+              child: Slider(
+                value: settings.appBackgroundImageBlur,
+                min: 0,
+                max: 30,
+                divisions: 15,
+                label: settings.appBackgroundImageBlur == 0
+                    ? '不模糊'
+                    : '${settings.appBackgroundImageBlur.round()}',
+                onChanged: _updating ? null : _setBlur,
+                onChangeEnd: _updating ? null : _saveBlur,
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
@@ -202,7 +458,7 @@ class _MonetProgressBarSwitchState extends State<_MonetProgressBarSwitch> {
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      description: '主题色进度条',
+      description: '进度条',
       subtitle: '进度条使用主题色渲染',
       action: Row(
         mainAxisSize: MainAxisSize.min,
@@ -345,7 +601,7 @@ class _MonetLyricsSwitchState extends State<_MonetLyricsSwitch> {
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      description: '主题色歌词',
+      description: '歌词',
       subtitle: '歌词使用主题色渲染',
       action: Switch(
         value: settings.useMaterialYouForLyrics,
@@ -374,7 +630,7 @@ class _MonetTransitionSwitchState extends State<_MonetTransitionSwitch> {
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      description: '主题色间奏动画',
+      description: '间奏动画',
       subtitle: '间奏动画使用主题色渲染',
       action: Switch(
         value: settings.useMaterialYouForTransition,
@@ -403,7 +659,7 @@ class _MonetControlsSwitchState extends State<_MonetControlsSwitch> {
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      description: '主题色控件',
+      description: '播放控件',
       subtitle: '播放页控件使用主题色渲染',
       action: Switch(
         value: settings.useMaterialYouForControls,
@@ -598,18 +854,20 @@ class _StaggerStyleSelectorState extends State<_StaggerStyleSelector> {
   }
 }
 
-class _CoverColorExtractionSwitch extends StatefulWidget {
-  const _CoverColorExtractionSwitch();
+enum _ThemeColorSource { cover, custom }
+
+class _ThemeColorSourceControl extends StatefulWidget {
+  const _ThemeColorSourceControl();
 
   @override
-  State<_CoverColorExtractionSwitch> createState() =>
-      _CoverColorExtractionSwitchState();
+  State<_ThemeColorSourceControl> createState() =>
+      _ThemeColorSourceControlState();
 }
 
-class _CoverColorExtractionSwitchState
-    extends State<_CoverColorExtractionSwitch> {
+class _ThemeColorSourceControlState extends State<_ThemeColorSourceControl> {
   final settings = AppSettings.instance;
   bool _isPickingColor = false;
+  bool _updating = false;
 
   void _refreshTheme() {
     final audio = PlayService.instance.playbackService.nowPlaying;
@@ -633,9 +891,17 @@ class _CoverColorExtractionSwitchState
     try {
       final result = await _openColorPicker();
       if (result == null || !mounted) return;
+      final previous = settings.customCoverColor;
       setState(() => settings.customCoverColor = result.toARGB32());
       _refreshTheme();
-      await settings.saveSettings();
+      if (!await settings.saveSettings()) {
+        settings.customCoverColor = previous;
+        _refreshTheme();
+        if (mounted) {
+          setState(() {});
+          showTextOnSnackBar('主题色保存失败', variant: ToastVariant.error);
+        }
+      }
     } finally {
       if (mounted) {
         setState(() => _isPickingColor = false);
@@ -643,53 +909,103 @@ class _CoverColorExtractionSwitchState
     }
   }
 
-  Future<void> _setAutoExtraction(bool value) async {
-    setState(() => settings.enableCoverColorExtraction = value);
+  Future<void> _setSource(_ThemeColorSource source) async {
+    if (_updating || _isPickingColor) return;
+    final enableCoverColorExtraction = source == _ThemeColorSource.cover;
+    if (enableCoverColorExtraction == settings.enableCoverColorExtraction) {
+      return;
+    }
+
+    final previousExtraction = settings.enableCoverColorExtraction;
+    final previousCustomColor = settings.customCoverColor;
+    setState(() {
+      _updating = true;
+      settings.enableCoverColorExtraction = enableCoverColorExtraction;
+      if (!enableCoverColorExtraction) {
+        settings.customCoverColor ??= AppSettings.getWindowsTheme();
+      }
+    });
     _refreshTheme();
-    await settings.saveSettings();
+    try {
+      if (!await settings.saveSettings()) {
+        settings.enableCoverColorExtraction = previousExtraction;
+        settings.customCoverColor = previousCustomColor;
+        _refreshTheme();
+        if (mounted) {
+          showTextOnSnackBar('主题色来源保存失败', variant: ToastVariant.error);
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _updating = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final isAuto = settings.enableCoverColorExtraction;
-    final subtitle = isAuto ? '从专辑封面自动提取' : '自定义应用整体颜色';
+    final source = isAuto ? _ThemeColorSource.cover : _ThemeColorSource.custom;
+    final customColor = Color(
+      settings.customCoverColor ?? AppSettings.getWindowsTheme(),
+    );
+    final scheme = Theme.of(context).colorScheme;
 
-    return SettingsTile(
-      description: '应用主题色',
-      subtitle: subtitle,
-      action: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (!isAuto)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: OutlinedButton.icon(
-                onPressed: _isPickingColor ? null : _pickCustomColor,
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: AppRadius.smCircular,
-                  ),
-                ),
-                icon: _isPickingColor
-                    ? const SizedBox(
-                        width: 16.0,
-                        height: 16.0,
-                        child: CircularProgressIndicator(strokeWidth: 2.0),
-                      )
-                    : const Icon(Symbols.palette),
-                label: Text(_isPickingColor ? '选择中' : '自定义'),
+    return Column(
+      children: [
+        SettingsTile(
+          description: '主题色来源',
+          subtitle: isAuto ? '当前封面' : '固定颜色',
+          action: SegmentedButton<_ThemeColorSource>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(value: _ThemeColorSource.cover, label: Text('封面')),
+              ButtonSegment(
+                value: _ThemeColorSource.custom,
+                label: Text('自定义'),
               ),
+            ],
+            selected: {source},
+            onSelectionChanged: _updating || _isPickingColor
+                ? null
+                : (selected) => _setSource(selected.first),
+          ),
+        ),
+        if (!isAuto) ...[
+          const SizedBox(height: 16),
+          SettingsTile(
+            description: '自定义颜色',
+            subtitle: _colorToHex(customColor),
+            action: OutlinedButton.icon(
+              onPressed: _isPickingColor || _updating ? null : _pickCustomColor,
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: AppRadius.smCircular,
+                ),
+              ),
+              icon: _isPickingColor
+                  ? const SizedBox.square(
+                      dimension: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Container(
+                      width: 18,
+                      height: 18,
+                      decoration: BoxDecoration(
+                        color: customColor,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: scheme.outline.withValues(alpha: 0.6),
+                        ),
+                      ),
+                    ),
+              label: Text(_isPickingColor ? '选择中' : '选择'),
             ),
-          Switch(
-            value: isAuto,
-            onChanged: _isPickingColor ? null : _setAutoExtraction,
           ),
         ],
-      ),
+      ],
     );
   }
 }
@@ -713,7 +1029,7 @@ class _ThemeColorPickerDialogState extends State<_ThemeColorPickerDialog> {
     final custom = AppSettings.instance.customCoverColor;
     final color = custom != null
         ? Color(custom)
-        : Theme.of(context).colorScheme.primary;
+        : Color(AppSettings.getWindowsTheme());
     _hsv = HSVColor.fromColor(color);
     _hexCtrl = TextEditingController(text: _colorToHex(color));
   }
@@ -2010,16 +2326,118 @@ class _AdvancedTabContent extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.only(bottom: 96.0, right: 20),
       children: const [
+        _WindowCloseBehaviorControl(),
+        SizedBox(height: 16.0),
+        _TaskbarThumbnailControl(),
+        SizedBox(height: 16.0),
         ReplayGainControl(),
+        SizedBox(height: 16.0),
+        TransitionControl(),
         SizedBox(height: 16.0),
         AudioEchoLogRecordControl(),
         SizedBox(height: 16.0),
         ArtistSeparatorEditor(),
         SizedBox(height: 16.0),
         SelectFontCombobox(),
-        SizedBox(height: 16.0),
-        CreateIssueTile(),
       ],
+    );
+  }
+}
+
+class _TaskbarThumbnailControl extends StatefulWidget {
+  const _TaskbarThumbnailControl();
+
+  @override
+  State<_TaskbarThumbnailControl> createState() =>
+      _TaskbarThumbnailControlState();
+}
+
+class _TaskbarThumbnailControlState extends State<_TaskbarThumbnailControl> {
+  final pref = AppPreference.instance;
+
+  @override
+  Widget build(BuildContext context) {
+    return SettingsTile(
+      description: '任务栏封面与播放控制',
+      subtitle: pref.taskbarThumbnailCover
+          ? '悬停时显示歌曲封面和播放按钮'
+          : '悬停时显示窗口预览',
+      action: Switch(
+        value: pref.taskbarThumbnailCover,
+        onChanged: (value) => setState(() {
+          TaskbarThumbnailService.instance.setEnabled(value);
+        }),
+      ),
+    );
+  }
+}
+
+class _WindowCloseBehaviorControl extends StatefulWidget {
+  const _WindowCloseBehaviorControl();
+
+  @override
+  State<_WindowCloseBehaviorControl> createState() =>
+      _WindowCloseBehaviorControlState();
+}
+
+class _WindowCloseBehaviorControlState
+    extends State<_WindowCloseBehaviorControl> {
+  final settings = AppSettings.instance;
+  bool _updating = false;
+
+  Future<void> _setBehavior(WindowCloseBehavior behavior) async {
+    if (_updating || behavior == settings.windowCloseBehavior) return;
+    final previous = settings.windowCloseBehavior;
+    setState(() {
+      _updating = true;
+      settings.windowCloseBehavior = behavior;
+    });
+    try {
+      final trayUpdated = await WindowLifecycleService.instance.syncTrayIcon();
+      if (!trayUpdated && behavior == WindowCloseBehavior.minimizeToTray) {
+        await _restoreBehavior(previous);
+        _showSaveError('通知区初始化失败');
+        return;
+      }
+      if (!await settings.saveSettings()) {
+        await _restoreBehavior(previous);
+        _showSaveError('关闭行为保存失败');
+      }
+    } finally {
+      if (mounted) setState(() => _updating = false);
+    }
+  }
+
+  Future<void> _restoreBehavior(WindowCloseBehavior behavior) async {
+    settings.windowCloseBehavior = behavior;
+    await WindowLifecycleService.instance.syncTrayIcon();
+  }
+
+  void _showSaveError(String message) {
+    if (mounted) showTextOnSnackBar(message, variant: ToastVariant.error);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SettingsTile(
+      description: '关闭主窗口时',
+      subtitle: settings.windowCloseBehavior == WindowCloseBehavior.exit
+          ? '退出程序并停止播放'
+          : '隐藏到通知区并继续播放',
+      action: SegmentedButton<WindowCloseBehavior>(
+        showSelectedIcon: false,
+        segments: const [
+          ButtonSegment(value: WindowCloseBehavior.exit, label: Text('退出程序')),
+          ButtonSegment(
+            value: WindowCloseBehavior.minimizeToTray,
+            label: Text('通知区'),
+          ),
+        ],
+        selected: {settings.windowCloseBehavior},
+        onSelectionChanged: _updating
+            ? null
+            : (value) => _setBehavior(value.first),
+      ),
     );
   }
 }
@@ -2397,13 +2815,13 @@ class _AboutTabContent extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.only(bottom: 96.0, right: 20),
       children: const [
-        _AboutSectionHeader('更新'),
+        _SettingsSectionHeader('更新'),
         SizedBox(height: 4.0),
         _AboutVersionItem(),
         SizedBox(height: 16.0),
         _AboutAutoUpdateItem(),
         SizedBox(height: 24.0),
-        _AboutSectionHeader('相关链接'),
+        _SettingsSectionHeader('相关链接'),
         SizedBox(height: 4.0),
         _AboutLinkItem(
           title: '官方网站',
@@ -2419,21 +2837,15 @@ class _AboutTabContent extends StatelessWidget {
           icon: Symbols.code,
         ),
         SizedBox(height: 16.0),
-        _AboutLinkItem(
-          title: '反馈与建议',
-          subtitle: '在 GitHub 提交 Issue',
-          url: 'https://github.com/qingyueyin/Pure-music/issues/new/choose',
-          actionLabel: '提交 Issue',
-          icon: Symbols.lightbulb,
-        ),
+        CreateIssueTile(),
       ],
     );
   }
 }
 
-class _AboutSectionHeader extends StatelessWidget {
+class _SettingsSectionHeader extends StatelessWidget {
   final String label;
-  const _AboutSectionHeader(this.label);
+  const _SettingsSectionHeader(this.label);
 
   @override
   Widget build(BuildContext context) {
@@ -2446,7 +2858,7 @@ class _AboutSectionHeader extends StatelessWidget {
           color: scheme.onSurfaceVariant,
           fontSize: AppType.caption,
           fontWeight: AppType.weightSemibold,
-          letterSpacing: 0.5,
+          letterSpacing: 0,
         ),
       ),
     );
@@ -2536,14 +2948,12 @@ class _AboutAutoUpdateItemState extends State<_AboutAutoUpdateItem> {
 class _AboutLinkItem extends StatelessWidget {
   final IconData icon;
   final String title;
-  final String? subtitle;
   final String url;
   final String actionLabel;
 
   const _AboutLinkItem({
     required this.icon,
     required this.title,
-    this.subtitle,
     required this.url,
     required this.actionLabel,
   });
@@ -2552,7 +2962,6 @@ class _AboutLinkItem extends StatelessWidget {
   Widget build(BuildContext context) {
     return SettingsTile(
       description: title,
-      subtitle: subtitle,
       action: FilledButton.tonalIcon(
         onPressed: () async {
           final opened = await rust_utils.launchInBrowser(uri: url);

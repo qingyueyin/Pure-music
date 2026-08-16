@@ -6,6 +6,7 @@ import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/core/list_action_state.dart';
+import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/page/uni_page.dart';
 import 'package:pure_music/page/uni_page_components.dart';
 import 'package:flutter/material.dart';
@@ -226,55 +227,72 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
       widget.tertiaryContent?.length ?? 0,
     );
     final currentTabIndex = hasTertiaryContent ? _currentTabIndex : 0;
-    return ColoredBox(
-      color: scheme.surfaceContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            _UniDetailPageHeader(
-              pic: widget.primaryPic,
-              backgroundPic: widget.backgroundPic,
-              picShape: widget.picShape,
-              title: widget.title,
-              subtitle: widget.subtitle,
-              actions: actions,
-              multiSelectController: multiSelectController,
-              multiSelectViewActions: widget.multiSelectViewActions,
-              onPicTap: widget.onPrimaryPicTap,
-              picBusy: widget.primaryPicBusy,
-              searchController: widget.enableSearch ? _searchController : null,
-              searchQuery: widget.searchQuery,
-              onSearchChanged: widget.onSearchChanged,
-            ),
-            if (widget.enableTabs && hasTertiaryContent) ...[
-              const SizedBox(height: 16.0),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: _buildTabBar(scheme),
-              ),
-            ],
-            const SizedBox(height: 16.0),
-            Expanded(
-              child:
-                  widget.bodyOverride ??
-                  (widget.enableTabs
-                      ? DirectionalTabView(
-                          index: currentTabIndex,
-                          children: [
-                            _buildSecondaryContent(
+    return ListenableBuilder(
+      listenable: AppSettings.backgroundNotifier,
+      builder: (context, _) {
+        final useAppBackground =
+            AppSettings.instance.appBackgroundImagePath != null;
+        return ColoredBox(
+          color: useAppBackground
+              ? scheme.surface.withValues(
+                  alpha: scheme.brightness == Brightness.dark ? 0.32 : 0.26,
+                )
+              : scheme.surfaceContainer,
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              children: [
+                _UniDetailPageHeader(
+                  pic: widget.primaryPic,
+                  backgroundPic: widget.backgroundPic,
+                  picShape: widget.picShape,
+                  title: widget.title,
+                  subtitle: widget.subtitle,
+                  actions: actions,
+                  multiSelectController: multiSelectController,
+                  multiSelectViewActions: widget.multiSelectViewActions,
+                  onPicTap: widget.onPrimaryPicTap,
+                  picBusy: widget.primaryPicBusy,
+                  searchController: widget.enableSearch
+                      ? _searchController
+                      : null,
+                  searchQuery: widget.searchQuery,
+                  onSearchChanged: widget.onSearchChanged,
+                  useAppBackground: useAppBackground,
+                ),
+                if (widget.enableTabs && hasTertiaryContent) ...[
+                  const SizedBox(height: 16.0),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: _buildTabBar(scheme),
+                  ),
+                ],
+                const SizedBox(height: 16.0),
+                Expanded(
+                  child:
+                      widget.bodyOverride ??
+                      (widget.enableTabs
+                          ? DirectionalTabView(
+                              index: currentTabIndex,
+                              children: [
+                                _buildSecondaryContent(
+                                  multiSelectController,
+                                  scheme,
+                                ),
+                                if (hasTertiaryContent)
+                                  _buildTertiaryContent(scheme),
+                              ],
+                            )
+                          : _buildCombinedContent(
                               multiSelectController,
                               scheme,
-                            ),
-                            if (hasTertiaryContent)
-                              _buildTertiaryContent(scheme),
-                          ],
-                        )
-                      : _buildCombinedContent(multiSelectController, scheme)),
+                            )),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -727,6 +745,7 @@ class _UniDetailPageHeader extends StatelessWidget {
     this.searchController,
     this.searchQuery = '',
     this.onSearchChanged,
+    required this.useAppBackground,
   });
 
   final Future<ImageProvider?> pic;
@@ -743,6 +762,7 @@ class _UniDetailPageHeader extends StatelessWidget {
   final TextEditingController? searchController;
   final String searchQuery;
   final ValueChanged<String>? onSearchChanged;
+  final bool useAppBackground;
 
   @override
   Widget build(BuildContext context) {
@@ -761,31 +781,33 @@ class _UniDetailPageHeader extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              FutureBuilder(
-                future: backgroundPic,
-                builder: (context, snapshot) {
-                  if (snapshot.data == null) return const SizedBox.shrink();
+              if (!useAppBackground) ...[
+                FutureBuilder(
+                  future: backgroundPic,
+                  builder: (context, snapshot) {
+                    if (snapshot.data == null) return const SizedBox.shrink();
 
-                  return Image(
-                    image: snapshot.data!,
-                    fit: BoxFit.cover,
-                    gaplessPlayback: true,
-                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                  );
+                    return Image(
+                      image: snapshot.data!,
+                      fit: BoxFit.cover,
+                      gaplessPlayback: true,
+                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                    );
+                  },
+                ),
+                switch (brightness) {
+                  Brightness.dark => ColoredBox(
+                    color: scheme.surface.withValues(alpha: 0.38),
+                  ),
+                  Brightness.light => ColoredBox(
+                    color: scheme.surface.withValues(alpha: 0.70),
+                  ),
                 },
-              ),
-              switch (brightness) {
-                Brightness.dark => ColoredBox(
-                  color: scheme.surface.withValues(alpha: 0.38),
+                BackdropFilter(
+                  filter: _UniDetailPageHeader._blurFilter,
+                  child: const ColoredBox(color: Colors.transparent),
                 ),
-                Brightness.light => ColoredBox(
-                  color: scheme.surface.withValues(alpha: 0.70),
-                ),
-              },
-              BackdropFilter(
-                filter: _UniDetailPageHeader._blurFilter,
-                child: const ColoredBox(color: Colors.transparent),
-              ),
+              ],
               Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [

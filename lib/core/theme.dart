@@ -31,6 +31,87 @@ ColorScheme _applyDarkSurfacePalette(ColorScheme scheme) {
   );
 }
 
+Color _contrastingTextColor(Color background) {
+  return background.computeLuminance() > 0.179 ? Colors.black : Colors.white;
+}
+
+ColorScheme _buildIndependentColorScheme(Color accent, Brightness brightness) {
+  final isDark = brightness == Brightness.dark;
+  final surface = isDark ? const Color(0xff121212) : const Color(0xfffafafa);
+  final onSurface = isDark ? const Color(0xffe6e6e6) : const Color(0xff1b1b1b);
+  final surfaceContainer = isDark
+      ? const Color(0xff202020)
+      : const Color(0xffeeeeee);
+  final accentContainer = Color.alphaBlend(
+    accent.withValues(alpha: isDark ? 0.32 : 0.18),
+    surfaceContainer,
+  );
+  final onAccent = _contrastingTextColor(accent);
+  final onAccentContainer = _contrastingTextColor(accentContainer);
+
+  return ColorScheme(
+    brightness: brightness,
+    primary: accent,
+    onPrimary: onAccent,
+    primaryContainer: accentContainer,
+    onPrimaryContainer: onAccentContainer,
+    primaryFixed: accent,
+    primaryFixedDim: accent,
+    onPrimaryFixed: onAccent,
+    onPrimaryFixedVariant: onAccent,
+    secondary: accent,
+    onSecondary: onAccent,
+    secondaryContainer: accentContainer,
+    onSecondaryContainer: onAccentContainer,
+    secondaryFixed: accent,
+    secondaryFixedDim: accent,
+    onSecondaryFixed: onAccent,
+    onSecondaryFixedVariant: onAccent,
+    tertiary: accent,
+    onTertiary: onAccent,
+    tertiaryContainer: accentContainer,
+    onTertiaryContainer: onAccentContainer,
+    tertiaryFixed: accent,
+    tertiaryFixedDim: accent,
+    onTertiaryFixed: onAccent,
+    onTertiaryFixedVariant: onAccent,
+    error: isDark ? const Color(0xffffb4ab) : const Color(0xffba1a1a),
+    onError: isDark ? const Color(0xff690005) : Colors.white,
+    errorContainer: isDark ? const Color(0xff93000a) : const Color(0xffffdad6),
+    onErrorContainer: isDark
+        ? const Color(0xffffdad6)
+        : const Color(0xff410002),
+    surface: surface,
+    onSurface: onSurface,
+    surfaceDim: isDark ? const Color(0xff121212) : const Color(0xffdadada),
+    surfaceBright: isDark ? const Color(0xff393939) : const Color(0xfffafafa),
+    surfaceContainerLowest: isDark ? const Color(0xff0d0d0d) : Colors.white,
+    surfaceContainerLow: isDark
+        ? const Color(0xff1b1b1b)
+        : const Color(0xfff4f4f4),
+    surfaceContainer: surfaceContainer,
+    surfaceContainerHigh: isDark
+        ? const Color(0xff2b2b2b)
+        : const Color(0xffe8e8e8),
+    surfaceContainerHighest: isDark
+        ? const Color(0xff363636)
+        : const Color(0xffe2e2e2),
+    onSurfaceVariant: isDark
+        ? const Color(0xffcacaca)
+        : const Color(0xff494949),
+    outline: isDark ? const Color(0xff919191) : const Color(0xff767676),
+    outlineVariant: isDark ? const Color(0xff454545) : const Color(0xffc6c6c6),
+    shadow: Colors.black,
+    scrim: Colors.black,
+    inverseSurface: isDark ? const Color(0xffe6e6e6) : const Color(0xff303030),
+    onInverseSurface: isDark
+        ? const Color(0xff303030)
+        : const Color(0xfff2f2f2),
+    inversePrimary: accent,
+    surfaceTint: Colors.transparent,
+  );
+}
+
 Color _selectThemeSeedColor(List<Color> palette) {
   final dominant = palette.first;
   final dominantHsv = HSVColor.fromColor(dominant);
@@ -50,7 +131,8 @@ Color _selectThemeSeedColor(List<Color> palette) {
     if (chroma < 0.06 || hsl.saturation < 0.18) continue;
 
     final toneFit = 1.0 - (hsl.lightness - 0.5).abs() * 2.0;
-    final score = chroma * 0.65 +
+    final score =
+        chroma * 0.65 +
         hsl.saturation * 0.2 +
         toneFit * 0.1 +
         0.05 / (index + 1);
@@ -80,11 +162,11 @@ class ThemeProvider extends ChangeNotifier {
   String? fontFamily = AppSettings.instance.fontFamily;
 
   Brightness get effectiveBrightness => switch (themeMode) {
-        ThemeMode.light => Brightness.light,
-        ThemeMode.dark => Brightness.dark,
-        ThemeMode.system =>
-          WidgetsBinding.instance.platformDispatcher.platformBrightness,
-      };
+    ThemeMode.light => Brightness.light,
+    ThemeMode.dark => Brightness.dark,
+    ThemeMode.system =>
+      WidgetsBinding.instance.platformDispatcher.platformBrightness,
+  };
 
   ColorScheme get currScheme =>
       effectiveBrightness == Brightness.dark ? darkScheme : lightScheme;
@@ -99,7 +181,8 @@ class ThemeProvider extends ChangeNotifier {
 
   ThemeProvider._() {
     _appliedSeedColor = _configuredThemeSeedColor();
-    _updateColorSchemes(_appliedSeedColor);
+    _appliedThemeColorMode = AppSettings.instance.themeColorMode;
+    _updateColorSchemes(_appliedSeedColor, _appliedThemeColorMode);
   }
 
   static ThemeProvider get instance {
@@ -108,27 +191,45 @@ class ThemeProvider extends ChangeNotifier {
   }
 
   late Color _appliedSeedColor;
+  late ThemeColorMode _appliedThemeColorMode;
 
-  void _updateColorSchemes(Color seedColor) {
-    lightScheme = _applyLightSurfacePalette(
-      ColorScheme.fromSeed(
-        seedColor: seedColor,
-        brightness: Brightness.light,
-      ),
-    );
-    darkScheme = _applyDarkSurfacePalette(
-      ColorScheme.fromSeed(
-        seedColor: seedColor,
-        brightness: Brightness.dark,
-      ),
-    );
+  void _updateColorSchemes(Color seedColor, ThemeColorMode colorMode) {
+    switch (colorMode) {
+      case ThemeColorMode.material3:
+        lightScheme = _applyLightSurfacePalette(
+          ColorScheme.fromSeed(
+            seedColor: seedColor,
+            brightness: Brightness.light,
+          ),
+        );
+        darkScheme = _applyDarkSurfacePalette(
+          ColorScheme.fromSeed(
+            seedColor: seedColor,
+            brightness: Brightness.dark,
+          ),
+        );
+      case ThemeColorMode.independent:
+        lightScheme = _buildIndependentColorScheme(seedColor, Brightness.light);
+        darkScheme = _buildIndependentColorScheme(seedColor, Brightness.dark);
+    }
   }
 
   bool _setSeedColor(Color seedColor) {
-    if (_appliedSeedColor == seedColor) return false;
+    final colorMode = AppSettings.instance.themeColorMode;
+    if (_appliedSeedColor == seedColor && _appliedThemeColorMode == colorMode) {
+      return false;
+    }
     _appliedSeedColor = seedColor;
-    _updateColorSchemes(seedColor);
+    _appliedThemeColorMode = colorMode;
+    _updateColorSchemes(seedColor, colorMode);
     return true;
+  }
+
+  void applyThemeColorMode(ThemeColorMode colorMode) {
+    if (_appliedThemeColorMode == colorMode) return;
+    _appliedThemeColorMode = colorMode;
+    _updateColorSchemes(_appliedSeedColor, colorMode);
+    _notifyThemeChanged();
   }
 
   void _notifyThemeChanged() {

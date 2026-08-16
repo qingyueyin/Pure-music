@@ -269,23 +269,20 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
-    return ColoredBox(
-      color: scheme.surfaceContainer,
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 0),
-            child: _buildTabBar(scheme),
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 0),
+          child: _buildTabBar(scheme),
+        ),
+        const SizedBox(height: 16.0),
+        Expanded(
+          child: DirectionalTabView(
+            index: _currentTabIndex,
+            children: [_buildInfoTab(scheme), _buildLyricTab(scheme)],
           ),
-          const SizedBox(height: 16.0),
-          Expanded(
-            child: DirectionalTabView(
-              index: _currentTabIndex,
-              children: [_buildInfoTab(scheme), _buildLyricTab(scheme)],
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
