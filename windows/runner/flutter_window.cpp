@@ -8,6 +8,7 @@
 static std::atomic<bool> g_destroying{false};
 
 #include "flutter/generated_plugin_registrant.h"
+#include "taskbar_thumbnail.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -34,6 +35,8 @@ bool FlutterWindow::OnCreate() {
   }
   RegisterPlugins(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
+  taskbar_thumbnail_ = std::make_unique<TaskbarThumbnail>(
+      flutter_controller_->engine()->messenger(), GetHandle());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();
@@ -51,6 +54,7 @@ void FlutterWindow::OnDestroy() {
   // 标记正在销毁，防止后续消息进入 Flutter 回调。
   g_destroying.store(true);
 
+  taskbar_thumbnail_.reset();
   if (flutter_controller_) {
     // 在销毁前延迟以确保任何待处理的回调完成
     flutter_controller_ = nullptr;
@@ -63,6 +67,14 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  if (taskbar_thumbnail_) {
+    const std::optional<LRESULT> result =
+        taskbar_thumbnail_->HandleMessage(message, wparam, lparam);
+    if (result) {
+      return *result;
+    }
+  }
+
   // Give Flutter, including plugins, an opportunity to handle window messages.
   if (!g_destroying.load() && flutter_controller_) {
     std::optional<LRESULT> result =

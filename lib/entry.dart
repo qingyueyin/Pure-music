@@ -27,6 +27,7 @@ import 'package:pure_music/page/welcoming_page.dart';
 import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
 import 'package:pure_music/play_service/play_service.dart';
+import 'package:pure_music/play_service/taskbar_thumbnail_service.dart';
 import 'package:pure_music/component/app_scroll_behavior.dart';
 import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/core/immersive.dart';
@@ -53,11 +54,11 @@ class SlideTransitionPage<T> extends CustomTransitionPage<T> {
     super.restorationId,
     super.key,
   }) : super(
-          maintainState: false,
-          transitionsBuilder: _transitionsBuilder,
-          transitionDuration: MotionDuration.fast,
-          reverseTransitionDuration: MotionDuration.fast,
-        );
+         maintainState: false,
+         transitionsBuilder: _transitionsBuilder,
+         transitionDuration: MotionDuration.fast,
+         reverseTransitionDuration: MotionDuration.fast,
+       );
 
   static Widget _transitionsBuilder(
     BuildContext context,
@@ -77,10 +78,7 @@ class SlideTransitionPage<T> extends CustomTransitionPage<T> {
     ).animate(curved);
     return FadeTransition(
       opacity: fade,
-      child: SlideTransition(
-        position: slide,
-        child: child,
-      ),
+      child: SlideTransition(position: slide, child: child),
     );
   }
 }
@@ -105,9 +103,11 @@ class _EntryState extends State<Entry>
     WidgetsBinding.instance.addObserver(this);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (Platform.environment['CP_ECHO_RECORD'] == '1') {
-        AudioEchoLogRecorder.instance.start();
-      }
+      AudioEchoLogRecorder.instance.start(
+        full: Platform.environment['CP_ECHO_RECORD'] == '1',
+      );
+      // 任务栏缩略图自定义封面（主窗口已创建完成）
+      TaskbarThumbnailService.instance.init();
       // 启动后延迟检查更新
       _autoCheckUpdate();
     });
@@ -188,8 +188,10 @@ class _EntryState extends State<Entry>
 
     if (ImmersiveModeController.instance.enabled) {
       await ImmersiveModeController.instance.exit();
-      final startIndex = AppPreference.instance.startPage
-          .clamp(0, app_paths.START_PAGES.length - 1);
+      final startIndex = AppPreference.instance.startPage.clamp(
+        0,
+        app_paths.START_PAGES.length - 1,
+      );
       router.go(app_paths.START_PAGES[startIndex]);
       return;
     }
@@ -247,10 +249,12 @@ class _EntryState extends State<Entry>
     final bool isDark = colorScheme.brightness == Brightness.dark;
 
     // For surfaces that use primary color in light themes and surface color in dark
-    final Color primarySurfaceColor =
-        isDark ? colorScheme.surface : colorScheme.primary;
-    final Color onPrimarySurfaceColor =
-        isDark ? colorScheme.onSurface : colorScheme.onPrimary;
+    final Color primarySurfaceColor = isDark
+        ? colorScheme.surface
+        : colorScheme.primary;
+    final Color onPrimarySurfaceColor = isDark
+        ? colorScheme.onSurface
+        : colorScheme.onPrimary;
 
     final defaultTextTheme = isDark
         ? Typography.material2021().white
@@ -274,32 +278,21 @@ class _EntryState extends State<Entry>
       cardTheme: CardThemeData(
         color: colorScheme.surface,
         elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: AppRadius.mdCircular,
-        ),
+        shape: RoundedRectangleBorder(borderRadius: AppRadius.mdCircular),
         clipBehavior: Clip.antiAlias,
       ),
       chipTheme: ChipThemeData(
         backgroundColor: colorScheme.surfaceContainerHighest,
-        labelStyle: textTheme.bodySmall?.copyWith(
-          color: colorScheme.onSurface,
-        ),
+        labelStyle: textTheme.bodySmall?.copyWith(color: colorScheme.onSurface),
         side: BorderSide(color: colorScheme.outline),
-        shape: RoundedRectangleBorder(
-          borderRadius: AppRadius.smCircular,
-        ),
-        padding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 10,
-        ),
+        shape: RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: colorScheme.primary,
           foregroundColor: colorScheme.onPrimary,
-          shape: RoundedRectangleBorder(
-            borderRadius: AppRadius.smCircular,
-          ),
+          shape: RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
           padding: const EdgeInsets.symmetric(
             horizontal: Spacing.lg,
             vertical: Spacing.sm,
@@ -310,9 +303,7 @@ class _EntryState extends State<Entry>
         style: OutlinedButton.styleFrom(
           foregroundColor: colorScheme.primary,
           side: BorderSide(color: colorScheme.outline),
-          shape: RoundedRectangleBorder(
-            borderRadius: AppRadius.smCircular,
-          ),
+          shape: RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
           padding: const EdgeInsets.symmetric(
             horizontal: Spacing.lg,
             vertical: Spacing.sm,
@@ -359,9 +350,7 @@ class _EntryState extends State<Entry>
       ),
       dialogTheme: DialogThemeData(
         backgroundColor: colorScheme.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: AppRadius.mdCircular,
-        ),
+        shape: RoundedRectangleBorder(borderRadius: AppRadius.mdCircular),
       ),
       bottomSheetTheme: BottomSheetThemeData(
         backgroundColor: colorScheme.surface,
@@ -381,8 +370,9 @@ class _EntryState extends State<Entry>
         activeTrackColor: colorScheme.primary,
         inactiveTrackColor: colorScheme.surfaceContainerHighest,
         thumbColor: colorScheme.primary,
-        overlayColor:
-            colorScheme.primary.withAlpha((255 * Alpha.hover).round()),
+        overlayColor: colorScheme.primary.withAlpha(
+          (255 * Alpha.hover).round(),
+        ),
       ),
       segmentedButtonTheme: SegmentedButtonThemeData(
         style: ButtonStyle(
@@ -466,8 +456,9 @@ class _EntryState extends State<Entry>
 
   late final GoRouter config = GoRouter(
     navigatorKey: routerKey,
-    initialLocation:
-        widget.welcome ? app_paths.WELCOMING_PAGE : app_paths.UPDATING_DIALOG,
+    initialLocation: widget.welcome
+        ? app_paths.WELCOMING_PAGE
+        : app_paths.UPDATING_DIALOG,
     observers: [routeVisibilityObserver],
     routes: [
       StatefulShellRoute(
@@ -475,23 +466,25 @@ class _EntryState extends State<Entry>
             AppShell(navigationShell: navigationShell),
         navigatorContainerBuilder: (context, navigationShell, children) =>
             DirectionalTabView(
-          index: navigationShell.currentIndex,
-          children: children,
-        ),
+              index: navigationShell.currentIndex,
+              children: children,
+            ),
         branches: [
           StatefulShellBranch(
             routes: [
               GoRoute(
                 path: app_paths.AUDIOS_PAGE,
                 builder: (context, state) {
-                  if (state.extra != null) {
-                    return AudiosPage(locateTo: state.extra as Audio?);
+                  if (state.extra case final Audio audio) {
+                    return AudiosPage(locateTo: audio);
                   }
                   return const AudiosPage();
                 },
                 routes: [
                   GoRoute(
                     path: 'detail',
+                    redirect: (context, state) =>
+                        state.extra is Audio ? null : app_paths.AUDIOS_PAGE,
                     pageBuilder: (context, state) => SlideTransitionPage(
                       key: state.pageKey,
                       child: AudioDetailPage(audio: state.extra as Audio),
@@ -509,6 +502,8 @@ class _EntryState extends State<Entry>
                 routes: [
                   GoRoute(
                     path: 'detail',
+                    redirect: (context, state) =>
+                        state.extra is Artist ? null : app_paths.ARTISTS_PAGE,
                     pageBuilder: (context, state) => SlideTransitionPage(
                       key: state.pageKey,
                       child: ArtistDetailPage(artist: state.extra as Artist),
@@ -526,6 +521,8 @@ class _EntryState extends State<Entry>
                 routes: [
                   GoRoute(
                     path: 'detail',
+                    redirect: (context, state) =>
+                        state.extra is Album ? null : app_paths.ALBUMS_PAGE,
                     pageBuilder: (context, state) => SlideTransitionPage(
                       key: state.pageKey,
                       child: AlbumDetailPage(album: state.extra as Album),
@@ -547,9 +544,11 @@ class _EntryState extends State<Entry>
                       final folder = state.extra as AudioFolder?;
                       if (folder == null) {
                         return NoTransitionPage(
-                            key: state.pageKey,
-                            child: FolderDetailPage(
-                                folder: AudioFolder([], '', 0, 0)));
+                          key: state.pageKey,
+                          child: FolderDetailPage(
+                            folder: AudioFolder([], '', 0, 0),
+                          ),
+                        );
                       }
                       return SlideTransitionPage(
                         key: state.pageKey,
@@ -573,9 +572,9 @@ class _EntryState extends State<Entry>
                       final playlist = state.extra as Playlist?;
                       if (playlist == null) {
                         return NoTransitionPage(
-                            key: state.pageKey,
-                            child:
-                                PlaylistDetailPage(playlist: Playlist('', [])));
+                          key: state.pageKey,
+                          child: PlaylistDetailPage(playlist: Playlist('', [])),
+                        );
                       }
                       return SlideTransitionPage(
                         key: state.pageKey,
@@ -598,17 +597,18 @@ class _EntryState extends State<Entry>
           StatefulShellBranch(
             routes: [
               GoRoute(
-                  path: app_paths.SETTINGS_PAGE,
-                  builder: (context, state) => const SettingsPage(),
-                  routes: [
-                    GoRoute(
-                      path: 'issue',
-                      pageBuilder: (context, state) => SlideTransitionPage(
-                        key: state.pageKey,
-                        child: const SettingsIssuePage(),
-                      ),
-                    )
-                  ]),
+                path: app_paths.SETTINGS_PAGE,
+                builder: (context, state) => const SettingsPage(),
+                routes: [
+                  GoRoute(
+                    path: 'issue',
+                    pageBuilder: (context, state) => SlideTransitionPage(
+                      key: state.pageKey,
+                      child: const SettingsIssuePage(),
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
         ],
@@ -635,10 +635,7 @@ class _EntryState extends State<Entry>
             final fade = Tween<double>(begin: 0.0, end: 1.0).animate(curved);
             return FadeTransition(
               opacity: fade,
-              child: SlideTransition(
-                position: slide,
-                child: child,
-              ),
+              child: SlideTransition(position: slide, child: child),
             );
           },
           child: const NowPlayingPage(),
@@ -678,11 +675,20 @@ class _EntryState extends State<Entry>
     Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hans'),
     Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hant'),
     Locale.fromSubtags(
-        languageCode: 'zh', scriptCode: 'Hans', countryCode: 'CN'),
+      languageCode: 'zh',
+      scriptCode: 'Hans',
+      countryCode: 'CN',
+    ),
     Locale.fromSubtags(
-        languageCode: 'zh', scriptCode: 'Hant', countryCode: 'TW'),
+      languageCode: 'zh',
+      scriptCode: 'Hant',
+      countryCode: 'TW',
+    ),
     Locale.fromSubtags(
-        languageCode: 'zh', scriptCode: 'Hant', countryCode: 'HK'),
+      languageCode: 'zh',
+      scriptCode: 'Hant',
+      countryCode: 'HK',
+    ),
     Locale('en', 'US'),
   ];
 }

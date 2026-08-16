@@ -775,6 +775,12 @@ class CoverImageCache {
     );
   }
 
+  Future<Uint8List?> loadPhysicalBytes({
+    required String path,
+    required int width,
+    required int height,
+  }) => _loadBytesAt(path: path, width: width, height: height, pixelRatio: 1);
+
   Future<Uint8List?> _loadBytesAt({
     required String path,
     required int width,
