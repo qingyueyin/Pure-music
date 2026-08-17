@@ -5,22 +5,35 @@ import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter/widgets.dart';
 import 'package:pure_music/component/motion.dart' show StackedEffectScope;
 
-/// 使用 [SmoothScrollPosition] 的滚动控制器。
+bool _usesSmoothScrollPhysics(ScrollPhysics physics) {
+  ScrollPhysics? current = physics;
+  while (current != null) {
+    if (current is SmoothScrollPhysics) return true;
+    current = current.parent;
+  }
+  return false;
+}
+
+/// 在启用 [SmoothScrollPhysics] 时使用 [SmoothScrollPosition] 的滚动控制器。
 ///
-/// 列表使用外部 [ScrollController] 时，position 由控制器创建，
-/// 不会经过 physics 的 `createScrollPosition`，因此需要控制器本身
-/// 提供平滑 position。
+/// 其他 physics 下沿用 Flutter 的标准 position，避免关闭效果后仍改变
+/// 原列表的滚动生命周期。
 class SmoothScrollController extends ScrollController {
   @override
   ScrollPosition createScrollPosition(
     ScrollPhysics physics,
     ScrollContext context,
     ScrollPosition? oldPosition,
-  ) => SmoothScrollPosition(
-    physics: physics,
-    context: context,
-    oldPosition: oldPosition,
-  );
+  ) {
+    if (!_usesSmoothScrollPhysics(physics)) {
+      return super.createScrollPosition(physics, context, oldPosition);
+    }
+    return SmoothScrollPosition(
+      physics: physics,
+      context: context,
+      oldPosition: oldPosition,
+    );
+  }
 }
 
 /// 平滑滚轮滚动 physics。
@@ -62,21 +75,8 @@ class SmoothScrollPosition extends ScrollPositionWithSingleContext {
 
   static const _wheelTolerance = Tolerance(distance: 0.05, velocity: 0.5);
 
-  bool get _smoothScrollingEnabled {
-    ScrollPhysics? current = physics;
-    while (current != null) {
-      if (current is SmoothScrollPhysics) return true;
-      current = current.parent;
-    }
-    return false;
-  }
-
   @override
   void pointerScroll(double delta) {
-    if (!_smoothScrollingEnabled) {
-      super.pointerScroll(delta);
-      return;
-    }
     if (delta == 0.0) {
       goBallistic(0.0);
       return;

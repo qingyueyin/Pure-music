@@ -333,8 +333,16 @@ class _UniPageState<T> extends State<UniPage<T>> {
   /// 平滑滚动到指定位置。
   void _smoothScrollTo(double offset) {
     if (!scrollController.hasClients) return;
-    final position = scrollController.position as SmoothScrollPosition;
-    position.smoothScrollTo(offset);
+    final position = scrollController.position;
+    if (position is SmoothScrollPosition) {
+      position.smoothScrollTo(offset);
+      return;
+    }
+    scrollController.animateTo(
+      offset.clamp(position.minScrollExtent, position.maxScrollExtent),
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.fastOutSlowIn,
+    );
   }
 
   /// 按钮浮层不拦截滚轮：鼠标停留在浮层按钮上滚动时，
