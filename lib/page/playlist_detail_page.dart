@@ -3,6 +3,7 @@ import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/component/danger_confirm_dialog.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/list_action_state.dart';
+import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/library/playlist.dart';
@@ -32,6 +33,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
   bool _isPickingCover = false;
   late Future<ImageProvider?> _primaryPicFuture;
   late Future<ImageProvider?> _backgroundPicFuture;
+  final _reorderScrollController = SmoothScrollController();
   String _searchQuery = '';
 
   Future<ImageProvider?> _loadPrimaryPic() async {
@@ -55,6 +57,13 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
   void initState() {
     super.initState();
     _refreshCoverFutures();
+  }
+
+  @override
+  void dispose() {
+    multiSelectController.dispose();
+    _reorderScrollController.dispose();
+    super.dispose();
   }
 
   @override
@@ -162,14 +171,18 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
         method: (list, order) {
           switch (order) {
             case SortOrder.ascending:
-              list.sort((a, b) => widget.playlist
-                  .addedAt(a.path)
-                  .compareTo(widget.playlist.addedAt(b.path)));
+              list.sort(
+                (a, b) => widget.playlist
+                    .addedAt(a.path)
+                    .compareTo(widget.playlist.addedAt(b.path)),
+              );
               break;
             case SortOrder.decending:
-              list.sort((a, b) => widget.playlist
-                  .addedAt(b.path)
-                  .compareTo(widget.playlist.addedAt(a.path)));
+              list.sort(
+                (a, b) => widget.playlist
+                    .addedAt(b.path)
+                    .compareTo(widget.playlist.addedAt(a.path)),
+              );
               break;
           }
         },
@@ -266,54 +279,50 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
             style: IconButton.styleFrom(
               fixedSize: const Size(40, 40),
               padding: EdgeInsets.zero,
-              shape: RoundedRectangleBorder(
-                borderRadius: AppRadius.smCircular,
-              ),
+              shape: RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
               backgroundColor: scheme.error,
               foregroundColor: scheme.onError,
             ),
             onPressed:
                 multiSelectController.selected.isEmpty || _isRemovingSelected
-                    ? null
-                    : () async {
-                        if (_isRemovingSelected) return;
-                        final selected = List<Audio>.from(
-                          multiSelectController.selected,
-                        );
-                        final confirmed = await _confirmRemoveSelectedAudios(
-                          selected,
-                        );
-                        if (!confirmed || !mounted) return;
-                        setState(() => _isRemovingSelected = true);
-                        try {
-                          final oldPaths = List<String>.from(
-                            widget.playlist.paths,
-                          );
-                          setState(() {
-                            for (final item in selected) {
-                              widget.playlist.removeByPath(item.path);
-                            }
-                            _refreshCoverFutures();
-                          });
-                          final saved = await savePlaylists();
-                          if (!mounted) return;
-                          if (!saved) {
-                            setState(() {
-                              widget.playlist.replacePaths(oldPaths);
-                              _refreshCoverFutures();
-                            });
-                            showTextOnSnackBar('保存歌单失败');
-                            return;
-                          }
-                          showTextOnSnackBar('已从歌单移除');
-                          multiSelectController.useMultiSelectView(false);
-                          multiSelectController.clear();
-                        } finally {
-                          if (mounted) {
-                            setState(() => _isRemovingSelected = false);
-                          }
+                ? null
+                : () async {
+                    if (_isRemovingSelected) return;
+                    final selected = List<Audio>.from(
+                      multiSelectController.selected,
+                    );
+                    final confirmed = await _confirmRemoveSelectedAudios(
+                      selected,
+                    );
+                    if (!confirmed || !mounted) return;
+                    setState(() => _isRemovingSelected = true);
+                    try {
+                      final oldPaths = List<String>.from(widget.playlist.paths);
+                      setState(() {
+                        for (final item in selected) {
+                          widget.playlist.removeByPath(item.path);
                         }
-                      },
+                        _refreshCoverFutures();
+                      });
+                      final saved = await savePlaylists();
+                      if (!mounted) return;
+                      if (!saved) {
+                        setState(() {
+                          widget.playlist.replacePaths(oldPaths);
+                          _refreshCoverFutures();
+                        });
+                        showTextOnSnackBar('保存歌单失败');
+                        return;
+                      }
+                      showTextOnSnackBar('已从歌单移除');
+                      multiSelectController.useMultiSelectView(false);
+                      multiSelectController.clear();
+                    } finally {
+                      if (mounted) {
+                        setState(() => _isRemovingSelected = false);
+                      }
+                    }
+                  },
             icon: _isRemovingSelected
                 ? const SizedBox(
                     width: 20.0,
@@ -338,13 +347,19 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
       bodyOverride: contentList.isEmpty
           ? const _EmptyPlaylistBody()
           : _isReordering && canReorder
-              ? _buildReorderBody(contentList, scheme)
-              : null,
+          ? ListenableBuilder(
+              listenable: AppSettings.listMotionNotifier,
+              builder: (context, _) => _buildReorderBody(contentList, scheme),
+            )
+          : null,
       extraActions: canReorder
           ? [
               FilledButton.tonalIcon(
                 onPressed: () => setState(() => _isReordering = !_isReordering),
-                icon: Icon(_isReordering ? Symbols.check : Symbols.reorder, size: 20),
+                icon: Icon(
+                  _isReordering ? Symbols.check : Symbols.reorder,
+                  size: 20,
+                ),
                 label: Text(_isReordering ? '完成' : '排序'),
                 style: ButtonStyle(
                   fixedSize: const WidgetStatePropertyAll(Size.fromHeight(40)),
@@ -355,10 +370,14 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
                     RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
                   ),
                   backgroundColor: WidgetStatePropertyAll(
-                    _isReordering ? scheme.tertiaryContainer : scheme.secondaryContainer,
+                    _isReordering
+                        ? scheme.tertiaryContainer
+                        : scheme.secondaryContainer,
                   ),
                   foregroundColor: WidgetStatePropertyAll(
-                    _isReordering ? scheme.onTertiaryContainer : scheme.onSecondaryContainer,
+                    _isReordering
+                        ? scheme.onTertiaryContainer
+                        : scheme.onSecondaryContainer,
                   ),
                 ),
               ),
@@ -371,10 +390,11 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
     final paths = List<String>.from(widget.playlist.paths);
 
     return ScrollConfiguration(
-      behavior: ScrollConfiguration.of(context).copyWith(
-        physics: const SmoothScrollPhysics(),
-      ),
+      behavior: ScrollConfiguration.of(
+        context,
+      ).copyWith(physics: const SmoothScrollPhysics()),
       child: ReorderableListView.builder(
+        scrollController: _reorderScrollController,
         padding: const EdgeInsets.only(bottom: 96.0),
         buildDefaultDragHandles: false,
         itemCount: contentList.length,
@@ -402,7 +422,9 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
         ),
         itemBuilder: (context, i) {
           final audio = contentList[i];
-          final position = Scrollable.of(context).position;
+          final position = AppSettings.instance.enableStackedScrollEffect
+              ? Scrollable.of(context).position
+              : null;
           return _ReorderItem(
             key: ValueKey(audio.path),
             audio: audio,
@@ -445,8 +467,10 @@ class _ReorderItem extends StatelessWidget {
                 index: index,
                 child: Padding(
                   padding: const EdgeInsets.all(12.0),
-                  child: Icon(Symbols.drag_indicator,
-                      color: scheme.onSurfaceVariant),
+                  child: Icon(
+                    Symbols.drag_indicator,
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ),
               ),
               const SizedBox(width: 8.0),
@@ -457,7 +481,10 @@ class _ReorderItem extends StatelessWidget {
                   children: [
                     Text(
                       audio.title,
-                      style: TextStyle(color: scheme.onSurface, fontSize: AppType.subtitle),
+                      style: TextStyle(
+                        color: scheme.onSurface,
+                        fontSize: AppType.subtitle,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -465,7 +492,9 @@ class _ReorderItem extends StatelessWidget {
                     Text(
                       '${audio.artist} - ${audio.album}',
                       style: TextStyle(
-                          color: scheme.onSurfaceVariant, fontSize: AppType.body),
+                        color: scheme.onSurfaceVariant,
+                        fontSize: AppType.body,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),

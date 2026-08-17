@@ -142,6 +142,10 @@ class _AppearanceTabContent extends StatelessWidget {
         SizedBox(height: 4.0),
         _AppBackgroundControl(),
         SizedBox(height: 24.0),
+        _SettingsSectionHeader('列表效果'),
+        SizedBox(height: 4.0),
+        _StackedScrollEffectSwitch(),
+        SizedBox(height: 24.0),
         _SettingsSectionHeader('主题色应用'),
         SizedBox(height: 4.0),
         _MonetProgressBarSwitch(),
@@ -468,6 +472,52 @@ class _MonetProgressBarSwitchState extends State<_MonetProgressBarSwitch> {
             onChanged: _setEnabled,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _StackedScrollEffectSwitch extends StatefulWidget {
+  const _StackedScrollEffectSwitch();
+
+  @override
+  State<_StackedScrollEffectSwitch> createState() =>
+      _StackedScrollEffectSwitchState();
+}
+
+class _StackedScrollEffectSwitchState
+    extends State<_StackedScrollEffectSwitch> {
+  final settings = AppSettings.instance;
+  bool _updating = false;
+
+  Future<void> _setEnabled(bool value) async {
+    if (_updating || value == settings.enableStackedScrollEffect) return;
+    final previous = settings.enableStackedScrollEffect;
+    setState(() {
+      _updating = true;
+      settings.enableStackedScrollEffect = value;
+    });
+    AppSettings.listMotionNotifier.rebuild();
+    try {
+      if (await settings.saveSettings()) return;
+      settings.enableStackedScrollEffect = previous;
+      AppSettings.listMotionNotifier.rebuild();
+      if (mounted) {
+        showTextOnSnackBar('列表效果保存失败', variant: ToastVariant.error);
+      }
+    } finally {
+      if (mounted) setState(() => _updating = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SettingsTile(
+      description: '堆叠滚动效果',
+      subtitle: '关闭后使用列表项入场动画',
+      action: Switch(
+        value: settings.enableStackedScrollEffect,
+        onChanged: _updating ? null : _setEnabled,
       ),
     );
   }
@@ -2359,9 +2409,7 @@ class _TaskbarThumbnailControlState extends State<_TaskbarThumbnailControl> {
   Widget build(BuildContext context) {
     return SettingsTile(
       description: '任务栏封面与播放控制',
-      subtitle: pref.taskbarThumbnailCover
-          ? '悬停时显示歌曲封面和播放按钮'
-          : '悬停时显示窗口预览',
+      subtitle: pref.taskbarThumbnailCover ? '悬停时显示歌曲封面和播放按钮' : '悬停时显示窗口预览',
       action: Switch(
         value: pref.taskbarThumbnailCover,
         onChanged: (value) => setState(() {

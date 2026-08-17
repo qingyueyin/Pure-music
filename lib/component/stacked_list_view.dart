@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
-import 'package:flutter/scheduler.dart' show Ticker;
+import 'package:flutter/physics.dart' show FrictionSimulation, Tolerance;
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter/widgets.dart';
 import 'package:pure_music/component/motion.dart' show StackedEffectScope;
 
@@ -15,19 +16,18 @@ class SmoothScrollController extends ScrollController {
     ScrollPhysics physics,
     ScrollContext context,
     ScrollPosition? oldPosition,
-  ) =>
-      SmoothScrollPosition(
-        physics: physics,
-        context: context,
-        oldPosition: oldPosition,
-      );
+  ) => SmoothScrollPosition(
+    physics: physics,
+    context: context,
+    oldPosition: oldPosition,
+  );
 }
 
 /// 平滑滚轮滚动 physics。
 ///
 /// Windows 滚轮事件是离散的大步长输入，直接应用会产生"一蹦一蹦"的跳变。
 /// 本 physics 覆写 [ScrollPosition.pointerScroll]，把滚轮位移累积为目标位置，
-/// 由 [Ticker] 每帧按剩余距离的比例逼近（速度与距离成正比，自然减速），
+/// 由滚动活动按摩擦模拟连续推进并自然减速，
 /// 让滚动位置本身连续变化，行变换随之平滑。拖拽与惯性滚动不受影响。
 class SmoothScrollPhysics extends ScrollPhysics {
   const SmoothScrollPhysics({super.parent});
@@ -35,6 +35,14 @@ class SmoothScrollPhysics extends ScrollPhysics {
   @override
   SmoothScrollPhysics applyTo(ScrollPhysics? ancestor) =>
       SmoothScrollPhysics(parent: buildParent(ancestor));
+}
+
+class _SmoothWheelScrollActivity extends DrivenScrollActivity {
+  _SmoothWheelScrollActivity(
+    super.delegate,
+    super.simulation, {
+    required super.vsync,
+  }) : super.simulation();
 }
 
 class SmoothScrollPosition extends ScrollPositionWithSingleContext {
@@ -52,116 +60,60 @@ class SmoothScrollPosition extends ScrollPositionWithSingleContext {
   /// 的位移恰好等于滚轮输入量；快速连续滚轮时速度累积，产生加速感。
   double get _deltaToVelocity => velocityDecayPerSecond;
 
-  double _velocity = 0;
-  double? _targetPixels;
-  Duration? _lastTickElapsed;
-  Ticker? _ticker;
-  bool _dragging = false;
-
-  /// 按钮触发时的逼近系数（单向指数逼近目标，无回弹）。
-  static const double buttonApproachFactor = 0.13;
+  static const _wheelTolerance = Tolerance(distance: 0.05, velocity: 0.5);
 
   @override
   void pointerScroll(double delta) {
-    if (delta == 0.0) return;
-    // 用户滚轮输入接管，取消按钮目标。
-    _targetPixels = null;
-    // 速度累积：快滚时速度叠加（加速感），反向滚轮反向驱动（可纠错）。
-    _velocity += delta * _deltaToVelocity;
-    _ensureTicker();
+    if (delta == 0.0) {
+      goBallistic(0.0);
+      return;
+    }
+    if ((delta < 0 && pixels <= minScrollExtent) ||
+        (delta > 0 && pixels >= maxScrollExtent)) {
+      goBallistic(0.0);
+      return;
+    }
+
+    final inputVelocity = delta * _deltaToVelocity;
+    final currentActivity = activity;
+    final carriedVelocity =
+        currentActivity is _SmoothWheelScrollActivity &&
+            currentActivity.velocity.sign == inputVelocity.sign
+        ? currentActivity.velocity
+        : 0.0;
+    final simulation = FrictionSimulation(
+      math.exp(-velocityDecayPerSecond),
+      pixels,
+      carriedVelocity + inputVelocity,
+      tolerance: _wheelTolerance,
+    );
+    updateUserScrollDirection(
+      delta < 0 ? ScrollDirection.forward : ScrollDirection.reverse,
+    );
+    beginActivity(
+      _SmoothWheelScrollActivity(this, simulation, vsync: context.vsync),
+    );
   }
 
   /// 平滑滚动到指定位置，供"回到顶部""定位正在播放"等按钮调用。
-  void smoothScrollTo(double target) {
-    _targetPixels = target.clamp(minScrollExtent, maxScrollExtent);
-    _velocity = 0;
-    _ensureTicker();
+  Future<void> smoothScrollTo(double target) {
+    return animateTo(
+      target.clamp(minScrollExtent, maxScrollExtent),
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.fastOutSlowIn,
+    );
   }
+}
 
-  /// 确保 ticker 运行：停止过的 ticker 需要重新 start，否则滚轮会失效。
-  void _ensureTicker() {
-    var ticker = _ticker;
-    if (ticker == null) {
-      ticker = Ticker(_onTick);
-      _ticker = ticker;
-    }
-    if (!ticker.isActive) {
-      // 重启后 Ticker 的 elapsed 从 0 重新累计，重置上一帧时间，
-      // 否则首帧 dt 算出负数（clamp 成 0），在边界处误判为越界。
-      _lastTickElapsed = null;
-      ticker.start();
-    }
-  }
-
-  void _onTick(Duration elapsed) {
-    final last = _lastTickElapsed;
-    _lastTickElapsed = elapsed;
-    var dt = last == null ? 0.016 : (elapsed - last).inMicroseconds / 1e6;
-    dt = dt.clamp(0.0, 0.05);
-    if (_dragging) return;
-
-    final target = _targetPixels;
-    if (target != null) {
-      final remaining = target - pixels;
-      if (remaining.abs() < 0.5) {
-        jumpTo(target);
-        _targetPixels = null;
-        _ticker?.stop();
-        return;
-      }
-      jumpTo(pixels + remaining * buttonApproachFactor);
-      return;
-    }
-
-    final step = _velocity * dt;
-    // 无输入时自然减速；有输入时由 pointerScroll 持续累加。
-    _velocity *= math.exp(-velocityDecayPerSecond * dt);
-
-    var next = pixels + step;
-    if (next <= minScrollExtent) {
-      jumpTo(minScrollExtent);
-      _velocity = math.min(0, _velocity);
-      _stopWhenSettled();
-      return;
-    }
-    if (next >= maxScrollExtent) {
-      jumpTo(maxScrollExtent);
-      _velocity = math.max(0, _velocity);
-      _stopWhenSettled();
-      return;
-    }
-    if (_velocity.abs() < 0.5 && step.abs() < 0.05) {
-      _ticker?.stop();
-      return;
-    }
-    jumpTo(next);
-  }
-
-  void _stopWhenSettled() {
-    if (_velocity.abs() < 0.5) {
-      _ticker?.stop();
-    }
-  }
-
-  @override
-  void beginActivity(ScrollActivity? activity) {
-    super.beginActivity(activity);
-    if (activity is DragScrollActivity) {
-      _dragging = true;
-      _velocity = 0;
-    } else if (_dragging) {
-      // 拖拽结束（进入惯性或静止），速度重置，由 physics 接管惯性。
-      _dragging = false;
-      _velocity = 0;
-    }
-  }
-
-  @override
-  void dispose() {
-    _ticker?.dispose();
-    _ticker = null;
-    super.dispose();
-  }
+int maxExtentGridCrossAxisCount({
+  required double crossAxisExtent,
+  required double maxCrossAxisExtent,
+  required double crossAxisSpacing,
+}) {
+  return math.max(
+    1,
+    (crossAxisExtent / (maxCrossAxisExtent + crossAxisSpacing)).ceil(),
+  );
 }
 
 /// 堆叠滚动效果列表。
@@ -246,9 +198,9 @@ class StackedScrollConfiguration extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ScrollConfiguration(
-      behavior: ScrollConfiguration.of(context).copyWith(
-        physics: const SmoothScrollPhysics(),
-      ),
+      behavior: ScrollConfiguration.of(
+        context,
+      ).copyWith(physics: const SmoothScrollPhysics()),
       child: child,
     );
   }
@@ -277,24 +229,31 @@ class StackedGridView extends StatelessWidget {
   Widget build(BuildContext context) {
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final physics = reduceMotion ? null : const SmoothScrollPhysics();
-    final mainAxisExtent = gridDelegate.mainAxisExtent;
-    // mainAxisExtent 为空时（用 childAspectRatio 决定高度），
-    // 按最大格宽 / 宽高比 估算行高，堆叠动画对几像素误差不敏感。
-    final tileHeight = mainAxisExtent ??
-        gridDelegate.maxCrossAxisExtent / gridDelegate.childAspectRatio;
-    final mainAxisStep = tileHeight + gridDelegate.mainAxisSpacing;
     final maxCrossAxisExtent = gridDelegate.maxCrossAxisExtent;
     return StackedEffectScope(
       child: ScrollConfiguration(
         behavior: ScrollConfiguration.of(context).copyWith(physics: physics),
         child: LayoutBuilder(
           builder: (context, constraints) {
-            // 按实际布局宽度计算列数（扣除 padding），避免侧栏等影响估算。
-            final crossAxisCount =
-                ((constraints.maxWidth - (padding?.horizontal ?? 0)) /
-                        maxCrossAxisExtent)
-                    .floor()
-                    .clamp(1, 100);
+            final crossAxisExtent = math.max(
+              0.0,
+              constraints.maxWidth - (padding?.horizontal ?? 0),
+            );
+            final crossAxisCount = maxExtentGridCrossAxisCount(
+              crossAxisExtent: crossAxisExtent,
+              maxCrossAxisExtent: maxCrossAxisExtent,
+              crossAxisSpacing: gridDelegate.crossAxisSpacing,
+            );
+            final usableCrossAxisExtent = math.max(
+              0.0,
+              crossAxisExtent -
+                  gridDelegate.crossAxisSpacing * (crossAxisCount - 1),
+            );
+            final tileWidth = usableCrossAxisExtent / crossAxisCount;
+            final tileHeight =
+                gridDelegate.mainAxisExtent ??
+                tileWidth / gridDelegate.childAspectRatio;
+            final mainAxisStep = tileHeight + gridDelegate.mainAxisSpacing;
             return GridView.builder(
               controller: controller,
               padding: padding,
@@ -346,17 +305,19 @@ class StackedSliverItem extends StatelessWidget {
     required this.rowIndex,
     required this.itemExtent,
     required this.child,
+    this.enabled = true,
   });
 
   final ScrollController controller;
   final int rowIndex;
   final double itemExtent;
   final Widget child;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
-    if (reduceMotion) return child;
+    if (!enabled || reduceMotion) return child;
     return StackedEffectScope(
       child: AnimatedBuilder(
         animation: controller,
@@ -407,8 +368,10 @@ class StackedItemTransform extends StatelessWidget {
     final topProgress = (-itemTop / transitionExtent).clamp(0.0, 1.0);
     // 底部进入进度：行底未进入视口的部分占比。
     final bottomProgress =
-        ((itemTop - (viewportHeight - itemExtent)) / transitionExtent)
-            .clamp(0.0, 1.0);
+        ((itemTop - (viewportHeight - itemExtent)) / transitionExtent).clamp(
+          0.0,
+          1.0,
+        );
 
     final progress = math.max(topProgress, bottomProgress);
     if (progress <= 0.0) return child;
@@ -420,11 +383,7 @@ class StackedItemTransform extends StatelessWidget {
         : Alignment.bottomCenter;
     return Opacity(
       opacity: 1.0 - progress,
-      child: Transform.scale(
-        scale: scale,
-        alignment: alignment,
-        child: child,
-      ),
+      child: Transform.scale(scale: scale, alignment: alignment, child: child),
     );
   }
 }

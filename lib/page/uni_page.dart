@@ -10,6 +10,7 @@ import 'package:pure_music/component/stacked_list_view.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/page_sort.dart';
+import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/core/workload_policy.dart';
 import 'package:pure_music/library/audio_library.dart';
@@ -417,19 +418,19 @@ class _UniPageState<T> extends State<UniPage<T>> {
                       padding: const WidgetStatePropertyAll(EdgeInsets.zero),
                       shape: WidgetStatePropertyAll(
                         RoundedRectangleBorder(
-                        borderRadius: AppRadius.smCircular,
+                          borderRadius: AppRadius.smCircular,
+                        ),
                       ),
                     ),
+                    icon: const Icon(Symbols.my_location),
                   ),
-                  icon: const Icon(Symbols.my_location),
                 ),
               ),
-            ),
-          );
-        },
-      );
-    },
-  );
+            );
+          },
+        );
+      },
+    );
   }
 
   Widget _scrollToTopButton() {
@@ -469,9 +470,7 @@ class _UniPageState<T> extends State<UniPage<T>> {
                   fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
                   padding: const WidgetStatePropertyAll(EdgeInsets.zero),
                   shape: WidgetStatePropertyAll(
-                    RoundedRectangleBorder(
-                      borderRadius: AppRadius.smCircular,
-                    ),
+                    RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
                   ),
                 ),
                 icon: const Icon(Symbols.vertical_align_top),
@@ -666,7 +665,10 @@ class _UniPageState<T> extends State<UniPage<T>> {
         return _UniPageEmptyState(title: widget.title);
       }
 
-      final listView = widget.enableStackedEffect
+      final enableStackedEffect =
+          widget.enableStackedEffect &&
+          AppSettings.instance.enableStackedScrollEffect;
+      final listView = enableStackedEffect
           ? StackedListView(
               controller: listScrollController,
               itemExtent: 64,
@@ -693,11 +695,12 @@ class _UniPageState<T> extends State<UniPage<T>> {
                 ContentView.list,
               ),
             );
-      final tableView = widget.enableStackedEffect
+      final tableView = enableStackedEffect
           ? StackedGridView(
               controller: tableScrollController,
-              gridDelegate: (widget.gridDelegate ?? gridDelegate)
-                  as SliverGridDelegateWithMaxCrossAxisExtent,
+              gridDelegate:
+                  (widget.gridDelegate ?? gridDelegate)
+                      as SliverGridDelegateWithMaxCrossAxisExtent,
               itemCount: widget.contentList.length,
               padding: const EdgeInsets.only(bottom: 96.0, right: 20),
               itemBuilder: (context, i) => widget.contentBuilder(
@@ -754,34 +757,37 @@ class _UniPageState<T> extends State<UniPage<T>> {
           : multiSelectController.enableMultiSelectView
           ? widget.multiSelectViewActions!
           : actions,
-      body: Material(
-        type: MaterialType.transparency,
-        child: Stack(
-          children: [
-            _buildContentArea(multiSelectController),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: IgnorePointer(
-                child: Container(
-                  height: 48,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.transparent,
-                        scheme.surfaceContainer.withValues(alpha: 0.06),
-                      ],
+      body: ListenableBuilder(
+        listenable: AppSettings.listMotionNotifier,
+        builder: (context, _) => Material(
+          type: MaterialType.transparency,
+          child: Stack(
+            children: [
+              _buildContentArea(multiSelectController),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: IgnorePointer(
+                  child: Container(
+                    height: 48,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.transparent,
+                          scheme.surfaceContainer.withValues(alpha: 0.06),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-            _scrollToTopButton(),
-            _locateNowPlayingButton(),
-          ],
+              _scrollToTopButton(),
+              _locateNowPlayingButton(),
+            ],
+          ),
         ),
       ),
     );

@@ -238,6 +238,7 @@ class RebuildNotifier extends ChangeNotifier {
 class AppSettings {
   static final rebuildNotifier = RebuildNotifier();
   static final backgroundNotifier = RebuildNotifier();
+  static final listMotionNotifier = RebuildNotifier();
   static const String version = String.fromEnvironment(
     'APP_VERSION',
     defaultValue: '2.2.2',
@@ -296,6 +297,7 @@ class AppSettings {
   Set<NowPlayingMode> wavyBarEnabledModes = defaultWavyBarEnabledModes();
   TopBarLyricAnimation topBarLyricAnimation = TopBarLyricAnimation.slideUp;
   bool enableCoverColorExtraction = true;
+  bool enableStackedScrollEffect = true;
   int? customCoverColor;
   String? appBackgroundImagePath;
   double appBackgroundImageOpacity = 0.22;
@@ -348,6 +350,10 @@ class AppSettings {
     }
     _instance.themeColorMode = normalizedThemeColorMode(
       settingsMap['ThemeColorMode'],
+    );
+    _instance.enableStackedScrollEffect = normalizedBoolSetting(
+      settingsMap['EnableStackedScrollEffect'],
+      defaultValue: true,
     );
     _instance.appBackgroundImagePath = normalizedPathSetting(
       settingsMap['AppBackgroundImagePath'],
@@ -430,6 +436,10 @@ class AppSettings {
     }
     _instance.themeColorMode = normalizedThemeColorMode(
       settingsMap['ThemeColorMode'],
+    );
+    _instance.enableStackedScrollEffect = normalizedBoolSetting(
+      settingsMap['EnableStackedScrollEffect'],
+      defaultValue: true,
     );
 
     final sep = settingsMap['ArtistSeparator'];
@@ -793,6 +803,7 @@ class AppSettings {
         'Version': version,
         'ThemeOption': themeOption.index,
         'ThemeColorMode': themeColorMode.name,
+        'EnableStackedScrollEffect': enableStackedScrollEffect,
         'ArtistSeparator': artistSeparator,
         'LocalLyricFirst': localLyricFirst,
         'PreferredOnlineSource': preferredOnlineSource.name,

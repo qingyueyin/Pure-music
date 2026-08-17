@@ -276,24 +276,27 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
                 ],
                 const SizedBox(height: 16.0),
                 Expanded(
-                  child:
-                      widget.bodyOverride ??
-                      (widget.enableTabs
-                          ? DirectionalTabView(
-                              index: currentTabIndex,
-                              children: [
-                                _buildSecondaryContent(
-                                  multiSelectController,
-                                  scheme,
-                                ),
-                                if (hasTertiaryContent)
-                                  _buildTertiaryContent(scheme),
-                              ],
-                            )
-                          : _buildCombinedContent(
-                              multiSelectController,
-                              scheme,
-                            )),
+                  child: ListenableBuilder(
+                    listenable: AppSettings.listMotionNotifier,
+                    builder: (context, _) =>
+                        widget.bodyOverride ??
+                        (widget.enableTabs
+                            ? DirectionalTabView(
+                                index: currentTabIndex,
+                                children: [
+                                  _buildSecondaryContent(
+                                    multiSelectController,
+                                    scheme,
+                                  ),
+                                  if (hasTertiaryContent)
+                                    _buildTertiaryContent(scheme),
+                                ],
+                              )
+                            : _buildCombinedContent(
+                                multiSelectController,
+                                scheme,
+                              )),
+                  ),
                 ),
               ],
             ),
@@ -355,89 +358,94 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
     MultiSelectController<S>? multiSelectController,
     ColorScheme scheme,
   ) {
+    final enableStackedEffect = AppSettings.instance.enableStackedScrollEffect;
     return Material(
       borderRadius: AppRadius.smCircular,
       type: MaterialType.transparency,
       child: LayoutBuilder(
         builder: (context, constraints) {
           final maxCrossAxisExtent = gridDelegate.maxCrossAxisExtent;
-          final crossAxisCount =
-              ((constraints.maxWidth - 32) / maxCrossAxisExtent)
-                  .floor()
-                  .clamp(1, 100);
+          final crossAxisCount = maxExtentGridCrossAxisCount(
+            crossAxisExtent: constraints.maxWidth,
+            maxCrossAxisExtent: maxCrossAxisExtent,
+            crossAxisSpacing: gridDelegate.crossAxisSpacing,
+          );
           return CustomScrollView(
-        controller: _secondaryScrollController,
-        slivers: [
-          switch (currContentView) {
-            ContentView.list
-                when widget.secondaryContentSectionBuilder != null =>
-              SliverList.builder(
-                itemCount: widget.secondaryContent.length,
-                itemBuilder: (context, i) {
-                  final item = widget.secondaryContent[i];
-                  final section = widget.secondaryContentSectionBuilder!(
-                    context,
-                    item,
-                    i,
-                  );
-                  return Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      ?section,
-                      SizedBox(
-                        height: 64,
-                        child: widget.secondaryContentBuilder(
-                          context,
-                          item,
-                          i,
-                          multiSelectController,
-                          ContentView.list,
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ContentView.list => SliverFixedExtentList.builder(
-              itemExtent: 64,
-              itemCount: widget.secondaryContent.length,
-              itemBuilder: (context, i) => StackedSliverItem(
-                controller: _secondaryScrollController,
-                rowIndex: i,
-                itemExtent: 64,
-                child: widget.secondaryContentBuilder(
-                  context,
-                  widget.secondaryContent[i],
-                  i,
-                  multiSelectController,
-                  ContentView.list,
+            controller: _secondaryScrollController,
+            slivers: [
+              switch (currContentView) {
+                ContentView.list
+                    when widget.secondaryContentSectionBuilder != null =>
+                  SliverList.builder(
+                    itemCount: widget.secondaryContent.length,
+                    itemBuilder: (context, i) {
+                      final item = widget.secondaryContent[i];
+                      final section = widget.secondaryContentSectionBuilder!(
+                        context,
+                        item,
+                        i,
+                      );
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ?section,
+                          SizedBox(
+                            height: 64,
+                            child: widget.secondaryContentBuilder(
+                              context,
+                              item,
+                              i,
+                              multiSelectController,
+                              ContentView.list,
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ContentView.list => SliverFixedExtentList.builder(
+                  itemExtent: 64,
+                  itemCount: widget.secondaryContent.length,
+                  itemBuilder: (context, i) => StackedSliverItem(
+                    controller: _secondaryScrollController,
+                    rowIndex: i,
+                    itemExtent: 64,
+                    enabled: enableStackedEffect,
+                    child: widget.secondaryContentBuilder(
+                      context,
+                      widget.secondaryContent[i],
+                      i,
+                      multiSelectController,
+                      ContentView.list,
+                    ),
+                  ),
                 ),
-              ),
-            ),
-            ContentView.table => SliverGrid.builder(
-              gridDelegate: gridDelegate,
-              itemCount: widget.secondaryContent.length,
-              itemBuilder: (context, i) => StackedSliverItem(
-                controller: _secondaryScrollController,
-                rowIndex: i ~/ crossAxisCount,
-                itemExtent: gridDelegate.mainAxisExtent! +
-                    gridDelegate.mainAxisSpacing,
-                child: widget.secondaryContentBuilder(
-                  context,
-                  widget.secondaryContent[i],
-                  i,
-                  multiSelectController,
-                  ContentView.table,
+                ContentView.table => SliverGrid.builder(
+                  gridDelegate: gridDelegate,
+                  itemCount: widget.secondaryContent.length,
+                  itemBuilder: (context, i) => StackedSliverItem(
+                    controller: _secondaryScrollController,
+                    rowIndex: i ~/ crossAxisCount,
+                    itemExtent:
+                        gridDelegate.mainAxisExtent! +
+                        gridDelegate.mainAxisSpacing,
+                    enabled: enableStackedEffect,
+                    child: widget.secondaryContentBuilder(
+                      context,
+                      widget.secondaryContent[i],
+                      i,
+                      multiSelectController,
+                      ContentView.table,
+                    ),
+                  ),
                 ),
-              ),
-            ),
-          },
-          const SliverPadding(padding: EdgeInsets.only(bottom: 96.0)),
-        ],
-      );
-    },
-  ),
-);
+              },
+              const SliverPadding(padding: EdgeInsets.only(bottom: 96.0)),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   Widget _buildTertiaryContent(ColorScheme scheme) {
@@ -446,167 +454,180 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
         widget.tertiaryContentBuilder == null) {
       return const SizedBox.shrink();
     }
+    final enableStackedEffect = AppSettings.instance.enableStackedScrollEffect;
     return Material(
       borderRadius: AppRadius.smCircular,
       type: MaterialType.transparency,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final crossAxisCount =
-              ((constraints.maxWidth - 32) / 300).floor().clamp(1, 100);
+          final crossAxisCount = maxExtentGridCrossAxisCount(
+            crossAxisExtent: constraints.maxWidth,
+            maxCrossAxisExtent: 300,
+            crossAxisSpacing: 8,
+          );
           return CustomScrollView(
-        controller: _tertiaryScrollController,
-        slivers: [
-          SliverGrid.builder(
-            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: 300,
-              mainAxisExtent: 72,
-              mainAxisSpacing: 8.0,
-              crossAxisSpacing: 8.0,
-            ),
-            itemCount: widget.tertiaryContent!.length,
-            itemBuilder: (context, i) => StackedSliverItem(
-              controller: _tertiaryScrollController,
-              rowIndex: i ~/ crossAxisCount,
-              itemExtent: 80,
-              child: widget.tertiaryContentBuilder!(
-                context,
-                widget.tertiaryContent![i],
-                i,
-                null,
-                ContentView.list,
+            controller: _tertiaryScrollController,
+            slivers: [
+              SliverGrid.builder(
+                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 300,
+                  mainAxisExtent: 72,
+                  mainAxisSpacing: 8.0,
+                  crossAxisSpacing: 8.0,
+                ),
+                itemCount: widget.tertiaryContent!.length,
+                itemBuilder: (context, i) => StackedSliverItem(
+                  controller: _tertiaryScrollController,
+                  rowIndex: i ~/ crossAxisCount,
+                  itemExtent: 80,
+                  enabled: enableStackedEffect,
+                  child: widget.tertiaryContentBuilder!(
+                    context,
+                    widget.tertiaryContent![i],
+                    i,
+                    null,
+                    ContentView.list,
+                  ),
+                ),
               ),
-            ),
-          ),
-          const SliverPadding(padding: EdgeInsets.only(bottom: 96.0)),
-        ],
-      );
-    },
-  ),
-);
+              const SliverPadding(padding: EdgeInsets.only(bottom: 96.0)),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   Widget _buildCombinedContent(
     MultiSelectController<S>? multiSelectController,
     ColorScheme scheme,
   ) {
+    final enableStackedEffect = AppSettings.instance.enableStackedScrollEffect;
     return Material(
       borderRadius: AppRadius.smCircular,
       type: MaterialType.transparency,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final crossAxisCount =
-              ((constraints.maxWidth - 32) / 300).floor().clamp(1, 100);
+          final crossAxisCount = maxExtentGridCrossAxisCount(
+            crossAxisExtent: constraints.maxWidth,
+            maxCrossAxisExtent: 300,
+            crossAxisSpacing: 8,
+          );
           return CustomScrollView(
-        controller: _combinedScrollController,
-        slivers: [
-          switch (currContentView) {
-            ContentView.list
-                when widget.secondaryContentSectionBuilder != null =>
-              SliverList.builder(
-                itemCount: widget.secondaryContent.length,
-                itemBuilder: (context, i) {
-                  final item = widget.secondaryContent[i];
-                  final section = widget.secondaryContentSectionBuilder!(
-                    context,
-                    item,
-                    i,
-                  );
-                  return Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      ?section,
-                      SizedBox(
-                        height: 64,
-                        child: widget.secondaryContentBuilder(
-                          context,
-                          item,
-                          i,
-                          multiSelectController,
-                          ContentView.list,
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ContentView.list => SliverFixedExtentList.builder(
-              itemExtent: 64,
-              itemCount: widget.secondaryContent.length,
-              itemBuilder: (context, i) => StackedSliverItem(
-                controller: _combinedScrollController,
-                rowIndex: i,
-                itemExtent: 64,
-                child: widget.secondaryContentBuilder(
-                  context,
-                  widget.secondaryContent[i],
-                  i,
-                  multiSelectController,
-                  ContentView.list,
-                ),
-              ),
-            ),
-            ContentView.table => SliverGrid.builder(
-              gridDelegate: gridDelegate,
-              itemCount: widget.secondaryContent.length,
-              itemBuilder: (context, i) => StackedSliverItem(
-                controller: _combinedScrollController,
-                rowIndex: i ~/ crossAxisCount,
-                itemExtent: gridDelegate.mainAxisExtent! +
-                    gridDelegate.mainAxisSpacing,
-                child: widget.secondaryContentBuilder(
-                  context,
-                  widget.secondaryContent[i],
-                  i,
-                  multiSelectController,
-                  ContentView.table,
-                ),
-              ),
-            ),
-          },
-          if (widget.tertiaryContent != null &&
-              widget.tertiaryContent!.isNotEmpty &&
-              widget.tertiaryContentTitle != null) ...[
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Text(
-                  widget.tertiaryContentTitle!,
-                  style: TextStyle(
-                    color: scheme.onSurface,
-                    fontSize: AppType.sectionTitle,
-                    fontWeight: AppType.weightBold,
+            controller: _combinedScrollController,
+            slivers: [
+              switch (currContentView) {
+                ContentView.list
+                    when widget.secondaryContentSectionBuilder != null =>
+                  SliverList.builder(
+                    itemCount: widget.secondaryContent.length,
+                    itemBuilder: (context, i) {
+                      final item = widget.secondaryContent[i];
+                      final section = widget.secondaryContentSectionBuilder!(
+                        context,
+                        item,
+                        i,
+                      );
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ?section,
+                          SizedBox(
+                            height: 64,
+                            child: widget.secondaryContentBuilder(
+                              context,
+                              item,
+                              i,
+                              multiSelectController,
+                              ContentView.list,
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ContentView.list => SliverFixedExtentList.builder(
+                  itemExtent: 64,
+                  itemCount: widget.secondaryContent.length,
+                  itemBuilder: (context, i) => StackedSliverItem(
+                    controller: _combinedScrollController,
+                    rowIndex: i,
+                    itemExtent: 64,
+                    enabled: enableStackedEffect,
+                    child: widget.secondaryContentBuilder(
+                      context,
+                      widget.secondaryContent[i],
+                      i,
+                      multiSelectController,
+                      ContentView.list,
+                    ),
                   ),
                 ),
-              ),
-            ),
-            SliverGrid.builder(
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 300,
-                mainAxisExtent: 72,
-                mainAxisSpacing: 8.0,
-                crossAxisSpacing: 8.0,
-              ),
-              itemCount: widget.tertiaryContent!.length,
-              itemBuilder: (context, i) => StackedSliverItem(
-                controller: _combinedScrollController,
-                rowIndex: i ~/ crossAxisCount,
-                itemExtent: 80,
-                child: widget.tertiaryContentBuilder!(
-                  context,
-                  widget.tertiaryContent![i],
-                  i,
-                  null,
-                  ContentView.list,
+                ContentView.table => SliverGrid.builder(
+                  gridDelegate: gridDelegate,
+                  itemCount: widget.secondaryContent.length,
+                  itemBuilder: (context, i) => StackedSliverItem(
+                    controller: _combinedScrollController,
+                    rowIndex: i ~/ crossAxisCount,
+                    itemExtent:
+                        gridDelegate.mainAxisExtent! +
+                        gridDelegate.mainAxisSpacing,
+                    enabled: enableStackedEffect,
+                    child: widget.secondaryContentBuilder(
+                      context,
+                      widget.secondaryContent[i],
+                      i,
+                      multiSelectController,
+                      ContentView.table,
+                    ),
+                  ),
                 ),
-              ),
-            ),
-          ],
-          const SliverPadding(padding: EdgeInsets.only(bottom: 96.0)),
-        ],
-      );
-    },
-  ),
-);
+              },
+              if (widget.tertiaryContent != null &&
+                  widget.tertiaryContent!.isNotEmpty &&
+                  widget.tertiaryContentTitle != null) ...[
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Text(
+                      widget.tertiaryContentTitle!,
+                      style: TextStyle(
+                        color: scheme.onSurface,
+                        fontSize: AppType.sectionTitle,
+                        fontWeight: AppType.weightBold,
+                      ),
+                    ),
+                  ),
+                ),
+                SliverGrid.builder(
+                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: 300,
+                    mainAxisExtent: 72,
+                    mainAxisSpacing: 8.0,
+                    crossAxisSpacing: 8.0,
+                  ),
+                  itemCount: widget.tertiaryContent!.length,
+                  itemBuilder: (context, i) => StackedSliverItem(
+                    controller: _combinedScrollController,
+                    rowIndex: i ~/ crossAxisCount,
+                    itemExtent: 80,
+                    enabled: enableStackedEffect,
+                    child: widget.tertiaryContentBuilder!(
+                      context,
+                      widget.tertiaryContent![i],
+                      i,
+                      null,
+                      ContentView.list,
+                    ),
+                  ),
+                ),
+              ],
+              const SliverPadding(padding: EdgeInsets.only(bottom: 96.0)),
+            ],
+          );
+        },
+      ),
+    );
   }
 }
 
