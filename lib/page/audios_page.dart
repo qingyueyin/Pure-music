@@ -69,7 +69,6 @@ class _AudiosPageState extends State<AudiosPage> {
           enableSortMethod: canSortSongs,
           enableSortOrder: canSortSongs,
           enableContentViewSwitch: hasSongs,
-          enableStackedList: true,
           locateTo: widget.locateTo,
           multiSelectController: _multiSelectController,
           multiSelectViewActions: [

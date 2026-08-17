@@ -125,6 +125,7 @@ class _AlbumsPageState extends State<AlbumsPage> {
           enableSortMethod: canSortItems,
           enableSortOrder: canSortItems,
           enableContentViewSwitch: false,
+          enableStackedEffect: false,
           multiSelectController: _multiSelectController,
           multiSelectViewActions: [
             MultiSelectPlaySelectedAudios(

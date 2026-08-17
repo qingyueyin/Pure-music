@@ -85,6 +85,9 @@ class SmoothScrollPosition extends ScrollPositionWithSingleContext {
       _ticker = ticker;
     }
     if (!ticker.isActive) {
+      // 重启后 Ticker 的 elapsed 从 0 重新累计，重置上一帧时间，
+      // 否则首帧 dt 算出负数（clamp 成 0），在边界处误判为越界。
+      _lastTickElapsed = null;
       ticker.start();
     }
   }
@@ -217,7 +220,7 @@ class StackedListView extends StatelessWidget {
               // 视口高度异常（视图切换动画中尚未稳定）时不应用变换。
               if (viewportHeight < itemExtent * 2) return child!;
               final itemTop = index * itemExtent - offset;
-              return _StackedItemTransform(
+              return StackedItemTransform(
                 itemTop: itemTop,
                 itemExtent: itemExtent,
                 viewportHeight: viewportHeight,
@@ -231,8 +234,146 @@ class StackedListView extends StatelessWidget {
   }
 }
 
-class _StackedItemTransform extends StatelessWidget {
-  const _StackedItemTransform({
+/// 为列表视图提供平滑滚轮 physics 的便捷包装。
+class StackedScrollConfiguration extends StatelessWidget {
+  const StackedScrollConfiguration({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ScrollConfiguration(
+      behavior: ScrollConfiguration.of(context).copyWith(
+        physics: const SmoothScrollPhysics(),
+      ),
+      child: child,
+    );
+  }
+}
+
+/// 带堆叠动画的网格视图。
+class StackedGridView extends StatelessWidget {
+  const StackedGridView({
+    super.key,
+    required this.controller,
+    required this.gridDelegate,
+    required this.itemCount,
+    required this.itemBuilder,
+    this.padding,
+  });
+
+  final ScrollController controller;
+  final SliverGridDelegateWithMaxCrossAxisExtent gridDelegate;
+  final int itemCount;
+  final IndexedWidgetBuilder itemBuilder;
+  final EdgeInsetsGeometry? padding;
+
+  static const double maxShrink = 0.7;
+
+  @override
+  Widget build(BuildContext context) {
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final physics = reduceMotion ? null : const SmoothScrollPhysics();
+    final mainAxisExtent = gridDelegate.mainAxisExtent;
+    // mainAxisExtent 为空时（用 childAspectRatio 决定高度），
+    // 按最大格宽 / 宽高比 估算行高，堆叠动画对几像素误差不敏感。
+    final tileHeight = mainAxisExtent ??
+        gridDelegate.maxCrossAxisExtent / gridDelegate.childAspectRatio;
+    final mainAxisStep = tileHeight + gridDelegate.mainAxisSpacing;
+    final maxCrossAxisExtent = gridDelegate.maxCrossAxisExtent;
+    return ScrollConfiguration(
+      behavior: ScrollConfiguration.of(context).copyWith(physics: physics),
+      child: GridView.builder(
+        controller: controller,
+        padding: padding,
+        gridDelegate: gridDelegate,
+        itemCount: itemCount,
+        itemBuilder: (context, index) {
+          final child = itemBuilder(context, index);
+          if (reduceMotion) return child;
+          final width = MediaQuery.of(context).size.width;
+          final crossAxisCount =
+              ((width - (padding?.horizontal ?? 0)) / maxCrossAxisExtent)
+                  .floor()
+                  .clamp(1, 100);
+          final row = index ~/ crossAxisCount;
+          return AnimatedBuilder(
+            animation: controller,
+            child: child,
+            builder: (context, child) {
+              final attached = controller.positions;
+              if (attached.length != 1) {
+                if (attached.isEmpty) return child!;
+              }
+              final position = attached.first;
+              final offset = position.pixels;
+              final viewportHeight = position.viewportDimension;
+              if (viewportHeight < mainAxisStep * 2) return child!;
+              final itemTop = row * mainAxisStep - offset;
+              return StackedItemTransform(
+                itemTop: itemTop,
+                itemExtent: mainAxisStep,
+                viewportHeight: viewportHeight,
+                child: child!,
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// 给 sliver 列表项包堆叠变换（用于 CustomScrollView / SliverFixedExtentList /
+/// SliverGrid 等 sliver 场景）。
+///
+/// [rowIndex] 是该 item 所在的行号（单列列表即 index，网格为 index ~/ crossAxisCount）。
+/// [itemExtent] 是行的主轴步长（含间距）。
+class StackedSliverItem extends StatelessWidget {
+  const StackedSliverItem({
+    super.key,
+    required this.controller,
+    required this.rowIndex,
+    required this.itemExtent,
+    required this.child,
+  });
+
+  final ScrollController controller;
+  final int rowIndex;
+  final double itemExtent;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    if (reduceMotion) return child;
+    return AnimatedBuilder(
+      animation: controller,
+      child: child,
+      builder: (context, child) {
+        final attached = controller.positions;
+        if (attached.length != 1) {
+          if (attached.isEmpty) return child!;
+        }
+        final position = attached.first;
+        final offset = position.pixels;
+        final viewportHeight = position.viewportDimension;
+        if (viewportHeight < itemExtent * 2) return child!;
+        final itemTop = rowIndex * itemExtent - offset;
+        return StackedItemTransform(
+          itemTop: itemTop,
+          itemExtent: itemExtent,
+          viewportHeight: viewportHeight,
+          child: child!,
+        );
+      },
+    );
+  }
+}
+
+class StackedItemTransform extends StatelessWidget {
+  const StackedItemTransform({
+    super.key,
     required this.itemTop,
     required this.itemExtent,
     required this.viewportHeight,

@@ -9,6 +9,7 @@ import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/page/uni_page.dart';
 import 'package:pure_music/page/uni_page_components.dart';
+import 'package:pure_music/component/stacked_list_view.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
@@ -115,6 +116,9 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
   late ContentView currContentView = widget.pref.contentView;
   int _currentTabIndex = 0;
   final _searchController = TextEditingController();
+  final _secondaryScrollController = SmoothScrollController();
+  final _tertiaryScrollController = SmoothScrollController();
+  final _combinedScrollController = SmoothScrollController();
 
   @override
   void initState() {
@@ -125,6 +129,9 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
   @override
   void dispose() {
     _searchController.dispose();
+    _secondaryScrollController.dispose();
+    _tertiaryScrollController.dispose();
+    _combinedScrollController.dispose();
     super.dispose();
   }
 
@@ -169,6 +176,12 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
       currContentView = contentView;
       widget.pref.contentView = contentView;
     });
+  }
+
+  /// 估算网格每行列数（用于堆叠动画的行号计算）。
+  int _crossAxisCount(BuildContext context, double maxCrossAxisExtent) {
+    final width = MediaQuery.of(context).size.width;
+    return ((width - 32) / maxCrossAxisExtent).floor().clamp(1, 100);
   }
 
   @override
@@ -352,6 +365,7 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
       borderRadius: AppRadius.smCircular,
       type: MaterialType.transparency,
       child: CustomScrollView(
+        controller: _secondaryScrollController,
         slivers: [
           switch (currContentView) {
             ContentView.list
@@ -386,23 +400,35 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
             ContentView.list => SliverFixedExtentList.builder(
               itemExtent: 64,
               itemCount: widget.secondaryContent.length,
-              itemBuilder: (context, i) => widget.secondaryContentBuilder(
-                context,
-                widget.secondaryContent[i],
-                i,
-                multiSelectController,
-                ContentView.list,
+              itemBuilder: (context, i) => StackedSliverItem(
+                controller: _secondaryScrollController,
+                rowIndex: i,
+                itemExtent: 64,
+                child: widget.secondaryContentBuilder(
+                  context,
+                  widget.secondaryContent[i],
+                  i,
+                  multiSelectController,
+                  ContentView.list,
+                ),
               ),
             ),
             ContentView.table => SliverGrid.builder(
               gridDelegate: gridDelegate,
               itemCount: widget.secondaryContent.length,
-              itemBuilder: (context, i) => widget.secondaryContentBuilder(
-                context,
-                widget.secondaryContent[i],
-                i,
-                multiSelectController,
-                ContentView.table,
+              itemBuilder: (context, i) => StackedSliverItem(
+                controller: _secondaryScrollController,
+                rowIndex:
+                    i ~/ _crossAxisCount(context, gridDelegate.maxCrossAxisExtent),
+                itemExtent: gridDelegate.mainAxisExtent! +
+                    gridDelegate.mainAxisSpacing,
+                child: widget.secondaryContentBuilder(
+                  context,
+                  widget.secondaryContent[i],
+                  i,
+                  multiSelectController,
+                  ContentView.table,
+                ),
               ),
             ),
           },
@@ -422,6 +448,7 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
       borderRadius: AppRadius.smCircular,
       type: MaterialType.transparency,
       child: CustomScrollView(
+        controller: _tertiaryScrollController,
         slivers: [
           SliverGrid.builder(
             gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
@@ -431,12 +458,17 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
               crossAxisSpacing: 8.0,
             ),
             itemCount: widget.tertiaryContent!.length,
-            itemBuilder: (context, i) => widget.tertiaryContentBuilder!(
-              context,
-              widget.tertiaryContent![i],
-              i,
-              null,
-              ContentView.list,
+            itemBuilder: (context, i) => StackedSliverItem(
+              controller: _tertiaryScrollController,
+              rowIndex: i ~/ _crossAxisCount(context, 300),
+              itemExtent: 80,
+              child: widget.tertiaryContentBuilder!(
+                context,
+                widget.tertiaryContent![i],
+                i,
+                null,
+                ContentView.list,
+              ),
             ),
           ),
           const SliverPadding(padding: EdgeInsets.only(bottom: 96.0)),
@@ -453,6 +485,7 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
       borderRadius: AppRadius.smCircular,
       type: MaterialType.transparency,
       child: CustomScrollView(
+        controller: _combinedScrollController,
         slivers: [
           switch (currContentView) {
             ContentView.list
@@ -487,23 +520,35 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
             ContentView.list => SliverFixedExtentList.builder(
               itemExtent: 64,
               itemCount: widget.secondaryContent.length,
-              itemBuilder: (context, i) => widget.secondaryContentBuilder(
-                context,
-                widget.secondaryContent[i],
-                i,
-                multiSelectController,
-                ContentView.list,
+              itemBuilder: (context, i) => StackedSliverItem(
+                controller: _combinedScrollController,
+                rowIndex: i,
+                itemExtent: 64,
+                child: widget.secondaryContentBuilder(
+                  context,
+                  widget.secondaryContent[i],
+                  i,
+                  multiSelectController,
+                  ContentView.list,
+                ),
               ),
             ),
             ContentView.table => SliverGrid.builder(
               gridDelegate: gridDelegate,
               itemCount: widget.secondaryContent.length,
-              itemBuilder: (context, i) => widget.secondaryContentBuilder(
-                context,
-                widget.secondaryContent[i],
-                i,
-                multiSelectController,
-                ContentView.table,
+              itemBuilder: (context, i) => StackedSliverItem(
+                controller: _combinedScrollController,
+                rowIndex:
+                    i ~/ _crossAxisCount(context, gridDelegate.maxCrossAxisExtent),
+                itemExtent: gridDelegate.mainAxisExtent! +
+                    gridDelegate.mainAxisSpacing,
+                child: widget.secondaryContentBuilder(
+                  context,
+                  widget.secondaryContent[i],
+                  i,
+                  multiSelectController,
+                  ContentView.table,
+                ),
               ),
             ),
           },
@@ -531,12 +576,17 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
                 crossAxisSpacing: 8.0,
               ),
               itemCount: widget.tertiaryContent!.length,
-              itemBuilder: (context, i) => widget.tertiaryContentBuilder!(
-                context,
-                widget.tertiaryContent![i],
-                i,
-                null,
-                ContentView.list,
+              itemBuilder: (context, i) => StackedSliverItem(
+                controller: _combinedScrollController,
+                rowIndex: i ~/ _crossAxisCount(context, 300),
+                itemExtent: 80,
+                child: widget.tertiaryContentBuilder!(
+                  context,
+                  widget.tertiaryContent![i],
+                  i,
+                  null,
+                  ContentView.list,
+                ),
               ),
             ),
           ],

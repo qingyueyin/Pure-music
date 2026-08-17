@@ -156,7 +156,7 @@ class UniPage<T> extends StatefulWidget {
     this.gridDelegate,
     this.contentRevision,
     this.contentIsPrepared = false,
-    this.enableStackedList = false,
+    this.enableStackedEffect = true,
   });
 
   final PagePreference pref;
@@ -185,8 +185,8 @@ class UniPage<T> extends StatefulWidget {
   final Object? contentRevision;
   final bool contentIsPrepared;
 
-  /// 列表视图启用堆叠滚动效果（滚出顶部缩小淡出、底部进入渐显）。
-  final bool enableStackedList;
+  /// 是否启用堆叠滚动效果（平滑滚轮始终启用）。
+  final bool enableStackedEffect;
 
   @override
   State<UniPage<T>> createState() => _UniPageState<T>();
@@ -206,10 +206,8 @@ class _UniPageState<T> extends State<UniPage<T>> {
   late ContentView currContentView = widget.enableContentViewSwitch
       ? widget.pref.contentView
       : ContentView.table;
-  late final ScrollController listScrollController = widget.enableStackedList
-      ? SmoothScrollController()
-      : ScrollController();
-  late final ScrollController tableScrollController = ScrollController();
+  late final ScrollController listScrollController = SmoothScrollController();
+  late final ScrollController tableScrollController = SmoothScrollController();
   bool _showScrollToTop = false;
   int _sortRequest = 0;
   bool _backgroundSortPending = false;
@@ -331,19 +329,11 @@ class _UniPageState<T> extends State<UniPage<T>> {
     );
   }
 
-  /// 平滑滚动到指定位置；非平滑控制器回退到默认动画滚动。
+  /// 平滑滚动到指定位置。
   void _smoothScrollTo(double offset) {
     if (!scrollController.hasClients) return;
-    final position = scrollController.position;
-    if (position is SmoothScrollPosition) {
-      position.smoothScrollTo(offset);
-    } else {
-      scrollController.animateTo(
-        offset,
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.fastOutSlowIn,
-      );
-    }
+    final position = scrollController.position as SmoothScrollPosition;
+    position.smoothScrollTo(offset);
   }
 
   /// 按钮浮层不拦截滚轮：鼠标停留在浮层按钮上滚动时，
@@ -684,7 +674,7 @@ class _UniPageState<T> extends State<UniPage<T>> {
         return _UniPageEmptyState(title: widget.title);
       }
 
-      final listView = widget.enableStackedList
+      final listView = widget.enableStackedEffect
           ? StackedListView(
               controller: listScrollController,
               itemExtent: 64,
@@ -711,19 +701,34 @@ class _UniPageState<T> extends State<UniPage<T>> {
                 ContentView.list,
               ),
             );
-      final tableView = GridView.builder(
-        controller: tableScrollController,
-        padding: const EdgeInsets.only(bottom: 96.0, right: 20),
-        gridDelegate: widget.gridDelegate ?? gridDelegate,
-        itemCount: widget.contentList.length,
-        itemBuilder: (context, i) => widget.contentBuilder(
-          context,
-          widget.contentList[i],
-          i,
-          multiSelectController,
-          ContentView.table,
-        ),
-      );
+      final tableView = widget.enableStackedEffect
+          ? StackedGridView(
+              controller: tableScrollController,
+              gridDelegate: (widget.gridDelegate ?? gridDelegate)
+                  as SliverGridDelegateWithMaxCrossAxisExtent,
+              itemCount: widget.contentList.length,
+              padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+              itemBuilder: (context, i) => widget.contentBuilder(
+                context,
+                widget.contentList[i],
+                i,
+                multiSelectController,
+                ContentView.table,
+              ),
+            )
+          : GridView.builder(
+              controller: tableScrollController,
+              padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+              gridDelegate: widget.gridDelegate ?? gridDelegate,
+              itemCount: widget.contentList.length,
+              itemBuilder: (context, i) => widget.contentBuilder(
+                context,
+                widget.contentList[i],
+                i,
+                multiSelectController,
+                ContentView.table,
+              ),
+            );
 
       return Row(
         children: [

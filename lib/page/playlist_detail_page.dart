@@ -12,6 +12,7 @@ import 'package:pure_music/component/quiet_empty_state.dart';
 import 'package:pure_music/page/uni_detail_page.dart';
 import 'package:pure_music/page/uni_page.dart';
 import 'package:pure_music/page/uni_page_components.dart';
+import 'package:pure_music/component/stacked_list_view.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
@@ -369,41 +370,48 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
   Widget _buildReorderBody(List<Audio> contentList, ColorScheme scheme) {
     final paths = List<String>.from(widget.playlist.paths);
 
-    return ReorderableListView.builder(
-      padding: const EdgeInsets.only(bottom: 96.0),
-      buildDefaultDragHandles: false,
-      itemCount: contentList.length,
-      onReorderItem: (oldIndex, newIndex) {
-        final oldPaths = List<String>.from(widget.playlist.paths);
-        setState(() {
-          final item = paths.removeAt(oldIndex);
-          paths.insert(newIndex, item);
-          widget.playlist.replacePaths(paths);
-          _refreshCoverFutures();
-        });
-        savePlaylists().then((saved) {
-          if (saved || !mounted) return;
+    return ScrollConfiguration(
+      behavior: ScrollConfiguration.of(context).copyWith(
+        physics: const SmoothScrollPhysics(),
+      ),
+      child: ReorderableListView.builder(
+        padding: const EdgeInsets.only(bottom: 96.0),
+        buildDefaultDragHandles: false,
+        itemCount: contentList.length,
+        onReorderItem: (oldIndex, newIndex) {
+          final oldPaths = List<String>.from(widget.playlist.paths);
           setState(() {
-            widget.playlist.replacePaths(oldPaths);
+            final item = paths.removeAt(oldIndex);
+            paths.insert(newIndex, item);
+            widget.playlist.replacePaths(paths);
             _refreshCoverFutures();
           });
-          showTextOnSnackBar('保存歌单失败');
-        });
-      },
-      proxyDecorator: (child, index, animation) => Material(
-        elevation: 4,
-        borderRadius: AppRadius.smCircular,
-        child: child,
+          savePlaylists().then((saved) {
+            if (saved || !mounted) return;
+            setState(() {
+              widget.playlist.replacePaths(oldPaths);
+              _refreshCoverFutures();
+            });
+            showTextOnSnackBar('保存歌单失败');
+          });
+        },
+        proxyDecorator: (child, index, animation) => Material(
+          elevation: 4,
+          borderRadius: AppRadius.smCircular,
+          child: child,
+        ),
+        itemBuilder: (context, i) {
+          final audio = contentList[i];
+          final position = Scrollable.of(context).position;
+          return _ReorderItem(
+            key: ValueKey(audio.path),
+            audio: audio,
+            index: i,
+            colorScheme: scheme,
+            scrollPosition: position,
+          );
+        },
       ),
-      itemBuilder: (context, i) {
-        final audio = contentList[i];
-        return _ReorderItem(
-          key: ValueKey(audio.path),
-          audio: audio,
-          index: i,
-          colorScheme: scheme,
-        );
-      },
     );
   }
 }
@@ -414,16 +422,18 @@ class _ReorderItem extends StatelessWidget {
     required this.audio,
     required this.index,
     required this.colorScheme,
+    this.scrollPosition,
   });
 
   final Audio audio;
   final int index;
   final ColorScheme colorScheme;
+  final ScrollPosition? scrollPosition;
 
   @override
   Widget build(BuildContext context) {
     final scheme = colorScheme;
-    return SizedBox(
+    final child = SizedBox(
       height: 64,
       child: Material(
         color: Colors.transparent,
@@ -466,6 +476,23 @@ class _ReorderItem extends StatelessWidget {
           ),
         ),
       ),
+    );
+    final sp = scrollPosition;
+    if (sp == null) return child;
+    return AnimatedBuilder(
+      animation: sp,
+      child: child,
+      builder: (context, child) {
+        final offset = sp.pixels;
+        final viewportHeight = sp.viewportDimension;
+        if (viewportHeight < 128) return child!;
+        return StackedItemTransform(
+          itemTop: index * 64 - offset,
+          itemExtent: 64,
+          viewportHeight: viewportHeight,
+          child: child!,
+        );
+      },
     );
   }
 }
