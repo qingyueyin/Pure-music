@@ -49,6 +49,18 @@ class MotionCurve {
   static const entrance = Cubic(0.23, 1, 0.32, 1);
 }
 
+/// 标记子树处于堆叠滚动效果作用域内。
+/// 该作用域内的行会跳过入场动画，避免与堆叠变换叠加冲突。
+class StackedEffectScope extends InheritedWidget {
+  const StackedEffectScope({super.key, required super.child});
+
+  static bool isActive(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<StackedEffectScope>() != null;
+
+  @override
+  bool updateShouldNotify(StackedEffectScope oldWidget) => false;
+}
+
 class DirectionalListItemEntrance extends StatelessWidget {
   const DirectionalListItemEntrance({
     super.key,
@@ -61,8 +73,26 @@ class DirectionalListItemEntrance extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 入场动画已禁用：与堆叠滚动效果叠加时视觉冲突。
-    return child;
+    // 堆叠滚动效果作用域内禁用入场动画，避免与堆叠变换叠加冲突。
+    if (StackedEffectScope.isActive(context)) return child;
+    final scrollPosition = Scrollable.maybeOf(context)?.position;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final identity = this.identity;
+    final animateEntrance = !reduceMotion;
+    final offset = !animateEntrance
+        ? 0.0
+        : scrollPosition == null
+        ? _listItemEntryDistance
+        : _listItemEntryOffsets[scrollPosition] ?? _listItemEntryDistance;
+    return _DirectionalListItemEntrance(
+      key: identity == null ? null : ValueKey<Object>(identity),
+      scrollPosition: scrollPosition,
+      identity: identity,
+      offset: offset,
+      animateEntrance: animateEntrance,
+      reduceMotion: reduceMotion,
+      child: child,
+    );
   }
 }
 

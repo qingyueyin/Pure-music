@@ -19,10 +19,7 @@ class ShufflePlay<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     final enabled = contentList.isNotEmpty;
 
-    return Focus(
-      canRequestFocus: false,
-      descendantsAreFocusable: false,
-      child: FilledButton.icon(
+    return FilledButton.icon(
         onPressed: enabled
             ? () {
                 PlayService.instance.playbackService.shuffleAndPlay(
@@ -39,8 +36,7 @@ class ShufflePlay<T> extends StatelessWidget {
             EdgeInsets.symmetric(horizontal: 16),
           ),
         ),
-      ),
-    );
+      );
   }
 }
 
@@ -59,10 +55,7 @@ class SortMethodComboBox<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Focus(
-      canRequestFocus: false,
-      descendantsAreFocusable: false,
-      child: MenuAnchor(
+    return MenuAnchor(
         style: appMenuStyle,
         menuChildren: List.generate(
           sortMethods.length,
@@ -119,8 +112,7 @@ class SortMethodComboBox<T> extends StatelessWidget {
             ),
           );
         },
-      ),
-    );
+      );
   }
 }
 
@@ -133,10 +125,7 @@ class SortOrderSwitch<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     var isAscending = sortOrder == SortOrder.ascending;
-    return Focus(
-      canRequestFocus: false,
-      descendantsAreFocusable: false,
-      child: IconButton.filledTonal(
+    return IconButton.filledTonal(
         tooltip: "切换排序顺序（${isAscending ? "升序" : "降序"}）",
         onPressed: () => setSortOrder(
           isAscending ? SortOrder.decending : SortOrder.ascending,
@@ -164,7 +153,6 @@ class SortOrderSwitch<T> extends StatelessWidget {
             key: ValueKey(isAscending),
           ),
         ),
-      ),
     );
   }
 }
@@ -178,10 +166,7 @@ class ContentViewSwitch<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     var isListView = contentView == ContentView.list;
-    return Focus(
-      canRequestFocus: false,
-      descendantsAreFocusable: false,
-      child: IconButton.filledTonal(
+    return IconButton.filledTonal(
         tooltip: "切换页面视图（${isListView ? "列表" : "表格"}）",
         onPressed: () => setContentView(
           isListView ? ContentView.table : ContentView.list,
@@ -208,7 +193,6 @@ class ContentViewSwitch<T> extends StatelessWidget {
           isListView ? Symbols.list : Symbols.table,
           key: ValueKey(isListView),
         ),
-      ),
       ),
     );
   }

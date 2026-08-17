@@ -178,12 +178,6 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
     });
   }
 
-  /// 估算网格每行列数（用于堆叠动画的行号计算）。
-  int _crossAxisCount(BuildContext context, double maxCrossAxisExtent) {
-    final width = MediaQuery.of(context).size.width;
-    return ((width - 32) / maxCrossAxisExtent).floor().clamp(1, 100);
-  }
-
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -364,7 +358,14 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
     return Material(
       borderRadius: AppRadius.smCircular,
       type: MaterialType.transparency,
-      child: CustomScrollView(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final maxCrossAxisExtent = gridDelegate.maxCrossAxisExtent;
+          final crossAxisCount =
+              ((constraints.maxWidth - 32) / maxCrossAxisExtent)
+                  .floor()
+                  .clamp(1, 100);
+          return CustomScrollView(
         controller: _secondaryScrollController,
         slivers: [
           switch (currContentView) {
@@ -418,8 +419,7 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
               itemCount: widget.secondaryContent.length,
               itemBuilder: (context, i) => StackedSliverItem(
                 controller: _secondaryScrollController,
-                rowIndex:
-                    i ~/ _crossAxisCount(context, gridDelegate.maxCrossAxisExtent),
+                rowIndex: i ~/ crossAxisCount,
                 itemExtent: gridDelegate.mainAxisExtent! +
                     gridDelegate.mainAxisSpacing,
                 child: widget.secondaryContentBuilder(
@@ -434,8 +434,10 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
           },
           const SliverPadding(padding: EdgeInsets.only(bottom: 96.0)),
         ],
-      ),
-    );
+      );
+    },
+  ),
+);
   }
 
   Widget _buildTertiaryContent(ColorScheme scheme) {
@@ -447,7 +449,11 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
     return Material(
       borderRadius: AppRadius.smCircular,
       type: MaterialType.transparency,
-      child: CustomScrollView(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final crossAxisCount =
+              ((constraints.maxWidth - 32) / 300).floor().clamp(1, 100);
+          return CustomScrollView(
         controller: _tertiaryScrollController,
         slivers: [
           SliverGrid.builder(
@@ -460,7 +466,7 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
             itemCount: widget.tertiaryContent!.length,
             itemBuilder: (context, i) => StackedSliverItem(
               controller: _tertiaryScrollController,
-              rowIndex: i ~/ _crossAxisCount(context, 300),
+              rowIndex: i ~/ crossAxisCount,
               itemExtent: 80,
               child: widget.tertiaryContentBuilder!(
                 context,
@@ -473,8 +479,10 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
           ),
           const SliverPadding(padding: EdgeInsets.only(bottom: 96.0)),
         ],
-      ),
-    );
+      );
+    },
+  ),
+);
   }
 
   Widget _buildCombinedContent(
@@ -484,7 +492,11 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
     return Material(
       borderRadius: AppRadius.smCircular,
       type: MaterialType.transparency,
-      child: CustomScrollView(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final crossAxisCount =
+              ((constraints.maxWidth - 32) / 300).floor().clamp(1, 100);
+          return CustomScrollView(
         controller: _combinedScrollController,
         slivers: [
           switch (currContentView) {
@@ -538,8 +550,7 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
               itemCount: widget.secondaryContent.length,
               itemBuilder: (context, i) => StackedSliverItem(
                 controller: _combinedScrollController,
-                rowIndex:
-                    i ~/ _crossAxisCount(context, gridDelegate.maxCrossAxisExtent),
+                rowIndex: i ~/ crossAxisCount,
                 itemExtent: gridDelegate.mainAxisExtent! +
                     gridDelegate.mainAxisSpacing,
                 child: widget.secondaryContentBuilder(
@@ -578,7 +589,7 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
               itemCount: widget.tertiaryContent!.length,
               itemBuilder: (context, i) => StackedSliverItem(
                 controller: _combinedScrollController,
-                rowIndex: i ~/ _crossAxisCount(context, 300),
+                rowIndex: i ~/ crossAxisCount,
                 itemExtent: 80,
                 child: widget.tertiaryContentBuilder!(
                   context,
@@ -592,8 +603,10 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
           ],
           const SliverPadding(padding: EdgeInsets.only(bottom: 96.0)),
         ],
-      ),
-    );
+      );
+    },
+  ),
+);
   }
 }
 

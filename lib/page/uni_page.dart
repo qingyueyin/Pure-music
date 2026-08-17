@@ -409,23 +409,19 @@ class _UniPageState<T> extends State<UniPage<T>> {
                       child: child,
                     ),
                   ),
-                  child: Focus(
-                    canRequestFocus: false,
-                    descendantsAreFocusable: false,
-                    child: IconButton.filledTonal(
-                      tooltip: '定位正在播放',
-                      onPressed: () => _scrollToIndex(targetAt),
-                      style: ButtonStyle(
-                        fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
-                        padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-                        shape: WidgetStatePropertyAll(
-                          RoundedRectangleBorder(
-                          borderRadius: AppRadius.smCircular,
-                        ),
+                  child: IconButton.filledTonal(
+                    tooltip: '定位正在播放',
+                    onPressed: () => _scrollToIndex(targetAt),
+                    style: ButtonStyle(
+                      fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
+                      padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+                      shape: WidgetStatePropertyAll(
+                        RoundedRectangleBorder(
+                        borderRadius: AppRadius.smCircular,
                       ),
                     ),
-                    icon: const Icon(Symbols.my_location),
                   ),
+                  icon: const Icon(Symbols.my_location),
                 ),
               ),
             ),
@@ -466,12 +462,9 @@ class _UniPageState<T> extends State<UniPage<T>> {
                   ),
                 ),
               ),
-              child: Focus(
-                canRequestFocus: false,
-                descendantsAreFocusable: false,
-                child: IconButton.filledTonal(
-                  tooltip: '回到顶部',
-                  onPressed: () => _smoothScrollTo(0.0),
+              child: IconButton.filledTonal(
+                tooltip: '回到顶部',
+                onPressed: () => _smoothScrollTo(0.0),
                 style: ButtonStyle(
                   fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
                   padding: const WidgetStatePropertyAll(EdgeInsets.zero),
@@ -484,7 +477,6 @@ class _UniPageState<T> extends State<UniPage<T>> {
                 icon: const Icon(Symbols.vertical_align_top),
               ),
             ),
-          ),
           ),
         );
       },
