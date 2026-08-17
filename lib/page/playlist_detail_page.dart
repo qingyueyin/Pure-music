@@ -388,52 +388,51 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
 
   Widget _buildReorderBody(List<Audio> contentList, ColorScheme scheme) {
     final paths = List<String>.from(widget.playlist.paths);
+    final enableStackedEffect =
+        AppSettings.instance.enableStackedScrollEffect &&
+        !MediaQuery.disableAnimationsOf(context);
 
-    return ScrollConfiguration(
-      behavior: ScrollConfiguration.of(
-        context,
-      ).copyWith(physics: const SmoothScrollPhysics()),
-      child: ReorderableListView.builder(
-        scrollController: _reorderScrollController,
-        padding: const EdgeInsets.only(bottom: 96.0),
-        buildDefaultDragHandles: false,
-        itemCount: contentList.length,
-        onReorderItem: (oldIndex, newIndex) {
-          final oldPaths = List<String>.from(widget.playlist.paths);
+    return ReorderableListView.builder(
+      scrollController: _reorderScrollController,
+      physics: enableStackedEffect ? const SmoothScrollPhysics() : null,
+      padding: const EdgeInsets.only(bottom: 96.0),
+      buildDefaultDragHandles: false,
+      itemCount: contentList.length,
+      onReorderItem: (oldIndex, newIndex) {
+        final oldPaths = List<String>.from(widget.playlist.paths);
+        setState(() {
+          final item = paths.removeAt(oldIndex);
+          paths.insert(newIndex, item);
+          widget.playlist.replacePaths(paths);
+          _refreshCoverFutures();
+        });
+        savePlaylists().then((saved) {
+          if (saved || !mounted) return;
           setState(() {
-            final item = paths.removeAt(oldIndex);
-            paths.insert(newIndex, item);
-            widget.playlist.replacePaths(paths);
+            widget.playlist.replacePaths(oldPaths);
             _refreshCoverFutures();
           });
-          savePlaylists().then((saved) {
-            if (saved || !mounted) return;
-            setState(() {
-              widget.playlist.replacePaths(oldPaths);
-              _refreshCoverFutures();
-            });
-            showTextOnSnackBar('保存歌单失败');
-          });
-        },
-        proxyDecorator: (child, index, animation) => Material(
-          elevation: 4,
-          borderRadius: AppRadius.smCircular,
-          child: child,
-        ),
-        itemBuilder: (context, i) {
-          final audio = contentList[i];
-          final position = AppSettings.instance.enableStackedScrollEffect
-              ? Scrollable.of(context).position
-              : null;
-          return _ReorderItem(
-            key: ValueKey(audio.path),
-            audio: audio,
-            index: i,
-            colorScheme: scheme,
-            scrollPosition: position,
-          );
-        },
+          showTextOnSnackBar('保存歌单失败');
+        });
+      },
+      proxyDecorator: (child, index, animation) => Material(
+        elevation: 4,
+        borderRadius: AppRadius.smCircular,
+        child: child,
       ),
+      itemBuilder: (context, i) {
+        final audio = contentList[i];
+        final position = enableStackedEffect
+            ? Scrollable.of(context).position
+            : null;
+        return _ReorderItem(
+          key: ValueKey(audio.path),
+          audio: audio,
+          index: i,
+          colorScheme: scheme,
+          scrollPosition: position,
+        );
+      },
     );
   }
 }

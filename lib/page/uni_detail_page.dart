@@ -359,6 +359,8 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
     ColorScheme scheme,
   ) {
     final enableStackedEffect = AppSettings.instance.enableStackedScrollEffect;
+    final enableSmoothScrolling =
+        enableStackedEffect && !MediaQuery.disableAnimationsOf(context);
     return Material(
       borderRadius: AppRadius.smCircular,
       type: MaterialType.transparency,
@@ -372,6 +374,7 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
           );
           return CustomScrollView(
             controller: _secondaryScrollController,
+            physics: enableSmoothScrolling ? const SmoothScrollPhysics() : null,
             slivers: [
               switch (currContentView) {
                 ContentView.list
@@ -455,6 +458,8 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
       return const SizedBox.shrink();
     }
     final enableStackedEffect = AppSettings.instance.enableStackedScrollEffect;
+    final enableSmoothScrolling =
+        enableStackedEffect && !MediaQuery.disableAnimationsOf(context);
     return Material(
       borderRadius: AppRadius.smCircular,
       type: MaterialType.transparency,
@@ -467,6 +472,7 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
           );
           return CustomScrollView(
             controller: _tertiaryScrollController,
+            physics: enableSmoothScrolling ? const SmoothScrollPhysics() : null,
             slivers: [
               SliverGrid.builder(
                 gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
@@ -503,6 +509,8 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
     ColorScheme scheme,
   ) {
     final enableStackedEffect = AppSettings.instance.enableStackedScrollEffect;
+    final enableSmoothScrolling =
+        enableStackedEffect && !MediaQuery.disableAnimationsOf(context);
     return Material(
       borderRadius: AppRadius.smCircular,
       type: MaterialType.transparency,
@@ -515,6 +523,7 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
           );
           return CustomScrollView(
             controller: _combinedScrollController,
+            physics: enableSmoothScrolling ? const SmoothScrollPhysics() : null,
             slivers: [
               switch (currContentView) {
                 ContentView.list

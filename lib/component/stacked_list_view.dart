@@ -30,7 +30,7 @@ class SmoothScrollController extends ScrollController {
 /// 由滚动活动按摩擦模拟连续推进并自然减速，
 /// 让滚动位置本身连续变化，行变换随之平滑。拖拽与惯性滚动不受影响。
 class SmoothScrollPhysics extends ScrollPhysics {
-  const SmoothScrollPhysics({super.parent});
+  const SmoothScrollPhysics({super.parent = const ClampingScrollPhysics()});
 
   @override
   SmoothScrollPhysics applyTo(ScrollPhysics? ancestor) =>
@@ -62,8 +62,21 @@ class SmoothScrollPosition extends ScrollPositionWithSingleContext {
 
   static const _wheelTolerance = Tolerance(distance: 0.05, velocity: 0.5);
 
+  bool get _smoothScrollingEnabled {
+    ScrollPhysics? current = physics;
+    while (current != null) {
+      if (current is SmoothScrollPhysics) return true;
+      current = current.parent;
+    }
+    return false;
+  }
+
   @override
   void pointerScroll(double delta) {
+    if (!_smoothScrollingEnabled) {
+      super.pointerScroll(delta);
+      return;
+    }
     if (delta == 0.0) {
       goBallistic(0.0);
       return;

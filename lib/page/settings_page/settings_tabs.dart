@@ -514,7 +514,7 @@ class _StackedScrollEffectSwitchState
   Widget build(BuildContext context) {
     return SettingsTile(
       description: '堆叠滚动效果',
-      subtitle: '关闭后使用列表项入场动画',
+      subtitle: '关闭后恢复默认滚动与列表项入场动画',
       action: Switch(
         value: settings.enableStackedScrollEffect,
         onChanged: _updating ? null : _setEnabled,

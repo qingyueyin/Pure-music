@@ -340,6 +340,10 @@ class _UniPageState<T> extends State<UniPage<T>> {
   /// 按钮浮层不拦截滚轮：鼠标停留在浮层按钮上滚动时，
   /// 把滚轮位移转发给列表的平滑滚动。
   void _forwardWheelToList(double delta) {
+    if (!AppSettings.instance.enableStackedScrollEffect ||
+        MediaQuery.disableAnimationsOf(context)) {
+      return;
+    }
     if (currContentView != ContentView.list) return;
     if (!scrollController.hasClients) return;
     final position = scrollController.position;
@@ -665,6 +669,9 @@ class _UniPageState<T> extends State<UniPage<T>> {
         return _UniPageEmptyState(title: widget.title);
       }
 
+      final enableListMotion =
+          AppSettings.instance.enableStackedScrollEffect &&
+          !MediaQuery.disableAnimationsOf(context);
       final enableStackedEffect =
           widget.enableStackedEffect &&
           AppSettings.instance.enableStackedScrollEffect;
@@ -684,6 +691,7 @@ class _UniPageState<T> extends State<UniPage<T>> {
             )
           : ListView.builder(
               controller: listScrollController,
+              physics: enableListMotion ? const SmoothScrollPhysics() : null,
               padding: const EdgeInsets.only(bottom: 96.0, right: 20),
               itemCount: widget.contentList.length,
               itemExtent: 64,
@@ -713,6 +721,7 @@ class _UniPageState<T> extends State<UniPage<T>> {
             )
           : GridView.builder(
               controller: tableScrollController,
+              physics: enableListMotion ? const SmoothScrollPhysics() : null,
               padding: const EdgeInsets.only(bottom: 96.0, right: 20),
               gridDelegate: widget.gridDelegate ?? gridDelegate,
               itemCount: widget.contentList.length,
