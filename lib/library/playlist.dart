@@ -53,7 +53,6 @@ String? findImportedPlaylistLibraryPath({
 
 Future<void> readPlaylists() async {
   final stopwatch = Stopwatch()..start();
-  playlists.clear();
   try {
     final dir = await getAppDataDir();
     final jsonFile = File(p.join(dir.path, 'playlists.json'));
@@ -64,7 +63,9 @@ Future<void> readPlaylists() async {
     if (playlistCount == 0 && jsonFile.existsSync()) {
       final fromJson = _readPlaylistsFromJson(jsonFile);
       _writePlaylistsToDb(db, fromJson);
-      playlists.addAll(fromJson);
+      playlists
+        ..clear()
+        ..addAll(fromJson);
       logger.i(
         '[perf] playlists load=${stopwatch.elapsedMilliseconds}ms '
         'count=${playlists.length} migrated=true',
@@ -72,13 +73,17 @@ Future<void> readPlaylists() async {
       return;
     }
 
-    playlists.addAll(readPlaylistsFromDatabase(db));
+    final fromDatabase = readPlaylistsFromDatabase(db);
+    playlists
+      ..clear()
+      ..addAll(fromDatabase);
     logger.i(
       '[perf] playlists load=${stopwatch.elapsedMilliseconds}ms '
       'count=${playlists.length} migrated=false',
     );
   } catch (err, trace) {
     logger.e(err, stackTrace: trace);
+    rethrow;
   }
 }
 
@@ -107,18 +112,13 @@ List<Playlist> readPlaylistsFromDatabase(Database db) {
     }
   }
 
-  return playlistRows
-      .map((row) {
-        final id = row['id'] as int;
-        return Playlist(
-            row['name'] as String,
-            pathsByPlaylistId[id] ?? const [],
-          )
-          ..id = id
-          ..coverSource = row['cover_source'] as String?
-          .._addedAt.addAll(addedAtByPlaylistId[id] ?? const {});
-      })
-      .toList();
+  return playlistRows.map((row) {
+    final id = row['id'] as int;
+    return Playlist(row['name'] as String, pathsByPlaylistId[id] ?? const [])
+      ..id = id
+      ..coverSource = row['cover_source'] as String?
+      .._addedAt.addAll(addedAtByPlaylistId[id] ?? const {});
+  }).toList();
 }
 
 Future<bool> savePlaylists() async {
@@ -207,13 +207,18 @@ void _writePlaylistsToDb(Database db, List<Playlist> playlists) {
       if (existingId != null) {
         playlistId = existingId;
         keptIds.add(playlistId);
-        db.execute('UPDATE playlists SET cover_source = ? WHERE id = ?',
-            [pl.coverSource, playlistId]);
-        db.execute(
-            'DELETE FROM playlist_items WHERE playlist_id = ?', [playlistId]);
+        db.execute('UPDATE playlists SET cover_source = ? WHERE id = ?', [
+          pl.coverSource,
+          playlistId,
+        ]);
+        db.execute('DELETE FROM playlist_items WHERE playlist_id = ?', [
+          playlistId,
+        ]);
       } else {
-        db.execute('INSERT INTO playlists(name, cover_source) VALUES(?, ?)',
-            [pl.name, pl.coverSource]);
+        db.execute('INSERT INTO playlists(name, cover_source) VALUES(?, ?)', [
+          pl.name,
+          pl.coverSource,
+        ]);
         playlistId = db.lastInsertRowId;
         keptIds.add(playlistId);
       }
@@ -328,10 +333,14 @@ class Playlist {
   List<Audio>? _audiosCache;
   AudioLibrary? _audiosCacheLibrary;
 
-  Playlist(this.name, List<String> paths) : paths = _uniquePlaylistPaths(paths) {
+  Playlist(this.name, List<String> paths)
+    : paths = _uniquePlaylistPaths(paths) {
     var ms = DateTime.now().millisecondsSinceEpoch;
     for (final path in this.paths) {
-      _addedAt.putIfAbsent(_playlistPathKey(path), () => DateTime.fromMillisecondsSinceEpoch(ms++));
+      _addedAt.putIfAbsent(
+        _playlistPathKey(path),
+        () => DateTime.fromMillisecondsSinceEpoch(ms++),
+      );
     }
   }
 
@@ -341,8 +350,10 @@ class Playlist {
   }
 
   Set<String> get _pathKeySet {
-    return _pathKeys ??=
-        paths.map(_playlistPathKey).where((key) => key.isNotEmpty).toSet();
+    return _pathKeys ??= paths
+        .map(_playlistPathKey)
+        .where((key) => key.isNotEmpty)
+        .toSet();
   }
 
   void _invalidateAudioCache() {
@@ -475,7 +486,9 @@ class Playlist {
     _addedAt.clear();
     var ms = DateTime.now().millisecondsSinceEpoch;
     for (final path in this.paths) {
-      _addedAt[_playlistPathKey(path)] = DateTime.fromMillisecondsSinceEpoch(ms++);
+      _addedAt[_playlistPathKey(path)] = DateTime.fromMillisecondsSinceEpoch(
+        ms++,
+      );
     }
     _invalidateAudioCache();
   }
