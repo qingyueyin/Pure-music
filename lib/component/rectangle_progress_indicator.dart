@@ -1,17 +1,31 @@
 import 'dart:async';
+import 'package:flutter/gestures.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:flutter/material.dart';
+
+/// 进度条拖拽的激活手势类型。
+enum _DragGestureType { longPress, drag }
 
 class RectangleProgressIndicator extends StatefulWidget {
   const RectangleProgressIndicator({
     super.key,
     required this.size,
     required this.child,
+    this.onSeek,
+    this.onDragActiveChanged,
   });
 
   final Size size;
   final Widget child;
+
+  /// 长按拖拽结束后回调（fraction 0-1，相对进度条宽度）。
+  /// 为 null 时禁用拖拽交互。
+  final ValueChanged<double>? onSeek;
+
+  /// 拖拽激活状态变化回调（长按开始 true，结束/取消 false）。
+  /// 外层可用它控制整个控件的缩放反馈。
+  final ValueChanged<bool>? onDragActiveChanged;
 
   @override
   State<RectangleProgressIndicator> createState() =>
@@ -31,6 +45,15 @@ class _RectangleProgressIndicatorState
   /// position / length, [0, 1]
   final progress = ValueNotifier<double>(0);
 
+  /// 长按拖拽中的预览进度（0-1），null 表示未拖拽。
+  double? _dragFraction;
+
+  /// 当前激活拖拽的手势类型（长按 or 拖动），避免竞技场失败方误结束拖拽。
+  _DragGestureType? _activeDragGesture;
+
+  /// 长按触发时长（毫秒），默认 500，这里缩短为 250。
+  static const _longPressDuration = Duration(milliseconds: 250);
+
   @override
   void initState() {
     super.initState();
@@ -41,6 +64,8 @@ class _RectangleProgressIndicatorState
   }
 
   void _syncNativeProgress() {
+    // 拖拽中冻结本地同步值，避免结束后进度跳回 seek 前的位置。
+    if (_dragFraction != null) return;
     _syncedLength = playbackService.length;
     _syncedPosition = playbackService.position;
     _lastNativeSyncMs = _clock.elapsedMilliseconds;
@@ -48,6 +73,7 @@ class _RectangleProgressIndicatorState
   }
 
   void _emitProgressFromLocal() {
+    if (_dragFraction != null) return;
     final elapsedMs = _clock.elapsedMilliseconds - _lastNativeSyncMs;
     final isPlaying =
         playbackService.playerStateNotifier.value == PlayerState.playing;
@@ -76,13 +102,116 @@ class _RectangleProgressIndicatorState
     });
   }
 
+  void _handleLongPressStart(LongPressStartDetails d) {
+    if (_activeDragGesture != null) return;
+    _activeDragGesture = _DragGestureType.longPress;
+    final width = widget.size.width;
+    if (width <= 0) return;
+    _dragFraction = (d.localPosition.dx / width).clamp(0.0, 1.0);
+    progress.value = _dragFraction!;
+    widget.onDragActiveChanged?.call(true);
+  }
+
+  void _handleLongPressMove(LongPressMoveUpdateDetails d) {
+    final width = widget.size.width;
+    if (width <= 0 || _dragFraction == null) return;
+    _dragFraction = (d.localPosition.dx / width).clamp(0.0, 1.0);
+    progress.value = _dragFraction!;
+  }
+
+  void _handleLongPressEnd(LongPressEndDetails d) {
+    if (_activeDragGesture != _DragGestureType.longPress) return;
+    _activeDragGesture = null;
+    _endDrag(applySeek: true);
+  }
+
+  void _handleLongPressCancel() {
+    if (_activeDragGesture != _DragGestureType.longPress) return;
+    _activeDragGesture = null;
+    _endDrag(applySeek: false);
+  }
+
+  void _handleDragStart(DragStartDetails d) {
+    if (_activeDragGesture != null) return;
+    _activeDragGesture = _DragGestureType.drag;
+    final width = widget.size.width;
+    if (width <= 0) return;
+    _dragFraction = (d.localPosition.dx / width).clamp(0.0, 1.0);
+    progress.value = _dragFraction!;
+    widget.onDragActiveChanged?.call(true);
+  }
+
+  void _handleDragUpdate(DragUpdateDetails d) {
+    if (_activeDragGesture != _DragGestureType.drag) return;
+    final width = widget.size.width;
+    if (width <= 0 || _dragFraction == null) return;
+    _dragFraction = (d.localPosition.dx / width).clamp(0.0, 1.0);
+    progress.value = _dragFraction!;
+  }
+
+  void _handleDragEnd(DragEndDetails d) {
+    if (_activeDragGesture != _DragGestureType.drag) return;
+    _activeDragGesture = null;
+    _endDrag(applySeek: true);
+  }
+
+  void _handleDragCancel() {
+    if (_activeDragGesture != _DragGestureType.drag) return;
+    _activeDragGesture = null;
+    _endDrag(applySeek: false);
+  }
+
+  void _endDrag({required bool applySeek}) {
+    final fraction = _dragFraction;
+    _dragFraction = null;
+    widget.onDragActiveChanged?.call(false);
+    if (fraction == null || !applySeek) return;
+    // 乐观更新本地同步值到目标位置，避免 seek 异步生效期间进度跳回旧值。
+    _syncedPosition = fraction * _syncedLength;
+    _lastNativeSyncMs = _clock.elapsedMilliseconds;
+    progress.value = _syncedLength > 0 ? fraction.clamp(0.0, 1.0) : 0;
+    widget.onSeek?.call(fraction);
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return CustomPaint(
-      size: widget.size,
-      painter: RectangleProgressPainter(progress: progress, scheme: scheme),
-      child: widget.child,
+    final hasSeek = widget.onSeek != null;
+    return RawGestureDetector(
+      behavior: HitTestBehavior.opaque,
+      gestures: {
+        LongPressGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
+              () => LongPressGestureRecognizer(
+                duration: _longPressDuration,
+              ),
+              (instance) {
+                instance
+                  ..onLongPressStart = hasSeek ? _handleLongPressStart : null
+                  ..onLongPressMoveUpdate =
+                      hasSeek ? _handleLongPressMove : null
+                  ..onLongPressEnd = hasSeek ? _handleLongPressEnd : null
+                  ..onLongPressCancel =
+                      hasSeek ? _handleLongPressCancel : null;
+              },
+            ),
+        HorizontalDragGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<HorizontalDragGestureRecognizer>(
+              () => HorizontalDragGestureRecognizer(),
+              (instance) {
+                instance
+                  ..onStart = hasSeek ? _handleDragStart : null
+                  ..onUpdate = hasSeek ? _handleDragUpdate : null
+                  ..onEnd = hasSeek ? _handleDragEnd : null
+                  ..onCancel = hasSeek ? _handleDragCancel : null;
+              },
+            ),
+      },
+      child: CustomPaint(
+        size: widget.size,
+        painter: RectangleProgressPainter(progress: progress, scheme: scheme),
+        child: widget.child,
+      ),
     );
   }
 

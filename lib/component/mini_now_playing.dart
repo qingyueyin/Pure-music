@@ -14,8 +14,16 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
-class MiniNowPlaying extends StatelessWidget {
+class MiniNowPlaying extends StatefulWidget {
   const MiniNowPlaying({super.key});
+
+  @override
+  State<MiniNowPlaying> createState() => _MiniNowPlayingState();
+}
+
+class _MiniNowPlayingState extends State<MiniNowPlaying> {
+  /// 拖拽进度条时整个卡片平滑放大，松开后缩小回原样。
+  bool _dragActive = false;
 
   @override
   Widget build(BuildContext context) {
@@ -32,26 +40,46 @@ class MiniNowPlaying extends StatelessWidget {
             ),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 600.0),
-              child: SizedBox(
-                height: 64.0,
-                width: double.infinity,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: AppRadius.smCircular,
-                    boxShadow: kElevationToShadow[4],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: AppRadius.smCircular,
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        return RectangleProgressIndicator(
-                          size: Size(
-                            constraints.maxWidth,
-                            constraints.maxHeight,
-                          ),
-                          child: const _NowPlayingForeground(),
-                        );
-                      },
+              child: AnimatedScale(
+                scale: _dragActive ? 1.04 : 1.0,
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOutCubic,
+                child: SizedBox(
+                  height: 64.0,
+                  width: double.infinity,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: AppRadius.smCircular,
+                      boxShadow: kElevationToShadow[4],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: AppRadius.smCircular,
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          return RectangleProgressIndicator(
+                            size: Size(
+                              constraints.maxWidth,
+                              constraints.maxHeight,
+                            ),
+                            onSeek: (fraction) {
+                              final playbackService =
+                                  PlayService.instance.playbackService;
+                              final length = playbackService.length;
+                              if (length <= 0 ||
+                                  playbackService.nowPlaying == null) {
+                                return;
+                              }
+                              playbackService.seek(fraction * length);
+                            },
+                            onDragActiveChanged: (active) {
+                              if (mounted && _dragActive != active) {
+                                setState(() => _dragActive = active);
+                              }
+                            },
+                            child: const _NowPlayingForeground(),
+                          );
+                        },
+                      ),
                     ),
                   ),
                 ),
@@ -136,6 +164,8 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
               context.push(app_paths.NOW_PLAYING_PAGE);
             },
             borderRadius: AppRadius.smCircular,
+            splashFactory: NoSplash.splashFactory,
+            highlightColor: Colors.transparent,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8.0),
               child: ListenableBuilder(
