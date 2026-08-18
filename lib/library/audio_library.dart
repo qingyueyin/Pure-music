@@ -421,7 +421,7 @@ class AudioLibrary {
       );
       final objectBatchSize = libraryObjectBatchSizeFor(
         processorBudget: applicationProcessorBudget,
-        hasPlaybackSession: PlayService.instance.hasPlaybackSession,
+        hasPlaybackSession: PlayService.hasInitializedPlaybackSession,
       );
 
       if (!File(sqlitePath).existsSync() && File(indexPath).existsSync()) {
@@ -960,7 +960,7 @@ class AudioLibrary {
     required _PageOrderCacheSpec? cacheSpec,
     required bool restoredAll,
   }) async {
-    final protectPlayback = PlayService.instance.hasPlaybackSession;
+    final protectPlayback = PlayService.hasInitializedPlaybackSession;
     if (shouldDeferSecondaryPagePreparation(
       processorBudget: applicationProcessorBudget,
       initialLoad: initialLoad,
@@ -994,12 +994,12 @@ class AudioLibrary {
     try {
       final delay = deferredSecondaryPagePreparationDelayFor(
         processorBudget: applicationProcessorBudget,
-        hasPlaybackSession: PlayService.instance.hasPlaybackSession,
+        hasPlaybackSession: PlayService.hasInitializedPlaybackSession,
       );
       if (delay > Duration.zero) {
         logger.i(
           '[perf] secondary page preparation deferred=${delay.inMilliseconds}ms '
-          'playback=${PlayService.instance.hasPlaybackSession}',
+          'playback=${PlayService.hasInitializedPlaybackSession}',
         );
         await Future<void>.delayed(delay);
       }
@@ -1100,7 +1100,7 @@ class AudioLibrary {
     final result = Uint32List(items.length);
     var batchRemaining = libraryObjectBatchSizeFor(
       processorBudget: applicationProcessorBudget,
-      hasPlaybackSession: PlayService.instance.hasPlaybackSession,
+      hasPlaybackSession: PlayService.hasInitializedPlaybackSession,
     );
     for (var position = 0; position < items.length; position++) {
       final index = indexOf(items[position]);
@@ -1114,7 +1114,7 @@ class AudioLibrary {
         if (!isCurrent()) return null;
         batchRemaining = libraryObjectBatchSizeFor(
           processorBudget: applicationProcessorBudget,
-          hasPlaybackSession: PlayService.instance.hasPlaybackSession,
+          hasPlaybackSession: PlayService.hasInitializedPlaybackSession,
         );
       }
     }
@@ -1124,7 +1124,7 @@ class AudioLibrary {
   Future<void> preparePreferredPageSnapshots() async {
     final concurrency = libraryPagePreparationConcurrencyFor(
       processorBudget: applicationProcessorBudget,
-      hasPlaybackSession: PlayService.instance.hasPlaybackSession,
+      hasPlaybackSession: PlayService.hasInitializedPlaybackSession,
     );
     final prepareAudio = preparedAudiosPage == null;
     if (prepareAudio && concurrency >= 2) {
@@ -1249,7 +1249,7 @@ class AudioLibrary {
         (concurrencyLimit ??
                 libraryPagePreparationConcurrencyFor(
                   processorBudget: applicationProcessorBudget,
-                  hasPlaybackSession: PlayService.instance.hasPlaybackSession,
+                  hasPlaybackSession: PlayService.hasInitializedPlaybackSession,
                 ))
             .clamp(1, 2)
             .toInt();
@@ -1788,7 +1788,7 @@ class AudioLibrary {
   void evictStaleCoverBytes() {
     final now = DateTime.now().millisecondsSinceEpoch;
     const coldMs = 2 * 60 * 1000;
-    final playingPath = PlayService.instance.playbackService.nowPlaying?.path;
+    final playingPath = PlayService.existingPlaybackService?.nowPlaying?.path;
     int evicted = 0;
     final activePaths = List<String>.from(_coverCachePaths);
     for (final path in activePaths) {

@@ -136,12 +136,12 @@ class _EntryState extends State<Entry>
   void onWindowMinimize() {
     MemoryMonitorService.instance.trimAll();
     logger.i('[mem] window minimized - cleared invisible caches');
-    PlayService.instance.playbackService.startSmtcKeepAlive();
+    PlayService.existingPlaybackService?.startSmtcKeepAlive();
   }
 
   @override
   void onWindowRestore() {
-    PlayService.instance.playbackService.stopSmtcKeepAlive();
+    PlayService.existingPlaybackService?.stopSmtcKeepAlive();
   }
 
   @override
@@ -233,7 +233,7 @@ class _EntryState extends State<Entry>
   void _onLowMemory() {
     CoverImageCache.instance.clear();
     AudioLibrary.instance.evictAllCoversExcept(
-      PlayService.instance.playbackService.nowPlaying?.path,
+      PlayService.existingPlaybackService?.nowPlaying?.path,
       includeCollectionCovers: true,
     );
     PaintingBinding.instance.imageCache.clear();

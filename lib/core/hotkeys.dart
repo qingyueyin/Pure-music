@@ -17,14 +17,15 @@ class HotkeysHelper {
   static bool _windowToggleInProgress = false;
 
   static bool _canHandlePlaybackHotkey() => canHandleInAppPlaybackHotkey(
-        textInputFocused: isTextInputFocusedForHotkeys(),
-      );
+    textInputFocused: isTextInputFocusedForHotkeys(),
+  );
 
   static final Map<HotKey, void Function(HotKey)> _hotKeys = {
     HotKey(key: PhysicalKeyboardKey.space, scope: HotKeyScope.inapp): (_) {
       if (!_canHandlePlaybackHotkey()) return;
 
-      final playbackService = PlayService.instance.playbackService;
+      final playbackService = PlayService.existingPlaybackService;
+      if (playbackService == null) return;
       final state = playbackService.playerState;
       if (state == PlayerState.playing) {
         playbackService.pause();
@@ -37,16 +38,20 @@ class HotkeysHelper {
         showHotkeyToast(text: '播放', icon: Icons.play_arrow);
       }
     },
-    HotKey(key: PhysicalKeyboardKey.escape, scope: HotKeyScope.inapp):
-        (_) async {
+    HotKey(
+      key: PhysicalKeyboardKey.escape,
+      scope: HotKeyScope.inapp,
+    ): (_) async {
       final routerContext = routerKey.currentContext;
       if (routerContext == null) return;
 
       final router = GoRouter.of(routerContext);
       if (ImmersiveModeController.instance.enabled) {
         await ImmersiveModeController.instance.exit();
-        final startIndex = AppPreference.instance.startPage
-            .clamp(0, app_paths.START_PAGES.length - 1);
+        final startIndex = AppPreference.instance.startPage.clamp(
+          0,
+          app_paths.START_PAGES.length - 1,
+        );
         router.go(app_paths.START_PAGES[startIndex]);
         return;
       }
@@ -65,7 +70,9 @@ class HotkeysHelper {
       scope: HotKeyScope.inapp,
     ): (_) {
       if (!_canHandlePlaybackHotkey()) return;
-      PlayService.instance.playbackService.lastAudio();
+      final playbackService = PlayService.existingPlaybackService;
+      if (playbackService == null) return;
+      playbackService.lastAudio();
       hotkeyUiFeedback.emit(HotkeyUiAction.prev);
       showHotkeyToast(text: '上一曲', icon: Icons.skip_previous);
     },
@@ -75,7 +82,9 @@ class HotkeysHelper {
       scope: HotKeyScope.inapp,
     ): (_) {
       if (!_canHandlePlaybackHotkey()) return;
-      PlayService.instance.playbackService.nextAudio();
+      final playbackService = PlayService.existingPlaybackService;
+      if (playbackService == null) return;
+      playbackService.nextAudio();
       hotkeyUiFeedback.emit(HotkeyUiAction.next);
       showHotkeyToast(text: '下一曲', icon: Icons.skip_next);
     },
@@ -85,7 +94,8 @@ class HotkeysHelper {
       scope: HotKeyScope.inapp,
     ): (_) {
       if (!_canHandlePlaybackHotkey()) return;
-      final playbackService = PlayService.instance.playbackService;
+      final playbackService = PlayService.existingPlaybackService;
+      if (playbackService == null) return;
       final next = (playbackService.volumeDsp + 0.05).clamp(0.0, 1.0);
       playbackService.setVolumeDsp(next);
       hotkeyUiFeedback.emit(HotkeyUiAction.volumeStep);
@@ -100,7 +110,8 @@ class HotkeysHelper {
       scope: HotKeyScope.inapp,
     ): (_) {
       if (!_canHandlePlaybackHotkey()) return;
-      final playbackService = PlayService.instance.playbackService;
+      final playbackService = PlayService.existingPlaybackService;
+      if (playbackService == null) return;
       final next = (playbackService.volumeDsp - 0.05).clamp(0.0, 1.0);
       playbackService.setVolumeDsp(next);
       hotkeyUiFeedback.emit(HotkeyUiAction.volumeStep);
@@ -121,15 +132,12 @@ class HotkeysHelper {
       if (_windowToggleInProgress) return;
       _windowToggleInProgress = true;
       try {
-        final isMaximized = await windowManager.isMaximized();
-        if (isMaximized) {
-          await windowManager.unmaximize();
-        } else {
-          await windowManager.maximize();
-        }
+        // 全屏铺满整块显示器，覆盖任务栏
+        final isFullScreen = await windowManager.isFullScreen();
+        await windowManager.setFullScreen(!isFullScreen);
         showHotkeyToast(
-          text: isMaximized ? '还原窗口' : '最大化窗口',
-          icon: isMaximized ? Icons.fullscreen_exit : Icons.fullscreen,
+          text: isFullScreen ? '退出全屏' : '全屏',
+          icon: isFullScreen ? Icons.fullscreen_exit : Icons.fullscreen,
         );
       } catch (err, trace) {
         logger.e('F11 窗口切换失败', error: err, stackTrace: trace);
@@ -142,10 +150,7 @@ class HotkeysHelper {
   static void registerHotKeys() {
     if (_registered) return;
     for (var item in _hotKeys.entries) {
-      hotKeyManager.register(
-        item.key,
-        keyDownHandler: item.value,
-      );
+      hotKeyManager.register(item.key, keyDownHandler: item.value);
     }
     _registered = true;
   }

@@ -234,10 +234,12 @@ class ThemeProvider extends ChangeNotifier {
 
   void _notifyThemeChanged() {
     notifyListeners();
-    PlayService.instance.desktopLyricService.canSendMessage.then((canSend) {
+    final desktopLyricService = PlayService.existingDesktopLyricService;
+    if (desktopLyricService == null) return;
+    desktopLyricService.canSendMessage.then((canSend) {
       if (!canSend) return;
       final scheme = currScheme;
-      PlayService.instance.desktopLyricService.sendThemeMessage(
+      desktopLyricService.sendThemeMessage(
         scheme,
         darkMode: scheme.brightness == Brightness.dark,
       );
@@ -246,7 +248,7 @@ class ThemeProvider extends ChangeNotifier {
 
   void applyThemeOption(ThemeOption option) {
     if (!AppSettings.instance.enableCoverColorExtraction ||
-        PlayService.instance.playbackService.nowPlaying == null) {
+        PlayService.existingPlaybackService?.nowPlaying == null) {
       _setSeedColor(_configuredThemeSeedColor());
     }
     themeMode = switch (option) {

@@ -84,7 +84,7 @@ class MemoryMonitorService {
   /// 播放状态下仅做轻量清理，避免缓存重建开销导致音频卡顿
   bool _isPlaying() {
     try {
-      return PlayService.instance.playbackService.playerState ==
+      return PlayService.existingPlaybackService?.playerState ==
           PlayerState.playing;
     } catch (_) {
       return false;
@@ -96,6 +96,8 @@ class MemoryMonitorService {
     _timer = Timer.periodic(const Duration(seconds: 10), (_) {
       try {
         final rssMB = (ProcessInfo.currentRss / (1024 * 1024)).round();
+        final playbackService = PlayService.existingPlaybackService;
+        final playingPath = playbackService?.nowPlaying?.path;
 
         final playing = _isPlaying();
         // 播放中贴近 140-160MB 目标区间，越界后从轻到重逐级清理。
@@ -113,9 +115,7 @@ class MemoryMonitorService {
           } else {
             PaintingBinding.instance.imageCache.clear();
           }
-          CoverImageCache.instance.trimMemory(
-            keepPath: PlayService.instance.playbackService.nowPlaying?.path,
-          );
+          CoverImageCache.instance.trimMemory(keepPath: playingPath);
           CoverImageCache.instance.trimSmall(keepEntries: 24);
           AudioLibrary.instance.trimCollectionThumbnailRetention(32);
           LyricsLinePainter.clearPool();
@@ -124,7 +124,7 @@ class MemoryMonitorService {
             AudioLibrary.instance.evictStaleCoverBytes();
           } else {
             AudioLibrary.instance.evictAllCoversExcept(
-              PlayService.instance.playbackService.nowPlaying?.path,
+              playingPath,
               includeCollectionCovers: true,
             );
             clearLyricCaches();
@@ -136,9 +136,7 @@ class MemoryMonitorService {
           );
         } else if (rssMB > tier2Threshold) {
           logger.w('[mem] RSS ${rssMB}MB > $tier2Threshold, tier-2 cleanup');
-          CoverImageCache.instance.trimMemory(
-            keepPath: PlayService.instance.playbackService.nowPlaying?.path,
-          );
+          CoverImageCache.instance.trimMemory(keepPath: playingPath);
           CoverImageCache.instance.trimSmall(keepEntries: 64);
           AudioLibrary.instance.trimCollectionThumbnailRetention(80);
           LyricsLinePainter.trimPool();
@@ -176,7 +174,7 @@ class MemoryMonitorService {
     if (rssMB >= 210) {
       LyricsLinePainter.trimPool();
       CoverImageCache.instance.trimMemory(
-        keepPath: PlayService.instance.playbackService.nowPlaying?.path,
+        keepPath: PlayService.existingPlaybackService?.nowPlaying?.path,
       );
       CoverImageCache.instance.trimSmall(keepEntries: 64);
     }
@@ -195,7 +193,7 @@ class MemoryMonitorService {
     LyricsLinePainter.clearPool();
     LyricsLineWidget.clearBlurFilterCache();
     AudioLibrary.instance.evictAllCoversExcept(
-      PlayService.instance.playbackService.nowPlaying?.path,
+      PlayService.existingPlaybackService?.nowPlaying?.path,
       includeCollectionCovers: true,
     );
     _WindowsWorkingSetTrimmer.trim();
