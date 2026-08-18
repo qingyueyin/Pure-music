@@ -594,6 +594,7 @@ class AudioLibrary {
       );
     } catch (err, trace) {
       logger.e(err, stackTrace: trace);
+      rethrow;
     }
   }
 
