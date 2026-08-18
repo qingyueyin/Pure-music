@@ -159,32 +159,42 @@ class _AppBackgroundState extends State<_AppBackground> {
     );
   }
 
-  Widget _blurredBackground(BuildContext context, String imagePath, double blur) {
-    const downsample = 4;
+  Widget _blurredBackground(
+    BuildContext context,
+    String imagePath,
+    double blur,
+  ) {
+    final downsample = blur >= 16
+        ? 4
+        : blur >= 8
+        ? 2
+        : 1;
     final viewportWidth = MediaQuery.sizeOf(context).width;
+    final devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
     return ImageFiltered(
       imageFilter: ImageFilter.blur(
-        sigmaX: blur / downsample,
-        sigmaY: blur / downsample,
+        sigmaX: blur,
+        sigmaY: blur,
+        tileMode: TileMode.clamp,
       ),
       child: Image.file(
-        File(imagePath),
-        fit: BoxFit.cover,
-        filterQuality: FilterQuality.low,
-        gaplessPlayback: true,
-        errorBuilder: (_, _, _) => const SizedBox.shrink(),
-        cacheWidth: (viewportWidth / downsample).round(),
-      ),
-    );
-  }
-
-  Widget _backgroundImage(String imagePath) => Image.file(
         File(imagePath),
         fit: BoxFit.cover,
         filterQuality: FilterQuality.medium,
         gaplessPlayback: true,
         errorBuilder: (_, _, _) => const SizedBox.shrink(),
-      );
+        cacheWidth: (viewportWidth * devicePixelRatio / downsample).round(),
+      ),
+    );
+  }
+
+  Widget _backgroundImage(String imagePath) => Image.file(
+    File(imagePath),
+    fit: BoxFit.cover,
+    filterQuality: FilterQuality.medium,
+    gaplessPlayback: true,
+    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+  );
 }
 
 class _AppShell_Small extends StatefulWidget {
