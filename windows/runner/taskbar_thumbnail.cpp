@@ -309,104 +309,6 @@ const std::vector<uint8_t>& FallbackCover() {
   return pixels;
 }
 
-HBITMAP CreateEmptyBitmap(int width, int height) {
-  BITMAPINFO bitmap_info{};
-  bitmap_info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-  bitmap_info.bmiHeader.biWidth = width;
-  bitmap_info.bmiHeader.biHeight = -height;
-  bitmap_info.bmiHeader.biPlanes = 1;
-  bitmap_info.bmiHeader.biBitCount = 32;
-  bitmap_info.bmiHeader.biCompression = BI_RGB;
-  void* bits = nullptr;
-  HBITMAP bitmap = CreateDIBSection(nullptr, &bitmap_info, DIB_RGB_COLORS,
-                                    &bits, nullptr, 0);
-  if (bitmap != nullptr && bits == nullptr) {
-    DeleteObject(bitmap);
-    return nullptr;
-  }
-  return bitmap;
-}
-
-HBITMAP CreateLivePreviewBitmap(const std::vector<uint8_t>& cover,
-                                int cover_width, int cover_height, int width,
-                                int height) {
-  if (width <= 0 || height <= 0 || width > 8192 || height > 8192) {
-    return nullptr;
-  }
-  HBITMAP source = CreateBitmapFromBgra(cover, cover_width, cover_height);
-  HBITMAP target = CreateEmptyBitmap(width, height);
-  HDC source_dc = CreateCompatibleDC(nullptr);
-  HDC target_dc = CreateCompatibleDC(nullptr);
-  if (source == nullptr || target == nullptr || source_dc == nullptr ||
-      target_dc == nullptr) {
-    if (source_dc != nullptr) DeleteDC(source_dc);
-    if (target_dc != nullptr) DeleteDC(target_dc);
-    if (source != nullptr) DeleteObject(source);
-    if (target != nullptr) DeleteObject(target);
-    return nullptr;
-  }
-
-  const HGDIOBJ old_source = SelectObject(source_dc, source);
-  const HGDIOBJ old_target = SelectObject(target_dc, target);
-  SetStretchBltMode(target_dc, HALFTONE);
-  SetBrushOrgEx(target_dc, 0, 0, nullptr);
-
-  int source_x = 0;
-  int source_y = 0;
-  int source_width = cover_width;
-  int source_height = cover_height;
-  const double source_aspect =
-      static_cast<double>(cover_width) / cover_height;
-  const double target_aspect = static_cast<double>(width) / height;
-  if (source_aspect > target_aspect) {
-    source_width = std::max(
-        1, static_cast<int>(std::round(cover_height * target_aspect)));
-    source_x = (cover_width - source_width) / 2;
-  } else {
-    source_height = std::max(
-        1, static_cast<int>(std::round(cover_width / target_aspect)));
-    source_y = (cover_height - source_height) / 2;
-  }
-  StretchBlt(target_dc, 0, 0, width, height, source_dc, source_x, source_y,
-             source_width, source_height, SRCCOPY);
-
-  const std::vector<uint8_t> black_pixel = {0, 0, 0, 0xFF};
-  HBITMAP overlay = CreateBitmapFromBgra(black_pixel, 1, 1);
-  HDC overlay_dc = CreateCompatibleDC(nullptr);
-  if (overlay != nullptr && overlay_dc != nullptr) {
-    const HGDIOBJ old_overlay = SelectObject(overlay_dc, overlay);
-    const BLENDFUNCTION blend{AC_SRC_OVER, 0, 128, 0};
-    AlphaBlend(target_dc, 0, 0, width, height, overlay_dc, 0, 0, 1, 1,
-               blend);
-    SelectObject(overlay_dc, old_overlay);
-  }
-
-  const int foreground_size =
-      std::max(1, std::min(width * 48 / 100, height * 72 / 100));
-  const int foreground_x = (width - foreground_size) / 2;
-  const int foreground_y = (height - foreground_size) / 2;
-  RECT shadow{foreground_x - 6, foreground_y - 6,
-              foreground_x + foreground_size + 6,
-              foreground_y + foreground_size + 6};
-  HBRUSH shadow_brush = CreateSolidBrush(RGB(0, 0, 0));
-  if (shadow_brush != nullptr) {
-    ::FillRect(target_dc, &shadow, shadow_brush);
-    DeleteObject(shadow_brush);
-  }
-  StretchBlt(target_dc, foreground_x, foreground_y, foreground_size,
-             foreground_size, source_dc, 0, 0, cover_width, cover_height,
-             SRCCOPY);
-
-  if (overlay_dc != nullptr) DeleteDC(overlay_dc);
-  if (overlay != nullptr) DeleteObject(overlay);
-  SelectObject(source_dc, old_source);
-  SelectObject(target_dc, old_target);
-  DeleteDC(source_dc);
-  DeleteDC(target_dc);
-  DeleteObject(source);
-  return target;
-}
-
 }  // namespace
 
 TaskbarThumbnail::TaskbarThumbnail(flutter::BinaryMessenger* messenger,
@@ -685,8 +587,7 @@ void TaskbarThumbnail::InvalidateThumbnail() {
   }
 }
 
-void TaskbarThumbnail::ProvideThumbnail(int max_width, int max_height,
-                                        bool live_preview) {
+void TaskbarThumbnail::ProvideThumbnail(int max_width, int max_height) {
   if (!enabled_ || max_width <= 0 || max_height <= 0) {
     return;
   }
@@ -695,16 +596,6 @@ void TaskbarThumbnail::ProvideThumbnail(int max_width, int max_height,
       use_fallback ? FallbackCover() : cover_bgra_;
   const int cover_width = use_fallback ? kFallbackCoverSize : cover_width_;
   const int cover_height = use_fallback ? kFallbackCoverSize : cover_height_;
-  if (live_preview) {
-    HBITMAP bitmap = CreateLivePreviewBitmap(
-        cover, cover_width, cover_height, max_width, max_height);
-    if (bitmap != nullptr) {
-      POINT offset{0, 0};
-      DwmSetIconicLivePreviewBitmap(window_, bitmap, &offset, 0);
-      DeleteObject(bitmap);
-    }
-    return;
-  }
   const auto [width, height] =
       FitSize(cover_width, cover_height, max_width, max_height);
   std::vector<uint8_t> scaled;
@@ -815,14 +706,7 @@ std::optional<LRESULT> TaskbarThumbnail::HandleMessage(UINT message,
     case WM_DWMSENDICONICTHUMBNAIL: {
       const int width = HIWORD(lparam);
       UpdateTitleScrolling(width);
-      ProvideThumbnail(width, LOWORD(lparam), false);
-      return LRESULT(0);
-    }
-    case WM_DWMSENDICONICLIVEPREVIEWBITMAP: {
-      RECT client{};
-      GetClientRect(window_, &client);
-      ProvideThumbnail(std::max(1L, client.right - client.left),
-                       std::max(1L, client.bottom - client.top), true);
+      ProvideThumbnail(width, LOWORD(lparam));
       return LRESULT(0);
     }
     case WM_COMMAND:

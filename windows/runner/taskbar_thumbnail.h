@@ -38,7 +38,7 @@ class TaskbarThumbnail {
   bool ShowButtons();
   void HideButtons();
   void InvalidateThumbnail();
-  void ProvideThumbnail(int max_width, int max_height, bool live_preview);
+  void ProvideThumbnail(int max_width, int max_height);
   void SendControlEvent(const char* event);
   void UpdateTitleScrolling(int available_width);
   void StopTitleScrolling();
