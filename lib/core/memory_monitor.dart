@@ -183,6 +183,21 @@ class MemoryMonitorService {
     }
   }
 
+  /// 托盘驻留清理：释放大图/位图等大头，但保留 48px 小图与当前曲目，
+  /// 且不做工作集压缩，保证恢复窗口时列表不卡、不触发 page fault
+  void trimTrayHidden() {
+    PaintingBinding.instance.imageCache.clear();
+    PaintingBinding.instance.imageCache.clearLiveImages();
+    final playingPath =
+        PlayService.existingPlaybackService?.nowPlaying?.path;
+    CoverImageCache.instance.trimMemory(keepPath: playingPath);
+    CoverImageCache.instance.trimSmall(keepEntries: 96);
+    AudioLibrary.instance.trimCollectionThumbnailRetention(128);
+    LyricsLinePainter.trimPool();
+    LyricsLineWidget.clearBlurFilterCache();
+    AudioLibrary.instance.evictStaleCoverBytes();
+  }
+
   /// 强制释放可回收内存，用于窗口最小化/低内存通知等场景
   void trimAll() {
     PaintingBinding.instance.imageCache.clear();
