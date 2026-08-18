@@ -6,9 +6,9 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `_clear_display`, `_create_hidden_smtc_window`, `_debug_snapshot`, `_init_controls`, `_new`, `_queue_thumbnail_update`, `_ras_ref_from_pic_data`, `_refresh_display`, `_start_thumbnail_worker`, `_try_get_thumbnail`, `_update_display`, `_update_state`, `_update_time_properties`, `hidden_window_proc`
+// These functions are ignored because they are not marked as `pub`: `_clear_display`, `_create_hidden_smtc_window`, `_debug_snapshot`, `_init_controls`, `_new`, `_queue_thumbnail_update`, `_ras_ref_from_pic_data`, `_refresh_display`, `_start_thumbnail_worker`, `_try_get_thumbnail`, `_update_display`, `_update_state`, `_update_time_properties`, `destroy_hidden_window`, `hidden_window_proc`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `WinRtThreadGuard`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `drop`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `drop`, `drop`, `fmt`
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SMTCFlutter>>
 abstract class SmtcFlutter implements RustOpaqueInterface {
