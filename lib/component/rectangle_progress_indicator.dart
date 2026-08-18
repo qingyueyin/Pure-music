@@ -7,6 +7,41 @@ import 'package:flutter/material.dart';
 /// 进度条拖拽的激活手势类型。
 enum _DragGestureType { longPress, drag }
 
+/// 进度条拖拽状态机（纯逻辑，便于单元测试）。
+///
+/// 职责：判断拖拽是否可开始（空播放时不允许）、记录拖拽开始时的歌曲身份、
+/// 结束拖拽时校验歌曲是否一致（不一致则不 seek）、切歌时取消拖拽。
+class ProgressDragController {
+  bool _dragging = false;
+  String? _dragAudioIdentity;
+
+  bool get isDragging => _dragging;
+
+  /// 开始拖拽。返回 false 表示不可拖拽（如无正在播放）。
+  bool begin({required String? audioIdentity}) {
+    if (audioIdentity == null) return false;
+    _dragging = true;
+    _dragAudioIdentity = audioIdentity;
+    return true;
+  }
+
+  /// 结束拖拽。返回 true 表示应执行 seek（确实在拖拽且歌曲一致）。
+  bool end({required String? currentIdentity, required bool applySeek}) {
+    final wasDragging = _dragging;
+    final identity = _dragAudioIdentity;
+    _dragging = false;
+    _dragAudioIdentity = null;
+    if (!wasDragging || !applySeek) return false;
+    return identity != null && identity == currentIdentity;
+  }
+
+  /// 歌曲变化时取消拖拽。
+  void cancelOnTrackChange() {
+    _dragging = false;
+    _dragAudioIdentity = null;
+  }
+}
+
 class RectangleProgressIndicator extends StatefulWidget {
   const RectangleProgressIndicator({
     super.key,
@@ -51,6 +86,8 @@ class _RectangleProgressIndicatorState
   /// 当前激活拖拽的手势类型（长按 or 拖动），避免竞技场失败方误结束拖拽。
   _DragGestureType? _activeDragGesture;
 
+  final ProgressDragController _dragController = ProgressDragController();
+
   /// 长按触发时长（毫秒），默认 500，这里缩短为 250。
   static const _longPressDuration = Duration(milliseconds: 250);
 
@@ -58,7 +95,7 @@ class _RectangleProgressIndicatorState
   void initState() {
     super.initState();
     playbackService.playerStateNotifier.addListener(_syncTimer);
-    playbackService.nowPlayingNotifier.addListener(_syncNativeProgress);
+    playbackService.nowPlayingNotifier.addListener(_onNowPlayingChanged);
     _syncNativeProgress();
     _syncTimer();
   }
@@ -102,14 +139,36 @@ class _RectangleProgressIndicatorState
     });
   }
 
+  /// 歌曲变化：拖拽中切歌则取消拖拽，随后同步新歌的真实进度。
+  void _onNowPlayingChanged() {
+    if (_dragFraction != null) {
+      _dragFraction = null;
+      _activeDragGesture = null;
+      _dragController.cancelOnTrackChange();
+      widget.onDragActiveChanged?.call(false);
+    }
+    _syncNativeProgress();
+  }
+
+  /// 开始拖拽：空播放时不允许，记录歌曲身份。
+  void _beginDrag(double fraction) {
+    if (_dragFraction != null) return;
+    if (!_dragController.begin(
+      audioIdentity: playbackService.nowPlaying?.path,
+    )) {
+      return;
+    }
+    _dragFraction = fraction.clamp(0.0, 1.0);
+    progress.value = _dragFraction!;
+    widget.onDragActiveChanged?.call(true);
+  }
+
   void _handleLongPressStart(LongPressStartDetails d) {
     if (_activeDragGesture != null) return;
     _activeDragGesture = _DragGestureType.longPress;
     final width = widget.size.width;
     if (width <= 0) return;
-    _dragFraction = (d.localPosition.dx / width).clamp(0.0, 1.0);
-    progress.value = _dragFraction!;
-    widget.onDragActiveChanged?.call(true);
+    _beginDrag(d.localPosition.dx / width);
   }
 
   void _handleLongPressMove(LongPressMoveUpdateDetails d) {
@@ -121,13 +180,11 @@ class _RectangleProgressIndicatorState
 
   void _handleLongPressEnd(LongPressEndDetails d) {
     if (_activeDragGesture != _DragGestureType.longPress) return;
-    _activeDragGesture = null;
     _endDrag(applySeek: true);
   }
 
   void _handleLongPressCancel() {
     if (_activeDragGesture != _DragGestureType.longPress) return;
-    _activeDragGesture = null;
     _endDrag(applySeek: false);
   }
 
@@ -136,9 +193,7 @@ class _RectangleProgressIndicatorState
     _activeDragGesture = _DragGestureType.drag;
     final width = widget.size.width;
     if (width <= 0) return;
-    _dragFraction = (d.localPosition.dx / width).clamp(0.0, 1.0);
-    progress.value = _dragFraction!;
-    widget.onDragActiveChanged?.call(true);
+    _beginDrag(d.localPosition.dx / width);
   }
 
   void _handleDragUpdate(DragUpdateDetails d) {
@@ -151,21 +206,28 @@ class _RectangleProgressIndicatorState
 
   void _handleDragEnd(DragEndDetails d) {
     if (_activeDragGesture != _DragGestureType.drag) return;
-    _activeDragGesture = null;
     _endDrag(applySeek: true);
   }
 
   void _handleDragCancel() {
     if (_activeDragGesture != _DragGestureType.drag) return;
-    _activeDragGesture = null;
     _endDrag(applySeek: false);
   }
 
   void _endDrag({required bool applySeek}) {
     final fraction = _dragFraction;
     _dragFraction = null;
+    _activeDragGesture = null;
     widget.onDragActiveChanged?.call(false);
-    if (fraction == null || !applySeek) return;
+    final shouldSeek = _dragController.end(
+      currentIdentity: playbackService.nowPlaying?.path,
+      applySeek: applySeek,
+    );
+    if (fraction == null || !shouldSeek) {
+      // 取消拖拽或歌曲已变化：重新同步真实进度。
+      _syncNativeProgress();
+      return;
+    }
     // 乐观更新本地同步值到目标位置，避免 seek 异步生效期间进度跳回旧值。
     _syncedPosition = fraction * _syncedLength;
     _lastNativeSyncMs = _clock.elapsedMilliseconds;
@@ -218,7 +280,7 @@ class _RectangleProgressIndicatorState
   @override
   void dispose() {
     playbackService.playerStateNotifier.removeListener(_syncTimer);
-    playbackService.nowPlayingNotifier.removeListener(_syncNativeProgress);
+    playbackService.nowPlayingNotifier.removeListener(_onNowPlayingChanged);
     _progressTimer?.cancel();
     progress.dispose();
     super.dispose();
