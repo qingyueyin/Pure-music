@@ -344,6 +344,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
       onSortMethodChanged: _onSortChanged,
       onPrimaryPicTap: _isPickingCover ? null : _changeCover,
       primaryPicBusy: _isPickingCover,
+      locateButtonsController: _reorderScrollController,
       bodyOverride: contentList.isEmpty
           ? const _EmptyPlaylistBody()
           : _isReordering && canReorder

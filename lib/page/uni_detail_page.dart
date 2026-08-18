@@ -1,5 +1,6 @@
 import 'dart:ui';
 
+import 'package:pure_music/component/list_locate_buttons.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/preference.dart';
@@ -7,8 +8,10 @@ import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/page/uni_page.dart';
 import 'package:pure_music/page/uni_page_components.dart';
+import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/component/stacked_list_view.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -55,6 +58,7 @@ class UniDetailPage<P, S, T> extends StatefulWidget {
     this.enableSearch = false,
     this.searchQuery = '',
     this.onSearchChanged,
+    this.locateButtonsController,
   });
 
   final PagePreference pref;
@@ -103,6 +107,9 @@ class UniDetailPage<P, S, T> extends StatefulWidget {
   final String searchQuery;
   final ValueChanged<String>? onSearchChanged;
 
+  /// 覆盖默认活动滚动控制器（bodyOverride 使用外部列表时传入）。
+  final ScrollController? locateButtonsController;
+
   @override
   State<UniDetailPage<P, S, T>> createState() => _UniDetailPageState<P, S, T>();
 }
@@ -119,6 +126,72 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
   final _secondaryScrollController = SmoothScrollController();
   final _tertiaryScrollController = SmoothScrollController();
   final _combinedScrollController = SmoothScrollController();
+  final _itemKeys = <int, GlobalKey>{};
+
+  bool get _hasTertiaryContent =>
+      canShowRelatedContentTab(widget.tertiaryContent?.length ?? 0);
+
+  ScrollController get _activeScrollController {
+    if (widget.bodyOverride != null) {
+      return widget.locateButtonsController ?? _combinedScrollController;
+    }
+    if (widget.enableTabs && _hasTertiaryContent) {
+      return _currentTabIndex == 0
+          ? _secondaryScrollController
+          : _tertiaryScrollController;
+    }
+    return _combinedScrollController;
+  }
+
+  /// 当前正在播放乐曲在列表中的索引；不在列表中或当前视图不可定位时返回 null。
+  int? _locateTargetAt() {
+    if (widget.enableTabs && _hasTertiaryContent && _currentTabIndex == 1) {
+      return null;
+    }
+    if (widget.bodyOverride != null) return null;
+    final nowPlaying = PlayService.instance.playbackService.nowPlaying;
+    if (nowPlaying == null) return null;
+    final targetAt = widget.secondaryContent.indexWhere(
+      (item) => item is Audio && item.path == nowPlaying.path,
+    );
+    return targetAt < 0 ? null : targetAt;
+  }
+
+  /// 按钮浮层不拦截滚轮：把滚轮位移转发给列表的平滑滚动。
+  void _forwardWheelToList(double delta) {
+    if (!AppSettings.instance.enableStackedScrollEffect ||
+        MediaQuery.disableAnimationsOf(context)) {
+      return;
+    }
+    final controller = _activeScrollController;
+    if (!controller.hasClients) return;
+    final position = controller.position;
+    if (position is SmoothScrollPosition) {
+      position.pointerScroll(delta);
+    }
+  }
+
+  /// 定位到指定行（行高不固定时按行 key 滚动，保证精确）。
+  void _scrollToIndex(int targetAt) {
+    if (targetAt < 0 || targetAt >= widget.secondaryContent.length) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final ctx = _itemKeys[targetAt]?.currentContext;
+      if (ctx == null) return;
+      Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.fastOutSlowIn,
+      );
+    });
+  }
+
+  Widget _keyedItem(int index, Widget child) {
+    return KeyedSubtree(
+      key: _itemKeys.putIfAbsent(index, GlobalKey.new),
+      child: child,
+    );
+  }
 
   @override
   void initState() {
@@ -276,26 +349,38 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
                 ],
                 const SizedBox(height: 16.0),
                 Expanded(
-                  child: ListenableBuilder(
-                    listenable: AppSettings.listMotionNotifier,
-                    builder: (context, _) =>
-                        widget.bodyOverride ??
-                        (widget.enableTabs
-                            ? DirectionalTabView(
-                                index: currentTabIndex,
-                                children: [
-                                  _buildSecondaryContent(
-                                    multiSelectController,
-                                    scheme,
-                                  ),
-                                  if (hasTertiaryContent)
-                                    _buildTertiaryContent(scheme),
-                                ],
-                              )
-                            : _buildCombinedContent(
-                                multiSelectController,
-                                scheme,
-                              )),
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: ListenableBuilder(
+                          listenable: AppSettings.listMotionNotifier,
+                          builder: (context, _) =>
+                              widget.bodyOverride ??
+                              (widget.enableTabs
+                                  ? DirectionalTabView(
+                                      index: currentTabIndex,
+                                      children: [
+                                        _buildSecondaryContent(
+                                          multiSelectController,
+                                          scheme,
+                                        ),
+                                        if (hasTertiaryContent)
+                                          _buildTertiaryContent(scheme),
+                                      ],
+                                    )
+                                  : _buildCombinedContent(
+                                      multiSelectController,
+                                      scheme,
+                                    )),
+                        ),
+                      ),
+                      ListLocateButtons(
+                        controller: _activeScrollController,
+                        locateTargetAt: _locateTargetAt,
+                        onScrollToIndex: _scrollToIndex,
+                        onWheel: _forwardWheelToList,
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -388,57 +473,66 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
                         item,
                         i,
                       );
-                      return Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          ?section,
-                          SizedBox(
-                            height: 64,
-                            child: widget.secondaryContentBuilder(
-                              context,
-                              item,
-                              i,
-                              multiSelectController,
-                              ContentView.list,
+                      return _keyedItem(
+                        i,
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            ?section,
+                            SizedBox(
+                              height: 64,
+                              child: widget.secondaryContentBuilder(
+                                context,
+                                item,
+                                i,
+                                multiSelectController,
+                                ContentView.list,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       );
                     },
                   ),
                 ContentView.list => SliverFixedExtentList.builder(
                   itemExtent: 64,
                   itemCount: widget.secondaryContent.length,
-                  itemBuilder: (context, i) => StackedSliverItem(
-                    controller: _secondaryScrollController,
-                    rowIndex: i,
-                    itemExtent: 64,
-                    enabled: enableStackedEffect,
-                    child: widget.secondaryContentBuilder(
-                      context,
-                      widget.secondaryContent[i],
-                      i,
-                      multiSelectController,
-                      ContentView.list,
+                  itemBuilder: (context, i) => _keyedItem(
+                    i,
+                    StackedSliverItem(
+                      controller: _secondaryScrollController,
+                      rowIndex: i,
+                      itemExtent: 64,
+                      enabled: enableStackedEffect,
+                      child: widget.secondaryContentBuilder(
+                        context,
+                        widget.secondaryContent[i],
+                        i,
+                        multiSelectController,
+                        ContentView.list,
+                      ),
                     ),
                   ),
                 ),
                 ContentView.table => SliverGrid.builder(
                   gridDelegate: gridDelegate,
                   itemCount: widget.secondaryContent.length,
-                  itemBuilder: (context, i) => StackedSliverItem(
-                    controller: _secondaryScrollController,
-                    rowIndex: i ~/ crossAxisCount,
-                    itemExtent:
-                        gridDelegate.mainAxisExtent! +
-                        gridDelegate.mainAxisSpacing,
-                    enabled: enableStackedEffect,
-                    child: widget.secondaryContentBuilder(
-                      context,
-                      widget.secondaryContent[i],
-                      i,
-                      multiSelectController,
-                      ContentView.table,
+                  itemBuilder: (context, i) => _keyedItem(
+                    i,
+                    StackedSliverItem(
+                      controller: _secondaryScrollController,
+                      rowIndex: i ~/ crossAxisCount,
+                      itemExtent:
+                          gridDelegate.mainAxisExtent! +
+                          gridDelegate.mainAxisSpacing,
+                      enabled: enableStackedEffect,
+                      child: widget.secondaryContentBuilder(
+                        context,
+                        widget.secondaryContent[i],
+                        i,
+                        multiSelectController,
+                        ContentView.table,
+                      ),
                     ),
                   ),
                 ),
@@ -537,57 +631,66 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
                         item,
                         i,
                       );
-                      return Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          ?section,
-                          SizedBox(
-                            height: 64,
-                            child: widget.secondaryContentBuilder(
-                              context,
-                              item,
-                              i,
-                              multiSelectController,
-                              ContentView.list,
+                      return _keyedItem(
+                        i,
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            ?section,
+                            SizedBox(
+                              height: 64,
+                              child: widget.secondaryContentBuilder(
+                                context,
+                                item,
+                                i,
+                                multiSelectController,
+                                ContentView.list,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       );
                     },
                   ),
                 ContentView.list => SliverFixedExtentList.builder(
                   itemExtent: 64,
                   itemCount: widget.secondaryContent.length,
-                  itemBuilder: (context, i) => StackedSliverItem(
-                    controller: _combinedScrollController,
-                    rowIndex: i,
-                    itemExtent: 64,
-                    enabled: enableStackedEffect,
-                    child: widget.secondaryContentBuilder(
-                      context,
-                      widget.secondaryContent[i],
-                      i,
-                      multiSelectController,
-                      ContentView.list,
+                  itemBuilder: (context, i) => _keyedItem(
+                    i,
+                    StackedSliverItem(
+                      controller: _combinedScrollController,
+                      rowIndex: i,
+                      itemExtent: 64,
+                      enabled: enableStackedEffect,
+                      child: widget.secondaryContentBuilder(
+                        context,
+                        widget.secondaryContent[i],
+                        i,
+                        multiSelectController,
+                        ContentView.list,
+                      ),
                     ),
                   ),
                 ),
                 ContentView.table => SliverGrid.builder(
                   gridDelegate: gridDelegate,
                   itemCount: widget.secondaryContent.length,
-                  itemBuilder: (context, i) => StackedSliverItem(
-                    controller: _combinedScrollController,
-                    rowIndex: i ~/ crossAxisCount,
-                    itemExtent:
-                        gridDelegate.mainAxisExtent! +
-                        gridDelegate.mainAxisSpacing,
-                    enabled: enableStackedEffect,
-                    child: widget.secondaryContentBuilder(
-                      context,
-                      widget.secondaryContent[i],
-                      i,
-                      multiSelectController,
-                      ContentView.table,
+                  itemBuilder: (context, i) => _keyedItem(
+                    i,
+                    StackedSliverItem(
+                      controller: _combinedScrollController,
+                      rowIndex: i ~/ crossAxisCount,
+                      itemExtent:
+                          gridDelegate.mainAxisExtent! +
+                          gridDelegate.mainAxisSpacing,
+                      enabled: enableStackedEffect,
+                      child: widget.secondaryContentBuilder(
+                        context,
+                        widget.secondaryContent[i],
+                        i,
+                        multiSelectController,
+                        ContentView.table,
+                      ),
                     ),
                   ),
                 ),

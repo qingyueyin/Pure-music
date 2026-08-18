@@ -1,11 +1,9 @@
 import 'dart:async';
 
-import 'package:flutter/gestures.dart' show PointerScrollEvent;
-import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/preference.dart';
+import 'package:pure_music/component/list_locate_buttons.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/quiet_empty_state.dart';
-import 'package:pure_music/component/responsive_builder.dart';
 import 'package:pure_music/component/stacked_list_view.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/list_action_state.dart';
@@ -209,7 +207,6 @@ class _UniPageState<T> extends State<UniPage<T>> {
       : ContentView.table;
   late final ScrollController listScrollController = SmoothScrollController();
   late final ScrollController tableScrollController = SmoothScrollController();
-  bool _showScrollToTop = false;
   int _sortRequest = 0;
   bool _backgroundSortPending = false;
   bool _backgroundSortWorkerActive = false;
@@ -380,135 +377,18 @@ class _UniPageState<T> extends State<UniPage<T>> {
     });
   }
 
-  Widget _locateNowPlayingButton() {
-    if (widget.contentList is! List<Audio>) return const SizedBox.shrink();
-    final playbackService = PlayService.instance.playbackService;
-
-    return ListenableBuilder(
-      listenable: playbackService,
-      builder: (context, _) {
-        final nowPlaying = playbackService.nowPlaying;
-        if (nowPlaying == null) return const SizedBox.shrink();
-
-        final targetAt = AudioLibrary.instance.audiosPageIndexForPath(
-          nowPlaying.path,
-        );
-        if (targetAt == null) return const SizedBox.shrink();
-
-        return ResponsiveBuilder(
-          builder: (context, screenType) {
-            final bottom = screenType == ScreenType.small ? 88.0 : 112.0;
-            final right = screenType == ScreenType.small ? 88.0 : 128.0;
-            final reduceMotion = MediaQuery.disableAnimationsOf(context);
-            return Positioned(
-              right: right,
-              bottom: bottom,
-              child: Listener(
-                onPointerSignal: (event) {
-                  if (event is PointerScrollEvent) {
-                    _forwardWheelToList(event.scrollDelta.dy);
-                  }
-                },
-                child: TweenAnimationBuilder<double>(
-                  key: ValueKey(nowPlaying.path),
-                  tween: Tween(begin: 0.0, end: 1.0),
-                  duration: MotionDuration.fast,
-                  curve: MotionCurve.standard,
-                  builder: (context, t, child) => Opacity(
-                    opacity: t,
-                    child: Transform.scale(
-                      scale: reduceMotion ? 1.0 : 0.7 + t * 0.3,
-                      filterQuality: FilterQuality.low,
-                      child: child,
-                    ),
-                  ),
-                  child: IconButton.filledTonal(
-                    tooltip: '定位正在播放',
-                    onPressed: () => _scrollToIndex(targetAt),
-                    style: ButtonStyle(
-                      fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
-                      padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-                      shape: WidgetStatePropertyAll(
-                        RoundedRectangleBorder(
-                          borderRadius: AppRadius.smCircular,
-                        ),
-                      ),
-                    ),
-                    icon: const Icon(Symbols.my_location),
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _scrollToTopButton() {
-    return ResponsiveBuilder(
-      builder: (context, screenType) {
-        final bottom = screenType == ScreenType.small ? 88.0 : 112.0;
-        final right = screenType == ScreenType.small ? 88.0 : 128.0;
-        final reduceMotion = MediaQuery.disableAnimationsOf(context);
-        return Positioned(
-          right: right,
-          bottom: bottom + 56.0,
-          child: Listener(
-            onPointerSignal: (event) {
-              if (event is PointerScrollEvent) {
-                _forwardWheelToList(event.scrollDelta.dy);
-              }
-            },
-            child: TweenAnimationBuilder<double>(
-              tween: Tween(begin: 0.0, end: _showScrollToTop ? 1.0 : 0.0),
-              duration: MotionDuration.fast,
-              curve: MotionCurve.standard,
-              builder: (context, t, child) => IgnorePointer(
-                ignoring: t <= 0.01,
-                child: Opacity(
-                  opacity: t,
-                  child: Transform.scale(
-                    scale: reduceMotion ? 1.0 : 0.7 + t * 0.3,
-                    filterQuality: FilterQuality.low,
-                    child: child,
-                  ),
-                ),
-              ),
-              child: IconButton.filledTonal(
-                tooltip: '回到顶部',
-                onPressed: () => _smoothScrollTo(0.0),
-                style: ButtonStyle(
-                  fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
-                  padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-                  shape: WidgetStatePropertyAll(
-                    RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
-                  ),
-                ),
-                icon: const Icon(Symbols.vertical_align_top),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  void _onScrollUpdate() {
-    if (!mounted) return;
-    final shouldShow =
-        scrollController.hasClients && scrollController.position.pixels > 320.0;
-    if (shouldShow != _showScrollToTop) {
-      setState(() => _showScrollToTop = shouldShow);
-    }
+  /// 定位当前正在播放乐曲在列表中的索引；非乐曲列表或不在列表中时返回 null。
+  int? _locateTargetAt() {
+    if (widget.contentList is! List<Audio>) return null;
+    final nowPlaying = PlayService.instance.playbackService.nowPlaying;
+    if (nowPlaying == null) return null;
+    return AudioLibrary.instance.audiosPageIndexForPath(nowPlaying.path);
   }
 
   @override
   void initState() {
     super.initState();
     _prepareIncomingContent('init');
-    listScrollController.addListener(_onScrollUpdate);
-    tableScrollController.addListener(_onScrollUpdate);
     if (widget.locateTo == null) return;
 
     final locateTo = widget.locateTo;
@@ -608,14 +488,9 @@ class _UniPageState<T> extends State<UniPage<T>> {
 
   void setContentView(ContentView contentView) {
     if (currContentView == contentView) return;
-    final nextController = contentView == ContentView.list
-        ? listScrollController
-        : tableScrollController;
     setState(() {
       currContentView = contentView;
       widget.pref.contentView = contentView;
-      _showScrollToTop =
-          nextController.hasClients && nextController.position.pixels > 320.0;
     });
   }
 
@@ -801,8 +676,12 @@ class _UniPageState<T> extends State<UniPage<T>> {
                   ),
                 ),
               ),
-              _scrollToTopButton(),
-              _locateNowPlayingButton(),
+              ListLocateButtons(
+                controller: scrollController,
+                locateTargetAt: _locateTargetAt,
+                onScrollToIndex: _scrollToIndex,
+                onWheel: _forwardWheelToList,
+              ),
             ],
           ),
         ),
