@@ -25,8 +25,8 @@ use windows::{
             },
         },
         UI::WindowsAndMessaging::{
-            CreateWindowExW, DefWindowProcW, DestroyWindow, RegisterClassW, WINDOW_EX_STYLE,
-            WNDCLASSW, WS_POPUP,
+            CreateWindowExW, DefWindowProcW, DestroyWindow, FindWindowW, RegisterClassW,
+            WINDOW_EX_STYLE, WNDCLASSW, WS_POPUP,
         },
     },
 };
@@ -308,6 +308,23 @@ impl SMTCFlutter {
         }
     }
 
+    /// 获取 SMTC 绑定的窗口：优先主窗口（系统媒体控件会显示在
+    /// 主窗口的任务栏缩略图上），主窗口尚未创建时回退到隐藏窗口。
+    fn _get_smtc_window() -> Result<HWND, windows::core::Error> {
+        const MAIN_CLASS_NAME: &str = "FLUTTER_RUNNER_WIN32_WINDOW";
+        unsafe {
+            let class_name: HSTRING = HSTRING::from(MAIN_CLASS_NAME);
+            let hwnd = FindWindowW(PCWSTR(class_name.as_ptr()), PCWSTR::null());
+            if hwnd.0 != 0 {
+                log_to_dart(format!("SMTC: bound to main window HWND={}", hwnd.0));
+                return Ok(hwnd);
+            }
+        }
+        let hidden = Self::_create_hidden_smtc_window()?;
+        log_to_dart(format!("SMTC: main window not found, bound to hidden HWND={}", hidden.0));
+        Ok(hidden)
+    }
+
     fn _init_controls(smtc: &SystemMediaTransportControls) -> Result<(), windows::core::Error> {
         smtc.SetIsEnabled(false)?;
         smtc.SetIsNextEnabled(true)?;
@@ -319,12 +336,11 @@ impl SMTCFlutter {
     }
 
     fn _new() -> Result<Self, windows::core::Error> {
-        let hwnd = Self::_create_hidden_smtc_window()?;
+        let hwnd = Self::_get_smtc_window()?;
         let interop =
             factory::<SystemMediaTransportControls, ISystemMediaTransportControlsInterop>()?;
         let _smtc: SystemMediaTransportControls = unsafe { interop.GetForWindow(hwnd) }?;
         Self::_init_controls(&_smtc)?;
-        log_to_dart(format!("SMTC: bound to hidden HWND={}", hwnd.0));
 
         let display_revision = Arc::new(AtomicU64::new(0));
         let display_lock = Arc::new(Mutex::new(()));

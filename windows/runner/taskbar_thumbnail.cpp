@@ -18,6 +18,8 @@ constexpr UINT kPlayPauseButtonId = 2;
 constexpr UINT kNextButtonId = 3;
 constexpr UINT_PTR kTitleScrollTimerId = 0x5054;
 constexpr UINT kTitleScrollIntervalMs = 500;
+constexpr UINT_PTR kButtonsRetryTimerId = 0x5055;
+constexpr UINT kButtonsRetryIntervalMs = 200;
 constexpr int kIconSize = 32;
 constexpr int kFallbackCoverSize = 64;
 
@@ -383,22 +385,13 @@ bool TaskbarThumbnail::Enable() {
       !EnsureTaskbar()) {
     return false;
   }
-  const BOOL enabled = TRUE;
-  if (FAILED(DwmSetWindowAttribute(window_, DWMWA_FORCE_ICONIC_REPRESENTATION,
-                                   &enabled, sizeof(enabled)))) {
-    return false;
-  }
-  if (FAILED(DwmSetWindowAttribute(window_, DWMWA_HAS_ICONIC_BITMAP, &enabled,
-                                   sizeof(enabled)))) {
-    const BOOL disabled = FALSE;
-    DwmSetWindowAttribute(window_, DWMWA_FORCE_ICONIC_REPRESENTATION, &disabled,
-                          sizeof(disabled));
-    return false;
-  }
+  // 不启用 iconic：任务栏缩略图与 Peek 保持系统默认的窗口实时预览，
+  // 通过 ThumbBar 提供播放控制按钮（普通权限运行下点击正常）。
   enabled_ = true;
   ApplyWindowTitle();
-  ShowButtons();
-  InvalidateThumbnail();
+  // 任务栏按钮可能在窗口显示后才创建（TaskbarButtonCreated 消息
+  // 可能早于本服务构造而丢失），延迟重试绑定 ThumbBar 按钮。
+  SetTimer(window_, kButtonsRetryTimerId, kButtonsRetryIntervalMs, nullptr);
   return true;
 }
 
@@ -406,16 +399,12 @@ void TaskbarThumbnail::Disable() {
   if (window_ == nullptr) {
     return;
   }
+  KillTimer(window_, kTitleScrollTimerId);
+  KillTimer(window_, kButtonsRetryTimerId);
   HideButtons();
   if (enabled_) {
     StopTitleScrolling();
     SetWindowTextW(window_, original_title_.c_str());
-    const BOOL disabled = FALSE;
-    DwmSetWindowAttribute(window_, DWMWA_FORCE_ICONIC_REPRESENTATION, &disabled,
-                          sizeof(disabled));
-    DwmSetWindowAttribute(window_, DWMWA_HAS_ICONIC_BITMAP, &disabled,
-                          sizeof(disabled));
-    InvalidateThumbnail();
     enabled_ = false;
   }
   cover_bgra_.clear();
@@ -733,6 +722,13 @@ std::optional<LRESULT> TaskbarThumbnail::HandleMessage(UINT message,
     case WM_TIMER:
       if (wparam == kTitleScrollTimerId) {
         AdvanceTitleScroll();
+        return LRESULT(0);
+      }
+      if (wparam == kButtonsRetryTimerId) {
+        // 任务栏按钮就绪后绑定 ThumbBar 按钮；成功后停止重试。
+        if (ShowButtons()) {
+          KillTimer(window_, kButtonsRetryTimerId);
+        }
         return LRESULT(0);
       }
       break;

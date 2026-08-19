@@ -675,7 +675,7 @@ class AppPreference {
 
   bool sidebarExpanded = true;
 
-  /// 任务栏悬停缩略图显示歌曲封面（关闭则显示窗口实时预览）
+  /// 任务栏集成：缩略图保持窗口实时预览，同时提供播放控制按钮
   bool taskbarThumbnailCover = true;
 
   var playbackPref = PlaybackPreference(
