@@ -2408,8 +2408,8 @@ class _TaskbarThumbnailControlState extends State<_TaskbarThumbnailControl> {
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      description: '任务栏封面与播放控制',
-      subtitle: pref.taskbarThumbnailCover ? '悬停时显示歌曲封面和播放按钮' : '悬停时显示窗口预览',
+      description: '任务栏播放控制',
+      subtitle: pref.taskbarThumbnailCover ? '悬停时显示窗口预览和播放按钮' : '关闭任务栏播放控制',
       action: Switch(
         value: pref.taskbarThumbnailCover,
         onChanged: (value) => setState(() {
