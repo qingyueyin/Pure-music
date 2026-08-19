@@ -145,7 +145,7 @@ BASS、flutter_rust_bridge、dio、lofty、provider、go_router、window_manager
 
 ## 贡献者
 
-[![contrib.rocks](https://contrib.rocks/image?repo=qingyueyin/Pure-music&max=1000)](https://github.com/qingyueyin/Pure-music/graphs/contributors)
+[![contrib.rocks](https://contrib.rocks/image?repo=qingyueyin/Pure-music&max=1000&v=2)](https://github.com/qingyueyin/Pure-music/graphs/contributors)
 
 ---
 
