@@ -87,6 +87,7 @@ String _cleanText(String text) {
 /// 强匹配：关键词 + 分隔符，或正则匹配
 bool _isStrictMatch(String text, List<String> keywords, List<RegExp> regexes) {
   final cleaned = _cleanText(text);
+  if (isPreservedArtistMetadataText(cleaned)) return false;
   if (isLyricMetadataText(cleaned)) return true;
   final normalized = cleaned.toLowerCase().replaceAll(RegExp(r'\s+'), '');
 
@@ -120,16 +121,55 @@ bool _isStrictMatch(String text, List<String> keywords, List<RegExp> regexes) {
   return false;
 }
 
-/// 弱匹配：只保留首尾扫描需要的上下文信号
+/// 弱匹配：只保留头部扫描需要的上下文信号
 bool _looksLikeMetadata(String text, List<RegExp> softRegexes) {
   final cleaned = _cleanText(text);
-  if (RegExp(r'^[^:：]{1,40}[:：]\s*\S').hasMatch(cleaned)) {
+  if (isPreservedArtistMetadataText(cleaned)) return false;
+  if (RegExp(
+    r'^(?:男|女|合|旁白|独白|[我你他她它谁](?:说|问|喊))\s*[:：]',
+  ).hasMatch(cleaned)) {
+    return false;
+  }
+  if (RegExp(r'^[^:：\s]{1,40}[:：]\s*\S').hasMatch(cleaned)) {
     return true;
   }
   for (final reg in softRegexes) {
     if (reg.hasMatch(text)) return true;
   }
   return false;
+}
+
+List<String> _lineMetadataTexts(LyricLine line) {
+  return <String>[
+    _lineText(line),
+    line.translation ?? '',
+    line.romanLyric ?? '',
+  ].map((text) => text.trim()).where((text) => text.isNotEmpty).toList();
+}
+
+({bool strict, bool weak, int evidence}) _lineMetadataMatch(
+  LyricLine line,
+  List<String> keywords,
+  List<RegExp> regexes,
+  List<RegExp> softRegexes,
+) {
+  final texts = _lineMetadataTexts(line);
+  if (texts.isEmpty || texts.any(isPreservedArtistMetadataText)) {
+    return (strict: false, weak: false, evidence: 0);
+  }
+  final strictMatches = texts
+      .map((text) => _isStrictMatch(text, keywords, regexes))
+      .toList(growable: false);
+  final candidateMatches = texts
+      .map((text) =>
+          _isStrictMatch(text, keywords, regexes) ||
+          _looksLikeMetadata(text, softRegexes))
+      .toList(growable: false);
+  return (
+    strict: strictMatches.every((matches) => matches),
+    weak: candidateMatches.every((matches) => matches),
+    evidence: candidateMatches.where((matches) => matches).length,
+  );
 }
 
 bool _isBracketedTitleArtistLine(String text) {
@@ -395,19 +435,27 @@ int _findHeaderCutoff(
   List<RegExp> softRegexes,
   int limit,
 ) {
-  var lastValidIndex = startIndex - 1;
+  var cutoff = startIndex;
+  var candidateEnd = startIndex;
+  var hasAnchor = false;
+  var weakEvidence = 0;
   for (int i = startIndex; i < limit && i < lines.length; i++) {
-    final text = _lineText(lines[i]);
-    final transText = lines[i].translation ?? '';
-    final strict = (text.isNotEmpty &&
-            _isStrictMatch(text, keywords, regexes)) ||
-        (transText.isNotEmpty && _isStrictMatch(transText, keywords, regexes));
-    final weak = (text.isNotEmpty && _looksLikeMetadata(text, softRegexes)) ||
-        (transText.isNotEmpty && _looksLikeMetadata(transText, softRegexes));
-    if (!strict && !weak) break;
-    if (strict) lastValidIndex = i;
+    final match = _lineMetadataMatch(
+      lines[i],
+      keywords,
+      regexes,
+      softRegexes,
+    );
+    if (!match.strict && !match.weak) break;
+    candidateEnd = i + 1;
+    if (match.strict) {
+      hasAnchor = true;
+      cutoff = i + 1;
+    } else {
+      weakEvidence += match.evidence;
+    }
   }
-  return lastValidIndex + 1;
+  return hasAnchor ? cutoff : (weakEvidence >= 2 ? candidateEnd : startIndex);
 }
 
 // ── 尾部扫描 ──
@@ -417,7 +465,6 @@ int _findFooterCutoff(
   int startIndex,
   List<String> keywords,
   List<RegExp> regexes,
-  List<RegExp> softRegexes,
   int limit,
 ) {
   if (startIndex >= lines.length) return startIndex;
@@ -425,15 +472,12 @@ int _findFooterCutoff(
   var firstValidIndex = lines.length;
 
   for (int i = lines.length - 1; i >= scanEnd; i--) {
-    final text = _lineText(lines[i]);
-    final transText = lines[i].translation ?? '';
-    final strict = (text.isNotEmpty &&
-            _isStrictMatch(text, keywords, regexes)) ||
-        (transText.isNotEmpty && _isStrictMatch(transText, keywords, regexes));
-    final weak = (text.isNotEmpty && _looksLikeMetadata(text, softRegexes)) ||
-        (transText.isNotEmpty && _looksLikeMetadata(transText, softRegexes));
-    if (!strict && !weak) break;
-    if (strict) firstValidIndex = i;
+    final texts = _lineMetadataTexts(lines[i]);
+    final strict = texts.isNotEmpty &&
+        !texts.any(isPreservedArtistMetadataText) &&
+        texts.every((text) => _isStrictMatch(text, keywords, regexes));
+    if (!strict) break;
+    firstValidIndex = i;
   }
   return firstValidIndex;
 }
@@ -444,7 +488,7 @@ int _findFooterCutoff(
 ///
 /// 策略：
 /// 1. 强匹配（关键词+分隔符 / 正则）→ 确定为元数据行
-/// 2. 弱匹配（含冒号/连字符）→ 若夹在强匹配行之间则视为元数据
+/// 2. 弱匹配（含冒号/连字符）→ 仅在头部连续出现或位于强匹配前时生效
 /// 3. 真正的歌词行作为防火墙，阻止误删
 List<LyricLine> stripLyricMetadata(List<LyricLine>? lines,
     [StripOptions? options]) {
@@ -492,7 +536,6 @@ List<LyricLine> stripLyricMetadata(List<LyricLine>? lines,
     startIdx,
     options.keywords,
     options.regexes,
-    options.softRegexes,
     footerLimit,
   );
 
@@ -673,8 +716,8 @@ void applyProfanityUncensor(Lyric lyric) {
 ///
 /// 策略：
 /// 1. 只清空头部/尾部连续元数据区，降低中段歌词误伤
-/// 2. 元数据区必须包含强匹配或标题-歌手行作为锚点
-/// 3. 弱匹配只在同一个首尾元数据区内跟随清空
+/// 2. 元数据区包含强匹配、标题-歌手行或连续弱匹配
+/// 3. 弱匹配只在头部连续元数据区内跟随清空
 
 /// 预编译的正则列表，避免每次调用都重新编译
 final List<RegExp> _cachedExcludeRegexes =
@@ -732,16 +775,24 @@ void blankMetadataLines(List<LyricLine> lines, [StripOptions? options]) {
   // 增强 LRC 会把同时戳的版权行合并为 translation，必须连同 translation 一起检查
   final isStrict = List<bool>.filled(totalLines, false);
   final isWeak = List<bool>.filled(totalLines, false);
+  final matchEvidence = List<int>.filled(totalLines, 0);
+  final isPreservedArtist = List<bool>.filled(totalLines, false);
   final isTitleArtist = List<bool>.filled(totalLines, false);
   final isMatchedTitleArtist = List<bool>.filled(totalLines, false);
   for (int i = 0; i < totalLines; i++) {
     final text = _lineText(lines[i]);
     final transText = lines[i].translation ?? '';
-    isStrict[i] = (text.isNotEmpty &&
-            _isStrictMatch(text, keywords, regexes)) ||
-        (transText.isNotEmpty && _isStrictMatch(transText, keywords, regexes));
-    isWeak[i] = (text.isNotEmpty && _looksLikeMetadata(text, softRegexes)) ||
-        (transText.isNotEmpty && _looksLikeMetadata(transText, softRegexes));
+    final texts = _lineMetadataTexts(lines[i]);
+    final match = _lineMetadataMatch(
+      lines[i],
+      keywords,
+      regexes,
+      softRegexes,
+    );
+    isStrict[i] = match.strict;
+    isWeak[i] = match.weak;
+    matchEvidence[i] = match.evidence;
+    isPreservedArtist[i] = texts.any(isPreservedArtistMetadataText);
     isTitleArtist[i] = (text.isNotEmpty &&
             (_isBracketedTitleArtistLine(text) ||
                 _isUnbracketedTitleArtistLine(text))) ||
@@ -762,11 +813,16 @@ void blankMetadataLines(List<LyricLine> lines, [StripOptions? options]) {
 
   bool isAnchor(int index) => isStrict[index] || isMatchedTitleArtist[index];
   bool isCandidate(int index) =>
-      isAnchor(index) || isWeak[index] || isTitleArtist[index];
+      isAnchor(index) ||
+      isWeak[index] ||
+      isTitleArtist[index] ||
+      isPreservedArtist[index];
 
   // ── 头部扫描：找连续元数据区截止位置 ──
   var headerCutoff = 0;
+  var headerCandidateEnd = 0;
   var headerHasAnchor = false;
+  var headerWeakEvidence = 0;
   for (int i = 0; i < headerLimit && i < totalLines; i++) {
     if (_isLineBlanked(lines[i])) {
       headerCutoff = i + 1;
@@ -775,12 +831,17 @@ void blankMetadataLines(List<LyricLine> lines, [StripOptions? options]) {
     if (!isCandidate(i)) {
       break;
     }
+    headerCandidateEnd = i + 1;
     if (isAnchor(i)) {
       headerHasAnchor = true;
       headerCutoff = i + 1;
+    } else if (isWeak[i]) {
+      headerWeakEvidence += matchEvidence[i];
     }
   }
-  if (!headerHasAnchor) headerCutoff = 0;
+  if (!headerHasAnchor) {
+    headerCutoff = headerWeakEvidence >= 2 ? headerCandidateEnd : 0;
+  }
 
   // ── 尾部扫描：找连续元数据区起始位置 ──
   var firstAnyInFooter = totalLines;
@@ -792,22 +853,21 @@ void blankMetadataLines(List<LyricLine> lines, [StripOptions? options]) {
       firstAnyInFooter = i;
       continue;
     }
-    if (!isCandidate(i)) {
+    if (!isAnchor(i)) {
       break;
     }
-    if (isAnchor(i)) {
-      footerHasAnchor = true;
-      firstAnyInFooter = i;
-    }
+    footerHasAnchor = true;
+    firstAnyInFooter = i;
   }
   if (!footerHasAnchor) firstAnyInFooter = totalLines;
 
   // ── 清空头部元数据（全清，含弱匹配） ──
   for (int i = 0; i < headerCutoff; i++) {
+    if (isPreservedArtist[i]) continue;
     blankLine(lines[i]);
   }
 
-  // ── 清空尾部元数据（全清，含弱匹配） ──
+  // ── 清空尾部明确元数据 ──
   if (firstAnyInFooter < totalLines) {
     for (int i = firstAnyInFooter; i < totalLines; i++) {
       blankLine(lines[i]);

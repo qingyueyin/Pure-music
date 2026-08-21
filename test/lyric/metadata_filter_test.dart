@@ -85,6 +85,158 @@ void main() {
       }
     });
 
+    test('preserves artist labels', () {
+      const labels = <String>[
+        '艺术家：Someone',
+        '藝術家: Someone',
+        'Artist: Someone',
+      ];
+      for (final label in labels) {
+        expect(LrcLine.isLyricMetadataLine(label), isFalse, reason: label);
+      }
+    });
+
+    test('uses generic colon labels only in a header block', () {
+      final headerCredits = <LrcLine>[
+        LrcLine(Duration.zero, '调校：Someone', requiredIsBlank: false),
+        LrcLine(
+          const Duration(seconds: 1),
+          '素材整理：Someone Else',
+          requiredIsBlank: false,
+        ),
+      ];
+      final lyricLine = LrcLine(
+        const Duration(seconds: 4),
+        '我说：别走',
+        requiredIsBlank: false,
+      );
+      final footerCredit = LrcLine(
+        const Duration(seconds: 8),
+        '调校：Another Person',
+        requiredIsBlank: false,
+      );
+      final lines = <LyricLine>[...headerCredits, lyricLine, footerCredit];
+
+      blankMetadataLines(lines);
+
+      expect(headerCredits.every((line) => line.isBlank), isTrue);
+      expect(lyricLine.content, '我说：别走');
+      expect(footerCredit.content, '调校：Another Person');
+    });
+
+    test('filters weak metadata left at the start of enhanced LRC', () {
+      final lyric = Lrc.fromLrcTextAuto(
+        '[00:00.000] <00:00.000>词<00:00.500>：<00:01.000>赵雷<00:02.000>\n'
+        '[00:02.000] <00:02.000>制作人<00:02.500>：<00:03.000>龙隆<00:04.000>\n'
+        '[00:04.000] <00:04.000>Program<00:04.500>：<00:05.000>孔德岳<00:06.000>\n'
+        '[00:06.000] <00:06.000>伴唱<00:06.500>：<00:07.000>西曼<00:08.000>\n'
+        '[00:08.000] <00:08.000>童声<00:08.500>：<00:09.000>少儿艺术团<00:10.000>\n'
+        '[00:10.000] <00:10.000>阿刁住在西藏的某个地方<00:14.000>',
+        LyricFormat.local,
+        keepMetadata: false,
+      )!;
+
+      blankMetadataLines(lyric.lines);
+
+      final contents = lyric.lines
+          .whereType<SyncLyricLine>()
+          .where((line) => line.words.isNotEmpty)
+          .map((line) => line.words.map((word) => word.content).join())
+          .toList();
+      expect(contents, ['阿刁住在西藏的某个地方']);
+    });
+
+    test('filters multiple weak metadata fields grouped into one line', () {
+      final metadataLine = SyncLyricLine(
+        Duration.zero,
+        const Duration(seconds: 3),
+        [
+          SyncLyricWord(
+            Duration.zero,
+            const Duration(seconds: 3),
+            'Program：孔德岳',
+          ),
+        ],
+        '伴唱：西曼',
+        '童声：少儿艺术团',
+      );
+      final lyricLine = SyncLyricLine(
+        const Duration(seconds: 4),
+        const Duration(seconds: 3),
+        [
+          SyncLyricWord(
+            const Duration(seconds: 4),
+            const Duration(seconds: 3),
+            '阿刁住在西藏的某个地方',
+          ),
+        ],
+      );
+
+      blankMetadataLines(<LyricLine>[metadataLine, lyricLine]);
+
+      expect(metadataLine.words, isEmpty);
+      expect(lyricLine.words, isNotEmpty);
+    });
+
+    test('keeps an artist label while filtering following header credits', () {
+      final artistLine = LrcLine(
+        Duration.zero,
+        '艺术家：Someone',
+        requiredIsBlank: false,
+      );
+      final creditLines = <LrcLine>[
+        LrcLine(
+          const Duration(seconds: 1),
+          '调校：Someone',
+          requiredIsBlank: false,
+        ),
+        LrcLine(
+          const Duration(seconds: 2),
+          '素材整理：Someone Else',
+          requiredIsBlank: false,
+        ),
+      ];
+
+      blankMetadataLines(<LyricLine>[artistLine, ...creditLines]);
+
+      expect(artistLine.content, '艺术家：Someone');
+      expect(artistLine.isBlank, isFalse);
+      expect(creditLines.every((line) => line.isBlank), isTrue);
+    });
+
+    test('preserves mixed lyric fields at the header', () {
+      final mixedLine = SyncLyricLine(
+        Duration.zero,
+        const Duration(seconds: 2),
+        [
+          SyncLyricWord(
+            Duration.zero,
+            const Duration(seconds: 2),
+            '我说：别走',
+          ),
+        ],
+        '作词：Someone',
+      );
+      final creditLines = <LrcLine>[
+        LrcLine(
+          const Duration(seconds: 3),
+          '调校：Someone',
+          requiredIsBlank: false,
+        ),
+        LrcLine(
+          const Duration(seconds: 4),
+          '素材整理：Someone Else',
+          requiredIsBlank: false,
+        ),
+      ];
+
+      blankMetadataLines(<LyricLine>[mixedLine, ...creditLines]);
+
+      expect(mixedLine.words, isNotEmpty);
+      expect(mixedLine.translation, '作词：Someone');
+      expect(creditLines.every((line) => line.isBlank), isFalse);
+    });
+
     test('AMLL TTML only blanks its exact creator row', () {
       final creatorLine = TtmlLine(
         const Duration(seconds: 10),

@@ -751,40 +751,110 @@ class Lrc extends Lyric {
         for (final line in rawLines) {
           grouped.putIfAbsent(line.start, () => []).add(line);
         }
+
+        // 抽样学习「位置→角色」映射（原文/翻译/注音）
+        // 同一首歌里分组结构稳定：从能确定角色的组（原文带逐字时间戳）取样，
+        // 学出每个位置上是什么角色，再套用到无法确定角色的歧义组。
+        const kOriginal = 0;
+        const kTranslation = 1;
+        const kRomanization = 2;
+        final sampleRoles = <int, List<Map<int, int>>>{};
+        for (final group in grouped.values) {
+          if (group.length == 1) continue;
+          final primaryIdx = _bestPrimaryIndex(group);
+          // 只有原文是多词（带逐字时间戳）的组才算可靠样本
+          if (group[primaryIdx].words.length <= 1) continue;
+          final posRole = <int, int>{};
+          for (int i = 0; i < group.length; i++) {
+            if (i == primaryIdx) {
+              posRole[i] = kOriginal;
+              continue;
+            }
+            final text = group[i].words.map((w) => w.content).join().trim();
+            posRole[i] =
+                (!_hasAsianChars(text) || _isRomanizationStatic(text))
+                    ? kRomanization
+                    : kTranslation;
+          }
+          sampleRoles.putIfAbsent(group.length, () => []).add(posRole);
+        }
+        // 聚合多数，得到每个行数下的「位置→角色」映射
+        final roleMap = <int, Map<int, int>>{};
+        sampleRoles.forEach((size, list) {
+          final posCounts = <int, Map<int, int>>{};
+          for (final pr in list) {
+            pr.forEach((pos, role) {
+              posCounts
+                  .putIfAbsent(pos, () => {})
+                  .update(role, (v) => v + 1, ifAbsent: () => 1);
+            });
+          }
+          final map = <int, int>{};
+          posCounts.forEach((pos, counts) {
+            int bestRole = kOriginal;
+            int best = 0;
+            counts.forEach((role, c) {
+              if (c > best) {
+                best = c;
+                bestRole = role;
+              }
+            });
+            map[pos] = bestRole;
+          });
+          roleMap[size] = map;
+        });
+
         final combined = <SyncLyricLine>[];
         for (final entry in grouped.entries) {
           final group = entry.value;
           if (group.length == 1) {
             combined.add(group[0]);
-          } else {
-            // 智能选择主歌词行：不再假设 group[0] 一定是原文
-            // 某些内嵌歌词的顺序是「罗马音 / 日语原文 / 中文翻译」，
-            // 需要通过内容特征（CJK 字符 + 逐字时间戳数量）来判断
-            final primaryIdx = _bestPrimaryIndex(group);
-            final primary = group[primaryIdx];
-            final romanParts = <String>[];
-            final transParts = <String>[];
-            for (int i = 0; i < group.length; i++) {
-              if (i == primaryIdx) continue;
-              final text = group[i].words.map((w) => w.content).join().trim();
-              if (text.isEmpty) continue;
-              // 如果该行不含东方文字 → 一定是罗马音/拼音，
-              // 不用走 _isRomanizationStatic 的英文词检测（防止 "I love you"
-              // 等英文借词被误判成翻译）。
-              if (!_hasAsianChars(text) || _isRomanizationStatic(text)) {
-                romanParts.add(text);
-              } else {
-                transParts.add(text);
-              }
-            }
-            if (romanParts.isNotEmpty) {
-              primary.romanLyric = romanParts.join(' ');
-            }
-            if (transParts.isNotEmpty) {
-              primary.translation = transParts.join(separator ?? '\u2503');
-            }
-            combined.add(primary);
+            continue;
           }
+          final primaryIdx = _bestPrimaryIndex(group);
+          // 歧义组：整组都没有带逐字时间戳的原文（如单词原文 "Monday"），
+          // 且已学到该行数的位置角色映射时，用抽样结果代替逐组判断。
+          final hasConfidentOriginal = group.any((l) => l.words.length > 1);
+          final useLearned =
+              !hasConfidentOriginal && roleMap.containsKey(group.length);
+          int primary = primaryIdx;
+          if (useLearned) {
+            final learned = roleMap[group.length]!;
+            final found = learned.entries
+                .firstWhere(
+                  (e) => e.value == kOriginal,
+                  orElse: () => const MapEntry(-1, -1),
+                )
+                .key;
+            if (found != -1) primary = found;
+          }
+          final pri = group[primary];
+          final romanParts = <String>[];
+          final transParts = <String>[];
+          for (int i = 0; i < group.length; i++) {
+            if (i == primary) continue;
+            final text = group[i].words.map((w) => w.content).join().trim();
+            if (text.isEmpty) continue;
+            // 使用抽样角色时按学到的位置判断翻译/注音；
+            // 否则按内容判断：不含东方文字 → 罗马音/拼音，
+            // 不用走 _isRomanizationStatic 的英文词检测（防止 "I love you"
+            // 等英文借词被误判成翻译）。
+            final isRoman = useLearned
+                ? roleMap[group.length]![i] == kRomanization
+                : (!_hasAsianChars(text) || _isRomanizationStatic(text));
+            if (isRoman) {
+              romanParts.add(text);
+            } else {
+              transParts.add(text);
+            }
+          }
+          if (romanParts.isNotEmpty) {
+            pri.romanLyric = romanParts.join(' ');
+          }
+          if (transParts.isNotEmpty) {
+            pri.translation = transParts.join(separator ?? '\u2503');
+          }
+          combined.add(pri);
         }
         // 插入开头前奏和中间间奏空白行（与 enhanced/Lyricify 对齐）
         final withInterludes = _insertInterludesForWordByWord(combined);

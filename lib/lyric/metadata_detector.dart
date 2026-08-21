@@ -123,6 +123,18 @@ String _stripOuterBrackets(String text) {
   return value;
 }
 
+final RegExp _preservedArtistLabelPattern = RegExp(
+  r'^(?:艺术家|藝術家|artist)\s*[:：]\s*\S',
+  caseSensitive: false,
+);
+
+bool isPreservedArtistMetadataText(String text) {
+  final cleaned = _stripOuterBrackets(
+    text.replaceAll(RegExp(r'<[^>]*>'), '').trim(),
+  );
+  return _preservedArtistLabelPattern.hasMatch(cleaned);
+}
+
 bool _isChineseCreditSequence(String text) {
   final normalized = text.replaceAll(RegExp(r'[\s/／&＆、·・]+'), '');
   if (normalized.isEmpty || normalized.length > 40) return false;
@@ -171,6 +183,7 @@ bool isLyricMetadataText(String text) {
     text.replaceAll(RegExp(r'<[^>]*>'), '').trim(),
   );
   if (cleaned.isEmpty) return false;
+  if (_preservedArtistLabelPattern.hasMatch(cleaned)) return false;
 
   if (_creditByPattern.hasMatch(cleaned) ||
       _compoundCreditLabelPattern.hasMatch(cleaned) ||
