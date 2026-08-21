@@ -52,6 +52,20 @@ void main() {
     expect(message.isWordByWord, isTrue);
   });
 
+  test('serializes desktop lyric layout config', () {
+    const message = DesktopLyricConfigMessage(
+      translationPosition: 0,
+      lyricTextAlign: 3,
+      showDoubleLine: true,
+    );
+
+    expect(message.toMessageJson(), {
+      'translationPosition': 0,
+      'lyricTextAlign': 3,
+      'showDoubleLine': true,
+    });
+  });
+
   test('keeps the final word authored timing past the line duration', () {
     final line = SyncLyricLine(
       const Duration(seconds: 8),

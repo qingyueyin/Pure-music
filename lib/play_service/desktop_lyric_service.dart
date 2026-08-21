@@ -406,6 +406,7 @@ class DesktopLyricService extends ChangeNotifier {
     bool? showLyricTranslation,
     bool? showRoman,
     int? romanPosition,
+    int? translationPosition,
     bool? showNowPlayingInfo,
     bool? hideOnPause,
     int? lyricTextAlign,
@@ -416,6 +417,8 @@ class DesktopLyricService extends ChangeNotifier {
     int? unplayedColor,
     bool? followThemeColor,
     bool? useLightOutline,
+    bool? useVerticalDisplayMode,
+    bool? showDoubleLine,
   }) {
     sendMessage(
       msg.DesktopLyricConfigMessage(
@@ -425,6 +428,7 @@ class DesktopLyricService extends ChangeNotifier {
         showLyricTranslation: showLyricTranslation,
         showRoman: showRoman,
         romanPosition: romanPosition,
+        translationPosition: translationPosition,
         showNowPlayingInfo: showNowPlayingInfo,
         hideOnPause: hideOnPause,
         lyricTextAlign: lyricTextAlign,
@@ -435,6 +439,8 @@ class DesktopLyricService extends ChangeNotifier {
         unplayedColor: unplayedColor,
         followThemeColor: followThemeColor,
         useLightOutline: useLightOutline,
+        useVerticalDisplayMode: useVerticalDisplayMode,
+        showDoubleLine: showDoubleLine,
       ),
     );
   }
@@ -721,16 +727,25 @@ class DesktopLyricService extends ChangeNotifier {
       customUnplayedColor: settings.desktopUnplayedColor,
     );
     sendConfig(
+      lyricFontSize: settings.desktopLyricFontSize,
+      translationFontSize: settings.desktopTranslationFontSize,
+      lyricFontWeight: settings.desktopLyricFontWeight,
+      showLyricTranslation: settings.desktopShowTranslation,
       showNowPlayingInfo: settings.desktopShowNowPlayingInfo,
       hideOnPause: settings.desktopHideOnPause,
       showRoman: settings.showDesktopLyricRoman,
       romanPosition: settings.desktopLyricRomanPosition,
+      translationPosition: settings.desktopLyricTranslationPosition,
+      lyricTextAlign: settings.desktopLyricTextAlign,
       lyricAnimation: settings.desktopLyricAnimation.index,
       enableStroke: settings.desktopEnableStroke,
+      backgroundOpacity: settings.desktopBackgroundOpacity,
       playedColor: colors.played.toARGB32(),
       unplayedColor: colors.unplayed.toARGB32(),
       followThemeColor: settings.desktopFollowThemeColor,
       useLightOutline: shouldUseLightDesktopLyricOutline(colors.played),
+      useVerticalDisplayMode: settings.desktopUseVerticalDisplayMode,
+      showDoubleLine: settings.desktopShowDoubleLine,
     );
   }
 

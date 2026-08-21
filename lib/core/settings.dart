@@ -268,10 +268,13 @@ class AppSettings {
   bool showDesktopLyricRoman = true;
   int desktopLyricRomanPosition = 1;
   bool desktopShowTranslation = true;
+  int desktopLyricTranslationPosition = 1;
   bool desktopShowNowPlayingInfo = true;
   bool desktopHideOnPause = false;
   bool desktopEnableStroke = true;
   bool desktopEnablePinTop = true;
+  bool desktopUseVerticalDisplayMode = false;
+  bool desktopShowDoubleLine = false;
   double desktopLyricFontSize = 22.0;
   double desktopTranslationFontSize = 18.0;
   int desktopLyricFontWeight = 700;
@@ -671,6 +674,16 @@ class AppSettings {
       );
     }
 
+    final dltp = settingsMap['DesktopLyricTranslationPosition'];
+    if (dltp != null) {
+      _instance.desktopLyricTranslationPosition = normalizedBoundedIntSetting(
+        dltp,
+        defaultValue: 1,
+        min: 0,
+        max: 1,
+      );
+    }
+
     final dsnp = settingsMap['DesktopShowNowPlayingInfo'];
     if (dsnp != null) {
       _instance.desktopShowNowPlayingInfo = normalizedBoolSetting(
@@ -703,6 +716,22 @@ class AppSettings {
       );
     }
 
+    final dvu = settingsMap['DesktopUseVerticalDisplayMode'];
+    if (dvu != null) {
+      _instance.desktopUseVerticalDisplayMode = normalizedBoolSetting(
+        dvu,
+        defaultValue: false,
+      );
+    }
+
+    final dsdl = settingsMap['DesktopShowDoubleLine'];
+    if (dsdl != null) {
+      _instance.desktopShowDoubleLine = normalizedBoolSetting(
+        dsdl,
+        defaultValue: false,
+      );
+    }
+
     final dls = settingsMap['DesktopLyricFontSize'];
     if (dls != null) {
       _instance.desktopLyricFontSize = (dls as num).clamp(12, 60).toDouble();
@@ -732,7 +761,7 @@ class AppSettings {
 
     final dlta = settingsMap['DesktopLyricTextAlign'];
     if (dlta != null) {
-      _instance.desktopLyricTextAlign = ((dlta as num).toInt()).clamp(0, 2);
+      _instance.desktopLyricTextAlign = ((dlta as num).toInt()).clamp(0, 3);
     }
 
     _instance.desktopLyricAnimation =
@@ -813,10 +842,13 @@ class AppSettings {
         'ShowDesktopLyricRoman': showDesktopLyricRoman,
         'DesktopLyricRomanPosition': desktopLyricRomanPosition,
         'DesktopShowTranslation': desktopShowTranslation,
+        'DesktopLyricTranslationPosition': desktopLyricTranslationPosition,
         'DesktopShowNowPlayingInfo': desktopShowNowPlayingInfo,
         'DesktopHideOnPause': desktopHideOnPause,
         'DesktopEnableStroke': desktopEnableStroke,
         'DesktopEnablePinTop': desktopEnablePinTop,
+        'DesktopUseVerticalDisplayMode': desktopUseVerticalDisplayMode,
+        'DesktopShowDoubleLine': desktopShowDoubleLine,
         'DesktopLyricFontSize': desktopLyricFontSize,
         'DesktopTranslationFontSize': desktopTranslationFontSize,
         'DesktopLyricFontWeight': desktopLyricFontWeight,
