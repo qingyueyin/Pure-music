@@ -4,6 +4,8 @@ import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/native/rust/api/utils.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart' as rust_tag_reader;
+import 'package:pure_music/services/online_lyric/api/net_lyric_api.dart'
+    as net_api;
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
@@ -448,52 +450,78 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
 
   Widget _buildLyricTab(ColorScheme scheme) {
     _lyricFuture ??= rust_tag_reader.getLyricFromPath(path: audio.path);
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16.0, 0, 16.0, 96.0),
-      child: FutureBuilder<String?>(
-        future: _lyricFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(32),
-                child: CircularProgressIndicator(),
-              ),
-            );
-          }
-          final lyric = snapshot.data;
-          if (lyric == null || lyric.trim().isEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Text(
-                  '未找到内嵌歌词',
+    return Stack(
+      children: [
+        SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16.0, 0, 16.0, 96.0),
+          child: FutureBuilder<String?>(
+            future: _lyricFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(32),
+                    child: CircularProgressIndicator(),
+                  ),
+                );
+              }
+              final lyric = snapshot.data;
+              if (lyric == null || lyric.trim().isEmpty) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Text(
+                      '未找到内嵌歌词',
+                      style: TextStyle(
+                        color: scheme.onSurfaceVariant,
+                        fontSize: AppType.body,
+                      ),
+                    ),
+                  ),
+                );
+              }
+              return Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                  borderRadius: AppRadius.mdCircular,
+                ),
+                child: SelectableText(
+                  lyric,
                   style: TextStyle(
-                    color: scheme.onSurfaceVariant,
                     fontSize: AppType.body,
+                    color: scheme.onSurface,
+                    height: 1.6,
                   ),
                 ),
+              );
+            },
+          ),
+        ),
+        Positioned(
+          top: 0,
+          right: 0,
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: IconButton.filledTonal(
+              tooltip: '编辑内嵌歌词',
+              onPressed: () => _showLyricsEditDialog(context, scheme),
+              style: IconButton.styleFrom(
+                shape: RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
               ),
-            );
-          }
-          return Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-              borderRadius: AppRadius.mdCircular,
+              icon: const Icon(Symbols.edit, size: 18),
             ),
-            child: SelectableText(
-              lyric,
-              style: TextStyle(
-                fontSize: AppType.body,
-                color: scheme.onSurface,
-                height: 1.6,
-              ),
-            ),
-          );
-        },
-      ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showLyricsEditDialog(BuildContext context, ColorScheme scheme) {
+    showDialog(
+      context: context,
+      builder: (_) => _LyricsEditDialog(audio: audio),
     );
   }
 
@@ -644,6 +672,143 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
         _DetailTextField(
           label: '专辑',
           controller: _controllers.album,
+          decoration: _chipDecoration(scheme),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          '分类',
+          style: TextStyle(
+            fontSize: AppType.caption,
+            color: scheme.onSurfaceVariant,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        _DetailTextField(
+          label: '流派',
+          controller: _controllers.genre,
+          decoration: _chipDecoration(scheme),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: _DetailTextField(
+                label: '年份',
+                controller: _controllers.year,
+                decoration: _chipDecoration(scheme),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _DetailTextField(
+                label: '音轨号',
+                controller: _controllers.track,
+                decoration: _chipDecoration(scheme, '如 3'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: _DetailTextField(
+                label: '音轨总数',
+                controller: _controllers.trackTotal,
+                decoration: _chipDecoration(scheme, '如 12'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _DetailTextField(
+                label: '碟片号',
+                controller: _controllers.disc,
+                decoration: _chipDecoration(scheme),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _DetailTextField(
+                label: '碟片总数',
+                controller: _controllers.discTotal,
+                decoration: _chipDecoration(scheme),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Text(
+          '详细',
+          style: TextStyle(
+            fontSize: AppType.caption,
+            color: scheme.onSurfaceVariant,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        _DetailTextField(
+          label: '作曲',
+          controller: _controllers.composer,
+          decoration: _chipDecoration(scheme, '多个用 / 分隔'),
+        ),
+        const SizedBox(height: 10),
+        _DetailTextField(
+          label: '作词',
+          controller: _controllers.lyricist,
+          decoration: _chipDecoration(scheme, '多个用 / 分隔'),
+        ),
+        const SizedBox(height: 10),
+        _DetailTextField(
+          label: '厂牌',
+          controller: _controllers.label,
+          decoration: _chipDecoration(scheme),
+        ),
+        const SizedBox(height: 10),
+        _DetailTextField(
+          label: '注释',
+          controller: _controllers.comment,
+          decoration: _chipDecoration(scheme),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          '其他',
+          style: TextStyle(
+            fontSize: AppType.caption,
+            color: scheme.onSurfaceVariant,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: _DetailTextField(
+                label: 'BPM',
+                controller: _controllers.bpm,
+                decoration: _chipDecoration(scheme),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _DetailTextField(
+                label: '语言',
+                controller: _controllers.language,
+                decoration: _chipDecoration(scheme),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        _DetailTextField(
+          label: '版权',
+          controller: _controllers.copyright,
+          decoration: _chipDecoration(scheme),
+        ),
+        const SizedBox(height: 10),
+        _DetailTextField(
+          label: '许可',
+          controller: _controllers.license,
           decoration: _chipDecoration(scheme),
         ),
         const SizedBox(height: 14),
@@ -1081,4 +1246,469 @@ class _DetailTextField extends StatelessWidget {
       ],
     );
   }
+}
+
+class _LyricsEditDialog extends StatefulWidget {
+  const _LyricsEditDialog({required this.audio});
+
+  final Audio audio;
+
+  @override
+  State<_LyricsEditDialog> createState() => _LyricsEditDialogState();
+}
+
+class _LyricsEditDialogState extends State<_LyricsEditDialog> {
+  late final TextEditingController _ctrl;
+  bool _isLoading = true;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController();
+    _loadEmbeddedLyric();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadEmbeddedLyric() async {
+    try {
+      final lyric = await rust_tag_reader.getLyricFromPath(path: widget.audio.path);
+      if (!mounted) return;
+      setState(() {
+        _ctrl.text = lyric ?? '';
+        _isLoading = false;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _save() async {
+    if (_isSaving) return;
+    setState(() => _isSaving = true);
+    try {
+      await rust_tag_reader.writeLyricToPath(
+        path: widget.audio.path,
+        lyric: _ctrl.text,
+      );
+      if (mounted) {
+        Navigator.pop(context);
+        showTextOnSnackBar('歌词已写入标签', variant: ToastVariant.success);
+      }
+    } catch (e, trace) {
+      logger.e('写入歌词标签失败', error: e, stackTrace: trace);
+      if (mounted) {
+        showTextOnSnackBar('写入标签失败，请查看日志', variant: ToastVariant.error);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
+  }
+
+  Future<void> _fetchFromNet() async {
+    final result = await showDialog<String>(
+      context: context,
+      builder: (_) => _FetchLyricFromNetDialog(audio: widget.audio),
+    );
+    if (result != null && result.isNotEmpty && mounted) {
+      setState(() => _ctrl.text = result);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return AlertDialog(
+      title: const Text('编辑内嵌歌词'),
+      content: SizedBox(
+        width: 500,
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : TextField(
+                controller: _ctrl,
+                maxLines: null,
+                style: TextStyle(fontSize: AppType.body, color: scheme.onSurface),
+                decoration: InputDecoration(
+                  hintText: '粘贴或输入歌词内容，支持 LRC / 增强 LRC / QRC / YRC / KRC 格式',
+                  alignLabelWithHint: true,
+                  suffixIcon: IconButton(
+                    tooltip: '从网络获取',
+                    icon: const Icon(Symbols.cloud_download, size: 20),
+                    onPressed: _fetchFromNet,
+                  ),
+                ),
+              ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: _isSaving ? null : _save,
+          child: _isSaving
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('保存'),
+        ),
+      ],
+    );
+  }
+}
+
+enum _LyricNetSource { qq, ne, kugou }
+
+class _FetchLyricFromNetDialog extends StatefulWidget {
+  const _FetchLyricFromNetDialog({required this.audio});
+
+  final Audio audio;
+
+  @override
+  State<_FetchLyricFromNetDialog> createState() => _FetchLyricFromNetDialogState();
+}
+
+class _FetchLyricFromNetDialogState extends State<_FetchLyricFromNetDialog> {
+  late final TextEditingController _searchCtrl;
+  _LyricNetSource _activeSource = _LyricNetSource.qq;
+  List<_LyricSearchItem> _results = [];
+  bool _isSearching = false;
+  bool _isFetching = false;
+  _LyricSearchItem? _fetchingItem;
+
+  @override
+  void initState() {
+    super.initState();
+    final query = widget.audio.artist.isNotEmpty
+        ? '${widget.audio.title} ${widget.audio.artist}'
+        : widget.audio.title;
+    _searchCtrl = TextEditingController(text: query);
+    _search();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _search() async {
+    final query = _searchCtrl.text.trim();
+    if (query.isEmpty) return;
+    setState(() {
+      _isSearching = true;
+      _results = [];
+    });
+    try {
+      final results = await _searchSource(query, _activeSource);
+      if (!mounted) return;
+      setState(() {
+        _results = results;
+        _isSearching = false;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _isSearching = false;
+        });
+      }
+    }
+  }
+
+  Future<List<_LyricSearchItem>> _searchSource(
+    String query,
+    _LyricNetSource source,
+  ) async {
+    return switch (source) {
+      _LyricNetSource.qq => (await net_api.qqSearchLyric(keyword: query))
+          .map((e) => _LyricSearchItem(
+                source: source,
+                id: e.id,
+                title: e.title,
+                artist: e.artist,
+                album: e.album,
+                extras: {'id': e.id, 'mid': e.mid},
+              ))
+          .toList(),
+      _LyricNetSource.ne => (await net_api.neSearchLyric(keyword: query))
+          .map((e) => _LyricSearchItem(
+                source: source,
+                id: e.id,
+                title: e.title,
+                artist: e.artist,
+                album: e.album,
+              ))
+          .toList(),
+      _LyricNetSource.kugou => (await net_api.kgSearchLyric(keyword: query))
+          .map((e) => _LyricSearchItem(
+                source: source,
+                id: e.hash,
+                title: e.title,
+                artist: e.artist,
+                album: e.album,
+                extras: {'hash': e.hash},
+              ))
+          .toList(),
+    };
+  }
+
+  Future<void> _selectResult(_LyricSearchItem item) async {
+    if (_isFetching) return;
+    setState(() {
+      _isFetching = true;
+      _fetchingItem = item;
+    });
+    try {
+      final rawText = await _fetchRawLyric(item);
+      if (!mounted) return;
+      if (rawText != null && rawText.isNotEmpty) {
+        Navigator.pop(context, rawText);
+      } else {
+        showTextOnSnackBar('歌词获取失败', variant: ToastVariant.error);
+      }
+    } catch (_) {
+      if (mounted) {
+        showTextOnSnackBar('歌词获取失败', variant: ToastVariant.error);
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isFetching = false;
+          _fetchingItem = null;
+        });
+      }
+    }
+  }
+
+  Future<String?> _fetchRawLyric(_LyricSearchItem item) async {
+    return switch (item.source) {
+      _LyricNetSource.qq => _fetchQQLyric(item),
+      _LyricNetSource.ne => _fetchNELyric(item),
+      _LyricNetSource.kugou => _fetchKugouLyric(item),
+    };
+  }
+
+  Future<String?> _fetchQQLyric(_LyricSearchItem item) async {
+    final songId = int.tryParse(item.extras['id'] ?? item.id);
+    if (songId == null) return null;
+    final result = await net_api.qqGetLyric(
+      id: songId,
+      title: widget.audio.title,
+      album: widget.audio.album,
+      artist: widget.audio.artist,
+      durationSec: widget.audio.duration.toInt(),
+    );
+    return result?.mainLyric;
+  }
+
+  Future<String?> _fetchNELyric(_LyricSearchItem item) async {
+    final songId = int.tryParse(item.id);
+    if (songId == null) return null;
+    final result = await net_api.neGetLyric(id: songId);
+    return result?.mainLyric;
+  }
+
+  Future<String?> _fetchKugouLyric(_LyricSearchItem item) async {
+    final hash = item.extras['hash'] ?? item.id;
+    final result = await net_api.kgGetLyric(hash: hash);
+    return result?.mainLyric;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: AppRadius.mdCircular),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: 384, maxWidth: 560),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    '从网络获取歌词',
+                    style: TextStyle(
+                      fontSize: AppType.sectionTitle,
+                      fontWeight: AppType.weightBold,
+                      color: scheme.onSurface,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Symbols.close, size: 20),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _searchCtrl,
+                      autofocus: true,
+                      style: TextStyle(fontSize: AppType.body, color: scheme.onSurface),
+                      decoration: const InputDecoration(
+                        hintText: '输入歌曲名或歌手...',
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                      ),
+                      onSubmitted: (_) => _search(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    tooltip: '搜索',
+                    icon: _isSearching
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Symbols.search, size: 20),
+                    onPressed: _isSearching ? null : _search,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  _buildSourceTab(_LyricNetSource.qq, 'QQ'),
+                  const SizedBox(width: 8),
+                  _buildSourceTab(_LyricNetSource.ne, '网易'),
+                  const SizedBox(width: 8),
+                  _buildSourceTab(_LyricNetSource.kugou, '酷狗'),
+                ],
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 280,
+                child: _isSearching
+                    ? const Center(child: CircularProgressIndicator())
+                    : _results.isEmpty
+                        ? Center(
+                            child: Text(
+                              '无结果',
+                              style: TextStyle(
+                                color: scheme.onSurfaceVariant,
+                                fontSize: AppType.body,
+                              ),
+                            ),
+                          )
+                        : ListView.builder(
+                            itemCount: _results.length,
+                            itemBuilder: (context, index) {
+                              final item = _results[index];
+                              final isFetching = _fetchingItem == item;
+                              return ListTile(
+                                dense: true,
+                                title: Text(
+                                  item.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: AppType.body,
+                                    color: scheme.onSurface,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  '${item.artist}${item.album.isNotEmpty ? ' · ${item.album}' : ''}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: AppType.caption,
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                                ),
+                                trailing: isFetching
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : null,
+                                onTap: isFetching ? null : () => _selectResult(item),
+                              );
+                            },
+                          ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSourceTab(_LyricNetSource source, String label) {
+    final isActive = _activeSource == source;
+    final scheme = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onTap: () {
+        if (_activeSource == source) return;
+        setState(() {
+          _activeSource = source;
+          _results = [];
+        });
+        _search();
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: BoxDecoration(
+          color: isActive ? scheme.primaryContainer : Colors.transparent,
+          borderRadius: AppRadius.smCircular,
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: AppType.caption,
+            color: isActive
+                ? scheme.onPrimaryContainer
+                : scheme.onSurfaceVariant,
+            fontWeight: isActive ? AppType.weightBold : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LyricSearchItem {
+  final _LyricNetSource source;
+  final String id;
+  final String title;
+  final String artist;
+  final String album;
+  final Map<String, String> extras;
+
+  const _LyricSearchItem({
+    required this.source,
+    required this.id,
+    required this.title,
+    required this.artist,
+    this.album = '',
+    this.extras = const {},
+  });
 }
