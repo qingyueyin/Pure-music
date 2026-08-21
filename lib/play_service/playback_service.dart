@@ -549,11 +549,19 @@ class PlaybackService extends ChangeNotifier {
       incomingIndex: incomingIndex,
       outgoing: outgoing,
       incoming: incoming,
+      isSameAlbum: _sameAlbum(outgoing, incoming),
       isGaplessCandidate: false,
       userSpeed: _rate.value,
       pitch: _pitch.value,
       outgoingReplayGainDb: _player.replayGainDb,
     );
+  }
+
+  bool _sameAlbum(Audio outgoing, Audio incoming) {
+    final outgoingAlbum = outgoing.album.trim().toLowerCase();
+    final incomingAlbum = incoming.album.trim().toLowerCase();
+    if (outgoingAlbum.isEmpty || incomingAlbum.isEmpty) return false;
+    return outgoingAlbum == incomingAlbum;
   }
 
   bool _isCurrentSmartTarget(SmartTransitionTarget target) {

@@ -17,6 +17,8 @@ pub const TEMPO_RATIO_TOLERANCE: f64 = 0.04;
 pub const PHASE_ALIGNMENT_RATIO_TOLERANCE: f64 = 0.06;
 pub const MIN_DURATION_MS: f64 = 2000.0;
 pub const MAX_DURATION_MS: f64 = 12000.0;
+pub const CROSS_ALBUM_MIN_DURATION_MS: f64 = 2000.0;
+pub const CROSS_ALBUM_MAX_DURATION_MS: f64 = 3000.0;
 pub const DOWNBEAD_GRID_THRESHOLD: f64 = 0.58;
 pub const FOLD_CANDIDATES: [f64; 3] = [0.5, 1.0, 2.0];
 pub const RATIO_RANGE_MIN: f64 = 2.0 / 3.0;
@@ -26,6 +28,7 @@ pub const RATIO_RANGE_MAX: f64 = 1.5;
 pub struct Relationship {
     /// 调用方提供的明确连续媒体标记；专辑和曲号不能单独作为依据。
     pub is_gapless_candidate: bool,
+    pub is_same_album: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -74,7 +77,7 @@ fn gain_inputs(
     }
 }
 
-/// 7.1 分派：GAPLESS -> SILENCE_TRIM（区域不足）-> 节拍 -> ENERGY_CROSSFADE。
+/// 7.1 分派：GAPLESS -> 跨专辑保守衔接 -> SILENCE_TRIM（区域不足）-> 节拍 -> ENERGY_CROSSFADE。
 /// 节拍准入失败或无法 cue 时，失败原因合并进 ENERGY_CROSSFADE 的 diagnostics，不丢失降级依据。
 pub fn plan_transition(
     outgoing: &TrackProfile,
@@ -93,6 +96,9 @@ pub fn plan_transition(
     if relationship.is_gapless_candidate {
         return Ok(gapless_plan(outgoing, incoming, constraints));
     }
+    if !relationship.is_same_album {
+        return conservative_cross_album_plan(outgoing, incoming, constraints);
+    }
     let exit_len = outgoing.exit.end_ms - outgoing.exit.start_ms;
     let entrance_len = incoming.entrance.end_ms - incoming.entrance.start_ms;
     if exit_len < MIN_DURATION_MS || entrance_len < MIN_DURATION_MS {
@@ -110,6 +116,69 @@ pub fn plan_transition(
     let mut plan = energy_crossfade_plan(outgoing, incoming, constraints)?;
     plan.diagnostics.extend(beat_notes);
     Ok(plan)
+}
+
+fn conservative_cross_album_plan(
+    outgoing: &TrackProfile,
+    incoming: &TrackProfile,
+    constraints: &RuntimeConstraints,
+) -> Result<TransitionPlan, PlanError> {
+    let inputs = gain_inputs(outgoing, incoming, constraints);
+    let intro = intro_protection_of(&inputs);
+    let activity = outgoing
+        .exit
+        .onset_density
+        .max(incoming.entrance.onset_density);
+    let intensity = activity.max(intro).clamp(0.0, 1.0);
+    let requested_ms = CROSS_ALBUM_MAX_DURATION_MS
+        - intensity * (CROSS_ALBUM_MAX_DURATION_MS - CROSS_ALBUM_MIN_DURATION_MS);
+    let exit_len = outgoing.exit.end_ms - outgoing.exit.start_ms;
+    let entrance_len = incoming.entrance.end_ms - incoming.entrance.start_ms;
+    let available_duration_ms =
+        (exit_len / constraints.user_speed).min(entrance_len / constraints.user_speed);
+    let duration_ms = requested_ms.min(available_duration_ms);
+    if duration_ms < CROSS_ALBUM_MIN_DURATION_MS {
+        let mut plan = silence_trim_plan(
+            outgoing,
+            incoming,
+            constraints,
+            "cross-album boundary window is too short",
+        );
+        plan.diagnostics
+            .push(diag("relationship", "different_album"));
+        return Ok(plan);
+    }
+
+    let (outgoing_bpm, incoming_bpm, raw_ratio, matched_ratio, fold_factor) =
+        tempo_fields(outgoing, incoming);
+    let confidence = (outgoing.exit.boundary_confidence * incoming.entrance.boundary_confidence)
+        .sqrt()
+        .clamp(0.0, 1.0);
+    Ok(TransitionPlan {
+        mode: TransitionMode::EnergyCrossfade,
+        confidence,
+        confidence_tier: 1,
+        outgoing_bpm,
+        incoming_bpm,
+        outgoing_cue_ms: (outgoing.exit.end_ms - duration_ms * constraints.user_speed).round()
+            as u64,
+        incoming_cue_ms: incoming.entrance.start_ms.round() as u64,
+        duration_ms: duration_ms.round() as u64,
+        raw_ratio,
+        matched_ratio,
+        fold_factor,
+        outgoing_effective_speed: constraints.user_speed,
+        bass_tempo_percent: 0.0,
+        gain_curve: build_gain_curve(&inputs)?.to_vec(),
+        diagnostics: vec![
+            diag("mode", "energy_crossfade"),
+            diag("relationship", "different_album"),
+            diag(
+                "boundary",
+                &format!("activity={activity:.4} intro={intro:.4}"),
+            ),
+        ],
+    })
 }
 
 fn validate_constraints(constraints: &RuntimeConstraints) -> Result<(), PlanError> {

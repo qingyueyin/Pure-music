@@ -1797,6 +1797,7 @@ fn wire__crate__api__smart_transition__plan_smart_transition_json_impl(
             let api_outgoing_profile_json = <String>::sse_decode(&mut deserializer);
             let api_incoming_profile_json = <String>::sse_decode(&mut deserializer);
             let api_is_gapless_candidate = <bool>::sse_decode(&mut deserializer);
+            let api_is_same_album = <bool>::sse_decode(&mut deserializer);
             let api_user_speed = <f64>::sse_decode(&mut deserializer);
             let api_pitch = <f64>::sse_decode(&mut deserializer);
             let api_tempo_at_cue_available = <bool>::sse_decode(&mut deserializer);
@@ -1809,6 +1810,7 @@ fn wire__crate__api__smart_transition__plan_smart_transition_json_impl(
                         api_outgoing_profile_json,
                         api_incoming_profile_json,
                         api_is_gapless_candidate,
+                        api_is_same_album,
                         api_user_speed,
                         api_pitch,
                         api_tempo_at_cue_available,

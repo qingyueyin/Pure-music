@@ -121,6 +121,7 @@ pub fn plan_smart_transition_json(
     outgoing_profile_json: String,
     incoming_profile_json: String,
     is_gapless_candidate: bool,
+    is_same_album: bool,
     user_speed: f64,
     pitch: f64,
     tempo_at_cue_available: bool,
@@ -137,6 +138,7 @@ pub fn plan_smart_transition_json(
         &incoming,
         &Relationship {
             is_gapless_candidate,
+            is_same_album,
         },
         &RuntimeConstraints {
             user_speed,

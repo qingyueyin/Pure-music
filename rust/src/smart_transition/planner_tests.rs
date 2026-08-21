@@ -104,6 +104,7 @@ fn scenarios() -> Vec<Scenario> {
             incoming: beat_in.clone(),
             relationship: Relationship {
                 is_gapless_candidate: true,
+                is_same_album: true,
             },
             constraints: constraints(1.0, false),
         },
@@ -113,6 +114,7 @@ fn scenarios() -> Vec<Scenario> {
             incoming: beat_in.clone(),
             relationship: Relationship {
                 is_gapless_candidate: false,
+                is_same_album: true,
             },
             constraints: constraints(1.0, false),
         },
@@ -122,6 +124,7 @@ fn scenarios() -> Vec<Scenario> {
             incoming: beat_match_in,
             relationship: Relationship {
                 is_gapless_candidate: false,
+                is_same_album: true,
             },
             constraints: constraints(1.0, true),
         },
@@ -131,6 +134,7 @@ fn scenarios() -> Vec<Scenario> {
             incoming: energy_in,
             relationship: Relationship {
                 is_gapless_candidate: false,
+                is_same_album: true,
             },
             constraints: constraints(1.0, false),
         },
@@ -140,6 +144,7 @@ fn scenarios() -> Vec<Scenario> {
             incoming: trim_in,
             relationship: Relationship {
                 is_gapless_candidate: false,
+                is_same_album: true,
             },
             constraints: constraints(1.0, false),
         },
@@ -223,6 +228,7 @@ fn threshold_boundaries_are_exact() {
     let inc = profile("in-b1", 120.0, 0.75, 0.8, 0.6, full_exit());
     let rel = Relationship {
         is_gapless_candidate: false,
+        is_same_album: true,
     };
     let p = plan_transition(&out, &inc, &rel, &constraints(1.0, false), &config()).unwrap();
     assert_eq!(
@@ -272,6 +278,7 @@ fn degradation_reason_is_preserved() {
     let inc = profile("in-dr", 100.0, 0.75, 0.8, 0.6, full_exit());
     let rel = Relationship {
         is_gapless_candidate: false,
+        is_same_album: true,
     };
     let p = plan_transition(&out, &inc, &rel, &constraints(1.0, false), &config()).unwrap();
     assert_eq!(p.mode, TransitionMode::EnergyCrossfade);
@@ -319,6 +326,7 @@ fn beat_cue_stays_in_analysis_region() {
     };
     let rel = Relationship {
         is_gapless_candidate: false,
+        is_same_album: true,
     };
     let p = plan_transition(&out, &inc, &rel, &constraints(1.0, true), &config()).unwrap();
     if p.mode == TransitionMode::BeatMatched {
@@ -367,6 +375,7 @@ fn beat_incoming_cue_stays_in_entrance() {
     };
     let rel = Relationship {
         is_gapless_candidate: false,
+        is_same_album: true,
     };
     let p = plan_transition(&out, &inc, &rel, &constraints(1.0, false), &config()).unwrap();
     assert_eq!(
@@ -396,6 +405,7 @@ fn shuffle_blocks_gapless() {
     let beat_in = profile("in-sh", 120.0, 0.75, 0.8, 0.6, full_exit());
     let rel = Relationship {
         is_gapless_candidate: false,
+        is_same_album: true,
     };
     let p = plan_transition(
         &beat_out,
@@ -413,6 +423,56 @@ fn shuffle_blocks_gapless() {
 }
 
 #[test]
+fn different_album_uses_short_boundary_crossfade_for_calm_edges() {
+    let mut outgoing = profile("out-cross-album-calm", 120.0, 0.75, 0.8, 0.6, full_exit());
+    outgoing.exit.onset_density = 0.05;
+    outgoing.exit.average_energy_dbfs = -18.0;
+    let mut incoming = profile("in-cross-album-calm", 120.0, 0.75, 0.8, 0.6, full_exit());
+    incoming.entrance.onset_density = 0.05;
+    incoming.entrance.average_energy_dbfs = -18.0;
+    let plan = plan_transition(
+        &outgoing,
+        &incoming,
+        &Relationship {
+            is_gapless_candidate: false,
+            is_same_album: false,
+        },
+        &constraints(1.0, true),
+        &config(),
+    )
+    .unwrap();
+    assert_eq!(plan.mode, TransitionMode::EnergyCrossfade);
+    assert!((2000..=3000).contains(&plan.duration_ms));
+    assert_eq!(plan.bass_tempo_percent, 0.0);
+    assert!(plan
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.detail == "different_album"));
+    validate_transition_plan(&plan).unwrap();
+}
+
+#[test]
+fn different_album_keeps_a_short_crossfade_for_active_edges() {
+    let outgoing = profile("out-cross-album-active", 120.0, 0.75, 0.8, 0.6, full_exit());
+    let incoming = profile("in-cross-album-active", 123.0, 0.75, 0.8, 0.6, full_exit());
+    let plan = plan_transition(
+        &outgoing,
+        &incoming,
+        &Relationship {
+            is_gapless_candidate: false,
+            is_same_album: false,
+        },
+        &constraints(1.0, true),
+        &config(),
+    )
+    .unwrap();
+    assert_eq!(plan.mode, TransitionMode::EnergyCrossfade);
+    assert!((2000..=3000).contains(&plan.duration_ms));
+    assert_eq!(plan.bass_tempo_percent, 0.0);
+    validate_transition_plan(&plan).unwrap();
+}
+
+#[test]
 fn unsupported_tempo_uses_phase_alignment() {
     // 无 tempo profile -> 能量交叉淡化
     let mut out = profile("out-nt", 120.0, 0.75, 0.8, 0.6, full_exit());
@@ -420,6 +480,7 @@ fn unsupported_tempo_uses_phase_alignment() {
     let inc = profile("in-nt", 120.0, 0.75, 0.8, 0.6, full_exit());
     let rel = Relationship {
         is_gapless_candidate: false,
+        is_same_album: true,
     };
     let p = plan_transition(&out, &inc, &rel, &constraints(1.0, false), &config()).unwrap();
     assert_eq!(p.mode, TransitionMode::EnergyCrossfade);
@@ -449,6 +510,7 @@ fn observed_near_tempo_profiles_use_phase_alignment() {
         &incoming,
         &Relationship {
             is_gapless_candidate: false,
+            is_same_album: true,
         },
         &constraints(1.0, false),
         &config(),
@@ -467,6 +529,7 @@ fn exact_ratio_boundary_and_capability_range_are_enforced() {
     let incoming = profile("in-ratio", 124.8, 0.75, 0.8, 0.5, full_exit());
     let relationship = Relationship {
         is_gapless_candidate: false,
+        is_same_album: true,
     };
     let plan = plan_transition(
         &outgoing,
@@ -505,6 +568,7 @@ fn silence_trim_uses_audible_boundaries() {
         &incoming,
         &Relationship {
             is_gapless_candidate: false,
+            is_same_album: true,
         },
         &constraints(1.0, false),
         &config(),
@@ -526,6 +590,7 @@ fn planner_rejects_invalid_runtime_input() {
         &incoming,
         &Relationship {
             is_gapless_candidate: false,
+            is_same_album: true,
         },
         &invalid,
         &config(),
@@ -542,6 +607,7 @@ fn energy_plan_preserves_tempo_ratio() {
         &incoming,
         &Relationship {
             is_gapless_candidate: false,
+            is_same_album: true,
         },
         &constraints(1.0, false),
         &config(),
@@ -560,6 +626,7 @@ fn energy_plan_scales_source_window_with_user_speed() {
         &incoming,
         &Relationship {
             is_gapless_candidate: false,
+            is_same_album: true,
         },
         &constraints(2.0, false),
         &config(),

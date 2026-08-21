@@ -15,6 +15,7 @@ final class SmartTransitionTarget {
     required this.incomingIndex,
     required this.outgoing,
     required this.incoming,
+    this.isSameAlbum = true,
     required this.isGaplessCandidate,
     required this.userSpeed,
     required this.pitch,
@@ -26,6 +27,7 @@ final class SmartTransitionTarget {
   final int incomingIndex;
   final Audio outgoing;
   final Audio incoming;
+  final bool isSameAlbum;
   final bool isGaplessCandidate;
   final double userSpeed;
   final double pitch;
@@ -198,6 +200,7 @@ final class SmartTransitionCoordinator {
         'sourceGeneration': pending.sourceGeneration,
         'outgoingIndex': target.outgoingIndex,
         'incomingIndex': target.incomingIndex,
+        'sameAlbum': target.isSameAlbum,
         'gaplessCandidate': target.isGaplessCandidate,
         'outgoingPath': target.outgoing.path,
         'incomingPath': target.incoming.path,
@@ -461,6 +464,7 @@ final class SmartTransitionCoordinator {
         outgoingProfileJson: pending.outgoingProfileJson!,
         incomingProfileJson: pending.incomingProfileJson!,
         isGaplessCandidate: pending.target.isGaplessCandidate,
+        isSameAlbum: pending.target.isSameAlbum,
         userSpeed: pending.target.userSpeed,
         pitch: pending.target.pitch,
         tempoAtCueAvailable: capabilities['tempoAtCue'] == true,

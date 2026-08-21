@@ -268,6 +268,7 @@ abstract class RustLibApi extends BaseApi {
     required String outgoingProfileJson,
     required String incomingProfileJson,
     required bool isGaplessCandidate,
+    required bool isSameAlbum,
     required double userSpeed,
     required double pitch,
     required bool tempoAtCueAvailable,
@@ -1806,6 +1807,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String outgoingProfileJson,
     required String incomingProfileJson,
     required bool isGaplessCandidate,
+    required bool isSameAlbum,
     required double userSpeed,
     required double pitch,
     required bool tempoAtCueAvailable,
@@ -1819,6 +1821,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(outgoingProfileJson, serializer);
           sse_encode_String(incomingProfileJson, serializer);
           sse_encode_bool(isGaplessCandidate, serializer);
+          sse_encode_bool(isSameAlbum, serializer);
           sse_encode_f_64(userSpeed, serializer);
           sse_encode_f_64(pitch, serializer);
           sse_encode_bool(tempoAtCueAvailable, serializer);
@@ -1840,6 +1843,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           outgoingProfileJson,
           incomingProfileJson,
           isGaplessCandidate,
+          isSameAlbum,
           userSpeed,
           pitch,
           tempoAtCueAvailable,
@@ -1858,6 +1862,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           'outgoingProfileJson',
           'incomingProfileJson',
           'isGaplessCandidate',
+          'isSameAlbum',
           'userSpeed',
           'pitch',
           'tempoAtCueAvailable',
