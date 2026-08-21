@@ -1996,8 +1996,9 @@ pub fn get_picture_from_path(path: String, width: u32, height: u32) -> Option<Ve
             );
 
             let mut output = Cursor::new(Vec::new());
-            if resized_img
-                .write_to(&mut output, image::ImageFormat::Png)
+            if image::DynamicImage::ImageRgba8(resized_img)
+                .to_rgb8()
+                .write_to(&mut output, image::ImageFormat::Jpeg)
                 .is_ok()
             {
                 let out = output.into_inner();

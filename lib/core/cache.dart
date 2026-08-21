@@ -342,12 +342,13 @@ class AlbumColorCache {
 class _AsyncSemaphore {
   final int _capacity;
   int _inUse = 0;
-  final Queue<Completer<void>> _queue = Queue();
+  final Queue<Completer<void>> _highPriority = Queue();
+  final Queue<Completer<void>> _lowPriority = Queue();
 
   _AsyncSemaphore(this._capacity);
 
-  Future<T> run<T>(Future<T> Function() task) async {
-    await _acquire();
+  Future<T> run<T>(Future<T> Function() task, {bool lowPriority = false}) async {
+    await _acquire(lowPriority);
     try {
       return await task();
     } finally {
@@ -355,18 +356,22 @@ class _AsyncSemaphore {
     }
   }
 
-  Future<void> _acquire() {
+  Future<void> _acquire(bool lowPriority) {
     if (_inUse < _capacity) {
       _inUse += 1;
       return Future.value();
     }
     final c = Completer<void>();
-    _queue.add(c);
+    (lowPriority ? _lowPriority : _highPriority).add(c);
     return c.future;
   }
 
   void _release() {
-    final next = _queue.isEmpty ? null : _queue.removeFirst();
+    final next = _highPriority.isNotEmpty
+        ? _highPriority.removeFirst()
+        : _lowPriority.isNotEmpty
+            ? _lowPriority.removeFirst()
+            : null;
     if (next != null) {
       next.complete();
       return;
@@ -569,7 +574,7 @@ class CoverImageCache {
   CoverImageCache._();
 
   late final _small = _LruMap<String, ImageProvider>(
-    512,
+    2048,
     onRemove: (key, _) => _smallBytes.remove(key),
     onEvict: (_, provider) => unawaited(provider.evict()),
   );
@@ -590,6 +595,7 @@ class CoverImageCache {
   final _pendingBytes = <String, Future<Uint8List?>>{};
   final _persistentWarmCompleted = <String>{};
   final _persistentWarmPending = <String>{};
+  late final _missing = _LruMap<String, bool>(512);
   final _coverLoadSemaphore = _AsyncSemaphore(
     backgroundWorkerConcurrencyFor(applicationProcessorBudget),
   );
@@ -764,6 +770,7 @@ class CoverImageCache {
     required String path,
     required int width,
     required int height,
+    bool lowPriority = false,
   }) async {
     final pixelRatio =
         ui.PlatformDispatcher.instance.views.first.devicePixelRatio;
@@ -772,6 +779,7 @@ class CoverImageCache {
       width: width,
       height: height,
       pixelRatio: pixelRatio,
+      lowPriority: lowPriority,
     );
   }
 
@@ -786,6 +794,7 @@ class CoverImageCache {
     required int width,
     required int height,
     required double pixelRatio,
+    bool lowPriority = false,
   }) async {
     final physicalWidth = (width * pixelRatio).round();
     final physicalHeight = (height * pixelRatio).round();
@@ -793,16 +802,21 @@ class CoverImageCache {
     final pending = _pendingBytes[key];
     if (pending != null) return pending;
 
+    if (_missing.get(key) == true) return null;
+
     final future = _coverLoadSemaphore.run(
       () => _loadBytesUncached(
         path: path,
         physicalWidth: physicalWidth,
         physicalHeight: physicalHeight,
       ),
+      lowPriority: lowPriority,
     );
     _pendingBytes[key] = future;
     try {
-      return await future;
+      final result = await future;
+      if (result == null) _missing.set(key, true);
+      return result;
     } finally {
       if (identical(_pendingBytes[key], future)) {
         _pendingBytes.remove(key);
@@ -810,13 +824,17 @@ class CoverImageCache {
     }
   }
 
+  /// 小封面（≤96 物理像素）直接 FFI 读音频文件，不走 SQLite 持久化层：
+  /// 内存缓存已足以覆盖列表滚动距离，省掉每次 stat + 全局锁 + SQLite 查询。
+  /// 大封面仍走持久化缓存，命中时避免重复读音频文件。
   Future<Uint8List?> _loadBytesUncached({
     required String path,
     required int physicalWidth,
     required int physicalHeight,
   }) async {
     final indexPath = _indexPath;
-    if (indexPath != null) {
+    final maxPhysical = max(physicalWidth, physicalHeight);
+    if (indexPath != null && maxPhysical > 96) {
       try {
         return await library_db.getCachedCover(
           indexPath: indexPath,
@@ -855,30 +873,30 @@ class CoverImageCache {
   Future<void> _warmPersistent(Map<String, int> targets) async {
     var processed = 0;
     for (final entry in targets.entries) {
-      for (final size in const [48, 200]) {
-        final key = '${entry.key}|${entry.value}|${size}x$size';
-        if (_persistentWarmCompleted.contains(key) ||
-            !_persistentWarmPending.add(key)) {
-          continue;
-        }
-        try {
-          await loadBytes(
-            path: entry.key,
-            width: size,
-            height: size,
-          );
-          _persistentWarmCompleted.add(key);
-        } catch (error, trace) {
-          logger.d(
-            '[cache] persistent cover warm skipped: $error',
-            stackTrace: trace,
-          );
-        } finally {
-          _persistentWarmPending.remove(key);
-        }
-        processed++;
-        if (processed % 8 == 0) await Future<void>.delayed(Duration.zero);
+      const size = 200;
+      final key = '${entry.key}|${entry.value}|${size}x$size';
+      if (_persistentWarmCompleted.contains(key) ||
+          !_persistentWarmPending.add(key)) {
+        continue;
       }
+      try {
+        await loadBytes(
+          path: entry.key,
+          width: size,
+          height: size,
+          lowPriority: true,
+        );
+        _persistentWarmCompleted.add(key);
+      } catch (error, trace) {
+        logger.d(
+          '[cache] persistent cover warm skipped: $error',
+          stackTrace: trace,
+        );
+      } finally {
+        _persistentWarmPending.remove(key);
+      }
+      processed++;
+      if (processed % 8 == 0) await Future<void>.delayed(Duration.zero);
     }
   }
 
@@ -895,6 +913,7 @@ class CoverImageCache {
     _large.clear();
     _pending.clear();
     _pendingBytes.clear();
+    _missing.clear();
     _persistentWarmCompleted.clear();
     _persistentWarmPending.clear();
   }
@@ -909,12 +928,14 @@ class CoverImageCache {
       _large.removeWhere(notKeep);
       _pending.removeWhere((key, _) => notKeep(key));
       _pendingBytes.removeWhere((key, _) => notKeep(key));
+      _missing.removeWhere(notKeep);
     } else {
       _generation++;
       _medium.clear();
       _large.clear();
       _pending.clear();
       _pendingBytes.clear();
+      _missing.clear();
     }
   }
 
@@ -931,6 +952,7 @@ class CoverImageCache {
     _large.removeWhere(matches);
     _pending.removeWhere((key, _) => matches(key));
     _pendingBytes.removeWhere((key, _) => matches(key));
+    _missing.removeWhere(matches);
     _persistentWarmCompleted.removeWhere((key) => key.startsWith('$path|'));
     _persistentWarmPending.removeWhere((key) => key.startsWith('$path|'));
     for (final configuration in _stableImageConfigurations) {
@@ -982,6 +1004,7 @@ class CoverImageCache {
     _large.clear();
     _pending.clear();
     _pendingBytes.clear();
+    _missing.clear();
     _persistentWarmCompleted.clear();
     _persistentWarmPending.clear();
   }
