@@ -7,6 +7,29 @@ import 'package:flutter/material.dart';
 /// 进度条拖拽的激活手势类型。
 enum _DragGestureType { longPress, drag }
 
+class _MouseThresholdHorizontalDragGestureRecognizer
+    extends HorizontalDragGestureRecognizer {
+  _MouseThresholdHorizontalDragGestureRecognizer({
+    required this.mouseDragThreshold,
+  });
+
+  final double mouseDragThreshold;
+
+  @override
+  bool hasSufficientGlobalDistanceToAccept(
+    PointerDeviceKind pointerDeviceKind,
+    double? deviceTouchSlop,
+  ) {
+    if (pointerDeviceKind == PointerDeviceKind.mouse) {
+      return globalDistanceMoved.abs() > mouseDragThreshold;
+    }
+    return super.hasSufficientGlobalDistanceToAccept(
+      pointerDeviceKind,
+      deviceTouchSlop,
+    );
+  }
+}
+
 /// 进度条拖拽状态机（纯逻辑，便于单元测试）。
 ///
 /// 职责：判断拖拽是否可开始（空播放时不允许）、记录拖拽开始时的歌曲身份、
@@ -88,8 +111,8 @@ class _RectangleProgressIndicatorState
 
   final ProgressDragController _dragController = ProgressDragController();
 
-  /// 长按触发时长（毫秒），默认 500，这里缩短为 250。
   static const _longPressDuration = Duration(milliseconds: 250);
+  static const _mouseDragThreshold = 12.0;
 
   @override
   void initState() {
@@ -257,9 +280,13 @@ class _RectangleProgressIndicatorState
                       hasSeek ? _handleLongPressCancel : null;
               },
             ),
-        HorizontalDragGestureRecognizer:
-            GestureRecognizerFactoryWithHandlers<HorizontalDragGestureRecognizer>(
-              () => HorizontalDragGestureRecognizer(),
+        _MouseThresholdHorizontalDragGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<
+              _MouseThresholdHorizontalDragGestureRecognizer
+            >(
+              () => _MouseThresholdHorizontalDragGestureRecognizer(
+                mouseDragThreshold: _mouseDragThreshold,
+              ),
               (instance) {
                 instance
                   ..onStart = hasSeek ? _handleDragStart : null
