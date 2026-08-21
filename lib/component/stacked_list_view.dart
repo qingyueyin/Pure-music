@@ -56,6 +56,9 @@ class _SmoothWheelScrollActivity extends DrivenScrollActivity {
     super.simulation, {
     required super.vsync,
   }) : super.simulation();
+
+  @override
+  bool get shouldIgnorePointer => false;
 }
 
 class SmoothScrollPosition extends ScrollPositionWithSingleContext {

@@ -83,6 +83,7 @@ class _AudiosPageState extends State<AudiosPage> {
             SortMethodDesc(
               icon: Symbols.title,
               name: '标题',
+              alphabetValueOf: (audio) => audio.title,
               method: (list, order) {
                 switch (order) {
                   case SortOrder.ascending:
@@ -108,6 +109,7 @@ class _AudiosPageState extends State<AudiosPage> {
             SortMethodDesc(
               icon: Symbols.artist,
               name: '艺术家',
+              alphabetValueOf: (audio) => audio.artist,
               method: (list, order) {
                 switch (order) {
                   case SortOrder.ascending:
@@ -139,6 +141,7 @@ class _AudiosPageState extends State<AudiosPage> {
             SortMethodDesc(
               icon: Symbols.album,
               name: '专辑',
+              alphabetValueOf: (audio) => audio.album,
               method: (list, order) {
                 switch (order) {
                   case SortOrder.ascending:

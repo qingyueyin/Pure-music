@@ -147,6 +147,7 @@ class _ArtistsPageState extends State<ArtistsPage> {
             SortMethodDesc(
               icon: Symbols.title,
               name: '名称',
+              alphabetValueOf: (artist) => artist.name,
               method: (list, order) {
                 switch (order) {
                   case SortOrder.ascending:

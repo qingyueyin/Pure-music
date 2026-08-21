@@ -14,9 +14,9 @@ class _DeferredLoadRequest {
 }
 
 class _DeferredLoadQueue {
-  static const _retryDelay = Duration(milliseconds: 64);
-  static const _maximumDeferral = Duration(milliseconds: 192);
-  static const _maximumForcedLoadsPerFlush = 2;
+  static const _retryDelay = Duration(milliseconds: 32);
+  static const _maximumDeferral = Duration(milliseconds: 128);
+  static const _maximumForcedLoadsPerFlush = 8;
 
   final LinkedHashMap<Object, _DeferredLoadRequest> _pending =
       LinkedHashMap<Object, _DeferredLoadRequest>.identity();
@@ -69,6 +69,7 @@ class ScrollAwareFutureBuilder<T> extends StatefulWidget {
   final AsyncWidgetBuilder<T> builder;
   final String? identity;
   final T? initialData;
+  final bool deferWhileScrolling;
 
   const ScrollAwareFutureBuilder({
     super.key,
@@ -76,6 +77,7 @@ class ScrollAwareFutureBuilder<T> extends StatefulWidget {
     required this.builder,
     this.identity,
     this.initialData,
+    this.deferWhileScrolling = true,
   });
 
   @override
@@ -98,7 +100,9 @@ class _ScrollAwareFutureBuilderState<T>
 
   void _tryLoad(int generation, bool force) {
     if (!mounted || generation != _loadGeneration) return;
-    if (!force && Scrollable.recommendDeferredLoadingForContext(context)) {
+    if (!force &&
+        widget.deferWhileScrolling &&
+        Scrollable.recommendDeferredLoadingForContext(context)) {
       _deferredLoadQueue.enqueue(this, (force) => _tryLoad(generation, force));
       return;
     }

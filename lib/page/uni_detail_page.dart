@@ -1,5 +1,6 @@
 import 'dart:ui';
 
+import 'package:pure_music/component/alphabet_index_bar.dart';
 import 'package:pure_music/component/list_locate_buttons.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/core/design_tokens.dart';
@@ -8,6 +9,7 @@ import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/page/uni_page.dart';
 import 'package:pure_music/page/uni_page_components.dart';
@@ -127,6 +129,8 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
   final _tertiaryScrollController = SmoothScrollController();
   final _combinedScrollController = SmoothScrollController();
   final _itemKeys = <int, GlobalKey>{};
+  Map<String, int> _alphabetSectionIndexes = const {};
+  double _contentCrossAxisExtent = 0;
 
   bool get _hasTertiaryContent =>
       canShowRelatedContentTab(widget.tertiaryContent?.length ?? 0);
@@ -186,6 +190,65 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
     });
   }
 
+  void _jumpToIndex(int targetAt) {
+    if (targetAt < 0 || targetAt >= widget.secondaryContent.length) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_activeScrollController.hasClients) return;
+      final position = _activeScrollController.position;
+      _activeScrollController.jumpTo(
+        _offsetForIndex(
+          targetAt,
+        ).clamp(position.minScrollExtent, position.maxScrollExtent),
+      );
+    });
+  }
+
+  void _updateAlphabetSections() {
+    final valueOf = currSortMethod?.alphabetValueOf;
+    if (valueOf == null || widget.secondaryContent.length < 2) {
+      _alphabetSectionIndexes = const {};
+      return;
+    }
+    final indexes = <String, int>{};
+    for (var i = 0; i < widget.secondaryContent.length; i++) {
+      indexes.putIfAbsent(
+        alphabetSectionFor(valueOf(widget.secondaryContent[i])),
+        () => i,
+      );
+    }
+    _alphabetSectionIndexes = indexes;
+  }
+
+  int _indexForOffset(double offset) {
+    if (currContentView == ContentView.list) {
+      return (offset / 64).floor().clamp(0, widget.secondaryContent.length - 1);
+    }
+    final crossAxisCount = _gridCrossAxisCount();
+    final mainAxisStep =
+        gridDelegate.mainAxisExtent! + gridDelegate.mainAxisSpacing;
+    return ((offset / mainAxisStep).floor() * crossAxisCount).clamp(
+      0,
+      widget.secondaryContent.length - 1,
+    );
+  }
+
+  int _gridCrossAxisCount() {
+    final crossAxisCount = maxExtentGridCrossAxisCount(
+      crossAxisExtent: _contentCrossAxisExtent,
+      maxCrossAxisExtent: gridDelegate.maxCrossAxisExtent,
+      crossAxisSpacing: gridDelegate.crossAxisSpacing,
+    );
+    return crossAxisCount;
+  }
+
+  double _offsetForIndex(int index) {
+    if (currContentView == ContentView.list) return index * 64.0;
+    final crossAxisCount = _gridCrossAxisCount();
+    final mainAxisStep =
+        gridDelegate.mainAxisExtent! + gridDelegate.mainAxisSpacing;
+    return (index ~/ crossAxisCount) * mainAxisStep;
+  }
+
   Widget _keyedItem(int index, Widget child) {
     return KeyedSubtree(
       key: _itemKeys.putIfAbsent(index, GlobalKey.new),
@@ -197,6 +260,7 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
   void initState() {
     super.initState();
     currSortMethod?.method(widget.secondaryContent, currSortOrder);
+    _updateAlphabetSections();
   }
 
   @override
@@ -225,6 +289,7 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
       isSwitchAvailable: widget.enableSecondaryContentViewSwitch,
     );
     currSortMethod?.method(widget.secondaryContent, currSortOrder);
+    _updateAlphabetSections();
   }
 
   void setSortMethod(SortMethodDesc<S> sortMethod) {
@@ -232,6 +297,7 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
       currSortMethod = sortMethod;
       widget.pref.sortMethod = widget.sortMethods?.indexOf(sortMethod) ?? 0;
       currSortMethod?.method(widget.secondaryContent, currSortOrder);
+      _updateAlphabetSections();
     });
     widget.onSortMethodChanged?.call();
   }
@@ -241,6 +307,7 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
       currSortOrder = sortOrder;
       widget.pref.sortOrder = sortOrder;
       currSortMethod?.method(widget.secondaryContent, currSortOrder);
+      _updateAlphabetSections();
     });
   }
 
@@ -352,26 +419,59 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
                   child: Stack(
                     children: [
                       Positioned.fill(
-                        child: ListenableBuilder(
-                          listenable: AppSettings.listMotionNotifier,
-                          builder: (context, _) =>
-                              widget.bodyOverride ??
-                              (widget.enableTabs
-                                  ? DirectionalTabView(
-                                      index: currentTabIndex,
-                                      children: [
-                                        _buildSecondaryContent(
-                                          multiSelectController,
-                                          scheme,
-                                        ),
-                                        if (hasTertiaryContent)
-                                          _buildTertiaryContent(scheme),
-                                      ],
-                                    )
-                                  : _buildCombinedContent(
-                                      multiSelectController,
-                                      scheme,
-                                    )),
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final showAlphabetIndex =
+                                widget.bodyOverride == null &&
+                                currentTabIndex == 0 &&
+                                _alphabetSectionIndexes.isNotEmpty;
+                            _contentCrossAxisExtent =
+                                constraints.maxWidth -
+                                (showAlphabetIndex ? 32 : 0);
+                            return Row(
+                              children: [
+                                Expanded(
+                                  child: MultiSelectPointerRegion<S>(
+                                    controller: multiSelectController,
+                                    child: ListenableBuilder(
+                                      listenable:
+                                          AppSettings.listMotionNotifier,
+                                      builder: (context, _) =>
+                                          widget.bodyOverride ??
+                                          (widget.enableTabs
+                                              ? DirectionalTabView(
+                                                  index: currentTabIndex,
+                                                  children: [
+                                                    _buildSecondaryContent(
+                                                      multiSelectController,
+                                                      scheme,
+                                                    ),
+                                                    if (hasTertiaryContent)
+                                                      _buildTertiaryContent(
+                                                        scheme,
+                                                      ),
+                                                  ],
+                                                )
+                                              : _buildCombinedContent(
+                                                  multiSelectController,
+                                                  scheme,
+                                                )),
+                                    ),
+                                  ),
+                                ),
+                                if (showAlphabetIndex)
+                                  AlphabetIndexBar(
+                                    controller: _activeScrollController,
+                                    sectionIndexes: _alphabetSectionIndexes,
+                                    indexForOffset: _indexForOffset,
+                                    onSelectIndex: _jumpToIndex,
+                                    onWheel: _forwardWheelToList,
+                                    descending:
+                                        currSortOrder == SortOrder.decending,
+                                  ),
+                              ],
+                            );
+                          },
                         ),
                       ),
                       ListLocateButtons(

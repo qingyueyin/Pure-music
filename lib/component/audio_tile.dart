@@ -48,10 +48,7 @@ class _AudioTileState extends State<AudioTile> {
   bool _isRemovingFromPlaylist = false;
   Playlist? _addingToPlaylist;
   bool _menuRequested = false;
-  int? _dragStartIndex;
-  int? _lastDragTargetIndex;
-  final Set<Audio> _dragRange = {};
-  final Set<Audio> _preDragSelection = {};
+  double? _rangeScrollOrigin;
 
   @override
   Widget build(BuildContext context) {
@@ -367,90 +364,38 @@ class _AudioTileState extends State<AudioTile> {
                     type: MaterialType.transparency,
                     child: GestureDetector(
                       onLongPressStart: (details) {
-                        if (widget.multiSelectController == null) return;
-
-                        if (!widget
-                            .multiSelectController!
-                            .enableMultiSelectView) {
-                          widget.multiSelectController!.useMultiSelectView(
-                            true,
-                          );
-                        }
-
-                        _dragStartIndex = widget.audioIndex;
-                        _lastDragTargetIndex = widget.audioIndex;
-                        _preDragSelection
-                          ..clear()
-                          ..addAll(
-                            widget.multiSelectController!.selected
-                                .cast<Audio>(),
-                          );
-                        _dragRange.clear();
-                        _dragRange.add(audio);
-                        widget.multiSelectController!.select(audio);
+                        _rangeScrollOrigin = Scrollable.maybeOf(
+                          context,
+                        )?.position.pixels;
+                        widget.multiSelectController?.beginRangeSelection(
+                          widget.playlist,
+                          widget.audioIndex,
+                        );
                       },
                       onLongPressMoveUpdate: (details) {
-                        if (_dragStartIndex == null ||
-                            widget.multiSelectController == null) {
-                          return;
-                        }
-
-                        final dy = details.localOffsetFromOrigin.dy;
-                        final delta = (dy / 64).round();
-                        final targetIndex = (_dragStartIndex! + delta).clamp(
-                          0,
-                          widget.playlist.length - 1,
+                        final scrollPosition = Scrollable.maybeOf(
+                          context,
+                        )?.position.pixels;
+                        final scrollDelta =
+                            scrollPosition == null || _rangeScrollOrigin == null
+                            ? 0.0
+                            : scrollPosition - _rangeScrollOrigin!;
+                        final targetIndex =
+                            widget.audioIndex +
+                            ((details.localOffsetFromOrigin.dy + scrollDelta) /
+                                    64)
+                                .round();
+                        widget.multiSelectController?.updateRangeSelection(
+                          targetIndex,
                         );
-
-                        if (targetIndex == _lastDragTargetIndex) return;
-
-                        final oldMin = _dragStartIndex! < _lastDragTargetIndex!
-                            ? _dragStartIndex!
-                            : _lastDragTargetIndex!;
-                        final oldMax = _dragStartIndex! > _lastDragTargetIndex!
-                            ? _dragStartIndex!
-                            : _lastDragTargetIndex!;
-                        final newMin = _dragStartIndex! < targetIndex
-                            ? _dragStartIndex!
-                            : targetIndex;
-                        final newMax = _dragStartIndex! > targetIndex
-                            ? _dragStartIndex!
-                            : targetIndex;
-
-                        _lastDragTargetIndex = targetIndex;
-
-                        for (int i = oldMin; i <= oldMax; i++) {
-                          final item = widget.playlist[i];
-                          final inNewRange = i >= newMin && i <= newMax;
-                          if (!inNewRange &&
-                              _dragRange.contains(item) &&
-                              !_preDragSelection.contains(item)) {
-                            widget.multiSelectController!.unselect(item);
-                            _dragRange.remove(item);
-                          }
-                        }
-
-                        for (int i = newMin; i <= newMax; i++) {
-                          if (i < oldMin || i > oldMax) {
-                            final item = widget.playlist[i];
-                            if (!_dragRange.contains(item)) {
-                              widget.multiSelectController!.select(item);
-                              _dragRange.add(item);
-                            }
-                          }
-                        }
                       },
-                      onLongPressEnd: (details) {
-                        _dragStartIndex = null;
-                        _lastDragTargetIndex = null;
-                        _dragRange.clear();
-                        _preDragSelection.clear();
+                      onLongPressEnd: (_) {
+                        _rangeScrollOrigin = null;
+                        widget.multiSelectController?.endRangeSelection();
                       },
                       onLongPressCancel: () {
-                        _dragStartIndex = null;
-                        _lastDragTargetIndex = null;
-                        _dragRange.clear();
-                        _preDragSelection.clear();
+                        _rangeScrollOrigin = null;
+                        widget.multiSelectController?.endRangeSelection();
                       },
                       onSecondaryTapDown: (details) {
                         if (widget
@@ -477,6 +422,16 @@ class _AudioTileState extends State<AudioTile> {
                       child: InkWell(
                         focusColor: Colors.transparent,
                         hoverColor: scheme.onSurface.withAlpha(10),
+                        onHover: (hovering) {
+                          final multiSelectController =
+                              widget.multiSelectController;
+                          if (hovering &&
+                              multiSelectController?.isRangeSelecting == true) {
+                            multiSelectController!.updateRangeSelection(
+                              widget.audioIndex,
+                            );
+                          }
+                        },
                         borderRadius: AppRadius.smCircular,
                         onTap: () {
                           if (controller.isOpen) {

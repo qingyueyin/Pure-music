@@ -148,6 +148,7 @@ class _AlbumsPageState extends State<AlbumsPage> {
             SortMethodDesc(
               icon: Symbols.title,
               name: '标题',
+              alphabetValueOf: (album) => album.name,
               method: (list, order) {
                 switch (order) {
                   case SortOrder.ascending:

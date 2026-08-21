@@ -37,17 +37,15 @@ class ArtistDetailPage extends StatelessWidget {
       secondaryContent: secondaryContent,
       secondaryContentBuilder: (context, audio, i, multiSelectController, _) =>
           AudioTile(
-        audioIndex: i,
-        playlist: secondaryContent,
-        multiSelectController: multiSelectController,
-      ),
+            audioIndex: i,
+            playlist: secondaryContent,
+            multiSelectController: multiSelectController,
+          ),
       tertiaryContentTitle: '专辑',
       tertiaryContent: artist.albumsMap.values.toList(),
       tertiaryContentBuilder:
-          (context, album, i, multiSelectController, view) => AlbumTile(
-        album: album,
-        view: view,
-      ),
+          (context, album, i, multiSelectController, view) =>
+              AlbumTile(album: album, view: view),
       enableShufflePlay: secondaryContent.isNotEmpty,
       enableSortMethod: canSortSongs,
       enableSortOrder: canSortSongs,
@@ -69,6 +67,7 @@ class ArtistDetailPage extends StatelessWidget {
         SortMethodDesc(
           icon: Symbols.title,
           name: '标题',
+          alphabetValueOf: (audio) => audio.title,
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
@@ -83,6 +82,7 @@ class ArtistDetailPage extends StatelessWidget {
         SortMethodDesc(
           icon: Symbols.album,
           name: '专辑',
+          alphabetValueOf: (audio) => audio.album,
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:

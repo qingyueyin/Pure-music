@@ -85,8 +85,8 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
       onSearchChanged: (v) => setState(() => _searchQuery = v),
       bodyOverride: contentList.isEmpty
           ? (_searchQuery.isEmpty
-              ? const _EmptyFolderBody()
-              : const _NoSearchResultBody())
+                ? const _EmptyFolderBody()
+                : const _NoSearchResultBody())
           : null,
       multiSelectController: multiSelectController,
       multiSelectViewActions: [
@@ -101,6 +101,7 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
         SortMethodDesc(
           icon: Symbols.title,
           name: '标题',
+          alphabetValueOf: (audio) => audio.title,
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
@@ -115,6 +116,7 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
         SortMethodDesc(
           icon: Symbols.artist,
           name: '艺术家',
+          alphabetValueOf: (audio) => audio.artist,
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
@@ -129,6 +131,7 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
         SortMethodDesc(
           icon: Symbols.album,
           name: '专辑',
+          alphabetValueOf: (audio) => audio.album,
           method: (list, order) {
             switch (order) {
               case SortOrder.ascending:
@@ -148,8 +151,8 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
               case SortOrder.ascending:
                 list.sort((a, b) => a.created.compareTo(b.created));
                 break;
- 
-             case SortOrder.decending:
+
+              case SortOrder.decending:
                 list.sort((a, b) => b.created.compareTo(a.created));
                 break;
             }

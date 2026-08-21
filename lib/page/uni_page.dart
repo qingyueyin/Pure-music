@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:pure_music/component/alphabet_index_bar.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/component/list_locate_buttons.dart';
 import 'package:pure_music/component/motion.dart';
@@ -40,12 +41,14 @@ class SortMethodDesc<T> {
   String name;
   SortMethod<T> method;
   BackgroundSortMethod<T>? backgroundMethod;
+  String Function(T item)? alphabetValueOf;
 
   SortMethodDesc({
     required this.icon,
     required this.name,
     required this.method,
     this.backgroundMethod,
+    this.alphabetValueOf,
   });
 }
 
@@ -95,10 +98,44 @@ class LibraryPagePreparing extends StatelessWidget {
 }
 
 class MultiSelectController<T> extends ChangeNotifier {
+  static bool Function()? _activeBackHandler;
+
   final Set<T> selected = {};
   bool enableMultiSelectView = false;
+  List<T>? _rangeItems;
+  int? _rangeStartIndex;
+  int? _rangeTargetIndex;
+  final Set<T> _rangeItemsSelected = {};
+  final Set<T> _selectionBeforeRange = {};
+  bool Function()? _backHandler;
+
+  bool get isRangeSelecting => _rangeStartIndex != null;
+
+  static bool consumeBack() {
+    final handler = _activeBackHandler;
+    if (handler == null) return false;
+    final consumed = handler();
+    if (!consumed && identical(_activeBackHandler, handler)) {
+      _activeBackHandler = null;
+    }
+    return consumed;
+  }
 
   void useMultiSelectView(bool multiSelectView) {
+    if (multiSelectView) {
+      _backHandler ??= () {
+        if (!enableMultiSelectView) return false;
+        useMultiSelectView(false);
+        clear();
+        return true;
+      };
+      _activeBackHandler = _backHandler;
+    } else {
+      endRangeSelection();
+      if (identical(_activeBackHandler, _backHandler)) {
+        _activeBackHandler = null;
+      }
+    }
     enableMultiSelectView = multiSelectView;
     notifyListeners();
   }
@@ -114,13 +151,107 @@ class MultiSelectController<T> extends ChangeNotifier {
   }
 
   void clear() {
+    endRangeSelection();
     selected.clear();
     notifyListeners();
   }
 
   void selectAll(Iterable<T> items) {
+    endRangeSelection();
     selected.addAll(items);
     notifyListeners();
+  }
+
+  void beginRangeSelection(List<T> items, int startIndex) {
+    if (startIndex < 0 || startIndex >= items.length) return;
+    endRangeSelection();
+    _rangeItems = items;
+    _rangeStartIndex = startIndex;
+    _rangeTargetIndex = startIndex;
+    _selectionBeforeRange
+      ..clear()
+      ..addAll(selected);
+    _rangeItemsSelected
+      ..clear()
+      ..add(items[startIndex]);
+    if (!enableMultiSelectView) {
+      useMultiSelectView(true);
+    } else {
+      _activeBackHandler = _backHandler;
+    }
+    selected.add(items[startIndex]);
+    notifyListeners();
+  }
+
+  void updateRangeSelection(int targetIndex) {
+    final items = _rangeItems;
+    final startIndex = _rangeStartIndex;
+    final oldTargetIndex = _rangeTargetIndex;
+    if (items == null ||
+        startIndex == null ||
+        oldTargetIndex == null ||
+        items.isEmpty) {
+      return;
+    }
+    final target = targetIndex.clamp(0, items.length - 1);
+    if (target == oldTargetIndex) return;
+
+    final oldMin = startIndex < oldTargetIndex ? startIndex : oldTargetIndex;
+    final oldMax = startIndex > oldTargetIndex ? startIndex : oldTargetIndex;
+    final newMin = startIndex < target ? startIndex : target;
+    final newMax = startIndex > target ? startIndex : target;
+    _rangeTargetIndex = target;
+
+    for (var i = oldMin; i <= oldMax; i++) {
+      final item = items[i];
+      if ((i < newMin || i > newMax) &&
+          _rangeItemsSelected.remove(item) &&
+          !_selectionBeforeRange.contains(item)) {
+        selected.remove(item);
+      }
+    }
+    for (var i = newMin; i <= newMax; i++) {
+      final item = items[i];
+      if (_rangeItemsSelected.add(item)) selected.add(item);
+    }
+    notifyListeners();
+  }
+
+  void endRangeSelection() {
+    _rangeItems = null;
+    _rangeStartIndex = null;
+    _rangeTargetIndex = null;
+    _rangeItemsSelected.clear();
+    _selectionBeforeRange.clear();
+  }
+
+  @override
+  void dispose() {
+    if (identical(_activeBackHandler, _backHandler)) {
+      _activeBackHandler = null;
+    }
+    _backHandler = null;
+    super.dispose();
+  }
+}
+
+class MultiSelectPointerRegion<T> extends StatelessWidget {
+  const MultiSelectPointerRegion({
+    super.key,
+    required this.controller,
+    required this.child,
+  });
+
+  final MultiSelectController<T>? controller;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      onPointerUp: (_) => controller?.endRangeSelection(),
+      onPointerCancel: (_) => controller?.endRangeSelection(),
+      child: child,
+    );
   }
 }
 
@@ -211,6 +342,8 @@ class _UniPageState<T> extends State<UniPage<T>> {
   bool _backgroundSortPending = false;
   bool _backgroundSortWorkerActive = false;
   String _pendingSortReason = 'sort';
+  Map<String, int> _alphabetSectionIndexes = const {};
+  double _contentCrossAxisExtent = 0;
 
   ScrollController get scrollController => currContentView == ContentView.list
       ? listScrollController
@@ -227,6 +360,7 @@ class _UniPageState<T> extends State<UniPage<T>> {
   void _prepareContent(String reason) {
     final sortStopwatch = Stopwatch()..start();
     currSortMethod?.method(widget.contentList, currSortOrder);
+    _updateAlphabetSections();
     sortStopwatch.stop();
     final indexStopwatch = Stopwatch()..start();
     _rememberPreparedPageOrder();
@@ -247,6 +381,7 @@ class _UniPageState<T> extends State<UniPage<T>> {
   void _scheduleBackgroundSort(String reason) {
     _sortRequest++;
     _backgroundSortPending = true;
+    _alphabetSectionIndexes = const {};
     _pendingSortReason = reason;
     if (!_backgroundSortWorkerActive) {
       unawaited(_runBackgroundSortWorker());
@@ -295,6 +430,7 @@ class _UniPageState<T> extends State<UniPage<T>> {
         }
         final indexStopwatch = Stopwatch()..start();
         widget.contentList.setAll(0, sorted);
+        _updateAlphabetSections();
         _rememberPreparedPageOrder();
         indexStopwatch.stop();
         setState(() {});
@@ -319,12 +455,29 @@ class _UniPageState<T> extends State<UniPage<T>> {
       return;
     }
     final indexStopwatch = Stopwatch()..start();
+    _updateAlphabetSections();
     indexStopwatch.stop();
     logger.i(
       '[perf] page prepare title=${widget.title} reason=$reason '
       'items=${widget.contentList.length} sort=0us '
       'pathIndex=${indexStopwatch.elapsedMicroseconds}us cached=true',
     );
+  }
+
+  void _updateAlphabetSections() {
+    final valueOf = currSortMethod?.alphabetValueOf;
+    if (valueOf == null || widget.contentList.length < 2) {
+      _alphabetSectionIndexes = const {};
+      return;
+    }
+    final indexes = <String, int>{};
+    for (var i = 0; i < widget.contentList.length; i++) {
+      indexes.putIfAbsent(
+        alphabetSectionFor(valueOf(widget.contentList[i])),
+        () => i,
+      );
+    }
+    _alphabetSectionIndexes = indexes;
   }
 
   /// 平滑滚动到指定位置。
@@ -343,18 +496,18 @@ class _UniPageState<T> extends State<UniPage<T>> {
   }
 
   /// 按钮浮层不拦截滚轮：鼠标停留在浮层按钮上滚动时，
-  /// 把滚轮位移转发给列表的平滑滚动。
+  /// 把滚轮位移转发给当前列表。
   void _forwardWheelToList(double delta) {
-    if (!AppSettings.instance.enableStackedScrollEffect ||
-        MediaQuery.disableAnimationsOf(context)) {
-      return;
-    }
-    if (currContentView != ContentView.list) return;
     if (!scrollController.hasClients) return;
     final position = scrollController.position;
-    if (position is SmoothScrollPosition) {
+    if (currContentView == ContentView.list &&
+        AppSettings.instance.enableStackedScrollEffect &&
+        !MediaQuery.disableAnimationsOf(context) &&
+        position is SmoothScrollPosition) {
       position.pointerScroll(delta);
+      return;
     }
+    position.pointerScroll(delta);
   }
 
   void _scrollToIndex(int targetAt) {
@@ -362,19 +515,80 @@ class _UniPageState<T> extends State<UniPage<T>> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !scrollController.hasClients) return;
-
-      if (currContentView == ContentView.list) {
-        _smoothScrollTo(targetAt * 64.0);
-      } else {
-        final renderObject = context.findRenderObject();
-        if (renderObject is RenderBox) {
-          final width = renderObject.size.width;
-          final crossAxisCount = (width / 300).ceil().clamp(1, 100);
-          final offset = (targetAt ~/ crossAxisCount) * (64.0 + 8.0);
-          _smoothScrollTo(offset);
-        }
-      }
+      _smoothScrollTo(_offsetForIndex(targetAt));
     });
+  }
+
+  void _jumpToIndex(int targetAt) {
+    if (targetAt < 0 || targetAt >= widget.contentList.length) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !scrollController.hasClients) return;
+      final position = scrollController.position;
+      scrollController.jumpTo(
+        _offsetForIndex(
+          targetAt,
+        ).clamp(position.minScrollExtent, position.maxScrollExtent),
+      );
+    });
+  }
+
+  ({int crossAxisCount, double mainAxisStep})? _gridMetrics() {
+    final delegate = widget.gridDelegate ?? gridDelegate;
+    if (delegate is! SliverGridDelegateWithMaxCrossAxisExtent ||
+        _contentCrossAxisExtent <= 0) {
+      return null;
+    }
+    final crossAxisExtent = (_contentCrossAxisExtent - 20).clamp(
+      0.0,
+      double.infinity,
+    );
+    final crossAxisCount = maxExtentGridCrossAxisCount(
+      crossAxisExtent: crossAxisExtent,
+      maxCrossAxisExtent: delegate.maxCrossAxisExtent,
+      crossAxisSpacing: delegate.crossAxisSpacing,
+    );
+    final usableCrossAxisExtent =
+        (crossAxisExtent - delegate.crossAxisSpacing * (crossAxisCount - 1))
+            .clamp(0.0, double.infinity);
+    final tileWidth = usableCrossAxisExtent / crossAxisCount;
+    final tileHeight =
+        delegate.mainAxisExtent ?? tileWidth / delegate.childAspectRatio;
+    return (
+      crossAxisCount: crossAxisCount,
+      mainAxisStep: tileHeight + delegate.mainAxisSpacing,
+    );
+  }
+
+  double _offsetForIndex(int index) {
+    if (currContentView == ContentView.list) return index * 64.0;
+    final metrics = _gridMetrics();
+    if (metrics != null) {
+      return (index ~/ metrics.crossAxisCount) * metrics.mainAxisStep;
+    }
+    if (!scrollController.hasClients || widget.contentList.isEmpty) return 0;
+    return scrollController.position.maxScrollExtent *
+        index /
+        widget.contentList.length;
+  }
+
+  int _indexForOffset(double offset) {
+    if (currContentView == ContentView.list) {
+      return (offset / 64.0).floor().clamp(0, widget.contentList.length - 1);
+    }
+    final metrics = _gridMetrics();
+    if (metrics != null && metrics.mainAxisStep > 0) {
+      return ((offset / metrics.mainAxisStep).floor() * metrics.crossAxisCount)
+          .clamp(0, widget.contentList.length - 1);
+    }
+    if (!scrollController.hasClients ||
+        scrollController.position.maxScrollExtent <= 0) {
+      return 0;
+    }
+    return (offset /
+            scrollController.position.maxScrollExtent *
+            widget.contentList.length)
+        .floor()
+        .clamp(0, widget.contentList.length - 1);
   }
 
   /// 定位当前正在播放乐曲在列表中的索引；非乐曲列表或不在列表中时返回 null。
@@ -398,17 +612,7 @@ class _UniPageState<T> extends State<UniPage<T>> {
     if (targetAt < 0) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!scrollController.hasClients) return;
-      if (currContentView == ContentView.list) {
-        scrollController.jumpTo(targetAt * 64);
-      } else {
-        final renderObject = context.findRenderObject();
-        if (renderObject is RenderBox) {
-          final width = renderObject.size.width;
-          final crossAxisCount = (width / 300).ceil().clamp(1, 100);
-          final offset = (targetAt ~/ crossAxisCount) * (64.0 + 8.0);
-          scrollController.jumpTo(offset);
-        }
-      }
+      scrollController.jumpTo(_offsetForIndex(targetAt));
     });
   }
 
@@ -617,17 +821,36 @@ class _UniPageState<T> extends State<UniPage<T>> {
               ),
             );
 
-      return Row(
-        children: [
-          Expanded(
-            child: widget.enableContentViewSwitch
-                ? DirectionalTabView(
-                    index: currContentView == ContentView.list ? 0 : 1,
-                    children: [listView, tableView],
-                  )
-                : tableView,
-          ),
-        ],
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          final showAlphabetIndex = _alphabetSectionIndexes.isNotEmpty;
+          _contentCrossAxisExtent =
+              constraints.maxWidth - (showAlphabetIndex ? 32 : 0);
+          return Row(
+            children: [
+              Expanded(
+                child: MultiSelectPointerRegion<T>(
+                  controller: multiSelectController,
+                  child: widget.enableContentViewSwitch
+                      ? DirectionalTabView(
+                          index: currContentView == ContentView.list ? 0 : 1,
+                          children: [listView, tableView],
+                        )
+                      : tableView,
+                ),
+              ),
+              if (showAlphabetIndex)
+                AlphabetIndexBar(
+                  controller: scrollController,
+                  sectionIndexes: _alphabetSectionIndexes,
+                  indexForOffset: _indexForOffset,
+                  onSelectIndex: _jumpToIndex,
+                  onWheel: _forwardWheelToList,
+                  descending: currSortOrder == SortOrder.decending,
+                ),
+            ],
+          );
+        },
       );
     } finally {
       stopwatch.stop();

@@ -226,9 +226,20 @@ int _addableAudioCount(Playlist playlist, Iterable<Audio> audios) {
 }
 
 class AddAllToPlaylist extends StatefulWidget {
-  const AddAllToPlaylist({super.key, required this.multiSelectController});
+  const AddAllToPlaylist({
+    super.key,
+    required this.multiSelectController,
+    this.excludedPlaylist,
+    this.label = '添加到歌单',
+  });
 
   final MultiSelectController<Audio> multiSelectController;
+
+  /// 目标歌单列表中需要排除的歌单（当前正在查看的歌单）。
+  final Playlist? excludedPlaylist;
+
+  /// 按钮文案，默认“添加到歌单”。
+  final String label;
 
   @override
   State<AddAllToPlaylist> createState() => _AddAllToPlaylistState();
@@ -273,15 +284,20 @@ class _AddAllToPlaylistState extends State<AddAllToPlaylist> {
       builder: (context, _) {
         final selectedAudios =
             _uniqueAudiosByPath(widget.multiSelectController.selected);
-        final addableCounts = playlists
+        final targetPlaylists = widget.excludedPlaylist == null
+            ? playlists
+            : playlists
+                  .where((playlist) => !identical(playlist, widget.excludedPlaylist))
+                  .toList(growable: false);
+        final addableCounts = targetPlaylists
             .map((playlist) => _addableAudioCount(playlist, selectedAudios))
             .toList(growable: false);
         return MenuAnchor(
           style: appMenuStyle,
           menuChildren: List.generate(
-            playlists.length,
+            targetPlaylists.length,
             (i) {
-              final playlist = playlists[i];
+              final playlist = targetPlaylists[i];
               final isAdding = identical(_addingPlaylist, playlist);
               final addableCount = addableCounts[i];
               final allAlreadyAdded =
@@ -332,7 +348,7 @@ class _AddAllToPlaylistState extends State<AddAllToPlaylist> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Symbols.add, size: 20),
-              label: Text(isAdding ? '添加中' : '添加到歌单'),
+              label: Text(isAdding ? '添加中' : widget.label),
               style: const ButtonStyle(
                 fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
                 padding: WidgetStatePropertyAll(

@@ -93,6 +93,18 @@ extension PinyinCompare on String {
   }
 }
 
+String alphabetSectionFor(String value) {
+  final normalized = _localeComparisonKey(value.trimLeft());
+  if (normalized.isEmpty) return '#';
+  final first = normalized.codeUnitAt(0);
+  if (first >= 0x30 && first <= 0x39) return '0';
+  final upper = first >= 0x61 && first <= 0x7a ? first - 0x20 : first;
+  if (upper >= 0x41 && upper <= 0x5a) {
+    return String.fromCharCode(upper);
+  }
+  return '#';
+}
+
 void sortNaturallyBy<T>(
   List<T> list,
   String Function(T item) valueOf, {
