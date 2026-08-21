@@ -20,8 +20,12 @@ constexpr UINT_PTR kTitleScrollTimerId = 0x5054;
 constexpr UINT kTitleScrollIntervalMs = 500;
 constexpr UINT_PTR kButtonsRetryTimerId = 0x5055;
 constexpr UINT kButtonsRetryIntervalMs = 200;
+constexpr UINT_PTR kLivePreviewResizeTimerId = 0x5056;
+constexpr UINT kLivePreviewResizeIntervalMs = 150;
 constexpr int kIconSize = 32;
 constexpr int kFallbackCoverSize = 64;
+constexpr int kMinimumPreviewWidth = 240;
+constexpr int kMinimumPreviewHeight = 160;
 
 const flutter::EncodableValue* ValueForKey(
     const flutter::EncodableMap& map, const char* key) {
@@ -221,58 +225,6 @@ std::array<THUMBBUTTON, 3> MakeButtons(const std::array<HICON, 4>& icons,
   };
 }
 
-std::pair<int, int> FitSize(int source_width, int source_height, int max_width,
-                            int max_height) {
-  if (source_width <= max_width && source_height <= max_height) {
-    return {source_width, source_height};
-  }
-  const double scale = std::min(
-      static_cast<double>(max_width) / source_width,
-      static_cast<double>(max_height) / source_height);
-  return {std::max(1, static_cast<int>(std::round(source_width * scale))),
-          std::max(1, static_cast<int>(std::round(source_height * scale)))};
-}
-
-std::vector<uint8_t> ScaleBgra(const std::vector<uint8_t>& source,
-                               int source_width, int source_height,
-                               int target_width, int target_height) {
-  std::vector<uint8_t> result(
-      static_cast<size_t>(target_width) * target_height * 4);
-  for (int y = 0; y < target_height; ++y) {
-    const double source_y = target_height > 1
-                                ? static_cast<double>(y) * (source_height - 1) /
-                                      (target_height - 1)
-                                : 0.0;
-    const int y0 = static_cast<int>(std::floor(source_y));
-    const int y1 = std::min(y0 + 1, source_height - 1);
-    const double y_weight = source_y - y0;
-    for (int x = 0; x < target_width; ++x) {
-      const double source_x = target_width > 1
-                                  ? static_cast<double>(x) *
-                                        (source_width - 1) / (target_width - 1)
-                                  : 0.0;
-      const int x0 = static_cast<int>(std::floor(source_x));
-      const int x1 = std::min(x0 + 1, source_width - 1);
-      const double x_weight = source_x - x0;
-      const size_t destination_offset =
-          (static_cast<size_t>(y) * target_width + x) * 4;
-      for (size_t channel = 0; channel < 4; ++channel) {
-        const auto pixel = [&](int px, int py) {
-          return source[(static_cast<size_t>(py) * source_width + px) * 4 +
-                        channel];
-        };
-        const double top = pixel(x0, y0) +
-                           (pixel(x1, y0) - pixel(x0, y0)) * x_weight;
-        const double bottom = pixel(x0, y1) +
-                              (pixel(x1, y1) - pixel(x0, y1)) * x_weight;
-        result[destination_offset + channel] = static_cast<uint8_t>(
-            std::round(top + (bottom - top) * y_weight));
-      }
-    }
-  }
-  return result;
-}
-
 HBITMAP CreateBitmapFromBgra(const std::vector<uint8_t>& bgra, int width,
                              int height) {
   BITMAPINFO bitmap_info{};
@@ -311,6 +263,75 @@ const std::vector<uint8_t>& FallbackCover() {
   return pixels;
 }
 
+HBITMAP CreatePreviewBitmap(const std::vector<uint8_t>& cover, int cover_width,
+                            int cover_height, int width, int height,
+                            bool allow_upscale) {
+  if (cover_width <= 0 || cover_height <= 0 || width <= 0 || height <= 0 ||
+      width > 8192 || height > 8192) {
+    return nullptr;
+  }
+
+  BITMAPINFO bitmap_info{};
+  bitmap_info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+  bitmap_info.bmiHeader.biWidth = width;
+  bitmap_info.bmiHeader.biHeight = -height;
+  bitmap_info.bmiHeader.biPlanes = 1;
+  bitmap_info.bmiHeader.biBitCount = 32;
+  bitmap_info.bmiHeader.biCompression = BI_RGB;
+
+  void* target_bits = nullptr;
+  HBITMAP target = CreateDIBSection(nullptr, &bitmap_info, DIB_RGB_COLORS,
+                                    &target_bits, nullptr, 0);
+  HBITMAP source = CreateBitmapFromBgra(cover, cover_width, cover_height);
+  HDC target_dc = CreateCompatibleDC(nullptr);
+  HDC source_dc = CreateCompatibleDC(nullptr);
+  if (target == nullptr || target_bits == nullptr || source == nullptr ||
+      target_dc == nullptr || source_dc == nullptr) {
+    if (target_dc != nullptr) DeleteDC(target_dc);
+    if (source_dc != nullptr) DeleteDC(source_dc);
+    if (target != nullptr) DeleteObject(target);
+    if (source != nullptr) DeleteObject(source);
+    return nullptr;
+  }
+
+  const HGDIOBJ old_target = SelectObject(target_dc, target);
+  const HGDIOBJ old_source = SelectObject(source_dc, source);
+  SetStretchBltMode(target_dc, HALFTONE);
+  SetBrushOrgEx(target_dc, 0, 0, nullptr);
+  RECT target_rect{0, 0, width, height};
+  HBRUSH background = CreateSolidBrush(RGB(0, 0, 0));
+  if (background != nullptr) {
+    FillRect(target_dc, &target_rect, background);
+    DeleteObject(background);
+  }
+  double scale = std::min(static_cast<double>(width) / cover_width,
+                          static_cast<double>(height) / cover_height);
+  if (!allow_upscale) {
+    scale = std::min(1.0, scale);
+  }
+  const int draw_width = std::max(
+      1, std::min(width, static_cast<int>(std::round(cover_width * scale))));
+  const int draw_height = std::max(
+      1, std::min(height, static_cast<int>(std::round(cover_height * scale))));
+  const int draw_left = (width - draw_width) / 2;
+  const int draw_top = (height - draw_height) / 2;
+  StretchBlt(target_dc, draw_left, draw_top, draw_width, draw_height,
+             source_dc, 0, 0, cover_width, cover_height, SRCCOPY);
+  GdiFlush();
+  const size_t pixel_count = static_cast<size_t>(width) * height;
+  auto* pixels = static_cast<uint8_t*>(target_bits);
+  for (size_t index = 0; index < pixel_count; ++index) {
+    pixels[index * 4 + 3] = 0xFF;
+  }
+
+  SelectObject(target_dc, old_target);
+  SelectObject(source_dc, old_source);
+  DeleteDC(target_dc);
+  DeleteDC(source_dc);
+  DeleteObject(source);
+  return target;
+}
+
 }  // namespace
 
 TaskbarThumbnail::TaskbarThumbnail(flutter::BinaryMessenger* messenger,
@@ -328,6 +349,7 @@ TaskbarThumbnail::TaskbarThumbnail(flutter::BinaryMessenger* messenger,
       [this](const auto& call, auto result) {
         HandleMethodCall(call, std::move(result));
       });
+  GetPreviewSize(&last_client_width_, &last_client_height_);
 }
 
 TaskbarThumbnail::~TaskbarThumbnail() {
@@ -347,6 +369,15 @@ void TaskbarThumbnail::HandleMethodCall(
   } else if (method_call.method_name() == "disable") {
     Disable();
     result->Success();
+  } else if (method_call.method_name() == "setPlaybackControlsEnabled") {
+    if (SetPlaybackControlsEnabled(method_call.arguments())) {
+      result->Success();
+    } else {
+      result->Error("invalid_controls", "Invalid playback controls state");
+    }
+  } else if (method_call.method_name() == "setCoverPreview") {
+    result->Success(flutter::EncodableValue(
+        SetCoverPreview(method_call.arguments())));
   } else if (method_call.method_name() == "setCover") {
     if (SetCover(method_call.arguments())) {
       result->Success();
@@ -385,13 +416,8 @@ bool TaskbarThumbnail::Enable() {
       !EnsureTaskbar()) {
     return false;
   }
-  // 不启用 iconic：任务栏缩略图与 Peek 保持系统默认的窗口实时预览，
-  // 通过 ThumbBar 提供播放控制按钮（普通权限运行下点击正常）。
   enabled_ = true;
   ApplyWindowTitle();
-  // 任务栏按钮可能在窗口显示后才创建（TaskbarButtonCreated 消息
-  // 可能早于本服务构造而丢失），延迟重试绑定 ThumbBar 按钮。
-  SetTimer(window_, kButtonsRetryTimerId, kButtonsRetryIntervalMs, nullptr);
   return true;
 }
 
@@ -401,15 +427,98 @@ void TaskbarThumbnail::Disable() {
   }
   KillTimer(window_, kTitleScrollTimerId);
   KillTimer(window_, kButtonsRetryTimerId);
+  KillTimer(window_, kLivePreviewResizeTimerId);
   HideButtons();
+  DisableCoverPreview();
   if (enabled_) {
     StopTitleScrolling();
     SetWindowTextW(window_, original_title_.c_str());
     enabled_ = false;
   }
+  playback_controls_enabled_ = false;
+  ClearLivePreview();
   cover_bgra_.clear();
   cover_width_ = 0;
   cover_height_ = 0;
+}
+
+bool TaskbarThumbnail::SetPlaybackControlsEnabled(
+    const flutter::EncodableValue* arguments) {
+  const auto map = arguments == nullptr
+                       ? nullptr
+                       : std::get_if<flutter::EncodableMap>(arguments);
+  const bool* value =
+      map == nullptr ? nullptr : ReadBool(*map, "enabled");
+  if (value == nullptr) {
+    return false;
+  }
+  playback_controls_enabled_ = enabled_ && *value;
+  if (playback_controls_enabled_) {
+    SetTimer(window_, kButtonsRetryTimerId, kButtonsRetryIntervalMs, nullptr);
+  } else {
+    KillTimer(window_, kButtonsRetryTimerId);
+    HideButtons();
+  }
+  return true;
+}
+
+bool TaskbarThumbnail::SetCoverPreview(
+    const flutter::EncodableValue* arguments) {
+  const auto map = arguments == nullptr
+                       ? nullptr
+                       : std::get_if<flutter::EncodableMap>(arguments);
+  const bool* value =
+      map == nullptr ? nullptr : ReadBool(*map, "enabled");
+  if (value == nullptr) {
+    return false;
+  }
+  if (*value) {
+    return EnableCoverPreview();
+  }
+  DisableCoverPreview();
+  return true;
+}
+
+bool TaskbarThumbnail::EnableCoverPreview() {
+  if (cover_preview_enabled_) {
+    return true;
+  }
+  if (!enabled_ || !RebuildLivePreview()) {
+    return false;
+  }
+  const BOOL enabled = TRUE;
+  if (FAILED(DwmSetWindowAttribute(window_, DWMWA_FORCE_ICONIC_REPRESENTATION,
+                                   &enabled, sizeof(enabled)))) {
+    ClearLivePreview();
+    return false;
+  }
+  if (FAILED(DwmSetWindowAttribute(window_, DWMWA_HAS_ICONIC_BITMAP, &enabled,
+                                   sizeof(enabled)))) {
+    const BOOL disabled = FALSE;
+    DwmSetWindowAttribute(window_, DWMWA_FORCE_ICONIC_REPRESENTATION, &disabled,
+                          sizeof(disabled));
+    ClearLivePreview();
+    return false;
+  }
+  cover_preview_enabled_ = true;
+  InvalidateThumbnail();
+  return true;
+}
+
+void TaskbarThumbnail::DisableCoverPreview() {
+  KillTimer(window_, kLivePreviewResizeTimerId);
+  StopTitleScrolling();
+  if (cover_preview_enabled_) {
+    const BOOL disabled = FALSE;
+    DwmSetWindowAttribute(window_, DWMWA_FORCE_ICONIC_REPRESENTATION, &disabled,
+                          sizeof(disabled));
+    DwmSetWindowAttribute(window_, DWMWA_HAS_ICONIC_BITMAP, &disabled,
+                          sizeof(disabled));
+    DwmInvalidateIconicBitmaps(window_);
+    cover_preview_enabled_ = false;
+  }
+  ClearLivePreview();
+  ApplyWindowTitle();
 }
 
 bool TaskbarThumbnail::SetCover(
@@ -440,6 +549,9 @@ bool TaskbarThumbnail::SetCover(
   cover_bgra_ = *pixels;
   cover_width_ = *width;
   cover_height_ = *height;
+  if (cover_preview_enabled_) {
+    RebuildLivePreview();
+  }
   InvalidateThumbnail();
   return true;
 }
@@ -456,7 +568,7 @@ bool TaskbarThumbnail::SetPlaying(
     return false;
   }
   playing_ = *value;
-  if (buttons_added_) {
+  if (playback_controls_enabled_ && buttons_added_) {
     auto buttons =
         MakeButtons(icons_, playing_, true, has_track_, can_skip_);
     taskbar_->ThumbBarUpdateButtons(window_, static_cast<UINT>(buttons.size()),
@@ -480,7 +592,7 @@ bool TaskbarThumbnail::SetControls(
   }
   has_track_ = *has_track;
   can_skip_ = *can_skip;
-  if (buttons_added_) {
+  if (playback_controls_enabled_ && buttons_added_) {
     auto buttons =
         MakeButtons(icons_, playing_, true, has_track_, can_skip_);
     taskbar_->ThumbBarUpdateButtons(window_, static_cast<UINT>(buttons.size()),
@@ -544,7 +656,7 @@ bool TaskbarThumbnail::EnsureTaskbar() {
 }
 
 bool TaskbarThumbnail::ShowButtons() {
-  if (!enabled_ || !EnsureTaskbar()) {
+  if (!enabled_ || !playback_controls_enabled_ || !EnsureTaskbar()) {
     return false;
   }
   auto buttons = MakeButtons(icons_, playing_, true, has_track_, can_skip_);
@@ -571,13 +683,13 @@ void TaskbarThumbnail::HideButtons() {
 }
 
 void TaskbarThumbnail::InvalidateThumbnail() {
-  if (enabled_ && window_ != nullptr) {
+  if (cover_preview_enabled_ && window_ != nullptr) {
     DwmInvalidateIconicBitmaps(window_);
   }
 }
 
 void TaskbarThumbnail::ProvideThumbnail(int max_width, int max_height) {
-  if (!enabled_ || max_width <= 0 || max_height <= 0) {
+  if (!cover_preview_enabled_ || max_width <= 0 || max_height <= 0) {
     return;
   }
   const bool use_fallback = cover_bgra_.empty();
@@ -585,20 +697,132 @@ void TaskbarThumbnail::ProvideThumbnail(int max_width, int max_height) {
       use_fallback ? FallbackCover() : cover_bgra_;
   const int cover_width = use_fallback ? kFallbackCoverSize : cover_width_;
   const int cover_height = use_fallback ? kFallbackCoverSize : cover_height_;
-  const auto [width, height] =
-      FitSize(cover_width, cover_height, max_width, max_height);
-  std::vector<uint8_t> scaled;
-  const std::vector<uint8_t>* pixels = &cover;
-  if (width != cover_width || height != cover_height) {
-    scaled = ScaleBgra(cover, cover_width, cover_height, width, height);
-    pixels = &scaled;
-  }
-  HBITMAP bitmap = CreateBitmapFromBgra(*pixels, width, height);
+  HBITMAP bitmap = CreatePreviewBitmap(cover, cover_width, cover_height,
+                                       max_width, max_height, true);
   if (bitmap == nullptr) {
     return;
   }
   DwmSetIconicThumbnail(window_, bitmap, 0);
   DeleteObject(bitmap);
+}
+
+bool TaskbarThumbnail::RebuildLivePreview() {
+  int width = 0;
+  int height = 0;
+  if (!GetPreviewSize(&width, &height)) {
+    return false;
+  }
+  const bool use_fallback = cover_bgra_.empty();
+  const std::vector<uint8_t>& cover =
+      use_fallback ? FallbackCover() : cover_bgra_;
+  const int cover_width = use_fallback ? kFallbackCoverSize : cover_width_;
+  const int cover_height = use_fallback ? kFallbackCoverSize : cover_height_;
+  HBITMAP bitmap = CreatePreviewBitmap(cover, cover_width, cover_height, width,
+                                       height, false);
+  if (bitmap == nullptr) {
+    return false;
+  }
+  ClearLivePreview();
+  live_preview_bitmap_ = bitmap;
+  live_preview_width_ = width;
+  live_preview_height_ = height;
+  return true;
+}
+
+void TaskbarThumbnail::ProvideLivePreview() {
+  if (!cover_preview_enabled_) {
+    return;
+  }
+  int width = 0;
+  int height = 0;
+  if (!GetPreviewSize(&width, &height)) return;
+  if ((live_preview_bitmap_ == nullptr || width != live_preview_width_ ||
+       height != live_preview_height_) &&
+      !RebuildLivePreview()) {
+    return;
+  }
+  DwmSetIconicLivePreviewBitmap(window_, live_preview_bitmap_, nullptr,
+                                DWM_SIT_DISPLAYFRAME);
+}
+
+bool TaskbarThumbnail::GetRestoredClientSize(int* width, int* height) {
+  if (window_ == nullptr || width == nullptr || height == nullptr) {
+    return false;
+  }
+  WINDOWPLACEMENT placement{};
+  placement.length = sizeof(placement);
+  if (!GetWindowPlacement(window_, &placement)) {
+    return false;
+  }
+
+  RECT outer = placement.rcNormalPosition;
+  if (placement.showCmd == SW_SHOWMAXIMIZED ||
+      (placement.flags & WPF_RESTORETOMAXIMIZED) != 0) {
+    const HMONITOR monitor = MonitorFromWindow(window_, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO monitor_info{};
+    monitor_info.cbSize = sizeof(monitor_info);
+    if (monitor != nullptr && GetMonitorInfo(monitor, &monitor_info)) {
+      outer = monitor_info.rcWork;
+    }
+  }
+  const int outer_width = static_cast<int>(outer.right - outer.left);
+  const int outer_height = static_cast<int>(outer.bottom - outer.top);
+  if (outer_width <= 0 || outer_height <= 0) {
+    return false;
+  }
+
+  const DWORD style = static_cast<DWORD>(GetWindowLongPtrW(window_, GWL_STYLE));
+  const DWORD ex_style =
+      static_cast<DWORD>(GetWindowLongPtrW(window_, GWL_EXSTYLE));
+  RECT frame{};
+  if (!AdjustWindowRectEx(&frame, style, FALSE, ex_style)) {
+    return false;
+  }
+  const int frame_width = static_cast<int>(frame.right - frame.left);
+  const int frame_height = static_cast<int>(frame.bottom - frame.top);
+  *width = outer_width - frame_width;
+  *height = outer_height - frame_height;
+  return *width > 0 && *height > 0;
+}
+
+bool TaskbarThumbnail::GetPreviewSize(int* width, int* height) {
+  if (window_ == nullptr || width == nullptr || height == nullptr) {
+    return false;
+  }
+  RECT client{};
+  if (!IsIconic(window_) && GetClientRect(window_, &client)) {
+    const int current_width = static_cast<int>(client.right - client.left);
+    const int current_height = static_cast<int>(client.bottom - client.top);
+    if (current_width >= kMinimumPreviewWidth &&
+        current_height >= kMinimumPreviewHeight) {
+      last_client_width_ = current_width;
+      last_client_height_ = current_height;
+    }
+  }
+  if (last_client_width_ < kMinimumPreviewWidth ||
+      last_client_height_ < kMinimumPreviewHeight) {
+    int restored_width = 0;
+    int restored_height = 0;
+    if (GetRestoredClientSize(&restored_width, &restored_height)) {
+      last_client_width_ = restored_width;
+      last_client_height_ = restored_height;
+    }
+  }
+  if (last_client_width_ <= 0 || last_client_height_ <= 0) {
+    return false;
+  }
+  *width = last_client_width_;
+  *height = last_client_height_;
+  return true;
+}
+
+void TaskbarThumbnail::ClearLivePreview() {
+  if (live_preview_bitmap_ != nullptr) {
+    DeleteObject(live_preview_bitmap_);
+    live_preview_bitmap_ = nullptr;
+  }
+  live_preview_width_ = 0;
+  live_preview_height_ = 0;
 }
 
 void TaskbarThumbnail::SendControlEvent(const char* event) {
@@ -693,13 +917,35 @@ std::optional<LRESULT> TaskbarThumbnail::HandleMessage(UINT message,
   }
   switch (message) {
     case WM_DWMSENDICONICTHUMBNAIL: {
+      if (!cover_preview_enabled_) return std::nullopt;
       const int width = HIWORD(lparam);
       UpdateTitleScrolling(width);
       ProvideThumbnail(width, LOWORD(lparam));
       return LRESULT(0);
     }
+    case WM_DWMSENDICONICLIVEPREVIEWBITMAP:
+      if (!cover_preview_enabled_) return std::nullopt;
+      ProvideLivePreview();
+      return LRESULT(0);
+    case WM_SIZE:
+      if (wparam == SIZE_MINIMIZED) {
+        KillTimer(window_, kLivePreviewResizeTimerId);
+      } else {
+        const int width = LOWORD(lparam);
+        const int height = HIWORD(lparam);
+        if (width >= kMinimumPreviewWidth &&
+            height >= kMinimumPreviewHeight) {
+          last_client_width_ = width;
+          last_client_height_ = height;
+        }
+      }
+      if (cover_preview_enabled_ && wparam != SIZE_MINIMIZED) {
+        SetTimer(window_, kLivePreviewResizeTimerId,
+                 kLivePreviewResizeIntervalMs, nullptr);
+      }
+      break;
     case WM_COMMAND:
-      if (HIWORD(wparam) == THBN_CLICKED) {
+      if (playback_controls_enabled_ && HIWORD(wparam) == THBN_CLICKED) {
         switch (LOWORD(wparam)) {
           case kPreviousButtonId:
             if (!can_skip_) return LRESULT(0);
@@ -726,8 +972,15 @@ std::optional<LRESULT> TaskbarThumbnail::HandleMessage(UINT message,
       }
       if (wparam == kButtonsRetryTimerId) {
         // 任务栏按钮就绪后绑定 ThumbBar 按钮；成功后停止重试。
-        if (ShowButtons()) {
+        if (!playback_controls_enabled_ || ShowButtons()) {
           KillTimer(window_, kButtonsRetryTimerId);
+        }
+        return LRESULT(0);
+      }
+      if (wparam == kLivePreviewResizeTimerId) {
+        KillTimer(window_, kLivePreviewResizeTimerId);
+        if (cover_preview_enabled_ && RebuildLivePreview()) {
+          InvalidateThumbnail();
         }
         return LRESULT(0);
       }

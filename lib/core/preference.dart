@@ -675,8 +675,8 @@ class AppPreference {
 
   bool sidebarExpanded = true;
 
-  /// 任务栏集成：缩略图保持窗口实时预览，同时提供播放控制按钮
-  bool taskbarThumbnailCover = true;
+  bool taskbarPlaybackControls = true;
+  bool taskbarCoverPreview = false;
 
   var playbackPref = PlaybackPreference(
     PlayMode.forward,
@@ -756,9 +756,15 @@ class AppPreference {
       prefMap['sidebarExpanded'],
       defaultValue: true,
     );
-    taskbarThumbnailCover = _normalizedBool(
-      prefMap['taskbarThumbnailCover'],
+    taskbarPlaybackControls = _normalizedBool(
+      prefMap.containsKey('taskbarPlaybackControls')
+          ? prefMap['taskbarPlaybackControls']
+          : prefMap['taskbarThumbnailCover'],
       defaultValue: true,
+    );
+    taskbarCoverPreview = _normalizedBool(
+      prefMap['taskbarCoverPreview'],
+      defaultValue: false,
     );
     playbackPref = PlaybackPreference.fromMap(prefMap['playbackPref']);
     nowPlayingPagePref = NowPlayingPagePreference.fromMap(
@@ -807,6 +813,7 @@ class AppPreference {
       final prefMap = _rawPrefMap != null
           ? Map<String, dynamic>.from(_rawPrefMap!)
           : <String, dynamic>{};
+      prefMap.remove('taskbarThumbnailCover');
       prefMap['version'] = AppSettings.version;
       prefMap.addAll({
         'audiosPagePref': audiosPagePref.toMap(),
@@ -820,7 +827,8 @@ class AppPreference {
         'playlistDetailPagePref': playlistDetailPagePref.toMap(),
         'startPage': startPage,
         'sidebarExpanded': sidebarExpanded,
-        'taskbarThumbnailCover': taskbarThumbnailCover,
+        'taskbarPlaybackControls': taskbarPlaybackControls,
+        'taskbarCoverPreview': taskbarCoverPreview,
         'playbackPref': playbackPref.toMap(),
         'nowPlayingPagePref': nowPlayingPagePref.toMap(),
         'customCpFeedbackKey': customCpFeedbackKey,

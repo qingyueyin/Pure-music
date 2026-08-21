@@ -13,11 +13,9 @@ import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/play_service/play_service.dart';
 
-/// 任务栏缩略图自定义封面管理。
+/// 任务栏播放控制和自定义封面管理。
 ///
-/// 开启时把任务栏悬停缩略图 / Peek 预览替换为当前歌曲封面，
-/// 并在缩略图底部提供上一首 / 播放暂停 / 下一首三个控制按钮；
-/// 关闭时恢复系统默认的实时窗口预览。仅 Windows 生效。
+/// 播放按钮和封面预览可独立开关，仅 Windows 生效。
 class TaskbarThumbnailService {
   TaskbarThumbnailService._();
 
@@ -31,6 +29,8 @@ class TaskbarThumbnailService {
   bool _initialized = false;
   bool _enabled = false;
   bool _pendingEnable = false;
+  bool _playbackControlsEnabled = false;
+  bool _coverPreviewEnabled = false;
   int _lifecycleGeneration = 0;
   int _coverGeneration = 0;
   ValueNotifier<Audio?>? _nowPlayingNotifier;
@@ -39,7 +39,7 @@ class TaskbarThumbnailService {
 
   bool get enabled => _enabled;
 
-  /// 应用启动时初始化：读取开关并接管任务栏缩略图（主窗口已创建）
+  /// 应用启动时初始化任务栏集成（主窗口已创建）
   void init() {
     if (!Platform.isWindows || _initialized) return;
     _initialized = true;
@@ -51,17 +51,47 @@ class TaskbarThumbnailService {
     _playerStateNotifier?.addListener(_onPlayerStateChanged);
     _playlistNotifier = playback.playlistNotifier;
     _playlistNotifier?.addListener(_onPlaylistChanged);
-    if (!AppPreference.instance.taskbarThumbnailCover) return;
-    unawaited(_enable());
+    final pref = AppPreference.instance;
+    _playbackControlsEnabled = pref.taskbarPlaybackControls;
+    _coverPreviewEnabled = pref.taskbarCoverPreview;
+    if (_playbackControlsEnabled || _coverPreviewEnabled) {
+      unawaited(_enable());
+    }
   }
 
-  /// 运行时开关切换
-  void setEnabled(bool enabled) {
-    AppPreference.instance.taskbarThumbnailCover = enabled;
+  void setPlaybackControlsEnabled(bool enabled) {
+    AppPreference.instance.taskbarPlaybackControls = enabled;
+    _playbackControlsEnabled = enabled;
     if (enabled) {
-      unawaited(_enable());
+      if (_enabled) {
+        unawaited(_syncPlaybackControlsEnabled());
+      } else {
+        unawaited(_enable());
+      }
+    } else if (_coverPreviewEnabled) {
+      if (_enabled) unawaited(_syncPlaybackControlsEnabled());
     } else {
       _disable();
+    }
+    unawaited(AppPreference.instance.save());
+  }
+
+  void setCoverPreviewEnabled(bool enabled) {
+    AppPreference.instance.taskbarCoverPreview = enabled;
+    _coverPreviewEnabled = enabled;
+    if (enabled) {
+      if (_enabled) {
+        unawaited(_activateCoverPreview());
+      } else {
+        unawaited(_enable());
+      }
+    } else {
+      _coverGeneration++;
+      if (_playbackControlsEnabled) {
+        if (_enabled) unawaited(_setNativeCoverPreview(false));
+      } else {
+        _disable();
+      }
     }
     unawaited(AppPreference.instance.save());
   }
@@ -69,6 +99,7 @@ class TaskbarThumbnailService {
   void _onNowPlayingChanged() {
     unawaited(_setTitle());
     unawaited(_setControls());
+    if (!_coverPreviewEnabled) return;
     final generation = ++_coverGeneration;
     unawaited(_updateCoverFor(_nowPlayingNotifier?.value, generation));
   }
@@ -90,6 +121,19 @@ class TaskbarThumbnailService {
       });
     } catch (error, stackTrace) {
       logger.w('[taskbar-thumbnail] set playing error: $error\n$stackTrace');
+    }
+  }
+
+  Future<void> _syncPlaybackControlsEnabled() async {
+    if (!_enabled) return;
+    try {
+      await _channel.invokeMethod<void>('setPlaybackControlsEnabled', {
+        'enabled': _playbackControlsEnabled,
+      });
+    } catch (error, stackTrace) {
+      logger.w(
+        '[taskbar-thumbnail] set playback controls error: $error\n$stackTrace',
+      );
     }
   }
 
@@ -139,10 +183,6 @@ class TaskbarThumbnailService {
     _pendingEnable = true;
     final generation = ++_lifecycleGeneration;
     try {
-      await _pushDefaultCover(
-        () => _pendingEnable && generation == _lifecycleGeneration,
-      );
-      if (generation != _lifecycleGeneration) return;
       final enabled = await _channel.invokeMethod<bool>('enable') ?? false;
       if (generation != _lifecycleGeneration) {
         if (enabled) unawaited(_channel.invokeMethod<void>('disable'));
@@ -153,15 +193,40 @@ class TaskbarThumbnailService {
         return;
       }
       _enabled = true;
+      unawaited(_syncPlaybackControlsEnabled());
       unawaited(_setTitle());
       unawaited(_setControls());
-      final coverGeneration = ++_coverGeneration;
-      unawaited(_updateCoverFor(_nowPlayingNotifier?.value, coverGeneration));
+      if (_coverPreviewEnabled) unawaited(_activateCoverPreview());
       _onPlayerStateChanged();
     } catch (error, stackTrace) {
       logger.w('[taskbar-thumbnail] enable error: $error\n$stackTrace');
     } finally {
       if (generation == _lifecycleGeneration) _pendingEnable = false;
+    }
+  }
+
+  Future<void> _activateCoverPreview() async {
+    if (!_enabled || !_coverPreviewEnabled) return;
+    final generation = ++_coverGeneration;
+    await _pushDefaultCover(() => _isCurrentCover(generation));
+    if (!_isCurrentCover(generation)) return;
+    if (!await _setNativeCoverPreview(true) || !_isCurrentCover(generation)) {
+      return;
+    }
+    unawaited(_updateCoverFor(_nowPlayingNotifier?.value, generation));
+  }
+
+  Future<bool> _setNativeCoverPreview(bool enabled) async {
+    try {
+      return await _channel.invokeMethod<bool>('setCoverPreview', {
+            'enabled': enabled,
+          }) ??
+          false;
+    } catch (error, stackTrace) {
+      logger.w(
+        '[taskbar-thumbnail] set cover preview error: $error\n$stackTrace',
+      );
+      return false;
     }
   }
 
@@ -183,7 +248,7 @@ class TaskbarThumbnailService {
   }
 
   bool _isCurrentCover(int generation) =>
-      _enabled && generation == _coverGeneration;
+      _enabled && _coverPreviewEnabled && generation == _coverGeneration;
 
   Future<void> _updateCoverFor(Audio? audio, int generation) async {
     if (!_isCurrentCover(generation)) return;
@@ -243,17 +308,17 @@ class TaskbarThumbnailService {
       }
       final source = frame.image;
       try {
-        final resized =
-            source.width == targetSize && source.height == targetSize
-            ? null
-            : await _resizeToSquare(source, targetSize);
+        final resized = source.width > targetSize || source.height > targetSize
+            ? await _resizeToFit(source, targetSize)
+            : null;
         try {
-          final bgra = await _imageToBgra(resized ?? source);
+          final output = resized ?? source;
+          final bgra = await _imageToBgra(output);
           if (!_isCurrentCover(generation)) return false;
           await _channel.invokeMethod<void>('setCover', {
             'bgra': bgra,
-            'width': targetSize,
-            'height': targetSize,
+            'width': output.width,
+            'height': output.height,
           });
           return true;
         } finally {
@@ -268,8 +333,7 @@ class TaskbarThumbnailService {
     }
   }
 
-  /// 等比缩放到指定尺寸内的正方形画布
-  Future<ui.Image> _resizeToSquare(ui.Image source, int targetSize) async {
+  Future<ui.Image> _resizeToFit(ui.Image source, int targetSize) async {
     final sw = source.width;
     final sh = source.height;
     final scale = targetSize / (sw > sh ? sw : sh);
@@ -278,20 +342,14 @@ class TaskbarThumbnailService {
 
     final recorder = ui.PictureRecorder();
     final canvas = ui.Canvas(recorder);
-    canvas.drawColor(
-      ThemeProvider.instance.currScheme.surfaceContainerHighest,
-      ui.BlendMode.src,
-    );
-    final left = (targetSize - targetW) / 2;
-    final top = (targetSize - targetH) / 2;
     canvas.drawImageRect(
       source,
       Rect.fromLTWH(0, 0, sw.toDouble(), sh.toDouble()),
-      Rect.fromLTWH(left, top, targetW.toDouble(), targetH.toDouble()),
+      Rect.fromLTWH(0, 0, targetW.toDouble(), targetH.toDouble()),
       Paint()..filterQuality = FilterQuality.medium,
     );
     final picture = recorder.endRecording();
-    final resized = await picture.toImage(targetSize, targetSize);
+    final resized = await picture.toImage(targetW, targetH);
     picture.dispose();
     return resized;
   }

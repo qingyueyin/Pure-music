@@ -30,6 +30,11 @@ class TaskbarThumbnail {
       std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
   bool Enable();
   void Disable();
+  bool SetPlaybackControlsEnabled(
+      const flutter::EncodableValue* arguments);
+  bool SetCoverPreview(const flutter::EncodableValue* arguments);
+  bool EnableCoverPreview();
+  void DisableCoverPreview();
   bool SetCover(const flutter::EncodableValue* arguments);
   bool SetPlaying(const flutter::EncodableValue* arguments);
   bool SetControls(const flutter::EncodableValue* arguments);
@@ -39,6 +44,11 @@ class TaskbarThumbnail {
   void HideButtons();
   void InvalidateThumbnail();
   void ProvideThumbnail(int max_width, int max_height);
+  bool GetRestoredClientSize(int* width, int* height);
+  bool GetPreviewSize(int* width, int* height);
+  bool RebuildLivePreview();
+  void ProvideLivePreview();
+  void ClearLivePreview();
   void SendControlEvent(const char* event);
   void UpdateTitleScrolling(int available_width);
   void StopTitleScrolling();
@@ -48,6 +58,8 @@ class TaskbarThumbnail {
   HWND window_ = nullptr;
   UINT taskbar_button_created_message_ = 0;
   bool enabled_ = false;
+  bool playback_controls_enabled_ = false;
+  bool cover_preview_enabled_ = false;
   bool buttons_added_ = false;
   bool playing_ = false;
   bool has_track_ = false;
@@ -56,6 +68,11 @@ class TaskbarThumbnail {
   size_t title_scroll_index_ = 0;
   int cover_width_ = 0;
   int cover_height_ = 0;
+  int live_preview_width_ = 0;
+  int live_preview_height_ = 0;
+  int last_client_width_ = 0;
+  int last_client_height_ = 0;
+  HBITMAP live_preview_bitmap_ = nullptr;
   std::vector<uint8_t> cover_bgra_;
   std::wstring original_title_;
   std::wstring song_title_;
