@@ -50,6 +50,8 @@ class SettingsIssuePage extends StatefulWidget {
 }
 
 class _SettingsIssuePageState extends State<SettingsIssuePage> {
+  static const _maxSnapshotChars = 60 * 1024;
+
   final titleEditingController = TextEditingController();
   final descEditingController = TextEditingController();
   final logEditingController = TextEditingController();
@@ -185,6 +187,22 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
     return redactDiagnosticData(logStrBuf.toString());
   }
 
+  String _truncateTail(String content, int maxChars) {
+    if (content.length <= maxChars) return content;
+    final omitted = content.length - maxChars;
+    return 'TRUNCATED|omittedChars=$omitted\n${content.substring(omitted)}';
+  }
+
+  (String, String?) _splitApplicationLog(String content) {
+    const crashMarker = '\nCRASH_LOG_PATH=';
+    final crashIndex = content.indexOf(crashMarker);
+    if (crashIndex < 0) return (content, null);
+    return (
+      content.substring(0, crashIndex),
+      content.substring(crashIndex + 1),
+    );
+  }
+
   Future<String> _buildLogSnapshotFull() async {
     final parts = <String>[];
     parts.add('== APP ==');
@@ -192,21 +210,6 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
     parts.add('');
     parts.add('== ENV ==');
     parts.add(_buildEnvironmentInfo());
-    parts.add('');
-    parts.add('== AUDIO_ECHO_LOG ==');
-    final echoLog = await AudioEchoLogRecorder.instance.readLatestLog();
-    parts.add(
-      redactDiagnosticData(
-        'AUDIO_ECHO_LOG_PATH=${AudioEchoLogRecorder.instance.latestLogPath ?? '-'}',
-      ),
-    );
-    parts.add(echoLog == null ? '-' : redactDiagnosticData(echoLog));
-    parts.add('');
-    parts.add('== APPLICATION_LOG ==');
-    final applicationLog = await applicationLogOutput.readForExport();
-    parts.add(
-      applicationLog == null ? '-' : redactDiagnosticData(applicationLog),
-    );
     parts.add('');
     parts.add('== PREF ==');
     parts.add(_buildPreferenceSnapshot());
@@ -217,8 +220,50 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
     parts.add('== NOW_PLAYING ==');
     parts.add(_buildNowPlayingSnapshot());
     parts.add('');
-    parts.add('== LOGGER_MEMORY ==');
-    parts.add(_buildLogSnapshot());
+    var budget = _maxSnapshotChars - parts.join('\n').length;
+    if (budget < 0) budget = 0;
+
+    final applicationLog = await applicationLogOutput.readForExport();
+    if (applicationLog != null) {
+      final (appBody, crashBody) = _splitApplicationLog(applicationLog);
+      parts.add('== APPLICATION_LOG ==');
+      var piece = redactDiagnosticData(appBody);
+      if (piece.length > budget) piece = _truncateTail(piece, budget);
+      budget -= piece.length;
+      parts.add(piece);
+      parts.add('');
+      if (crashBody != null && budget > 0) {
+        parts.add('== CRASH_LOG ==');
+        piece = redactDiagnosticData(crashBody);
+        if (piece.length > budget) piece = _truncateTail(piece, budget);
+        budget -= piece.length;
+        parts.add(piece);
+        parts.add('');
+      }
+    }
+
+    if (budget > 0) {
+      parts.add('== LOGGER_MEMORY ==');
+      var piece = _buildLogSnapshot();
+      if (piece.length > budget) piece = _truncateTail(piece, budget);
+      budget -= piece.length;
+      parts.add(piece);
+      parts.add('');
+    }
+
+    if (budget > 0) {
+      parts.add('== AUDIO_ECHO_LOG ==');
+      final echoLog = await AudioEchoLogRecorder.instance.readLatestLog();
+      final header =
+          'AUDIO_ECHO_LOG_PATH='
+          '${AudioEchoLogRecorder.instance.latestLogPath ?? '-'}';
+      var piece = redactDiagnosticData(
+        echoLog == null ? header : '$header\n$echoLog',
+      );
+      if (piece.length > budget) piece = _truncateTail(piece, budget);
+      parts.add(piece);
+      parts.add('');
+    }
     return parts.join('\n');
   }
 
