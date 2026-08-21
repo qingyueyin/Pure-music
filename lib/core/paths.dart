@@ -21,6 +21,7 @@ const String STATS_PAGE = '/stats';
 
 const String SETTINGS_PAGE = '/settings';
 const String SETTINGS_ISSUE_PAGE = '/settings/issue';
+const String SETTINGS_GROUP_PAGE = '/settings/group';
 
 const String WELCOMING_PAGE = '/welcoming';
 

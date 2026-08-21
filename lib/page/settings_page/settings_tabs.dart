@@ -23,17 +23,21 @@ import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/taskbar_thumbnail_service.dart';
 import 'package:pure_music/play_service/desktop_lyric_service.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.dart';
+import 'package:pure_music/page/page_scaffold.dart';
 import 'package:pure_music/page/settings_page/check_update.dart';
 import 'package:pure_music/page/settings_page/create_issue.dart';
 import 'package:pure_music/page/settings_page/artist_separator_editor.dart';
+import 'package:pure_music/page/settings_page/settings_group_entry.dart';
 import 'package:pure_music/page/settings_page/other_settings.dart'
     show AudioEchoLogRecordControl, ReplayGainControl, TransitionControl;
 import 'package:pure_music/native/rust/api/utils.dart' as rust_utils;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
 import 'package:path/path.dart' as path;
+import 'package:pure_music/core/paths.dart' as app_paths;
 
 class SettingsTabs extends StatefulWidget {
   const SettingsTabs({super.key});
@@ -48,6 +52,7 @@ class _SettingsTabsState extends State<SettingsTabs> {
   static const _tabs = [
     _SettingsTab('外观', Symbols.palette),
     _SettingsTab('歌词', Symbols.lyrics),
+    _SettingsTab('播放', Symbols.play_circle),
     _SettingsTab('桌面歌词', Symbols.desktop_windows),
     _SettingsTab('高级', Symbols.settings),
     _SettingsTab('关于', Symbols.info),
@@ -103,6 +108,7 @@ class _SettingsTabsState extends State<SettingsTabs> {
             children: const [
               _AppearanceTabContent(),
               _LyricsTabContent(),
+              _PlaybackTabContent(),
               _DesktopLyricTabContent(),
               _AdvancedTabContent(),
               _AboutTabContent(),
@@ -128,39 +134,47 @@ class _AppearanceTabContent extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.only(bottom: 96.0, right: 20),
       children: const [
-        _SettingsSectionHeader('显示模式'),
-        SizedBox(height: 4.0),
-        _ThemeOptionControl(),
-        SizedBox(height: 24.0),
-        _SettingsSectionHeader('配色'),
-        SizedBox(height: 4.0),
-        _ThemeColorModeControl(),
-        SizedBox(height: 16.0),
-        _ThemeColorSourceControl(),
-        SizedBox(height: 24.0),
-        _SettingsSectionHeader('应用背景'),
-        SizedBox(height: 4.0),
-        _AppBackgroundControl(),
-        SizedBox(height: 24.0),
-        _SettingsSectionHeader('列表效果'),
-        SizedBox(height: 4.0),
-        _StackedScrollEffectSwitch(),
-        SizedBox(height: 24.0),
-        _SettingsSectionHeader('主题色应用'),
-        SizedBox(height: 4.0),
-        _MonetProgressBarSwitch(),
-        SizedBox(height: 16.0),
-        _MonetLyricsSwitch(),
-        SizedBox(height: 16.0),
-        _MonetTransitionSwitch(),
-        SizedBox(height: 16.0),
-        _MonetControlsSwitch(),
-        SizedBox(height: 24.0),
-        _SettingsSectionHeader('播放效果'),
-        SizedBox(height: 4.0),
-        _WavyProgressBarSwitch(),
-        SizedBox(height: 16.0),
-        _TopBarLyricAnimationSelector(),
+        _GroupEntry(
+          icon: Symbols.brightness_6,
+          title: '显示模式',
+          subtitle: '明暗模式',
+          groupId: 'appearance-display',
+        ),
+        SizedBox(height: 8.0),
+        _GroupEntry(
+          icon: Symbols.format_color_fill,
+          title: '配色',
+          subtitle: '主题色生成方式与颜色来源',
+          groupId: 'appearance-color',
+        ),
+        SizedBox(height: 8.0),
+        _GroupEntry(
+          icon: Symbols.wallpaper,
+          title: '应用背景',
+          subtitle: '背景图片、强度与模糊',
+          groupId: 'appearance-background',
+        ),
+        SizedBox(height: 8.0),
+        _GroupEntry(
+          icon: Symbols.view_agenda,
+          title: '列表效果',
+          subtitle: '列表滚动与入场动效',
+          groupId: 'appearance-list',
+        ),
+        SizedBox(height: 8.0),
+        _GroupEntry(
+          icon: Symbols.auto_awesome,
+          title: '主题色应用',
+          subtitle: '主题色在播放界面的应用范围',
+          groupId: 'appearance-monet',
+        ),
+        SizedBox(height: 8.0),
+        _GroupEntry(
+          icon: Symbols.show_chart,
+          title: '进度条显示',
+          subtitle: '波浪进度条与顶部歌词动画',
+          groupId: 'appearance-progress',
+        ),
       ],
     );
   }
@@ -1436,225 +1450,53 @@ class UpperCaseTextFormatter extends TextInputFormatter {
   }
 }
 
-class _LyricsTabContent extends StatefulWidget {
+class _LyricsTabContent extends StatelessWidget {
   const _LyricsTabContent();
-
-  @override
-  State<_LyricsTabContent> createState() => _LyricsTabContentState();
-}
-
-class _LyricsTabContentState extends State<_LyricsTabContent> {
-  final settings = AppSettings.instance;
-
-  Future<void> _setZhConversionMode(ZhConversionMode mode) async {
-    if (mode == settings.zhConversionMode) return;
-    setState(() => settings.zhConversionMode = mode);
-    LyricViewController.instance.triggerRebuild();
-    await settings.saveSettings();
-  }
 
   @override
   Widget build(BuildContext context) {
     return ListView(
       padding: const EdgeInsets.only(bottom: 96.0, right: 20),
-      children: [
-        const DefaultLyricSourceControl(),
-        const SizedBox(height: 16.0),
-        // 注释：这两个设置暂时隐藏，因为第三方歌词 API 总是返回全部数据（主歌词+翻译+注音），
-        // 无法单独控制是否获取翻译和注音。播放页面已有显示/隐藏开关，这里的设置是冗余的。
-        // TODO: 未来如果 API 支持分别请求，可以重新启用
-        // SettingsTile(
-        //   description: '注音',
-        //   subtitle: '获取网络歌词中的注音',
-        //   action: Switch(
-        //     value: settings.showRomanization,
-        //     onChanged: (v) {
-        //       setState(() {
-        //         settings.showRomanization = v;
-        //       });
-        //       settings.saveSettings();
-        //       LyricViewController.instance.triggerRebuild();
-        //     },
-        //   ),
-        // ),
-        // const SizedBox(height: 16.0),
-        // SettingsTile(
-        //   description: '翻译',
-        //   subtitle: '获取网络歌词中的翻译',
-        //   action: Switch(
-        //     value: settings.showTranslation,
-        //     onChanged: (v) {
-        //       setState(() {
-        //         settings.showTranslation = v;
-        //       });
-        //       settings.saveSettings();
-        //       LyricViewController.instance.triggerRebuild();
-        //     },
-        //   ),
-        // ),
-        // const SizedBox(height: 16.0),
-        SettingsTile(
-          description: '保留歌词歌曲信息',
-          subtitle: settings.keepLyricMetadata ? '显示词曲作者等信息' : '隐藏歌曲信息',
-          action: Switch(
-            value: settings.keepLyricMetadata,
-            onChanged: (value) {
-              setState(() => settings.keepLyricMetadata = value);
-              settings.saveSettings();
-              PlayService.instance.lyricService
-                  .reloadAfterMetadataSettingChange();
-            },
-          ),
+      children: const [
+        _GroupEntry(
+          icon: Symbols.download,
+          title: '来源与存储',
+          subtitle: '歌词获取、转换与标签写入',
+          groupId: 'lyric-source',
         ),
-        const SizedBox(height: 16.0),
-        SettingsTile(
-          description: '歌词转换',
-          action: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SegmentedButton<ZhConversionMode>(
-                showSelectedIcon: false,
-                segments: const [
-                  ButtonSegment<ZhConversionMode>(
-                    value: ZhConversionMode.none,
-                    label: Text('不转换'),
-                  ),
-                  ButtonSegment<ZhConversionMode>(
-                    value: ZhConversionMode.traditionalToSimplified,
-                    label: Text('繁转简'),
-                  ),
-                  ButtonSegment<ZhConversionMode>(
-                    value: ZhConversionMode.simplifiedToTraditional,
-                    label: Text('简转繁'),
-                  ),
-                ],
-                selected: {settings.zhConversionMode},
-                onSelectionChanged: (newSelection) =>
-                    _setZhConversionMode(newSelection.first),
-              ),
-            ],
-          ),
+        SizedBox(height: 8.0),
+        _GroupEntry(
+          icon: Symbols.animation,
+          title: '显示效果',
+          subtitle: '逐字播放、注音与行动效',
+          groupId: 'lyric-effect',
         ),
-        const SizedBox(height: 16.0),
-        const _GlowEffectSwitch(),
-        const SizedBox(height: 16.0),
-        const _RubyPositionSetting(),
-        const SizedBox(height: 16.0),
-        const _StaggerStyleSelector(),
-        const SizedBox(height: 16.0),
-        const _LiftStyleSelector(),
-        if (enableOnlineLyricTagWriting) ...[
-          const SizedBox(height: 16.0),
-          SettingsTile(
-            description: '逐字歌词写入格式',
-            subtitle: '逐行歌词始终写为标准 LRC',
-            action: SegmentedButton<LyricTagWordFormat>(
-              showSelectedIcon: false,
-              segments: const [
-                ButtonSegment(
-                  value: LyricTagWordFormat.wordByWord,
-                  label: Text('逐字 LRC'),
-                ),
-                ButtonSegment(
-                  value: LyricTagWordFormat.enhanced,
-                  label: Text('增强 LRC'),
-                ),
-              ],
-              selected: {settings.lyricTagWordFormat},
-              onSelectionChanged: (selection) {
-                setState(() {
-                  settings.lyricTagWordFormat = selection.first;
-                });
-                settings.saveSettings();
-              },
-            ),
-          ),
-          const SizedBox(height: 16.0),
-          SettingsTile(
-            description: '歌词写入标签提示',
-            subtitle: '获取网络歌词后询问是否写入音频标签',
-            action: Switch(
-              value: settings.promptWriteLyricToTag,
-              onChanged: (v) {
-                setState(() {
-                  settings.promptWriteLyricToTag = v;
-                  if (!v) settings.autoWriteLyricToTag = false;
-                });
-                settings.saveSettings();
-                if (!v) {
-                  PlayService.instance.lyricService.resetLyricWritePrompts();
-                }
-              },
-            ),
-          ),
-          if (settings.promptWriteLyricToTag) ...[
-            const SizedBox(height: 16.0),
-            SettingsTile(
-              description: '自动写入标签',
-              subtitle: settings.autoWriteLyricToTag
-                  ? '获取歌词 ${settings.autoWriteLyricToTagDelay} 秒后自动写入，无需确认'
-                  : '开启后静默写入，不再弹窗询问',
-              action: Switch(
-                value: settings.autoWriteLyricToTag,
-                onChanged: (v) {
-                  setState(() {
-                    settings.autoWriteLyricToTag = v;
-                  });
-                  settings.saveSettings();
-                  PlayService.instance.lyricService.resetLyricWritePrompts();
-                },
-              ),
-            ),
-            if (settings.autoWriteLyricToTag) ...[
-              const SizedBox(height: 16.0),
-              SettingsTile(
-                description: '自动写入延迟',
-                subtitle: '获取歌词后 ${settings.autoWriteLyricToTagDelay} 秒自动写入',
-                action: SizedBox(
-                  width: 140,
-                  child: Slider(
-                    value: settings.autoWriteLyricToTagDelay.toDouble(),
-                    min: 10,
-                    max: 120,
-                    divisions: 11,
-                    label: '${settings.autoWriteLyricToTagDelay}秒',
-                    onChanged: (v) {
-                      setState(() {
-                        settings.autoWriteLyricToTagDelay = v.round();
-                      });
-                      settings.saveSettings();
-                    },
-                  ),
-                ),
-              ),
-            ],
-            const SizedBox(height: 16.0),
-            SettingsTile(
-              description: '提示延迟',
-              subtitle: settings.autoWriteLyricToTag
-                  ? '自动写入已启用，提示不生效'
-                  : '获取歌词后等待 ${settings.promptWriteLyricToTagDelay} 秒再提示',
-              action: SizedBox(
-                width: 140,
-                child: Slider(
-                  value: settings.promptWriteLyricToTagDelay.toDouble(),
-                  min: 5,
-                  max: 60,
-                  divisions: 11,
-                  label: '${settings.promptWriteLyricToTagDelay}秒',
-                  onChanged: settings.autoWriteLyricToTag
-                      ? null
-                      : (v) {
-                          setState(() {
-                            settings.promptWriteLyricToTagDelay = v.round();
-                          });
-                          settings.saveSettings();
-                        },
-                ),
-              ),
-            ),
-          ],
-        ],
+      ],
+    );
+  }
+}
+
+class _PlaybackTabContent extends StatelessWidget {
+  const _PlaybackTabContent();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+      children: const [
+        _GroupEntry(
+          icon: Symbols.play_circle,
+          title: '播放行为',
+          subtitle: '音量增益与切歌过渡',
+          groupId: 'playback-behavior',
+        ),
+        SizedBox(height: 8.0),
+        _GroupEntry(
+          icon: Symbols.keyboard_command_key,
+          title: '播放控制',
+          subtitle: '任务栏播放控制',
+          groupId: 'playback-control',
+        ),
       ],
     );
   }
@@ -1669,89 +1511,7 @@ class _DesktopLyricTabContent extends StatefulWidget {
 }
 
 class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
-  final settings = AppSettings.instance;
-  double _playedOpacity = 1.0;
-  double _unplayedOpacity = 1.0;
-
-  @override
-  void initState() {
-    super.initState();
-    _playedOpacity = _alphaFromColor(settings.desktopPlayedColor);
-    _unplayedOpacity = _alphaFromColor(settings.desktopUnplayedColor);
-  }
-
-  double _alphaFromColor(int? color) {
-    if (color == null) return 1.0;
-    return ((color >> 24) & 0xFF) / 255.0;
-  }
-
-  Future<void> _pickDesktopColor(
-    int? current,
-    double opacity,
-    ValueChanged<int> onPicked,
-    ValueChanged<double> onChangedOpacity,
-  ) async {
-    final initial = current != null
-        ? Color(current.toUnsigned(32))
-        : Theme.of(context).colorScheme.primary;
-    final result = await showDialog<_DesktopColorResult>(
-      context: context,
-      builder: (context) => _DesktopColorPickerDialog(
-        initialColor: initial,
-        initialOpacity: opacity,
-        label: '选择颜色',
-      ),
-    );
-    if (!mounted || result == null) return;
-    final alpha = (result.opacity * 255).round().clamp(0, 255);
-    final argb = (alpha << 24) | (result.color.toARGB32() & 0x00FFFFFF);
-    _update(() {
-      onPicked(argb);
-      onChangedOpacity(result.opacity);
-    });
-  }
-
   DesktopLyricService get _service => PlayService.instance.desktopLyricService;
-
-  void _sendAll() {
-    if (!_service.isRunning) return;
-    final scheme = Theme.of(context).colorScheme;
-    final colors = resolveDesktopLyricColors(
-      followThemeColor: settings.desktopFollowThemeColor,
-      brightnessMode: settings.desktopLyricBrightnessMode,
-      scheme: scheme,
-      customPlayedColor: settings.desktopPlayedColor,
-      customUnplayedColor: settings.desktopUnplayedColor,
-    );
-    _service.sendConfig(
-      lyricFontSize: settings.desktopLyricFontSize,
-      translationFontSize: settings.desktopTranslationFontSize,
-      lyricFontWeight: settings.desktopLyricFontWeight,
-      showLyricTranslation: settings.desktopShowTranslation,
-      showRoman: settings.showDesktopLyricRoman,
-      romanPosition: settings.desktopLyricRomanPosition,
-      showNowPlayingInfo: settings.desktopShowNowPlayingInfo,
-      hideOnPause: settings.desktopHideOnPause,
-      lyricTextAlign: settings.desktopLyricTextAlign,
-      lyricAnimation: settings.desktopLyricAnimation.index,
-      enableStroke: settings.desktopEnableStroke,
-      backgroundOpacity: settings.desktopBackgroundOpacity,
-      playedColor: colors.played.toARGB32(),
-      unplayedColor: colors.unplayed.toARGB32(),
-      followThemeColor: settings.desktopFollowThemeColor,
-      useLightOutline: shouldUseLightDesktopLyricOutline(colors.played),
-    );
-  }
-
-  void _update(VoidCallback fn) {
-    setState(fn);
-    _saveAndSend();
-  }
-
-  void _saveAndSend() {
-    settings.saveSettings();
-    _sendAll();
-  }
 
   Future<void> _toggleDesktopLyric(bool enabled) async {
     if (_service.isKilling) return;
@@ -1765,14 +1525,6 @@ class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    const animationItems = {
-      DesktopLyricAnimation.slideUp: '上划',
-      DesktopLyricAnimation.slideDown: '下划',
-      DesktopLyricAnimation.slideLeft: '左划',
-      DesktopLyricAnimation.slideRight: '右划',
-      DesktopLyricAnimation.fade: '淡入淡出',
-      DesktopLyricAnimation.absorb: '吸收',
-    };
     return ListenableBuilder(
       listenable: _service,
       builder: (context, _) {
@@ -1804,263 +1556,244 @@ class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
                   ),
                 ),
               ),
-
-            // ── 显示设置 ──
-            SettingsTile(
-              description: '歌词翻译',
-              action: Switch(
-                value: settings.desktopShowTranslation,
-                onChanged: (v) =>
-                    _update(() => settings.desktopShowTranslation = v),
-              ),
-            ),
-            const SizedBox(height: 16),
-            SettingsTile(
-              description: '注音',
-              action: Switch(
-                value: settings.showDesktopLyricRoman,
-                onChanged: (v) =>
-                    _update(() => settings.showDesktopLyricRoman = v),
-              ),
-            ),
-            const SizedBox(height: 16),
-            SettingsTile(
-              description: '注音位置',
-              action: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SegmentedButton<int>(
-                    showSelectedIcon: false,
-                    segments: const [
-                      ButtonSegment(value: 0, label: Text('歌词上方')),
-                      ButtonSegment(value: 1, label: Text('歌词下方')),
-                      ButtonSegment(value: 2, label: Text('翻译下方')),
-                    ],
-                    selected: {settings.desktopLyricRomanPosition},
-                    onSelectionChanged: (v) => _update(
-                      () => settings.desktopLyricRomanPosition = v.first,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            SettingsTile(
-              description: '歌曲信息',
-              subtitle: settings.desktopShowNowPlayingInfo ? '显示歌曲标题和艺人' : '隐藏',
-              action: Switch(
-                value: settings.desktopShowNowPlayingInfo,
-                onChanged: (v) =>
-                    _update(() => settings.desktopShowNowPlayingInfo = v),
-              ),
-            ),
-            const SizedBox(height: 16),
-            SettingsTile(
-              description: '暂停时隐藏桌面歌词',
-              action: Switch(
-                value: settings.desktopHideOnPause,
-                onChanged: (v) =>
-                    _update(() => settings.desktopHideOnPause = v),
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // ── 文字样式 ──
-            Text(
-              '文字样式',
-              style: TextStyle(
-                color: scheme.onSurfaceVariant,
-                fontSize: AppType.caption,
-              ),
+            const SizedBox(height: 8),
+            const _GroupEntry(
+              icon: Symbols.lyrics,
+              title: '基础',
+              subtitle: '翻译、注音与信息显示',
+              groupId: 'desktop-basic',
             ),
             const SizedBox(height: 8),
-            SettingsTile(
-              description: '文字对齐',
-              action: SegmentedButton<int>(
-                showSelectedIcon: false,
-                segments: const [
-                  ButtonSegment(value: 0, label: Text('左')),
-                  ButtonSegment(value: 1, label: Text('中')),
-                  ButtonSegment(value: 2, label: Text('右')),
-                ],
-                selected: {settings.desktopLyricTextAlign},
-                onSelectionChanged: (v) =>
-                    _update(() => settings.desktopLyricTextAlign = v.first),
-              ),
-            ),
-            const SizedBox(height: 16),
-            SettingsTile(
-              description: '桌面歌词切换动画',
-              action: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: SegmentedButton<DesktopLyricAnimation>(
-                      segments: [
-                        for (final entry in animationItems.entries)
-                          ButtonSegment(
-                            value: entry.key,
-                            label: Text(entry.value),
-                          ),
-                      ],
-                      selected: {settings.desktopLyricAnimation},
-                      onSelectionChanged: (value) => _update(
-                        () => settings.desktopLyricAnimation = value.first,
-                      ),
-                      showSelectedIcon: false,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            SettingsTile(
-              description: '歌词字号',
-              subtitle: '${settings.desktopLyricFontSize.toStringAsFixed(0)}px',
-              action: SizedBox(
-                width: 160,
-                child: Slider(
-                  value: settings.desktopLyricFontSize,
-                  min: 14,
-                  max: 48,
-                  divisions: 34,
-                  label:
-                      '${settings.desktopLyricFontSize.toStringAsFixed(0)}px',
-                  onChanged: (v) => setState(() {
-                    settings.desktopLyricFontSize = v;
-                    settings.desktopTranslationFontSize = (v - 4).clamp(10, 44);
-                  }),
-                  onChangeEnd: (_) => _saveAndSend(),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            SettingsTile(
-              description: '翻译/注音字号',
-              subtitle:
-                  '${settings.desktopTranslationFontSize.toStringAsFixed(0)}px',
-              action: SizedBox(
-                width: 160,
-                child: Slider(
-                  value: settings.desktopTranslationFontSize,
-                  min: 10,
-                  max: 44,
-                  divisions: 34,
-                  label:
-                      '${settings.desktopTranslationFontSize.toStringAsFixed(0)}px',
-                  onChanged: (v) =>
-                      setState(() => settings.desktopTranslationFontSize = v),
-                  onChangeEnd: (_) => _saveAndSend(),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            SettingsTile(
-              description: '字重',
-              subtitle: '${settings.desktopLyricFontWeight}',
-              action: SizedBox(
-                width: 160,
-                child: Slider(
-                  value: settings.desktopLyricFontWeight.toDouble(),
-                  min: 100,
-                  max: 900,
-                  divisions: 8,
-                  label: '${settings.desktopLyricFontWeight}',
-                  onChanged: (v) => setState(
-                    () => settings.desktopLyricFontWeight = v.round(),
-                  ),
-                  onChangeEnd: (_) => _saveAndSend(),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            SettingsTile(
-              description: '文字描边',
-              action: Switch(
-                value: settings.desktopEnableStroke,
-                onChanged: (value) =>
-                    _update(() => settings.desktopEnableStroke = value),
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // ── 歌词颜色 ──
-            Text(
-              '歌词颜色',
-              style: TextStyle(
-                color: scheme.onSurfaceVariant,
-                fontSize: AppType.caption,
-              ),
+            const _GroupEntry(
+              icon: Symbols.view_week,
+              title: '显示',
+              subtitle: '布局、对齐与切换动画',
+              groupId: 'desktop-display',
             ),
             const SizedBox(height: 8),
-            SettingsTile(
-              description: '跟随主题色',
-              action: Switch(
-                value: settings.desktopFollowThemeColor,
-                onChanged: (v) => _update(() {
-                  settings.desktopFollowThemeColor = v;
-                }),
-              ),
+            const _GroupEntry(
+              icon: Symbols.format_size,
+              title: '样式',
+              subtitle: '字号、字重与描边',
+              groupId: 'desktop-style',
             ),
-            if (!settings.desktopFollowThemeColor) ...[
-              const SizedBox(height: 16),
-              SettingsTile(
-                description: '明暗配色',
-                action: SegmentedButton<DesktopLyricBrightnessMode>(
-                  showSelectedIcon: false,
-                  segments: const [
-                    ButtonSegment(
-                      value: DesktopLyricBrightnessMode.follow,
-                      label: Text('跟随'),
-                    ),
-                    ButtonSegment(
-                      value: DesktopLyricBrightnessMode.light,
-                      label: Text('浅色'),
-                    ),
-                    ButtonSegment(
-                      value: DesktopLyricBrightnessMode.dark,
-                      label: Text('深色'),
-                    ),
-                  ],
-                  selected: {settings.desktopLyricBrightnessMode},
-                  onSelectionChanged: (value) => _update(() {
-                    settings.desktopLyricBrightnessMode = value.first;
-                    settings.desktopPlayedColor = null;
-                    settings.desktopUnplayedColor = null;
-                    _playedOpacity = 1.0;
-                    _unplayedOpacity = 1.0;
-                  }),
-                ),
-              ),
-              const SizedBox(height: 16),
-              _DesktopColorSetting(
-                label: '已播放颜色',
-                color: settings.desktopPlayedColor,
-                opacity: _playedOpacity,
-                onPickColor: () => _pickDesktopColor(
-                  settings.desktopPlayedColor,
-                  _playedOpacity,
-                  (color) => settings.desktopPlayedColor = color,
-                  (opacity) => _playedOpacity = opacity,
-                ),
-              ),
-              const SizedBox(height: 16),
-              _DesktopColorSetting(
-                label: '未播放颜色',
-                color: settings.desktopUnplayedColor,
-                opacity: _unplayedOpacity,
-                onPickColor: () => _pickDesktopColor(
-                  settings.desktopUnplayedColor,
-                  _unplayedOpacity,
-                  (color) => settings.desktopUnplayedColor = color,
-                  (opacity) => _unplayedOpacity = opacity,
-                ),
-              ),
-            ],
+            const SizedBox(height: 8),
+            const _GroupEntry(
+              icon: Symbols.palette,
+              title: '颜色',
+              subtitle: '主题色与自定义配色',
+              groupId: 'desktop-color',
+            ),
           ],
         );
       },
+    );
+  }
+}
+
+class _DesktopLyricPreview extends StatelessWidget {
+  const _DesktopLyricPreview();
+
+  static const _mainLyric = '时光的河入海流';
+  static const _romanLyric = 'shí guāng de hé';
+  static const _translation = 'The river of time flows';
+  static const _nextLyric = '终于我们分头走';
+  static const _nextRomanLyric = 'zhong yu wo men';
+  static const _nextTranslation = 'At last, we walk apart';
+
+  static final _alphanumeric = RegExp(
+    r'''^[A-Za-z0-9 !"'?.,:;()\[\]\-《》「」（）：/“”]+$''',
+  );
+
+  FontWeight _weight(int w) {
+    final clamped = w.clamp(100, 900);
+    return switch (clamped) {
+      100 => FontWeight.w100,
+      200 => FontWeight.w200,
+      300 => FontWeight.w300,
+      400 => FontWeight.w400,
+      500 => FontWeight.w500,
+      600 => FontWeight.w600,
+      700 => FontWeight.w700,
+      800 => FontWeight.w800,
+      _ => FontWeight.w900,
+    };
+  }
+
+  Widget _verticalText(String text, TextStyle style) {
+    return Flex(
+      direction: Axis.vertical,
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        for (final char in text.split(''))
+          if (_alphanumeric.hasMatch(char))
+            RotatedBox(quarterTurns: 1, child: Text(char, style: style))
+          else
+            Text(char, style: style),
+      ],
+    );
+  }
+
+  Widget _lineText(String text, TextStyle style, bool vertical) {
+    if (!vertical) {
+      return Text(
+        text,
+        style: style,
+        maxLines: 1,
+        overflow: TextOverflow.clip,
+        softWrap: false,
+      );
+    }
+    return _verticalText(text, style);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = AppSettings.instance;
+    final scheme = Theme.of(context).colorScheme;
+    final colors = resolveDesktopLyricColors(
+      followThemeColor: settings.desktopFollowThemeColor,
+      brightnessMode: settings.desktopLyricBrightnessMode,
+      scheme: scheme,
+      customPlayedColor: settings.desktopPlayedColor,
+      customUnplayedColor: settings.desktopUnplayedColor,
+    );
+    final played = colors.played;
+    final unplayed = colors.unplayed;
+    final weight = _weight(settings.desktopLyricFontWeight);
+    final vertical = settings.desktopUseVerticalDisplayMode;
+    final doubleLine = settings.desktopShowDoubleLine;
+
+    final outlineColor = shouldUseLightDesktopLyricOutline(played)
+        ? Colors.white.withValues(alpha: 0.55)
+        : Colors.black.withValues(alpha: 0.85);
+    final shadows = settings.desktopEnableStroke
+        ? [
+            for (final (dx, dy) in const [
+              (1.0, 0.0),
+              (-1.0, 0.0),
+              (0.0, 1.0),
+              (0.0, -1.0),
+            ])
+              Shadow(
+                color: outlineColor,
+                offset: Offset(dx, dy),
+                blurRadius: 1,
+              ),
+          ]
+        : null;
+
+    TextStyle mainStyle(Color color) => TextStyle(
+      fontSize: settings.desktopLyricFontSize,
+      color: color,
+      fontWeight: weight,
+      height: 1.1,
+      shadows: shadows,
+    );
+    TextStyle subStyle(Color color) => TextStyle(
+      fontSize: settings.desktopTranslationFontSize,
+      color: color,
+      fontWeight: weight,
+      height: 1.1,
+      shadows: shadows,
+    );
+
+    final hasRoman = settings.showDesktopLyricRoman;
+    final hasTranslation = settings.desktopShowTranslation;
+
+    List<Widget> lineChildren(
+      String lyric,
+      String roman,
+      String translation,
+      Color color,
+    ) => [
+      if (hasRoman && settings.desktopLyricRomanPosition == 0)
+        _lineText(roman, subStyle(color), vertical),
+      if (hasTranslation && settings.desktopLyricTranslationPosition == 0)
+        _lineText(translation, subStyle(color), vertical),
+      _lineText(lyric, mainStyle(color), vertical),
+      if (hasRoman && settings.desktopLyricRomanPosition == 1)
+        _lineText(roman, subStyle(color), vertical),
+      if (hasTranslation && settings.desktopLyricTranslationPosition == 1)
+        _lineText(translation, subStyle(color), vertical),
+      if (hasRoman && settings.desktopLyricRomanPosition == 2)
+        _lineText(roman, subStyle(color), vertical),
+    ];
+
+    Widget lineBlock(List<Widget> children, int alignment) {
+      final crossAxis = switch (alignment) {
+        0 => CrossAxisAlignment.start,
+        1 => CrossAxisAlignment.center,
+        _ => CrossAxisAlignment.end,
+      };
+      final line = Flex(
+        direction: vertical ? Axis.horizontal : Axis.vertical,
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: crossAxis,
+        children: children,
+      );
+      return Align(
+        alignment: vertical
+            ? switch (alignment) {
+                0 => Alignment.topCenter,
+                1 => Alignment.center,
+                _ => Alignment.bottomCenter,
+              }
+            : switch (alignment) {
+                0 => Alignment.centerLeft,
+                1 => Alignment.center,
+                _ => Alignment.centerRight,
+              },
+        child: line,
+      );
+    }
+
+    final current = lineChildren(_mainLyric, _romanLyric, _translation, played);
+    final currentAlign = settings.desktopLyricTextAlign == 3
+        ? 0
+        : settings.desktopLyricTextAlign;
+    final nextAlign = settings.desktopLyricTextAlign == 3
+        ? 2
+        : settings.desktopLyricTextAlign;
+    final inner = doubleLine
+        ? Flex(
+            direction: vertical ? Axis.horizontal : Axis.vertical,
+            children: [
+              Expanded(child: lineBlock(current, currentAlign)),
+              Expanded(
+                child: lineBlock(
+                  lineChildren(
+                    _nextLyric,
+                    _nextRomanLyric,
+                    _nextTranslation,
+                    unplayed,
+                  ),
+                  nextAlign,
+                ),
+              ),
+            ],
+          )
+        : lineBlock(current, currentAlign);
+
+    return Container(
+      height: vertical ? 190 : 130,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainer.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+      ),
+      padding: const EdgeInsets.all(12),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: SizedBox(
+          width: vertical ? 110 : 320,
+          height: vertical ? 150 : 80,
+          child: inner,
+        ),
+      ),
     );
   }
 }
@@ -2376,19 +2109,19 @@ class _AdvancedTabContent extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.only(bottom: 96.0, right: 20),
       children: const [
-        _WindowCloseBehaviorControl(),
-        SizedBox(height: 16.0),
-        _TaskbarThumbnailControl(),
-        SizedBox(height: 16.0),
-        ReplayGainControl(),
-        SizedBox(height: 16.0),
-        TransitionControl(),
-        SizedBox(height: 16.0),
-        AudioEchoLogRecordControl(),
-        SizedBox(height: 16.0),
-        ArtistSeparatorEditor(),
-        SizedBox(height: 16.0),
-        SelectFontCombobox(),
+        _GroupEntry(
+          icon: Symbols.settings_suggest,
+          title: '系统行为',
+          subtitle: '关闭窗口行为与日志',
+          groupId: 'advanced-system',
+        ),
+        SizedBox(height: 8.0),
+        _GroupEntry(
+          icon: Symbols.interests,
+          title: '个性化',
+          subtitle: '艺术家分隔符与字体',
+          groupId: 'advanced-custom',
+        ),
       ],
     );
   }
@@ -2407,15 +2140,32 @@ class _TaskbarThumbnailControlState extends State<_TaskbarThumbnailControl> {
 
   @override
   Widget build(BuildContext context) {
-    return SettingsTile(
-      description: '任务栏播放控制',
-      subtitle: pref.taskbarThumbnailCover ? '悬停时显示窗口预览和播放按钮' : '关闭任务栏播放控制',
-      action: Switch(
-        value: pref.taskbarThumbnailCover,
-        onChanged: (value) => setState(() {
-          TaskbarThumbnailService.instance.setEnabled(value);
-        }),
-      ),
+    return Column(
+      children: [
+        SettingsTile(
+          description: '任务栏播放控制',
+          subtitle: pref.taskbarPlaybackControls ? '显示上一首、播放和下一首按钮' : '隐藏播放按钮',
+          action: Switch(
+            value: pref.taskbarPlaybackControls,
+            onChanged: (value) => setState(() {
+              TaskbarThumbnailService.instance.setPlaybackControlsEnabled(
+                value,
+              );
+            }),
+          ),
+        ),
+        const SizedBox(height: 16.0),
+        SettingsTile(
+          description: 'Alt+Tab 封面预览',
+          subtitle: pref.taskbarCoverPreview ? '显示当前歌曲封面' : '显示窗口预览',
+          action: Switch(
+            value: pref.taskbarCoverPreview,
+            onChanged: (value) => setState(() {
+              TaskbarThumbnailService.instance.setCoverPreviewEnabled(value);
+            }),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -3020,6 +2770,1009 @@ class _AboutLinkItem extends StatelessWidget {
         icon: Icon(icon, size: 18),
         label: Text(actionLabel),
       ),
+    );
+  }
+}
+
+/// 设置分组入口行，点击进入对应二级页面
+class _GroupEntry extends StatelessWidget {
+  const _GroupEntry({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.groupId,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String groupId;
+
+  @override
+  Widget build(BuildContext context) {
+    return SettingsGroupEntry(
+      icon: icon,
+      title: title,
+      subtitle: subtitle,
+      onTap: () => context.push('${app_paths.SETTINGS_GROUP_PAGE}/$groupId'),
+    );
+  }
+}
+
+/// 设置二级页面：返回按钮 + 分组内容
+class SettingsGroupPage extends StatelessWidget {
+  const SettingsGroupPage({super.key, required this.groupId});
+
+  final String groupId;
+
+  @override
+  Widget build(BuildContext context) {
+    final group = _settingsGroups[groupId];
+    return PageScaffold(
+      title: group?.title ?? '设置',
+      subtitle: group?.subtitle,
+      actions: const [],
+      body: group?.body ?? const SizedBox.shrink(),
+    );
+  }
+}
+
+class _SettingsGroupDesc {
+  final String title;
+  final String subtitle;
+  final Widget body;
+
+  const _SettingsGroupDesc(this.title, this.subtitle, this.body);
+}
+
+const _settingsGroups = <String, _SettingsGroupDesc>{
+  'appearance-display': _SettingsGroupDesc(
+    '显示模式',
+    '明暗模式',
+    _AppearanceDisplayGroup(),
+  ),
+  'appearance-color': _SettingsGroupDesc(
+    '配色',
+    '主题色生成方式与颜色来源',
+    _AppearanceColorGroup(),
+  ),
+  'appearance-background': _SettingsGroupDesc(
+    '应用背景',
+    '背景图片、强度与模糊',
+    _AppearanceBackgroundGroup(),
+  ),
+  'appearance-list': _SettingsGroupDesc(
+    '列表效果',
+    '列表滚动与入场动效',
+    _AppearanceListGroup(),
+  ),
+  'appearance-monet': _SettingsGroupDesc(
+    '主题色应用',
+    '主题色在播放界面的应用范围',
+    _AppearanceMonetGroup(),
+  ),
+  'appearance-progress': _SettingsGroupDesc(
+    '进度条显示',
+    '波浪进度条与顶部歌词动画',
+    _AppearanceProgressGroup(),
+  ),
+  'lyric-source': _SettingsGroupDesc(
+    '来源与存储',
+    '歌词获取、转换与标签写入',
+    _LyricSourceGroup(),
+  ),
+  'lyric-effect': _SettingsGroupDesc(
+    '显示效果',
+    '逐字播放、注音与行动效',
+    _LyricEffectGroup(),
+  ),
+  'playback-behavior': _SettingsGroupDesc(
+    '播放行为',
+    '音量增益与切歌过渡',
+    _PlaybackBehaviorGroup(),
+  ),
+  'playback-control': _SettingsGroupDesc(
+    '播放控制',
+    '任务栏播放控制',
+    _PlaybackControlGroup(),
+  ),
+  'desktop-basic': _SettingsGroupDesc('基础', '翻译、注音与信息显示', _DesktopBasicGroup()),
+  'desktop-display': _SettingsGroupDesc(
+    '显示',
+    '布局、对齐与切换动画',
+    _DesktopDisplayGroup(),
+  ),
+  'desktop-style': _SettingsGroupDesc('样式', '字号、字重与描边', _DesktopStyleGroup()),
+  'desktop-color': _SettingsGroupDesc('颜色', '主题色与自定义配色', _DesktopColorGroup()),
+  'advanced-system': _SettingsGroupDesc(
+    '系统行为',
+    '关闭窗口行为与日志',
+    _AdvancedSystemGroup(),
+  ),
+  'advanced-custom': _SettingsGroupDesc(
+    '个性化',
+    '艺术家分隔符与字体',
+    _AdvancedCustomGroup(),
+  ),
+};
+
+/// 把桌面歌词配置同步到桌面歌词窗口
+void syncDesktopLyricConfig(BuildContext context) {
+  final settings = AppSettings.instance;
+  final service = PlayService.instance.desktopLyricService;
+  if (!service.isRunning) return;
+  final scheme = Theme.of(context).colorScheme;
+  final colors = resolveDesktopLyricColors(
+    followThemeColor: settings.desktopFollowThemeColor,
+    brightnessMode: settings.desktopLyricBrightnessMode,
+    scheme: scheme,
+    customPlayedColor: settings.desktopPlayedColor,
+    customUnplayedColor: settings.desktopUnplayedColor,
+  );
+  service.sendConfig(
+    lyricFontSize: settings.desktopLyricFontSize,
+    translationFontSize: settings.desktopTranslationFontSize,
+    lyricFontWeight: settings.desktopLyricFontWeight,
+    showLyricTranslation: settings.desktopShowTranslation,
+    showRoman: settings.showDesktopLyricRoman,
+    romanPosition: settings.desktopLyricRomanPosition,
+    translationPosition: settings.desktopLyricTranslationPosition,
+    showNowPlayingInfo: settings.desktopShowNowPlayingInfo,
+    hideOnPause: settings.desktopHideOnPause,
+    lyricTextAlign: settings.desktopLyricTextAlign,
+    lyricAnimation: settings.desktopLyricAnimation.index,
+    enableStroke: settings.desktopEnableStroke,
+    backgroundOpacity: settings.desktopBackgroundOpacity,
+    playedColor: colors.played.toARGB32(),
+    unplayedColor: colors.unplayed.toARGB32(),
+    followThemeColor: settings.desktopFollowThemeColor,
+    useLightOutline: shouldUseLightDesktopLyricOutline(colors.played),
+    useVerticalDisplayMode: settings.desktopUseVerticalDisplayMode,
+    showDoubleLine: settings.desktopShowDoubleLine,
+  );
+}
+
+/// 桌面歌词分组页公共行为：修改后保存并同步到桌面歌词窗口
+mixin _DesktopLyricConfigMixin<T extends StatefulWidget> on State<T> {
+  void updateDesktopLyricConfig(VoidCallback fn) {
+    setState(fn);
+    AppSettings.instance.saveSettings();
+    syncDesktopLyricConfig(context);
+  }
+}
+
+class _AppearanceDisplayGroup extends StatelessWidget {
+  const _AppearanceDisplayGroup();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+      children: const [
+        _SettingsSectionHeader('显示模式'),
+        SizedBox(height: 4.0),
+        _ThemeOptionControl(),
+      ],
+    );
+  }
+}
+
+class _AppearanceColorGroup extends StatelessWidget {
+  const _AppearanceColorGroup();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+      children: const [
+        _SettingsSectionHeader('配色'),
+        SizedBox(height: 4.0),
+        _ThemeColorModeControl(),
+        SizedBox(height: 16.0),
+        _ThemeColorSourceControl(),
+      ],
+    );
+  }
+}
+
+class _AppearanceBackgroundGroup extends StatelessWidget {
+  const _AppearanceBackgroundGroup();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+      children: const [
+        _SettingsSectionHeader('应用背景'),
+        SizedBox(height: 4.0),
+        _AppBackgroundControl(),
+      ],
+    );
+  }
+}
+
+class _AppearanceListGroup extends StatelessWidget {
+  const _AppearanceListGroup();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+      children: const [
+        _SettingsSectionHeader('列表效果'),
+        SizedBox(height: 4.0),
+        _StackedScrollEffectSwitch(),
+      ],
+    );
+  }
+}
+
+class _AppearanceMonetGroup extends StatelessWidget {
+  const _AppearanceMonetGroup();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+      children: const [
+        _SettingsSectionHeader('主题色应用'),
+        SizedBox(height: 4.0),
+        _MonetProgressBarSwitch(),
+        SizedBox(height: 16.0),
+        _MonetLyricsSwitch(),
+        SizedBox(height: 16.0),
+        _MonetTransitionSwitch(),
+        SizedBox(height: 16.0),
+        _MonetControlsSwitch(),
+      ],
+    );
+  }
+}
+
+class _AppearanceProgressGroup extends StatelessWidget {
+  const _AppearanceProgressGroup();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+      children: const [
+        _SettingsSectionHeader('进度条显示'),
+        SizedBox(height: 4.0),
+        _WavyProgressBarSwitch(),
+        SizedBox(height: 16.0),
+        _TopBarLyricAnimationSelector(),
+      ],
+    );
+  }
+}
+
+class _LyricSourceGroup extends StatefulWidget {
+  const _LyricSourceGroup();
+
+  @override
+  State<_LyricSourceGroup> createState() => _LyricSourceGroupState();
+}
+
+class _LyricSourceGroupState extends State<_LyricSourceGroup> {
+  final settings = AppSettings.instance;
+
+  Future<void> _setZhConversionMode(ZhConversionMode mode) async {
+    if (mode == settings.zhConversionMode) return;
+    setState(() => settings.zhConversionMode = mode);
+    LyricViewController.instance.triggerRebuild();
+    await settings.saveSettings();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+      children: [
+        const _SettingsSectionHeader('来源'),
+        const SizedBox(height: 4.0),
+        const DefaultLyricSourceControl(),
+        const SizedBox(height: 24.0),
+        const _SettingsSectionHeader('存储'),
+        const SizedBox(height: 4.0),
+        SettingsTile(
+          description: '保留歌词歌曲信息',
+          subtitle: settings.keepLyricMetadata ? '显示词曲作者等信息' : '隐藏歌曲信息',
+          action: Switch(
+            value: settings.keepLyricMetadata,
+            onChanged: (value) {
+              setState(() => settings.keepLyricMetadata = value);
+              settings.saveSettings();
+              PlayService.instance.lyricService
+                  .reloadAfterMetadataSettingChange();
+            },
+          ),
+        ),
+        const SizedBox(height: 16.0),
+        SettingsTile(
+          description: '歌词转换',
+          action: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SegmentedButton<ZhConversionMode>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment<ZhConversionMode>(
+                    value: ZhConversionMode.none,
+                    label: Text('不转换'),
+                  ),
+                  ButtonSegment<ZhConversionMode>(
+                    value: ZhConversionMode.traditionalToSimplified,
+                    label: Text('繁转简'),
+                  ),
+                  ButtonSegment<ZhConversionMode>(
+                    value: ZhConversionMode.simplifiedToTraditional,
+                    label: Text('简转繁'),
+                  ),
+                ],
+                selected: {settings.zhConversionMode},
+                onSelectionChanged: (newSelection) =>
+                    _setZhConversionMode(newSelection.first),
+              ),
+            ],
+          ),
+        ),
+        // 注释：这两个设置暂时隐藏，因为第三方歌词 API 总是返回全部数据（主歌词+翻译+注音），
+        // 无法单独控制是否获取翻译和注音。播放页面已有显示/隐藏开关，这里的设置是冗余的。
+        // TODO: 未来如果 API 支持分别请求，可以重新启用
+        // SettingsTile(
+        //   description: '注音',
+        //   subtitle: '获取网络歌词中的注音',
+        //   action: Switch(
+        //     value: settings.showRomanization,
+        //     onChanged: (v) {
+        //       setState(() {
+        //         settings.showRomanization = v;
+        //       });
+        //       settings.saveSettings();
+        //       LyricViewController.instance.triggerRebuild();
+        //     },
+        //   ),
+        // ),
+        // const SizedBox(height: 16.0),
+        // SettingsTile(
+        //   description: '翻译',
+        //   subtitle: '获取网络歌词中的翻译',
+        //   action: Switch(
+        //     value: settings.showTranslation,
+        //     onChanged: (v) {
+        //       setState(() {
+        //         settings.showTranslation = v;
+        //       });
+        //       settings.saveSettings();
+        //       LyricViewController.instance.triggerRebuild();
+        //     },
+        //   ),
+        // ),
+        if (enableOnlineLyricTagWriting) ...[
+          const SizedBox(height: 16.0),
+          SettingsTile(
+            description: '逐字歌词写入格式',
+            subtitle: '逐行歌词始终写为标准 LRC',
+            action: SegmentedButton<LyricTagWordFormat>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(
+                  value: LyricTagWordFormat.wordByWord,
+                  label: Text('逐字 LRC'),
+                ),
+                ButtonSegment(
+                  value: LyricTagWordFormat.enhanced,
+                  label: Text('增强 LRC'),
+                ),
+              ],
+              selected: {settings.lyricTagWordFormat},
+              onSelectionChanged: (selection) {
+                setState(() {
+                  settings.lyricTagWordFormat = selection.first;
+                });
+                settings.saveSettings();
+              },
+            ),
+          ),
+          const SizedBox(height: 16.0),
+          SettingsTile(
+            description: '歌词写入标签提示',
+            subtitle: '获取网络歌词后询问是否写入音频标签',
+            action: Switch(
+              value: settings.promptWriteLyricToTag,
+              onChanged: (v) {
+                setState(() {
+                  settings.promptWriteLyricToTag = v;
+                  if (!v) settings.autoWriteLyricToTag = false;
+                });
+                settings.saveSettings();
+                if (!v) {
+                  PlayService.instance.lyricService.resetLyricWritePrompts();
+                }
+              },
+            ),
+          ),
+          if (settings.promptWriteLyricToTag) ...[
+            const SizedBox(height: 16.0),
+            SettingsTile(
+              description: '自动写入标签',
+              subtitle: settings.autoWriteLyricToTag
+                  ? '获取歌词 ${settings.autoWriteLyricToTagDelay} 秒后自动写入，无需确认'
+                  : '开启后静默写入，不再弹窗询问',
+              action: Switch(
+                value: settings.autoWriteLyricToTag,
+                onChanged: (v) {
+                  setState(() {
+                    settings.autoWriteLyricToTag = v;
+                  });
+                  settings.saveSettings();
+                  PlayService.instance.lyricService.resetLyricWritePrompts();
+                },
+              ),
+            ),
+            if (settings.autoWriteLyricToTag) ...[
+              const SizedBox(height: 16.0),
+              SettingsTile(
+                description: '自动写入延迟',
+                subtitle: '获取歌词后 ${settings.autoWriteLyricToTagDelay} 秒自动写入',
+                action: SizedBox(
+                  width: 140,
+                  child: Slider(
+                    value: settings.autoWriteLyricToTagDelay.toDouble(),
+                    min: 10,
+                    max: 120,
+                    divisions: 11,
+                    label: '${settings.autoWriteLyricToTagDelay}秒',
+                    onChanged: (v) {
+                      setState(() {
+                        settings.autoWriteLyricToTagDelay = v.round();
+                      });
+                      settings.saveSettings();
+                    },
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 16.0),
+            SettingsTile(
+              description: '提示延迟',
+              subtitle: settings.autoWriteLyricToTag
+                  ? '自动写入已启用，提示不生效'
+                  : '获取歌词后等待 ${settings.promptWriteLyricToTagDelay} 秒再提示',
+              action: SizedBox(
+                width: 140,
+                child: Slider(
+                  value: settings.promptWriteLyricToTagDelay.toDouble(),
+                  min: 5,
+                  max: 60,
+                  divisions: 11,
+                  label: '${settings.promptWriteLyricToTagDelay}秒',
+                  onChanged: settings.autoWriteLyricToTag
+                      ? null
+                      : (v) {
+                          setState(() {
+                            settings.promptWriteLyricToTagDelay = v.round();
+                          });
+                          settings.saveSettings();
+                        },
+                ),
+              ),
+            ),
+          ],
+        ],
+      ],
+    );
+  }
+}
+
+class _LyricEffectGroup extends StatelessWidget {
+  const _LyricEffectGroup();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+      children: const [
+        _SettingsSectionHeader('显示效果'),
+        SizedBox(height: 4.0),
+        _GlowEffectSwitch(),
+        SizedBox(height: 16.0),
+        _RubyPositionSetting(),
+        SizedBox(height: 16.0),
+        _StaggerStyleSelector(),
+        SizedBox(height: 16.0),
+        _LiftStyleSelector(),
+      ],
+    );
+  }
+}
+
+class _PlaybackBehaviorGroup extends StatelessWidget {
+  const _PlaybackBehaviorGroup();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+      children: const [
+        _SettingsSectionHeader('播放行为'),
+        SizedBox(height: 4.0),
+        ReplayGainControl(),
+        SizedBox(height: 16.0),
+        TransitionControl(),
+      ],
+    );
+  }
+}
+
+class _PlaybackControlGroup extends StatelessWidget {
+  const _PlaybackControlGroup();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+      children: const [
+        _SettingsSectionHeader('播放控制'),
+        SizedBox(height: 4.0),
+        _TaskbarThumbnailControl(),
+      ],
+    );
+  }
+}
+
+class _DesktopBasicGroup extends StatefulWidget {
+  const _DesktopBasicGroup();
+
+  @override
+  State<_DesktopBasicGroup> createState() => _DesktopBasicGroupState();
+}
+
+class _DesktopBasicGroupState extends State<_DesktopBasicGroup>
+    with _DesktopLyricConfigMixin {
+  final settings = AppSettings.instance;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+      children: [
+        const _SettingsSectionHeader('基础'),
+        const SizedBox(height: 4.0),
+        SettingsTile(
+          description: '歌词翻译',
+          action: Switch(
+            value: settings.desktopShowTranslation,
+            onChanged: (v) => updateDesktopLyricConfig(
+              () => settings.desktopShowTranslation = v,
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        SettingsTile(
+          description: '翻译位置',
+          action: SegmentedButton<int>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(value: 0, label: Text('原文之前')),
+              ButtonSegment(value: 1, label: Text('原文之后')),
+            ],
+            selected: {settings.desktopLyricTranslationPosition},
+            onSelectionChanged: (v) => updateDesktopLyricConfig(
+              () => settings.desktopLyricTranslationPosition = v.first,
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        SettingsTile(
+          description: '注音',
+          action: Switch(
+            value: settings.showDesktopLyricRoman,
+            onChanged: (v) => updateDesktopLyricConfig(
+              () => settings.showDesktopLyricRoman = v,
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        SettingsTile(
+          description: '注音位置',
+          action: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SegmentedButton<int>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(value: 0, label: Text('歌词上方')),
+                  ButtonSegment(value: 1, label: Text('歌词下方')),
+                  ButtonSegment(value: 2, label: Text('翻译下方')),
+                ],
+                selected: {settings.desktopLyricRomanPosition},
+                onSelectionChanged: (v) => updateDesktopLyricConfig(
+                  () => settings.desktopLyricRomanPosition = v.first,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        SettingsTile(
+          description: '歌曲信息',
+          subtitle: settings.desktopShowNowPlayingInfo ? '显示歌曲标题和艺人' : '隐藏',
+          action: Switch(
+            value: settings.desktopShowNowPlayingInfo,
+            onChanged: (v) => updateDesktopLyricConfig(
+              () => settings.desktopShowNowPlayingInfo = v,
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        SettingsTile(
+          description: '暂停时隐藏桌面歌词',
+          action: Switch(
+            value: settings.desktopHideOnPause,
+            onChanged: (v) =>
+                updateDesktopLyricConfig(() => settings.desktopHideOnPause = v),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DesktopDisplayGroup extends StatefulWidget {
+  const _DesktopDisplayGroup();
+
+  @override
+  State<_DesktopDisplayGroup> createState() => _DesktopDisplayGroupState();
+}
+
+class _DesktopDisplayGroupState extends State<_DesktopDisplayGroup>
+    with _DesktopLyricConfigMixin {
+  final settings = AppSettings.instance;
+
+  @override
+  Widget build(BuildContext context) {
+    const animationItems = {
+      DesktopLyricAnimation.slideUp: '上划',
+      DesktopLyricAnimation.slideDown: '下划',
+      DesktopLyricAnimation.slideLeft: '左划',
+      DesktopLyricAnimation.slideRight: '右划',
+      DesktopLyricAnimation.fade: '淡入淡出',
+      DesktopLyricAnimation.absorb: '吸收',
+    };
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+      children: [
+        const _SettingsSectionHeader('显示'),
+        const SizedBox(height: 4.0),
+        SettingsTile(
+          description: '竖排显示',
+          subtitle: '歌词逐字竖排，英文和数字横排旋转',
+          action: Switch(
+            value: settings.desktopUseVerticalDisplayMode,
+            onChanged: (v) => updateDesktopLyricConfig(
+              () => settings.desktopUseVerticalDisplayMode = v,
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        SettingsTile(
+          description: '双行显示',
+          subtitle: '同时显示当前行和下一行歌词',
+          action: Switch(
+            value: settings.desktopShowDoubleLine,
+            onChanged: (v) => updateDesktopLyricConfig(
+              () => settings.desktopShowDoubleLine = v,
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        SettingsTile(
+          description: '文字对齐',
+          action: SegmentedButton<int>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(value: 0, label: Text('左')),
+              ButtonSegment(value: 1, label: Text('中')),
+              ButtonSegment(value: 2, label: Text('右')),
+              ButtonSegment(value: 3, label: Text('交错')),
+            ],
+            selected: {settings.desktopLyricTextAlign},
+            onSelectionChanged: (v) => updateDesktopLyricConfig(
+              () => settings.desktopLyricTextAlign = v.first,
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        SettingsTile(
+          description: '桌面歌词切换动画',
+          action: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: SegmentedButton<DesktopLyricAnimation>(
+                  segments: [
+                    for (final entry in animationItems.entries)
+                      ButtonSegment(value: entry.key, label: Text(entry.value)),
+                  ],
+                  selected: {settings.desktopLyricAnimation},
+                  onSelectionChanged: (value) => updateDesktopLyricConfig(
+                    () => settings.desktopLyricAnimation = value.first,
+                  ),
+                  showSelectedIcon: false,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DesktopStyleGroup extends StatefulWidget {
+  const _DesktopStyleGroup();
+
+  @override
+  State<_DesktopStyleGroup> createState() => _DesktopStyleGroupState();
+}
+
+class _DesktopStyleGroupState extends State<_DesktopStyleGroup>
+    with _DesktopLyricConfigMixin {
+  final settings = AppSettings.instance;
+
+  void _saveAndSync() {
+    settings.saveSettings();
+    syncDesktopLyricConfig(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+      children: [
+        const _SettingsSectionHeader('样式'),
+        const SizedBox(height: 8),
+        const _DesktopLyricPreview(),
+        const SizedBox(height: 16),
+        SettingsTile(
+          description: '歌词字号',
+          subtitle: '${settings.desktopLyricFontSize.toStringAsFixed(0)}px',
+          action: SizedBox(
+            width: 160,
+            child: Slider(
+              value: settings.desktopLyricFontSize,
+              min: 14,
+              max: 48,
+              divisions: 34,
+              label: '${settings.desktopLyricFontSize.toStringAsFixed(0)}px',
+              onChanged: (v) => setState(() {
+                settings.desktopLyricFontSize = v;
+                settings.desktopTranslationFontSize = (v - 4).clamp(10, 44);
+              }),
+              onChangeEnd: (_) => _saveAndSync(),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        SettingsTile(
+          description: '翻译/注音字号',
+          subtitle:
+              '${settings.desktopTranslationFontSize.toStringAsFixed(0)}px',
+          action: SizedBox(
+            width: 160,
+            child: Slider(
+              value: settings.desktopTranslationFontSize,
+              min: 10,
+              max: 44,
+              divisions: 34,
+              label:
+                  '${settings.desktopTranslationFontSize.toStringAsFixed(0)}px',
+              onChanged: (v) =>
+                  setState(() => settings.desktopTranslationFontSize = v),
+              onChangeEnd: (_) => _saveAndSync(),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        SettingsTile(
+          description: '字重',
+          subtitle: '${settings.desktopLyricFontWeight}',
+          action: SizedBox(
+            width: 160,
+            child: Slider(
+              value: settings.desktopLyricFontWeight.toDouble(),
+              min: 100,
+              max: 900,
+              divisions: 8,
+              label: '${settings.desktopLyricFontWeight}',
+              onChanged: (v) =>
+                  setState(() => settings.desktopLyricFontWeight = v.round()),
+              onChangeEnd: (_) => _saveAndSync(),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        SettingsTile(
+          description: '文字描边',
+          action: Switch(
+            value: settings.desktopEnableStroke,
+            onChanged: (value) => updateDesktopLyricConfig(
+              () => settings.desktopEnableStroke = value,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DesktopColorGroup extends StatefulWidget {
+  const _DesktopColorGroup();
+
+  @override
+  State<_DesktopColorGroup> createState() => _DesktopColorGroupState();
+}
+
+class _DesktopColorGroupState extends State<_DesktopColorGroup> {
+  final settings = AppSettings.instance;
+  double _playedOpacity = 1.0;
+  double _unplayedOpacity = 1.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _playedOpacity = _alphaFromColor(settings.desktopPlayedColor);
+    _unplayedOpacity = _alphaFromColor(settings.desktopUnplayedColor);
+  }
+
+  double _alphaFromColor(int? color) {
+    if (color == null) return 1.0;
+    return ((color >> 24) & 0xFF) / 255.0;
+  }
+
+  Future<void> _pickDesktopColor(
+    int? current,
+    double opacity,
+    ValueChanged<int> onPicked,
+    ValueChanged<double> onChangedOpacity,
+  ) async {
+    final initial = current != null
+        ? Color(current.toUnsigned(32))
+        : Theme.of(context).colorScheme.primary;
+    final result = await showDialog<_DesktopColorResult>(
+      context: context,
+      builder: (context) => _DesktopColorPickerDialog(
+        initialColor: initial,
+        initialOpacity: opacity,
+        label: '选择颜色',
+      ),
+    );
+    if (!mounted || result == null) return;
+    final alpha = (result.opacity * 255).round().clamp(0, 255);
+    final argb = (alpha << 24) | (result.color.toARGB32() & 0x00FFFFFF);
+    _update(() {
+      onPicked(argb);
+      onChangedOpacity(result.opacity);
+    });
+  }
+
+  void _update(VoidCallback fn) {
+    setState(fn);
+    AppSettings.instance.saveSettings();
+    syncDesktopLyricConfig(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+      children: [
+        const _SettingsSectionHeader('颜色'),
+        const SizedBox(height: 4.0),
+        SettingsTile(
+          description: '跟随主题色',
+          action: Switch(
+            value: settings.desktopFollowThemeColor,
+            onChanged: (v) => _update(() {
+              settings.desktopFollowThemeColor = v;
+            }),
+          ),
+        ),
+        if (!settings.desktopFollowThemeColor) ...[
+          const SizedBox(height: 16),
+          SettingsTile(
+            description: '明暗配色',
+            action: SegmentedButton<DesktopLyricBrightnessMode>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(
+                  value: DesktopLyricBrightnessMode.follow,
+                  label: Text('跟随'),
+                ),
+                ButtonSegment(
+                  value: DesktopLyricBrightnessMode.light,
+                  label: Text('浅色'),
+                ),
+                ButtonSegment(
+                  value: DesktopLyricBrightnessMode.dark,
+                  label: Text('深色'),
+                ),
+              ],
+              selected: {settings.desktopLyricBrightnessMode},
+              onSelectionChanged: (value) => _update(() {
+                settings.desktopLyricBrightnessMode = value.first;
+                settings.desktopPlayedColor = null;
+                settings.desktopUnplayedColor = null;
+                _playedOpacity = 1.0;
+                _unplayedOpacity = 1.0;
+              }),
+            ),
+          ),
+          const SizedBox(height: 16),
+          _DesktopColorSetting(
+            label: '已播放颜色',
+            color: settings.desktopPlayedColor,
+            opacity: _playedOpacity,
+            onPickColor: () => _pickDesktopColor(
+              settings.desktopPlayedColor,
+              _playedOpacity,
+              (color) => settings.desktopPlayedColor = color,
+              (opacity) => _playedOpacity = opacity,
+            ),
+          ),
+          const SizedBox(height: 16),
+          _DesktopColorSetting(
+            label: '未播放颜色',
+            color: settings.desktopUnplayedColor,
+            opacity: _unplayedOpacity,
+            onPickColor: () => _pickDesktopColor(
+              settings.desktopUnplayedColor,
+              _unplayedOpacity,
+              (color) => settings.desktopUnplayedColor = color,
+              (opacity) => _unplayedOpacity = opacity,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _AdvancedSystemGroup extends StatelessWidget {
+  const _AdvancedSystemGroup();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+      children: const [
+        _SettingsSectionHeader('系统行为'),
+        SizedBox(height: 4.0),
+        _WindowCloseBehaviorControl(),
+        SizedBox(height: 16.0),
+        AudioEchoLogRecordControl(),
+      ],
+    );
+  }
+}
+
+class _AdvancedCustomGroup extends StatelessWidget {
+  const _AdvancedCustomGroup();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+      children: const [
+        _SettingsSectionHeader('个性化'),
+        SizedBox(height: 4.0),
+        ArtistSeparatorEditor(),
+        SizedBox(height: 16.0),
+        SelectFontCombobox(),
+      ],
     );
   }
 }

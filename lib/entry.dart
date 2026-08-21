@@ -21,9 +21,11 @@ import 'package:pure_music/page/settings_page/check_update.dart';
 import 'package:pure_music/page/settings_page/create_issue.dart';
 import 'package:pure_music/page/stats_page/page.dart';
 import 'package:pure_music/page/settings_page/page.dart';
+import 'package:pure_music/page/settings_page/settings_tabs.dart';
 import 'package:pure_music/test/static_cover_background_test_page.dart';
 import 'package:pure_music/page/updating_page.dart';
 import 'package:pure_music/page/welcoming_page.dart';
+import 'package:pure_music/page/uni_page.dart';
 import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
 import 'package:pure_music/play_service/play_service.dart';
@@ -53,8 +55,8 @@ class SlideTransitionPage<T> extends CustomTransitionPage<T> {
     super.arguments,
     super.restorationId,
     super.key,
+    super.maintainState = false,
   }) : super(
-         maintainState: false,
          transitionsBuilder: _transitionsBuilder,
          transitionDuration: MotionDuration.fast,
          reverseTransitionDuration: MotionDuration.fast,
@@ -79,6 +81,53 @@ class SlideTransitionPage<T> extends CustomTransitionPage<T> {
     return FadeTransition(
       opacity: fade,
       child: SlideTransition(position: slide, child: child),
+    );
+  }
+}
+
+/// 设置层级过渡：旧内容先退场，新内容随后进入，背景保持固定。
+class SettingsPageTransition<T> extends CustomTransitionPage<T> {
+  const SettingsPageTransition({
+    required super.child,
+    super.name,
+    super.arguments,
+    super.restorationId,
+    super.key,
+    super.maintainState = false,
+  }) : super(
+         transitionsBuilder: _transitionsBuilder,
+         transitionDuration: MotionDuration.base,
+         reverseTransitionDuration: MotionDuration.base,
+       );
+
+  static Widget _transitionsBuilder(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    if (MediaQuery.disableAnimationsOf(context)) return child;
+
+    return AnimatedBuilder(
+      animation: Listenable.merge([animation, secondaryAnimation]),
+      child: child,
+      builder: (context, child) {
+        final isUnderneath = secondaryAnimation.value > 0.001;
+        final rawProgress = isUnderneath
+            ? (secondaryAnimation.value / 0.32).clamp(0.0, 1.0)
+            : ((animation.value - 0.42) / 0.58).clamp(0.0, 1.0);
+        final motionProgress = isUnderneath
+            ? Curves.easeOutCubic.transform(rawProgress)
+            : MotionCurve.entrance.transform(rawProgress);
+        final opacity = isUnderneath ? 1 - motionProgress : motionProgress;
+        final offset = isUnderneath
+            ? -8.0 * motionProgress
+            : 10.0 * (1 - motionProgress);
+        return Opacity(
+          opacity: opacity,
+          child: Transform.translate(offset: Offset(offset, 0), child: child),
+        );
+      },
     );
   }
 }
@@ -182,6 +231,8 @@ class _EntryState extends State<Entry>
   }
 
   Future<void> _handleMouseBack() async {
+    if (MultiSelectController.consumeBack()) return;
+
     final routerContext = routerKey.currentContext;
     if (routerContext == null) return;
     final router = GoRouter.of(routerContext);
@@ -602,9 +653,20 @@ class _EntryState extends State<Entry>
                 routes: [
                   GoRoute(
                     path: 'issue',
-                    pageBuilder: (context, state) => SlideTransitionPage(
+                    pageBuilder: (context, state) => SettingsPageTransition(
                       key: state.pageKey,
+                      maintainState: true,
                       child: const SettingsIssuePage(),
+                    ),
+                  ),
+                  GoRoute(
+                    path: 'group/:id',
+                    pageBuilder: (context, state) => SettingsPageTransition(
+                      key: state.pageKey,
+                      maintainState: true,
+                      child: SettingsGroupPage(
+                        groupId: state.pathParameters['id']!,
+                      ),
                     ),
                   ),
                 ],
