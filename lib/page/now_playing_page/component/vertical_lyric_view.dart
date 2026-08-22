@@ -1525,13 +1525,17 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       lineCount: lines.length,
       groupedLines: groupLines,
     );
+    var tailCatchUp = _tailHighlightCatchUpLineFor(
+      groupCandidates,
+      visibleCandidates: groupLines,
+    );
+    if (tailCatchUp == null && groupLines.length > 1) {
+      tailCatchUp = groupLines.reduce(max);
+    }
     return (
       primaryIndex: primaryIndex,
       groupLines: groupLines,
-      tailCatchUpLine: _tailHighlightCatchUpLineFor(
-        groupCandidates,
-        visibleCandidates: groupLines,
-      ),
+      tailCatchUpLine: tailCatchUp,
     );
   }
 
