@@ -36,6 +36,7 @@ extension StringHMMSS on Duration {
 
 const int _pinyinCacheMaxSize = 2000;
 final LinkedHashMap<String, String> _pinyinCache = LinkedHashMap();
+final LinkedHashMap<String, String> _pinyinInitialsCache = LinkedHashMap();
 
 extension PinyinCompare on String {
   /// convert str to pinyin, cache it when it hasn't been converted;
@@ -90,6 +91,39 @@ extension PinyinCompare on String {
     final aTokens = _tokenizeForNaturalCompare(this);
     final bTokens = _tokenizeForNaturalCompare(other);
     return _compareNaturalTokens(aTokens, bTokens);
+  }
+
+  String getPinyinInitials() {
+    final cached = _pinyinInitialsCache.remove(this);
+    if (cached != null) {
+      _pinyinInitialsCache[this] = cached;
+      return cached;
+    }
+
+    final buffer = StringBuffer();
+    for (final rune in runes) {
+      final c = String.fromCharCode(rune);
+      if (ChineseHelper.isChinese(c)) {
+        final pinyin = PinyinHelper.convertToPinyinArray(
+          c,
+          PinyinFormat.WITHOUT_TONE,
+        ).firstOrNull;
+        if (pinyin != null && pinyin.isNotEmpty) {
+          buffer.write(pinyin[0]);
+        }
+      } else if (c.codeUnitAt(0) >= 0x41 && c.codeUnitAt(0) <= 0x5A ||
+          c.codeUnitAt(0) >= 0x61 && c.codeUnitAt(0) <= 0x7A ||
+          c.codeUnitAt(0) >= 0x30 && c.codeUnitAt(0) <= 0x39) {
+        buffer.write(c);
+      }
+    }
+
+    final result = buffer.toString();
+    _pinyinInitialsCache[this] = result;
+    while (_pinyinInitialsCache.length > _pinyinCacheMaxSize) {
+      _pinyinInitialsCache.remove(_pinyinInitialsCache.keys.first);
+    }
+    return result;
   }
 }
 
