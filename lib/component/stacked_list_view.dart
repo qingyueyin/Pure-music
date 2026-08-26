@@ -85,6 +85,16 @@ class SmoothScrollPosition extends ScrollPositionWithSingleContext {
 
   @override
   void pointerScroll(double delta) {
+    // 关闭"列表效果"开关或系统"减少动画"时，即使 position 未被重建，
+    // 也直接回退到默认滚动行为，避免平滑滚轮残留。
+    if (!AppSettings.instance.enableStackedScrollEffect ||
+        MediaQuery.maybeDisableAnimationsOf(
+          context.storageContext,
+        ) ==
+            true) {
+      super.pointerScroll(delta);
+      return;
+    }
     if (delta == 0.0) {
       goBallistic(0.0);
       return;
@@ -247,22 +257,57 @@ class SmoothScrollListView extends StatefulWidget {
 }
 
 class _SmoothScrollListViewState extends State<SmoothScrollListView> {
-  final _controller = SmoothScrollController();
+  late SmoothScrollController _controller;
+  bool _smoothEnabled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _smoothEnabled = _computeSmooth();
+    _controller = SmoothScrollController();
+    AppSettings.listMotionNotifier.addListener(_syncSmooth);
+  }
+
+  bool _computeSmooth() =>
+      AppSettings.instance.enableStackedScrollEffect &&
+      !MediaQuery.disableAnimationsOf(context);
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncSmooth();
+  }
+
+  /// 平滑状态变化时更换 controller，让滚动视图重新创建 position。
+  ///
+  /// 只改 [ListView.physics] 不会重建已创建的 [SmoothScrollPosition]，
+  /// 平滑滚轮会残留；换 controller 后 [Scrollable] 会把旧 position 作为
+  /// oldPosition 传入，滚动位置得以保留，physics 为 null 时则回退标准滚动。
+  void _syncSmooth() {
+    final next = _computeSmooth();
+    if (next == _smoothEnabled || !mounted) return;
+    final previous = _controller;
+    setState(() {
+      _smoothEnabled = next;
+      _controller = SmoothScrollController();
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !identical(previous, _controller)) previous.dispose();
+    });
+  }
 
   @override
   void dispose() {
+    AppSettings.listMotionNotifier.removeListener(_syncSmooth);
     _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final enableSmooth =
-        AppSettings.instance.enableStackedScrollEffect &&
-        !MediaQuery.disableAnimationsOf(context);
     return ListView(
       controller: _controller,
-      physics: enableSmooth ? const SmoothScrollPhysics() : null,
+      physics: _smoothEnabled ? const SmoothScrollPhysics() : null,
       padding: widget.padding,
       children: widget.children,
     );
