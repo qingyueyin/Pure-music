@@ -1,5 +1,6 @@
 import 'package:pure_music/component/list_locate_buttons.dart';
 import 'package:pure_music/component/motion.dart';
+import 'package:pure_music/component/stacked_list_view.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/library/audio_library.dart';
@@ -23,7 +24,7 @@ class _StatsPageState extends State<StatsPage> {
   bool _loadFailed = false;
   int _loadRequestToken = 0;
   late final ValueListenable<int> _playCountRevision;
-  final _scrollController = ScrollController();
+  final _scrollController = SmoothScrollController();
   final _itemKeys = <int, GlobalKey>{};
 
   @override
@@ -162,8 +163,13 @@ class _StatsPageState extends State<StatsPage> {
         .take(100)
         .toList();
 
+    final enableSmoothScrolling =
+        AppSettings.instance.enableStackedScrollEffect &&
+        !MediaQuery.disableAnimationsOf(context);
+
     return CustomScrollView(
       controller: _scrollController,
+      physics: enableSmoothScrolling ? const SmoothScrollPhysics() : null,
       slivers: [
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(

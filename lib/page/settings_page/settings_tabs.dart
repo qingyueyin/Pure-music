@@ -19,6 +19,7 @@ import 'package:pure_music/lyric/lyric_source.dart';
 import 'package:pure_music/lyric/lyric_tag_word_format.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/settings_tile.dart';
+import 'package:pure_music/component/stacked_list_view.dart' show SmoothScrollListView;
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/taskbar_thumbnail_service.dart';
 import 'package:pure_music/play_service/desktop_lyric_service.dart';
@@ -131,9 +132,9 @@ class _AppearanceTabContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
-      children: const [
+    return const SmoothScrollListView(
+      padding: EdgeInsets.only(bottom: 96.0, right: 20),
+      children: [
         _GroupEntry(
           icon: Symbols.brightness_6,
           title: '显示模式',
@@ -1455,9 +1456,9 @@ class _LyricsTabContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
-      children: const [
+    return const SmoothScrollListView(
+      padding: EdgeInsets.only(bottom: 96.0, right: 20),
+      children: [
         _GroupEntry(
           icon: Symbols.download,
           title: '来源与存储',
@@ -1481,9 +1482,9 @@ class _PlaybackTabContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
-      children: const [
+    return const SmoothScrollListView(
+      padding: EdgeInsets.only(bottom: 96.0, right: 20),
+      children: [
         _GroupEntry(
           icon: Symbols.play_circle,
           title: '播放行为',
@@ -1530,7 +1531,7 @@ class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
       builder: (context, _) {
         final running = _service.isRunning;
         final busy = _service.isKilling;
-        return ListView(
+        return SmoothScrollListView(
           padding: const EdgeInsets.only(bottom: 96.0, right: 20),
           children: [
             SettingsTile(
@@ -2106,9 +2107,9 @@ class _AdvancedTabContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
-      children: const [
+    return const SmoothScrollListView(
+      padding: EdgeInsets.only(bottom: 96.0, right: 20),
+      children: [
         _GroupEntry(
           icon: Symbols.settings_suggest,
           title: '系统行为',
@@ -2610,9 +2611,9 @@ class _AboutTabContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
-      children: const [
+    return const SmoothScrollListView(
+      padding: EdgeInsets.only(bottom: 96.0, right: 20),
+      children: [
         _SettingsSectionHeader('更新'),
         SizedBox(height: 4.0),
         _AboutVersionItem(),

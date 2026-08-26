@@ -4,6 +4,7 @@ import 'package:flutter/physics.dart' show FrictionSimulation, Tolerance;
 import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter/widgets.dart';
 import 'package:pure_music/component/motion.dart' show StackedEffectScope;
+import 'package:pure_music/core/settings.dart' show AppSettings;
 
 bool _usesSmoothScrollPhysics(ScrollPhysics physics) {
   ScrollPhysics? current = physics;
@@ -68,13 +69,17 @@ class SmoothScrollPosition extends ScrollPositionWithSingleContext {
     super.oldPosition,
   });
 
-  /// 速度每秒的衰减指数（越小惯性越长）。
-  static const double velocityDecayPerSecond = 3.0;
+  /// 速度每秒的衰减指数（越大衰减越快、收尾越干脆，惯性越短）。
+  static const double velocityDecayPerSecond = 5.0;
 
   /// 滚轮输入换算为速度的系数。
-  /// 指数衰减下总位移 = v0 / decay，取 delta * decay 使单次滚轮
-  /// 的位移恰好等于滚轮输入量；快速连续滚轮时速度累积，产生加速感。
-  double get _deltaToVelocity => velocityDecayPerSecond;
+  /// 指数衰减下总位移 = v0 / decay，取 delta * decay * multiplier，
+  /// 使单次滚轮位移 = delta * multiplier，提升灵敏度与跟手度；
+  /// 快速连续滚轮时速度累积，产生连贯的加速感。
+  static const double wheelSensitivity = 1.6;
+
+  double get _deltaToVelocity =>
+      velocityDecayPerSecond * wheelSensitivity;
 
   static const _wheelTolerance = Tolerance(distance: 0.05, velocity: 0.5);
 
@@ -218,6 +223,48 @@ class StackedScrollConfiguration extends StatelessWidget {
         context,
       ).copyWith(physics: const SmoothScrollPhysics()),
       child: child,
+    );
+  }
+}
+
+/// 自带平滑滚轮的 [ListView]（不等高内容列表，如设置页/统计页）。
+///
+/// 打开"列表效果"开关时使用 [SmoothScrollPhysics]，滚动平滑跟手；
+/// 关闭或系统"减少动画"时回退默认滚动。内部持有自己的
+/// [SmoothScrollController]，不依赖外部。
+class SmoothScrollListView extends StatefulWidget {
+  const SmoothScrollListView({
+    super.key,
+    this.padding,
+    required this.children,
+  });
+
+  final EdgeInsetsGeometry? padding;
+  final List<Widget> children;
+
+  @override
+  State<SmoothScrollListView> createState() => _SmoothScrollListViewState();
+}
+
+class _SmoothScrollListViewState extends State<SmoothScrollListView> {
+  final _controller = SmoothScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final enableSmooth =
+        AppSettings.instance.enableStackedScrollEffect &&
+        !MediaQuery.disableAnimationsOf(context);
+    return ListView(
+      controller: _controller,
+      physics: enableSmooth ? const SmoothScrollPhysics() : null,
+      padding: widget.padding,
+      children: widget.children,
     );
   }
 }
