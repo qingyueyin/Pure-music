@@ -19,6 +19,8 @@ class StatsPage extends StatefulWidget {
 }
 
 class _StatsPageState extends State<StatsPage> {
+  static const _rankedTrackExtent = 68.0;
+
   List<rust_library_db.PlayCountEntry>? _topPlayed;
   bool _loading = true;
   bool _loadFailed = false;
@@ -162,6 +164,9 @@ class _StatsPageState extends State<StatsPage> {
     final rankedTracks = (data ?? const <rust_library_db.PlayCountEntry>[])
         .take(100)
         .toList();
+    final enableStackedEffect =
+        AppSettings.instance.enableStackedScrollEffect &&
+        !MediaQuery.disableAnimationsOf(context);
 
     final enableSmoothScrolling =
         AppSettings.instance.enableStackedScrollEffect &&
@@ -234,13 +239,23 @@ class _StatsPageState extends State<StatsPage> {
             ),
           )
         else
-          SliverList.builder(
-            itemCount: rankedTracks.length,
-            itemBuilder: (context, index) => _buildRow(
-              scheme,
-              rankedTracks[index],
-              index: index,
-              maxPlays: rankedTracks.first.playCount,
+          SliverLayoutBuilder(
+            builder: (context, constraints) => SliverFixedExtentList.builder(
+              itemExtent: _rankedTrackExtent,
+              itemCount: rankedTracks.length,
+              itemBuilder: (context, index) => StackedSliverItem(
+                controller: _scrollController,
+                rowIndex: index,
+                itemExtent: _rankedTrackExtent,
+                leadingScrollExtent: constraints.precedingScrollExtent,
+                enabled: enableStackedEffect,
+                child: _buildRow(
+                  scheme,
+                  rankedTracks[index],
+                  index: index,
+                  maxPlays: rankedTracks.first.playCount,
+                ),
+              ),
             ),
           ),
         const SliverToBoxAdapter(child: SizedBox(height: Spacing.bottomNav)),
@@ -257,63 +272,66 @@ class _StatsPageState extends State<StatsPage> {
     required int albumCount,
     required int totalDuration,
   }) {
-    return Container(
-      padding: const EdgeInsets.all(Spacing.md),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
-        borderRadius: AppRadius.smCircular,
-        border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.45),
+    return ListenableBuilder(
+      listenable: AppSettings.listMotionNotifier,
+      builder: (context, _) => Container(
+        padding: const EdgeInsets.all(Spacing.md),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerLow,
+          borderRadius: AppRadius.smCircular,
+          border: Border.all(
+            color: scheme.outlineVariant.withValues(alpha: 0.45),
+          ),
         ),
-      ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final columns = constraints.maxWidth >= 1000
-              ? 4
-              : constraints.maxWidth >= 520
-              ? 2
-              : 1;
-          final width =
-              (constraints.maxWidth - (columns - 1) * Spacing.sm) / columns;
-          return Wrap(
-            spacing: Spacing.sm,
-            runSpacing: Spacing.sm,
-            children: [
-              _overviewMetric(
-                scheme,
-                width: width,
-                icon: Symbols.play_arrow,
-                color: scheme.primary,
-                label: '累计播放',
-                value: formatCount(totalPlays),
-              ),
-              _overviewMetric(
-                scheme,
-                width: width,
-                icon: Symbols.library_music,
-                color: scheme.tertiary,
-                label: '听过的曲目',
-                value: '$playedTracks / $totalTracks',
-              ),
-              _overviewMetric(
-                scheme,
-                width: width,
-                icon: Symbols.album,
-                color: scheme.secondary,
-                label: '艺术家 / 专辑',
-                value: '$artistCount / $albumCount',
-              ),
-              _overviewMetric(
-                scheme,
-                width: width,
-                icon: Symbols.schedule,
-                color: scheme.onSurfaceVariant,
-                label: '曲库总时长',
-                value: formatDuration(totalDuration),
-              ),
-            ],
-          );
-        },
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final columns = constraints.maxWidth >= 1000
+                ? 4
+                : constraints.maxWidth >= 520
+                ? 2
+                : 1;
+            final width =
+                (constraints.maxWidth - (columns - 1) * Spacing.sm) / columns;
+            return Wrap(
+              spacing: Spacing.sm,
+              runSpacing: Spacing.sm,
+              children: [
+                _overviewMetric(
+                  scheme,
+                  width: width,
+                  icon: Symbols.play_arrow,
+                  color: scheme.primary,
+                  label: '累计播放',
+                  value: formatCount(totalPlays),
+                ),
+                _overviewMetric(
+                  scheme,
+                  width: width,
+                  icon: Symbols.library_music,
+                  color: scheme.tertiary,
+                  label: '听过的曲目',
+                  value: '$playedTracks / $totalTracks',
+                ),
+                _overviewMetric(
+                  scheme,
+                  width: width,
+                  icon: Symbols.album,
+                  color: scheme.secondary,
+                  label: '艺术家 / 专辑',
+                  value: '$artistCount / $albumCount',
+                ),
+                _overviewMetric(
+                  scheme,
+                  width: width,
+                  icon: Symbols.schedule,
+                  color: scheme.onSurfaceVariant,
+                  label: '曲库总时长',
+                  value: formatDuration(totalDuration),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -348,16 +366,7 @@ class _StatsPageState extends State<StatsPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    value,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: AppType.pageTitle,
-                      fontWeight: AppType.weightSemibold,
-                      color: scheme.onSurface,
-                    ),
-                  ),
+                  _AnimatedMetricValue(value, color: scheme.onSurface),
                   Text(
                     label,
                     maxLines: 1,
@@ -825,6 +834,53 @@ class _CoverWidgetState extends State<_CoverWidget> {
         Symbols.music_note,
         size: 22,
         color: scheme.onSurfaceVariant.withValues(alpha: 0.65),
+      ),
+    );
+  }
+}
+
+class _AnimatedMetricValue extends StatelessWidget {
+  const _AnimatedMetricValue(this.value, {required this.color});
+
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final animate =
+        AppSettings.instance.enableStackedScrollEffect &&
+        !MediaQuery.disableAnimationsOf(context);
+    return AnimatedSwitcher(
+      duration: animate ? MotionDuration.xFast : Duration.zero,
+      switchInCurve: MotionCurve.entrance,
+      switchOutCurve: MotionCurve.standard,
+      layoutBuilder: (currentChild, previousChildren) => Stack(
+        alignment: Alignment.centerLeft,
+        children: [...previousChildren, ?currentChild],
+      ),
+      transitionBuilder: (child, animation) {
+        if (!animate) return child;
+        return FadeTransition(
+          opacity: animation,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 0.12),
+              end: Offset.zero,
+            ).animate(animation),
+            child: child,
+          ),
+        );
+      },
+      child: Text(
+        value,
+        key: ValueKey(value),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: AppType.pageTitle,
+          fontWeight: AppType.weightSemibold,
+          color: color,
+        ),
       ),
     );
   }

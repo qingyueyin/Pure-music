@@ -414,6 +414,7 @@ class StackedSliverItem extends StatelessWidget {
     required this.itemExtent,
     required this.child,
     this.enabled = true,
+    this.leadingScrollExtent = 0,
   });
 
   final ScrollController controller;
@@ -421,6 +422,7 @@ class StackedSliverItem extends StatelessWidget {
   final double itemExtent;
   final Widget child;
   final bool enabled;
+  final double leadingScrollExtent;
 
   @override
   Widget build(BuildContext context) {
@@ -439,7 +441,7 @@ class StackedSliverItem extends StatelessWidget {
           final offset = position.pixels;
           final viewportHeight = position.viewportDimension;
           if (viewportHeight < itemExtent * 2) return child!;
-          final itemTop = rowIndex * itemExtent - offset;
+          final itemTop = leadingScrollExtent + rowIndex * itemExtent - offset;
           return StackedItemTransform(
             itemTop: itemTop,
             itemExtent: itemExtent,
@@ -483,7 +485,10 @@ class StackedItemTransform extends StatelessWidget {
 
     final progress = math.max(topProgress, bottomProgress);
     if (progress <= 0.0) return child;
-    if (progress >= 1.0) return const SizedBox.shrink();
+    if (progress >= 1.0) {
+      // 隐藏滚出视口的内容，但保留行高，避免列表滚动范围被压缩。
+      return SizedBox(height: itemExtent, child: const SizedBox.shrink());
+    }
 
     final scale = 1.0 - (1.0 - StackedListView.maxShrink) * progress;
     final alignment = topProgress > bottomProgress
