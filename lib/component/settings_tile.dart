@@ -74,7 +74,10 @@ class _SettingsTileDescription extends StatelessWidget {
       children: [
         Text(
           description,
-          style: TextStyle(color: scheme.onSurface, fontSize: AppType.sectionTitle),
+          style: TextStyle(
+            color: scheme.onSurface,
+            fontSize: AppType.sectionTitle,
+          ),
         ),
         if (subtitle != null)
           Padding(

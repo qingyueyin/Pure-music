@@ -17,7 +17,7 @@ const bool portableBuild = bool.fromEnvironment(
   defaultValue: true,
 );
 
-const bool enableOnlineLyricTagWriting = false;
+const bool enableOnlineLyricWriting = true;
 
 String resolveAppDataPath({
   required bool usePortableData,
@@ -271,27 +271,36 @@ class AppSettings {
   int desktopLyricTranslationPosition = 1;
   bool desktopShowNowPlayingInfo = true;
   bool desktopHideOnPause = false;
+  bool desktopHoverHide = false;
+  bool desktopFullscreenHide = false;
+  double desktopLineGap = 4.0;
   bool desktopEnableStroke = true;
   bool desktopEnablePinTop = true;
   bool desktopUseVerticalDisplayMode = false;
   bool desktopShowDoubleLine = false;
+  bool desktopUseMultiLineMode = false;
+  bool desktopHidePlayedLines = false;
   double desktopLyricFontSize = 22.0;
   double desktopTranslationFontSize = 18.0;
   int desktopLyricFontWeight = 700;
   double desktopBackgroundOpacity = 0.0;
+  double desktopFontOpacity = 1.0;
   int desktopLyricTextAlign = 1;
   DesktopLyricAnimation desktopLyricAnimation = DesktopLyricAnimation.slideUp;
+  LyricStaggerStyle desktopMultiLineAnimation = LyricStaggerStyle.smooth;
   int? desktopPlayedColor;
   int? desktopUnplayedColor;
   bool desktopFollowThemeColor = true;
   DesktopLyricBrightnessMode desktopLyricBrightnessMode =
       DesktopLyricBrightnessMode.follow;
   ZhConversionMode zhConversionMode = ZhConversionMode.none;
-  bool promptWriteLyricToTag = true;
   int promptWriteLyricToTagDelay = 15;
   bool autoWriteLyricToTag = false;
   int autoWriteLyricToTagDelay = 30;
   LyricTagWordFormat lyricTagWordFormat = LyricTagWordFormat.enhanced;
+  bool lyricTagIncludeTranslation = true;
+  bool lyricTagIncludeRomanization = true;
+  bool autoSaveExternalLyric = false;
   bool useMaterialYouForLyrics = false;
   bool useMaterialYouForProgressBar = false;
   bool useMaterialYouForTransition = false;
@@ -499,14 +508,6 @@ class AppSettings {
           };
     }
 
-    final pwt = settingsMap['PromptWriteLyricToTag'];
-    if (pwt != null) {
-      _instance.promptWriteLyricToTag = normalizedBoolSetting(
-        pwt,
-        defaultValue: true,
-      );
-    }
-
     final pwd = settingsMap['PromptWriteLyricToTagDelay'];
     if (pwd != null) {
       _instance.promptWriteLyricToTagDelay = normalizedBoundedIntSetting(
@@ -542,6 +543,30 @@ class AppSettings {
         LyricTagWordFormat.values,
         fallback: LyricTagWordFormat.enhanced,
       )!;
+    }
+
+    final ltit = settingsMap['LyricTagIncludeTranslation'];
+    if (ltit != null) {
+      _instance.lyricTagIncludeTranslation = normalizedBoolSetting(
+        ltit,
+        defaultValue: true,
+      );
+    }
+
+    final ltir = settingsMap['LyricTagIncludeRomanization'];
+    if (ltir != null) {
+      _instance.lyricTagIncludeRomanization = normalizedBoolSetting(
+        ltir,
+        defaultValue: true,
+      );
+    }
+
+    final asel = settingsMap['AutoSaveExternalLyric'];
+    if (asel != null) {
+      _instance.autoSaveExternalLyric = normalizedBoolSetting(
+        asel,
+        defaultValue: false,
+      );
     }
 
     final umyl = settingsMap['UseMaterialYouForLyrics'];
@@ -700,6 +725,22 @@ class AppSettings {
       );
     }
 
+    final dhh = settingsMap['DesktopHoverHide'];
+    if (dhh != null) {
+      _instance.desktopHoverHide = normalizedBoolSetting(
+        dhh,
+        defaultValue: false,
+      );
+    }
+
+    final dfh = settingsMap['DesktopFullscreenHide'];
+    if (dfh != null) {
+      _instance.desktopFullscreenHide = normalizedBoolSetting(
+        dfh,
+        defaultValue: false,
+      );
+    }
+
     final des = settingsMap['DesktopEnableStroke'];
     if (des != null) {
       _instance.desktopEnableStroke = normalizedBoolSetting(
@@ -732,9 +773,30 @@ class AppSettings {
       );
     }
 
+    final dum = settingsMap['DesktopUseMultiLineMode'];
+    if (dum != null) {
+      _instance.desktopUseMultiLineMode = normalizedBoolSetting(
+        dum,
+        defaultValue: false,
+      );
+    }
+
+    final dhpl = settingsMap['DesktopHidePlayedLines'];
+    if (dhpl != null) {
+      _instance.desktopHidePlayedLines = normalizedBoolSetting(
+        dhpl,
+        defaultValue: false,
+      );
+    }
+
     final dls = settingsMap['DesktopLyricFontSize'];
     if (dls != null) {
       _instance.desktopLyricFontSize = (dls as num).clamp(12, 60).toDouble();
+    }
+
+    final dlg = settingsMap['DesktopLineGap'];
+    if (dlg is num) {
+      _instance.desktopLineGap = dlg.clamp(0, 16).toDouble();
     }
 
     final dts = settingsMap['DesktopTranslationFontSize'];
@@ -759,9 +821,18 @@ class AppSettings {
           .toDouble();
     }
 
+    final dfo = settingsMap['DesktopFontOpacity'];
+    if (dfo is num) {
+      _instance.desktopFontOpacity = dfo.clamp(0, 1).toDouble();
+    }
+
     final dlta = settingsMap['DesktopLyricTextAlign'];
     if (dlta != null) {
       _instance.desktopLyricTextAlign = ((dlta as num).toInt()).clamp(0, 3);
+    }
+    if (!_instance.desktopShowDoubleLine &&
+        _instance.desktopLyricTextAlign == 3) {
+      _instance.desktopLyricTextAlign = 1;
     }
 
     _instance.desktopLyricAnimation =
@@ -769,6 +840,11 @@ class AppSettings {
           settingsMap['DesktopLyricAnimation']?.toString() ?? '',
         ) ??
         DesktopLyricAnimation.slideUp;
+    _instance.desktopMultiLineAnimation =
+        LyricStaggerStyle.fromString(
+          settingsMap['DesktopMultiLineAnimation']?.toString() ?? '',
+        ) ??
+        LyricStaggerStyle.smooth;
 
     if (settingsMap.containsKey('DesktopTextColor')) {
       _instance.desktopPlayedColor = settingsMap['DesktopTextColor'] as int?;
@@ -845,26 +921,35 @@ class AppSettings {
         'DesktopLyricTranslationPosition': desktopLyricTranslationPosition,
         'DesktopShowNowPlayingInfo': desktopShowNowPlayingInfo,
         'DesktopHideOnPause': desktopHideOnPause,
+        'DesktopHoverHide': desktopHoverHide,
+        'DesktopFullscreenHide': desktopFullscreenHide,
         'DesktopEnableStroke': desktopEnableStroke,
         'DesktopEnablePinTop': desktopEnablePinTop,
         'DesktopUseVerticalDisplayMode': desktopUseVerticalDisplayMode,
         'DesktopShowDoubleLine': desktopShowDoubleLine,
+        'DesktopUseMultiLineMode': desktopUseMultiLineMode,
+        'DesktopHidePlayedLines': desktopHidePlayedLines,
+        'DesktopLineGap': desktopLineGap,
         'DesktopLyricFontSize': desktopLyricFontSize,
         'DesktopTranslationFontSize': desktopTranslationFontSize,
         'DesktopLyricFontWeight': desktopLyricFontWeight,
         'DesktopBackgroundOpacity': desktopBackgroundOpacity,
+        'DesktopFontOpacity': desktopFontOpacity,
         'DesktopLyricTextAlign': desktopLyricTextAlign,
         'DesktopLyricAnimation': desktopLyricAnimation.name,
+        'DesktopMultiLineAnimation': desktopMultiLineAnimation.name,
         'DesktopPlayedColor': desktopPlayedColor,
         'DesktopUnplayedColor': desktopUnplayedColor,
         'DesktopFollowThemeColor': desktopFollowThemeColor,
         'DesktopLyricBrightnessMode': desktopLyricBrightnessMode.name,
         'ZhConversionMode': zhConversionMode.name,
-        'PromptWriteLyricToTag': promptWriteLyricToTag,
         'PromptWriteLyricToTagDelay': promptWriteLyricToTagDelay,
         'AutoWriteLyricToTag': autoWriteLyricToTag,
         'AutoWriteLyricToTagDelay': autoWriteLyricToTagDelay,
         'LyricTagWordFormat': lyricTagWordFormat.name,
+        'LyricTagIncludeTranslation': lyricTagIncludeTranslation,
+        'LyricTagIncludeRomanization': lyricTagIncludeRomanization,
+        'AutoSaveExternalLyric': autoSaveExternalLyric,
         'UseMaterialYouForLyrics': useMaterialYouForLyrics,
         'UseMaterialYouForProgressBar': useMaterialYouForProgressBar,
         'UseMaterialYouForTransition': useMaterialYouForTransition,
