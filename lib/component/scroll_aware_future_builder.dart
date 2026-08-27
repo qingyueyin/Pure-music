@@ -14,9 +14,9 @@ class _DeferredLoadRequest {
 }
 
 class _DeferredLoadQueue {
-  static const _retryDelay = Duration(milliseconds: 32);
-  static const _maximumDeferral = Duration(milliseconds: 128);
-  static const _maximumForcedLoadsPerFlush = 8;
+  static const _retryDelay = Duration(milliseconds: 64);
+  static const _maximumDeferral = Duration(milliseconds: 192);
+  static const _maximumForcedLoadsPerFlush = 2;
 
   final LinkedHashMap<Object, _DeferredLoadRequest> _pending =
       LinkedHashMap<Object, _DeferredLoadRequest>.identity();
