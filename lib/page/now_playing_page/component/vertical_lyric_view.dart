@@ -12,12 +12,13 @@ import 'package:pure_music/native/bass/bass_player.dart' show PlayerState;
 import 'package:pure_music/page/now_playing_page/component/collapsible_lyric_controls.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_stagger_motion.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.dart';
+import 'package:pure_music/page/now_playing_page/component/lyric_view_tile.dart';
 import 'package:pure_music/page/now_playing_page/component/lyrics_line_widget.dart';
 import 'package:pure_music/page/now_playing_page/component/lyrics_line_painter.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_viewport_strategy.dart';
 import 'package:pure_music/page/now_playing_page/component/value_transition.dart';
 import 'package:pure_music/play_service/lyric_service.dart'
-    show lyricHighlightDeadlineMsForLine;
+    show lyricHighlightDeadlineMsForLine, lyricWordPreSwitchMs;
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -1530,13 +1531,34 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       visibleCandidates: groupLines,
     );
     if (tailCatchUp == null && groupLines.length > 1) {
-      tailCatchUp = groupLines.reduce(max);
+      final nextTriggerMs = _nextNonGroupLineTriggerMs(lines, groupCandidates);
+      if (nextTriggerMs != null &&
+          playbackService.position * 1000.0 >= nextTriggerMs) {
+        tailCatchUp = groupLines.reduce(max);
+      }
     }
     return (
       primaryIndex: primaryIndex,
       groupLines: groupLines,
       tailCatchUpLine: tailCatchUp,
     );
+  }
+
+  double? _nextNonGroupLineTriggerMs(
+    List<LyricLine> lines,
+    Set<int> groupLines,
+  ) {
+    final lastIndex = groupLines.reduce(max);
+    for (var i = lastIndex + 1; i < lines.length; i++) {
+      if (_isLineBlankFiltered(lines[i])) continue;
+      final line = lines[i];
+      if (line is SyncLyricLine && line.words.isNotEmpty) {
+        return (line.words.first.start.inMilliseconds - lyricWordPreSwitchMs)
+            .toDouble();
+      }
+      return line.start.inMilliseconds.toDouble();
+    }
+    return null;
   }
 
   bool _hasBackgroundVocal(LyricLine line) {
@@ -1558,12 +1580,42 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     return positionMs >= start;
   }
 
+  bool _isTransitionLine(LyricLine line) {
+    if (line is SyncLyricLine) {
+      return line.words.isEmpty && line.length > const Duration(seconds: 3);
+    }
+    if (line is LrcLine) {
+      return line.isBlank &&
+          line.length > const Duration(seconds: 3) &&
+          line.start == Duration.zero;
+    }
+    return false;
+  }
+
+  double _transitionReflowOffsetFor(int lineIndex) {
+    final lineContext = _lineKeys[lineIndex]?.currentContext;
+    final lineBox = lineContext?.findRenderObject() as RenderBox?;
+    if (lineBox != null && lineBox.hasSize) return lineBox.size.height;
+
+    final config = LyricViewController.instance.renderConfig;
+    final line = widget.lyric.lines[lineIndex];
+    final verticalPadding = line is SyncLyricLine
+        ? config.syncVerticalPadding(isMainLine: true)
+        : config.lrcVerticalPadding();
+    return transitionTileHeight + verticalPadding * 2;
+  }
+
   double _backgroundVocalReflowOffsetFor(int lineIndex) {
+    if (lineIndex < 0 || lineIndex >= widget.lyric.lines.length) return 0.0;
+    final line = widget.lyric.lines[lineIndex];
+    if (_isTransitionLine(line)) {
+      // 间奏行退场同样会释放布局高度，复用下方歌词的位移补偿。
+      return _transitionReflowOffsetFor(lineIndex);
+    }
     final heights = _cachedBackgroundVocalHeights;
-    if (heights == null || lineIndex < 0 || lineIndex >= heights.length) {
+    if (heights == null || lineIndex >= heights.length) {
       return 0.0;
     }
-    final line = widget.lyric.lines[lineIndex];
     if (line is! SyncLyricLine) return 0.0;
     final start = (line.bgStart ?? line.bg?.start ?? line.start).inMilliseconds
         .toDouble();
@@ -1586,6 +1638,9 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     bool mainLineChanged,
   ) {
     if (!mainLineChanged) return _departingBackgroundVocalLine;
+    if (_isTransitionLine(lines[previousMainLine])) {
+      return previousMainLine;
+    }
     final previousGroupLines = _parallelGroupLines.toList()
       ..sort((a, b) => b.compareTo(a));
     for (final index in previousGroupLines) {

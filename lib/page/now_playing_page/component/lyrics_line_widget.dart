@@ -120,15 +120,17 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
   }
 
   void _applyMeasuredHeight(double measuredHeight) {
-    final resolvedHeight = widget.freezeHeight
-        ? max(_frozenHeight ?? _heightNotifier.value, measuredHeight)
-        : measuredHeight;
     if (widget.freezeHeight) {
-      _frozenHeight = resolvedHeight;
+      _frozenHeight ??= measuredHeight;
+      if ((_frozenHeight! - _heightNotifier.value).abs() > 0.01) {
+        _cachedLineHeight = _frozenHeight;
+        _heightNotifier.value = _frozenHeight!;
+      }
+      return;
     }
-    if ((resolvedHeight - _heightNotifier.value).abs() <= 0.01) return;
-    _cachedLineHeight = resolvedHeight;
-    _heightNotifier.value = resolvedHeight;
+    if ((measuredHeight - _heightNotifier.value).abs() <= 0.01) return;
+    _cachedLineHeight = measuredHeight;
+    _heightNotifier.value = measuredHeight;
   }
 
   Duration _lineMedianWordDuration(LyricLine line) {
@@ -471,7 +473,12 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
     }
 
     if (widget.freezeHeight && !oldWidget.freezeHeight) {
-      if (_heightNotifier.value > 0) {
+      if (_cachedPainter != null && _cachedLineWidth > 0) {
+        _frozenHeight = _cachedPainter!.measureHeight(
+          _cachedLineWidth,
+          reserveBackgroundVocalHeight: widget.reserveBackgroundVocalHeight,
+        );
+      } else if (_heightNotifier.value > 0) {
         _frozenHeight = _heightNotifier.value;
       }
     } else if (!widget.freezeHeight) {
