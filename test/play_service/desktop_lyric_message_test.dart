@@ -57,13 +57,39 @@ void main() {
       translationPosition: 0,
       lyricTextAlign: 3,
       showDoubleLine: true,
+      hidePlayedLines: true,
+      fontOpacity: 0.65,
     );
 
     expect(message.toMessageJson(), {
       'translationPosition': 0,
       'lyricTextAlign': 3,
       'showDoubleLine': true,
+      'hidePlayedLines': true,
+      'fontOpacity': 0.65,
     });
+  });
+
+  test('round-trips the full lyric snapshot', () {
+    const message = FullLyricChangedMessage([
+      FullLyricLine(
+        4,
+        'line',
+        'translation',
+        'roman',
+        1200,
+        3000,
+        [LyricWord(0, 1500, 'line')],
+        2600,
+        880,
+      ),
+    ]);
+
+    final decoded = FullLyricChangedMessage.fromJson(message.toMessageJson());
+    expect(decoded.lines.single.lineId, 4);
+    expect(decoded.lines.single.words!.single.lengthMs, 1500);
+    expect(decoded.lines.single.translation, 'translation');
+    expect(decoded.lines.single.switchStartMs, 880);
   });
 
   test('keeps the final word authored timing past the line duration', () {

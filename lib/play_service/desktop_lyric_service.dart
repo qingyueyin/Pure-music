@@ -6,6 +6,7 @@ import 'package:ffi/ffi.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
+import 'package:pure_music/lyric/ttml.dart' show Ttml;
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/playback_service.dart';
 import 'package:pure_music/play_service/lyric_service.dart'
@@ -24,12 +25,25 @@ import 'package:path/path.dart' as path;
 
 import 'package:desktop_lyric/message.dart' as msg;
 
+const int _desktopLyricInterludeMinimumMs = 3000;
+
 Duration desktopLyricHighlightDuration(LyricLine line) {
   var duration = line.length;
   if (line is SyncLyricLine && line.words.isNotEmpty) {
     final lastWord = line.words.last;
     final authoredDuration = lastWord.start + lastWord.length - line.start;
     if (authoredDuration > duration) duration = authoredDuration;
+  }
+  if (line is SyncLyricLine) {
+    if (line.bgEnd != null) {
+      final authoredDuration = line.bgEnd! - line.start;
+      if (authoredDuration > duration) duration = authoredDuration;
+    }
+    if (line.bgWords.isNotEmpty) {
+      final lastWord = line.bgWords.last;
+      final authoredDuration = lastWord.start + lastWord.length - line.start;
+      if (authoredDuration > duration) duration = authoredDuration;
+    }
   }
   return duration.isNegative ? Duration.zero : duration;
 }
@@ -193,7 +207,11 @@ class DesktopLyricService extends ChangeNotifier {
   int? _currentLyricLineStartMs;
   int _currentLyricLineLengthMs = 0;
   int? _currentLyricLineId;
+  Lyric? _mappedLyric;
+  final Map<int, int> _lineIdByIndex = <int, int>{};
+  final Map<int, int> _gapLineIdByStart = <int, int>{};
   int _nextLyricLineId = 0;
+  int _nextSyntheticLineId = -1;
   Pointer<Void>? _jobHandle;
 
   /// 桌面歌词是否正在运行
@@ -240,6 +258,12 @@ class DesktopLyricService extends ChangeNotifier {
     _progressSyncTimer = null;
     _currentLyricLineStartMs = null;
     _currentLyricLineLengthMs = 0;
+    _currentLyricLineId = null;
+    _mappedLyric = null;
+    _lineIdByIndex.clear();
+    _gapLineIdByStart.clear();
+    _nextLyricLineId = 0;
+    _nextSyntheticLineId = -1;
     _WinJobObject.close(_jobHandle);
     _jobHandle = null;
     notifyListeners();
@@ -419,6 +443,14 @@ class DesktopLyricService extends ChangeNotifier {
     bool? useLightOutline,
     bool? useVerticalDisplayMode,
     bool? showDoubleLine,
+    bool? hoverHide,
+    bool? fullscreenHide,
+    double? lineGap,
+    bool? enablePinTop,
+    bool? useMultiLineMode,
+    int? multiLineAnimation,
+    bool? hidePlayedLines,
+    double? fontOpacity,
   }) {
     sendMessage(
       msg.DesktopLyricConfigMessage(
@@ -441,6 +473,14 @@ class DesktopLyricService extends ChangeNotifier {
         useLightOutline: useLightOutline,
         useVerticalDisplayMode: useVerticalDisplayMode,
         showDoubleLine: showDoubleLine,
+        hoverHide: hoverHide,
+        fullscreenHide: fullscreenHide,
+        lineGap: lineGap,
+        enablePinTop: enablePinTop,
+        useMultiLineMode: useMultiLineMode,
+        multiLineAnimation: multiLineAnimation,
+        hidePlayedLines: hidePlayedLines,
+        fontOpacity: fontOpacity,
       ),
     );
   }
@@ -482,6 +522,11 @@ class DesktopLyricService extends ChangeNotifier {
     _currentLyricLineStartMs = null;
     _currentLyricLineLengthMs = 0;
     _currentLyricLineId = null;
+    _mappedLyric = null;
+    _lineIdByIndex.clear();
+    _gapLineIdByStart.clear();
+    _nextLyricLineId = 0;
+    _nextSyntheticLineId = -1;
     sendMessage(
       msg.NowPlayingChangedMessage(
         nowPlaying.title,
@@ -496,11 +541,17 @@ class DesktopLyricService extends ChangeNotifier {
     LyricLine? nextLine,
     required bool isWordByWord,
     int? highlightDeadlineMs,
+    int? lineIndex,
+    int? syntheticLineId,
   }) {
     final lineStartMs = line.start.inMilliseconds;
     final highlightDuration = desktopLyricHighlightDuration(line);
     final lineLengthMs = highlightDuration.inMilliseconds;
-    final lineId = ++_nextLyricLineId;
+    final lineId =
+        syntheticLineId ??
+        (lineIndex == null
+            ? _nextSyntheticLineId--
+            : _lineIdForIndex(lineIndex));
     final progressMs =
         ((_playbackService.position * 1000).round() - lineStartMs).clamp(
           -60000,
@@ -607,6 +658,110 @@ class DesktopLyricService extends ChangeNotifier {
     _sendLyricProgressSnapshot();
   }
 
+  int _lineIdForIndex(int index) {
+    final existing = _lineIdByIndex[index];
+    if (existing != null) return existing;
+    final lineId = ++_nextLyricLineId;
+    _lineIdByIndex[index] = lineId;
+    return lineId;
+  }
+
+  int _gapLineIdForStart(int startMs) {
+    return _gapLineIdByStart.putIfAbsent(startMs, () => _nextSyntheticLineId--);
+  }
+
+  int syntheticLineIdForStart(int startMs) => _gapLineIdForStart(startMs);
+
+  void sendFullLyricMessage(Lyric lyric) {
+    if (!identical(_mappedLyric, lyric)) {
+      _mappedLyric = lyric;
+      _lineIdByIndex.clear();
+      _gapLineIdByStart.clear();
+      _nextLyricLineId = 0;
+      _nextSyntheticLineId = -1;
+    }
+    final renderStartMs = <int, int>{};
+    final switchStartMs = playService.lyricService.switchStartMsForLyric(lyric);
+    final items = <({int index, LyricLine line, String content})>[];
+    for (var index = 0; index < lyric.lines.length; index++) {
+      final line = lyric.lines[index];
+      final content = line is SyncLyricLine
+          ? line.content
+          : line is UnsyncLyricLine
+          ? line.content
+          : null;
+      if (content == null || content.trim().isEmpty) continue;
+      final startMs = line is SyncLyricLine && line.words.isNotEmpty
+          ? line.words.first.start.inMilliseconds
+          : line.start.inMilliseconds;
+      renderStartMs[index] = startMs;
+      items.add((index: index, line: line, content: content));
+    }
+    final lines = <msg.FullLyricLine>[];
+    void addGap(int startMs, int endMs) {
+      if (endMs - startMs <= _desktopLyricInterludeMinimumMs) return;
+      lines.add(
+        msg.FullLyricLine(
+          _gapLineIdForStart(startMs),
+          null,
+          null,
+          null,
+          startMs,
+          endMs - startMs,
+          null,
+          null,
+          startMs,
+        ),
+      );
+    }
+
+    if (items.isNotEmpty) {
+      addGap(0, renderStartMs[items.first.index]!);
+    }
+    for (var itemIndex = 0; itemIndex < items.length; itemIndex++) {
+      final item = items[itemIndex];
+      final line = item.line;
+      final words = line is SyncLyricLine
+          ? line.words
+                .map(
+                  (word) => msg.LyricWord(
+                    word.start.inMilliseconds - line.start.inMilliseconds,
+                    word.length.inMilliseconds,
+                    word.content,
+                  ),
+                )
+                .toList(growable: false)
+          : null;
+      lines.add(
+        msg.FullLyricLine(
+          _lineIdForIndex(item.index),
+          item.content,
+          line.translation,
+          line.romanLyric,
+          line.start.inMilliseconds,
+          _desktopLyricLineEndMs(lyric, line) - line.start.inMilliseconds,
+          words,
+          lyricHighlightDeadlineMsForLine(lyric, item.index) == null
+              ? null
+              : lyricHighlightDeadlineMsForLine(lyric, item.index)! -
+                    line.start.inMilliseconds,
+          item.index < switchStartMs.length
+              ? switchStartMs[item.index]
+              : renderStartMs[item.index],
+        ),
+      );
+      final lineEnd = _desktopLyricLineEndMs(lyric, line);
+      if (itemIndex + 1 < items.length) {
+        final nextItem = items[itemIndex + 1];
+        final nextSwitchStart = nextItem.index < switchStartMs.length
+            ? switchStartMs[nextItem.index]
+            : renderStartMs[nextItem.index]!;
+        addGap(lineEnd, nextSwitchStart);
+      }
+    }
+    sendMessage(msg.FullLyricChangedMessage(lines));
+  }
+
   void _startProgressSync() {
     _progressSyncTimer?.cancel();
     _progressSyncTimer = Timer.periodic(
@@ -688,13 +843,20 @@ class DesktopLyricService extends ChangeNotifier {
     playService.lyricService.currLyricFuture.then((lyric) {
       if (lyric == null) return;
       if (lyric.lines.isEmpty) return;
+      sendFullLyricMessage(lyric);
       final positionMs = (_playbackService.position * 1000).round();
       final preludeLine = desktopLyricPreludeLineAt(lyric, positionMs);
       if (preludeLine != null) {
+        final firstLine = lyric.lines.firstWhere(
+          (line) => _desktopLyricLineContent(line)?.trim().isNotEmpty == true,
+        );
         sendLyricLineMessage(
           preludeLine,
-          nextLine: lyric.lines.first,
+          nextLine: firstLine,
           isWordByWord: lyric.isWordByWord,
+          syntheticLineId: syntheticLineIdForStart(
+            preludeLine.start.inMilliseconds,
+          ),
         );
         return;
       }
@@ -704,16 +866,95 @@ class DesktopLyricService extends ChangeNotifier {
       );
       final idx = update?.primaryIndex;
       if (idx == null || idx < 0 || idx >= lyric.lines.length) return;
-      final nextLine = idx + 1 < lyric.lines.length
-          ? lyric.lines[idx + 1]
+      var currentIndex = idx;
+      while (currentIndex >= 0 &&
+          !_hasDesktopLyricContent(lyric.lines[currentIndex])) {
+        currentIndex -= 1;
+      }
+      if (currentIndex < 0) return;
+      final currentLine = lyric.lines[currentIndex];
+      var nextIndex = currentIndex + 1;
+      while (nextIndex < lyric.lines.length &&
+          !_hasDesktopLyricContent(lyric.lines[nextIndex])) {
+        nextIndex += 1;
+      }
+      final nextLine = nextIndex < lyric.lines.length
+          ? lyric.lines[nextIndex]
           : null;
       sendLyricLineMessage(
-        lyric.lines[idx],
+        currentLine,
         nextLine: nextLine,
         isWordByWord: lyric.isWordByWord,
-        highlightDeadlineMs: lyricHighlightDeadlineMsForLine(lyric, idx),
+        highlightDeadlineMs: lyricHighlightDeadlineMsForLine(
+          lyric,
+          currentIndex,
+        ),
+        lineIndex: currentIndex,
       );
+      final currentEnd = _desktopLyricLineEndMs(lyric, currentLine);
+      final nextStart = nextLine == null
+          ? currentEnd
+          : _desktopLyricLineStartMs(nextLine);
+      final gapDuration = nextStart - currentEnd;
+      if (nextLine != null &&
+          gapDuration > 0 &&
+          positionMs >= currentEnd &&
+          positionMs < nextStart) {
+        sendLyricLineMessage(
+          SyncLyricLine(
+            Duration(milliseconds: currentEnd),
+            Duration(milliseconds: gapDuration),
+            const [],
+          ),
+          nextLine: nextLine,
+          isWordByWord: lyric.isWordByWord,
+          syntheticLineId: syntheticLineIdForStart(currentEnd),
+        );
+      }
     });
+  }
+
+  String? _desktopLyricLineContent(LyricLine line) {
+    return switch (line) {
+      SyncLyricLine() => line.content,
+      UnsyncLyricLine() => line.content,
+      _ => null,
+    };
+  }
+
+  bool _hasDesktopLyricContent(LyricLine line) {
+    return _desktopLyricLineContent(line)?.trim().isNotEmpty == true;
+  }
+
+  int _desktopLyricLineStartMs(LyricLine line) {
+    return line is SyncLyricLine && line.words.isNotEmpty
+        ? line.words.first.start.inMilliseconds
+        : line.start.inMilliseconds;
+  }
+
+  int _desktopLyricLineEndMs(Lyric lyric, LyricLine line) {
+    var end = line.start.inMilliseconds + line.length.inMilliseconds;
+    if (line is SyncLyricLine && line.words.isNotEmpty) {
+      final lastWord = line.words.last;
+      final wordEnd =
+          lastWord.start.inMilliseconds + lastWord.length.inMilliseconds;
+      if (lyric is! Ttml) return wordEnd;
+      end = end > wordEnd ? end : wordEnd;
+    }
+    if (lyric is Ttml && line is SyncLyricLine) {
+      if (line.bgEnd != null) {
+        end = end > line.bgEnd!.inMilliseconds
+            ? end
+            : line.bgEnd!.inMilliseconds;
+      }
+      if (line.bgWords.isNotEmpty) {
+        final lastBgWord = line.bgWords.last;
+        final bgEnd =
+            lastBgWord.start.inMilliseconds + lastBgWord.length.inMilliseconds;
+        end = end > bgEnd ? end : bgEnd;
+      }
+    }
+    return end;
   }
 
   void _sendInitialConfig() {
@@ -735,8 +976,13 @@ class DesktopLyricService extends ChangeNotifier {
       hideOnPause: settings.desktopHideOnPause,
       showRoman: settings.showDesktopLyricRoman,
       romanPosition: settings.desktopLyricRomanPosition,
-      translationPosition: settings.desktopLyricTranslationPosition,
-      lyricTextAlign: settings.desktopLyricTextAlign,
+      translationPosition: settings.desktopUseVerticalDisplayMode
+          ? settings.desktopLyricTranslationPosition
+          : 1,
+      lyricTextAlign:
+          settings.desktopShowDoubleLine && settings.desktopLyricTextAlign == 3
+          ? 3
+          : settings.desktopLyricTextAlign.clamp(0, 2).toInt(),
       lyricAnimation: settings.desktopLyricAnimation.index,
       enableStroke: settings.desktopEnableStroke,
       backgroundOpacity: settings.desktopBackgroundOpacity,
@@ -746,6 +992,14 @@ class DesktopLyricService extends ChangeNotifier {
       useLightOutline: shouldUseLightDesktopLyricOutline(colors.played),
       useVerticalDisplayMode: settings.desktopUseVerticalDisplayMode,
       showDoubleLine: settings.desktopShowDoubleLine,
+      hoverHide: settings.desktopHoverHide,
+      fullscreenHide: settings.desktopFullscreenHide,
+      lineGap: settings.desktopLineGap,
+      enablePinTop: settings.desktopEnablePinTop,
+      useMultiLineMode: settings.desktopUseMultiLineMode,
+      multiLineAnimation: settings.desktopMultiLineAnimation.index,
+      hidePlayedLines: settings.desktopHidePlayedLines,
+      fontOpacity: settings.desktopFontOpacity,
     );
   }
 
@@ -765,6 +1019,10 @@ class DesktopLyricService extends ChangeNotifier {
     _stderrSubscription = null;
     _progressSyncTimer?.cancel();
     _progressSyncTimer = null;
+    _mappedLyric = null;
+    _lineIdByIndex.clear();
+    _nextLyricLineId = 0;
+    _nextSyntheticLineId = -1;
     _playbackService.positionSyncNotifier.removeListener(_positionSyncListener);
     _playbackService.rate.removeListener(_rateListener);
     // 释放 Job Object 句柄

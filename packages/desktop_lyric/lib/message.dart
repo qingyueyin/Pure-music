@@ -286,6 +286,75 @@ class LyricWord {
       };
 }
 
+class FullLyricLine {
+  final int lineId;
+  final String? content;
+  final String? translation;
+  final String? romanLyric;
+  final int startMs;
+  final int lengthMs;
+  final List<LyricWord>? words;
+  final int? highlightDeadlineMs;
+  final int? switchStartMs;
+
+  const FullLyricLine(
+    this.lineId,
+    this.content,
+    this.translation,
+    this.romanLyric,
+    this.startMs,
+    this.lengthMs,
+    this.words, [
+    this.highlightDeadlineMs,
+    this.switchStartMs,
+  ]);
+
+  factory FullLyricLine.fromJson(Map<String, dynamic> json) => FullLyricLine(
+        (json['lineId'] as num).toInt(),
+        json['content'] as String?,
+        json['translation'] as String?,
+        json['romanLyric'] as String?,
+        (json['startMs'] as num).toInt(),
+        (json['lengthMs'] as num).toInt(),
+        (json['words'] as List?)
+            ?.map((e) => LyricWord.fromJson(e as Map<String, dynamic>))
+            .toList(growable: false),
+        (json['highlightDeadlineMs'] as num?)?.toInt(),
+        (json['switchStartMs'] as num?)?.toInt(),
+      );
+
+  Map<String, dynamic> toJson() => {
+        'lineId': lineId,
+        'content': content,
+        'translation': translation,
+        'romanLyric': romanLyric,
+        'startMs': startMs,
+        'lengthMs': lengthMs,
+        'words': words?.map((word) => word.toJson()).toList(growable: false),
+        if (highlightDeadlineMs != null)
+          'highlightDeadlineMs': highlightDeadlineMs,
+        if (switchStartMs != null) 'switchStartMs': switchStartMs,
+      };
+}
+
+class FullLyricChangedMessage extends Message {
+  final List<FullLyricLine> lines;
+
+  const FullLyricChangedMessage(this.lines);
+
+  factory FullLyricChangedMessage.fromJson(Map<String, dynamic> json) =>
+      FullLyricChangedMessage(
+        (json['lines'] as List)
+            .map((e) => FullLyricLine.fromJson(e as Map<String, dynamic>))
+            .toList(growable: false),
+      );
+
+  @override
+  Map<String, dynamic> toMessageJson() => {
+        'lines': lines.map((line) => line.toJson()).toList(growable: false),
+      };
+}
+
 class ThemeChangedMessage extends Message {
   final bool darkMode;
   final int primary;
@@ -340,6 +409,14 @@ class DesktopLyricConfigMessage extends Message {
   final bool? useLightOutline;
   final bool? useVerticalDisplayMode;
   final bool? showDoubleLine;
+  final bool? hoverHide;
+  final bool? fullscreenHide;
+  final double? lineGap;
+  final bool? enablePinTop;
+  final bool? useMultiLineMode;
+  final int? multiLineAnimation;
+  final bool? hidePlayedLines;
+  final double? fontOpacity;
 
   const DesktopLyricConfigMessage({
     this.lyricFontSize,
@@ -361,7 +438,47 @@ class DesktopLyricConfigMessage extends Message {
     this.useLightOutline,
     this.useVerticalDisplayMode,
     this.showDoubleLine,
+    this.hoverHide,
+    this.fullscreenHide,
+    this.lineGap,
+    this.enablePinTop,
+    this.useMultiLineMode,
+    this.multiLineAnimation,
+    this.hidePlayedLines,
+    this.fontOpacity,
   });
+
+  factory DesktopLyricConfigMessage.fromJson(Map<String, dynamic> json) {
+    return DesktopLyricConfigMessage(
+      lyricFontSize: (json['lyricFontSize'] as num?)?.toDouble(),
+      translationFontSize: (json['translationFontSize'] as num?)?.toDouble(),
+      lyricFontWeight: (json['lyricFontWeight'] as num?)?.toInt(),
+      showLyricTranslation: json['showLyricTranslation'] as bool?,
+      showRoman: json['showRoman'] as bool?,
+      romanPosition: (json['romanPosition'] as num?)?.toInt(),
+      translationPosition: (json['translationPosition'] as num?)?.toInt(),
+      showNowPlayingInfo: json['showNowPlayingInfo'] as bool?,
+      hideOnPause: json['hideOnPause'] as bool?,
+      lyricTextAlign: (json['lyricTextAlign'] as num?)?.toInt(),
+      lyricAnimation: (json['lyricAnimation'] as num?)?.toInt(),
+      enableStroke: json['enableStroke'] as bool?,
+      backgroundOpacity: (json['backgroundOpacity'] as num?)?.toDouble(),
+      playedColor: (json['playedColor'] as num?)?.toInt(),
+      unplayedColor: (json['unplayedColor'] as num?)?.toInt(),
+      followThemeColor: json['followThemeColor'] as bool?,
+      useLightOutline: json['useLightOutline'] as bool?,
+      useVerticalDisplayMode: json['useVerticalDisplayMode'] as bool?,
+      showDoubleLine: json['showDoubleLine'] as bool?,
+      hoverHide: json['hoverHide'] as bool?,
+      fullscreenHide: json['fullscreenHide'] as bool?,
+      lineGap: (json['lineGap'] as num?)?.toDouble(),
+      enablePinTop: json['enablePinTop'] as bool?,
+      useMultiLineMode: json['useMultiLineMode'] as bool?,
+      multiLineAnimation: (json['multiLineAnimation'] as num?)?.toInt(),
+      hidePlayedLines: json['hidePlayedLines'] as bool?,
+      fontOpacity: (json['fontOpacity'] as num?)?.toDouble(),
+    );
+  }
 
   @override
   Map<String, dynamic> toMessageJson() => {
@@ -389,5 +506,14 @@ class DesktopLyricConfigMessage extends Message {
         if (useVerticalDisplayMode != null)
           'useVerticalDisplayMode': useVerticalDisplayMode,
         if (showDoubleLine != null) 'showDoubleLine': showDoubleLine,
+        if (hoverHide != null) 'hoverHide': hoverHide,
+        if (fullscreenHide != null) 'fullscreenHide': fullscreenHide,
+        if (lineGap != null) 'lineGap': lineGap,
+        if (enablePinTop != null) 'enablePinTop': enablePinTop,
+        if (useMultiLineMode != null) 'useMultiLineMode': useMultiLineMode,
+        if (multiLineAnimation != null)
+          'multiLineAnimation': multiLineAnimation,
+        if (hidePlayedLines != null) 'hidePlayedLines': hidePlayedLines,
+        if (fontOpacity != null) 'fontOpacity': fontOpacity,
       };
 }
