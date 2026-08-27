@@ -2,7 +2,9 @@ import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/preference.dart';
 
 import 'package:pure_music/component/danger_confirm_dialog.dart';
+import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/core/list_action_state.dart';
+import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/page/uni_page.dart';
@@ -355,7 +357,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
       title: '歌单',
       subtitle: '${playlists.length} 个歌单',
       contentList: playlists,
-      contentBuilder: (context, item, i, multiSelectController, _) {
+      contentBuilder: (context, item, i, multiSelectController, view) {
         final playlist = playlists[i];
         final isSelected =
             multiSelectController?.selected.contains(playlist) == true;
@@ -437,123 +439,130 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                   child: const Text('多选'),
                 ),
             ],
-            builder: (context, controller, _) => AnimatedContainer(
-              duration: const Duration(milliseconds: 150),
-              decoration: BoxDecoration(
-                color: isSelected
-                    ? scheme.secondaryContainer
-                    : Colors.transparent,
-                borderRadius: AppRadius.smCircular,
-              ),
-              child: Material(
-                type: MaterialType.transparency,
-                child: InkWell(
+            builder: (context, controller, _) => InteractiveSurfaceMotion(
+              enabled:
+                  view == ContentView.table &&
+                  AppSettings.instance.enableStackedScrollEffect,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? scheme.secondaryContainer
+                      : Colors.transparent,
                   borderRadius: AppRadius.smCircular,
-                  onTap: isBusy
-                      ? null
-                      : () {
-                          if (controller.isOpen) {
-                            controller.close();
-                            return;
-                          }
-                          if (!isMultiSelectView) {
-                            context.push(
-                              app_paths.PLAYLIST_DETAIL_PAGE,
-                              extra: playlist,
-                            );
-                            return;
-                          }
-                          if (isSelected) {
-                            multiSelectController?.unselect(playlist);
-                          } else {
-                            multiSelectController?.select(playlist);
-                          }
-                        },
-                  onLongPress: isBusy
-                      ? null
-                      : () {
-                          if (multiSelectController == null) return;
-                          if (isMultiSelectView) return;
-                          multiSelectController.useMultiSelectView(true);
-                          multiSelectController.select(playlist);
-                        },
-                  onSecondaryTapDown: (details) {
-                    if (isBusy || isMultiSelectView) return;
-                    controller.open(
-                      position: details.localPosition.translate(0, -240),
-                    );
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                    child: Row(
-                      children: [
-                        _PlaylistCover(playlist: playlist),
-                        const SizedBox(width: 16.0),
-                        Expanded(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                playlist.name,
-                                softWrap: false,
-                                maxLines: 1,
-                                style: const TextStyle(
-                                  fontSize: AppType.subtitle,
+                ),
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: InkWell(
+                    borderRadius: AppRadius.smCircular,
+                    onTap: isBusy
+                        ? null
+                        : () {
+                            if (controller.isOpen) {
+                              controller.close();
+                              return;
+                            }
+                            if (!isMultiSelectView) {
+                              context.push(
+                                app_paths.PLAYLIST_DETAIL_PAGE,
+                                extra: playlist,
+                              );
+                              return;
+                            }
+                            if (isSelected) {
+                              multiSelectController?.unselect(playlist);
+                            } else {
+                              multiSelectController?.select(playlist);
+                            }
+                          },
+                    onLongPress: isBusy
+                        ? null
+                        : () {
+                            if (multiSelectController == null) return;
+                            if (isMultiSelectView) return;
+                            multiSelectController.useMultiSelectView(true);
+                            multiSelectController.select(playlist);
+                          },
+                    onSecondaryTapDown: (details) {
+                      if (isBusy || isMultiSelectView) return;
+                      controller.open(
+                        position: details.localPosition.translate(0, -240),
+                      );
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                      child: Row(
+                        children: [
+                          _PlaylistCover(playlist: playlist),
+                          const SizedBox(width: 16.0),
+                          Expanded(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  playlist.name,
+                                  softWrap: false,
+                                  maxLines: 1,
+                                  style: const TextStyle(
+                                    fontSize: AppType.subtitle,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 4.0),
-                              Text(
-                                '${playlist.paths.length}首乐曲',
-                                softWrap: false,
-                                maxLines: 1,
-                                style: TextStyle(
-                                  color: scheme.onSurface.withAlpha(153),
+                                const SizedBox(height: 4.0),
+                                Text(
+                                  '${playlist.paths.length}首乐曲',
+                                  softWrap: false,
+                                  maxLines: 1,
+                                  style: TextStyle(
+                                    color: scheme.onSurface.withAlpha(153),
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
-                        if (isMultiSelectView)
-                          Checkbox(
-                            value: isSelected,
-                            onChanged: isBusy
-                                ? null
-                                : (v) {
-                                    if (v == true) {
-                                      multiSelectController?.select(playlist);
-                                    } else {
-                                      multiSelectController?.unselect(playlist);
-                                    }
-                                  },
-                          )
-                        else ...[
-                          IconButton(
-                            tooltip: '编辑',
-                            onPressed: isBusy
-                                ? null
-                                : () => editPlaylist(context, playlist),
-                            icon: const Icon(Symbols.edit),
-                          ),
-                          const SizedBox(width: 8.0),
-                          IconButton(
-                            tooltip: '删除',
-                            onPressed: isBusy
-                                ? null
-                                : () => _deletePlaylist(playlist),
-                            color: scheme.error,
-                            icon: isDeleting
-                                ? const SizedBox(
-                                    width: 20.0,
-                                    height: 20.0,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2.0,
-                                    ),
-                                  )
-                                : const Icon(Symbols.delete),
-                          ),
+                          if (isMultiSelectView)
+                            Checkbox(
+                              value: isSelected,
+                              onChanged: isBusy
+                                  ? null
+                                  : (v) {
+                                      if (v == true) {
+                                        multiSelectController?.select(playlist);
+                                      } else {
+                                        multiSelectController?.unselect(
+                                          playlist,
+                                        );
+                                      }
+                                    },
+                            )
+                          else ...[
+                            IconButton(
+                              tooltip: '编辑',
+                              onPressed: isBusy
+                                  ? null
+                                  : () => editPlaylist(context, playlist),
+                              icon: const Icon(Symbols.edit),
+                            ),
+                            const SizedBox(width: 8.0),
+                            IconButton(
+                              tooltip: '删除',
+                              onPressed: isBusy
+                                  ? null
+                                  : () => _deletePlaylist(playlist),
+                              color: scheme.error,
+                              icon: isDeleting
+                                  ? const SizedBox(
+                                      width: 20.0,
+                                      height: 20.0,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2.0,
+                                      ),
+                                    )
+                                  : const Icon(Symbols.delete),
+                            ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   ),
                 ),

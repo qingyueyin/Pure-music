@@ -49,6 +49,76 @@ class MotionCurve {
   static const entrance = Cubic(0.23, 1, 0.32, 1);
 }
 
+class InteractiveSurfaceMotion extends StatefulWidget {
+  const InteractiveSurfaceMotion({
+    super.key,
+    required this.child,
+    this.enabled = true,
+  });
+
+  final Widget child;
+  final bool enabled;
+
+  @override
+  State<InteractiveSurfaceMotion> createState() =>
+      _InteractiveSurfaceMotionState();
+}
+
+class _InteractiveSurfaceMotionState extends State<InteractiveSurfaceMotion> {
+  bool _hovered = false;
+  int? _primaryPointer;
+
+  void _setHovered(bool hovered) {
+    if (_hovered == hovered) return;
+    setState(() => _hovered = hovered);
+  }
+
+  void _handlePointerDown(PointerDownEvent event) {
+    if (event.buttons & kPrimaryButton == 0) return;
+    setState(() => _primaryPointer = event.pointer);
+  }
+
+  void _handlePointerEnd(PointerEvent event) {
+    if (_primaryPointer != event.pointer) return;
+    setState(() => _primaryPointer = null);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final movementEnabled =
+        widget.enabled && !MediaQuery.disableAnimationsOf(context);
+    if (!movementEnabled) return widget.child;
+
+    final pressed = _primaryPointer != null;
+    final target = pressed ? -1.0 : (_hovered ? 1.0 : 0.0);
+    return MouseRegion(
+      opaque: false,
+      onEnter: (_) => _setHovered(true),
+      onExit: (_) => _setHovered(false),
+      child: Listener(
+        onPointerDown: _handlePointerDown,
+        onPointerUp: _handlePointerEnd,
+        onPointerCancel: _handlePointerEnd,
+        child: TweenAnimationBuilder<double>(
+          duration: MotionDuration.xFast,
+          curve: MotionCurve.entrance,
+          tween: Tween(begin: target, end: target),
+          builder: (context, value, child) {
+            final hoverProgress = value.clamp(0.0, 1.0);
+            final pressProgress = (-value).clamp(0.0, 1.0);
+            final scale = 1.0 + hoverProgress * 0.012 - pressProgress * 0.02;
+            return Transform.translate(
+              offset: Offset(0, -2.0 * hoverProgress),
+              child: Transform.scale(scale: scale, child: child),
+            );
+          },
+          child: widget.child,
+        ),
+      ),
+    );
+  }
+}
+
 /// 标记子树处于堆叠滚动效果作用域内。
 /// 该作用域内的行会跳过入场动画，避免与堆叠变换叠加冲突。
 class StackedEffectScope extends InheritedWidget {

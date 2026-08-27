@@ -6,6 +6,7 @@ import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/core/menu_styles.dart';
+import 'package:pure_music/core/settings.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -102,183 +103,192 @@ class _AlbumTileState extends State<AlbumTile> {
         ],
         builder: (context, controller, _) => DirectionalListItemEntrance(
           identity: widget.album,
-          child: AnimatedContainer(
-            duration: MotionDuration.fast,
-            curve: MotionCurve.standard,
-            decoration: BoxDecoration(
-              color: isSelected
-                  ? scheme.secondaryContainer
-                  : Colors.transparent,
-              borderRadius: AppRadius.smCircular,
-            ),
-            child: Material(
-              type: MaterialType.transparency,
-              child: InkWell(
-                hoverColor: widget.view == ContentView.list
-                    ? scheme.onSurface.withValues(alpha: Alpha.hover)
+          child: InteractiveSurfaceMotion(
+            enabled:
+                widget.view == ContentView.table &&
+                AppSettings.instance.enableStackedScrollEffect,
+            child: AnimatedContainer(
+              duration: MotionDuration.fast,
+              curve: MotionCurve.standard,
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? scheme.secondaryContainer
                     : Colors.transparent,
-                onTap: () {
-                  if (controller.isOpen) {
-                    controller.close();
-                    return;
-                  }
-
-                  if (!isMultiSelectView) {
-                    if (hasWorks) {
-                      context.push(
-                        app_paths.ALBUM_DETAIL_PAGE,
-                        extra: widget.album,
-                      );
-                    }
-                    return;
-                  }
-
-                  if (isSelected) {
-                    widget.multiSelectController?.unselect(widget.album);
-                  } else {
-                    widget.multiSelectController?.select(widget.album);
-                  }
-                },
-                onLongPress: () {
-                  if (widget.multiSelectController == null) return;
-                  if (isMultiSelectView) return;
-                  widget.multiSelectController!.useMultiSelectView(true);
-                  widget.multiSelectController!.select(widget.album);
-                },
-                onSecondaryTapDown: (details) {
-                  if (isMultiSelectView) return;
-                  controller.open(
-                    position: details.localPosition.translate(0, -140),
-                  );
-                },
                 borderRadius: AppRadius.smCircular,
-                child: Stack(
-                  children: [
-                    widget.view == ContentView.list
-                        ? Padding(
-                            padding: const EdgeInsets.all(8.0),
-                            child: Row(
-                              children: [
-                                coverBuilder(),
-                                Flexible(
-                                  child: Padding(
-                                    padding: const EdgeInsets.only(left: 12.0),
-                                    child: Text(
-                                      widget.album.name,
-                                      softWrap: false,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(color: scheme.onSurface),
+              ),
+              child: Material(
+                type: MaterialType.transparency,
+                child: InkWell(
+                  hoverColor: widget.view == ContentView.list
+                      ? scheme.onSurface.withValues(alpha: Alpha.hover)
+                      : Colors.transparent,
+                  onTap: () {
+                    if (controller.isOpen) {
+                      controller.close();
+                      return;
+                    }
+
+                    if (!isMultiSelectView) {
+                      if (hasWorks) {
+                        context.push(
+                          app_paths.ALBUM_DETAIL_PAGE,
+                          extra: widget.album,
+                        );
+                      }
+                      return;
+                    }
+
+                    if (isSelected) {
+                      widget.multiSelectController?.unselect(widget.album);
+                    } else {
+                      widget.multiSelectController?.select(widget.album);
+                    }
+                  },
+                  onLongPress: () {
+                    if (widget.multiSelectController == null) return;
+                    if (isMultiSelectView) return;
+                    widget.multiSelectController!.useMultiSelectView(true);
+                    widget.multiSelectController!.select(widget.album);
+                  },
+                  onSecondaryTapDown: (details) {
+                    if (isMultiSelectView) return;
+                    controller.open(
+                      position: details.localPosition.translate(0, -140),
+                    );
+                  },
+                  borderRadius: AppRadius.smCircular,
+                  child: Stack(
+                    children: [
+                      widget.view == ContentView.list
+                          ? Padding(
+                              padding: const EdgeInsets.all(8.0),
+                              child: Row(
+                                children: [
+                                  coverBuilder(),
+                                  Flexible(
+                                    child: Padding(
+                                      padding: const EdgeInsets.only(
+                                        left: 12.0,
+                                      ),
+                                      child: Text(
+                                        widget.album.name,
+                                        softWrap: false,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: scheme.onSurface,
+                                        ),
+                                      ),
                                     ),
                                   ),
-                                ),
-                                if (isMultiSelectView)
-                                  Checkbox(
-                                    value: isSelected,
-                                    onChanged: (v) {
-                                      if (v == true) {
-                                        widget.multiSelectController?.select(
-                                          widget.album,
-                                        );
-                                      } else {
-                                        widget.multiSelectController?.unselect(
-                                          widget.album,
-                                        );
-                                      }
-                                    },
-                                  ),
-                              ],
-                            ),
-                          )
-                        : Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: SizedBox(
-                                  width: double.infinity,
-                                  child: coverBuilder(),
-                                ),
+                                  if (isMultiSelectView)
+                                    Checkbox(
+                                      value: isSelected,
+                                      onChanged: (v) {
+                                        if (v == true) {
+                                          widget.multiSelectController?.select(
+                                            widget.album,
+                                          );
+                                        } else {
+                                          widget.multiSelectController
+                                              ?.unselect(widget.album);
+                                        }
+                                      },
+                                    ),
+                                ],
                               ),
-                              ScrollAwareFutureBuilder<AlbumColor?>(
-                                identity: '$_currentCoverIdentity|color',
-                                future: () => hasWorks
-                                    ? AlbumColorCache.instance.getAlbumColor(
-                                        widget.album,
-                                      )
-                                    : Future<AlbumColor?>.value(null),
-                                builder: (context, snapshot) {
-                                  if (snapshot.data == null) {
-                                    return Padding(
-                                      padding: const EdgeInsets.fromLTRB(
-                                        4.0,
-                                        8.0,
-                                        4.0,
-                                        4.0,
+                            )
+                          : Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: SizedBox(
+                                    width: double.infinity,
+                                    child: coverBuilder(),
+                                  ),
+                                ),
+                                ScrollAwareFutureBuilder<AlbumColor?>(
+                                  identity: '$_currentCoverIdentity|color',
+                                  future: () => hasWorks
+                                      ? AlbumColorCache.instance.getAlbumColor(
+                                          widget.album,
+                                        )
+                                      : Future<AlbumColor?>.value(null),
+                                  builder: (context, snapshot) {
+                                    if (snapshot.data == null) {
+                                      return Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                          4.0,
+                                          8.0,
+                                          4.0,
+                                          4.0,
+                                        ),
+                                        child: Text(
+                                          widget.album.name,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            color: scheme.onSurface,
+                                            fontWeight: AppType.weightBold,
+                                          ),
+                                        ),
+                                      );
+                                    }
+
+                                    final primaryColor = snapshot.data!.primary;
+                                    final onPrimaryColor =
+                                        snapshot.data!.onPrimary;
+                                    return Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12.0,
+                                        vertical: 8.0,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: primaryColor,
+                                        borderRadius:
+                                            const BorderRadius.vertical(
+                                              bottom: Radius.circular(8.0),
+                                            ),
                                       ),
                                       child: Text(
                                         widget.album.name,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
-                                          color: scheme.onSurface,
+                                          color: onPrimaryColor,
                                           fontWeight: AppType.weightBold,
                                         ),
                                       ),
                                     );
-                                  }
-
-                                  final primaryColor = snapshot.data!.primary;
-                                  final onPrimaryColor =
-                                      snapshot.data!.onPrimary;
-                                  return Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12.0,
-                                      vertical: 8.0,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: primaryColor,
-                                      borderRadius: const BorderRadius.vertical(
-                                        bottom: Radius.circular(8.0),
-                                      ),
-                                    ),
-                                    child: Text(
-                                      widget.album.name,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color: onPrimaryColor,
-                                        fontWeight: AppType.weightBold,
-                                      ),
-                                    ),
+                                  },
+                                ),
+                              ],
+                            ),
+                      if (isMultiSelectView && widget.view != ContentView.list)
+                        Positioned(
+                          top: 6,
+                          right: 6,
+                          child: Material(
+                            type: MaterialType.transparency,
+                            child: Checkbox(
+                              value: isSelected,
+                              onChanged: (v) {
+                                if (v == true) {
+                                  widget.multiSelectController?.select(
+                                    widget.album,
                                   );
-                                },
-                              ),
-                            ],
-                          ),
-                    if (isMultiSelectView && widget.view != ContentView.list)
-                      Positioned(
-                        top: 6,
-                        right: 6,
-                        child: Material(
-                          type: MaterialType.transparency,
-                          child: Checkbox(
-                            value: isSelected,
-                            onChanged: (v) {
-                              if (v == true) {
-                                widget.multiSelectController?.select(
-                                  widget.album,
-                                );
-                              } else {
-                                widget.multiSelectController?.unselect(
-                                  widget.album,
-                                );
-                              }
-                            },
+                                } else {
+                                  widget.multiSelectController?.unselect(
+                                    widget.album,
+                                  );
+                                }
+                              },
+                            ),
                           ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
