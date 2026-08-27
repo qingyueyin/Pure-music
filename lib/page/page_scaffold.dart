@@ -27,10 +27,7 @@ class PageScaffold extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 16.0,
-        vertical: 8.0,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -41,8 +38,7 @@ class PageScaffold extends StatelessWidget {
                 child: switch (screenType) {
                   ScreenType.small => _buildSmallLayout(scheme),
                   ScreenType.medium ||
-                  ScreenType.large =>
-                    _buildWideLayout(scheme),
+                  ScreenType.large => _buildWideLayout(scheme),
                 },
               );
             },
