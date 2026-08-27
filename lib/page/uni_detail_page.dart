@@ -117,6 +117,8 @@ class UniDetailPage<P, S, T> extends StatefulWidget {
 }
 
 class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
+  static const _headerCollapseExtent = 120.0;
+
   late SortMethodDesc<S>? currSortMethod = resolveSortMethod(
     widget.pref,
     widget.sortMethods,
@@ -145,6 +147,17 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
           : _tertiaryScrollController;
     }
     return _combinedScrollController;
+  }
+
+  bool _enableHeaderCollapse(BuildContext context) =>
+      AppSettings.instance.enableStackedScrollEffect &&
+      !MediaQuery.disableAnimationsOf(context) &&
+      MediaQuery.sizeOf(context).width >= 560;
+
+  double get _headerCollapseProgress {
+    final positions = _activeScrollController.positions;
+    if (positions.length != 1) return 0;
+    return (positions.first.pixels / _headerCollapseExtent).clamp(0.0, 1.0);
   }
 
   /// 当前正在播放乐曲在列表中的索引；不在列表中或当前视图不可定位时返回 null。
@@ -389,23 +402,38 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
             padding: const EdgeInsets.all(16.0),
             child: Column(
               children: [
-                _UniDetailPageHeader(
-                  pic: widget.primaryPic,
-                  backgroundPic: widget.backgroundPic,
-                  picShape: widget.picShape,
-                  title: widget.title,
-                  subtitle: widget.subtitle,
-                  actions: actions,
-                  multiSelectController: multiSelectController,
-                  multiSelectViewActions: widget.multiSelectViewActions,
-                  onPicTap: widget.onPrimaryPicTap,
-                  picBusy: widget.primaryPicBusy,
-                  searchController: widget.enableSearch
-                      ? _searchController
-                      : null,
-                  searchQuery: widget.searchQuery,
-                  onSearchChanged: widget.onSearchChanged,
-                  useAppBackground: useAppBackground,
+                ListenableBuilder(
+                  listenable: AppSettings.listMotionNotifier,
+                  builder: (context, _) {
+                    Widget buildHeader(double collapseProgress) =>
+                        _UniDetailPageHeader(
+                          pic: widget.primaryPic,
+                          backgroundPic: widget.backgroundPic,
+                          picShape: widget.picShape,
+                          title: widget.title,
+                          subtitle: widget.subtitle,
+                          actions: actions,
+                          multiSelectController: multiSelectController,
+                          multiSelectViewActions: widget.multiSelectViewActions,
+                          onPicTap: widget.onPrimaryPicTap,
+                          picBusy: widget.primaryPicBusy,
+                          searchController: widget.enableSearch
+                              ? _searchController
+                              : null,
+                          searchQuery: widget.searchQuery,
+                          onSearchChanged: widget.onSearchChanged,
+                          useAppBackground: useAppBackground,
+                          collapseProgress: collapseProgress,
+                        );
+                    if (!_enableHeaderCollapse(context)) {
+                      return buildHeader(0);
+                    }
+                    return AnimatedBuilder(
+                      animation: _activeScrollController,
+                      builder: (context, _) =>
+                          buildHeader(_headerCollapseProgress),
+                    );
+                  },
                 ),
                 if (widget.enableTabs && hasTertiaryContent) ...[
                   const SizedBox(height: 16.0),
@@ -1042,6 +1070,7 @@ class _UniDetailPageHeader extends StatelessWidget {
     this.searchQuery = '',
     this.onSearchChanged,
     required this.useAppBackground,
+    this.collapseProgress = 0,
   });
 
   final Future<ImageProvider?> pic;
@@ -1059,6 +1088,7 @@ class _UniDetailPageHeader extends StatelessWidget {
   final String searchQuery;
   final ValueChanged<String>? onSearchChanged;
   final bool useAppBackground;
+  final double collapseProgress;
 
   @override
   Widget build(BuildContext context) {
@@ -1069,16 +1099,24 @@ class _UniDetailPageHeader extends StatelessWidget {
       builder: (context, constraints) {
         final compact =
             constraints.maxWidth.isFinite && constraints.maxWidth < 560;
-        final coverSize = compact ? 156.0 : 200.0;
-        final gap = compact ? 12.0 : 16.0;
+        final expandedCoverSize = compact ? 156.0 : 200.0;
+        final progress = compact
+            ? 0.0
+            : Curves.easeOutCubic.transform(collapseProgress.clamp(0.0, 1.0));
+        final coverSize = lerpDouble(expandedCoverSize, 72.0, progress)!;
+        final gap = lerpDouble(compact ? 12.0 : 16.0, 12.0, progress)!;
+        final titleSize = lerpDouble(
+          compact ? AppType.pageTitle : AppType.hero,
+          AppType.pageTitle,
+          progress,
+        )!;
+        final expandedContentOpacity = 1.0 - progress;
 
-        return SizedBox(
-          height: coverSize,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (!useAppBackground) ...[
-                FutureBuilder(
+        return Stack(
+          children: [
+            if (!useAppBackground) ...[
+              Positioned.fill(
+                child: FutureBuilder(
                   future: backgroundPic,
                   builder: (context, snapshot) {
                     if (snapshot.data == null) return const SizedBox.shrink();
@@ -1091,7 +1129,9 @@ class _UniDetailPageHeader extends StatelessWidget {
                     );
                   },
                 ),
-                switch (brightness) {
+              ),
+              Positioned.fill(
+                child: switch (brightness) {
                   Brightness.dark => ColoredBox(
                     color: scheme.surface.withValues(alpha: 0.38),
                   ),
@@ -1099,71 +1139,79 @@ class _UniDetailPageHeader extends StatelessWidget {
                     color: scheme.surface.withValues(alpha: 0.70),
                   ),
                 },
-                BackdropFilter(
+              ),
+              Positioned.fill(
+                child: BackdropFilter(
                   filter: _UniDetailPageHeader._blurFilter,
                   child: const ColoredBox(color: Colors.transparent),
                 ),
-              ],
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  _HoverableCover(
-                    futurePic: pic,
-                    picShape: picShape,
-                    scheme: scheme,
+              ),
+            ],
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                _HoverableCover(
+                  futurePic: pic,
+                  picShape: picShape,
+                  scheme: scheme,
+                  size: coverSize,
+                  onTap: onPicTap,
+                  busy: picBusy,
+                  placeholder: Icon(
+                    Symbols.queue_music,
                     size: coverSize,
-                    onTap: onPicTap,
-                    busy: picBusy,
-                    placeholder: Icon(
-                      Symbols.queue_music,
-                      size: coverSize,
-                      color: scheme.onSurface,
-                    ),
+                    color: scheme.onSurface,
                   ),
-                  SizedBox(width: gap),
-                  Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            title,
-                            style: TextStyle(
-                              fontSize: compact
-                                  ? AppType.pageTitle
-                                  : AppType.hero,
-                              color: scheme.onSurface,
-                              fontWeight: AppType.weightBold,
+                ),
+                SizedBox(width: gap),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: titleSize,
+                          color: scheme.onSurface,
+                          fontWeight: AppType.weightBold,
+                        ),
+                      ),
+                      ClipRect(
+                        child: Align(
+                          alignment: Alignment.topLeft,
+                          heightFactor: expandedContentOpacity,
+                          child: Opacity(
+                            opacity: expandedContentOpacity,
+                            child: Text(
+                              subtitle,
+                              style: TextStyle(
+                                fontSize: AppType.body,
+                                color: scheme.onSurface,
+                              ),
                             ),
                           ),
                         ),
-                        Text(
-                          subtitle,
-                          style: TextStyle(
-                            fontSize: AppType.body,
-                            color: scheme.onSurface,
-                          ),
-                        ),
-                        const SizedBox(height: 8.0),
-                        _ActionsRow(
-                          actions: multiSelectController == null
-                              ? actions
-                              : multiSelectController!.enableMultiSelectView
-                              ? multiSelectViewActions!
-                              : actions,
-                          searchController: searchController,
-                          searchQuery: searchQuery,
-                          onSearchChanged: onSearchChanged,
-                          scheme: scheme,
-                        ),
-                      ],
-                    ),
+                      ),
+                      SizedBox(height: 8.0 * expandedContentOpacity),
+                      _ActionsRow(
+                        actions: multiSelectController == null
+                            ? actions
+                            : multiSelectController!.enableMultiSelectView
+                            ? multiSelectViewActions!
+                            : actions,
+                        searchController: searchController,
+                        searchQuery: searchQuery,
+                        onSearchChanged: onSearchChanged,
+                        scheme: scheme,
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            ],
-          ),
+                ),
+              ],
+            ),
+          ],
         );
       },
     );
