@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1282059799;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -3457955;
 
 // Section: executor
 
@@ -1772,6 +1772,53 @@ fn wire__crate__api__utils__pick_single_folder_impl(
         },
     )
 }
+fn wire__crate__api__smart_sort__plan_smart_sort_json_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "plan_smart_sort_json",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_payload_json = <String>::sse_decode(&mut deserializer);
+            let api_climax_position = <f64>::sse_decode(&mut deserializer);
+            let api_contrast = <f64>::sse_decode(&mut deserializer);
+            let api_take_count = <usize>::sse_decode(&mut deserializer);
+            let api_smoothness = <f64>::sse_decode(&mut deserializer);
+            let api_outro_style = <i32>::sse_decode(&mut deserializer);
+            let api_taste = <i32>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::smart_sort::plan_smart_sort_json(
+                        api_payload_json,
+                        api_climax_position,
+                        api_contrast,
+                        api_take_count,
+                        api_smoothness,
+                        api_outro_style,
+                        api_taste,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__smart_transition__plan_smart_transition_json_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -3226,36 +3273,42 @@ fn pde_ffi_dispatcher_primary_impl(
         41 => wire__crate__api__ne__ne_lyric_impl(port, ptr, rust_vec_len, data_len),
         42 => wire__crate__api__ne__ne_search_impl(port, ptr, rust_vec_len, data_len),
         43 => wire__crate__api__utils__pick_single_folder_impl(port, ptr, rust_vec_len, data_len),
-        44 => wire__crate__api__smart_transition__plan_smart_transition_json_impl(
+        44 => wire__crate__api__smart_sort__plan_smart_sort_json_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        45 => wire__crate__api__tag_reader__read_audio_extra_metadata_impl(
+        45 => wire__crate__api__smart_transition__plan_smart_transition_json_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        46 => wire__crate__api__library_db__read_index_from_sqlite_impl(
+        46 => wire__crate__api__tag_reader__read_audio_extra_metadata_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        47 => wire__crate__api__utils__show_in_explorer_impl(port, ptr, rust_vec_len, data_len),
-        51 => wire__crate__api__system_theme__system_theme_default_impl(
+        47 => wire__crate__api__library_db__read_index_from_sqlite_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        57 => wire__crate__api__tag_reader__update_index_impl(port, ptr, rust_vec_len, data_len),
-        58 => {
+        48 => wire__crate__api__utils__show_in_explorer_impl(port, ptr, rust_vec_len, data_len),
+        52 => wire__crate__api__system_theme__system_theme_default_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        58 => wire__crate__api__tag_reader__update_index_impl(port, ptr, rust_vec_len, data_len),
+        59 => {
             wire__crate__api__tag_reader__write_audio_tags_impl(port, ptr, rust_vec_len, data_len)
         }
-        59 => wire__crate__api__tag_reader__write_lyric_to_path_impl(
+        60 => wire__crate__api__tag_reader__write_lyric_to_path_impl(
             port,
             ptr,
             rust_vec_len,
@@ -3309,32 +3362,32 @@ fn pde_ffi_dispatcher_sync_impl(
             rust_vec_len,
             data_len,
         ),
-        48 => wire__crate__api__smart_transition__smart_transition_analysis_config_json_impl(
+        49 => wire__crate__api__smart_transition__smart_transition_analysis_config_json_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        49 => wire__crate__api__smart_transition__smart_transition_capabilities_json_impl(
+        50 => wire__crate__api__smart_transition__smart_transition_capabilities_json_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        50 => wire__crate__api__smart_transition__smart_transition_diagnostics_json_impl(
+        51 => wire__crate__api__smart_transition__smart_transition_diagnostics_json_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        52 => wire__crate__api__system_theme__system_theme_get_system_theme_impl(
+        53 => wire__crate__api__system_theme__system_theme_get_system_theme_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        53 => {
+        54 => {
             wire__crate__api__system_volume__system_volume_dispose_impl(ptr, rust_vec_len, data_len)
         }
-        54 => wire__crate__api__system_volume__system_volume_get_impl(ptr, rust_vec_len, data_len),
-        55 => wire__crate__api__system_volume__system_volume_init_impl(ptr, rust_vec_len, data_len),
-        56 => wire__crate__api__system_volume__system_volume_set_impl(ptr, rust_vec_len, data_len),
+        55 => wire__crate__api__system_volume__system_volume_get_impl(ptr, rust_vec_len, data_len),
+        56 => wire__crate__api__system_volume__system_volume_init_impl(ptr, rust_vec_len, data_len),
+        57 => wire__crate__api__system_volume__system_volume_set_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }

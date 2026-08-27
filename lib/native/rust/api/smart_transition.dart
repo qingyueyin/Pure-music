@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `active_job`, `analyze_with_cache`, `get`, `insert`, `memory_cache`
+// These functions are ignored because they are not marked as `pub`: `active_jobs`, `analyze_with_cache`, `get`, `insert`, `memory_cache`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MemoryProfileCache`, `MemoryProfile`
 // These functions are ignored (category: IgnoreBecauseOwnerTyShouldIgnore): `default`
 

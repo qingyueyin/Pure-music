@@ -12,6 +12,7 @@ import 'package:pure_music/page/artist_detail_page.dart';
 import 'package:pure_music/page/artists_page.dart';
 import 'package:pure_music/page/audio_detail_page.dart';
 import 'package:pure_music/page/audios_page.dart';
+import 'package:pure_music/page/concert_page.dart';
 import 'package:pure_music/page/folder_detail_page.dart';
 import 'package:pure_music/page/folders_page.dart';
 import 'package:pure_music/page/now_playing_page/page.dart';
@@ -34,6 +35,7 @@ import 'package:pure_music/component/app_scroll_behavior.dart';
 import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/core/immersive.dart';
 import 'package:pure_music/core/memory_monitor.dart';
+import 'package:pure_music/core/mouse_back_exit.dart';
 import 'package:pure_music/core/matcher.dart' hide logger;
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/route_visibility.dart';
@@ -236,6 +238,8 @@ class _EntryState extends State<Entry>
     final routerContext = routerKey.currentContext;
     if (routerContext == null) return;
     final router = GoRouter.of(routerContext);
+    if (MouseBackExit.consumeRoute(router.state.uri.path)) return;
+    if (MouseBackExit.consume()) return;
 
     if (ImmersiveModeController.instance.enabled) {
       await ImmersiveModeController.instance.exit();
@@ -640,6 +644,14 @@ class _EntryState extends State<Entry>
           StatefulShellBranch(
             routes: [
               GoRoute(
+                path: app_paths.CONCERT_PAGE,
+                builder: (context, state) => const ConcertPage(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
                 path: app_paths.STATS_PAGE,
                 builder: (context, state) => const StatsPage(),
               ),
@@ -653,17 +665,15 @@ class _EntryState extends State<Entry>
                 routes: [
                   GoRoute(
                     path: 'issue',
-                    pageBuilder: (context, state) => SettingsPageTransition(
+                    pageBuilder: (context, state) => NoTransitionPage(
                       key: state.pageKey,
-                      maintainState: true,
                       child: const SettingsIssuePage(),
                     ),
                   ),
                   GoRoute(
                     path: 'group/:id',
-                    pageBuilder: (context, state) => SettingsPageTransition(
+                    pageBuilder: (context, state) => NoTransitionPage(
                       key: state.pageKey,
-                      maintainState: true,
                       child: SettingsGroupPage(
                         groupId: state.pathParameters['id']!,
                       ),

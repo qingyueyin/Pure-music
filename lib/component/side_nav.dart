@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'dart:math' as math;
 
 import 'package:pure_music/core/design_tokens.dart';
+import 'package:pure_music/core/mouse_back_exit.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/responsive_builder.dart';
@@ -25,16 +26,13 @@ final destinations = <DestinationDesc>[
   DestinationDesc(Symbols.album, '专辑', app_paths.ALBUMS_PAGE),
   DestinationDesc(Symbols.folder, '文件夹', app_paths.FOLDERS_PAGE),
   DestinationDesc(Symbols.list, '歌单', app_paths.PLAYLISTS_PAGE),
+  DestinationDesc(Symbols.stadium, '演出模式', app_paths.CONCERT_PAGE),
   DestinationDesc(Symbols.bar_chart, '统计', app_paths.STATS_PAGE),
   DestinationDesc(Symbols.settings, '设置', app_paths.SETTINGS_PAGE),
 ];
 
 class SideNav extends StatefulWidget {
-  const SideNav({
-    super.key,
-    this.navigationShell,
-    this.onExpandedChanged,
-  });
+  const SideNav({super.key, this.navigationShell, this.onExpandedChanged});
 
   final StatefulNavigationShell? navigationShell;
   final ValueChanged<bool>? onExpandedChanged;
@@ -55,7 +53,8 @@ class _SideNavState extends State<SideNav> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final navShell = widget.navigationShell;
-    final selectedIndex = navShell?.currentIndex ??
+    final selectedIndex =
+        navShell?.currentIndex ??
         destinations.indexWhere(
           (d) => GoRouterState.of(context).uri.toString().startsWith(d.desPath),
         );
@@ -82,6 +81,7 @@ class _SideNavState extends State<SideNav> {
 
     void onDestinationDoubleTap(int value) {
       if (selectedIndex != value) return;
+      if (MouseBackExit.consumeRoute(destinations[value].desPath)) return;
 
       if (navShell != null) {
         navShell.goBranch(value, initialLocation: true);
@@ -203,13 +203,13 @@ class _SmoothLargeSideNav extends StatelessWidget {
                   icon: isDrawer
                       ? Symbols.close
                       : expandedVisual
-                          ? Symbols.menu_open
-                          : Symbols.menu,
+                      ? Symbols.menu_open
+                      : Symbols.menu,
                   label: isDrawer
                       ? '关闭'
                       : expandedVisual
-                          ? '收起'
-                          : '展开',
+                      ? '收起'
+                      : '展开',
                   expandedT: t,
                   selected: false,
                   onTap: onToggle,
@@ -225,7 +225,8 @@ class _SmoothLargeSideNav extends StatelessWidget {
                           children: [
                             if (selectedIndex != null && selectedIndex! >= 0)
                               TweenAnimationBuilder<double>(
-                                duration: MediaQuery.disableAnimationsOf(context)
+                                duration:
+                                    MediaQuery.disableAnimationsOf(context)
                                     ? Duration.zero
                                     : MotionDuration.fast,
                                 curve: MotionCurve.entrance,
@@ -235,9 +236,9 @@ class _SmoothLargeSideNav extends StatelessWidget {
                                 ),
                                 builder: (context, index, child) =>
                                     Transform.translate(
-                                  offset: Offset(0, index * _itemHeight),
-                                  child: child,
-                                ),
+                                      offset: Offset(0, index * _itemHeight),
+                                      child: child,
+                                    ),
                                 child: SizedBox(
                                   width: itemWidth,
                                   height: _itemHeight,
@@ -267,8 +268,9 @@ class _SmoothLargeSideNav extends StatelessWidget {
                                       scaffold.closeDrawer();
                                     }
                                   },
-                                  onDoubleTap:
-                                      selected ? () => onReturnHome(i) : null,
+                                  onDoubleTap: selected
+                                      ? () => onReturnHome(i)
+                                      : null,
                                 );
                               }),
                             ),
@@ -337,8 +339,11 @@ class _NavItem extends StatelessWidget {
                   const SizedBox(width: iconLeftPad),
                   SizedBox(
                     width: iconSize,
-                    child: Icon(icon,
-                        size: iconSize, color: fg.withValues(alpha: 0.90)),
+                    child: Icon(
+                      icon,
+                      size: iconSize,
+                      color: fg.withValues(alpha: 0.90),
+                    ),
                   ),
                   Opacity(
                     opacity: textOpacity,

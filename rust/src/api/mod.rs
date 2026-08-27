@@ -8,6 +8,7 @@ pub mod installed_font;
 pub mod library_db;
 pub mod logger;
 pub mod ne;
+pub mod smart_sort;
 pub mod smart_transition;
 pub mod smtc_flutter;
 pub mod system_theme;
