@@ -105,7 +105,8 @@ class MultiSelectController<T> extends ChangeNotifier {
   List<T>? _rangeItems;
   int? _rangeStartIndex;
   int? _rangeTargetIndex;
-  final Set<T> _rangeItemsSelected = {};
+  final Set<T> _rangeItemsTouched = {};
+  bool _rangeDeselecting = false;
   final Set<T> _selectionBeforeRange = {};
   bool Function()? _backHandler;
 
@@ -171,15 +172,19 @@ class MultiSelectController<T> extends ChangeNotifier {
     _selectionBeforeRange
       ..clear()
       ..addAll(selected);
-    _rangeItemsSelected
-      ..clear()
-      ..add(items[startIndex]);
+    // 起始项已选中时，本次拖动改为取消选中经过的条目。
+    _rangeDeselecting = selected.contains(items[startIndex]);
+    _rangeItemsTouched.add(items[startIndex]);
     if (!enableMultiSelectView) {
       useMultiSelectView(true);
     } else {
       _activeBackHandler = _backHandler;
     }
-    selected.add(items[startIndex]);
+    if (_rangeDeselecting) {
+      selected.remove(items[startIndex]);
+    } else {
+      selected.add(items[startIndex]);
+    }
     notifyListeners();
   }
 
@@ -204,15 +209,24 @@ class MultiSelectController<T> extends ChangeNotifier {
 
     for (var i = oldMin; i <= oldMax; i++) {
       final item = items[i];
-      if ((i < newMin || i > newMax) &&
-          _rangeItemsSelected.remove(item) &&
-          !_selectionBeforeRange.contains(item)) {
+      if (i >= newMin && i <= newMax) continue;
+      if (!_rangeItemsTouched.remove(item)) continue;
+      final wasSelectedBefore = _selectionBeforeRange.contains(item);
+      // 拖出范围的条目恢复为拖动前的选中状态。
+      if (_rangeDeselecting) {
+        if (wasSelectedBefore) selected.add(item);
+      } else if (!wasSelectedBefore) {
         selected.remove(item);
       }
     }
     for (var i = newMin; i <= newMax; i++) {
       final item = items[i];
-      if (_rangeItemsSelected.add(item)) selected.add(item);
+      if (!_rangeItemsTouched.add(item)) continue;
+      if (_rangeDeselecting) {
+        selected.remove(item);
+      } else {
+        selected.add(item);
+      }
     }
     notifyListeners();
   }
@@ -221,8 +235,9 @@ class MultiSelectController<T> extends ChangeNotifier {
     _rangeItems = null;
     _rangeStartIndex = null;
     _rangeTargetIndex = null;
-    _rangeItemsSelected.clear();
+    _rangeItemsTouched.clear();
     _selectionBeforeRange.clear();
+    _rangeDeselecting = false;
   }
 
   @override
