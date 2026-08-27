@@ -677,6 +677,7 @@ class AppPreference {
 
   bool taskbarPlaybackControls = true;
   bool taskbarCoverPreview = false;
+  double taskbarCoverScale = 1.0;
 
   var playbackPref = PlaybackPreference(
     PlayMode.forward,
@@ -766,6 +767,12 @@ class AppPreference {
       prefMap['taskbarCoverPreview'],
       defaultValue: false,
     );
+    taskbarCoverScale = _normalizedBoundedDouble(
+      prefMap['taskbarCoverScale'],
+      defaultValue: 1.0,
+      min: 0.5,
+      max: 2.0,
+    );
     playbackPref = PlaybackPreference.fromMap(prefMap['playbackPref']);
     nowPlayingPagePref = NowPlayingPagePreference.fromMap(
       prefMap['nowPlayingPagePref'],
@@ -829,6 +836,7 @@ class AppPreference {
         'sidebarExpanded': sidebarExpanded,
         'taskbarPlaybackControls': taskbarPlaybackControls,
         'taskbarCoverPreview': taskbarCoverPreview,
+        'taskbarCoverScale': taskbarCoverScale,
         'playbackPref': playbackPref.toMap(),
         'nowPlayingPagePref': nowPlayingPagePref.toMap(),
         'customCpFeedbackKey': customCpFeedbackKey,

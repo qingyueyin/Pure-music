@@ -32,6 +32,7 @@ class TaskbarThumbnail {
   void Disable();
   bool SetPlaybackControlsEnabled(
       const flutter::EncodableValue* arguments);
+  bool SetCoverScale(const flutter::EncodableValue* arguments);
   bool SetCoverPreview(const flutter::EncodableValue* arguments);
   bool EnableCoverPreview();
   void DisableCoverPreview();
@@ -43,6 +44,7 @@ class TaskbarThumbnail {
   bool ShowButtons();
   void HideButtons();
   void InvalidateThumbnail();
+  void PublishLivePreview();
   void ProvideThumbnail(int max_width, int max_height);
   bool GetRestoredClientSize(int* width, int* height);
   bool GetPreviewSize(int* width, int* height);
@@ -60,6 +62,7 @@ class TaskbarThumbnail {
   bool enabled_ = false;
   bool playback_controls_enabled_ = false;
   bool cover_preview_enabled_ = false;
+  double cover_scale_ = 1.0;
   bool buttons_added_ = false;
   bool playing_ = false;
   bool has_track_ = false;

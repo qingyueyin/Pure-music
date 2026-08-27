@@ -31,6 +31,7 @@ class TaskbarThumbnailService {
   bool _pendingEnable = false;
   bool _playbackControlsEnabled = false;
   bool _coverPreviewEnabled = false;
+  double _coverScale = 1.0;
   int _lifecycleGeneration = 0;
   int _coverGeneration = 0;
   ValueNotifier<Audio?>? _nowPlayingNotifier;
@@ -54,6 +55,7 @@ class TaskbarThumbnailService {
     final pref = AppPreference.instance;
     _playbackControlsEnabled = pref.taskbarPlaybackControls;
     _coverPreviewEnabled = pref.taskbarCoverPreview;
+    _coverScale = pref.taskbarCoverScale;
     if (_playbackControlsEnabled || _coverPreviewEnabled) {
       unawaited(_enable());
     }
@@ -96,6 +98,14 @@ class TaskbarThumbnailService {
     unawaited(AppPreference.instance.save());
   }
 
+  void setCoverScale(double scale) {
+    final normalized = scale.clamp(0.5, 2.0).toDouble();
+    AppPreference.instance.taskbarCoverScale = normalized;
+    _coverScale = normalized;
+    if (_enabled) unawaited(_syncCoverScale());
+    unawaited(AppPreference.instance.save());
+  }
+
   void _onNowPlayingChanged() {
     unawaited(_setTitle());
     unawaited(_setControls());
@@ -133,6 +143,19 @@ class TaskbarThumbnailService {
     } catch (error, stackTrace) {
       logger.w(
         '[taskbar-thumbnail] set playback controls error: $error\n$stackTrace',
+      );
+    }
+  }
+
+  Future<void> _syncCoverScale() async {
+    if (!_enabled) return;
+    try {
+      await _channel.invokeMethod<void>('setCoverScale', {
+        'scale': _coverScale,
+      });
+    } catch (error, stackTrace) {
+      logger.w(
+        '[taskbar-thumbnail] set cover scale error: $error\n$stackTrace',
       );
     }
   }
@@ -194,6 +217,7 @@ class TaskbarThumbnailService {
       }
       _enabled = true;
       unawaited(_syncPlaybackControlsEnabled());
+      unawaited(_syncCoverScale());
       unawaited(_setTitle());
       unawaited(_setControls());
       if (_coverPreviewEnabled) unawaited(_activateCoverPreview());

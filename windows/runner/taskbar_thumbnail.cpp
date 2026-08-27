@@ -48,6 +48,22 @@ std::optional<int> ReadInt(const flutter::EncodableValue* value) {
   return std::nullopt;
 }
 
+std::optional<double> ReadDouble(const flutter::EncodableValue* value) {
+  if (value == nullptr) {
+    return std::nullopt;
+  }
+  if (const auto number = std::get_if<double>(value)) {
+    return *number;
+  }
+  if (const auto number = std::get_if<int32_t>(value)) {
+    return static_cast<double>(*number);
+  }
+  if (const auto number = std::get_if<int64_t>(value)) {
+    return static_cast<double>(*number);
+  }
+  return std::nullopt;
+}
+
 const bool* ReadBool(const flutter::EncodableMap& map, const char* key) {
   return std::get_if<bool>(ValueForKey(map, key));
 }
@@ -265,7 +281,7 @@ const std::vector<uint8_t>& FallbackCover() {
 
 HBITMAP CreatePreviewBitmap(const std::vector<uint8_t>& cover, int cover_width,
                             int cover_height, int width, int height,
-                            bool allow_upscale) {
+                            bool allow_upscale, double cover_scale) {
   if (cover_width <= 0 || cover_height <= 0 || width <= 0 || height <= 0 ||
       width > 8192 || height > 8192) {
     return nullptr;
@@ -306,6 +322,7 @@ HBITMAP CreatePreviewBitmap(const std::vector<uint8_t>& cover, int cover_width,
   }
   double scale = std::min(static_cast<double>(width) / cover_width,
                           static_cast<double>(height) / cover_height);
+  scale = std::min(scale, cover_scale);
   if (!allow_upscale) {
     scale = std::min(1.0, scale);
   }
@@ -374,6 +391,12 @@ void TaskbarThumbnail::HandleMethodCall(
       result->Success();
     } else {
       result->Error("invalid_controls", "Invalid playback controls state");
+    }
+  } else if (method_call.method_name() == "setCoverScale") {
+    if (SetCoverScale(method_call.arguments())) {
+      result->Success();
+    } else {
+      result->Error("invalid_cover_scale", "Invalid cover preview scale");
     }
   } else if (method_call.method_name() == "setCoverPreview") {
     result->Success(flutter::EncodableValue(
@@ -462,6 +485,28 @@ bool TaskbarThumbnail::SetPlaybackControlsEnabled(
   return true;
 }
 
+bool TaskbarThumbnail::SetCoverScale(
+    const flutter::EncodableValue* arguments) {
+  const auto map = arguments == nullptr
+                       ? nullptr
+                       : std::get_if<flutter::EncodableMap>(arguments);
+  const auto scale = map == nullptr
+                         ? std::nullopt
+                         : ReadDouble(ValueForKey(*map, "scale"));
+  if (!scale.has_value() || !std::isfinite(*scale) || *scale < 0.5 ||
+      *scale > 2.0) {
+    return false;
+  }
+  cover_scale_ = *scale;
+  if (cover_preview_enabled_) {
+    if (RebuildLivePreview()) {
+      PublishLivePreview();
+    }
+    InvalidateThumbnail();
+  }
+  return true;
+}
+
 bool TaskbarThumbnail::SetCoverPreview(
     const flutter::EncodableValue* arguments) {
   const auto map = arguments == nullptr
@@ -502,6 +547,7 @@ bool TaskbarThumbnail::EnableCoverPreview() {
   }
   cover_preview_enabled_ = true;
   InvalidateThumbnail();
+  PublishLivePreview();
   return true;
 }
 
@@ -518,6 +564,8 @@ void TaskbarThumbnail::DisableCoverPreview() {
     cover_preview_enabled_ = false;
   }
   ClearLivePreview();
+  RedrawWindow(window_, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW |
+                                              RDW_ALLCHILDREN);
   ApplyWindowTitle();
 }
 
@@ -550,7 +598,9 @@ bool TaskbarThumbnail::SetCover(
   cover_width_ = *width;
   cover_height_ = *height;
   if (cover_preview_enabled_) {
-    RebuildLivePreview();
+    if (RebuildLivePreview()) {
+      PublishLivePreview();
+    }
   }
   InvalidateThumbnail();
   return true;
@@ -688,6 +738,15 @@ void TaskbarThumbnail::InvalidateThumbnail() {
   }
 }
 
+void TaskbarThumbnail::PublishLivePreview() {
+  if (!cover_preview_enabled_ || window_ == nullptr ||
+      live_preview_bitmap_ == nullptr) {
+    return;
+  }
+  DwmSetIconicLivePreviewBitmap(window_, live_preview_bitmap_, nullptr,
+                                DWM_SIT_DISPLAYFRAME);
+}
+
 void TaskbarThumbnail::ProvideThumbnail(int max_width, int max_height) {
   if (!cover_preview_enabled_ || max_width <= 0 || max_height <= 0) {
     return;
@@ -698,7 +757,8 @@ void TaskbarThumbnail::ProvideThumbnail(int max_width, int max_height) {
   const int cover_width = use_fallback ? kFallbackCoverSize : cover_width_;
   const int cover_height = use_fallback ? kFallbackCoverSize : cover_height_;
   HBITMAP bitmap = CreatePreviewBitmap(cover, cover_width, cover_height,
-                                       max_width, max_height, true);
+                                       max_width, max_height, true,
+                                       cover_scale_);
   if (bitmap == nullptr) {
     return;
   }
@@ -718,7 +778,7 @@ bool TaskbarThumbnail::RebuildLivePreview() {
   const int cover_width = use_fallback ? kFallbackCoverSize : cover_width_;
   const int cover_height = use_fallback ? kFallbackCoverSize : cover_height_;
   HBITMAP bitmap = CreatePreviewBitmap(cover, cover_width, cover_height, width,
-                                       height, false);
+                                       height, true, cover_scale_);
   if (bitmap == nullptr) {
     return false;
   }
@@ -741,8 +801,7 @@ void TaskbarThumbnail::ProvideLivePreview() {
       !RebuildLivePreview()) {
     return;
   }
-  DwmSetIconicLivePreviewBitmap(window_, live_preview_bitmap_, nullptr,
-                                DWM_SIT_DISPLAYFRAME);
+  PublishLivePreview();
 }
 
 bool TaskbarThumbnail::GetRestoredClientSize(int* width, int* height) {
@@ -980,6 +1039,7 @@ std::optional<LRESULT> TaskbarThumbnail::HandleMessage(UINT message,
       if (wparam == kLivePreviewResizeTimerId) {
         KillTimer(window_, kLivePreviewResizeTimerId);
         if (cover_preview_enabled_ && RebuildLivePreview()) {
+          PublishLivePreview();
           InvalidateThumbnail();
         }
         return LRESULT(0);
