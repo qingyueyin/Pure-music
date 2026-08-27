@@ -105,18 +105,29 @@ class SlideTransitionPage<T> extends CustomTransitionPage<T> {
     ).animate(secondaryCurve);
 
     // 旧页淡出 + 左移次层，新页右滑入顶层。
-    return FadeTransition(
-      opacity: secondaryFade,
-      child: SlideTransition(
-        position: secondaryPosition,
-        textDirection: textDirection,
-        transformHitTests: false,
-        child: SlideTransition(
-          position: primaryPosition,
-          textDirection: textDirection,
-          child: child,
-        ),
-      ),
+    // 被上层路由覆盖（退出中或已退出）时禁用命中测试，
+    // 避免点到已淡出/视觉移位的旧页内容。
+    return AnimatedBuilder(
+      animation: secondaryAnimation,
+      child: child,
+      builder: (context, child) {
+        return IgnorePointer(
+          ignoring: secondaryAnimation.value > 0.001,
+          child: FadeTransition(
+            opacity: secondaryFade,
+            child: SlideTransition(
+              position: secondaryPosition,
+              textDirection: textDirection,
+              transformHitTests: false,
+              child: SlideTransition(
+                position: primaryPosition,
+                textDirection: textDirection,
+                child: child,
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
