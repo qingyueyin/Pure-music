@@ -72,25 +72,30 @@ void main() {
 
     for (final format in LyricTagWordFormat.values) {
       test('${format.name} keeps grouping through an LRC round trip', () {
-        final text = serializeLyricToLrc(
-          _syncLyric(),
-          wordFormat: format,
-        );
+        final text = serializeLyricToLrc(_syncLyric(), wordFormat: format);
 
         final parsed = Lrc.fromLrcTextAuto(
           text,
           LyricFormat.local,
           separator: '┃',
         );
-        final contentLines = parsed!.lines
-            .whereType<SyncLyricLine>()
-            .where((line) => line.words.isNotEmpty)
-            .toList();
+        final contentLines = parsed!.lines.where((line) {
+          if (line is LrcLine) {
+            return !line.isMetadata && line.content.trim().isNotEmpty;
+          }
+          return line is SyncLyricLine && line.content.trim().isNotEmpty;
+        }).toList();
 
         expect(contentLines, hasLength(1));
-        expect(contentLines.single.content, '怕你');
-        expect(contentLines.single.translation, '害怕你');
-        expect(contentLines.single.romanLyric, 'pa ni');
+        final contentLine = contentLines.single;
+        expect(
+          contentLine is LrcLine
+              ? contentLine.content
+              : (contentLine as SyncLyricLine).content,
+          '怕你',
+        );
+        expect(contentLine.translation, '害怕你');
+        expect(contentLine.romanLyric, 'pa ni');
       });
     }
   });

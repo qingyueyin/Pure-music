@@ -1,9 +1,14 @@
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/core/design_tokens.dart';
+import 'package:pure_music/core/matcher.dart' hide logger;
+import 'package:pure_music/core/mouse_back_exit.dart';
+import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/library/audio_library.dart';
+import 'package:pure_music/lyric/lrc_serializer.dart';
 import 'package:pure_music/native/rust/api/utils.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart' as rust_tag_reader;
+import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/services/online_lyric/api/net_lyric_api.dart'
     as net_api;
 import 'dart:io';
@@ -174,6 +179,7 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
 
   @override
   void dispose() {
+    MouseBackExit.unregister(_exitEditOnBack);
     _controllers.dispose();
     super.dispose();
   }
@@ -227,9 +233,17 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
     final meta = await _getAudioExtra(audio);
     _controllers.initFrom(audio, meta.items);
     setState(() => _isEditing = true);
+    MouseBackExit.register(_exitEditOnBack);
+  }
+
+  bool _exitEditOnBack() {
+    if (!_isEditing) return false;
+    _cancelEdit();
+    return true;
   }
 
   void _cancelEdit() {
+    MouseBackExit.unregister(_exitEditOnBack);
     setState(() => _isEditing = false);
   }
 
@@ -253,7 +267,7 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
       );
       if (mounted) {
         showTextOnSnackBar('标签已保存');
-        setState(() => _isEditing = false);
+        _cancelEdit();
       }
     } catch (e, trace) {
       logger.e('保存音频标签失败', error: e, stackTrace: trace);
@@ -1300,6 +1314,7 @@ class _LyricsEditDialogState extends State<_LyricsEditDialog> {
         path: widget.audio.path,
         lyric: _ctrl.text,
       );
+      _refreshNowPlayingLyricIfCurrent(widget.audio.path);
       if (mounted) {
         Navigator.pop(context);
         showTextOnSnackBar('歌词已写入标签', variant: ToastVariant.success);
@@ -1317,12 +1332,16 @@ class _LyricsEditDialogState extends State<_LyricsEditDialog> {
   }
 
   Future<void> _fetchFromNet() async {
-    final result = await showDialog<String>(
+    final result = await showDialog<_NetFetchResult>(
       context: context,
       builder: (_) => _FetchLyricFromNetDialog(audio: widget.audio),
     );
-    if (result != null && result.isNotEmpty && mounted) {
-      setState(() => _ctrl.text = result);
+    if (!mounted || result == null) return;
+    if (result.written) {
+      Navigator.pop(context);
+      showTextOnSnackBar('歌词已写入标签', variant: ToastVariant.success);
+    } else if (result.text.isNotEmpty) {
+      setState(() => _ctrl.text = result.text);
     }
   }
 
@@ -1330,25 +1349,52 @@ class _LyricsEditDialogState extends State<_LyricsEditDialog> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return AlertDialog(
-      title: const Text('编辑内嵌歌词'),
+      title: Row(
+        children: [
+          const Expanded(child: Text('编辑内嵌歌词')),
+          IconButton(
+            tooltip: '从网络获取',
+            icon: const Icon(Symbols.cloud_download, size: 20),
+            onPressed: _isLoading ? null : _fetchFromNet,
+          ),
+        ],
+      ),
       content: SizedBox(
         width: 500,
-        child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : TextField(
-                controller: _ctrl,
-                maxLines: null,
-                style: TextStyle(fontSize: AppType.body, color: scheme.onSurface),
-                decoration: InputDecoration(
-                  hintText: '粘贴或输入歌词内容，支持 LRC / 增强 LRC / QRC / YRC / KRC 格式',
-                  alignLabelWithHint: true,
-                  suffixIcon: IconButton(
-                    tooltip: '从网络获取',
-                    icon: const Icon(Symbols.cloud_download, size: 20),
-                    onPressed: _fetchFromNet,
-                  ),
-                ),
+        height: 400,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${widget.audio.title} - ${widget.audio.artist}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: AppType.caption,
+                color: scheme.onSurfaceVariant,
               ),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : TextField(
+                      controller: _ctrl,
+                      maxLines: null,
+                      expands: true,
+                      textAlignVertical: TextAlignVertical.top,
+                      style: TextStyle(
+                        fontSize: AppType.body,
+                        color: scheme.onSurface,
+                      ),
+                      decoration: const InputDecoration(
+                        hintText: '粘贴或输入歌词，支持 LRC / 增强 LRC / QRC / YRC / KRC',
+                        alignLabelWithHint: true,
+                      ),
+                    ),
+            ),
+          ],
+        ),
       ),
       actions: [
         TextButton(
@@ -1465,23 +1511,37 @@ class _FetchLyricFromNetDialogState extends State<_FetchLyricFromNetDialog> {
     };
   }
 
-  Future<void> _selectResult(_LyricSearchItem item) async {
+  Future<void> _selectResult(
+    _LyricSearchItem item, {
+    bool writeDirectly = false,
+  }) async {
     if (_isFetching) return;
     setState(() {
       _isFetching = true;
       _fetchingItem = item;
     });
     try {
-      final rawText = await _fetchRawLyric(item);
+      final text = await _fetchRawLyric(item);
       if (!mounted) return;
-      if (rawText != null && rawText.isNotEmpty) {
-        Navigator.pop(context, rawText);
-      } else {
+      if (text == null || text.isEmpty) {
         showTextOnSnackBar('歌词获取失败', variant: ToastVariant.error);
+        return;
       }
-    } catch (_) {
+      if (writeDirectly) {
+        await rust_tag_reader.writeLyricToPath(
+          path: widget.audio.path,
+          lyric: text,
+        );
+        _refreshNowPlayingLyricIfCurrent(widget.audio.path);
+        if (!mounted) return;
+        Navigator.pop(context, _NetFetchResult(text, written: true));
+      } else {
+        Navigator.pop(context, _NetFetchResult(text));
+      }
+    } catch (e, trace) {
+      logger.e('获取或写入歌词失败', error: e, stackTrace: trace);
       if (mounted) {
-        showTextOnSnackBar('歌词获取失败', variant: ToastVariant.error);
+        showTextOnSnackBar('操作失败，请查看日志', variant: ToastVariant.error);
       }
     } finally {
       if (mounted) {
@@ -1494,37 +1554,29 @@ class _FetchLyricFromNetDialogState extends State<_FetchLyricFromNetDialog> {
   }
 
   Future<String?> _fetchRawLyric(_LyricSearchItem item) async {
-    return switch (item.source) {
-      _LyricNetSource.qq => _fetchQQLyric(item),
-      _LyricNetSource.ne => _fetchNELyric(item),
-      _LyricNetSource.kugou => _fetchKugouLyric(item),
+    final lyric = switch (item.source) {
+      _LyricNetSource.qq => await getOnlineLyric(
+        qqSongId: item.extras['id'] ?? item.id,
+        title: widget.audio.title,
+        album: widget.audio.album,
+        artist: widget.audio.artist,
+        durationSec: widget.audio.duration.toInt(),
+      ),
+      _LyricNetSource.ne => await getOnlineLyric(
+        neSongId: int.tryParse(item.id),
+      ),
+      _LyricNetSource.kugou => await getOnlineLyric(
+        kugouSongHash: item.extras['hash'] ?? item.id,
+      ),
     };
-  }
-
-  Future<String?> _fetchQQLyric(_LyricSearchItem item) async {
-    final songId = int.tryParse(item.extras['id'] ?? item.id);
-    if (songId == null) return null;
-    final result = await net_api.qqGetLyric(
-      id: songId,
-      title: widget.audio.title,
-      album: widget.audio.album,
-      artist: widget.audio.artist,
-      durationSec: widget.audio.duration.toInt(),
+    if (lyric == null || lyric.lines.isEmpty) return null;
+    final settings = AppSettings.instance;
+    return serializeLyricToLrc(
+      lyric,
+      wordFormat: settings.lyricTagWordFormat,
+      includeTranslation: settings.lyricTagIncludeTranslation,
+      includeRomanization: settings.lyricTagIncludeRomanization,
     );
-    return result?.mainLyric;
-  }
-
-  Future<String?> _fetchNELyric(_LyricSearchItem item) async {
-    final songId = int.tryParse(item.id);
-    if (songId == null) return null;
-    final result = await net_api.neGetLyric(id: songId);
-    return result?.mainLyric;
-  }
-
-  Future<String?> _fetchKugouLyric(_LyricSearchItem item) async {
-    final hash = item.extras['hash'] ?? item.id;
-    final result = await net_api.kgGetLyric(hash: hash);
-    return result?.mainLyric;
   }
 
   @override
@@ -1648,8 +1700,22 @@ class _FetchLyricFromNetDialogState extends State<_FetchLyricFromNetDialog> {
                                           strokeWidth: 2,
                                         ),
                                       )
-                                    : null,
-                                onTap: isFetching ? null : () => _selectResult(item),
+                                    : IconButton(
+                                        tooltip: '直接写入标签',
+                                        visualDensity: VisualDensity.compact,
+                                        icon: const Icon(
+                                          Symbols.task_alt,
+                                          size: 18,
+                                        ),
+                                        onPressed: () =>
+                                            _selectResult(
+                                              item,
+                                              writeDirectly: true,
+                                            ),
+                                      ),
+                                onTap: isFetching
+                                    ? null
+                                    : () => _selectResult(item),
                               );
                             },
                           ),
@@ -1693,6 +1759,20 @@ class _FetchLyricFromNetDialogState extends State<_FetchLyricFromNetDialog> {
       ),
     );
   }
+}
+
+/// 写入的是当前播放歌曲时，刷新播放页歌词缓存
+void _refreshNowPlayingLyricIfCurrent(String audioPath) {
+  final nowPlaying = PlayService.instance.playbackService.nowPlaying;
+  if (nowPlaying?.path != audioPath) return;
+  PlayService.instance.lyricService.reloadLyricFromTag();
+}
+
+class _NetFetchResult {
+  const _NetFetchResult(this.text, {this.written = false});
+
+  final String text;
+  final bool written;
 }
 
 class _LyricSearchItem {

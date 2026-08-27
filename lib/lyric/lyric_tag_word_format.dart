@@ -1,1 +1,1 @@
-enum LyricTagWordFormat { wordByWord, enhanced }
+enum LyricTagWordFormat { standard, wordByWord, enhanced }
