@@ -191,7 +191,10 @@ StreamSubscription<String>? _rustLoggerSub;
 
 Future<void> disposeRuntimeResources() async {
   MemoryMonitorService.instance.stop();
-  await _rustLoggerSub?.cancel();
+  final rustLoggerSub = _rustLoggerSub;
   _rustLoggerSub = null;
+  if (rustLoggerSub != null) {
+    unawaited(rustLoggerSub.cancel().catchError((_) {}));
+  }
   await applicationLogOutput.flush();
 }

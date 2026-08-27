@@ -383,7 +383,11 @@ void showHotkeyToast({required String text, IconData? icon}) {
   if (context == null || overlay == null) return;
 
   _hotkeyToastTimer?.cancel();
-  _hotkeyToastEntry?.remove();
+  final previousEntry = _hotkeyToastEntry;
+  _hotkeyToastEntry = null;
+  if (previousEntry?.mounted ?? false) {
+    previousEntry!.remove();
+  }
 
   final scheme = Theme.of(context).colorScheme;
   final textTheme = Theme.of(context).textTheme;
@@ -460,13 +464,13 @@ void showHotkeyToast({required String text, IconData? icon}) {
   });
 
   _hotkeyToastTimer = Timer(const Duration(milliseconds: 1100), () {
+    if (!identical(_hotkeyToastEntry, entry)) return;
     visible.value = false;
     Timer(const Duration(milliseconds: 160), () {
-      entry.remove();
-      if (identical(_hotkeyToastEntry, entry)) {
-        _hotkeyToastEntry = null;
-        _hotkeyToastTimer = null;
-      }
+      if (!identical(_hotkeyToastEntry, entry)) return;
+      if (entry.mounted) entry.remove();
+      _hotkeyToastEntry = null;
+      _hotkeyToastTimer = null;
     });
   });
 }

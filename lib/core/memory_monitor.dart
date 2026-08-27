@@ -71,6 +71,12 @@ class MemoryMonitorService {
 
   Timer? _timer;
   DateTime? _lastWorkingSetTrimAt;
+  DateTime? _lastTier1CleanupAt;
+  DateTime? _lastTier2CleanupAt;
+  DateTime? _lastTier3CleanupAt;
+
+  bool _cleanupDue(DateTime now, DateTime? lastRun, Duration cooldown) =>
+      lastRun == null || now.difference(lastRun) >= cooldown;
 
   void _trimWorkingSetIfDue({Duration cooldown = const Duration(minutes: 1)}) {
     final now = DateTime.now();
@@ -98,6 +104,7 @@ class MemoryMonitorService {
         final rssMB = (ProcessInfo.currentRss / (1024 * 1024)).round();
         final playbackService = PlayService.existingPlaybackService;
         final playingPath = playbackService?.nowPlaying?.path;
+        final now = DateTime.now();
 
         final playing = _isPlaying();
         // 播放中贴近 140-160MB 目标区间，越界后从轻到重逐级清理。
@@ -105,7 +112,11 @@ class MemoryMonitorService {
         final tier2Threshold = playing ? 220 : 260;
         final tier3Threshold = playing ? 280 : 320;
 
-        if (rssMB > tier3Threshold) {
+        if (rssMB > tier3Threshold &&
+            _cleanupDue(now, _lastTier3CleanupAt, const Duration(minutes: 1))) {
+          _lastTier1CleanupAt = now;
+          _lastTier2CleanupAt = now;
+          _lastTier3CleanupAt = now;
           logger.w(
             '[mem] RSS ${rssMB}MB > $tier3Threshold, tier-3 emergency cleanup',
           );
@@ -134,7 +145,10 @@ class MemoryMonitorService {
                 ? const Duration(minutes: 2)
                 : const Duration(minutes: 1),
           );
-        } else if (rssMB > tier2Threshold) {
+        } else if (rssMB > tier2Threshold &&
+            _cleanupDue(now, _lastTier2CleanupAt, const Duration(minutes: 3))) {
+          _lastTier1CleanupAt = now;
+          _lastTier2CleanupAt = now;
           logger.w('[mem] RSS ${rssMB}MB > $tier2Threshold, tier-2 cleanup');
           CoverImageCache.instance.trimMemory(keepPath: playingPath);
           CoverImageCache.instance.trimSmall(keepEntries: 64);
@@ -142,7 +156,9 @@ class MemoryMonitorService {
           LyricsLinePainter.trimPool();
           LyricsLineWidget.clearBlurFilterCache();
           AudioLibrary.instance.evictStaleCoverBytes();
-        } else if (rssMB > tier1Threshold) {
+        } else if (rssMB > tier1Threshold &&
+            _cleanupDue(now, _lastTier1CleanupAt, const Duration(minutes: 1))) {
+          _lastTier1CleanupAt = now;
           // tier-1: keep playback smooth; avoid forcing image reloads or OS working-set trim.
           AudioLibrary.instance.trimCollectionThumbnailRetention(128);
           LyricsLinePainter.trimPool();
