@@ -265,6 +265,19 @@ impl StreamingAnalysis {
             .map_err(|error| AnalyzerError::InvalidProfile(error.to_string()))?;
         Ok(profile)
     }
+
+    fn has_samples(&self) -> bool {
+        self.sample_count > 0
+    }
+}
+
+fn is_trailing_eof(error: &SymphoniaError, has_samples: bool) -> bool {
+    has_samples
+        && matches!(
+            error,
+            SymphoniaError::IoError(error)
+                if error.kind() == std::io::ErrorKind::UnexpectedEof
+        )
 }
 
 pub fn analyze_file(
@@ -319,6 +332,7 @@ pub fn analyze_file(
                     "audio track changed during analysis".to_string(),
                 ));
             }
+            Err(error) if is_trailing_eof(&error, analysis.has_samples()) => break,
             Err(error) => return Err(AnalyzerError::Decode(error.to_string())),
         };
         if packet.track_id != track_id {
@@ -834,6 +848,21 @@ fn fft_in_place(real: &mut [f64], imag: &mut [f64]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn trailing_unexpected_eof_is_only_accepted_after_audio() {
+        let error =
+            SymphoniaError::IoError(std::io::Error::from(std::io::ErrorKind::UnexpectedEof));
+        assert!(!is_trailing_eof(&error, false));
+        assert!(is_trailing_eof(&error, true));
+    }
+
+    #[test]
+    fn other_io_errors_are_not_treated_as_end_of_stream() {
+        let error =
+            SymphoniaError::IoError(std::io::Error::from(std::io::ErrorKind::PermissionDenied));
+        assert!(!is_trailing_eof(&error, true));
+    }
 
     #[test]
     fn fft_places_tone_in_expected_bin() {

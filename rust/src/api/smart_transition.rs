@@ -61,11 +61,11 @@ impl MemoryProfileCache {
     }
 }
 
-type ActiveJob = Option<(u64, Arc<AtomicBool>)>;
+type ActiveJobs = HashMap<u64, Arc<AtomicBool>>;
 
-fn active_job() -> &'static Mutex<ActiveJob> {
-    static ACTIVE: OnceLock<Mutex<ActiveJob>> = OnceLock::new();
-    ACTIVE.get_or_init(|| Mutex::new(None))
+fn active_jobs() -> &'static Mutex<ActiveJobs> {
+    static ACTIVE: OnceLock<Mutex<ActiveJobs>> = OnceLock::new();
+    ACTIVE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 fn memory_cache() -> &'static Mutex<MemoryProfileCache> {
@@ -81,38 +81,35 @@ pub fn analyze_smart_transition_track(
 ) -> Result<String, String> {
     let cancel = Arc::new(AtomicBool::new(false));
     {
-        let mut active = active_job()
+        let mut active = active_jobs()
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        if let Some((_, previous)) = active.replace((job_id, cancel.clone())) {
+        if let Some(previous) = active.insert(job_id, cancel.clone()) {
             previous.store(true, Ordering::Release);
         }
     }
     let result = analyze_with_cache(&path, media_id.as_deref(), &library_root, &cancel)
         .and_then(|profile| serde_json::to_string(&profile).map_err(|error| error.to_string()));
-    let mut active = active_job()
+    let mut active = active_jobs()
         .lock()
         .unwrap_or_else(|error| error.into_inner());
     if active
-        .as_ref()
-        .is_some_and(|(active_id, _)| *active_id == job_id)
+        .get(&job_id)
+        .is_some_and(|current| Arc::ptr_eq(current, &cancel))
     {
-        *active = None;
+        active.remove(&job_id);
     }
     result
 }
 
 #[frb(sync)]
 pub fn cancel_smart_transition_analysis(job_id: u64) -> bool {
-    let active = active_job()
+    let active = active_jobs()
         .lock()
         .unwrap_or_else(|error| error.into_inner());
-    let Some((active_id, cancel)) = active.as_ref() else {
+    let Some(cancel) = active.get(&job_id) else {
         return false;
     };
-    if *active_id != job_id {
-        return false;
-    }
     cancel.store(true, Ordering::Release);
     true
 }
