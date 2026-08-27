@@ -310,6 +310,10 @@ class AppSettings {
   TopBarLyricAnimation topBarLyricAnimation = TopBarLyricAnimation.slideUp;
   bool enableCoverColorExtraction = true;
   bool enableStackedScrollEffect = true;
+  bool enableContentTransitionMotion = true;
+  bool enableInteractiveSurfaceMotion = true;
+  bool enableDetailHeaderCollapseMotion = true;
+  bool enableDataTransitionMotion = true;
   int? customCoverColor;
   String? appBackgroundImagePath;
   double appBackgroundImageOpacity = 0.22;
@@ -363,9 +367,26 @@ class AppSettings {
     _instance.themeColorMode = normalizedThemeColorMode(
       settingsMap['ThemeColorMode'],
     );
-    _instance.enableStackedScrollEffect = normalizedBoolSetting(
+    final stackedScrollEffect = normalizedBoolSetting(
       settingsMap['EnableStackedScrollEffect'],
       defaultValue: true,
+    );
+    _instance.enableStackedScrollEffect = stackedScrollEffect;
+    _instance.enableContentTransitionMotion = normalizedBoolSetting(
+      settingsMap['EnableContentTransitionMotion'],
+      defaultValue: true,
+    );
+    _instance.enableInteractiveSurfaceMotion = normalizedBoolSetting(
+      settingsMap['EnableInteractiveSurfaceMotion'],
+      defaultValue: stackedScrollEffect,
+    );
+    _instance.enableDetailHeaderCollapseMotion = normalizedBoolSetting(
+      settingsMap['EnableDetailHeaderCollapseMotion'],
+      defaultValue: stackedScrollEffect,
+    );
+    _instance.enableDataTransitionMotion = normalizedBoolSetting(
+      settingsMap['EnableDataTransitionMotion'],
+      defaultValue: stackedScrollEffect,
     );
     _instance.appBackgroundImagePath = normalizedPathSetting(
       settingsMap['AppBackgroundImagePath'],
@@ -449,9 +470,26 @@ class AppSettings {
     _instance.themeColorMode = normalizedThemeColorMode(
       settingsMap['ThemeColorMode'],
     );
-    _instance.enableStackedScrollEffect = normalizedBoolSetting(
+    final stackedScrollEffect = normalizedBoolSetting(
       settingsMap['EnableStackedScrollEffect'],
       defaultValue: true,
+    );
+    _instance.enableStackedScrollEffect = stackedScrollEffect;
+    _instance.enableContentTransitionMotion = normalizedBoolSetting(
+      settingsMap['EnableContentTransitionMotion'],
+      defaultValue: true,
+    );
+    _instance.enableInteractiveSurfaceMotion = normalizedBoolSetting(
+      settingsMap['EnableInteractiveSurfaceMotion'],
+      defaultValue: stackedScrollEffect,
+    );
+    _instance.enableDetailHeaderCollapseMotion = normalizedBoolSetting(
+      settingsMap['EnableDetailHeaderCollapseMotion'],
+      defaultValue: stackedScrollEffect,
+    );
+    _instance.enableDataTransitionMotion = normalizedBoolSetting(
+      settingsMap['EnableDataTransitionMotion'],
+      defaultValue: stackedScrollEffect,
     );
 
     final sep = settingsMap['ArtistSeparator'];
@@ -909,6 +947,10 @@ class AppSettings {
         'ThemeOption': themeOption.index,
         'ThemeColorMode': themeColorMode.name,
         'EnableStackedScrollEffect': enableStackedScrollEffect,
+        'EnableContentTransitionMotion': enableContentTransitionMotion,
+        'EnableInteractiveSurfaceMotion': enableInteractiveSurfaceMotion,
+        'EnableDetailHeaderCollapseMotion': enableDetailHeaderCollapseMotion,
+        'EnableDataTransitionMotion': enableDataTransitionMotion,
         'ArtistSeparator': artistSeparator,
         'LocalLyricFirst': localLyricFirst,
         'PreferredOnlineSource': preferredOnlineSource.name,

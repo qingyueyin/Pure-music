@@ -11,6 +11,7 @@ import 'package:pure_music/lyric/lyric_source.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/page/folder_manager_dialog.dart';
 import 'package:pure_music/page/uni_page.dart';
+import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -118,6 +119,7 @@ class _FoldersPageState extends State<FoldersPage> {
       contentBuilder: (context, item, i, multiSelectController, view) =>
           AudioFolderTile(
             audioFolder: item,
+            view: view,
             onAliasChanged: () => setState(_invalidateContentList),
           ),
       enableShufflePlay: false,
@@ -199,10 +201,12 @@ class _FoldersPageState extends State<FoldersPage> {
 
 class AudioFolderTile extends StatelessWidget {
   final AudioFolder audioFolder;
+  final ContentView view;
   final VoidCallback? onAliasChanged;
   const AudioFolderTile({
     super.key,
     required this.audioFolder,
+    this.view = ContentView.list,
     this.onAliasChanged,
   });
 
@@ -291,56 +295,64 @@ class AudioFolderTile extends StatelessWidget {
         builder: (context, controller, _) {
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8.0),
-            child: InkWell(
-              borderRadius: AppRadius.smCircular,
-              onTap: () => context.push(
-                app_paths.FOLDER_DETAIL_PAGE,
-                extra: audioFolder,
-              ),
-              onSecondaryTapDown: (details) {
-                controller.open(position: details.localPosition);
-              },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16.0,
-                  vertical: 10.0,
-                ),
-                child: Row(
-                  children: [
-                    Icon(Symbols.folder, color: scheme.onSurfaceVariant),
-                    const SizedBox(width: 16.0),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            audioFolder.displayName,
-                            softWrap: false,
-                            maxLines: 1,
-                            style: TextStyle(color: scheme.onSurface),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            p.dirname(audioFolder.path),
-                            softWrap: false,
-                            maxLines: 1,
-                            style: TextStyle(
-                              color: scheme.onSurfaceVariant,
-                              fontSize: AppType.body,
-                            ),
-                          ),
-                        ],
-                      ),
+            child: DirectionalListItemEntrance(
+              identity: audioFolder,
+              child: InteractiveSurfaceMotion(
+                enabled:
+                    view == ContentView.table &&
+                    AppSettings.instance.enableInteractiveSurfaceMotion,
+                child: InkWell(
+                  borderRadius: AppRadius.smCircular,
+                  onTap: () => context.push(
+                    app_paths.FOLDER_DETAIL_PAGE,
+                    extra: audioFolder,
+                  ),
+                  onSecondaryTapDown: (details) {
+                    controller.open(position: details.localPosition);
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16.0,
+                      vertical: 10.0,
                     ),
-                    const SizedBox(width: 12),
-                    Text(
-                      '${audioFolder.audios.length} 首',
-                      style: TextStyle(
-                        color: scheme.onSurfaceVariant,
-                        fontSize: AppType.body,
-                      ),
+                    child: Row(
+                      children: [
+                        Icon(Symbols.folder, color: scheme.onSurfaceVariant),
+                        const SizedBox(width: 16.0),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                audioFolder.displayName,
+                                softWrap: false,
+                                maxLines: 1,
+                                style: TextStyle(color: scheme.onSurface),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                p.dirname(audioFolder.path),
+                                softWrap: false,
+                                maxLines: 1,
+                                style: TextStyle(
+                                  color: scheme.onSurfaceVariant,
+                                  fontSize: AppType.body,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          '${audioFolder.audios.length} 首',
+                          style: TextStyle(
+                            color: scheme.onSurfaceVariant,
+                            fontSize: AppType.body,
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),

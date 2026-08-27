@@ -106,7 +106,7 @@ class _AlbumTileState extends State<AlbumTile> {
           child: InteractiveSurfaceMotion(
             enabled:
                 widget.view == ContentView.table &&
-                AppSettings.instance.enableStackedScrollEffect,
+                AppSettings.instance.enableInteractiveSurfaceMotion,
             child: AnimatedContainer(
               duration: MotionDuration.fast,
               curve: MotionCurve.standard,

@@ -442,7 +442,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
             builder: (context, controller, _) => InteractiveSurfaceMotion(
               enabled:
                   view == ContentView.table &&
-                  AppSettings.instance.enableStackedScrollEffect,
+                  AppSettings.instance.enableInteractiveSurfaceMotion,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
                 decoration: BoxDecoration(

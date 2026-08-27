@@ -19,7 +19,8 @@ import 'package:pure_music/lyric/lyric_source.dart';
 import 'package:pure_music/lyric/lyric_tag_word_format.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/settings_tile.dart';
-import 'package:pure_music/component/stacked_list_view.dart' show SmoothScrollListView;
+import 'package:pure_music/component/stacked_list_view.dart'
+    show SmoothScrollListView;
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/taskbar_thumbnail_service.dart';
 import 'package:pure_music/play_service/desktop_lyric_service.dart';
@@ -152,8 +153,8 @@ class _AppearanceTabContent extends StatelessWidget {
         SizedBox(height: 8.0),
         _GroupEntry(
           icon: Symbols.view_agenda,
-          title: '列表与动效',
-          subtitle: '列表滚动与入场动效',
+          title: '界面动效',
+          subtitle: '滚动、交互与内容过渡',
           groupId: 'appearance-list',
         ),
         SizedBox(height: 8.0),
@@ -479,32 +480,81 @@ class _MonetProgressBarSwitchState extends State<_MonetProgressBarSwitch> {
   }
 }
 
-class _StackedScrollEffectSwitch extends StatefulWidget {
-  const _StackedScrollEffectSwitch();
-
-  @override
-  State<_StackedScrollEffectSwitch> createState() =>
-      _StackedScrollEffectSwitchState();
+enum _MotionEffect {
+  stackedScroll,
+  contentTransition,
+  interactiveSurface,
+  detailHeaderCollapse,
+  dataTransition,
 }
 
-class _StackedScrollEffectSwitchState
-    extends State<_StackedScrollEffectSwitch> {
+class _MotionEffectSwitch extends StatefulWidget {
+  const _MotionEffectSwitch({required this.effect});
+
+  final _MotionEffect effect;
+
+  @override
+  State<_MotionEffectSwitch> createState() => _MotionEffectSwitchState();
+}
+
+class _MotionEffectSwitchState extends State<_MotionEffectSwitch> {
   final settings = AppSettings.instance;
   bool _updating = false;
 
+  bool get _value => switch (widget.effect) {
+    _MotionEffect.stackedScroll => settings.enableStackedScrollEffect,
+    _MotionEffect.contentTransition => settings.enableContentTransitionMotion,
+    _MotionEffect.interactiveSurface => settings.enableInteractiveSurfaceMotion,
+    _MotionEffect.detailHeaderCollapse =>
+      settings.enableDetailHeaderCollapseMotion,
+    _MotionEffect.dataTransition => settings.enableDataTransitionMotion,
+  };
+
+  String get _description => switch (widget.effect) {
+    _MotionEffect.stackedScroll => '堆叠滚动效果',
+    _MotionEffect.contentTransition => '内容切换过渡',
+    _MotionEffect.interactiveSurface => '卡片交互反馈',
+    _MotionEffect.detailHeaderCollapse => '详情头部收拢',
+    _MotionEffect.dataTransition => '数据更新过渡',
+  };
+
+  String get _subtitle => switch (widget.effect) {
+    _MotionEffect.stackedScroll => '列表滚动时使用堆叠变换与平滑滚动',
+    _MotionEffect.contentTransition => '页面与列表内容切换时使用滑入过渡',
+    _MotionEffect.interactiveSurface => '专辑、艺术家、歌单和文件夹卡片悬停与按压反馈',
+    _MotionEffect.detailHeaderCollapse => '详情页头部随滚动收拢',
+    _MotionEffect.dataTransition => '统计页指标数值更新时使用过渡',
+  };
+
+  void _setValue(bool value) {
+    switch (widget.effect) {
+      case _MotionEffect.stackedScroll:
+        settings.enableStackedScrollEffect = value;
+      case _MotionEffect.contentTransition:
+        settings.enableContentTransitionMotion = value;
+      case _MotionEffect.interactiveSurface:
+        settings.enableInteractiveSurfaceMotion = value;
+      case _MotionEffect.detailHeaderCollapse:
+        settings.enableDetailHeaderCollapseMotion = value;
+      case _MotionEffect.dataTransition:
+        settings.enableDataTransitionMotion = value;
+    }
+  }
+
   Future<void> _setEnabled(bool value) async {
-    if (_updating || value == settings.enableStackedScrollEffect) return;
-    final previous = settings.enableStackedScrollEffect;
+    if (_updating || value == _value) return;
+    final previous = _value;
     setState(() {
       _updating = true;
-      settings.enableStackedScrollEffect = value;
+      _setValue(value);
     });
     AppSettings.listMotionNotifier.rebuild();
     try {
       if (await settings.saveSettings()) return;
-      settings.enableStackedScrollEffect = previous;
+      _setValue(previous);
       AppSettings.listMotionNotifier.rebuild();
       if (mounted) {
+        setState(() {});
         showTextOnSnackBar('列表效果保存失败', variant: ToastVariant.error);
       }
     } finally {
@@ -515,12 +565,9 @@ class _StackedScrollEffectSwitchState
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      description: '堆叠滚动效果',
-      subtitle: '关闭后恢复默认滚动与列表项入场动画',
-      action: Switch(
-        value: settings.enableStackedScrollEffect,
-        onChanged: _updating ? null : _setEnabled,
-      ),
+      description: _description,
+      subtitle: _subtitle,
+      action: Switch(value: _value, onChanged: _updating ? null : _setEnabled),
     );
   }
 }
@@ -3202,8 +3249,8 @@ const _settingsGroups = <String, _SettingsGroupDesc>{
     _AppearanceBackgroundGroup(),
   ),
   'appearance-list': _SettingsGroupDesc(
-    '列表效果',
-    '列表滚动与入场动效',
+    '界面动效',
+    '滚动、交互与内容过渡',
     _AppearanceListGroup(),
   ),
   'appearance-monet': _SettingsGroupDesc(
@@ -3417,9 +3464,17 @@ class _AppearanceListGroup extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.only(bottom: 96.0, right: 20),
       children: const [
-        _SettingsSectionHeader('列表效果'),
+        _SettingsSectionHeader('界面动效'),
         SizedBox(height: 4.0),
-        _StackedScrollEffectSwitch(),
+        _MotionEffectSwitch(effect: _MotionEffect.stackedScroll),
+        SizedBox(height: 16.0),
+        _MotionEffectSwitch(effect: _MotionEffect.contentTransition),
+        SizedBox(height: 16.0),
+        _MotionEffectSwitch(effect: _MotionEffect.interactiveSurface),
+        SizedBox(height: 16.0),
+        _MotionEffectSwitch(effect: _MotionEffect.detailHeaderCollapse),
+        SizedBox(height: 16.0),
+        _MotionEffectSwitch(effect: _MotionEffect.dataTransition),
       ],
     );
   }

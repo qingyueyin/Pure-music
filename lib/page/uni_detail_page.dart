@@ -150,7 +150,7 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
   }
 
   bool _enableHeaderCollapse(BuildContext context) =>
-      AppSettings.instance.enableStackedScrollEffect &&
+      AppSettings.instance.enableDetailHeaderCollapseMotion &&
       !MediaQuery.disableAnimationsOf(context) &&
       MediaQuery.sizeOf(context).width >= 560;
 

@@ -847,11 +847,16 @@ class _AnimatedMetricValue extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final animate =
-        AppSettings.instance.enableStackedScrollEffect &&
-        !MediaQuery.disableAnimationsOf(context);
+    final motionEnabled = AppSettings.instance.enableDataTransitionMotion;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final animate = motionEnabled;
+    final duration = !animate
+        ? Duration.zero
+        : reduceMotion
+        ? MotionDuration.fast
+        : MotionDuration.xFast;
     return AnimatedSwitcher(
-      duration: animate ? MotionDuration.xFast : Duration.zero,
+      duration: duration,
       switchInCurve: MotionCurve.entrance,
       switchOutCurve: MotionCurve.standard,
       layoutBuilder: (currentChild, previousChildren) => Stack(
@@ -860,6 +865,9 @@ class _AnimatedMetricValue extends StatelessWidget {
       ),
       transitionBuilder: (child, animation) {
         if (!animate) return child;
+        if (reduceMotion) {
+          return FadeTransition(opacity: animation, child: child);
+        }
         return FadeTransition(
           opacity: animation,
           child: SlideTransition(
