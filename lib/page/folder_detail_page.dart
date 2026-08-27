@@ -1,6 +1,7 @@
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/list_action_state.dart';
+import 'package:pure_music/core/mouse_back_exit.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/component/audio_tile.dart';
@@ -46,6 +47,27 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
   }
 
   @override
+  void dispose() {
+    MouseBackExit.unregister(_clearSearchOnBack);
+    super.dispose();
+  }
+
+  void _setSearchQuery(String value) {
+    setState(() => _searchQuery = value);
+    if (_searchQuery.isEmpty) {
+      MouseBackExit.unregister(_clearSearchOnBack);
+    } else {
+      MouseBackExit.register(_clearSearchOnBack);
+    }
+  }
+
+  bool _clearSearchOnBack() {
+    if (!mounted || _searchQuery.isEmpty) return false;
+    _setSearchQuery('');
+    return true;
+  }
+
+  @override
   Widget build(BuildContext context) {
     final allAudios = _contentList;
     final contentList = _searchQuery.isEmpty
@@ -82,7 +104,7 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
       enableSecondaryContentViewSwitch: canSwitchContentView,
       enableSearch: true,
       searchQuery: _searchQuery,
-      onSearchChanged: (v) => setState(() => _searchQuery = v),
+      onSearchChanged: _setSearchQuery,
       bodyOverride: contentList.isEmpty
           ? (_searchQuery.isEmpty
                 ? const _EmptyFolderBody()

@@ -3,6 +3,7 @@ import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/component/danger_confirm_dialog.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/list_action_state.dart';
+import 'package:pure_music/core/mouse_back_exit.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/library/audio_library.dart';
@@ -61,6 +62,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
 
   @override
   void dispose() {
+    MouseBackExit.unregister(_clearSearchOnBack);
     multiSelectController.dispose();
     _reorderScrollController.dispose();
     super.dispose();
@@ -71,8 +73,23 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.playlist != widget.playlist) {
       _refreshCoverFutures();
-      _searchQuery = '';
+      _setSearchQuery('');
     }
+  }
+
+  void _setSearchQuery(String value) {
+    setState(() => _searchQuery = value);
+    if (_searchQuery.isEmpty) {
+      MouseBackExit.unregister(_clearSearchOnBack);
+    } else {
+      MouseBackExit.register(_clearSearchOnBack);
+    }
+  }
+
+  bool _clearSearchOnBack() {
+    if (!mounted || _searchQuery.isEmpty) return false;
+    _setSearchQuery('');
+    return true;
   }
 
   Future<void> _changeCover() async {
@@ -271,7 +288,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
       enableSecondaryContentViewSwitch: contentList.isNotEmpty,
       enableSearch: true,
       searchQuery: _searchQuery,
-      onSearchChanged: (v) => setState(() => _searchQuery = v),
+      onSearchChanged: _setSearchQuery,
       multiSelectController: multiSelectController,
       multiSelectViewActions: [
         ListenableBuilder(
