@@ -343,7 +343,7 @@ class PlaybackService extends ChangeNotifier {
 
   double get position => _player.position;
 
-  double get volumeDsp => _player.volumeDsp;
+  double get volumeDsp => _pref.volumeDsp;
 
   /// 修改解码时的音量（不影响 Windows 系统音量）
   void setVolumeDsp(double volume) {
@@ -355,6 +355,7 @@ class PlaybackService extends ChangeNotifier {
     _pref.volumeDsp = volume;
     _eq.reapplyOutputGain();
     _savePlaybackOnly();
+    notifyListeners();
   }
 
   Stream<double> get positionStream => _player.positionStream;
@@ -728,6 +729,7 @@ class PlaybackService extends ChangeNotifier {
     _lastNowPlayingChangedMs = DateTime.now().millisecondsSinceEpoch;
     _resetListenAccumulator(audio.duration.toDouble());
     unawaited(audio.loadSmallCoverBytes());
+    playService.desktopLyricService.sendNowPlayingMessage(audio);
     playService.lyricService.updateLyric();
 
     _playerState.value = state;
@@ -923,7 +925,6 @@ class PlaybackService extends ChangeNotifier {
         playService.desktopLyricService.sendPlayerStateMessage(
           playerState == PlayerState.playing,
         );
-        playService.desktopLyricService.sendNowPlayingMessage(audio);
       });
     });
 
@@ -1152,8 +1153,14 @@ class PlaybackService extends ChangeNotifier {
   }
 
   void useShuffle(bool flag) {
-    if (nowPlaying == null) return;
     if (flag == shuffle.value) return;
+    if (nowPlaying == null) {
+      if (!flag) {
+        shuffle.value = false;
+        _setPlaylistBackup(const []);
+      }
+      return;
+    }
     _synchronizeGaplessTransition();
     logger.i('[action] useShuffle=$flag');
     AudioEchoLogRecorder.instance.mark('useShuffle', extra: {'flag': flag});
