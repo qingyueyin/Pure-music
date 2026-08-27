@@ -4,6 +4,7 @@ import 'package:flutter/physics.dart' show FrictionSimulation, Tolerance;
 import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter/widgets.dart';
 import 'package:pure_music/component/motion.dart' show StackedEffectScope;
+import 'package:pure_music/core/settings.dart' show AppSettings;
 
 bool _usesSmoothScrollPhysics(ScrollPhysics physics) {
   ScrollPhysics? current = physics;
@@ -68,18 +69,32 @@ class SmoothScrollPosition extends ScrollPositionWithSingleContext {
     super.oldPosition,
   });
 
-  /// 速度每秒的衰减指数（越小惯性越长）。
-  static const double velocityDecayPerSecond = 3.0;
+  /// 速度每秒的衰减指数（越大衰减越快、收尾越干脆，惯性越短）。
+  static const double velocityDecayPerSecond = 5.0;
 
   /// 滚轮输入换算为速度的系数。
-  /// 指数衰减下总位移 = v0 / decay，取 delta * decay 使单次滚轮
-  /// 的位移恰好等于滚轮输入量；快速连续滚轮时速度累积，产生加速感。
-  double get _deltaToVelocity => velocityDecayPerSecond;
+  /// 指数衰减下总位移 = v0 / decay，取 delta * decay * multiplier，
+  /// 使单次滚轮位移 = delta * multiplier，提升灵敏度与跟手度；
+  /// 快速连续滚轮时速度累积，产生连贯的加速感。
+  static const double wheelSensitivity = 1.6;
+
+  double get _deltaToVelocity =>
+      velocityDecayPerSecond * wheelSensitivity;
 
   static const _wheelTolerance = Tolerance(distance: 0.05, velocity: 0.5);
 
   @override
   void pointerScroll(double delta) {
+    // 关闭"列表效果"开关或系统"减少动画"时，即使 position 未被重建，
+    // 也直接回退到默认滚动行为，避免平滑滚轮残留。
+    if (!AppSettings.instance.enableStackedScrollEffect ||
+        MediaQuery.maybeDisableAnimationsOf(
+          context.storageContext,
+        ) ==
+            true) {
+      super.pointerScroll(delta);
+      return;
+    }
     if (delta == 0.0) {
       goBallistic(0.0);
       return;
@@ -218,6 +233,83 @@ class StackedScrollConfiguration extends StatelessWidget {
         context,
       ).copyWith(physics: const SmoothScrollPhysics()),
       child: child,
+    );
+  }
+}
+
+/// 自带平滑滚轮的 [ListView]（不等高内容列表，如设置页/统计页）。
+///
+/// 打开"列表效果"开关时使用 [SmoothScrollPhysics]，滚动平滑跟手；
+/// 关闭或系统"减少动画"时回退默认滚动。内部持有自己的
+/// [SmoothScrollController]，不依赖外部。
+class SmoothScrollListView extends StatefulWidget {
+  const SmoothScrollListView({
+    super.key,
+    this.padding,
+    required this.children,
+  });
+
+  final EdgeInsetsGeometry? padding;
+  final List<Widget> children;
+
+  @override
+  State<SmoothScrollListView> createState() => _SmoothScrollListViewState();
+}
+
+class _SmoothScrollListViewState extends State<SmoothScrollListView> {
+  late SmoothScrollController _controller;
+  bool _smoothEnabled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _smoothEnabled = _computeSmooth();
+    _controller = SmoothScrollController();
+    AppSettings.listMotionNotifier.addListener(_syncSmooth);
+  }
+
+  bool _computeSmooth() =>
+      AppSettings.instance.enableStackedScrollEffect &&
+      !MediaQuery.disableAnimationsOf(context);
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncSmooth();
+  }
+
+  /// 平滑状态变化时更换 controller，让滚动视图重新创建 position。
+  ///
+  /// 只改 [ListView.physics] 不会重建已创建的 [SmoothScrollPosition]，
+  /// 平滑滚轮会残留；换 controller 后 [Scrollable] 会把旧 position 作为
+  /// oldPosition 传入，滚动位置得以保留，physics 为 null 时则回退标准滚动。
+  void _syncSmooth() {
+    final next = _computeSmooth();
+    if (next == _smoothEnabled || !mounted) return;
+    final previous = _controller;
+    setState(() {
+      _smoothEnabled = next;
+      _controller = SmoothScrollController();
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !identical(previous, _controller)) previous.dispose();
+    });
+  }
+
+  @override
+  void dispose() {
+    AppSettings.listMotionNotifier.removeListener(_syncSmooth);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      controller: _controller,
+      physics: _smoothEnabled ? const SmoothScrollPhysics() : null,
+      padding: widget.padding,
+      children: widget.children,
     );
   }
 }
