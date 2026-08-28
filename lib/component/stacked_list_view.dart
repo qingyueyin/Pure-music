@@ -263,7 +263,6 @@ class _SmoothScrollListViewState extends State<SmoothScrollListView> {
   @override
   void initState() {
     super.initState();
-    _smoothEnabled = _computeSmooth();
     _controller = SmoothScrollController();
     AppSettings.listMotionNotifier.addListener(_syncSmooth);
   }
