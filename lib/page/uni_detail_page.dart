@@ -43,6 +43,7 @@ class UniDetailPage<P, S, T> extends StatefulWidget {
     this.tertiaryContent,
     this.tertiaryContentBuilder,
     required this.enableShufflePlay,
+    this.enablePlayAll = false,
     required this.enableSortMethod,
     required this.enableSortOrder,
     required this.enableSecondaryContentViewSwitch,
@@ -88,6 +89,7 @@ class UniDetailPage<P, S, T> extends StatefulWidget {
   final ContentBuilder<T>? tertiaryContentBuilder;
 
   final bool enableShufflePlay;
+  final bool enablePlayAll;
   final bool enableSortMethod;
   final bool enableSortOrder;
   final bool enableSecondaryContentViewSwitch;
@@ -336,6 +338,9 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
     final scheme = Theme.of(context).colorScheme;
 
     final List<Widget> actions = [];
+    if (widget.enablePlayAll) {
+      actions.add(PlayAll<S>(contentList: widget.secondaryContent));
+    }
     if (widget.enableShufflePlay) {
       actions.add(ShufflePlay<S>(contentList: widget.secondaryContent));
     }

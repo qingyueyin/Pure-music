@@ -88,6 +88,7 @@ class AlbumDetailPage extends StatelessWidget {
           (context, artist, i, multiSelectController, view) =>
               ArtistTile(artist: artist, view: view),
       enableShufflePlay: secondaryContent.isNotEmpty,
+      enablePlayAll: secondaryContent.isNotEmpty,
       enableSortMethod: canSortSongs,
       enableSortOrder: canSortSongs,
       enableSecondaryContentViewSwitch: secondaryContent.isNotEmpty,

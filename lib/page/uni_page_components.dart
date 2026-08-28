@@ -20,23 +20,50 @@ class ShufflePlay<T> extends StatelessWidget {
     final enabled = contentList.isNotEmpty;
 
     return FilledButton.icon(
-        onPressed: enabled
-            ? () {
-                PlayService.instance.playbackService.shuffleAndPlay(
-                  contentList as List<Audio>,
-                );
-                showTextOnSnackBar('已随机播放', variant: ToastVariant.success);
-              }
-            : null,
-        icon: const Icon(Symbols.shuffle, size: 20),
-        label: const Text('随机播放'),
-        style: const ButtonStyle(
-          fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
-          padding: WidgetStatePropertyAll(
-            EdgeInsets.symmetric(horizontal: 16),
-          ),
-        ),
-      );
+      onPressed: enabled
+          ? () {
+              PlayService.instance.playbackService.shuffleAndPlay(
+                contentList as List<Audio>,
+              );
+              showTextOnSnackBar('已随机播放', variant: ToastVariant.success);
+            }
+          : null,
+      icon: const Icon(Symbols.shuffle, size: 20),
+      label: const Text('随机播放'),
+      style: const ButtonStyle(
+        fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
+        padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 16)),
+      ),
+    );
+  }
+}
+
+class PlayAll<T> extends StatelessWidget {
+  final List<T> contentList;
+
+  const PlayAll({super.key, required this.contentList});
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = contentList.isNotEmpty;
+
+    return FilledButton.icon(
+      onPressed: enabled
+          ? () {
+              final playbackService = PlayService.instance.playbackService;
+              playbackService.useShuffle(false);
+              playbackService.setPlayMode(PlayMode.forward);
+              playbackService.play(0, contentList as List<Audio>);
+              showTextOnSnackBar('已顺序播放', variant: ToastVariant.success);
+            }
+          : null,
+      icon: const Icon(Symbols.play_arrow, size: 20),
+      label: const Text('顺序播放'),
+      style: const ButtonStyle(
+        fixedSize: WidgetStatePropertyAll(Size.fromHeight(40)),
+        padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 16)),
+      ),
+    );
   }
 }
 
@@ -56,103 +83,103 @@ class SortMethodComboBox<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MenuAnchor(
-        style: appMenuStyle,
-        menuChildren: List.generate(
-          sortMethods.length,
-          (i) {
-            final sortMethod = sortMethods[i];
-            final selected = identical(sortMethod, currSortMethod);
-            return MenuItemButton(
-              style: const ButtonStyle(
-                padding: WidgetStatePropertyAll(EdgeInsets.all(12)),
-              ),
-              leadingIcon: Icon(sortMethod.icon),
-              trailingIcon: selected ? const Icon(Symbols.check) : null,
-              onPressed: selected ? null : () => setSortMethod(sortMethod),
-              child: Text(sortMethod.name),
-            );
+      style: appMenuStyle,
+      menuChildren: List.generate(sortMethods.length, (i) {
+        final sortMethod = sortMethods[i];
+        final selected = identical(sortMethod, currSortMethod);
+        return MenuItemButton(
+          style: const ButtonStyle(
+            padding: WidgetStatePropertyAll(EdgeInsets.all(12)),
+          ),
+          leadingIcon: Icon(sortMethod.icon),
+          trailingIcon: selected ? const Icon(Symbols.check) : null,
+          onPressed: selected ? null : () => setSortMethod(sortMethod),
+          child: Text(sortMethod.name),
+        );
+      }),
+      builder: (context, menuController, _) {
+        final scheme = Theme.of(context).colorScheme;
+        return FilledButton.tonal(
+          onPressed: () {
+            if (menuController.isOpen) {
+              menuController.close();
+            } else {
+              menuController.open();
+            }
           },
-        ),
-        builder: (context, menuController, _) {
-          final scheme = Theme.of(context).colorScheme;
-          return FilledButton.tonal(
-            onPressed: () {
-              if (menuController.isOpen) {
-                menuController.close();
-              } else {
-                menuController.open();
-              }
-            },
-            style: ButtonStyle(
-              backgroundColor: WidgetStatePropertyAll(scheme.secondaryContainer),
-              foregroundColor:
-                  WidgetStatePropertyAll(scheme.onSecondaryContainer),
-              fixedSize: const WidgetStatePropertyAll(Size.fromHeight(40)),
-              padding: const WidgetStatePropertyAll(
-                EdgeInsets.symmetric(horizontal: 16),
-              ),
-              shape: WidgetStatePropertyAll(
-                RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
-              ),
+          style: ButtonStyle(
+            backgroundColor: WidgetStatePropertyAll(scheme.secondaryContainer),
+            foregroundColor: WidgetStatePropertyAll(
+              scheme.onSecondaryContainer,
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Symbols.sort, size: 20),
-                const SizedBox(width: 4.0),
-                Text(currSortMethod.name),
-                const SizedBox(width: 4.0),
-                AnimatedRotation(
-                  duration: MotionDuration.fast,
-                  curve: MotionCurve.standard,
-                  turns: menuController.isOpen ? 0.5 : 0.0,
-                  child: const Icon(Symbols.arrow_drop_down, size: 20),
-                ),
-              ],
+            fixedSize: const WidgetStatePropertyAll(Size.fromHeight(40)),
+            padding: const WidgetStatePropertyAll(
+              EdgeInsets.symmetric(horizontal: 16),
             ),
-          );
-        },
-      );
+            shape: WidgetStatePropertyAll(
+              RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Symbols.sort, size: 20),
+              const SizedBox(width: 4.0),
+              Text(currSortMethod.name),
+              const SizedBox(width: 4.0),
+              AnimatedRotation(
+                duration: MotionDuration.fast,
+                curve: MotionCurve.standard,
+                turns: menuController.isOpen ? 0.5 : 0.0,
+                child: const Icon(Symbols.arrow_drop_down, size: 20),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 }
 
 class SortOrderSwitch<T> extends StatelessWidget {
   final SortOrder sortOrder;
   final void Function(SortOrder order) setSortOrder;
-  const SortOrderSwitch(
-      {super.key, required this.sortOrder, required this.setSortOrder});
+  const SortOrderSwitch({
+    super.key,
+    required this.sortOrder,
+    required this.setSortOrder,
+  });
 
   @override
   Widget build(BuildContext context) {
     var isAscending = sortOrder == SortOrder.ascending;
     return IconButton.filledTonal(
-        tooltip: "切换排序顺序（${isAscending ? "升序" : "降序"}）",
-        onPressed: () => setSortOrder(
-          isAscending ? SortOrder.decending : SortOrder.ascending,
+      tooltip: "切换排序顺序（${isAscending ? "升序" : "降序"}）",
+      onPressed: () =>
+          setSortOrder(isAscending ? SortOrder.decending : SortOrder.ascending),
+      iconSize: 20,
+      style: ButtonStyle(
+        fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
+        padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
         ),
-        iconSize: 20,
-        style: ButtonStyle(
-          fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
-          padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-          shape: WidgetStatePropertyAll(
-            RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
-          ),
+      ),
+      icon: AnimatedSwitcher(
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : MotionDuration.fast,
+        switchInCurve: MotionCurve.standard,
+        switchOutCurve: MotionCurve.standard,
+        transitionBuilder: (child, animation) => FadeTransition(
+          opacity: animation,
+          child: ScaleTransition(scale: animation, child: child),
         ),
-        icon: AnimatedSwitcher(
-          duration: MediaQuery.disableAnimationsOf(context)
-              ? Duration.zero
-              : MotionDuration.fast,
-          switchInCurve: MotionCurve.standard,
-          switchOutCurve: MotionCurve.standard,
-          transitionBuilder: (child, animation) => FadeTransition(
-            opacity: animation,
-            child: ScaleTransition(scale: animation, child: child),
-          ),
-          child: Icon(
-            isAscending ? Symbols.arrow_upward : Symbols.arrow_downward,
-            key: ValueKey(isAscending),
-          ),
+        child: Icon(
+          isAscending ? Symbols.arrow_upward : Symbols.arrow_downward,
+          key: ValueKey(isAscending),
         ),
+      ),
     );
   }
 }
@@ -160,17 +187,19 @@ class SortOrderSwitch<T> extends StatelessWidget {
 class ContentViewSwitch<T> extends StatelessWidget {
   final ContentView contentView;
   final void Function(ContentView contentView) setContentView;
-  const ContentViewSwitch(
-      {super.key, required this.contentView, required this.setContentView});
+  const ContentViewSwitch({
+    super.key,
+    required this.contentView,
+    required this.setContentView,
+  });
 
   @override
   Widget build(BuildContext context) {
     var isListView = contentView == ContentView.list;
     return IconButton.filledTonal(
-        tooltip: "切换页面视图（${isListView ? "列表" : "表格"}）",
-        onPressed: () => setContentView(
-          isListView ? ContentView.table : ContentView.list,
-        ),
+      tooltip: "切换页面视图（${isListView ? "列表" : "表格"}）",
+      onPressed: () =>
+          setContentView(isListView ? ContentView.table : ContentView.list),
       iconSize: 20,
       style: ButtonStyle(
         fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
@@ -282,48 +311,46 @@ class _AddAllToPlaylistState extends State<AddAllToPlaylist> {
     return ListenableBuilder(
       listenable: widget.multiSelectController,
       builder: (context, _) {
-        final selectedAudios =
-            _uniqueAudiosByPath(widget.multiSelectController.selected);
+        final selectedAudios = _uniqueAudiosByPath(
+          widget.multiSelectController.selected,
+        );
         final targetPlaylists = widget.excludedPlaylist == null
             ? playlists
             : playlists
-                  .where((playlist) => !identical(playlist, widget.excludedPlaylist))
+                  .where(
+                    (playlist) => !identical(playlist, widget.excludedPlaylist),
+                  )
                   .toList(growable: false);
         final addableCounts = targetPlaylists
             .map((playlist) => _addableAudioCount(playlist, selectedAudios))
             .toList(growable: false);
         return MenuAnchor(
           style: appMenuStyle,
-          menuChildren: List.generate(
-            targetPlaylists.length,
-            (i) {
-              final playlist = targetPlaylists[i];
-              final isAdding = identical(_addingPlaylist, playlist);
-              final addableCount = addableCounts[i];
-              final allAlreadyAdded =
-                  selectedAudios.isNotEmpty && addableCount == 0;
-              return MenuItemButton(
-                style: const ButtonStyle(
-                  padding: WidgetStatePropertyAll(
-                    EdgeInsets.symmetric(horizontal: 20),
-                  ),
+          menuChildren: List.generate(targetPlaylists.length, (i) {
+            final playlist = targetPlaylists[i];
+            final isAdding = identical(_addingPlaylist, playlist);
+            final addableCount = addableCounts[i];
+            final allAlreadyAdded =
+                selectedAudios.isNotEmpty && addableCount == 0;
+            return MenuItemButton(
+              style: const ButtonStyle(
+                padding: WidgetStatePropertyAll(
+                  EdgeInsets.symmetric(horizontal: 20),
                 ),
-                onPressed: _addingPlaylist == null && addableCount > 0
-                    ? () => _addToPlaylist(playlist)
-                    : null,
-                leadingIcon: isAdding
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Icon(
-                        allAlreadyAdded ? Symbols.check : Symbols.queue_music,
-                      ),
-                child: Text(playlist.name),
-              );
-            },
-          ),
+              ),
+              onPressed: _addingPlaylist == null && addableCount > 0
+                  ? () => _addToPlaylist(playlist)
+                  : null,
+              leadingIcon: isAdding
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(allAlreadyAdded ? Symbols.check : Symbols.queue_music),
+              child: Text(playlist.name),
+            );
+          }),
           builder: (context, controller, _) {
             final enabled = canOpenAddToPlaylistMenu(
               hasSelectedAudios: selectedAudios.isNotEmpty,
@@ -386,7 +413,8 @@ class _AddSelectedAudiosToPlaylistState<T>
     if (_addingPlaylist != null) return;
 
     final selectedAudios = _uniqueAudiosByPath(
-        widget.toAudios(widget.multiSelectController.selected));
+      widget.toAudios(widget.multiSelectController.selected),
+    );
     if (selectedAudios.isEmpty) return;
     setState(() => _addingPlaylist = playlist);
     try {
@@ -425,36 +453,31 @@ class _AddSelectedAudiosToPlaylistState<T>
             .toList(growable: false);
         return MenuAnchor(
           style: appMenuStyle,
-          menuChildren: List.generate(
-            playlists.length,
-            (i) {
-              final playlist = playlists[i];
-              final isAdding = identical(_addingPlaylist, playlist);
-              final addableCount = addableCounts[i];
-              final allAlreadyAdded =
-                  selectedAudios.isNotEmpty && addableCount == 0;
-              return MenuItemButton(
-                style: const ButtonStyle(
-                  padding: WidgetStatePropertyAll(
-                    EdgeInsets.symmetric(horizontal: 20),
-                  ),
+          menuChildren: List.generate(playlists.length, (i) {
+            final playlist = playlists[i];
+            final isAdding = identical(_addingPlaylist, playlist);
+            final addableCount = addableCounts[i];
+            final allAlreadyAdded =
+                selectedAudios.isNotEmpty && addableCount == 0;
+            return MenuItemButton(
+              style: const ButtonStyle(
+                padding: WidgetStatePropertyAll(
+                  EdgeInsets.symmetric(horizontal: 20),
                 ),
-                onPressed: _addingPlaylist == null && addableCount > 0
-                    ? () => _addToPlaylist(playlist)
-                    : null,
-                leadingIcon: isAdding
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Icon(
-                        allAlreadyAdded ? Symbols.check : Symbols.queue_music,
-                      ),
-                child: Text(playlist.name),
-              );
-            },
-          ),
+              ),
+              onPressed: _addingPlaylist == null && addableCount > 0
+                  ? () => _addToPlaylist(playlist)
+                  : null,
+              leadingIcon: isAdding
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(allAlreadyAdded ? Symbols.check : Symbols.queue_music),
+              child: Text(playlist.name),
+            );
+          }),
           builder: (context, controller, _) {
             final enabled = canOpenAddToPlaylistMenu(
               hasSelectedAudios: selectedAudios.isNotEmpty,
@@ -511,8 +534,9 @@ class MultiSelectPlaySelectedAudios<T> extends StatelessWidget {
     return ListenableBuilder(
       listenable: multiSelectController,
       builder: (context, _) {
-        final audios =
-            _uniqueAudiosByPath(toAudios(multiSelectController.selected));
+        final audios = _uniqueAudiosByPath(
+          toAudios(multiSelectController.selected),
+        );
         return FilledButton.icon(
           onPressed: audios.isEmpty
               ? null
@@ -546,10 +570,11 @@ class MultiSelectSelectOrClearAll<T> extends StatelessWidget {
   final MultiSelectController<T> multiSelectController;
   final List<T> contentList;
 
-  const MultiSelectSelectOrClearAll(
-      {super.key,
-      required this.multiSelectController,
-      required this.contentList});
+  const MultiSelectSelectOrClearAll({
+    super.key,
+    required this.multiSelectController,
+    required this.contentList,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -572,16 +597,12 @@ class MultiSelectSelectOrClearAll<T> extends StatelessWidget {
                   }
                 },
           iconSize: 20,
-          icon: Icon(
-            allSelected ? Symbols.deselect : Symbols.select_all,
-          ),
+          icon: Icon(allSelected ? Symbols.deselect : Symbols.select_all),
           style: ButtonStyle(
             fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
             padding: const WidgetStatePropertyAll(EdgeInsets.zero),
             shape: WidgetStatePropertyAll(
-              RoundedRectangleBorder(
-                borderRadius: AppRadius.smCircular,
-              ),
+              RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
             ),
           ),
         );
@@ -609,9 +630,7 @@ class MultiSelectExit<T> extends StatelessWidget {
         fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
         padding: const WidgetStatePropertyAll(EdgeInsets.zero),
         shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(
-            borderRadius: AppRadius.smCircular,
-          ),
+          RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
         ),
       ),
     );
