@@ -158,7 +158,18 @@ class _ArtistTileState extends State<ArtistTile> {
                                 : Future<ImageProvider?>.value(null),
                             builder: (context, snapshot) {
                               if (snapshot.data == null) {
-                                return placeholder;
+                                return snapshot.connectionState ==
+                                        ConnectionState.done
+                                    ? placeholder
+                                    : Container(
+                                        width: 48.0,
+                                        height: 48.0,
+                                        decoration: BoxDecoration(
+                                          color: scheme.surfaceContainerHighest
+                                              .withValues(alpha: 0.22),
+                                          shape: BoxShape.circle,
+                                        ),
+                                      );
                               }
                               return ClipOval(
                                 child: Image(

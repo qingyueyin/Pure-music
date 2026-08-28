@@ -567,7 +567,11 @@ class _SmallCoverWidget extends StatelessWidget {
       future: () => audio.cover,
       builder: (context, snapshot) {
         final provider = snapshot.data;
-        if (provider == null) return _placeholder(context);
+        if (provider == null) {
+          return snapshot.connectionState == ConnectionState.done
+              ? _placeholder(context)
+              : _loadingPlaceholder(context);
+        }
         return ClipRRect(
           borderRadius: AppRadius.smCircular,
           child: Image(
@@ -580,6 +584,18 @@ class _SmallCoverWidget extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+
+  Widget _loadingPlaceholder(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: 48.0,
+      height: 48.0,
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.22),
+        borderRadius: AppRadius.smCircular,
+      ),
     );
   }
 

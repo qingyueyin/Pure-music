@@ -53,11 +53,23 @@ class _AlbumTileState extends State<AlbumTile> {
           ? widget.album.thumbnailCover(size: _coverSize)
           : Future<ImageProvider?>.value(null),
       builder: (context, snapshot) {
-        if (snapshot.data == null) return placeholder;
+        final borderRadius = widget.view == ContentView.list
+            ? AppRadius.smCircular
+            : const BorderRadius.vertical(top: Radius.circular(8.0));
+        if (snapshot.data == null) {
+          return snapshot.connectionState == ConnectionState.done
+              ? placeholder
+              : ClipRRect(
+                  borderRadius: borderRadius,
+                  child: Container(
+                    color: scheme.surfaceContainerHighest.withValues(
+                      alpha: 0.22,
+                    ),
+                  ),
+                );
+        }
         return ClipRRect(
-          borderRadius: widget.view == ContentView.list
-              ? AppRadius.smCircular
-              : const BorderRadius.vertical(top: Radius.circular(8.0)),
+          borderRadius: borderRadius,
           child: Image(
             image: snapshot.data!,
             width: widget.view == ContentView.list ? 48.0 : null,
