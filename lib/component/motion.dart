@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
-import 'package:pure_music/core/settings.dart';
 
 const _listItemEntryDistance = 12.0;
 const _listItemEntrySpring = SpringDescription(
@@ -144,7 +143,6 @@ class DirectionalListItemEntrance extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!AppSettings.instance.enableContentTransitionMotion) return child;
     // 堆叠滚动效果作用域内禁用入场动画，避免与堆叠变换叠加冲突。
     if (StackedEffectScope.isActive(context)) return child;
     final scrollPosition = Scrollable.maybeOf(context)?.position;
@@ -201,23 +199,9 @@ class _DirectionalTabViewState extends State<DirectionalTabView>
   late final List<_TabMotionChannel> _channels;
   int _transitionRequestId = 0;
 
-  void _handleMotionSettingsChanged() {
-    if (!AppSettings.instance.enableContentTransitionMotion) {
-      for (var index = 0; index < _channels.length; index++) {
-        final channel = _channels[index];
-        channel
-          ..opacity.value = index == widget.index ? 1 : 0
-          ..offset.value = 0
-          ..listMotionReady.value = index == widget.index;
-      }
-    }
-    if (mounted) setState(() {});
-  }
-
   @override
   void initState() {
     super.initState();
-    AppSettings.listMotionNotifier.addListener(_handleMotionSettingsChanged);
     _channels = List.generate(
       widget.children.length,
       (index) => _TabMotionChannel(
@@ -238,16 +222,6 @@ class _DirectionalTabViewState extends State<DirectionalTabView>
     super.didUpdateWidget(oldWidget);
     _syncChannelCount();
     if (oldWidget.index == widget.index) return;
-    if (!AppSettings.instance.enableContentTransitionMotion) {
-      for (var index = 0; index < _channels.length; index++) {
-        final channel = _channels[index];
-        channel
-          ..opacity.value = index == widget.index ? 1 : 0
-          ..offset.value = 0
-          ..listMotionReady.value = index == widget.index;
-      }
-      return;
-    }
     final direction = widget.index > oldWidget.index ? 1.0 : -1.0;
     final requestId = ++_transitionRequestId;
     final incoming = _channels[widget.index];
@@ -311,7 +285,6 @@ class _DirectionalTabViewState extends State<DirectionalTabView>
 
   @override
   void dispose() {
-    AppSettings.listMotionNotifier.removeListener(_handleMotionSettingsChanged);
     for (final channel in _channels) {
       channel.dispose();
     }
@@ -321,8 +294,6 @@ class _DirectionalTabViewState extends State<DirectionalTabView>
   @override
   Widget build(BuildContext context) {
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
-    final contentMotionEnabled =
-        AppSettings.instance.enableContentTransitionMotion;
     return Stack(
       fit: StackFit.expand,
       children: List.generate(widget.children.length, (index) {
@@ -334,19 +305,17 @@ class _DirectionalTabViewState extends State<DirectionalTabView>
             final opacity = channel.opacity.value.clamp(0.0, 1.0);
             final isVisible = isCurrent || opacity > 0.001;
             Widget result = child!;
-            if (contentMotionEnabled &&
-                !reduceMotion &&
-                channel.offset.value.abs() > 0.001) {
+            if (!reduceMotion && channel.offset.value.abs() > 0.001) {
               result = Transform.translate(
                 offset: Offset(channel.offset.value, 0),
                 child: result,
               );
             }
-            if (contentMotionEnabled && opacity < 0.999) {
+            if (opacity < 0.999) {
               result = Opacity(opacity: opacity, child: result);
             }
             return Offstage(
-              offstage: contentMotionEnabled ? !isVisible : !isCurrent,
+              offstage: !isVisible,
               child: TickerMode(
                 enabled: isCurrent,
                 child: ExcludeSemantics(

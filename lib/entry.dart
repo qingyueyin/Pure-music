@@ -78,7 +78,21 @@ class SlideTransitionPage<T> extends CustomTransitionPage<T> {
     Widget child,
   ) {
     if (MediaQuery.disableAnimationsOf(context)) return child;
-    if (!_contentTransitionEnabled()) return child;
+    if (!_contentTransitionEnabled()) {
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: MotionCurve.standard,
+        reverseCurve: MotionCurve.standard,
+      );
+      final slide = Tween<Offset>(
+        begin: const Offset(0.03, 0.0),
+        end: Offset.zero,
+      ).animate(curved);
+      return FadeTransition(
+        opacity: curved,
+        child: SlideTransition(position: slide, child: child),
+      );
+    }
 
     final textDirection = Directionality.of(context);
 
@@ -136,8 +150,8 @@ class SlideTransitionPage<T> extends CustomTransitionPage<T> {
   }
 }
 
-/// 根据"内容切换过渡"开关构造页面：关闭时立即跳转（Duration.zero）。
-SlideTransitionPage<T> _slidePage<T>({
+/// 根据"内容切换过渡"开关构造页面：关闭时恢复旧版短过渡。
+Page<T> _slidePage<T>({
   required LocalKey? key,
   required Widget child,
   bool maintainState = false,
@@ -149,10 +163,10 @@ SlideTransitionPage<T> _slidePage<T>({
     child: child,
     transitionDuration: enabled
         ? const Duration(milliseconds: 420)
-        : Duration.zero,
+        : MotionDuration.fast,
     reverseTransitionDuration: enabled
         ? const Duration(milliseconds: 420)
-        : Duration.zero,
+        : MotionDuration.fast,
   );
 }
 
@@ -739,16 +753,10 @@ class _EntryState extends State<Entry>
         pageBuilder: (context, state) => CustomTransitionPage(
           key: state.pageKey,
           maintainState: false,
-          transitionDuration: AppSettings.instance.enableContentTransitionMotion
-              ? MotionDuration.medium
-              : Duration.zero,
-          reverseTransitionDuration:
-              AppSettings.instance.enableContentTransitionMotion
-              ? MotionDuration.medium
-              : Duration.zero,
+          transitionDuration: MotionDuration.medium,
+          reverseTransitionDuration: MotionDuration.medium,
           transitionsBuilder: (context, animation, _, child) {
-            if (MediaQuery.disableAnimationsOf(context) ||
-                !AppSettings.instance.enableContentTransitionMotion) {
+            if (MediaQuery.disableAnimationsOf(context)) {
               return child;
             }
             final curved = CurvedAnimation(
