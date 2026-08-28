@@ -25,6 +25,31 @@ void main() {
 
       expect(adjusted, greaterThan(9800));
     });
+
+    test(
+      'accelerates the tail when its deadline is just after the final word',
+      () {
+        final adjusted = lyricHighlightTimeMs(
+          currentTimeMs: 9900,
+          lineStartMs: 8000,
+          lastWordEndMs: 10000,
+          deadlineMs: 10032,
+        );
+
+        expect(adjusted, greaterThan(9900));
+      },
+    );
+
+    test('never moves highlight time backwards after a late frame', () {
+      final adjusted = lyricHighlightTimeMs(
+        currentTimeMs: 10150,
+        lineStartMs: 8000,
+        lastWordEndMs: 10000,
+        deadlineMs: 10032,
+      );
+
+      expect(adjusted, 10150);
+    });
   });
 
   group('lyricWordEffect', () {

@@ -24,7 +24,7 @@ double lyricHighlightTimeMs({
   required double? deadlineMs,
 }) {
   if (deadlineMs == null || deadlineMs <= lineStartMs) return currentTimeMs;
-  if (lastWordEndMs <= deadlineMs - lyricHighlightFinishLeadMs ||
+  if (lastWordEndMs < deadlineMs - lyricHighlightFinishLeadMs ||
       currentTimeMs < deadlineMs - lyricHighlightCatchUpDurationMs) {
     return currentTimeMs;
   }
@@ -34,7 +34,8 @@ double lyricHighlightTimeMs({
       .clamp(0.0, 1.0);
   final eased = Curves.easeIn.transform(t);
   final targetEnd = max(lastWordEndMs, deadlineMs);
-  return currentTimeMs + (targetEnd - currentTimeMs) * eased;
+  final adjusted = currentTimeMs + (targetEnd - currentTimeMs) * eased;
+  return adjusted < currentTimeMs ? currentTimeMs : adjusted;
 }
 
 enum LyricWordEffect { none, scale, scaleAndGlow }

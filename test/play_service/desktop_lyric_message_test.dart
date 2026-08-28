@@ -110,6 +110,7 @@ void main() {
 
   test('keeps the full opening interlude when desktop lyric starts late', () {
     final lyric = Lyric([
+      SyncLyricLine(Duration.zero, const Duration(seconds: 8), const []),
       SyncLyricLine(const Duration(seconds: 8), const Duration(seconds: 3), [
         SyncLyricWord(
           const Duration(seconds: 8),
@@ -124,6 +125,57 @@ void main() {
     expect(prelude?.start, Duration.zero);
     expect(prelude?.length, const Duration(seconds: 8));
     expect(desktopLyricPreludeLineAt(lyric, 8000), isNull);
+  });
+
+  test('uses only explicit long blank lines for desktop interludes', () {
+    final normalGap = SyncLyricLine(
+      const Duration(seconds: 1),
+      const Duration(seconds: 1),
+      [
+        SyncLyricWord(
+          const Duration(seconds: 1),
+          const Duration(seconds: 1),
+          'first',
+        ),
+      ],
+    );
+    final nextLine = SyncLyricLine(
+      const Duration(seconds: 10),
+      const Duration(seconds: 1),
+      [
+        SyncLyricWord(
+          const Duration(seconds: 10),
+          const Duration(seconds: 1),
+          'next',
+        ),
+      ],
+    );
+
+    expect(isDesktopLyricTransitionLine(normalGap), isFalse);
+    expect(
+      isDesktopLyricTransitionLine(
+        SyncLyricLine(
+          const Duration(seconds: 3),
+          const Duration(seconds: 5),
+          const [],
+        ),
+      ),
+      isTrue,
+    );
+    expect(
+      isDesktopLyricTransitionLine(
+        SyncLyricLine(
+          const Duration(seconds: 3),
+          const Duration(seconds: 3),
+          const [],
+        ),
+      ),
+      isFalse,
+    );
+    expect(
+      desktopLyricPreludeLineAt(Lyric([normalGap, nextLine]), 5000),
+      isNull,
+    );
   });
 
   test('round-trips line identity and highlight strategy', () {

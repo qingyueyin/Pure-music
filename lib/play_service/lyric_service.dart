@@ -36,6 +36,18 @@ bool _hasDesktopLyricContent(LyricLine line) {
   return content != null && content.trim().isNotEmpty;
 }
 
+bool isDesktopLyricTransitionLine(LyricLine line) {
+  if (line is SyncLyricLine) {
+    return line.words.isEmpty && line.length > const Duration(seconds: 3);
+  }
+  if (line is LrcLine) {
+    return line.isBlank &&
+        line.length > const Duration(seconds: 3) &&
+        line.start == Duration.zero;
+  }
+  return false;
+}
+
 class _ParallelLyricGroup {
   const _ParallelLyricGroup(this.members, this.endMs);
 
@@ -119,17 +131,22 @@ List<_ParallelLyricGroup> _buildParallelLyricGroups({
 SyncLyricLine? desktopLyricPreludeLineAt(Lyric lyric, int positionMs) {
   if (lyric.lines.isEmpty) return null;
   final firstIndex = lyric.lines.indexWhere(_hasDesktopLyricContent);
-  if (firstIndex < 0) return null;
-  final firstLine = lyric.lines[firstIndex];
-  final firstStartMs = firstLine is SyncLyricLine && firstLine.words.isNotEmpty
-      ? firstLine.words.first.start.inMilliseconds
-      : firstLine.start.inMilliseconds;
-  if (positionMs >= firstStartMs) return null;
-  return SyncLyricLine(
-    Duration.zero,
-    Duration(milliseconds: firstStartMs),
-    const [],
-  );
+  if (firstIndex <= 0) return null;
+  for (var index = 0; index < firstIndex; index++) {
+    final line = lyric.lines[index];
+    if (!isDesktopLyricTransitionLine(line) || line.start != Duration.zero) {
+      continue;
+    }
+    final endMs = _lyricLineRenderEndMs(lyric, line);
+    if (positionMs < endMs) {
+      return SyncLyricLine(
+        Duration.zero,
+        Duration(milliseconds: endMs),
+        const [],
+      );
+    }
+  }
+  return null;
 }
 
 int lyricLineSwitchStartMs({
@@ -450,48 +467,37 @@ class LyricService extends ChangeNotifier {
     final lyric = _currLyric;
     if (lyric == null) return;
     if (currLineIndex < 0 || currLineIndex >= lyric.lines.length) return;
-    var previousIndex = currLineIndex;
-    while (previousIndex >= 0 &&
-        !_hasDesktopLyricContent(lyric.lines[previousIndex])) {
-      previousIndex -= 1;
-    }
-    var nextIndex = currLineIndex + 1;
-    while (nextIndex < lyric.lines.length &&
-        !_hasDesktopLyricContent(lyric.lines[nextIndex])) {
-      nextIndex += 1;
-    }
-    if (nextIndex >= lyric.lines.length) {
+    final transitionLine = lyric.lines[currLineIndex];
+    if (!isDesktopLyricTransitionLine(transitionLine)) {
       _desktopGapShown = false;
       return;
     }
-    final gapStart = previousIndex >= 0 && previousIndex < _lineEndMs.length
-        ? _lineEndMs[previousIndex]
-        : 0;
-    final gapEnd = nextIndex < _lineRenderStartMs.length
-        ? _lineRenderStartMs[nextIndex]
-        : gapStart;
-    if (gapEnd <= gapStart || posMs < gapStart || posMs >= gapEnd) {
+    final transitionStart = _lyricLineRenderStartMs(transitionLine);
+    final transitionEnd = _lyricLineRenderEndMs(lyric, transitionLine);
+    if (transitionEnd <= transitionStart ||
+        posMs < transitionStart ||
+        posMs >= transitionEnd) {
       _desktopGapShown = false;
       return;
     }
     if (_desktopGapShown) return;
     _desktopGapShown = true;
+    var nextIndex = currLineIndex + 1;
+    while (nextIndex < lyric.lines.length &&
+        !_hasDesktopLyricContent(lyric.lines[nextIndex])) {
+      nextIndex += 1;
+    }
     final nextLine = nextIndex < lyric.lines.length
         ? lyric.lines[nextIndex]
         : null;
-    final gapDuration = gapEnd - gapStart;
     playService.desktopLyricService.canSendMessage.then((canSend) {
       if (!canSend) return;
       playService.desktopLyricService.sendLyricLineMessage(
-        SyncLyricLine(
-          Duration(milliseconds: gapStart),
-          Duration(milliseconds: gapDuration),
-          const [],
-        ),
+        transitionLine,
         nextLine: nextLine,
         isWordByWord: lyric.isWordByWord,
         syntheticLineId: playService.desktopLyricService
-            .syntheticLineIdForStart(gapStart),
+            .syntheticLineIdForStart(transitionStart),
       );
     });
   }
@@ -1092,7 +1098,9 @@ class LyricService extends ChangeNotifier {
     )) {
       if (!group.members.contains(anchor) || posMs >= group.endMs) continue;
       final startedMembers = group.members.where(
-        (index) => lineRenderStartMs[index] - posMs <= lyricWordPreSwitchMs,
+        (index) =>
+            lineRenderStartMs[index] - posMs <= lyricWordPreSwitchMs &&
+            posMs < lineEndMs[index],
       );
       layout.addAll(startedMembers);
       break;

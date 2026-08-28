@@ -14,7 +14,8 @@ import 'package:pure_music/play_service/lyric_service.dart'
         lyricHighlightCatchUpDurationMs,
         lyricHighlightDeadlineMsForLine,
         lyricHighlightFinishLeadMs,
-        desktopLyricPreludeLineAt;
+        desktopLyricPreludeLineAt,
+        isDesktopLyricTransitionLine;
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/desktop_lyric_colors.dart';
@@ -24,8 +25,6 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
 
 import 'package:desktop_lyric/message.dart' as msg;
-
-const int _desktopLyricInterludeMinimumMs = 3000;
 
 Duration desktopLyricHighlightDuration(LyricLine line) {
   var duration = line.length;
@@ -680,47 +679,17 @@ class DesktopLyricService extends ChangeNotifier {
       _nextLyricLineId = 0;
       _nextSyntheticLineId = -1;
     }
-    final renderStartMs = <int, int>{};
     final switchStartMs = playService.lyricService.switchStartMsForLyric(lyric);
-    final items = <({int index, LyricLine line, String content})>[];
+    final lines = <msg.FullLyricLine>[];
     for (var index = 0; index < lyric.lines.length; index++) {
       final line = lyric.lines[index];
-      final content = line is SyncLyricLine
-          ? line.content
-          : line is UnsyncLyricLine
-          ? line.content
-          : null;
-      if (content == null || content.trim().isEmpty) continue;
-      final startMs = line is SyncLyricLine && line.words.isNotEmpty
-          ? line.words.first.start.inMilliseconds
-          : line.start.inMilliseconds;
-      renderStartMs[index] = startMs;
-      items.add((index: index, line: line, content: content));
-    }
-    final lines = <msg.FullLyricLine>[];
-    void addGap(int startMs, int endMs) {
-      if (endMs - startMs <= _desktopLyricInterludeMinimumMs) return;
-      lines.add(
-        msg.FullLyricLine(
-          _gapLineIdForStart(startMs),
-          null,
-          null,
-          null,
-          startMs,
-          endMs - startMs,
-          null,
-          null,
-          startMs,
-        ),
-      );
-    }
-
-    if (items.isNotEmpty) {
-      addGap(0, renderStartMs[items.first.index]!);
-    }
-    for (var itemIndex = 0; itemIndex < items.length; itemIndex++) {
-      final item = items[itemIndex];
-      final line = item.line;
+      final content = _desktopLyricLineContent(line);
+      final isTransition = isDesktopLyricTransitionLine(line);
+      if ((content == null || content.trim().isEmpty) && !isTransition) {
+        continue;
+      }
+      final startMs = _desktopLyricLineStartMs(line);
+      final endMs = _desktopLyricLineEndMs(lyric, line);
       final words = line is SyncLyricLine
           ? line.words
                 .map(
@@ -732,32 +701,28 @@ class DesktopLyricService extends ChangeNotifier {
                 )
                 .toList(growable: false)
           : null;
+      final highlightDeadlineMs = isTransition
+          ? null
+          : lyricHighlightDeadlineMsForLine(lyric, index);
       lines.add(
         msg.FullLyricLine(
-          _lineIdForIndex(item.index),
-          item.content,
-          line.translation,
-          line.romanLyric,
+          isTransition ? _gapLineIdForStart(startMs) : _lineIdForIndex(index),
+          isTransition ? null : content,
+          isTransition ? null : line.translation,
+          isTransition ? null : line.romanLyric,
           line.start.inMilliseconds,
-          _desktopLyricLineEndMs(lyric, line) - line.start.inMilliseconds,
-          words,
-          lyricHighlightDeadlineMsForLine(lyric, item.index) == null
+          endMs - line.start.inMilliseconds,
+          isTransition ? null : words,
+          highlightDeadlineMs == null
               ? null
-              : lyricHighlightDeadlineMsForLine(lyric, item.index)! -
-                    line.start.inMilliseconds,
-          item.index < switchStartMs.length
-              ? switchStartMs[item.index]
-              : renderStartMs[item.index],
+              : highlightDeadlineMs - line.start.inMilliseconds,
+          isTransition
+              ? startMs
+              : index < switchStartMs.length
+              ? switchStartMs[index]
+              : startMs,
         ),
       );
-      final lineEnd = _desktopLyricLineEndMs(lyric, line);
-      if (itemIndex + 1 < items.length) {
-        final nextItem = items[itemIndex + 1];
-        final nextSwitchStart = nextItem.index < switchStartMs.length
-            ? switchStartMs[nextItem.index]
-            : renderStartMs[nextItem.index]!;
-        addGap(lineEnd, nextSwitchStart);
-      }
     }
     sendMessage(msg.FullLyricChangedMessage(lines));
   }
@@ -866,6 +831,25 @@ class DesktopLyricService extends ChangeNotifier {
       );
       final idx = update?.primaryIndex;
       if (idx == null || idx < 0 || idx >= lyric.lines.length) return;
+      final candidateLine = lyric.lines[idx];
+      if (isDesktopLyricTransitionLine(candidateLine)) {
+        var nextIndex = idx + 1;
+        while (nextIndex < lyric.lines.length &&
+            !_hasDesktopLyricContent(lyric.lines[nextIndex])) {
+          nextIndex += 1;
+        }
+        sendLyricLineMessage(
+          candidateLine,
+          nextLine: nextIndex < lyric.lines.length
+              ? lyric.lines[nextIndex]
+              : null,
+          isWordByWord: lyric.isWordByWord,
+          syntheticLineId: syntheticLineIdForStart(
+            _desktopLyricLineStartMs(candidateLine),
+          ),
+        );
+        return;
+      }
       var currentIndex = idx;
       while (currentIndex >= 0 &&
           !_hasDesktopLyricContent(lyric.lines[currentIndex])) {
@@ -891,26 +875,6 @@ class DesktopLyricService extends ChangeNotifier {
         ),
         lineIndex: currentIndex,
       );
-      final currentEnd = _desktopLyricLineEndMs(lyric, currentLine);
-      final nextStart = nextLine == null
-          ? currentEnd
-          : _desktopLyricLineStartMs(nextLine);
-      final gapDuration = nextStart - currentEnd;
-      if (nextLine != null &&
-          gapDuration > 0 &&
-          positionMs >= currentEnd &&
-          positionMs < nextStart) {
-        sendLyricLineMessage(
-          SyncLyricLine(
-            Duration(milliseconds: currentEnd),
-            Duration(milliseconds: gapDuration),
-            const [],
-          ),
-          nextLine: nextLine,
-          isWordByWord: lyric.isWordByWord,
-          syntheticLineId: syntheticLineIdForStart(currentEnd),
-        );
-      }
     });
   }
 
