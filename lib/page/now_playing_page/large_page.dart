@@ -16,57 +16,59 @@ class _NowPlayingLargePage extends StatelessWidget {
         Expanded(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(24.0, 8.0, 24.0, 8.0),
-            child: LayoutBuilder(builder: (context, constraints) {
-              final immersiveViewportHeight =
-                  MediaQuery.sizeOf(context).height - 16.0;
-              final currentLineAlignment =
-                  (immersiveViewportHeight * 0.45 / constraints.maxHeight)
-                      .clamp(0.0, 1.0)
-                      .toDouble();
-              // 封面尺寸按整个窗口高度计算，与横屏沉浸模式一致
-              final coverSize = _responsiveNowPlayingCoverSize(
-                maxWidth: constraints.maxWidth / 2,
-                maxHeight: immersiveViewportHeight,
-              );
-              return Row(
-                children: [
-                  // 左侧：封面+ 歌曲信息 (50%) - 封面垂直居中于整个窗口
-                  Expanded(
-                    child: Transform.translate(
-                      offset: const Offset(
-                        0,
-                        _normalLandscapeBottomAreaHeight / 2,
-                      ),
-                      child: Center(
-                        child: _NowPlayingInfo(coverSizeOverride: coverSize),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final immersiveViewportHeight =
+                    MediaQuery.sizeOf(context).height - 16.0;
+                final currentLineAlignment =
+                    (immersiveViewportHeight * 0.45 / constraints.maxHeight)
+                        .clamp(0.0, 1.0)
+                        .toDouble();
+                // 封面尺寸按整个窗口高度计算，与横屏沉浸模式一致
+                final coverSize = _responsiveNowPlayingCoverSize(
+                  maxWidth: constraints.maxWidth / 2,
+                  maxHeight: immersiveViewportHeight,
+                );
+                return Row(
+                  children: [
+                    // 左侧：封面+ 歌曲信息 (50%) - 封面垂直居中于整个窗口
+                    Expanded(
+                      child: Transform.translate(
+                        offset: const Offset(
+                          0,
+                          _normalLandscapeBottomAreaHeight / 2,
+                        ),
+                        child: Center(
+                          child: _NowPlayingInfo(coverSizeOverride: coverSize),
+                        ),
                       ),
                     ),
-                  ),
-                  // 右侧：歌词区域(50%)
-                  Expanded(
-                    child: ValueListenableBuilder(
-                      valueListenable: nowPlayingViewMode,
-                      builder: (context, value, _) => AnimatedSwitcher(
-                        duration: MotionDuration.base,
-                        switchInCurve: MotionCurve.standard,
-                        switchOutCurve: MotionCurve.standard,
-                        child: switch (value) {
-                          NowPlayingViewMode.withPlaylist =>
-                            const CurrentPlaylistView(),
-                          _ => Padding(
+                    // 右侧：歌词区域(50%)
+                    Expanded(
+                      child: ValueListenableBuilder(
+                        valueListenable: nowPlayingViewMode,
+                        builder: (context, value, _) => AnimatedSwitcher(
+                          duration: MotionDuration.base,
+                          switchInCurve: MotionCurve.standard,
+                          switchOutCurve: MotionCurve.standard,
+                          child: switch (value) {
+                            NowPlayingViewMode.withPlaylist =>
+                              const CurrentPlaylistView(),
+                            _ => Padding(
                               padding: const EdgeInsets.only(right: 8.0),
                               child: VerticalLyricView(
                                 enableEdgeSpacer: true,
                                 currentLineAlignment: currentLineAlignment,
                               ),
                             ),
-                        },
+                          },
+                        ),
                       ),
                     ),
-                  ),
-                ],
-              );
-            }),
+                  ],
+                );
+              },
+            ),
           ),
         ),
         Column(
@@ -87,6 +89,15 @@ class _NowPlayingLargePage extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        IconButton(
+                          tooltip: '收起播放页',
+                          onPressed: () {
+                            if (context.canPop()) context.pop();
+                          },
+                          icon: const Icon(Symbols.keyboard_arrow_down),
+                          color: controlColor,
+                        ),
+                        spacer,
                         const _DesktopLyricSwitch(),
                         spacer,
                         const _ExclusiveModeSwitch(),
@@ -175,10 +186,7 @@ class _NowPlayingLargePage extends StatelessWidget {
                               onPressed: hasNowPlaying
                                   ? playbackService.nextAudio
                                   : null,
-                              icon: const Icon(
-                                Symbols.skip_next,
-                                fill: 1.0,
-                              ),
+                              icon: const Icon(Symbols.skip_next, fill: 1.0),
                               iconSize: 28,
                               color: controlColor,
                               disabledColor: disabledColor,
@@ -199,10 +207,12 @@ class _NowPlayingLargePage extends StatelessWidget {
                         spacer,
                         NowPlayingPitchControl(),
                         spacer,
-                        _NowPlayingMoreAction(),
+                        SetLyricSourceBtn(),
+                        spacer,
+                        _NowPlayingMoreAction(showLyricSource: false),
                       ],
                     ),
-                  )
+                  ),
                 ],
               ),
             ),
@@ -236,11 +246,22 @@ class _AutoHidingControlBarState extends State<_AutoHidingControlBar> {
           color: Colors.transparent,
           borderRadius: AppRadius.mdCircular,
         ),
-        child: AnimatedOpacity(
-          duration: MotionDuration.base,
-          curve: MotionCurve.standard,
-          opacity: _isHovering ? 1.0 : 0.0,
-          child: widget.child,
+        child: ListenableBuilder(
+          listenable: AppSettings.rebuildNotifier,
+          builder: (context, _) => AnimatedOpacity(
+            duration: MotionDuration.base,
+            curve: MotionCurve.standard,
+            opacity:
+                AppSettings.instance.alwaysShowNowPlayingControls || _isHovering
+                ? 1.0
+                : 0.0,
+            child: IgnorePointer(
+              ignoring:
+                  !AppSettings.instance.alwaysShowNowPlayingControls &&
+                  !_isHovering,
+              child: widget.child,
+            ),
+          ),
         ),
       ),
     );
@@ -259,7 +280,8 @@ class _NowPlayingLargeViewSwitch extends StatefulWidget {
 class _NowPlayingLargeViewSwitchState
     extends State<_NowPlayingLargeViewSwitch> {
   Future<void> _changeView(NowPlayingViewMode currentViewMode) async {
-    final nextViewMode = currentViewMode == NowPlayingViewMode.onlyMain ||
+    final nextViewMode =
+        currentViewMode == NowPlayingViewMode.onlyMain ||
             currentViewMode == NowPlayingViewMode.withLyric
         ? NowPlayingViewMode.withPlaylist
         : NowPlayingViewMode.withLyric;
@@ -286,13 +308,10 @@ class _NowPlayingLargeViewSwitchState
         onPressed: () => _changeView(value),
         icon: switch (value) {
           NowPlayingViewMode.withPlaylist => const Icon(
-              Symbols.lyrics,
-              fill: 1.0,
-            ),
-          _ => const Icon(
-              Symbols.queue_music,
-              fill: 1.0,
-            ),
+            Symbols.lyrics,
+            fill: 1.0,
+          ),
+          _ => const Icon(Symbols.queue_music, fill: 1.0),
         },
         color: color,
         disabledColor: disabledColor,

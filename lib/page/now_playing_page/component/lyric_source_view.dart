@@ -821,6 +821,7 @@ class SetLyricSourceBtn extends StatelessWidget {
         future: PlayService.instance.lyricService.currLyricFuture,
         builder: (context, snapshot) {
           const loadingWidget = IconButton(
+            tooltip: '歌词来源：加载中',
             onPressed: null,
             icon: SizedBox(
               height: 20,
@@ -828,20 +829,16 @@ class SetLyricSourceBtn extends StatelessWidget {
               child: CircularProgressIndicator(),
             ),
           );
-          final lyricNullable = snapshot.data;
           final nowPlaying = PlayService.instance.playbackService.nowPlaying;
           final savedSource = nowPlaying == null
               ? null
               : lyricSources[nowPlaying.path];
-          final isLocal = lyricNullable == null
-              ? null
-              : savedSource?.source == LyricSourceType.local ||
-                    lyricNullable.source == LyricFormat.local;
+          final sourceType = savedSource?.source;
           return switch (snapshot.connectionState) {
             ConnectionState.none => loadingWidget,
             ConnectionState.waiting => loadingWidget,
             ConnectionState.active => loadingWidget,
-            ConnectionState.done => _SetLyricSourceBtn(isLocal: isLocal),
+            ConnectionState.done => _SetLyricSourceBtn(sourceType: sourceType),
           };
         },
       ),
@@ -850,13 +847,26 @@ class SetLyricSourceBtn extends StatelessWidget {
 }
 
 class _SetLyricSourceBtn extends StatelessWidget {
-  final bool? isLocal;
-  const _SetLyricSourceBtn({this.isLocal});
+  final LyricSourceType? sourceType;
+  const _SetLyricSourceBtn({this.sourceType});
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final lyricService = PlayService.instance.lyricService;
+    final isLocal = sourceType == null
+        ? null
+        : sourceType == LyricSourceType.local;
+    final icon = switch (sourceType) {
+      null => Symbols.lyrics,
+      LyricSourceType.local => Symbols.lyrics,
+      _ => Symbols.cloud,
+    };
+    final tooltip = switch (sourceType) {
+      null => '歌词来源：未指定',
+      LyricSourceType.local => '歌词来源：本地',
+      _ => '歌词来源：在线',
+    };
     return MenuAnchor(
       onOpen: () {
         alwaysShowLyricViewControls = true;
@@ -898,6 +908,7 @@ class _SetLyricSourceBtn extends StatelessWidget {
         ),
       ],
       builder: (context, controller, _) => IconButton(
+        tooltip: tooltip,
         onPressed: PlayService.instance.playbackService.nowPlaying == null
             ? null
             : () {
@@ -907,7 +918,7 @@ class _SetLyricSourceBtn extends StatelessWidget {
                   controller.open();
                 }
               },
-        icon: const Icon(Symbols.lyrics),
+        icon: Icon(icon, fill: sourceType == LyricSourceType.local ? 1.0 : 0.0),
         color: scheme.onSecondaryContainer,
       ),
     );

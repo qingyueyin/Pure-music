@@ -561,7 +561,9 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
 }
 
 class _NowPlayingMoreAction extends StatefulWidget {
-  const _NowPlayingMoreAction();
+  const _NowPlayingMoreAction({this.showLyricSource = true});
+
+  final bool showLyricSource;
 
   @override
   State<_NowPlayingMoreAction> createState() => _NowPlayingMoreActionState();
@@ -731,19 +733,21 @@ class _NowPlayingMoreActionState extends State<_NowPlayingMoreAction> {
                 );
               },
             ),
-          MenuItemButton(
-            style: menuItemStyle,
-            onPressed: () {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                showDialog<void>(
-                  context: context,
-                  builder: (context) => SetLyricSourceDialog(audio: nowPlaying),
-                );
-              });
-            },
-            leadingIcon: const Icon(Symbols.lyrics),
-            child: const Text('歌词来源'),
-          ),
+          if (widget.showLyricSource)
+            MenuItemButton(
+              style: menuItemStyle,
+              onPressed: () {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  showDialog<void>(
+                    context: context,
+                    builder: (context) =>
+                        SetLyricSourceDialog(audio: nowPlaying),
+                  );
+                });
+              },
+              leadingIcon: const Icon(Symbols.lyrics),
+              child: const Text('歌词来源'),
+            ),
           MenuItemButton(
             style: menuItemStyle,
             onPressed: () {

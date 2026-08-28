@@ -520,7 +520,7 @@ class _MotionEffectSwitchState extends State<_MotionEffectSwitch> {
 
   String get _subtitle => switch (widget.effect) {
     _MotionEffect.stackedScroll => '列表滚动时使用堆叠变换与平滑滚动',
-    _MotionEffect.contentTransition => '页面与列表内容切换时使用滑入过渡',
+    _MotionEffect.contentTransition => '页面切换时使用层级推入过渡',
     _MotionEffect.interactiveSurface => '专辑、艺术家、歌单和文件夹卡片悬停与按压反馈',
     _MotionEffect.detailHeaderCollapse => '详情页头部随滚动收拢',
     _MotionEffect.dataTransition => '统计页指标数值更新时使用过渡',
@@ -555,7 +555,7 @@ class _MotionEffectSwitchState extends State<_MotionEffectSwitch> {
       AppSettings.listMotionNotifier.rebuild();
       if (mounted) {
         setState(() {});
-        showTextOnSnackBar('列表效果保存失败', variant: ToastVariant.error);
+        showTextOnSnackBar('动效设置保存失败', variant: ToastVariant.error);
       }
     } finally {
       if (mounted) setState(() => _updating = false);
@@ -3502,6 +3502,44 @@ class _AppearanceMonetGroup extends StatelessWidget {
   }
 }
 
+class _AlwaysShowNowPlayingControlsSwitch extends StatefulWidget {
+  const _AlwaysShowNowPlayingControlsSwitch();
+
+  @override
+  State<_AlwaysShowNowPlayingControlsSwitch> createState() =>
+      _AlwaysShowNowPlayingControlsSwitchState();
+}
+
+class _AlwaysShowNowPlayingControlsSwitchState
+    extends State<_AlwaysShowNowPlayingControlsSwitch> {
+  final settings = AppSettings.instance;
+
+  Future<void> _setEnabled(bool value) async {
+    setState(() => settings.alwaysShowNowPlayingControls = value);
+    AppSettings.rebuildNotifier.rebuild();
+    final saved = await settings.saveSettings();
+    if (!saved && mounted) {
+      setState(() => settings.alwaysShowNowPlayingControls = !value);
+      AppSettings.rebuildNotifier.rebuild();
+      showTextOnSnackBar('播放控件设置保存失败', variant: ToastVariant.error);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SettingsTile(
+      description: '始终显示播放控件',
+      subtitle: settings.alwaysShowNowPlayingControls
+          ? '播放页底部控件保持显示'
+          : '鼠标移入播放页底部时显示控件',
+      action: Switch(
+        value: settings.alwaysShowNowPlayingControls,
+        onChanged: _setEnabled,
+      ),
+    );
+  }
+}
+
 class _AppearanceProgressGroup extends StatelessWidget {
   const _AppearanceProgressGroup();
 
@@ -3541,6 +3579,8 @@ class _AppearancePlayerGroup extends StatelessWidget {
         _MonetTransitionSwitch(),
         SizedBox(height: 16.0),
         _MonetControlsSwitch(),
+        SizedBox(height: 16.0),
+        _AlwaysShowNowPlayingControlsSwitch(),
       ],
     );
   }

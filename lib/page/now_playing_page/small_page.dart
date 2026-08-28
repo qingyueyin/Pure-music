@@ -25,10 +25,10 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
   ];
   late var views =
       switch (AppPreference.instance.nowPlayingPagePref.nowPlayingViewMode) {
-    NowPlayingViewMode.onlyMain => viewOnlyMain,
-    NowPlayingViewMode.withLyric => viewWithLyric,
-    NowPlayingViewMode.withPlaylist => viewWithPlaylist,
-  };
+        NowPlayingViewMode.onlyMain => viewOnlyMain,
+        NowPlayingViewMode.withLyric => viewWithLyric,
+        NowPlayingViewMode.withPlaylist => viewWithPlaylist,
+      };
   NowPlayingViewMode? _savingViewMode;
 
   IconData viewSwitchIcon(NowPlayingViewMode viewMode) {
@@ -92,24 +92,21 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
                     switchOutCurve: MotionCurve.standard,
                     child: switch (views[1]) {
                       NowPlayingViewMode.onlyMain => const Center(
-                          child: _NowPlayingInfo(
-                            usePortraitCoverSize: true,
-                          ),
-                        ),
+                        child: _NowPlayingInfo(usePortraitCoverSize: true),
+                      ),
                       NowPlayingViewMode.withLyric => Padding(
-                          // 负 padding 抵消歌词行内部 12px 水平 padding，让歌词贴近切换按钮
-                          padding:
-                              const EdgeInsets.symmetric(horizontal: -12.0),
-                          child: ClipRRect(
-                            borderRadius: AppRadius.mdCircular,
-                            child: const VerticalLyricView(
-                              showControls: true,
-                              centerVertically: false,
-                              enableEdgeSpacer: true,
-                              currentLineAlignment: 0.3,
-                            ),
+                        // 负 padding 抵消歌词行内部 12px 水平 padding，让歌词贴近切换按钮
+                        padding: const EdgeInsets.symmetric(horizontal: -12.0),
+                        child: ClipRRect(
+                          borderRadius: AppRadius.mdCircular,
+                          child: const VerticalLyricView(
+                            showControls: true,
+                            centerVertically: false,
+                            enableEdgeSpacer: true,
+                            currentLineAlignment: 0.3,
                           ),
                         ),
+                      ),
                       NowPlayingViewMode.withPlaylist =>
                         const CurrentPlaylistView(),
                     },
@@ -170,33 +167,42 @@ class _NowPlayingSmallControlZoneState
           const SizedBox(height: 4.0),
           const _NowPlayingSmallMainControls(),
           const SizedBox(height: 4.0),
-          AnimatedOpacity(
-            duration: MotionDuration.base,
-            curve: MotionCurve.standard,
-            opacity: _isHovering ? 1.0 : 0.0,
-            child: IgnorePointer(
-              ignoring: !_isHovering,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    const _DesktopLyricSwitch(),
-                    const NowPlayingPitchControl(),
-                    const _ExclusiveModeSwitch(),
-                    IconButton(
-                      tooltip: '均衡器',
-                      onPressed: () {
-                        showDialog(
-                          context: context,
-                          builder: (context) => const EqualizerDialog(),
-                        );
-                      },
-                      icon: const Icon(Symbols.graphic_eq),
-                      color: controlColor,
-                    ),
-                    const _NowPlayingMoreAction(),
-                  ],
+          ListenableBuilder(
+            listenable: AppSettings.rebuildNotifier,
+            builder: (context, _) => AnimatedOpacity(
+              duration: MotionDuration.base,
+              curve: MotionCurve.standard,
+              opacity:
+                  AppSettings.instance.alwaysShowNowPlayingControls ||
+                      _isHovering
+                  ? 1.0
+                  : 0.0,
+              child: IgnorePointer(
+                ignoring:
+                    !AppSettings.instance.alwaysShowNowPlayingControls &&
+                    !_isHovering,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      const _DesktopLyricSwitch(),
+                      const NowPlayingPitchControl(),
+                      const _ExclusiveModeSwitch(),
+                      IconButton(
+                        tooltip: '均衡器',
+                        onPressed: () {
+                          showDialog(
+                            context: context,
+                            builder: (context) => const EqualizerDialog(),
+                          );
+                        },
+                        icon: const Icon(Symbols.graphic_eq),
+                        color: controlColor,
+                      ),
+                      const _NowPlayingMoreAction(),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -332,8 +338,9 @@ class _NowPlayingSmallViewSwitchState
               child: InkWell(
                 borderRadius: AppRadius.mdCircular,
                 hoverColor: scheme.onSecondaryContainer.withValues(alpha: 0.02),
-                highlightColor:
-                    scheme.onSecondaryContainer.withValues(alpha: 0.04),
+                highlightColor: scheme.onSecondaryContainer.withValues(
+                  alpha: 0.04,
+                ),
                 splashColor: Colors.transparent,
                 onTap: widget.enabled ? widget.onTap : null,
                 onHover: (hasEntered) {
@@ -357,7 +364,7 @@ class _NowPlayingSmallViewSwitchState
                           color: widget.enabled
                               ? (useMonet ? scheme.primary : scheme.onSurface)
                               : (useMonet ? scheme.primary : scheme.onSurface)
-                                  .withValues(alpha: 0.38),
+                                    .withValues(alpha: 0.38),
                         ),
                 ),
               ),

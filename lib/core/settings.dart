@@ -314,6 +314,7 @@ class AppSettings {
   bool enableInteractiveSurfaceMotion = true;
   bool enableDetailHeaderCollapseMotion = true;
   bool enableDataTransitionMotion = true;
+  bool alwaysShowNowPlayingControls = false;
   int? customCoverColor;
   String? appBackgroundImagePath;
   double appBackgroundImageOpacity = 0.22;
@@ -387,6 +388,10 @@ class AppSettings {
     _instance.enableDataTransitionMotion = normalizedBoolSetting(
       settingsMap['EnableDataTransitionMotion'],
       defaultValue: stackedScrollEffect,
+    );
+    _instance.alwaysShowNowPlayingControls = normalizedBoolSetting(
+      settingsMap['AlwaysShowNowPlayingControls'],
+      defaultValue: false,
     );
     _instance.appBackgroundImagePath = normalizedPathSetting(
       settingsMap['AppBackgroundImagePath'],
@@ -490,6 +495,10 @@ class AppSettings {
     _instance.enableDataTransitionMotion = normalizedBoolSetting(
       settingsMap['EnableDataTransitionMotion'],
       defaultValue: stackedScrollEffect,
+    );
+    _instance.alwaysShowNowPlayingControls = normalizedBoolSetting(
+      settingsMap['AlwaysShowNowPlayingControls'],
+      defaultValue: false,
     );
 
     final sep = settingsMap['ArtistSeparator'];
@@ -951,6 +960,7 @@ class AppSettings {
         'EnableInteractiveSurfaceMotion': enableInteractiveSurfaceMotion,
         'EnableDetailHeaderCollapseMotion': enableDetailHeaderCollapseMotion,
         'EnableDataTransitionMotion': enableDataTransitionMotion,
+        'AlwaysShowNowPlayingControls': alwaysShowNowPlayingControls,
         'ArtistSeparator': artistSeparator,
         'LocalLyricFirst': localLyricFirst,
         'PreferredOnlineSource': preferredOnlineSource.name,
