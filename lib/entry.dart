@@ -39,6 +39,7 @@ import 'package:pure_music/core/mouse_back_exit.dart';
 import 'package:pure_music/core/matcher.dart' hide logger;
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/route_visibility.dart';
+import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/update_checker.dart';
@@ -50,6 +51,10 @@ import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 
+/// 统一页面跳转过渡：iOS 风格——新页从右滑入覆盖，旧页向左视差滑动并淡化淡出。
+///
+/// 新页全程不透明（只位移），旧页被推向左侧 1/3 的同时淡出，
+/// 由此形成清晰的层级推进，且不会出现"旧页没消失、新页重合"。
 class SlideTransitionPage<T> extends CustomTransitionPage<T> {
   const SlideTransitionPage({
     required super.child,
@@ -58,49 +63,13 @@ class SlideTransitionPage<T> extends CustomTransitionPage<T> {
     super.restorationId,
     super.key,
     super.maintainState = false,
-  }) : super(
-         transitionsBuilder: _transitionsBuilder,
-         transitionDuration: MotionDuration.fast,
-         reverseTransitionDuration: MotionDuration.fast,
-       );
+    super.transitionDuration = const Duration(milliseconds: 420),
+    super.reverseTransitionDuration = const Duration(milliseconds: 420),
+  }) : super(transitionsBuilder: _transitionsBuilder);
 
-  static Widget _transitionsBuilder(
-    BuildContext context,
-    Animation<double> animation,
-    Animation<double> secondaryAnimation,
-    Widget child,
-  ) {
-    final curved = CurvedAnimation(
-      parent: animation,
-      curve: MotionCurve.standard,
-      reverseCurve: MotionCurve.standard,
-    );
-    final fade = curved;
-    final slide = Tween(
-      begin: const Offset(0.03, 0.0),
-      end: Offset.zero,
-    ).animate(curved);
-    return FadeTransition(
-      opacity: fade,
-      child: SlideTransition(position: slide, child: child),
-    );
-  }
-}
-
-/// 设置层级过渡：旧内容先退场，新内容随后进入，背景保持固定。
-class SettingsPageTransition<T> extends CustomTransitionPage<T> {
-  const SettingsPageTransition({
-    required super.child,
-    super.name,
-    super.arguments,
-    super.restorationId,
-    super.key,
-    super.maintainState = false,
-  }) : super(
-         transitionsBuilder: _transitionsBuilder,
-         transitionDuration: MotionDuration.base,
-         reverseTransitionDuration: MotionDuration.base,
-       );
+  /// 内容切换过渡开关关闭时，页面立即跳转（无动画）。
+  static bool _contentTransitionEnabled() =>
+      AppSettings.instance.enableContentTransitionMotion;
 
   static Widget _transitionsBuilder(
     BuildContext context,
@@ -109,29 +78,82 @@ class SettingsPageTransition<T> extends CustomTransitionPage<T> {
     Widget child,
   ) {
     if (MediaQuery.disableAnimationsOf(context)) return child;
+    if (!_contentTransitionEnabled()) return child;
 
+    final textDirection = Directionality.of(context);
+
+    // 新页：从右侧 100% 宽度滑入，全程不透明。
+    final primaryCurve = CurvedAnimation(
+      parent: animation,
+      curve: Curves.fastEaseInToSlowEaseOut,
+      reverseCurve: Curves.fastEaseInToSlowEaseOut.flipped,
+    );
+    final primaryPosition = Tween<Offset>(
+      begin: const Offset(1.0, 0.0),
+      end: Offset.zero,
+    ).animate(primaryCurve);
+
+    // 旧页：被新页推向左侧 1/3 宽度，同时淡化淡出。
+    final secondaryCurve = CurvedAnimation(
+      parent: secondaryAnimation,
+      curve: Curves.linearToEaseOut,
+      reverseCurve: Curves.easeInToLinear,
+    );
+    final secondaryPosition = Tween<Offset>(
+      begin: Offset.zero,
+      end: const Offset(-1.0 / 3.0, 0.0),
+    ).animate(secondaryCurve);
+    final secondaryFade = Tween<double>(
+      begin: 1.0,
+      end: 0.0,
+    ).animate(secondaryCurve);
+
+    // 旧页淡出 + 左移次层，新页右滑入顶层。
+    // 被上层路由覆盖（退出中或已退出）时禁用命中测试，
+    // 避免点到已淡出/视觉移位的旧页内容。
     return AnimatedBuilder(
-      animation: Listenable.merge([animation, secondaryAnimation]),
+      animation: secondaryAnimation,
       child: child,
       builder: (context, child) {
-        final isUnderneath = secondaryAnimation.value > 0.001;
-        final rawProgress = isUnderneath
-            ? (secondaryAnimation.value / 0.32).clamp(0.0, 1.0)
-            : ((animation.value - 0.42) / 0.58).clamp(0.0, 1.0);
-        final motionProgress = isUnderneath
-            ? Curves.easeOutCubic.transform(rawProgress)
-            : MotionCurve.entrance.transform(rawProgress);
-        final opacity = isUnderneath ? 1 - motionProgress : motionProgress;
-        final offset = isUnderneath
-            ? -8.0 * motionProgress
-            : 10.0 * (1 - motionProgress);
-        return Opacity(
-          opacity: opacity,
-          child: Transform.translate(offset: Offset(offset, 0), child: child),
+        return IgnorePointer(
+          ignoring: secondaryAnimation.value > 0.001,
+          child: FadeTransition(
+            opacity: secondaryFade,
+            child: SlideTransition(
+              position: secondaryPosition,
+              textDirection: textDirection,
+              transformHitTests: false,
+              child: SlideTransition(
+                position: primaryPosition,
+                textDirection: textDirection,
+                child: child,
+              ),
+            ),
+          ),
         );
       },
     );
   }
+}
+
+/// 根据"内容切换过渡"开关构造页面：关闭时立即跳转（Duration.zero）。
+SlideTransitionPage<T> _slidePage<T>({
+  required LocalKey? key,
+  required Widget child,
+  bool maintainState = false,
+}) {
+  final enabled = AppSettings.instance.enableContentTransitionMotion;
+  return SlideTransitionPage<T>(
+    key: key,
+    maintainState: maintainState,
+    child: child,
+    transitionDuration: enabled
+        ? const Duration(milliseconds: 420)
+        : Duration.zero,
+    reverseTransitionDuration: enabled
+        ? const Duration(milliseconds: 420)
+        : Duration.zero,
+  );
 }
 
 class Entry extends StatefulWidget {
@@ -529,18 +551,23 @@ class _EntryState extends State<Entry>
             routes: [
               GoRoute(
                 path: app_paths.AUDIOS_PAGE,
-                builder: (context, state) {
+                pageBuilder: (context, state) {
+                  Widget page = const AudiosPage();
                   if (state.extra case final Audio audio) {
-                    return AudiosPage(locateTo: audio);
+                    page = AudiosPage(locateTo: audio);
                   }
-                  return const AudiosPage();
+                  return _slidePage(
+                    key: state.pageKey,
+                    maintainState: true,
+                    child: page,
+                  );
                 },
                 routes: [
                   GoRoute(
                     path: 'detail',
                     redirect: (context, state) =>
                         state.extra is Audio ? null : app_paths.AUDIOS_PAGE,
-                    pageBuilder: (context, state) => SlideTransitionPage(
+                    pageBuilder: (context, state) => _slidePage(
                       key: state.pageKey,
                       child: AudioDetailPage(audio: state.extra as Audio),
                     ),
@@ -553,13 +580,17 @@ class _EntryState extends State<Entry>
             routes: [
               GoRoute(
                 path: app_paths.ARTISTS_PAGE,
-                builder: (context, state) => const ArtistsPage(),
+                pageBuilder: (context, state) => _slidePage(
+                  key: state.pageKey,
+                  maintainState: true,
+                  child: const ArtistsPage(),
+                ),
                 routes: [
                   GoRoute(
                     path: 'detail',
                     redirect: (context, state) =>
                         state.extra is Artist ? null : app_paths.ARTISTS_PAGE,
-                    pageBuilder: (context, state) => SlideTransitionPage(
+                    pageBuilder: (context, state) => _slidePage(
                       key: state.pageKey,
                       child: ArtistDetailPage(artist: state.extra as Artist),
                     ),
@@ -572,13 +603,17 @@ class _EntryState extends State<Entry>
             routes: [
               GoRoute(
                 path: app_paths.ALBUMS_PAGE,
-                builder: (context, state) => const AlbumsPage(),
+                pageBuilder: (context, state) => _slidePage(
+                  key: state.pageKey,
+                  maintainState: true,
+                  child: const AlbumsPage(),
+                ),
                 routes: [
                   GoRoute(
                     path: 'detail',
                     redirect: (context, state) =>
                         state.extra is Album ? null : app_paths.ALBUMS_PAGE,
-                    pageBuilder: (context, state) => SlideTransitionPage(
+                    pageBuilder: (context, state) => _slidePage(
                       key: state.pageKey,
                       child: AlbumDetailPage(album: state.extra as Album),
                     ),
@@ -591,7 +626,11 @@ class _EntryState extends State<Entry>
             routes: [
               GoRoute(
                 path: app_paths.FOLDERS_PAGE,
-                builder: (context, state) => const FoldersPage(),
+                pageBuilder: (context, state) => _slidePage(
+                  key: state.pageKey,
+                  maintainState: true,
+                  child: const FoldersPage(),
+                ),
                 routes: [
                   GoRoute(
                     path: 'detail',
@@ -605,7 +644,7 @@ class _EntryState extends State<Entry>
                           ),
                         );
                       }
-                      return SlideTransitionPage(
+                      return _slidePage(
                         key: state.pageKey,
                         child: FolderDetailPage(folder: folder),
                       );
@@ -619,7 +658,11 @@ class _EntryState extends State<Entry>
             routes: [
               GoRoute(
                 path: app_paths.PLAYLISTS_PAGE,
-                builder: (context, state) => const PlaylistsPage(),
+                pageBuilder: (context, state) => _slidePage(
+                  key: state.pageKey,
+                  maintainState: true,
+                  child: const PlaylistsPage(),
+                ),
                 routes: [
                   GoRoute(
                     path: 'detail',
@@ -631,7 +674,7 @@ class _EntryState extends State<Entry>
                           child: PlaylistDetailPage(playlist: Playlist('', [])),
                         );
                       }
-                      return SlideTransitionPage(
+                      return _slidePage(
                         key: state.pageKey,
                         child: PlaylistDetailPage(playlist: playlist),
                       );
@@ -661,18 +704,22 @@ class _EntryState extends State<Entry>
             routes: [
               GoRoute(
                 path: app_paths.SETTINGS_PAGE,
-                builder: (context, state) => const SettingsPage(),
+                pageBuilder: (context, state) => _slidePage(
+                  key: state.pageKey,
+                  maintainState: true,
+                  child: const SettingsPage(),
+                ),
                 routes: [
                   GoRoute(
                     path: 'issue',
-                    pageBuilder: (context, state) => NoTransitionPage(
+                    pageBuilder: (context, state) => _slidePage(
                       key: state.pageKey,
                       child: const SettingsIssuePage(),
                     ),
                   ),
                   GoRoute(
                     path: 'group/:id',
-                    pageBuilder: (context, state) => NoTransitionPage(
+                    pageBuilder: (context, state) => _slidePage(
                       key: state.pageKey,
                       child: SettingsGroupPage(
                         groupId: state.pathParameters['id']!,
@@ -692,9 +739,18 @@ class _EntryState extends State<Entry>
         pageBuilder: (context, state) => CustomTransitionPage(
           key: state.pageKey,
           maintainState: false,
-          transitionDuration: MotionDuration.medium,
-          reverseTransitionDuration: MotionDuration.medium,
+          transitionDuration: AppSettings.instance.enableContentTransitionMotion
+              ? MotionDuration.medium
+              : Duration.zero,
+          reverseTransitionDuration:
+              AppSettings.instance.enableContentTransitionMotion
+              ? MotionDuration.medium
+              : Duration.zero,
           transitionsBuilder: (context, animation, _, child) {
+            if (MediaQuery.disableAnimationsOf(context) ||
+                !AppSettings.instance.enableContentTransitionMotion) {
+              return child;
+            }
             final curved = CurvedAnimation(
               parent: animation,
               curve: Curves.easeOutCubic,
@@ -716,7 +772,7 @@ class _EntryState extends State<Entry>
 
       GoRoute(
         path: app_paths.TEST_BACKGROUND,
-        pageBuilder: (context, state) => SlideTransitionPage(
+        pageBuilder: (context, state) => _slidePage(
           key: state.pageKey,
           child: const StaticCoverBackgroundTestPage(),
         ),
@@ -725,19 +781,15 @@ class _EntryState extends State<Entry>
       /// welcoming page
       GoRoute(
         path: app_paths.WELCOMING_PAGE,
-        pageBuilder: (context, state) => SlideTransitionPage(
-          key: state.pageKey,
-          child: const WelcomingPage(),
-        ),
+        pageBuilder: (context, state) =>
+            _slidePage(key: state.pageKey, child: const WelcomingPage()),
       ),
 
       /// updating dialog
       GoRoute(
         path: app_paths.UPDATING_DIALOG,
-        pageBuilder: (context, state) => SlideTransitionPage(
-          key: state.pageKey,
-          child: const UpdatingPage(),
-        ),
+        pageBuilder: (context, state) =>
+            _slidePage(key: state.pageKey, child: const UpdatingPage()),
       ),
     ],
   );
