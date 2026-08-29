@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/library/audio_library.dart';
@@ -10,12 +11,18 @@ import 'package:path/path.dart' as p;
 /// 智能排序特征缓存：按 path + mtime 持久化每首乐曲的紧凑特征 JSON。
 /// 乐曲文件未变化时直接复用，只对新增或已修改的乐曲做增量分析。
 class SmartSortFeatureCache {
-  SmartSortFeatureCache._();
+  SmartSortFeatureCache._({Future<Directory> Function()? appDataDirectory})
+    : _appDataDirectory = appDataDirectory ?? getAppDataDir;
 
   static final SmartSortFeatureCache instance = SmartSortFeatureCache._();
 
+  @visibleForTesting
+  factory SmartSortFeatureCache.forTesting(Directory directory) =>
+      SmartSortFeatureCache._(appDataDirectory: () async => directory);
+
   static const _fileName = 'smart_sort_features.json';
   static const _featureVersion = 2;
+  final Future<Directory> Function() _appDataDirectory;
 
   String _keyForPath(String value) =>
       p.normalize(p.absolute(value)).replaceAll('\\', '/').toLowerCase();
@@ -47,7 +54,7 @@ class SmartSortFeatureCache {
   Future<Map<String, dynamic>> _loadStoreNow() async {
     final loaded = <String, dynamic>{};
     try {
-      final dir = await getAppDataDir();
+      final dir = await _appDataDirectory();
       final file = File('${dir.path}${Platform.pathSeparator}$_fileName');
       if (await file.exists()) {
         final decoded = jsonDecode(await file.readAsString());
@@ -114,7 +121,7 @@ class SmartSortFeatureCache {
   Future<void> _flushNow() async {
     if (!_dirty) return;
     final store = await _loadStore();
-    final dir = await getAppDataDir();
+    final dir = await _appDataDirectory();
     final filePath = '${dir.path}${Platform.pathSeparator}$_fileName';
     while (_dirty) {
       final content = jsonEncode(store);
