@@ -67,7 +67,7 @@ outline: false
 
 **此次更新贡献者**
 
-- @oKaShi
+- @AwayWoKao
 
 </details>
 
