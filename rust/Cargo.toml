@@ -70,6 +70,7 @@ symphonia = { version = "0.6.0", default-features = false, features = [
     "mp2",
     "mp3",
     "ogg",
+    "pcm",
     "aiff",
     "wav",
 ] }
