@@ -65,6 +65,10 @@ outline: false
 
 - 更新检查更准确，预发布版本判断更合理
 
+**此次更新贡献者**
+
+- @oKaShi
+
 </details>
 
 <details>
