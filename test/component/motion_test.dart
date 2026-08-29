@@ -1,8 +1,83 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pure_music/component/motion.dart';
+import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/entry.dart';
 
 void main() {
+  tearDown(() async {
+    await AppSettings.readFromSettingsMapForTest({
+      'Version': 'test',
+      'EnableContentTransitionMotion': true,
+    });
+  });
+
+  testWidgets('content transition keeps a short fade when disabled', (
+    tester,
+  ) async {
+    await AppSettings.readFromSettingsMapForTest({
+      'Version': 'test',
+      'EnableContentTransitionMotion': false,
+    });
+
+    const animation = AlwaysStoppedAnimation<double>(0.5);
+    await tester.pumpWidget(
+      MediaQuery(
+        data: const MediaQueryData(),
+        child: Directionality(
+          textDirection: TextDirection.ltr,
+          child: Builder(
+            builder: (context) {
+              const page = SlideTransitionPage<void>(
+                child: SizedBox(key: ValueKey('transition-child')),
+              );
+              return page.transitionsBuilder(
+                context,
+                animation,
+                const AlwaysStoppedAnimation<double>(0),
+                page.child,
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(FadeTransition), findsOneWidget);
+    expect(find.byType(SlideTransition), findsOneWidget);
+    expect(find.byKey(const ValueKey('transition-child')), findsOneWidget);
+  });
+
+  testWidgets('system reduced motion bypasses content transition', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MediaQuery(
+        data: const MediaQueryData(disableAnimations: true),
+        child: Directionality(
+          textDirection: TextDirection.ltr,
+          child: Builder(
+            builder: (context) {
+              const page = SlideTransitionPage<void>(
+                child: SizedBox(key: ValueKey('reduced-motion-child')),
+              );
+              return page.transitionsBuilder(
+                context,
+                const AlwaysStoppedAnimation<double>(0.5),
+                const AlwaysStoppedAnimation<double>(0),
+                page.child,
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(FadeTransition), findsNothing);
+    expect(find.byType(SlideTransition), findsNothing);
+    expect(find.byKey(const ValueKey('reduced-motion-child')), findsOneWidget);
+  });
+
   testWidgets('list entrance identity history stays bounded', (tester) async {
     final controller = ScrollController();
     addTearDown(controller.dispose);
