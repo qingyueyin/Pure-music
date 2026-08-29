@@ -272,3 +272,138 @@ fn analyze_with_cache(
     }
     Ok(profile)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::smart_sort::plan_smart_sort_json;
+    use std::io::Write;
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new(label: &str) -> Self {
+            let unique = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock after epoch")
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!(
+                "pure_music_{label}_{}_{}",
+                std::process::id(),
+                unique
+            ));
+            fs::create_dir_all(&path).expect("create test directory");
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn write_test_wav(path: &Path, frequency_hz: f64, gain: f64) {
+        const SAMPLE_RATE: u32 = 16_000;
+        const DURATION_SECONDS: u32 = 6;
+        const CHANNELS: u16 = 1;
+        const BITS_PER_SAMPLE: u16 = 16;
+        let sample_count = SAMPLE_RATE * DURATION_SECONDS;
+        let data_size = sample_count * u32::from(BITS_PER_SAMPLE / 8);
+        let mut file = std::fs::File::create(path).expect("create wav fixture");
+        file.write_all(b"RIFF").unwrap();
+        file.write_all(&(36 + data_size).to_le_bytes()).unwrap();
+        file.write_all(b"WAVEfmt ").unwrap();
+        file.write_all(&16u32.to_le_bytes()).unwrap();
+        file.write_all(&1u16.to_le_bytes()).unwrap();
+        file.write_all(&CHANNELS.to_le_bytes()).unwrap();
+        file.write_all(&SAMPLE_RATE.to_le_bytes()).unwrap();
+        file.write_all(&(SAMPLE_RATE * 2).to_le_bytes()).unwrap();
+        file.write_all(&2u16.to_le_bytes()).unwrap();
+        file.write_all(&BITS_PER_SAMPLE.to_le_bytes()).unwrap();
+        file.write_all(b"data").unwrap();
+        file.write_all(&data_size.to_le_bytes()).unwrap();
+        let beat_samples = SAMPLE_RATE / 2;
+        let click_samples = SAMPLE_RATE / 100;
+        for index in 0..sample_count {
+            let time = index as f64 / SAMPLE_RATE as f64;
+            let tone = gain * (2.0 * std::f64::consts::PI * frequency_hz * time).sin();
+            let beat_offset = index % beat_samples;
+            let click = if beat_offset < click_samples {
+                0.55 * (1.0 - beat_offset as f64 / click_samples as f64)
+            } else {
+                0.0
+            };
+            let sample = ((tone + click).clamp(-1.0, 1.0) * i16::MAX as f64) as i16;
+            file.write_all(&sample.to_le_bytes()).unwrap();
+        }
+        file.flush().unwrap();
+    }
+
+    fn sort_feature(profile: &TrackProfile) -> serde_json::Value {
+        serde_json::json!({
+            "integratedRmsDbfs": profile.integrated_rms_dbfs,
+            "bpm": profile.tempo.as_ref().map(|tempo| tempo.bpm).unwrap_or(0.0),
+            "entranceOnsetDensity": profile.entrance.onset_density,
+            "entranceEnergyDbfs": profile.entrance.average_energy_dbfs,
+            "exitOnsetDensity": profile.exit.onset_density,
+            "exitEnergyDbfs": profile.exit.average_energy_dbfs,
+        })
+    }
+
+    #[test]
+    fn real_wav_analysis_flows_through_public_sort_json_api() {
+        let directory = TestDirectory::new("analysis_sort_e2e");
+        let first_path = directory.0.join("first.wav");
+        let second_path = directory.0.join("second.wav");
+        write_test_wav(&first_path, 220.0, 0.12);
+        write_test_wav(&second_path, 440.0, 0.32);
+        let library_root = directory.0.to_string_lossy().into_owned();
+
+        let first_json = analyze_smart_transition_track(
+            9_001,
+            first_path.to_string_lossy().into_owned(),
+            Some("fixture-first".to_string()),
+            library_root.clone(),
+        )
+        .expect("analyze first fixture");
+        let second_json = analyze_smart_transition_track(
+            9_002,
+            second_path.to_string_lossy().into_owned(),
+            Some("fixture-second".to_string()),
+            library_root,
+        )
+        .expect("analyze second fixture");
+        let first: TrackProfile = serde_json::from_str(&first_json).unwrap();
+        let second: TrackProfile = serde_json::from_str(&second_json).unwrap();
+        assert_eq!(first.duration_ms, 6_000);
+        assert_eq!(second.duration_ms, 6_000);
+        assert!(first.integrated_rms_dbfs.is_finite());
+        assert!(second.integrated_rms_dbfs > first.integrated_rms_dbfs);
+
+        let payload = serde_json::json!({
+            "features": [sort_feature(&first), sort_feature(&second)],
+            "playCounts": [2, 8],
+        });
+        let output_json = plan_smart_sort_json(payload.to_string(), 0.82, 0.85, 0, 0.5, 0, 0)
+            .expect("plan analyzed fixtures");
+        let output: serde_json::Value = serde_json::from_str(&output_json).unwrap();
+        let mut order = output["order"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_u64().unwrap())
+            .collect::<Vec<_>>();
+        order.sort_unstable();
+        assert_eq!(order, vec![0, 1]);
+        for key in ["idealCurve", "actualCurve"] {
+            let curve = output[key].as_array().unwrap();
+            assert_eq!(curve.len(), 2);
+            assert!(curve
+                .iter()
+                .all(|value| value.as_f64().unwrap().is_finite()));
+        }
+    }
+}
