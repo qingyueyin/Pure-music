@@ -52,4 +52,41 @@ void main() {
 
     expect(lyricSources.keys, ['c:/music/song.mp3']);
   });
+
+  test(
+    'failed lyric source persistence restores a newly added entry',
+    () async {
+      const path = r'C:\Music\Song.mp3';
+      final source = LyricSource(LyricSourceType.qq, qqSongId: '123');
+
+      await expectLater(
+        persistLyricSource(
+          path,
+          source,
+          persist: () async => throw StateError('write failed'),
+        ),
+        throwsA(isA<StateError>()),
+      );
+
+      expect(lyricSources, isEmpty);
+    },
+  );
+
+  test('failed lyric source persistence restores the previous entry', () async {
+    const path = r'C:\Music\Song.mp3';
+    final previous = LyricSource(LyricSourceType.kugou, kugouSongHash: 'old');
+    final replacement = LyricSource(LyricSourceType.qq, qqSongId: 'new');
+    lyricSources[path] = previous;
+
+    await expectLater(
+      persistLyricSource(
+        path,
+        replacement,
+        persist: () async => throw StateError('write failed'),
+      ),
+      throwsA(isA<StateError>()),
+    );
+
+    expect(lyricSources[path], same(previous));
+  });
 }
