@@ -49,8 +49,10 @@ pub struct SortWeights {
 pub fn sort_weights_for(smoothness: f64) -> SortWeights {
     let t = clamp_unit(smoothness);
     SortWeights {
-        curve: 2.2 - 1.4 * t,
-        transition_scale: 0.6 + 1.0 * t,
+        curve: SMOOTH_CURVE_WEIGHT
+            + (SLICK_CURVE_WEIGHT - SMOOTH_CURVE_WEIGHT) * t,
+        transition_scale: SMOOTH_TRANSITION_SCALE
+            + (SLICK_TRANSITION_SCALE - SMOOTH_TRANSITION_SCALE) * t,
     }
 }
 
