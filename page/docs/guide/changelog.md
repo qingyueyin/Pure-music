@@ -140,6 +140,10 @@ outline: false
 
 - 动态背景按封面亮度自适应
 
+**此次更新贡献者**
+
+- @asterlore
+
 </details>
 
 <details>
