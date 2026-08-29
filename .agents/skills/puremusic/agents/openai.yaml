@@ -1,0 +1,4 @@
+interface:
+  display_name: "Pure-music"
+  short_description: "Pure-music 项目开发、诊断、性能与验证工作流"
+  default_prompt: "使用 $puremusic 完成当前 Pure-music 项目开发任务。"
