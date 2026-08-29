@@ -3,6 +3,49 @@ import 'package:pure_music/library/playlist.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 void main() {
+  test(
+    'matches imported playlist entries by filename without changing the library path',
+    () {
+      const libraryPath = r'D:\Music\Artist\Song.MP3';
+
+      expect(
+        findImportedPlaylistLibraryPath(
+          rawPath: r'c:/incoming/song.mp3',
+          libraryPaths: [libraryPath],
+        ),
+        libraryPath,
+      );
+      expect(
+        findImportedPlaylistLibraryPath(
+          rawPath: r'c:/incoming/other.mp3',
+          libraryPaths: [libraryPath],
+        ),
+        isNull,
+      );
+    },
+  );
+
+  test('playlist construction and map loading keep the first unique path', () {
+    final playlist = Playlist('Favorites', [
+      r'D:\Music\Song.mp3',
+      r'd:/music/song.mp3',
+      '',
+    ]);
+    expect(playlist.paths, [r'D:\Music\Song.mp3']);
+
+    final restored = Playlist.fromMap({
+      'name': 'Imported',
+      'audios': [
+        {'path': r'D:\Music\Song.mp3'},
+        {'path': r'd:/music/song.mp3'},
+        {'path': 42},
+        'extra.mp3',
+      ],
+    });
+    expect(restored.name, 'Imported');
+    expect(restored.paths, [r'D:\Music\Song.mp3', 'extra.mp3']);
+  });
+
   test('loads playlists and all ordered items with two bulk queries', () {
     final database = sqlite3.openInMemory();
     try {
@@ -37,10 +80,7 @@ void main() {
         DateTime.parse('2026-01-01T00:00:00.000Z'),
       );
       expect(result.last.paths, ['beta.mp3']);
-      expect(
-        () => result.add(Playlist('Gamma', const [])),
-        returnsNormally,
-      );
+      expect(() => result.add(Playlist('Gamma', const [])), returnsNormally);
     } finally {
       database.dispose();
     }
