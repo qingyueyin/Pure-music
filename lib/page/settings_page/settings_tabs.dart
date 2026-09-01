@@ -3333,6 +3333,8 @@ void syncDesktopLyricConfig(BuildContext context) {
   final settings = AppSettings.instance;
   final service = PlayService.instance.desktopLyricService;
   if (!service.isRunning) return;
+  final useMultiLineMode = settings.desktopUseMultiLineMode;
+  final showDoubleLine = settings.desktopShowDoubleLine && !useMultiLineMode;
   final scheme = Theme.of(context).colorScheme;
   final colors = resolveDesktopLyricColors(
     followThemeColor: settings.desktopFollowThemeColor,
@@ -3354,7 +3356,7 @@ void syncDesktopLyricConfig(BuildContext context) {
     showNowPlayingInfo: settings.desktopShowNowPlayingInfo,
     hideOnPause: settings.desktopHideOnPause,
     lyricTextAlign:
-        settings.desktopShowDoubleLine && settings.desktopLyricTextAlign == 3
+        showDoubleLine && settings.desktopLyricTextAlign == 3
         ? 3
         : settings.desktopLyricTextAlign.clamp(0, 2).toInt(),
     lyricAnimation: settings.desktopLyricAnimation.index,
@@ -3365,12 +3367,12 @@ void syncDesktopLyricConfig(BuildContext context) {
     followThemeColor: settings.desktopFollowThemeColor,
     useLightOutline: shouldUseLightDesktopLyricOutline(colors.played),
     useVerticalDisplayMode: settings.desktopUseVerticalDisplayMode,
-    showDoubleLine: settings.desktopShowDoubleLine,
+    showDoubleLine: showDoubleLine,
     hoverHide: settings.desktopHoverHide,
     fullscreenHide: settings.desktopFullscreenHide,
     lineGap: settings.desktopLineGap,
     enablePinTop: settings.desktopEnablePinTop,
-    useMultiLineMode: settings.desktopUseMultiLineMode,
+    useMultiLineMode: useMultiLineMode,
     multiLineAnimation: settings.desktopMultiLineAnimation.index,
     hidePlayedLines: settings.desktopHidePlayedLines,
     fontOpacity: settings.desktopFontOpacity,
@@ -4006,6 +4008,7 @@ class _DesktopDisplayGroupState extends State<_DesktopDisplayGroup>
             value: settings.desktopShowDoubleLine,
             onChanged: (v) => updateDesktopLyricConfig(() {
               settings.desktopShowDoubleLine = v;
+              if (v) settings.desktopUseMultiLineMode = false;
               if (!v && settings.desktopLyricTextAlign == 3) {
                 settings.desktopLyricTextAlign = 1;
               }
@@ -4017,9 +4020,10 @@ class _DesktopDisplayGroupState extends State<_DesktopDisplayGroup>
           description: '多行模式',
           action: Switch(
             value: settings.desktopUseMultiLineMode,
-            onChanged: (v) => updateDesktopLyricConfig(
-              () => settings.desktopUseMultiLineMode = v,
-            ),
+            onChanged: (v) => updateDesktopLyricConfig(() {
+              settings.desktopUseMultiLineMode = v;
+              if (v) settings.desktopShowDoubleLine = false;
+            }),
           ),
         ),
         const SizedBox(height: 16),
@@ -4067,29 +4071,34 @@ class _DesktopDisplayGroupState extends State<_DesktopDisplayGroup>
             ),
           ),
         ),
-        const SizedBox(height: 16),
-        SettingsTile(
-          description: '桌面歌词切换动画',
-          action: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: SegmentedButton<DesktopLyricAnimation>(
-                  segments: [
-                    for (final entry in animationItems.entries)
-                      ButtonSegment(value: entry.key, label: Text(entry.value)),
-                  ],
-                  selected: {settings.desktopLyricAnimation},
-                  onSelectionChanged: (value) => updateDesktopLyricConfig(
-                    () => settings.desktopLyricAnimation = value.first,
+        if (!settings.desktopUseMultiLineMode) ...[
+          const SizedBox(height: 16),
+          SettingsTile(
+            description: '桌面歌词切换动画',
+            action: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: SegmentedButton<DesktopLyricAnimation>(
+                    segments: [
+                      for (final entry in animationItems.entries)
+                        ButtonSegment(
+                          value: entry.key,
+                          label: Text(entry.value),
+                        ),
+                    ],
+                    selected: {settings.desktopLyricAnimation},
+                    onSelectionChanged: (value) => updateDesktopLyricConfig(
+                      () => settings.desktopLyricAnimation = value.first,
+                    ),
+                    showSelectedIcon: false,
                   ),
-                  showSelectedIcon: false,
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+        ],
         if (settings.desktopUseMultiLineMode) ...[
           const SizedBox(height: 16),
           SettingsTile(
@@ -4101,27 +4110,29 @@ class _DesktopDisplayGroupState extends State<_DesktopDisplayGroup>
               ),
             ),
           ),
-          const SizedBox(height: 16),
-          SettingsTile(
-            description: '多行模式行切换动画',
-            action: SegmentedButton<LyricStaggerStyle>(
-              segments: const [
-                ButtonSegment(
-                  value: LyricStaggerStyle.smooth,
-                  label: Text('平滑'),
+          if (!settings.desktopShowDoubleLine) ...[
+            const SizedBox(height: 16),
+            SettingsTile(
+              description: '多行模式行切换动画',
+              action: SegmentedButton<LyricStaggerStyle>(
+                segments: const [
+                  ButtonSegment(
+                    value: LyricStaggerStyle.smooth,
+                    label: Text('平滑'),
+                  ),
+                  ButtonSegment(
+                    value: LyricStaggerStyle.spring,
+                    label: Text('弹簧'),
+                  ),
+                ],
+                selected: {settings.desktopMultiLineAnimation},
+                onSelectionChanged: (value) => updateDesktopLyricConfig(
+                  () => settings.desktopMultiLineAnimation = value.first,
                 ),
-                ButtonSegment(
-                  value: LyricStaggerStyle.spring,
-                  label: Text('弹簧'),
-                ),
-              ],
-              selected: {settings.desktopMultiLineAnimation},
-              onSelectionChanged: (value) => updateDesktopLyricConfig(
-                () => settings.desktopMultiLineAnimation = value.first,
+                showSelectedIcon: false,
               ),
-              showSelectedIcon: false,
             ),
-          ),
+          ],
         ],
       ],
     );

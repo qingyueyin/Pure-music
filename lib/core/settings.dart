@@ -827,6 +827,9 @@ class AppSettings {
         defaultValue: false,
       );
     }
+    if (_instance.desktopUseMultiLineMode) {
+      _instance.desktopShowDoubleLine = false;
+    }
 
     final dhpl = settingsMap['DesktopHidePlayedLines'];
     if (dhpl != null) {

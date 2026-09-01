@@ -923,6 +923,8 @@ class DesktopLyricService extends ChangeNotifier {
 
   void _sendInitialConfig() {
     final settings = AppSettings.instance;
+    final useMultiLineMode = settings.desktopUseMultiLineMode;
+    final showDoubleLine = settings.desktopShowDoubleLine && !useMultiLineMode;
     final scheme = ThemeProvider.instance.currScheme;
     final colors = resolveDesktopLyricColors(
       followThemeColor: settings.desktopFollowThemeColor,
@@ -944,7 +946,7 @@ class DesktopLyricService extends ChangeNotifier {
           ? settings.desktopLyricTranslationPosition
           : 1,
       lyricTextAlign:
-          settings.desktopShowDoubleLine && settings.desktopLyricTextAlign == 3
+          showDoubleLine && settings.desktopLyricTextAlign == 3
           ? 3
           : settings.desktopLyricTextAlign.clamp(0, 2).toInt(),
       lyricAnimation: settings.desktopLyricAnimation.index,
@@ -955,12 +957,12 @@ class DesktopLyricService extends ChangeNotifier {
       followThemeColor: settings.desktopFollowThemeColor,
       useLightOutline: shouldUseLightDesktopLyricOutline(colors.played),
       useVerticalDisplayMode: settings.desktopUseVerticalDisplayMode,
-      showDoubleLine: settings.desktopShowDoubleLine,
+      showDoubleLine: showDoubleLine,
       hoverHide: settings.desktopHoverHide,
       fullscreenHide: settings.desktopFullscreenHide,
       lineGap: settings.desktopLineGap,
       enablePinTop: settings.desktopEnablePinTop,
-      useMultiLineMode: settings.desktopUseMultiLineMode,
+      useMultiLineMode: useMultiLineMode,
       multiLineAnimation: settings.desktopMultiLineAnimation.index,
       hidePlayedLines: settings.desktopHidePlayedLines,
       fontOpacity: settings.desktopFontOpacity,
