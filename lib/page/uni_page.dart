@@ -608,10 +608,20 @@ class _UniPageState<T> extends State<UniPage<T>> {
 
   /// 定位当前正在播放乐曲在列表中的索引；非乐曲列表或不在列表中时返回 null。
   int? _locateTargetAt() {
-    if (widget.contentList is! List<Audio>) return null;
     final nowPlaying = PlayService.instance.playbackService.nowPlaying;
     if (nowPlaying == null) return null;
-    return AudioLibrary.instance.audiosPageIndexForPath(nowPlaying.path);
+    final path = nowPlaying.path;
+    if (widget.contentList is List<Audio>) {
+      return AudioLibrary.instance.audiosPageIndexForPath(path);
+    }
+    for (var i = 0; i < widget.contentList.length; i++) {
+      final item = widget.contentList[i];
+      if (item is Artist && item.works.any((a) => a.path == path)) return i;
+      if (item is AudioFolder && item.audios.any((a) => a.path == path)) {
+        return i;
+      }
+    }
+    return null;
   }
 
   @override
