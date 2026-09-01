@@ -13,6 +13,9 @@
   <img src="https://badgen.net/github/release/qingyueyin/Pure-music?icon=github" alt="Version">
   <img src="https://img.shields.io/github/downloads/qingyueyin/Pure-music/total?style=flat-square" alt="Downloads">
   <img src="https://img.shields.io/badge/License-GPL--3.0-green?style=flat-square" alt="License">
+  <a href="https://qingyueyin.github.io/Pure-music/"><img src="https://img.shields.io/badge/网站-Pure_Music-28a745?style=flat-square" alt="Website"></a>
+  <a href="https://gitee.com/qingyueyin/Pure-music"><img src="https://img.shields.io/badge/Gitee-镜像仓库-red?style=flat-square" alt="Gitee"></a>
+  <a href="https://t.me/+NsZamWiEKh5lOWNl"><img src="https://img.shields.io/badge/Telegram-加入群组-2AABEE?style=flat-square&logo=telegram" alt="Telegram"></a>
   <a href="https://linux.do"><img src="https://img.shields.io/badge/LINUX_DO-%E7%A4%BE%E5%8C%BA%20%E9%93%BE%E6%8E%A5-blue?style=flat-square" alt="LINUX DO"></a>
 </p>
 
