@@ -610,14 +610,19 @@ class _UniPageState<T> extends State<UniPage<T>> {
   int? _locateTargetAt() {
     final nowPlaying = PlayService.instance.playbackService.nowPlaying;
     if (nowPlaying == null) return null;
-    final path = nowPlaying.path;
+    final path = pendingFolderKey(nowPlaying.path);
+    if (path.isEmpty) return null;
     if (widget.contentList is List<Audio>) {
       return AudioLibrary.instance.audiosPageIndexForPath(path);
     }
     for (var i = 0; i < widget.contentList.length; i++) {
       final item = widget.contentList[i];
-      if (item is Artist && item.works.any((a) => a.path == path)) return i;
-      if (item is AudioFolder && item.audios.any((a) => a.path == path)) {
+      if (item is Artist &&
+          item.works.any((a) => pendingFolderKey(a.path) == path)) {
+        return i;
+      }
+      if (item is AudioFolder &&
+          item.audios.any((a) => pendingFolderKey(a.path) == path)) {
         return i;
       }
     }
