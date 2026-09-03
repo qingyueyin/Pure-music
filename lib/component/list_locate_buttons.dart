@@ -113,7 +113,7 @@ class _ListLocateButtonsState extends State<ListLocateButtons> {
     final locateTargetAt = widget.locateTargetAt;
 
     return ListenableBuilder(
-      listenable: playbackService,
+      listenable: playbackService.nowPlayingNotifier,
       builder: (context, _) {
         final targetAt = locateTargetAt?.call();
         if (targetAt == null) return const SizedBox.shrink();
