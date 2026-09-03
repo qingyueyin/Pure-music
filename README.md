@@ -9,15 +9,15 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Platform-Windows-blue?style=flat-square" alt="Platform">  
+  <img src="https://img.shields.io/badge/Platform-Windows-blue?style=flat-square" alt="Platform">
   <img src="https://badgen.net/github/release/qingyueyin/Pure-music?icon=github" alt="Version">
   <img src="https://img.shields.io/github/downloads/qingyueyin/Pure-music/total?style=flat-square" alt="Downloads">
   <img src="https://img.shields.io/badge/License-GPL--3.0-green?style=flat-square" alt="License">
   <a href="https://qingyueyin.github.io/Pure-music/"><img src="https://img.shields.io/badge/网站-Pure_Music-28a745?style=flat-square" alt="Website"></a>
   <a href="https://gitee.com/qingyueyin/Pure-music"><img src="https://img.shields.io/badge/Gitee-镜像仓库-red?style=flat-square" alt="Gitee"></a>
   <a href="https://t.me/+NsZamWiEKh5lOWNl"><img src="https://img.shields.io/badge/Telegram-加入群组-2AABEE?style=flat-square&logo=telegram" alt="Telegram"></a>
-  <a href="https://linux.do"><img src="https://img.shields.io/badge/LINUX_DO-%E7%A4%BE%E5%8C%BA%20%E9%93%BE%E6%8E%A5-blue?style=flat-square" alt="LINUX DO"></a>
-  <a href="https://trendshift.io/repositories/110656?utm_source=repository-badge&amp;utm_medium=badge&amp;utm_campaign=badge-repository-110656" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/repositories/110656" alt="qingyueyin%2FPure-music | Trendshift" width="250" height="55"/></a>
+  <a href="https://linux.do"><img src="https://img.shields.io/badge/LINUX_DO-社区-链接-blue?style=flat-square" alt="LINUX DO"></a>
+  <a href="https://trendshift.io/repositories/110656?utm_source=repository-badge&amp;utm_medium=badge&amp;utm_campaign=badge-repository-110656"><img src="https://trendshift.io/api/badge/repositories/110656" alt="Trendshift" height="22"></a>
 </p>
 
 一款纯粹的本地音乐播放器。
