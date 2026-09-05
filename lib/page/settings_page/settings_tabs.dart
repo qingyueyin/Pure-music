@@ -3284,11 +3284,7 @@ const _settingsGroups = <String, _SettingsGroupDesc>{
     '播放页背景与配色',
     _AppearancePlayerGroup(),
   ),
-  'lyric-source': _SettingsGroupDesc(
-    '歌词来源',
-    '本地与在线来源',
-    _LyricSourceGroup(),
-  ),
+  'lyric-source': _SettingsGroupDesc('歌词来源', '本地与在线来源', _LyricSourceGroup()),
   'lyric-content': _SettingsGroupDesc(
     '歌词内容',
     '歌曲信息与文字转换',
@@ -3299,11 +3295,7 @@ const _settingsGroups = <String, _SettingsGroupDesc>{
     '标签写入与外部 LRC',
     _LyricWritingGroup(),
   ),
-  'lyric-effect': _SettingsGroupDesc(
-    '显示效果',
-    '辉光、注音、上抬',
-    _LyricEffectGroup(),
-  ),
+  'lyric-effect': _SettingsGroupDesc('显示效果', '辉光、注音、上抬', _LyricEffectGroup()),
   'playback-behavior': _SettingsGroupDesc(
     '播放行为',
     'ReplayGain 与切歌过渡',
@@ -3314,21 +3306,9 @@ const _settingsGroups = <String, _SettingsGroupDesc>{
     '播放按钮与封面预览',
     _TaskbarControlGroup(),
   ),
-  'inapp-hotkey': _SettingsGroupDesc(
-    '应用内快捷键',
-    '仅在窗口前台生效',
-    _InAppHotkeyGroup(),
-  ),
-  'global-hotkey': _SettingsGroupDesc(
-    '全局热键',
-    '最小化后仍可使用',
-    _GlobalHotkeyGroup(),
-  ),
-  'desktop-basic': _SettingsGroupDesc(
-    '歌词内容',
-    '翻译、注音、歌名',
-    _DesktopBasicGroup(),
-  ),
+  'inapp-hotkey': _SettingsGroupDesc('应用内快捷键', '仅在窗口前台生效', _InAppHotkeyGroup()),
+  'global-hotkey': _SettingsGroupDesc('全局热键', '最小化后仍可使用', _GlobalHotkeyGroup()),
+  'desktop-basic': _SettingsGroupDesc('歌词内容', '翻译、注音、歌名', _DesktopBasicGroup()),
   'desktop-display': _SettingsGroupDesc(
     '布局与动画',
     '竖排、双行、对齐',
@@ -3620,7 +3600,7 @@ class _NowPlayingBackgroundSettingsState
           description: '播放页背景',
           subtitle: switch (pref.backgroundMode) {
             NowPlayingBackgroundMode.meshGradient => '封面取色网格渐变',
-            NowPlayingBackgroundMode.flowingCover => '封面流光',
+            NowPlayingBackgroundMode.flowingCover => '封面律动',
           },
           action: Row(
             mainAxisSize: MainAxisSize.min,
@@ -3634,7 +3614,7 @@ class _NowPlayingBackgroundSettingsState
                   ),
                   ButtonSegment(
                     value: NowPlayingBackgroundMode.flowingCover,
-                    label: Text('流光背景'),
+                    label: Text('律动背景'),
                   ),
                 ],
                 selected: {pref.backgroundMode},
@@ -3647,7 +3627,7 @@ class _NowPlayingBackgroundSettingsState
           const SizedBox(height: 16.0),
           SettingsTile(
             description: '音频律动',
-            subtitle: pref.audioReactiveFlow ? '流光随音频变化' : '流光按固定节奏流动',
+            subtitle: pref.audioReactiveFlow ? '背景随音频起伏' : '背景按固定节奏流动',
             action: Switch(
               value: pref.audioReactiveFlow,
               onChanged: _setAudioReactive,
