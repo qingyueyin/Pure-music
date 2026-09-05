@@ -26,6 +26,65 @@ const int _kLyricCacheCapacity = 32;
 const int lyricWordPreSwitchMs = 320;
 const int lyricHighlightCatchUpDurationMs = 260;
 const int lyricHighlightFinishLeadMs = 32;
+const int lyricLineAdvanceTimerMaxMs = 1000;
+
+/// 行推进定时器最多 1 秒对齐一次；只有明显回退或超过「定时器间隔 × 倍速」才当 seek。
+bool lyricLineAdvanceIsSeekJump({
+  required double previousPositionSec,
+  required double nextPositionSec,
+  required double rate,
+}) {
+  final delta = nextPositionSec - previousPositionSec;
+  if (delta < -0.05) return true;
+  final speed = rate > 1.0 ? rate : 1.0;
+  final maxForwardSec = (lyricLineAdvanceTimerMaxMs / 1000.0) * speed + 0.35;
+  return delta > maxForwardSec;
+}
+
+int lyricSwitchCursorAt({
+  required int timeMs,
+  required List<int> switchStartMs,
+  required List<int> lineEndMs,
+  required int hintLineIndex,
+}) {
+  final n = switchStartMs.length;
+  if (n == 0) return -1;
+  if (hintLineIndex >= 0 &&
+      hintLineIndex < n &&
+      hintLineIndex < lineEndMs.length) {
+    final nextIndex = hintLineIndex + 1;
+    if (nextIndex < n && nextIndex < lineEndMs.length) {
+      final nextStart = switchStartMs[nextIndex];
+      final nextEnd = lineEndMs[nextIndex];
+      if (timeMs >= nextStart && timeMs < nextEnd) {
+        return nextIndex + 1;
+      }
+      if (timeMs >= nextStart) {
+        return _lyricLowerBoundGreater(switchStartMs, timeMs);
+      }
+    }
+    if (timeMs >= switchStartMs[hintLineIndex] &&
+        timeMs < lineEndMs[hintLineIndex]) {
+      return hintLineIndex + 1;
+    }
+  }
+  return _lyricLowerBoundGreater(switchStartMs, timeMs);
+}
+
+int _lyricLowerBoundGreater(List<int> arr, int x) {
+  if (arr.isEmpty) return -1;
+  var lo = 0;
+  var hi = arr.length;
+  while (lo < hi) {
+    final mid = (lo + hi) >> 1;
+    if (arr[mid] > x) {
+      hi = mid;
+    } else {
+      lo = mid + 1;
+    }
+  }
+  return lo >= arr.length ? -1 : lo;
+}
 
 bool _hasDesktopLyricContent(LyricLine line) {
   final content = switch (line) {
@@ -292,8 +351,7 @@ class LyricService extends ChangeNotifier {
     if (!isPlaying || lyric == null || lyric.lines.isEmpty) {
       return;
     }
-    _advanceLyricLineAt(playService.playbackService.position);
-    _scheduleNextLineAdvance();
+    findCurrLyricLineAt(playService.playbackService.position);
   }
 
   void _scheduleNextLineAdvance() {
@@ -305,7 +363,9 @@ class LyricService extends ChangeNotifier {
     if (nextBoundaryMs == null) return;
     final speed = playService.playbackService.rate.value;
     if (speed <= 0) return;
-    final delayMs = ((nextBoundaryMs - posMs) / speed).clamp(16, 1000).toInt();
+    final delayMs = ((nextBoundaryMs - posMs) / speed)
+        .clamp(16, lyricLineAdvanceTimerMaxMs)
+        .toInt();
     _lineAdvanceTimer?.cancel();
     _lineAdvanceTimer = Timer(Duration(milliseconds: delayMs), () {
       _lineAdvanceTimer = null;
@@ -346,13 +406,13 @@ class LyricService extends ChangeNotifier {
   }
 
   void _advanceLyricLineAt(double pos) {
-    final jumped = (pos - _lastPos).abs() > 1.0;
+    final previous = _lastPos;
     _lastPos = pos;
-    final posMs = (pos * 1000).round();
-    if (jumped) {
+    if (pos + 0.05 < previous) {
       findCurrLyricLineAt(pos);
       return;
     }
+    final posMs = (pos * 1000).round();
     final lyric = _currLyric;
     if (lyric == null) return;
     if (_nextLyricLine >= lyric.lines.length) {
@@ -860,6 +920,7 @@ class LyricService extends ChangeNotifier {
       return;
     }
 
+    _lastPos = positionSeconds;
     final posMs = (positionSeconds * 1000).round();
     final hint = _lastEmittedLineIndexForHint;
     final next = _findLrcPos(time: posMs, lines: lyric.lines, hint: hint);
@@ -987,31 +1048,13 @@ class LyricService extends ChangeNotifier {
     required List<int> lineEndMs,
     required int hint,
   }) {
-    final n = lines.length;
-    if (n == 0) return -1;
-
-    if (hint >= 0 &&
-        hint < n &&
-        hint < lineRenderStartMs.length &&
-        hint < lineEndMs.length) {
-      final nextIndex = hint + 1;
-      if (nextIndex < n &&
-          nextIndex < lineRenderStartMs.length &&
-          nextIndex < lineEndMs.length) {
-        final segNextStart = lineRenderStartMs[nextIndex];
-        final segNextEnd = lineEndMs[nextIndex];
-        if (time >= segNextStart && time < segNextEnd) {
-          return nextIndex + 1;
-        }
-      }
-      final segStartMs = lineRenderStartMs[hint];
-      final segEndMs = lineEndMs[hint];
-      if (time >= segStartMs && time < segEndMs) {
-        return hint + 1;
-      }
-    }
-
-    return _lowerBoundGreater(lineRenderStartMs, time);
+    if (lines.isEmpty) return -1;
+    return lyricSwitchCursorAt(
+      timeMs: time,
+      switchStartMs: lineRenderStartMs,
+      lineEndMs: lineEndMs,
+      hintLineIndex: hint,
+    );
   }
 
   List<int> _computeActiveLines(int posMs) {
@@ -1117,18 +1160,7 @@ class LyricService extends ChangeNotifier {
   }
 
   int _lowerBoundGreater(List<int> arr, int x) {
-    if (arr.isEmpty) return -1;
-    int lo = 0;
-    int hi = arr.length;
-    while (lo < hi) {
-      final mid = (lo + hi) >> 1;
-      if (arr[mid] > x) {
-        hi = mid;
-      } else {
-        lo = mid + 1;
-      }
-    }
-    return lo >= arr.length ? -1 : lo;
+    return _lyricLowerBoundGreater(arr, x);
   }
 
   List<int> _buildLineStarts(Lyric lyric) {
