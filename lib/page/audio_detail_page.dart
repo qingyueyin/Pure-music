@@ -1,23 +1,26 @@
+import 'dart:io' as io;
+import 'dart:ui' as ui;
+
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
+import 'package:material_symbols_icons/symbols.dart';
+import 'package:path/path.dart' as p;
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/matcher.dart' hide logger;
 import 'package:pure_music/core/mouse_back_exit.dart';
+import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/lyric/lrc_serializer.dart';
-import 'package:pure_music/native/rust/api/utils.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart' as rust_tag_reader;
+import 'package:pure_music/native/rust/api/utils.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/services/online_lyric/api/net_lyric_api.dart'
     as net_api;
-import 'dart:io';
-import 'package:path/path.dart' as p;
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:material_symbols_icons/symbols.dart';
-import 'package:go_router/go_router.dart';
-import 'package:pure_music/core/paths.dart' as app_paths;
 
 String _formatBytes(int bytes) {
   if (bytes < 1024) return '$bytes B';
@@ -168,6 +171,8 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
   late _FieldControllers _controllers;
   int _currentTabIndex = 0;
   Future<String?>? _lyricFuture;
+  // 编辑模式下的封面预览字节（null = 无变化，空列表 = 移除封面）
+  Uint8List? _pendingCoverBytes;
 
   Audio get audio => widget.audio;
 
@@ -232,7 +237,10 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
   Future<void> _enterEditMode() async {
     final meta = await _getAudioExtra(audio);
     _controllers.initFrom(audio, meta.items);
-    setState(() => _isEditing = true);
+    setState(() {
+      _isEditing = true;
+      _pendingCoverBytes = null;
+    });
     MouseBackExit.register(_exitEditOnBack);
   }
 
@@ -244,12 +252,22 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
 
   void _cancelEdit() {
     MouseBackExit.unregister(_exitEditOnBack);
-    setState(() => _isEditing = false);
+    setState(() {
+      _isEditing = false;
+      _pendingCoverBytes = null;
+    });
   }
 
   Future<void> _saveEdit() async {
     setState(() => _isSaving = true);
     try {
+      if (_pendingCoverBytes != null) {
+        await rust_tag_reader.writeAudioCover(
+          path: audio.path,
+          bytes: _pendingCoverBytes!,
+        );
+        audio.evictCoverCache();
+      }
       final payload = _controllers.buildPayload();
       await rust_tag_reader.writeAudioTags(
         path: audio.path,
@@ -378,29 +396,33 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
               LayoutBuilder(
                 builder: (context, constraints) {
                   final narrow = constraints.maxWidth < 560.0;
-                  final cover = FutureBuilder(
-                    future: audio.mediumCover,
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState != ConnectionState.done) {
-                        return const SizedBox(
-                          width: 156,
-                          height: 156,
-                          child: Center(child: CircularProgressIndicator()),
+                  final cover = _isEditing
+                      ? _buildEditCover(scheme, placeholder)
+                      : FutureBuilder(
+                          future: audio.mediumCover,
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState !=
+                                ConnectionState.done) {
+                              return const SizedBox(
+                                width: 156,
+                                height: 156,
+                                child:
+                                    Center(child: CircularProgressIndicator()),
+                              );
+                            }
+                            if (snapshot.data == null) return placeholder;
+                            return ClipRRect(
+                              borderRadius: AppRadius.mdCircular,
+                              child: Image(
+                                image: snapshot.data!,
+                                width: 156,
+                                height: 156,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, _, _) => placeholder,
+                              ),
+                            );
+                          },
                         );
-                      }
-                      if (snapshot.data == null) return placeholder;
-                      return ClipRRect(
-                        borderRadius: AppRadius.mdCircular,
-                        child: Image(
-                          image: snapshot.data!,
-                          width: 156,
-                          height: 156,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => placeholder,
-                        ),
-                      );
-                    },
-                  );
                   final info = _isEditing
                       ? _buildEditInfo(scheme)
                       : _buildViewInfo(scheme);
@@ -667,6 +689,126 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
     );
   }
 
+  Widget _buildEditCover(ColorScheme scheme, Widget placeholder) {
+    final pending = _pendingCoverBytes;
+    Widget coverWidget;
+    if (pending != null) {
+      coverWidget = ClipRRect(
+        borderRadius: AppRadius.mdCircular,
+        child: Image.memory(
+          pending,
+          width: 156,
+          height: 156,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => placeholder,
+        ),
+      );
+    } else {
+      coverWidget = FutureBuilder(
+        future: audio.mediumCover,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return SizedBox(
+              width: 156,
+              height: 156,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                  borderRadius: AppRadius.mdCircular,
+                ),
+              ),
+            );
+          }
+          if (snapshot.data == null) return placeholder;
+          return ClipRRect(
+            borderRadius: AppRadius.mdCircular,
+            child: Image(
+              image: snapshot.data!,
+              width: 156,
+              height: 156,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => placeholder,
+            ),
+          );
+        },
+      );
+    }
+    return Stack(
+      alignment: Alignment.bottomRight,
+      children: [
+        coverWidget,
+        Padding(
+          padding: const EdgeInsets.all(4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _CoverActionButton(
+                tooltip: '搜索封面',
+                icon: Symbols.image_search,
+                onPressed: () => _showCoverSearchDialog(context),
+              ),
+              const SizedBox(width: 4),
+              _CoverActionButton(
+                tooltip: '选择本地图片',
+                icon: Symbols.folder_open,
+                onPressed: _pickLocalCover,
+              ),
+              if (_hasSameAlbumCover()) ...[
+                const SizedBox(width: 4),
+                _CoverActionButton(
+                  tooltip: '使用同专辑封面',
+                  icon: Symbols.album,
+                  onPressed: _useSameAlbumCover,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  bool _hasSameAlbumCover() {
+    final album = AudioLibrary.instance.albumCollection[audio.album];
+    if (album == null) return false;
+    return album.works.any(
+      (a) => a.path != audio.path && a.smallCoverBytes != null,
+    );
+  }
+
+  Future<void> _pickLocalCover() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty || !mounted) return;
+    final bytes = result.files.single.bytes;
+    if (bytes == null) return;
+    setState(() => _pendingCoverBytes = bytes);
+  }
+
+  Future<void> _useSameAlbumCover() async {
+    final album = AudioLibrary.instance.albumCollection[audio.album];
+    if (album == null) return;
+    final source = album.works.firstWhere(
+      (a) => a.path != audio.path && a.smallCoverBytes != null,
+      orElse: () => audio,
+    );
+    if (source.path == audio.path) return;
+    final bytes = source.smallCoverBytes;
+    if (bytes == null || !mounted) return;
+    setState(() => _pendingCoverBytes = Uint8List.fromList(bytes));
+  }
+
+  Future<void> _showCoverSearchDialog(BuildContext context) async {
+    final bytes = await showDialog<Uint8List>(
+      context: context,
+      builder: (_) => _CoverSearchDialog(audio: audio),
+    );
+    if (!mounted || bytes == null) return;
+    setState(() => _pendingCoverBytes = bytes);
+  }
+
   Widget _buildEditInfo(ColorScheme scheme) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -686,143 +828,6 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
         _DetailTextField(
           label: '专辑',
           controller: _controllers.album,
-          decoration: _chipDecoration(scheme),
-        ),
-        const SizedBox(height: 16),
-        Text(
-          '分类',
-          style: TextStyle(
-            fontSize: AppType.caption,
-            color: scheme.onSurfaceVariant,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 8),
-        _DetailTextField(
-          label: '流派',
-          controller: _controllers.genre,
-          decoration: _chipDecoration(scheme),
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(
-              child: _DetailTextField(
-                label: '年份',
-                controller: _controllers.year,
-                decoration: _chipDecoration(scheme),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _DetailTextField(
-                label: '音轨号',
-                controller: _controllers.track,
-                decoration: _chipDecoration(scheme, '如 3'),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(
-              child: _DetailTextField(
-                label: '音轨总数',
-                controller: _controllers.trackTotal,
-                decoration: _chipDecoration(scheme, '如 12'),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _DetailTextField(
-                label: '碟片号',
-                controller: _controllers.disc,
-                decoration: _chipDecoration(scheme),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _DetailTextField(
-                label: '碟片总数',
-                controller: _controllers.discTotal,
-                decoration: _chipDecoration(scheme),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        Text(
-          '详细',
-          style: TextStyle(
-            fontSize: AppType.caption,
-            color: scheme.onSurfaceVariant,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 8),
-        _DetailTextField(
-          label: '作曲',
-          controller: _controllers.composer,
-          decoration: _chipDecoration(scheme, '多个用 / 分隔'),
-        ),
-        const SizedBox(height: 10),
-        _DetailTextField(
-          label: '作词',
-          controller: _controllers.lyricist,
-          decoration: _chipDecoration(scheme, '多个用 / 分隔'),
-        ),
-        const SizedBox(height: 10),
-        _DetailTextField(
-          label: '厂牌',
-          controller: _controllers.label,
-          decoration: _chipDecoration(scheme),
-        ),
-        const SizedBox(height: 10),
-        _DetailTextField(
-          label: '注释',
-          controller: _controllers.comment,
-          decoration: _chipDecoration(scheme),
-        ),
-        const SizedBox(height: 16),
-        Text(
-          '其他',
-          style: TextStyle(
-            fontSize: AppType.caption,
-            color: scheme.onSurfaceVariant,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: _DetailTextField(
-                label: 'BPM',
-                controller: _controllers.bpm,
-                decoration: _chipDecoration(scheme),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _DetailTextField(
-                label: '语言',
-                controller: _controllers.language,
-                decoration: _chipDecoration(scheme),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        _DetailTextField(
-          label: '版权',
-          controller: _controllers.copyright,
-          decoration: _chipDecoration(scheme),
-        ),
-        const SizedBox(height: 10),
-        _DetailTextField(
-          label: '许可',
-          controller: _controllers.license,
           decoration: _chipDecoration(scheme),
         ),
         const SizedBox(height: 14),
@@ -878,7 +883,12 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
     for (final item in data?.items ?? const []) {
       final key = item.key.trim();
       final normalizedKey = key.toLowerCase();
-      if (normalizedKey == 'artist' || normalizedKey == 'encoder') continue;
+      if (normalizedKey == 'artist' ||
+          normalizedKey == 'encoder' ||
+          normalizedKey == 'encoded_by' ||
+          normalizedKey == 'encoder_settings') {
+        continue;
+      }
       tagFields.add(_DetailField(label: key, value: item.value));
     }
 
@@ -953,8 +963,8 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
     if (fileSize != null && fileSize > BigInt.zero) {
       return Text(_formatBytes(fileSize.toInt()));
     }
-    return FutureBuilder<FileStat>(
-      future: File(audio.path).stat(),
+    return FutureBuilder<io.FileStat>(
+      future: io.File(audio.path).stat(),
       builder: (context, snapshot) {
         final size = snapshot.data?.size;
         return Text(size == null ? '-' : _formatBytes(size));
@@ -1014,9 +1024,9 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
         editField('总碟数', _controllers.discTotal, hint: '数字'),
         editField('流派', _controllers.genre),
         editField('年份', _controllers.year),
-        editField('作曲', _controllers.composer),
-        editField('作词', _controllers.lyricist),
-        editField('唱片公司', _controllers.label),
+        editField('作曲', _controllers.composer, hint: '多个用 / 分隔'),
+        editField('作词', _controllers.lyricist, hint: '多个用 / 分隔'),
+        editField('厂牌', _controllers.label),
         editField('注释', _controllers.comment),
         editField('BPM', _controllers.bpm),
         editField('语言', _controllers.language),
@@ -1105,6 +1115,40 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
         const SizedBox(height: 16),
         fileSection,
       ],
+    );
+  }
+}
+
+class _CoverActionButton extends StatelessWidget {
+  const _CoverActionButton({
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: AppRadius.smCircular,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerHighest.withValues(alpha: 0.88),
+            borderRadius: AppRadius.smCircular,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(5),
+            child: Icon(icon, size: 16, color: scheme.onSurface),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1791,4 +1835,432 @@ class _LyricSearchItem {
     this.album = '',
     this.extras = const {},
   });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 封面搜索对话框
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum _CoverSource { qq, ne, kugou }
+
+class _CoverSearchResult {
+  const _CoverSearchResult({
+    required this.title,
+    required this.artist,
+    required this.album,
+    required this.picUrl,
+    required this.source,
+  });
+
+  final String title;
+  final String artist;
+  final String album;
+  final String picUrl;
+  final _CoverSource source;
+}
+
+class _CoverSearchDialog extends StatefulWidget {
+  const _CoverSearchDialog({required this.audio});
+
+  final Audio audio;
+
+  @override
+  State<_CoverSearchDialog> createState() => _CoverSearchDialogState();
+}
+
+class _CoverSearchDialogState extends State<_CoverSearchDialog> {
+  late final TextEditingController _searchCtrl;
+  _CoverSource _activeSource = _CoverSource.qq;
+  List<_CoverSearchResult> _results = [];
+  bool _isSearching = false;
+  bool _isDownloading = false;
+  final Map<String, (int, int)> _coverImageSizeCache = {};
+
+  @override
+  void initState() {
+    super.initState();
+    final query = widget.audio.artist.isNotEmpty &&
+            widget.audio.artist != 'UNKNOWN'
+        ? '${widget.audio.title} ${widget.audio.artist}'
+        : widget.audio.title;
+    _searchCtrl = TextEditingController(text: query);
+    _search();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _search() async {
+    final query = _searchCtrl.text.trim();
+    if (query.isEmpty) return;
+    setState(() {
+      _isSearching = true;
+      _results = [];
+    });
+    try {
+      final results = await _doSearch(query, _activeSource);
+      if (!mounted) return;
+      setState(() {
+        _results = results;
+        _isSearching = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _isSearching = false);
+    }
+  }
+
+  Future<List<_CoverSearchResult>> _doSearch(
+    String query,
+    _CoverSource source,
+  ) async {
+    return switch (source) {
+      _CoverSource.qq => (await net_api.qqSearchLyric(
+              keyword: query,
+              pageSize: 12,
+            ))
+          .where((e) => e.picUrl.isNotEmpty)
+          .map(
+            (e) => _CoverSearchResult(
+              title: e.title,
+              artist: e.artist,
+              album: e.album,
+              picUrl: e.picUrl,
+              source: _CoverSource.qq,
+            ),
+          )
+          .toList(),
+      _CoverSource.ne => (await net_api.neSearchLyric(
+              keyword: query,
+              pageSize: 12,
+            ))
+          .where((e) => e.picUrl.isNotEmpty)
+          .map(
+            (e) => _CoverSearchResult(
+              title: e.title,
+              artist: e.artist,
+              album: e.album,
+              picUrl: e.picUrl,
+              source: _CoverSource.ne,
+            ),
+          )
+          .toList(),
+      _CoverSource.kugou => (await net_api.kgSearchLyric(
+              keyword: query,
+              pageSize: 12,
+            ))
+          .where((e) => e.picUrl.isNotEmpty)
+          .map(
+            (e) => _CoverSearchResult(
+              title: e.title,
+              artist: e.artist,
+              album: e.album,
+              picUrl: e.picUrl,
+              source: _CoverSource.kugou,
+            ),
+          )
+          .toList(),
+    };
+  }
+
+  Future<void> _selectResult(_CoverSearchResult result) async {
+    if (_isDownloading) return;
+    setState(() => _isDownloading = true);
+    try {
+      final bytes = await _downloadImage(result.picUrl);
+      if (!mounted) return;
+      if (bytes == null) {
+        showTextOnSnackBar('封面下载失败');
+        return;
+      }
+      Navigator.pop(context, Uint8List.fromList(bytes));
+    } catch (e) {
+      if (mounted) showTextOnSnackBar('封面下载失败');
+    } finally {
+      if (mounted) setState(() => _isDownloading = false);
+    }
+  }
+
+  Future<List<int>?> _downloadImage(String url) async {
+    io.HttpClient? client;
+    try {
+      client = io.HttpClient();
+      client.connectionTimeout = const Duration(seconds: 10);
+      final request = await client.getUrl(Uri.parse(url));
+      final response = await request.close();
+      if (response.statusCode != 200) return null;
+      final bytes = <int>[];
+      await for (final chunk in response) {
+        bytes.addAll(chunk);
+      }
+      return bytes;
+    } catch (_) {
+      return null;
+    } finally {
+      client?.close(force: true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: AppRadius.mdCircular),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: 400, maxWidth: 600),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    '搜索封面',
+                    style: TextStyle(
+                      fontSize: AppType.sectionTitle,
+                      fontWeight: AppType.weightBold,
+                      color: scheme.onSurface,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Symbols.close, size: 20),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _searchCtrl,
+                      autofocus: true,
+                      style: TextStyle(
+                        fontSize: AppType.body,
+                        color: scheme.onSurface,
+                      ),
+                      decoration: const InputDecoration(
+                        hintText: '输入歌曲名或歌手...',
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                      ),
+                      onSubmitted: (_) => _search(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    tooltip: '搜索',
+                    icon: _isSearching
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Symbols.search, size: 20),
+                    onPressed: _isSearching ? null : _search,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  _buildSourceTab(_CoverSource.qq, 'QQ'),
+                  const SizedBox(width: 8),
+                  _buildSourceTab(_CoverSource.ne, '网易'),
+                  const SizedBox(width: 8),
+                  _buildSourceTab(_CoverSource.kugou, '酷狗'),
+                ],
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                height: 340,
+                child: _isSearching
+                    ? const Center(child: CircularProgressIndicator())
+                    : _results.isEmpty
+                        ? Center(
+                            child: Text(
+                              '无结果',
+                              style: TextStyle(
+                                color: scheme.onSurfaceVariant,
+                                fontSize: AppType.body,
+                              ),
+                            ),
+                          )
+                        : GridView.builder(
+                            gridDelegate:
+                                const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 4,
+                              crossAxisSpacing: 8,
+                              mainAxisSpacing: 8,
+                            ),
+                            itemCount: _results.length,
+                            itemBuilder: (context, index) {
+                              final item = _results[index];
+                              final size = _coverImageSizeCache[item.picUrl];
+                              return Tooltip(
+                                message:
+                                    '${item.title}\n${item.artist}${item.album.isNotEmpty ? '\n${item.album}' : ''}',
+                                child: InkWell(
+                                  onTap: _isDownloading
+                                      ? null
+                                      : () => _selectResult(item),
+                                  borderRadius: AppRadius.smCircular,
+                                  child: ClipRRect(
+                                    borderRadius: AppRadius.smCircular,
+                                    child: Stack(
+                                      fit: StackFit.expand,
+                                      children: [
+                                        Image.network(
+                                          item.picUrl,
+                                          fit: BoxFit.cover,
+                                          frameBuilder:
+                                              (ctx, child, frame, wasSynchronouslyLoaded) {
+                                            if (frame != null &&
+                                                !_coverImageSizeCache
+                                                    .containsKey(item.picUrl)) {
+                                              _loadImageSize(item.picUrl);
+                                            }
+                                            return child;
+                                          },
+                                          errorBuilder: (_, _, _) => DecoratedBox(
+                                            decoration: BoxDecoration(
+                                              color: scheme.surfaceContainerHighest,
+                                              borderRadius: AppRadius.smCircular,
+                                            ),
+                                            child: Icon(
+                                              Symbols.broken_image,
+                                              color: scheme.onSurfaceVariant,
+                                            ),
+                                          ),
+                                        ),
+                                        if (size != null)
+                                          Positioned(
+                                            left: 0,
+                                            right: 0,
+                                            bottom: 0,
+                                            child: DecoratedBox(
+                                              decoration: BoxDecoration(
+                                                gradient: LinearGradient(
+                                                  begin: Alignment.topCenter,
+                                                  end: Alignment.bottomCenter,
+                                                  colors: [
+                                                    Colors.transparent,
+                                                    Colors.black.withValues(alpha: 0.55),
+                                                  ],
+                                                ),
+                                              ),
+                                              child: Padding(
+                                                padding: const EdgeInsets.fromLTRB(0, 8, 4, 3),
+                                                child: Align(
+                                                  alignment: Alignment.bottomRight,
+                                                  child: Text(
+                                                    '${size.$1}×${size.$2}',
+                                                    style: const TextStyle(
+                                                      fontSize: 9,
+                                                      color: Colors.white,
+                                                      fontWeight: FontWeight.w600,
+                                                      shadows: [
+                                                        Shadow(
+                                                          color: Colors.black54,
+                                                          blurRadius: 2,
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+              ),
+              if (_isDownloading)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: LinearProgressIndicator(
+                    borderRadius: AppRadius.smCircular,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSourceTab(_CoverSource source, String label) {
+    final isActive = _activeSource == source;
+    final scheme = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onTap: () {
+        if (_activeSource == source) return;
+        setState(() {
+          _activeSource = source;
+          _results = [];
+        });
+        _search();
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: BoxDecoration(
+          color: isActive ? scheme.primaryContainer : Colors.transparent,
+          borderRadius: AppRadius.smCircular,
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: AppType.caption,
+            color: isActive
+                ? scheme.onPrimaryContainer
+                : scheme.onSurfaceVariant,
+            fontWeight: isActive ? AppType.weightBold : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _loadImageSize(String url) async {
+    if (_coverImageSizeCache.containsKey(url)) return;
+    io.HttpClient? client;
+    try {
+      client = io.HttpClient();
+      client.connectionTimeout = const Duration(seconds: 8);
+      final request = await client.getUrl(Uri.parse(url));
+      final response = await request.close();
+      if (response.statusCode != 200) return;
+      final chunks = <List<int>>[];
+      await for (final chunk in response) {
+        chunks.add(chunk);
+      }
+      final totalLen = chunks.fold<int>(0, (sum, c) => sum + c.length);
+      final bytes = Uint8List(totalLen);
+      var offset = 0;
+      for (final chunk in chunks) {
+        bytes.setRange(offset, offset + chunk.length, chunk);
+        offset += chunk.length;
+      }
+      final codec = await ui.instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      if (!mounted) return;
+      setState(() {
+        _coverImageSizeCache[url] = (frame.image.width, frame.image.height);
+      });
+      frame.image.dispose();
+    } catch (_) {}
+  }
 }

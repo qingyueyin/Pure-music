@@ -68,6 +68,17 @@ Future<void> writeLyricToPath({required String path, required String lyric}) =>
     );
 
 /// for Flutter
+/// 写入内嵌封面图片到音频文件标签。
+/// `bytes` 为空时移除封面。图片最长边超过 1600 时等比缩放，统一转 JPEG 写入。
+Future<void> writeAudioCover({
+  required String path,
+  required List<int> bytes,
+}) => RustLib.instance.api.crateApiTagReaderWriteAudioCover(
+  path: path,
+  bytes: bytes,
+);
+
+/// for Flutter
 /// 扫描给定路径下所有子文件夹（包括自己）的音乐文件并把索引保存在 index_path/index.json。
 Stream<IndexActionState> buildIndexFromFoldersRecursively({
   required List<String> folders,

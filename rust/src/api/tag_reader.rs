@@ -13,8 +13,9 @@ use std::{
 use dsf_meta::DsfFile;
 use flutter_rust_bridge::frb;
 use id3::TagLike;
-use image::imageops;
+use image::{imageops, DynamicImage};
 use lofty::config::{ParseOptions, ParsingMode, WriteOptions};
+use lofty::picture::{MimeType, Picture, PictureType};
 use lofty::prelude::{Accessor, AudioFile, ItemKey, TaggedFileExt};
 use lofty::probe::Probe;
 use lofty::tag::{ItemValue, Tag, TagItem, TagType};
@@ -2281,6 +2282,118 @@ pub fn write_lyric_to_path(path: String, lyric: String) -> Result<(), String> {
         Some(saved) if saved == lyric => Ok(()),
         Some(_) => Err("written lyrics do not match the saved tag".to_string()),
         None => Err("written lyrics could not be read back".to_string()),
+    }
+}
+
+/// for Flutter
+/// 写入内嵌封面图片到音频文件标签。
+/// `bytes` 为空时移除封面。图片最长边超过 1600 时等比缩放。
+/// 保留原始格式（PNG/JPEG/GIF），无法识别格式时降级为 JPEG。
+pub fn write_audio_cover(path: String, bytes: Vec<u8>) -> Result<(), String> {
+    let path_ref = Path::new(&path);
+    let options = ParseOptions::new()
+        .parsing_mode(ParsingMode::Relaxed)
+        .read_cover_art(true)
+        .read_properties(false)
+        .read_tags(true);
+
+    let mut tagged_file = match Probe::open(path_ref) {
+        Ok(v) => match v.options(options).read() {
+            Ok(f) => f,
+            Err(err) => return Err(format!("Error reading file: {:?}", err.kind())),
+        },
+        Err(err) => return Err(format!("Error opening file: {:?}", err.kind())),
+    };
+
+    let tag = if let Some(tag) = tagged_file.primary_tag_mut() {
+        tag
+    } else if let Some(tag) = tagged_file.first_tag_mut() {
+        tag
+    } else {
+        let tag_type = tagged_file.primary_tag_type();
+        tagged_file.insert_tag(Tag::new(tag_type));
+        if let Some(tag) = tagged_file.primary_tag_mut() {
+            tag
+        } else if let Some(tag) = tagged_file.first_tag_mut() {
+            tag
+        } else {
+            return Err("failed to create tag".to_string());
+        }
+    };
+
+    tag.remove_picture_type(PictureType::CoverFront);
+
+    if !bytes.is_empty() {
+        let img = image::load_from_memory(&bytes)
+            .map_err(|e| format!("Error decoding image: {e}"))?;
+
+        const MAX_SIDE: u32 = 1600;
+        let img = if img.width() > MAX_SIDE || img.height() > MAX_SIDE {
+            img.resize(MAX_SIDE, MAX_SIDE, imageops::FilterType::Lanczos3)
+        } else {
+            img
+        };
+
+        // 按原始格式编码，无法识别时降级 JPEG
+        let (encoded, mime) = detect_and_encode(&img, &bytes)?;
+
+        let picture = Picture::new_unchecked(
+            PictureType::CoverFront,
+            Some(mime),
+            None,
+            encoded,
+        );
+        tag.push_picture(picture);
+    }
+
+    tagged_file
+        .save_to_path(&path, WriteOptions::default())
+        .map_err(|e| format!("Error saving cover: {:?}", e.kind()))?;
+    Ok(())
+}
+
+/// 根据原始字节的 magic bytes 检测图片格式，按原格式编码返回。
+/// 支持 PNG、JPEG、GIF；无法识别时降级为 JPEG。
+fn detect_and_encode(
+    img: &DynamicImage,
+    raw_bytes: &[u8],
+) -> Result<(Vec<u8>, MimeType), String> {
+    let format = if raw_bytes.len() >= 8 && raw_bytes[..8] == *b"\x89PNG\r\n\x1a\n" {
+        Some(image::ImageFormat::Png)
+    } else if raw_bytes.len() >= 3 && raw_bytes[..3] == *b"\xFF\xD8\xFF" {
+        Some(image::ImageFormat::Jpeg)
+    } else if raw_bytes.len() >= 6 && raw_bytes[..6] == *b"GIF87a" || raw_bytes.len() >= 6 && raw_bytes[..6] == *b"GIF89a" {
+        Some(image::ImageFormat::Gif)
+    } else {
+        None
+    };
+
+    match format {
+        Some(f @ image::ImageFormat::Png) => {
+            let mut buf = Vec::new();
+            img.write_to(&mut Cursor::new(&mut buf), f)
+                .map_err(|e| format!("Error encoding PNG: {e}"))?;
+            Ok((buf, MimeType::Png))
+        }
+        Some(f @ image::ImageFormat::Jpeg) => {
+            let mut buf = Vec::new();
+            img.write_to(&mut Cursor::new(&mut buf), f)
+                .map_err(|e| format!("Error encoding JPEG: {e}"))?;
+            Ok((buf, MimeType::Jpeg))
+        }
+        Some(f @ image::ImageFormat::Gif) => {
+            let mut buf = Vec::new();
+            img.write_to(&mut Cursor::new(&mut buf), f)
+                .map_err(|e| format!("Error encoding GIF: {e}"))?;
+            Ok((buf, MimeType::Gif))
+        }
+        _ => {
+            // 不支持的格式降级为 JPEG
+            let mut buf = Vec::new();
+            img.write_to(&mut Cursor::new(&mut buf), image::ImageFormat::Jpeg)
+                .map_err(|e| format!("Error encoding JPEG fallback: {e}"))?;
+            Ok((buf, MimeType::Jpeg))
+        }
     }
 }
 
