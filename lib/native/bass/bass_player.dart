@@ -111,6 +111,7 @@ class BassPlayer {
   int? _smartOutgoingStream;
   int _mixerGeneration = 0;
   bool _streamWasapiExclusive = false;
+  bool _transitionHandledCompletion = false;
 
   double? _replayGainDb;
   double _baseOutputVolume = 1.0;
@@ -173,6 +174,7 @@ class BassPlayer {
 
   /// 自动切歌过渡（淡入淡出/交叉淡化）状态
   Timer? _transitionTimer;
+  Timer? _handledCompletionClearTimer;
   int? _transitionOldStream;
   int? _transitionSyncHandle;
   int? _transitionSyncChannel;
@@ -418,7 +420,9 @@ class BassPlayer {
       if (currentState == PlayerState.stopped) {
         if (lastNotifiedState != PlayerState.completed) {
           lastNotifiedState = PlayerState.completed;
-          _playerStateStreamController.add(PlayerState.completed);
+          if (!_transitionHandledCompletion) {
+            _playerStateStreamController.add(PlayerState.completed);
+          }
         }
       } else {
         if (lastNotifiedState != currentState) {
@@ -1472,6 +1476,7 @@ class BassPlayer {
       logger.i(
         '[bass] transition mode will apply after the next source rebuild',
       );
+      _transitionHandledCompletion = false;
       return false;
     }
     final nextStream = _createSharedSource(audioPath);
@@ -1631,6 +1636,9 @@ class BassPlayer {
     final detachedQueuedStream = _queuedStreamAttached ? null : _queuedStream;
     _mixerGeneration++;
     _unreportedGaplessTransition = null;
+    _handledCompletionClearTimer?.cancel();
+    _handledCompletionClearTimer = null;
+    _transitionHandledCompletion = false;
     _cancelTransition();
     _mixerStream = null;
     _mixerUsesQueue = false;
@@ -1698,6 +1706,7 @@ class BassPlayer {
     );
     if (added) {
       _queuedStreamAttached = true;
+      _resumeOutputIfStopped();
       return true;
     }
     logger.w(
@@ -1835,9 +1844,14 @@ class BassPlayer {
     final crossfade = mode == TransitionMode.crossfade;
     final oldStream = _fstream!;
     final gen = generation;
+    _transitionHandledCompletion = true;
 
     if (crossfade) {
-      if (!_attachQueuedStream(_mixerGeneration, newStream)) return;
+      if (!_attachQueuedStream(_mixerGeneration, newStream) ||
+          !_isOutputActive()) {
+        _failHandledAutoTransition();
+        return;
+      }
       _transitionOldStream = oldStream;
       _fadeOutOldStream(
         oldStream,
@@ -1849,7 +1863,11 @@ class BassPlayer {
       _transitionTimer = Timer(Duration(milliseconds: fadeOutMs + 50), () {
         if (gen != _transitionGeneration) return;
         _transitionTimer = null;
-        _activateQueuedStream(_mixerGeneration, newStream);
+        if (_activateQueuedStream(_mixerGeneration, newStream) == null) {
+          _failHandledAutoTransition();
+          return;
+        }
+        _armHandledCompletionClear();
       });
     } else {
       _transitionOldStream = oldStream;
@@ -1862,14 +1880,64 @@ class BassPlayer {
       _transitionTimer = Timer(Duration(milliseconds: fadeOutMs), () {
         if (gen != _transitionGeneration) return;
         _transitionTimer = null;
-        if (!_attachQueuedStream(_mixerGeneration, newStream)) {
-          _cancelTransition();
+        if (!_attachQueuedStream(_mixerGeneration, newStream) ||
+            !_isOutputActive()) {
+          _failHandledAutoTransition();
           return;
         }
         _fadeInNewStream(newStream, durationMs: fadeInMs);
-        _activateQueuedStream(_mixerGeneration, newStream);
+        if (_activateQueuedStream(_mixerGeneration, newStream) == null) {
+          _failHandledAutoTransition();
+          return;
+        }
+        _armHandledCompletionClear();
       });
     }
+  }
+
+  void _failHandledAutoTransition() {
+    _handledCompletionClearTimer?.cancel();
+    _handledCompletionClearTimer = null;
+    _transitionHandledCompletion = false;
+    _cancelTransition();
+    final output = _mixerStream;
+    if (output != null &&
+        _bass.BASS_ChannelIsActive(output) == bass.BASS_ACTIVE_STOPPED) {
+      _playerStateStreamController.add(PlayerState.completed);
+    }
+  }
+
+  void _armHandledCompletionClear() {
+    _handledCompletionClearTimer?.cancel();
+    _handledCompletionClearTimer = Timer(const Duration(seconds: 2), () {
+      _handledCompletionClearTimer = null;
+      _transitionHandledCompletion = false;
+    });
+  }
+
+  void _resumeOutputIfStopped() {
+    final output = _mixerStream;
+    if (output == null || wasapiExclusive) return;
+    if (_bass.BASS_ChannelIsActive(output) != bass.BASS_ACTIVE_STOPPED) {
+      return;
+    }
+    if (_bass.BASS_ChannelStart(output) == 0) {
+      logger.w(
+        '[bass] resuming ended mixer failed: ${_bass.BASS_ErrorGetCode()}',
+      );
+    }
+  }
+
+  bool _isOutputActive() {
+    final output = _mixerStream;
+    if (output == null) return false;
+    return _bass.BASS_ChannelIsActive(output) != bass.BASS_ACTIVE_STOPPED;
+  }
+
+  bool consumeTransitionHandledCompletion() {
+    if (!_transitionHandledCompletion) return false;
+    _transitionHandledCompletion = false;
+    return true;
   }
 
   GaplessTransition? _promoteDequeuedSource({bool emit = true}) {
@@ -2250,6 +2318,9 @@ class BassPlayer {
   void setSource(String path) {
     _replayGainDb = null;
     _activeGaplessTransitionId = null;
+    _handledCompletionClearTimer?.cancel();
+    _handledCompletionClearTimer = null;
+    _transitionHandledCompletion = false;
     _logAudioState('setSource(begin)');
     if (_fstream != null) {
       _positionUpdaterVersion++;
@@ -2718,6 +2789,9 @@ class BassPlayer {
     _fadeInTimer = null;
     _fadeOutTimer?.cancel();
     _fadeOutTimer = null;
+    _handledCompletionClearTimer?.cancel();
+    _handledCompletionClearTimer = null;
+    _transitionHandledCompletion = false;
     if (_fadeOutHandle != null) {
       if (_fadeOutRemoveFromMixer) {
         _bassMix?.channelRemove(_fadeOutHandle!);

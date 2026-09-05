@@ -71,6 +71,17 @@ class PlaybackService extends ChangeNotifier {
 
   ValueListenable<int> get playCountRevision => _playCountRevision;
 
+  @visibleForTesting
+  static bool shouldAutoAdvanceOnCompleted({
+    required bool smartHandled,
+    required bool transitionHandled,
+    required PlayerState currentState,
+  }) {
+    if (smartHandled || transitionHandled) return false;
+    if (currentState == PlayerState.playing) return false;
+    return true;
+  }
+
   PlaybackService(this.playService) {
     _player.onExclusiveModeChanged = (exclusive) {
       _wasapiExclusive.value = exclusive;
@@ -81,7 +92,11 @@ class PlaybackService extends ChangeNotifier {
       var shouldAutoAdvance = false;
       if (event == PlayerState.completed) {
         _updateSmtcPosition();
-        shouldAutoAdvance = !_smartTransitions.handlePlayerCompleted();
+        shouldAutoAdvance = shouldAutoAdvanceOnCompleted(
+          smartHandled: _smartTransitions.handlePlayerCompleted(),
+          transitionHandled: _player.consumeTransitionHandledCompletion(),
+          currentState: _player.playerState,
+        );
       }
       _playerState.value = event;
       _notifyPositionSync();
