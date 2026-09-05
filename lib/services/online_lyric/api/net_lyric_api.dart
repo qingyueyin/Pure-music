@@ -22,6 +22,7 @@ class QmSearchItem {
   final String artist;
   final String album;
   final int durationMs;
+  final String picUrl;
 
   const QmSearchItem({
     required this.id,
@@ -30,6 +31,7 @@ class QmSearchItem {
     required this.artist,
     required this.album,
     required this.durationMs,
+    this.picUrl = '',
   });
 }
 
@@ -39,6 +41,7 @@ class NeSearchItem {
   final String artist;
   final String album;
   final int durationMs;
+  final String picUrl;
 
   const NeSearchItem({
     required this.id,
@@ -46,6 +49,7 @@ class NeSearchItem {
     required this.artist,
     required this.album,
     required this.durationMs,
+    this.picUrl = '',
   });
 }
 
@@ -56,6 +60,7 @@ class KgSearchItem {
   final String artist;
   final String album;
   final int durationMs;
+  final String picUrl;
 
   const KgSearchItem({
     required this.hash,
@@ -64,6 +69,7 @@ class KgSearchItem {
     required this.artist,
     required this.album,
     required this.durationMs,
+    this.picUrl = '',
   });
 }
 
@@ -140,6 +146,7 @@ Future<List<QmSearchItem>> qqSearchLyric({
       artist: item['artist'] as String,
       album: item['album'] as String,
       durationMs: (item['interval'] as int) * 1000,
+      picUrl: item['picUrl']?.toString() ?? '',
     );
   }).toList();
 }
@@ -208,6 +215,7 @@ Future<List<NeSearchItem>> neSearchLyric({
       artist: (artistList ?? 'UNKNOWN') as String,
       album: item['album'] as String,
       durationMs: item['dt'] as int,
+      picUrl: item['picUrl']?.toString() ?? '',
     );
   }).toList();
 }
@@ -258,6 +266,7 @@ Future<List<KgSearchItem>> kgSearchLyric({
       album: item['album_name'] as String,
       durationMs:
           (int.tryParse(item['duration']?.toString() ?? '0') ?? 0) * 1000,
+      picUrl: item['picUrl']?.toString() ?? '',
     );
   }).toList();
 }

@@ -3,8 +3,12 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
+import 'package:crypto/crypto.dart';
+
 const _kgSearchUrl = 'https://mobilecdn.kugou.com/api/v3/search/song';
 const _kgSearchFallbackUrl = 'https://songsearch.kugou.com/song_search_v2';
+const _kgSearchSignedUrl = 'https://complexsearch.kugou.com/v2/search/song';
+const _kgSalt = 'LnT6xpN3khm36zse0QzvmgTZ3waWdRSA';
 const _kgSearchLrcUrl = 'https://lyrics.kugou.com/search';
 const _kgDownloadLrcUrl = 'https://lyrics.kugou.com/download';
 const _neSearchUrl = 'https://music.163.com/api/cloudsearch/pc';
@@ -60,6 +64,31 @@ Duration _effectiveTimeout(Duration? requested, Duration fallback) {
   return requested < fallback ? requested : fallback;
 }
 
+String _kgNormalizeCover(String url) =>
+    url.replaceFirst('{size}', '480').replaceFirst('http:', 'https:');
+
+String _kgCoverUrl(Map item, List? groupList) {
+  // 1) fallback 接口字段：item['Image']  ← Lyrico 用的也是这个
+  final imgRaw = item['Image']?.toString() ?? '';
+  if (imgRaw.isNotEmpty) return _kgNormalizeCover(imgRaw);
+
+  // 2) item 顶层 img（部分主接口）
+  final topImg = item['img']?.toString() ?? '';
+  if (topImg.isNotEmpty) return _kgNormalizeCover(topImg);
+
+  // 3) 主接口 group[0].trans_param.union_cover
+  if (groupList != null && groupList.isNotEmpty && groupList.first is Map) {
+    final g = groupList.first as Map;
+    final trans = g['trans_param'];
+    if (trans is Map) {
+      final cover = trans['union_cover']?.toString() ?? '';
+      if (cover.isNotEmpty) return _kgNormalizeCover(cover);
+    }
+  }
+
+  return '';
+}
+
 Future<String?> _httpPost(
   String urlStr,
   String body,
@@ -85,12 +114,84 @@ Future<String?> _httpPost(
   }
 }
 
+/// MD5 签名参数，Lyrico 酷狗插件 `signParams` 的 Dart 复现。
+Map<String, String> _kgSignParams(Map<String, String> custom) {
+  final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+  final params = <String, String>{
+    'userid': '0',
+    'appid': '3116',
+    'token': '',
+    'clienttime': '$now',
+    'iscorrection': '1',
+    'uuid': '-',
+    'mid': '',
+    'dfid': '-',
+    'clientver': '11070',
+    'platform': 'AndroidFilter',
+  };
+  params.addAll(custom);
+  final sorted = params.keys.toList()..sort();
+  final sigInput = sorted.map((k) => '$k=${params[k]}').join('');
+  params['signature'] = md5.convert(utf8.encode('$_kgSalt$sigInput$_kgSalt')).toString();
+  return params;
+}
+
+/// 用签名接口搜索酷狗，结果质量远高于 mobilecdn。
+Future<List<dynamic>> _kgSignedSearch(String keyword, int page, int pageSize) async {
+  final custom = {
+    'keyword': keyword,
+    'page': '$page',
+    'pagesize': '$pageSize',
+    'iscorrection': '1',
+  };
+  final signed = _kgSignParams(custom);
+  final qs = signed.entries.map((e) => '${Uri.encodeComponent(e.key)}=${Uri.encodeComponent(e.value)}').join('&');
+  final url = '$_kgSearchSignedUrl?$qs';
+  final body = await _httpGet(url, {}, {
+    'User-Agent': 'Android14-1070-11070-201-0-SearchSong-wifi',
+  });
+  if (body == null || body.isEmpty) return [];
+  try {
+    final data = jsonDecode(body) as Map<String, dynamic>;
+    if ((data['error_code'] ?? 1) != 0) return [];
+    final lists = data['data']?['lists'];
+    if (lists is! List) return [];
+    return lists.whereType<Map>().map((item) => _kgNormalizeSignedItem(item)).toList();
+  } catch (_) {
+    return [];
+  }
+}
+
+Map<String, dynamic> _kgNormalizeSignedItem(Map item) {
+  final singers = item['Singers'] is List ? item['Singers'] as List : [];
+  final artist = singers.map((s) => s is Map ? (s['name'] ?? s['Name'] ?? '') : '').where((s) => s.toString().isNotEmpty).join('/');
+  final imgRaw = item['Image']?.toString() ?? '';
+  final picUrl = imgRaw.isNotEmpty ? imgRaw.replaceFirst('{size}', '480').replaceFirst('http:', 'https:') : '';
+  return {
+    'hash': item['FileHash']?.toString() ?? '',
+    'id': item['ID']?.toString() ?? '',
+    'songname': item['SongName']?.toString() ?? 'UNKNOWN',
+    'singername': artist.isNotEmpty ? artist : 'UNKNOWN',
+    'album_name': item['AlbumName']?.toString() ?? '',
+    'duration': int.tryParse(item['Duration']?.toString() ?? '0') ?? 0,
+    'picUrl': picUrl,
+  };
+}
+
 Future<List<dynamic>> _kgSearchInIsolate(Map<String, dynamic> params) async {
+  // 优先用签名接口
+  final keyword = params['text'].toString();
+  final page = int.tryParse(params['offset'].toString()) ?? 1;
+  final pageSize = int.tryParse(params['limit'].toString()) ?? 12;
+  final signedResults = await _kgSignedSearch(keyword, page, pageSize);
+  if (signedResults.isNotEmpty) return signedResults;
+
+  // 降级到现有无签名接口
   final Map<String, String> queryParameters = {
     'format': 'json',
-    'keyword': params['text'].toString(),
-    'page': params['offset'].toString(),
-    'pagesize': params['limit'].toString(),
+    'keyword': keyword,
+    'page': '$page',
+    'pagesize': '$pageSize',
     if (params['cacheBust'] != null) '_': params['cacheBust'].toString(),
   };
   var body = await _httpGet(_kgSearchUrl, queryParameters, _kgApiHeaders);
@@ -130,9 +231,7 @@ Future<List<dynamic>> _kgSearchInIsolate(Map<String, dynamic> params) async {
     for (final rawItem in songList) {
       if (rawItem is! Map) continue;
       final item = rawItem;
-      final groupList = !useFallbackShape && item['group'] is List
-          ? item['group'] as List
-          : null;
+      final groupList = item['group'] is List ? item['group'] as List : null;
       String? albumName;
       if (groupList != null && groupList.isNotEmpty) {
         final firstGroup = groupList.first;
@@ -140,6 +239,7 @@ Future<List<dynamic>> _kgSearchInIsolate(Map<String, dynamic> params) async {
           albumName = firstGroup['album_name']?.toString();
         }
       }
+      final picUrl = _kgCoverUrl(item, groupList);
       final result = <String, dynamic>{
         'hash':
             (useFallbackShape ? item['FileHash'] : item['hash'])?.toString() ??
@@ -165,6 +265,7 @@ Future<List<dynamic>> _kgSearchInIsolate(Map<String, dynamic> params) async {
                   '0',
             ) ??
             0,
+        'picUrl': picUrl,
       };
       if ((result['hash'] as String).isNotEmpty) normalized.add(result);
     }
@@ -313,12 +414,17 @@ Future<List<dynamic>> _neSearchInIsolate(Map<String, dynamic> params) async {
       }
       final id = item['id']?.toString() ?? '';
       if (id.isEmpty) continue;
+      final picUrlRaw = item['al']?['picUrl']?.toString() ?? '';
+      final picUrl = picUrlRaw.isNotEmpty
+          ? picUrlRaw.replaceFirst('http:', 'https:')
+          : '';
       normalized.add({
         'id': item['id']?.toString() ?? '',
         'name': item['name']?.toString() ?? 'UNKNOWN',
         'artist': artist ?? 'UNKNOWN',
         'album': item['al']?['name']?.toString() ?? '',
         'dt': int.tryParse(item['dt']?.toString() ?? '0') ?? 0,
+        'picUrl': picUrl,
       });
     }
     return normalized;
@@ -448,6 +554,10 @@ Future<List<dynamic>> _qqSearchInIsolate(Map<String, dynamic> params) async {
             .where((n) => n != null)
             .join('、');
       }
+      final albumMid = item['album']?['mid']?.toString() ?? '';
+      final picUrl = albumMid.isNotEmpty
+          ? 'https://y.gtimg.cn/music/photo_new/T002R800x800M000$albumMid.jpg'
+          : '';
       return {
         'id': item['id']?.toString() ?? '',
         'mid': item['mid']?.toString() ?? '',
@@ -455,6 +565,7 @@ Future<List<dynamic>> _qqSearchInIsolate(Map<String, dynamic> params) async {
         'artist': singer ?? 'UNKNOWN',
         'album': item['album']?['name']?.toString() ?? '',
         'interval': int.tryParse(item['interval']?.toString() ?? '0') ?? 0,
+        'picUrl': picUrl,
       };
     }).toList();
   } catch (_) {
