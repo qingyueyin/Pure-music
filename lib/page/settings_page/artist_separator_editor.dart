@@ -14,10 +14,10 @@ class ArtistSeparatorEditor extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      description: '自定义艺术家分隔符',
+      description: '艺术家分隔符',
       action: FilledButton.icon(
         icon: const Icon(Symbols.edit),
-        label: const Text('管理艺术家分隔符'),
+        label: const Text('编辑分隔符'),
         onPressed: () {
           showDialog(
             context: context,
@@ -282,7 +282,7 @@ class _EmptySeparatorState extends StatelessWidget {
             ),
             const SizedBox(height: 12.0),
             Text(
-              '还没有自定义分隔符',
+              '还没有分隔符',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: scheme.onSurface,

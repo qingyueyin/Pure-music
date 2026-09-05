@@ -9,7 +9,7 @@ class SettingsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return const PageScaffold(
       title: '设置',
-      subtitle: '自定义播放器外观和行为',
+      subtitle: '外观、歌词、播放',
       actions: [],
       body: SettingsTabs(),
     );

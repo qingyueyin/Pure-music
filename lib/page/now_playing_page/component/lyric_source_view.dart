@@ -2,13 +2,11 @@ import 'package:file_picker/file_picker.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/core/list_action_state.dart';
-import 'package:pure_music/core/lyric_action_state.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/lyric/lyric_source.dart';
 import 'package:pure_music/lyric/lyric_loader.dart';
 import 'package:pure_music/core/matcher.dart';
-import 'package:pure_music/page/now_playing_page/component/vertical_lyric_view.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/services/online_lyric/api/net_lyric_api.dart'
     as net_api;
@@ -31,16 +29,17 @@ bool _isSavedLyricResult(String audioPath, SongSearchResult result) {
       saved.source != _lyricSourceTypeFromResultSource(result.source)) {
     return false;
   }
+  // 如果保存记录中 ID 缺失，则 source 类型匹配即视为选中（兜底）
   return switch (result.source) {
     ResultSource.qq =>
-      saved.qqSongId != null && saved.qqSongId == result.qqSongId,
+      saved.qqSongId == null || saved.qqSongId == result.qqSongId,
     ResultSource.kugou =>
-      saved.kugouSongHash != null &&
+      saved.kugouSongHash == null ||
           saved.kugouSongHash == result.kugouSongHash,
     ResultSource.ne =>
-      saved.neSongId != null && saved.neSongId == result.neSongId,
+      saved.neSongId == null || saved.neSongId == result.neSongId,
     ResultSource.amll =>
-      saved.amllTtmlFile != null && saved.amllTtmlFile == result.amllTtmlFile,
+      saved.amllTtmlFile == null || saved.amllTtmlFile == result.amllTtmlFile,
   };
 }
 
@@ -830,15 +829,22 @@ class SetLyricSourceBtn extends StatelessWidget {
             ),
           );
           final nowPlaying = PlayService.instance.playbackService.nowPlaying;
-          final savedSource = nowPlaying == null
-              ? null
-              : lyricSources[nowPlaying.path];
-          final sourceType = savedSource?.source;
+          final lyricService = PlayService.instance.lyricService;
+          // 加载中用持久化来源预填，加载完成后用实际命中源
+          final activeSourceType = snapshot.connectionState == ConnectionState.done
+              ? lyricService.activeLyricSourceType
+              : (nowPlaying == null ? null : lyricSources[nowPlaying.path]?.source);
+          final isExternal = snapshot.connectionState == ConnectionState.done
+              ? lyricService.activeLocalIsExternal
+              : null;
           return switch (snapshot.connectionState) {
             ConnectionState.none => loadingWidget,
             ConnectionState.waiting => loadingWidget,
             ConnectionState.active => loadingWidget,
-            ConnectionState.done => _SetLyricSourceBtn(sourceType: sourceType),
+            ConnectionState.done => _SetLyricSourceBtn(
+              sourceType: activeSourceType,
+              isExternal: isExternal,
+            ),
           };
         },
       ),
@@ -848,79 +854,46 @@ class SetLyricSourceBtn extends StatelessWidget {
 
 class _SetLyricSourceBtn extends StatelessWidget {
   final LyricSourceType? sourceType;
-  const _SetLyricSourceBtn({this.sourceType});
+  // 本地来源细分：true=外置，false=内嵌，null=未确定
+  final bool? isExternal;
+  const _SetLyricSourceBtn({this.sourceType, this.isExternal});
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final lyricService = PlayService.instance.lyricService;
-    final isLocal = sourceType == null
-        ? null
-        : sourceType == LyricSourceType.local;
     final icon = switch (sourceType) {
       null => Symbols.lyrics,
       LyricSourceType.local => Symbols.lyrics,
       _ => Symbols.cloud,
     };
-    final tooltip = switch (sourceType) {
-      null => '歌词来源：未指定',
-      LyricSourceType.local => '歌词来源：本地',
-      _ => '歌词来源：在线',
+    final String localSubLabel = switch (isExternal) {
+      true => '外置',
+      false => '内嵌',
+      null => '本地',
     };
-    return MenuAnchor(
-      onOpen: () {
-        alwaysShowLyricViewControls = true;
-      },
-      onClose: () {
-        alwaysShowLyricViewControls = false;
-      },
-      menuChildren: [
-        MenuItemButton(
-          onPressed: () {
-            final nowPlaying = PlayService.instance.playbackService.nowPlaying;
-            // 延迟到下一帧，确保菜单关闭动画完成后再弹 dialog
-            WidgetsBinding.instance.addPostFrameCallback((_) {
+    final tooltip = switch (sourceType) {
+      null || LyricSourceType.local => '歌词来源：$localSubLabel',
+      LyricSourceType.qq => '歌词来源：QQ',
+      LyricSourceType.ne => '歌词来源：网易',
+      LyricSourceType.kugou => '歌词来源：酷狗',
+      LyricSourceType.amll => '歌词来源：AMLL',
+    };
+    return IconButton(
+      tooltip: tooltip,
+      onPressed: PlayService.instance.playbackService.nowPlaying == null
+          ? null
+          : () {
+              final nowPlaying =
+                  PlayService.instance.playbackService.nowPlaying;
               if (nowPlaying != null) {
                 showDialog<String>(
                   context: context,
                   builder: (context) => SetLyricSourceDialog(audio: nowPlaying),
                 );
               }
-            });
-          },
-          child: const Text('指定默认歌词'),
-        ),
-        MenuItemButton(
-          onPressed:
-              canSelectLyricSource(isCurrentLocal: isLocal, targetLocal: false)
-              ? lyricService.useOnlineLyric
-              : null,
-          leadingIcon: isLocal == false ? const Icon(Symbols.check) : null,
-          child: const Text('在线'),
-        ),
-        MenuItemButton(
-          onPressed:
-              canSelectLyricSource(isCurrentLocal: isLocal, targetLocal: true)
-              ? lyricService.useLocalLyric
-              : null,
-          leadingIcon: isLocal == true ? const Icon(Symbols.check) : null,
-          child: const Text('本地'),
-        ),
-      ],
-      builder: (context, controller, _) => IconButton(
-        tooltip: tooltip,
-        onPressed: PlayService.instance.playbackService.nowPlaying == null
-            ? null
-            : () {
-                if (controller.isOpen) {
-                  controller.close();
-                } else {
-                  controller.open();
-                }
-              },
-        icon: Icon(icon, fill: sourceType == LyricSourceType.local ? 1.0 : 0.0),
-        color: scheme.onSecondaryContainer,
-      ),
+            },
+      icon: Icon(icon, fill: sourceType == LyricSourceType.local ? 1.0 : 0.0),
+      color: scheme.onSecondaryContainer,
     );
   }
 }

@@ -58,12 +58,12 @@ class _TransitionControlState extends State<TransitionControl> {
         SettingsTile(
           description: '切歌过渡',
           subtitle: switch (mode) {
-            TransitionMode.seamless => '曲尾零间隙无缝衔接',
+            TransitionMode.seamless => '曲目结束时无缝衔接',
             TransitionMode.fade =>
               '淡出 ${pref.transitionFadeOutMs}ms / 淡入 ${pref.transitionFadeInMs}ms',
             TransitionMode.crossfade =>
               '淡出 ${pref.transitionFadeOutMs}ms / 淡入 ${pref.transitionFadeInMs}ms',
-            TransitionMode.smart => '根据歌曲内容自动选择衔接方式',
+            TransitionMode.smart => '根据歌曲内容选择衔接方式',
           },
           action: SegmentedButton<TransitionMode>(
             showSelectedIcon: false,
@@ -157,7 +157,7 @@ class _AudioEchoLogRecordControlState extends State<AudioEchoLogRecordControl> {
         : '未开启';
 
     return SettingsTile(
-      description: '回声排查日志录制',
+      description: '回声排查日志',
       action: Wrap(
         spacing: 4.0,
         runSpacing: 8.0,

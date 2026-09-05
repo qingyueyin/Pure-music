@@ -30,6 +30,8 @@ import 'package:pure_music/page/settings_page/check_update.dart';
 import 'package:pure_music/page/settings_page/create_issue.dart';
 import 'package:pure_music/page/settings_page/artist_separator_editor.dart';
 import 'package:pure_music/page/settings_page/settings_group_entry.dart';
+import 'package:pure_music/page/settings_page/hotkey_settings.dart'
+    show HotkeySettingsPanel, GlobalHotkeySettingsPanel;
 import 'package:pure_music/page/settings_page/other_settings.dart'
     show AudioEchoLogRecordControl, ReplayGainControl, TransitionControl;
 import 'package:pure_music/native/rust/api/utils.dart' as rust_utils;
@@ -140,7 +142,7 @@ class _AppearanceTabContent extends StatelessWidget {
         _GroupEntry(
           icon: Symbols.palette,
           title: '主题',
-          subtitle: '明暗模式、主题色与配色来源',
+          subtitle: '明暗模式与主题色',
           groupId: 'appearance-theme',
         ),
         SizedBox(height: 8.0),
@@ -154,14 +156,14 @@ class _AppearanceTabContent extends StatelessWidget {
         _GroupEntry(
           icon: Symbols.view_agenda,
           title: '界面动效',
-          subtitle: '滚动、交互与内容过渡',
+          subtitle: '列表滚动与页面过渡',
           groupId: 'appearance-list',
         ),
         SizedBox(height: 8.0),
         _GroupEntry(
           icon: Symbols.auto_awesome,
           title: '播放界面',
-          subtitle: '进度条、歌词动画与控件配色',
+          subtitle: '播放页背景与配色',
           groupId: 'appearance-player',
         ),
       ],
@@ -379,7 +381,7 @@ class _AppBackgroundControlState extends State<_AppBackgroundControl> {
       children: [
         SettingsTile(
           description: '背景图片',
-          subtitle: imagePath == null ? '使用当前主题背景' : path.basename(imagePath),
+          subtitle: imagePath == null ? '未设置，使用主题背景' : path.basename(imagePath),
           action: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -465,8 +467,8 @@ class _MonetProgressBarSwitchState extends State<_MonetProgressBarSwitch> {
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      description: '进度条',
-      subtitle: '进度条使用主题色渲染',
+      description: '主题色进度条',
+      subtitle: '进度条使用主题色',
       action: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -511,19 +513,19 @@ class _MotionEffectSwitchState extends State<_MotionEffectSwitch> {
   };
 
   String get _description => switch (widget.effect) {
-    _MotionEffect.stackedScroll => '堆叠滚动效果',
+    _MotionEffect.stackedScroll => '堆叠滚动',
     _MotionEffect.contentTransition => '内容切换过渡',
-    _MotionEffect.interactiveSurface => '卡片交互反馈',
+    _MotionEffect.interactiveSurface => '卡片交互',
     _MotionEffect.detailHeaderCollapse => '详情头部收拢',
     _MotionEffect.dataTransition => '数据更新过渡',
   };
 
   String get _subtitle => switch (widget.effect) {
-    _MotionEffect.stackedScroll => '列表滚动时使用堆叠变换与平滑滚动',
-    _MotionEffect.contentTransition => '页面切换时使用层级推入过渡',
-    _MotionEffect.interactiveSurface => '专辑、艺术家、歌单和文件夹卡片悬停与按压反馈',
+    _MotionEffect.stackedScroll => '列表滚动时使用堆叠与平滑滚动',
+    _MotionEffect.contentTransition => '页面切换时使用层级推入',
+    _MotionEffect.interactiveSurface => '专辑、艺术家、歌单和文件夹卡片的悬停与按压',
     _MotionEffect.detailHeaderCollapse => '详情页头部随滚动收拢',
-    _MotionEffect.dataTransition => '统计页指标数值更新时使用过渡',
+    _MotionEffect.dataTransition => '统计页数值更新时使用过渡',
   };
 
   void _setValue(bool value) {
@@ -700,8 +702,8 @@ class _MonetLyricsSwitchState extends State<_MonetLyricsSwitch> {
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      description: '歌词',
-      subtitle: '歌词使用主题色渲染',
+      description: '主题色歌词',
+      subtitle: '歌词高亮使用主题色',
       action: Switch(
         value: settings.useMaterialYouForLyrics,
         onChanged: _setEnabled,
@@ -729,8 +731,8 @@ class _MonetTransitionSwitchState extends State<_MonetTransitionSwitch> {
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      description: '间奏动画',
-      subtitle: '间奏动画使用主题色渲染',
+      description: '主题色间奏',
+      subtitle: '前奏与间奏使用主题色',
       action: Switch(
         value: settings.useMaterialYouForTransition,
         onChanged: _setEnabled,
@@ -758,8 +760,8 @@ class _MonetControlsSwitchState extends State<_MonetControlsSwitch> {
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      description: '播放控件',
-      subtitle: '播放页控件使用主题色渲染',
+      description: '主题色控件',
+      subtitle: '播放页控件使用主题色',
       action: Switch(
         value: settings.useMaterialYouForControls,
         onChanged: _setEnabled,
@@ -788,8 +790,8 @@ class _GlowEffectSwitchState extends State<_GlowEffectSwitch> {
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      description: '辉光缩放效果',
-      subtitle: '逐字播放时的辉光缩放动画',
+      description: '辉光缩放',
+      subtitle: '逐字歌词中，较长的字会放大并带辉光',
       action: Switch(
         value: nowPlayingPagePref.enableLyricGlow,
         onChanged: _setEnabled,
@@ -865,7 +867,7 @@ class _LiftStyleSelectorState extends State<_LiftStyleSelector> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SettingsTile(
-          description: '逐字歌词上抬方式',
+          description: '逐字上抬',
           action: SegmentedButton<LyricLiftStyle>(
             showSelectedIcon: false,
             segments: const [
@@ -1165,7 +1167,7 @@ class _ThemeColorPickerDialogState extends State<_ThemeColorPickerDialog> {
 
     return AlertDialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      title: const Text('自定义主题色'),
+      title: const Text('选择颜色'),
       content: SizedBox(
         width: dialogWidth,
         child: SingleChildScrollView(
@@ -1496,21 +1498,21 @@ class _LyricsTabContent extends StatelessWidget {
         _GroupEntry(
           icon: Symbols.download,
           title: '歌词来源',
-          subtitle: '本地歌词与在线歌词的获取顺序',
+          subtitle: '本地与在线来源',
           groupId: 'lyric-source',
         ),
         SizedBox(height: 8.0),
         _GroupEntry(
           icon: Symbols.translate,
           title: '歌词内容',
-          subtitle: '歌曲信息保留与文字转换',
+          subtitle: '歌曲信息与文字转换',
           groupId: 'lyric-content',
         ),
         SizedBox(height: 8.0),
         _GroupEntry(
           icon: Symbols.save,
           title: '歌词写入',
-          subtitle: '标签写入与外部 LRC 文件保存',
+          subtitle: '标签写入与外部 LRC',
           groupId: 'lyric-writing',
         ),
         SizedBox(height: 8.0),
@@ -1519,7 +1521,7 @@ class _LyricsTabContent extends StatelessWidget {
         _GroupEntry(
           icon: Symbols.animation,
           title: '显示效果',
-          subtitle: '逐字播放、注音与行动效',
+          subtitle: '辉光、注音、上抬',
           groupId: 'lyric-effect',
         ),
       ],
@@ -1538,17 +1540,31 @@ class _PlaybackTabContent extends StatelessWidget {
         _GroupEntry(
           icon: Symbols.play_circle,
           title: '播放行为',
-          subtitle: '音量增益与切歌过渡',
+          subtitle: 'ReplayGain 与切歌过渡',
           groupId: 'playback-behavior',
         ),
         SizedBox(height: 8.0),
-        _SettingsSectionHeader('外部控制'),
+        _SettingsSectionHeader('任务栏和热键'),
         SizedBox(height: 4.0),
         _GroupEntry(
+          icon: Symbols.desktop_windows,
+          title: '任务栏',
+          subtitle: '播放按钮与封面预览',
+          groupId: 'taskbar-control',
+        ),
+        SizedBox(height: 8.0),
+        _GroupEntry(
+          icon: Symbols.keyboard,
+          title: '应用内快捷键',
+          subtitle: '仅在窗口前台生效',
+          groupId: 'inapp-hotkey',
+        ),
+        SizedBox(height: 8.0),
+        _GroupEntry(
           icon: Symbols.keyboard_command_key,
-          title: '播放控制',
-          subtitle: '任务栏播放控制',
-          groupId: 'playback-control',
+          title: '全局热键',
+          subtitle: '最小化后仍可使用',
+          groupId: 'global-hotkey',
         ),
       ],
     );
@@ -1615,21 +1631,21 @@ class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
             const _GroupEntry(
               icon: Symbols.lyrics,
               title: '歌词内容',
-              subtitle: '翻译、注音与信息显示',
+              subtitle: '翻译、注音、歌名',
               groupId: 'desktop-basic',
             ),
             const SizedBox(height: 8),
             const _GroupEntry(
               icon: Symbols.view_week,
               title: '布局与动画',
-              subtitle: '布局、对齐与切换动画',
+              subtitle: '竖排、双行、对齐',
               groupId: 'desktop-display',
             ),
             const SizedBox(height: 8),
             const _GroupEntry(
               icon: Symbols.desktop_windows,
               title: '窗口行为',
-              subtitle: '隐藏、置顶与交互',
+              subtitle: '暂停、全屏、置顶',
               groupId: 'desktop-window',
             ),
             const SizedBox(height: 8),
@@ -1638,14 +1654,14 @@ class _DesktopLyricTabContentState extends State<_DesktopLyricTabContent> {
             const _GroupEntry(
               icon: Symbols.format_size,
               title: '文字样式',
-              subtitle: '字号、字重与描边',
+              subtitle: '字号、粗细、描边',
               groupId: 'desktop-style',
             ),
             const SizedBox(height: 8),
             const _GroupEntry(
               icon: Symbols.palette,
               title: '颜色',
-              subtitle: '主题色与自定义配色',
+              subtitle: '主题色或自定义',
               groupId: 'desktop-color',
             ),
           ],
@@ -1881,7 +1897,7 @@ class _DesktopLyricUnlockTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return SettingsTile(
       description: '桌面歌词已锁定',
-      subtitle: '锁定后不接收鼠标操作',
+      subtitle: '解锁后可拖动或点击',
       action: Switch(value: true, onChanged: (_) => onUnlock()),
     );
   }
@@ -2186,7 +2202,7 @@ class _AdvancedTabContent extends StatelessWidget {
         _GroupEntry(
           icon: Symbols.settings_suggest,
           title: '系统行为',
-          subtitle: '关闭窗口行为与日志',
+          subtitle: '关闭窗口与日志',
           groupId: 'advanced-system',
         ),
         SizedBox(height: 8.0),
@@ -2195,14 +2211,14 @@ class _AdvancedTabContent extends StatelessWidget {
         _GroupEntry(
           icon: Symbols.interests,
           title: '媒体解析',
-          subtitle: '艺术家名称的分隔规则',
+          subtitle: '艺术家名称分隔',
           groupId: 'advanced-custom',
         ),
         SizedBox(height: 8.0),
         _GroupEntry(
           icon: Symbols.text_fields,
           title: '字体',
-          subtitle: '歌词与界面字体',
+          subtitle: '界面与歌词字体',
           groupId: 'advanced-font',
         ),
       ],
@@ -2446,7 +2462,7 @@ class _SelectFontComboboxState extends State<SelectFontCombobox> {
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      description: '自定义字体',
+      description: '界面字体',
       subtitle: _busyLabel,
       action: FilledButton.icon(
         onPressed: _isBusy ? null : _selectFont,
@@ -3230,7 +3246,7 @@ class _SettingsGroupDesc {
 const _settingsGroups = <String, _SettingsGroupDesc>{
   'appearance-theme': _SettingsGroupDesc(
     '主题',
-    '明暗模式、主题色与配色来源',
+    '明暗模式与主题色',
     _AppearanceThemeGroup(),
   ),
   'appearance-display': _SettingsGroupDesc(
@@ -3240,7 +3256,7 @@ const _settingsGroups = <String, _SettingsGroupDesc>{
   ),
   'appearance-color': _SettingsGroupDesc(
     '配色',
-    '主题色生成方式与颜色来源',
+    '主题色来源',
     _AppearanceColorGroup(),
   ),
   'appearance-background': _SettingsGroupDesc(
@@ -3250,12 +3266,12 @@ const _settingsGroups = <String, _SettingsGroupDesc>{
   ),
   'appearance-list': _SettingsGroupDesc(
     '界面动效',
-    '滚动、交互与内容过渡',
+    '列表滚动与页面过渡',
     _AppearanceListGroup(),
   ),
   'appearance-monet': _SettingsGroupDesc(
     '播放界面配色',
-    '主题色在播放界面的应用范围',
+    '主题色应用范围',
     _AppearanceMonetGroup(),
   ),
   'appearance-progress': _SettingsGroupDesc(
@@ -3265,67 +3281,77 @@ const _settingsGroups = <String, _SettingsGroupDesc>{
   ),
   'appearance-player': _SettingsGroupDesc(
     '播放界面',
-    '进度条、歌词动画与控件配色',
+    '播放页背景与配色',
     _AppearancePlayerGroup(),
   ),
   'lyric-source': _SettingsGroupDesc(
     '歌词来源',
-    '本地歌词与在线歌词的获取顺序',
+    '本地与在线来源',
     _LyricSourceGroup(),
   ),
   'lyric-content': _SettingsGroupDesc(
     '歌词内容',
-    '歌曲信息保留与文字转换',
+    '歌曲信息与文字转换',
     _LyricContentGroup(),
   ),
   'lyric-writing': _SettingsGroupDesc(
     '歌词写入',
-    '标签写入与外部 LRC 文件保存',
+    '标签写入与外部 LRC',
     _LyricWritingGroup(),
   ),
   'lyric-effect': _SettingsGroupDesc(
     '显示效果',
-    '逐字播放、注音与行动效',
+    '辉光、注音、上抬',
     _LyricEffectGroup(),
   ),
   'playback-behavior': _SettingsGroupDesc(
     '播放行为',
-    '音量增益与切歌过渡',
+    'ReplayGain 与切歌过渡',
     _PlaybackBehaviorGroup(),
   ),
-  'playback-control': _SettingsGroupDesc(
-    '播放控制',
-    '任务栏播放控制',
-    _PlaybackControlGroup(),
+  'taskbar-control': _SettingsGroupDesc(
+    '任务栏',
+    '播放按钮与封面预览',
+    _TaskbarControlGroup(),
+  ),
+  'inapp-hotkey': _SettingsGroupDesc(
+    '应用内快捷键',
+    '仅在窗口前台生效',
+    _InAppHotkeyGroup(),
+  ),
+  'global-hotkey': _SettingsGroupDesc(
+    '全局热键',
+    '最小化后仍可使用',
+    _GlobalHotkeyGroup(),
   ),
   'desktop-basic': _SettingsGroupDesc(
     '歌词内容',
-    '翻译、注音与信息显示',
+    '翻译、注音、歌名',
     _DesktopBasicGroup(),
   ),
   'desktop-display': _SettingsGroupDesc(
     '布局与动画',
-    '布局、对齐与切换动画',
+    '竖排、双行、对齐',
     _DesktopDisplayGroup(),
   ),
   'desktop-window': _SettingsGroupDesc(
     '窗口行为',
-    '隐藏、置顶与交互',
+    '暂停、全屏、置顶',
     _DesktopWindowGroup(),
   ),
-  'desktop-style': _SettingsGroupDesc('文字样式', '字号、字重与描边', _DesktopStyleGroup()),
-  'desktop-color': _SettingsGroupDesc('颜色', '主题色与自定义配色', _DesktopColorGroup()),
+  'desktop-style': _SettingsGroupDesc('文字样式', '字号、粗细、描边', _DesktopStyleGroup()),
+  'desktop-color': _SettingsGroupDesc('颜色', '主题色或自定义', _DesktopColorGroup()),
   'advanced-system': _SettingsGroupDesc(
     '系统行为',
-    '关闭窗口行为与日志',
+    '关闭窗口与日志',
     _AdvancedSystemGroup(),
   ),
   'advanced-custom': _SettingsGroupDesc(
     '媒体解析',
-    '艺术家名称的分隔规则',
+    '艺术家名称分隔',
     _AdvancedLibraryGroup(),
   ),
-  'advanced-font': _SettingsGroupDesc('字体', '歌词与界面字体', _AdvancedFontGroup()),
+  'advanced-font': _SettingsGroupDesc('字体', '界面与歌词字体', _AdvancedFontGroup()),
 };
 
 /// 把桌面歌词配置同步到桌面歌词窗口
@@ -3355,8 +3381,7 @@ void syncDesktopLyricConfig(BuildContext context) {
         : 1,
     showNowPlayingInfo: settings.desktopShowNowPlayingInfo,
     hideOnPause: settings.desktopHideOnPause,
-    lyricTextAlign:
-        showDoubleLine && settings.desktopLyricTextAlign == 3
+    lyricTextAlign: showDoubleLine && settings.desktopLyricTextAlign == 3
         ? 3
         : settings.desktopLyricTextAlign.clamp(0, 2).toInt(),
     lyricAnimation: settings.desktopLyricAnimation.index,
@@ -3530,10 +3555,10 @@ class _AlwaysShowNowPlayingControlsSwitchState
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      description: '始终显示播放控件',
+      description: '播放控件常驻',
       subtitle: settings.alwaysShowNowPlayingControls
-          ? '播放页底部控件保持显示'
-          : '鼠标移入播放页底部时显示控件',
+          ? '底部控件保持显示'
+          : '鼠标移入底部时显示',
       action: Switch(
         value: settings.alwaysShowNowPlayingControls,
         onChanged: _setEnabled,
@@ -3560,6 +3585,80 @@ class _AppearanceProgressGroup extends StatelessWidget {
   }
 }
 
+class _NowPlayingBackgroundSettings extends StatefulWidget {
+  const _NowPlayingBackgroundSettings();
+
+  @override
+  State<_NowPlayingBackgroundSettings> createState() =>
+      _NowPlayingBackgroundSettingsState();
+}
+
+class _NowPlayingBackgroundSettingsState
+    extends State<_NowPlayingBackgroundSettings> {
+  final pref = AppPreference.instance.nowPlayingPagePref;
+
+  Future<void> _setMode(NowPlayingBackgroundMode nextMode) async {
+    if (nextMode == pref.backgroundMode) return;
+    setState(() => pref.backgroundMode = nextMode);
+    nowPlayingBackgroundModeNotifier.value = nextMode;
+    await AppPreference.instance.save();
+  }
+
+  Future<void> _setAudioReactive(bool value) async {
+    if (value == pref.audioReactiveFlow) return;
+    setState(() => pref.audioReactiveFlow = value);
+    nowPlayingAudioReactiveFlowNotifier.value = value;
+    await AppPreference.instance.save();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SettingsTile(
+          description: '播放页背景',
+          subtitle: switch (pref.backgroundMode) {
+            NowPlayingBackgroundMode.meshGradient => '封面取色网格渐变',
+            NowPlayingBackgroundMode.flowingCover => '封面流光',
+          },
+          action: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SegmentedButton<NowPlayingBackgroundMode>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(
+                    value: NowPlayingBackgroundMode.meshGradient,
+                    label: Text('动态背景'),
+                  ),
+                  ButtonSegment(
+                    value: NowPlayingBackgroundMode.flowingCover,
+                    label: Text('流光背景'),
+                  ),
+                ],
+                selected: {pref.backgroundMode},
+                onSelectionChanged: (selected) => _setMode(selected.first),
+              ),
+            ],
+          ),
+        ),
+        if (pref.backgroundMode == NowPlayingBackgroundMode.flowingCover) ...[
+          const SizedBox(height: 16.0),
+          SettingsTile(
+            description: '音频律动',
+            subtitle: pref.audioReactiveFlow ? '流光随音频变化' : '流光按固定节奏流动',
+            action: Switch(
+              value: pref.audioReactiveFlow,
+              onChanged: _setAudioReactive,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 class _AppearancePlayerGroup extends StatelessWidget {
   const _AppearancePlayerGroup();
 
@@ -3570,6 +3669,8 @@ class _AppearancePlayerGroup extends StatelessWidget {
       children: const [
         _SettingsSectionHeader('播放界面'),
         SizedBox(height: 4.0),
+        _NowPlayingBackgroundSettings(),
+        SizedBox(height: 16.0),
         _WavyProgressBarSwitch(),
         SizedBox(height: 16.0),
         _MonetProgressBarSwitch(),
@@ -3629,7 +3730,7 @@ class _LyricContentGroupState extends State<_LyricContentGroup> {
         const _SettingsSectionHeader('歌曲信息'),
         const SizedBox(height: 4.0),
         SettingsTile(
-          description: '保留歌词歌曲信息',
+          description: '保留歌曲信息',
           subtitle: settings.keepLyricMetadata ? '显示词曲作者等信息' : '隐藏歌曲信息',
           action: Switch(
             value: settings.keepLyricMetadata,
@@ -3690,12 +3791,12 @@ class _LyricWritingGroupState extends State<_LyricWritingGroup> {
           const SettingsEmptyState(
             icon: Symbols.lyrics,
             title: '在线歌词写入未启用',
-            subtitle: '当前版本未开放在线歌词写入设置',
+            subtitle: '当前版本未开放此项',
           )
         else ...[
           SettingsTile(
             description: '写入格式',
-            subtitle: '决定歌词写入标签或导出 LRC 时的格式',
+            subtitle: '写入标签或导出 LRC 时的格式',
             action: SegmentedButton<LyricTagWordFormat>(
               showSelectedIcon: false,
               segments: const [
@@ -3722,7 +3823,7 @@ class _LyricWritingGroupState extends State<_LyricWritingGroup> {
           const SizedBox(height: 16.0),
           SettingsTile(
             description: '写入翻译',
-            subtitle: '歌词写入时附带翻译行',
+            subtitle: '写入时包含翻译行',
             action: Switch(
               value: settings.lyricTagIncludeTranslation,
               onChanged: (value) {
@@ -3734,7 +3835,7 @@ class _LyricWritingGroupState extends State<_LyricWritingGroup> {
           const SizedBox(height: 16.0),
           SettingsTile(
             description: '写入罗马音',
-            subtitle: '歌词写入时附带罗马音行',
+            subtitle: '写入时包含罗马音行',
             action: Switch(
               value: settings.lyricTagIncludeRomanization,
               onChanged: (value) {
@@ -3744,11 +3845,11 @@ class _LyricWritingGroupState extends State<_LyricWritingGroup> {
             ),
           ),
           const SizedBox(height: 24.0),
-          const _SettingsSectionHeader('自动化'),
+          const _SettingsSectionHeader('自动写入'),
           const SizedBox(height: 4.0),
           SettingsTile(
-            description: '获取网络歌词后自动写入标签',
-            subtitle: '开启后静默写入，不再弹窗询问',
+            description: '自动写入标签',
+            subtitle: '获取后自动写入，不再询问',
             action: Switch(
               value: settings.autoWriteLyricToTag,
               onChanged: (value) {
@@ -3762,8 +3863,8 @@ class _LyricWritingGroupState extends State<_LyricWritingGroup> {
           SettingsTile(
             description: settings.autoWriteLyricToTag ? '自动写入延迟' : '提示延迟',
             subtitle: settings.autoWriteLyricToTag
-                ? '获取歌词后等待 ${settings.autoWriteLyricToTagDelay} 秒再写入'
-                : '获取歌词后等待 ${settings.promptWriteLyricToTagDelay} 秒再提示',
+                ? '获取后等待 ${settings.autoWriteLyricToTagDelay} 秒再写入'
+                : '获取后等待 ${settings.promptWriteLyricToTagDelay} 秒再提示',
             action: SizedBox(
               width: 140,
               child: Slider(
@@ -3848,17 +3949,49 @@ class _PlaybackBehaviorGroup extends StatelessWidget {
   }
 }
 
-class _PlaybackControlGroup extends StatelessWidget {
-  const _PlaybackControlGroup();
+class _TaskbarControlGroup extends StatelessWidget {
+  const _TaskbarControlGroup();
 
   @override
   Widget build(BuildContext context) {
     return ListView(
       padding: const EdgeInsets.only(bottom: 96.0, right: 20),
       children: const [
-        _SettingsSectionHeader('播放控制'),
+        _SettingsSectionHeader('任务栏'),
         SizedBox(height: 4.0),
         _TaskbarThumbnailControl(),
+      ],
+    );
+  }
+}
+
+class _InAppHotkeyGroup extends StatelessWidget {
+  const _InAppHotkeyGroup();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+      children: const [
+        _SettingsSectionHeader('应用内快捷键'),
+        SizedBox(height: 4.0),
+        HotkeySettingsPanel(),
+      ],
+    );
+  }
+}
+
+class _GlobalHotkeyGroup extends StatelessWidget {
+  const _GlobalHotkeyGroup();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+      children: const [
+        _SettingsSectionHeader('全局热键'),
+        SizedBox(height: 4.0),
+        GlobalHotkeySettingsPanel(),
       ],
     );
   }
@@ -4074,7 +4207,7 @@ class _DesktopDisplayGroupState extends State<_DesktopDisplayGroup>
         if (!settings.desktopUseMultiLineMode) ...[
           const SizedBox(height: 16),
           SettingsTile(
-            description: '桌面歌词切换动画',
+            description: '切换动画',
             action: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -4113,7 +4246,7 @@ class _DesktopDisplayGroupState extends State<_DesktopDisplayGroup>
           if (!settings.desktopShowDoubleLine) ...[
             const SizedBox(height: 16),
             SettingsTile(
-              description: '多行模式行切换动画',
+              description: '行切换动画',
               action: SegmentedButton<LyricStaggerStyle>(
                 segments: const [
                   ButtonSegment(
@@ -4158,7 +4291,7 @@ class _DesktopWindowGroupState extends State<_DesktopWindowGroup>
         const _SettingsSectionHeader('窗口行为'),
         const SizedBox(height: 4.0),
         SettingsTile(
-          description: '暂停时隐藏桌面歌词',
+          description: '暂停时隐藏',
           action: Switch(
             value: settings.desktopHideOnPause,
             onChanged: (v) =>
@@ -4167,7 +4300,7 @@ class _DesktopWindowGroupState extends State<_DesktopWindowGroup>
         ),
         const SizedBox(height: 16),
         SettingsTile(
-          description: '锁定时鼠标移入显示',
+          description: '锁定后鼠标移入时显示',
           action: Switch(
             value: settings.desktopHoverHide,
             onChanged: (v) =>
@@ -4176,7 +4309,7 @@ class _DesktopWindowGroupState extends State<_DesktopWindowGroup>
         ),
         const SizedBox(height: 16),
         SettingsTile(
-          description: '全屏时隐藏桌面歌词',
+          description: '全屏时隐藏',
           action: Switch(
             value: settings.desktopFullscreenHide,
             onChanged: (v) => updateDesktopLyricConfig(
@@ -4283,7 +4416,7 @@ class _DesktopStyleGroupState extends State<_DesktopStyleGroup>
         ),
         const SizedBox(height: 16),
         SettingsTile(
-          description: '字体不透明度',
+          description: '文字透明度',
           subtitle: '${(settings.desktopFontOpacity * 100).round()}%',
           action: SizedBox(
             width: 160,
