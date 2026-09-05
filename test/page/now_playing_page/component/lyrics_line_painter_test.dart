@@ -189,4 +189,203 @@ void main() {
       expect(prominentScale, greaterThan(ordinaryScale));
     });
   });
+
+  group('lyricWrappedWordReveal', () {
+    test('matches whole-word progress when the word is not wrapped', () {
+      expect(
+        lyricWrappedWordReveal(
+          wordProgress: 0.5,
+          wordCharIndex: 0,
+          segmentLength: 10,
+          wordPlacedCount: 10,
+        ),
+        5,
+      );
+    });
+
+    test('fills the first visual line before the wrapped remainder', () {
+      expect(
+        lyricWrappedWordReveal(
+          wordProgress: 0.5,
+          wordCharIndex: 0,
+          segmentLength: 8,
+          wordPlacedCount: 10,
+        ),
+        5,
+      );
+      expect(
+        lyricWrappedWordReveal(
+          wordProgress: 0.5,
+          wordCharIndex: 8,
+          segmentLength: 2,
+          wordPlacedCount: 10,
+        ),
+        0,
+      );
+    });
+
+    test('starts the second visual line only after the first is full', () {
+      expect(
+        lyricWrappedWordReveal(
+          wordProgress: 0.9,
+          wordCharIndex: 0,
+          segmentLength: 8,
+          wordPlacedCount: 10,
+        ),
+        8,
+      );
+      expect(
+        lyricWrappedWordReveal(
+          wordProgress: 0.9,
+          wordCharIndex: 8,
+          segmentLength: 2,
+          wordPlacedCount: 10,
+        ),
+        1,
+      );
+    });
+  });
+
+  group('lyricScaledContentWidth', () {
+    test('keeps the layout width when scale is 1', () {
+      expect(
+        lyricScaledContentWidth(
+          layoutWidth: 400,
+          scale: 1,
+          paddingHorizontal: 24,
+        ),
+        376,
+      );
+    });
+
+    test('shrinks wrap width when the current line is scaled up', () {
+      expect(
+        lyricScaledContentWidth(
+          layoutWidth: 400,
+          scale: 1.25,
+          paddingHorizontal: 24,
+        ),
+        closeTo(400 / 1.25 - 24, 0.0001),
+      );
+    });
+
+    test('widens wrap width when inactive lines are scaled down', () {
+      expect(
+        lyricScaledContentWidth(
+          layoutWidth: 400,
+          scale: 0.9,
+          paddingHorizontal: 24,
+        ),
+        closeTo(400 / 0.9 - 24, 0.0001),
+      );
+    });
+  });
+
+  group('lyricUnifiedWrapScale', () {
+    test('uses the larger scale so played and unplayed wrap the same', () {
+      expect(lyricUnifiedWrapScale(activeScale: 1.0, inactiveScale: 0.9), 1.0);
+      expect(
+        lyricScaledContentWidth(
+          layoutWidth: 400,
+          scale: lyricUnifiedWrapScale(activeScale: 1.0, inactiveScale: 0.9),
+          paddingHorizontal: 24,
+        ),
+        376,
+      );
+    });
+  });
+
+  group('layoutTimedWordChars', () {
+    LyricWordLayoutCursor cursor({
+      double x = 0,
+      double y = 0,
+      bool firstOnLine = true,
+    }) => LyricWordLayoutCursor(x: x, y: y, firstOnLine: firstOnLine);
+
+    List<(int, double, double)> place({
+      required List<String> chars,
+      required List<double> widths,
+      required LyricWordLayoutCursor cursor,
+      double contentLeft = 0,
+      double contentRight = 100,
+      double lineHeight = 20,
+    }) {
+      final placed = <(int, double, double)>[];
+      layoutTimedWordChars(
+        chars: chars,
+        widths: widths,
+        contentLeft: contentLeft,
+        contentRight: contentRight,
+        lineHeight: lineHeight,
+        cursor: cursor,
+        onPlace: (i, x, y) => placed.add((i, x, y)),
+      );
+      return placed;
+    }
+
+    test('keeps a short timed word on one line', () {
+      final c = cursor();
+      final placed = place(chars: ['h', 'i'], widths: [10, 10], cursor: c);
+      expect(placed, [(0, 0.0, 0.0), (1, 10.0, 0.0)]);
+      expect(c.visualLineCount, 1);
+      expect(c.x, 20);
+    });
+
+    test('does not split a timed word that still fits on the current line', () {
+      final c = cursor(x: 40, firstOnLine: false);
+      final placed = place(chars: ['o', 'h'], widths: [10, 10], cursor: c);
+      expect(placed.map((e) => e.$3).toSet(), {0.0});
+      expect(c.visualLineCount, 1);
+      expect(c.x, 60);
+    });
+
+    test('wraps an oversized timed word at spaces', () {
+      final c = cursor();
+      final placed = place(
+        chars: ['W', 'h', 'a', ' ', 'o', 'h', ' ', 'o', 'h'],
+        widths: List<double>.filled(9, 10),
+        cursor: c,
+        contentRight: 35,
+      );
+      expect(placed.where((e) => e.$3 == 0.0).map((e) => e.$1).toList(), [
+        0,
+        1,
+        2,
+      ]);
+      expect(placed.where((e) => e.$3 == 20.0).map((e) => e.$1).toList(), [
+        4,
+        5,
+        6,
+      ]);
+      expect(placed.where((e) => e.$3 == 40.0).map((e) => e.$1).toList(), [
+        7,
+        8,
+      ]);
+      expect(c.visualLineCount, 3);
+    });
+
+    test('does not wrap a spaced timed word that already fits', () {
+      final c = cursor();
+      final placed = place(
+        chars: ['h', 'i', ' ', 'o', 'h'],
+        widths: List<double>.filled(5, 10),
+        cursor: c,
+        contentRight: 100,
+      );
+      expect(placed.map((e) => e.$3).toSet(), {0.0});
+      expect(c.visualLineCount, 1);
+    });
+
+    test('wraps a spaceless overflow at characters', () {
+      final c = cursor();
+      place(
+        chars: ['A', 'B', 'C', 'D', 'E', 'F'],
+        widths: List<double>.filled(6, 10),
+        cursor: c,
+        contentRight: 35,
+      );
+      expect(c.visualLineCount, 2);
+      expect(c.y, 20);
+    });
+  });
 }

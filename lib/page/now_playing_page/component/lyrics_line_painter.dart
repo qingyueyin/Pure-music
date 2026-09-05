@@ -38,6 +38,41 @@ double lyricHighlightTimeMs({
   return adjusted < currentTimeMs ? currentTimeMs : adjusted;
 }
 
+/// 折行后按整词字符顺序计算本段应点亮的字数，避免两行按同一进度并排高亮。
+double lyricWrappedWordReveal({
+  required double wordProgress,
+  required int wordCharIndex,
+  required int segmentLength,
+  required int wordPlacedCount,
+}) {
+  if (segmentLength <= 0 || wordPlacedCount <= 0) return 0.0;
+  final wp = wordProgress.clamp(0.0, 1.0);
+  if (wp <= 0.0) return 0.0;
+  final globalReveal = wordPlacedCount * wp;
+  return (globalReveal - wordCharIndex).clamp(0.0, segmentLength.toDouble());
+}
+
+/// 折行按缩放后的可视宽度算，避免当前行放大后顶出栏外。
+double lyricScaledContentWidth({
+  required double layoutWidth,
+  required double scale,
+  required double paddingHorizontal,
+}) {
+  final safeScale = scale <= 0 ? 1.0 : scale;
+  final width = layoutWidth / safeScale - paddingHorizontal;
+  return width < 1.0 ? 1.0 : width;
+}
+
+/// 已播放和未播放用同一套折行宽度，取更大缩放以免当前行顶出。
+double lyricUnifiedWrapScale({
+  required double activeScale,
+  required double inactiveScale,
+}) {
+  final active = activeScale <= 0 ? 1.0 : activeScale;
+  final inactive = inactiveScale <= 0 ? 1.0 : inactiveScale;
+  return active > inactive ? active : inactive;
+}
+
 enum LyricWordEffect { none, scale, scaleAndGlow }
 
 LyricWordEffect lyricWordEffect({
@@ -157,6 +192,7 @@ class _CharInfo {
   final double charProgress;
   final double wordProgress;
   final int wordIndex;
+  final int wordCharIndex;
   final double wordDurationSec; // 词时长（秒），用于逐字效果分档
 
   _CharInfo({
@@ -168,6 +204,7 @@ class _CharInfo {
     required this.charProgress,
     required this.wordProgress,
     required this.wordIndex,
+    required this.wordCharIndex,
     required this.wordDurationSec,
   });
 }
@@ -252,6 +289,73 @@ bool _isPunctuation(String ch) {
       c == 0x0029 || // )
       c == 0x005B || // [
       c == 0x005D; // ]
+}
+
+class LyricWordLayoutCursor {
+  LyricWordLayoutCursor({
+    required this.x,
+    required this.y,
+    required this.firstOnLine,
+    this.visualLineCount = 1,
+  });
+
+  double x;
+  double y;
+  bool firstOnLine;
+  int visualLineCount;
+}
+
+bool _isWrapTokenChar(String char) => char != ' ' && !_isZeroWidth(char);
+
+double _tokenWidthFrom(List<String> chars, List<double> widths, int start) {
+  var width = 0.0;
+  for (int i = start; i < chars.length && i < widths.length; i++) {
+    if (!_isWrapTokenChar(chars[i])) break;
+    width += widths[i];
+  }
+  return width;
+}
+
+/// 超宽逐词按空格折行，无空格才按字切。短词保持整词不拆。
+void layoutTimedWordChars({
+  required List<String> chars,
+  required List<double> widths,
+  required double contentLeft,
+  required double contentRight,
+  required double lineHeight,
+  required LyricWordLayoutCursor cursor,
+  void Function(int index, double x, double y)? onPlace,
+}) {
+  void wrap() {
+    cursor.x = contentLeft;
+    cursor.y += lineHeight;
+    cursor.firstOnLine = true;
+    cursor.visualLineCount++;
+  }
+
+  for (int i = 0; i < chars.length && i < widths.length; i++) {
+    final char = chars[i];
+    final width = widths[i];
+    if (_isZeroWidth(char)) continue;
+    if (char == ' ' && cursor.firstOnLine) continue;
+
+    final tokenStart =
+        _isWrapTokenChar(char) && (i == 0 || !_isWrapTokenChar(chars[i - 1]));
+    if (tokenStart &&
+        !cursor.firstOnLine &&
+        cursor.x + _tokenWidthFrom(chars, widths, i) > contentRight - 1.0) {
+      wrap();
+    }
+
+    if (!cursor.firstOnLine && cursor.x + width > contentRight - 1.0) {
+      wrap();
+      if (char == ' ') continue;
+    }
+
+    onPlace?.call(i, cursor.x, cursor.y);
+    cursor.x += width;
+    cursor.firstOnLine = false;
+  }
 }
 
 class LyricsLinePainter extends CustomPainter {
@@ -512,6 +616,17 @@ class LyricsLinePainter extends CustomPainter {
     }
   }
 
+  double _wrapContentWidth(double layoutWidth, EdgeInsets padding) {
+    return lyricScaledContentWidth(
+      layoutWidth: layoutWidth,
+      scale: lyricUnifiedWrapScale(
+        activeScale: config.mainLineScale * config.activeLineScaleMultiplier,
+        inactiveScale: config.subLineScale * config.inactiveLineScaleMultiplier,
+      ),
+      paddingHorizontal: padding.horizontal,
+    );
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     if (line is SyncLyricLine &&
@@ -580,7 +695,7 @@ class LyricsLinePainter extends CustomPainter {
           : neutralBase.withValues(alpha: 0.70),
     );
 
-    final maxWidth = size.width - padding.horizontal;
+    final maxWidth = _wrapContentWidth(size.width, padding);
 
     final zhMode = LyricViewController.instance.zhConversionMode;
 
@@ -667,9 +782,12 @@ class LyricsLinePainter extends CustomPainter {
 
     // ── Collect all character positions ─────────────────────────────────────
     final charInfos = <_CharInfo>[];
-    double cursorX = padding.left;
-    double cursorY = preTracks.isNotEmpty ? preCursorY : padding.top;
-    bool firstOnLine = true;
+    final contentRight = padding.left + maxWidth;
+    final layoutCursor = LyricWordLayoutCursor(
+      x: padding.left,
+      y: preTracks.isNotEmpty ? preCursorY : padding.top,
+      firstOnLine: true,
+    );
     final currentTimeMs = _highlightTimeMs(
       syncLine,
       syncLine.words,
@@ -728,11 +846,12 @@ class LyricsLinePainter extends CustomPainter {
         }
       }
 
-      final contentRight = padding.left + maxWidth;
-      if (!firstOnLine && cursorX + wordWidth > contentRight - 1.0) {
-        cursorX = padding.left;
-        cursorY += lineHeight;
-        firstOnLine = true;
+      if (!layoutCursor.firstOnLine &&
+          layoutCursor.x + wordWidth > contentRight - 1.0) {
+        layoutCursor.x = padding.left;
+        layoutCursor.y += lineHeight;
+        layoutCursor.firstOnLine = true;
+        layoutCursor.visualLineCount++;
       }
 
       // ── 词级波浪窗口进度计算 ───────────────────────────
@@ -752,74 +871,77 @@ class LyricsLinePainter extends CustomPainter {
       double? prevNonPunctProgress;
       int animIndex = 0;
 
-      for (int i = 0; i < convertedChars.length; i++) {
-        final char = convertedChars[i];
-        if (char == ' ' && firstOnLine) continue;
-        if (_isZeroWidth(char)) continue;
+      layoutTimedWordChars(
+        chars: convertedChars,
+        widths: charWidths,
+        contentLeft: padding.left,
+        contentRight: contentRight,
+        lineHeight: lineHeight,
+        cursor: layoutCursor,
+        onPlace: (i, x, y) {
+          final char = convertedChars[i];
+          final windowStart = animIndex * stepRatio * waveWidth;
+          final computedProgress = ((wordProgress - windowStart) / waveWidth)
+              .clamp(0.0, 1.0);
 
-        // 词级波浪窗口：每个字符有启动偏移，形成连贯波浪
-        final windowStart = animIndex * stepRatio * waveWidth;
-        final computedProgress = ((wordProgress - windowStart) / waveWidth)
-            .clamp(0.0, 1.0);
-
-        final double charProgress;
-        final isPunctuation = _isPunctuation(char);
-        if (isPunctuation && prevNonPunctProgress != null) {
-          charProgress = prevNonPunctProgress;
-        } else {
-          charProgress = computedProgress;
-          if (!isPunctuation) {
-            prevNonPunctProgress = computedProgress;
+          final double charProgress;
+          final isPunctuation = _isPunctuation(char);
+          if (isPunctuation && prevNonPunctProgress != null) {
+            charProgress = prevNonPunctProgress!;
+          } else {
+            charProgress = computedProgress;
+            if (!isPunctuation) {
+              prevNonPunctProgress = computedProgress;
+            }
           }
-        }
 
-        final liftProgress = _calcLiftProgress(charProgress, wordProgress);
-        final double yLift;
-        if (isHighlightActive && config.liftStyle == LyricLiftStyle.cosine) {
-          yLift = 0.0;
-        } else if (isHighlightActive && liftProgress > 0.0) {
-          final elapsedMs = currentTimeMs - wordStartMs;
-          final durationProgress = (elapsedMs / config.liftDurationMs)
-              .clamp(0.0, 1.0)
-              .toDouble();
-          final blended = _calcLiftProgress(charProgress, durationProgress);
-          yLift = Curves.easeOutCubic.transform(blended) * -config.liftPeak;
-        } else {
-          yLift = 0.0;
-        }
+          final liftProgress = _calcLiftProgress(charProgress, wordProgress);
+          final double yLift;
+          if (isHighlightActive && config.liftStyle == LyricLiftStyle.cosine) {
+            yLift = 0.0;
+          } else if (isHighlightActive && liftProgress > 0.0) {
+            final elapsedMs = currentTimeMs - wordStartMs;
+            final durationProgress = (elapsedMs / config.liftDurationMs)
+                .clamp(0.0, 1.0)
+                .toDouble();
+            final blended = _calcLiftProgress(charProgress, durationProgress);
+            yLift = Curves.easeOutCubic.transform(blended) * -config.liftPeak;
+          } else {
+            yLift = 0.0;
+          }
 
-        final charWidth = charWidths[i];
-        final isSpace = char == ' ';
-
-        if (isSpace && firstOnLine) continue;
-
-        charInfos.add(
-          _CharInfo(
-            char: char,
-            x: cursorX,
-            y: cursorY,
-            width: charWidth,
-            yLift: yLift,
-            charProgress: charProgress,
-            wordProgress: wordProgress,
-            wordIndex: wordIndex,
-            wordDurationSec: wordDurationSec,
-          ),
-        );
-
-        cursorX += charWidth;
-        firstOnLine = false;
-        animIndex++;
-      }
+          charInfos.add(
+            _CharInfo(
+              char: char,
+              x: x,
+              y: y,
+              width: charWidths[i],
+              yLift: yLift,
+              charProgress: charProgress,
+              wordProgress: wordProgress,
+              wordIndex: wordIndex,
+              wordCharIndex: animIndex,
+              wordDurationSec: wordDurationSec,
+            ),
+          );
+          animIndex++;
+        },
+      );
       // 词间间距，匹配 Widget 路径的 SizedBox(width: primarySize * 0.12)
-      cursorX += fontSize * 0.12;
+      layoutCursor.x += fontSize * 0.12;
     }
-    cursorY += lineHeight;
+    var cursorY = layoutCursor.y + lineHeight;
 
     if (charInfos.isEmpty) {
       recycleTextPainter(measureTp);
       canvas.restore();
       return;
+    }
+
+    final wordPlacedCounts = <int, int>{};
+    for (final info in charInfos) {
+      wordPlacedCounts[info.wordIndex] =
+          (wordPlacedCounts[info.wordIndex] ?? 0) + 1;
     }
 
     // ── Group characters by visual line (Y position) ─────────────────────────
@@ -865,6 +987,7 @@ class LyricsLinePainter extends CustomPainter {
             charProgress: original.charProgress,
             wordProgress: original.wordProgress,
             wordIndex: original.wordIndex,
+            wordCharIndex: original.wordCharIndex,
             wordDurationSec: original.wordDurationSec,
           );
         }
@@ -1022,7 +1145,6 @@ class LyricsLinePainter extends CustomPainter {
       StringBuffer? currentText;
       var currentHasLift = false;
       int? currentWordIndex;
-      var lineFullyPlayed = true;
       void finishWord() {
         final chars = currentChars;
         final text = currentText;
@@ -1036,7 +1158,6 @@ class LyricsLinePainter extends CustomPainter {
           wordDurationSec: first.wordDurationSec,
         );
         words.add(word);
-        lineFullyPlayed = lineFullyPlayed && word.wordProgress >= 0.999;
       }
 
       for (final info in group.chars) {
@@ -1074,6 +1195,23 @@ class LyricsLinePainter extends CustomPainter {
       }
 
       const gapUnits = 0.45;
+      double wordReveal(_WordPaintInfo wc) {
+        return lyricWrappedWordReveal(
+          wordProgress: wc.wordProgress,
+          wordCharIndex: wc.first.wordCharIndex,
+          segmentLength: wc.length,
+          wordPlacedCount: wordPlacedCounts[wc.first.wordIndex] ?? wc.length,
+        );
+      }
+
+      var lineFullyPlayed = true;
+      for (final wc in words) {
+        if (wordReveal(wc) < wc.length - 0.001) {
+          lineFullyPlayed = false;
+          break;
+        }
+      }
+
       double? prevR;
       double reveal = 0.0;
       for (int wi = 0; wi < words.length; wi++) {
@@ -1084,7 +1222,7 @@ class LyricsLinePainter extends CustomPainter {
         if (wi > 0 && prevR != null) {
           reveal += gapUnits;
         }
-        reveal += wc.length.toDouble() * wp;
+        reveal += wordReveal(wc);
         prevR = wR;
       }
       if (reveal <= 0.0) {
@@ -1586,7 +1724,7 @@ class LyricsLinePainter extends CustomPainter {
           : neutralBase.withValues(alpha: 0.70),
     );
 
-    final maxWidth = size.width - padding.horizontal;
+    final maxWidth = _wrapContentWidth(size.width, padding);
     final blockTextAlign = switch (_effectiveTextAlign) {
       LyricTextAlign.left => TextAlign.left,
       LyricTextAlign.center => TextAlign.center,
@@ -1803,7 +1941,7 @@ class LyricsLinePainter extends CustomPainter {
           : neutralBase.withValues(alpha: 0.70),
     );
 
-    final maxWidth = size.width - padding.horizontal;
+    final maxWidth = _wrapContentWidth(size.width, padding);
     final blockTextAlign = switch (_effectiveTextAlign) {
       LyricTextAlign.left => TextAlign.left,
       LyricTextAlign.center => TextAlign.center,
@@ -2059,7 +2197,7 @@ class LyricsLinePainter extends CustomPainter {
       top: verticalPad,
       bottom: verticalPad,
     );
-    final lineWidth = maxWidth - padding.horizontal;
+    final lineWidth = _wrapContentWidth(maxWidth, padding);
 
     if (line is SyncLyricLine && !isSyncLineByLine) {
       final syncLine = line as SyncLyricLine;
@@ -2070,8 +2208,12 @@ class LyricsLinePainter extends CustomPainter {
       final lineH = fontSize * config.primaryLineHeight();
 
       // 穷举每个字 + 词间 gap，与 _paintSyncLine 完全一致的换行逻辑
-      double curX = padding.left;
-      int visualLines = 1;
+      final contentRight = padding.left + lineWidth;
+      final layoutCursor = LyricWordLayoutCursor(
+        x: padding.left,
+        y: 0,
+        firstOnLine: true,
+      );
       final charTp = obtainTextPainter(); // 复用单个 TextPainter 测量字符宽度
       final charStyle = TextStyle(
         fontFamily: fontFamily,
@@ -2084,19 +2226,31 @@ class LyricsLinePainter extends CustomPainter {
             : null,
       );
       final zhMode = LyricViewController.instance.zhConversionMode;
+      final convertedChars = <String>[];
+      final charWidths = <double>[];
       for (final word in syncLine.words) {
-        double wordWidth = 0;
+        final wordTotalChars = word.obscene
+            ? word.content.runes.length
+            : word.content.characters.length;
+        if (wordTotalChars == 0) continue;
+        convertedChars.clear();
+        charWidths.clear();
+        var wordWidth = 0.0;
         void measureChar(String ch) {
           final converted = ZhConverter.convert(ch, zhMode);
           final key = '$converted|$fontSize|${fontWeight.value}|$fontFamily';
           final cached = _measureCache[key];
           if (cached != null) {
+            convertedChars.add(converted);
+            charWidths.add(cached);
             wordWidth += cached;
             return;
           }
           charTp.text = TextSpan(text: converted, style: charStyle);
           charTp.layout();
           final width = charTp.width;
+          convertedChars.add(converted);
+          charWidths.add(width);
           wordWidth += width;
           _measureCache[key] = width;
           if (_measureCache.length > _maxMeasureCacheSize) {
@@ -2114,14 +2268,25 @@ class LyricsLinePainter extends CustomPainter {
             measureChar(ch);
           }
         }
-        final needsWrap = curX + wordWidth > padding.left + lineWidth - 1.0;
-        if (needsWrap && curX > padding.left) {
-          visualLines++;
-          curX = padding.left;
+        if (!layoutCursor.firstOnLine &&
+            layoutCursor.x + wordWidth > contentRight - 1.0) {
+          layoutCursor.x = padding.left;
+          layoutCursor.y += lineH;
+          layoutCursor.firstOnLine = true;
+          layoutCursor.visualLineCount++;
         }
-        curX += wordWidth + fontSize * 0.12;
+        layoutTimedWordChars(
+          chars: convertedChars,
+          widths: charWidths,
+          contentLeft: padding.left,
+          contentRight: contentRight,
+          lineHeight: lineH,
+          cursor: layoutCursor,
+        );
+        layoutCursor.x += fontSize * 0.12;
       }
       recycleTextPainter(charTp);
+      final visualLines = layoutCursor.visualLineCount;
 
       final double mainHeight = visualLines * lineH;
       double height = padding.vertical + mainHeight;
