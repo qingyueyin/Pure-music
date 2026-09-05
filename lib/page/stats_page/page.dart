@@ -27,7 +27,7 @@ class _StatsPageState extends State<StatsPage> {
   int _loadRequestToken = 0;
   late final ValueListenable<int> _playCountRevision;
   final _scrollController = SmoothScrollController();
-  final _itemKeys = <int, GlobalKey>{};
+  double _rankedLeadingExtent = 0;
 
   @override
   void initState() {
@@ -96,25 +96,27 @@ class _StatsPageState extends State<StatsPage> {
     return targetAt < 0 ? null : targetAt;
   }
 
+  /// 平滑滚动到指定位置。行滚出视口后 key 会被卸掉，所以按偏移定位，不依赖 item context。
+  void _smoothScrollTo(double offset) {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    if (position is SmoothScrollPosition) {
+      position.smoothScrollTo(offset);
+      return;
+    }
+    _scrollController.animateTo(
+      offset.clamp(position.minScrollExtent, position.maxScrollExtent),
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.fastOutSlowIn,
+    );
+  }
+
   /// 定位到排行中的指定行。
   void _scrollToIndex(int targetAt) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final ctx = _itemKeys[targetAt]?.currentContext;
-      if (ctx == null) return;
-      Scrollable.ensureVisible(
-        ctx,
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.fastOutSlowIn,
-      );
+      if (!mounted || !_scrollController.hasClients) return;
+      _smoothScrollTo(_rankedLeadingExtent + targetAt * _rankedTrackExtent);
     });
-  }
-
-  Widget _keyedItem(int index, Widget child) {
-    return KeyedSubtree(
-      key: _itemKeys.putIfAbsent(index, GlobalKey.new),
-      child: child,
-    );
   }
 
   @override
@@ -240,23 +242,26 @@ class _StatsPageState extends State<StatsPage> {
           )
         else
           SliverLayoutBuilder(
-            builder: (context, constraints) => SliverFixedExtentList.builder(
-              itemExtent: _rankedTrackExtent,
-              itemCount: rankedTracks.length,
-              itemBuilder: (context, index) => StackedSliverItem(
-                controller: _scrollController,
-                rowIndex: index,
+            builder: (context, constraints) {
+              _rankedLeadingExtent = constraints.precedingScrollExtent;
+              return SliverFixedExtentList.builder(
                 itemExtent: _rankedTrackExtent,
-                leadingScrollExtent: constraints.precedingScrollExtent,
-                enabled: enableStackedEffect,
-                child: _buildRow(
-                  scheme,
-                  rankedTracks[index],
-                  index: index,
-                  maxPlays: rankedTracks.first.playCount,
+                itemCount: rankedTracks.length,
+                itemBuilder: (context, index) => StackedSliverItem(
+                  controller: _scrollController,
+                  rowIndex: index,
+                  itemExtent: _rankedTrackExtent,
+                  leadingScrollExtent: constraints.precedingScrollExtent,
+                  enabled: enableStackedEffect,
+                  child: _buildRow(
+                    scheme,
+                    rankedTracks[index],
+                    index: index,
+                    maxPlays: rankedTracks.first.playCount,
+                  ),
                 ),
-              ),
-            ),
+              );
+            },
           ),
         const SliverToBoxAdapter(child: SizedBox(height: Spacing.bottomNav)),
       ],
@@ -580,98 +585,77 @@ class _StatsPageState extends State<StatsPage> {
     final library = AudioLibrary.instance;
     final audio = library.audioByPath(entry.path);
 
-    return _keyedItem(
-      index,
-      DirectionalListItemEntrance(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: Spacing.sm,
-            vertical: 2,
-          ),
-          child: SizedBox(
-            height: 64,
-            child: Material(
-              color: Colors.transparent,
+    return DirectionalListItemEntrance(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: Spacing.sm,
+          vertical: 2,
+        ),
+        child: SizedBox(
+          height: 64,
+          child: Material(
+            color: Colors.transparent,
+            borderRadius: AppRadius.smCircular,
+            child: InkWell(
+              hoverColor: scheme.onSurface.withValues(alpha: Alpha.hover),
               borderRadius: AppRadius.smCircular,
-              child: InkWell(
-                hoverColor: scheme.onSurface.withValues(alpha: Alpha.hover),
-                borderRadius: AppRadius.smCircular,
-                onTap: audio == null
-                    ? null
-                    : () {
-                        final audioIndex = library.audioCollection.indexOf(
-                          audio,
-                        );
-                        if (audioIndex < 0) return;
-                        PlayService.instance.playbackService.play(
-                          audioIndex,
-                          library.audioCollection,
-                        );
-                      },
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final showAlbum = constraints.maxWidth >= 760;
-                    final albumWidth = constraints.maxWidth >= 1100
-                        ? 260.0
-                        : 180.0;
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: Spacing.sm,
-                      ),
-                      child: Row(
-                        children: [
-                          SizedBox(
-                            width: 36,
-                            child: Text(
-                              '${index + 1}',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: AppType.caption,
-                                fontWeight: index < 3
-                                    ? AppType.weightBold
-                                    : AppType.weightRegular,
-                                color: index < 3
-                                    ? scheme.primary
-                                    : scheme.onSurfaceVariant,
+              onTap: audio == null
+                  ? null
+                  : () {
+                      final audioIndex = library.audioCollection.indexOf(audio);
+                      if (audioIndex < 0) return;
+                      PlayService.instance.playbackService.play(
+                        audioIndex,
+                        library.audioCollection,
+                      );
+                    },
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final showAlbum = constraints.maxWidth >= 760;
+                  final albumWidth =
+                      constraints.maxWidth >= 1100 ? 260.0 : 180.0;
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: Spacing.sm,
+                    ),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 36,
+                          child: Text(
+                            '${index + 1}',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: AppType.caption,
+                              fontWeight: index < 3
+                                  ? AppType.weightBold
+                                  : AppType.weightRegular,
+                              color: index < 3
+                                  ? scheme.primary
+                                  : scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                        _CoverWidget(audio: audio),
+                        const SizedBox(width: Spacing.md),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                entry.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: AppType.subtitle,
+                                  color: scheme.onSurface,
+                                  fontWeight: AppType.weightMedium,
+                                ),
                               ),
-                            ),
-                          ),
-                          _CoverWidget(audio: audio),
-                          const SizedBox(width: Spacing.md),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  entry.title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: AppType.subtitle,
-                                    color: scheme.onSurface,
-                                    fontWeight: AppType.weightMedium,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  entry.artist,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: AppType.body,
-                                    color: scheme.onSurfaceVariant,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          if (showAlbum) ...[
-                            const SizedBox(width: Spacing.lg),
-                            SizedBox(
-                              width: albumWidth,
-                              child: Text(
-                                audio?.album ?? '',
+                              const SizedBox(height: 2),
+                              Text(
+                                entry.artist,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
@@ -679,15 +663,30 @@ class _StatsPageState extends State<StatsPage> {
                                   color: scheme.onSurfaceVariant,
                                 ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
+                        ),
+                        if (showAlbum) ...[
                           const SizedBox(width: Spacing.lg),
-                          _buildCount(scheme, entry.playCount, fraction),
+                          SizedBox(
+                            width: albumWidth,
+                            child: Text(
+                              audio?.album ?? '',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: AppType.body,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
                         ],
-                      ),
-                    );
-                  },
-                ),
+                        const SizedBox(width: Spacing.lg),
+                        _buildCount(scheme, entry.playCount, fraction),
+                      ],
+                    ),
+                  );
+                },
               ),
             ),
           ),
