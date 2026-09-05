@@ -595,6 +595,14 @@ class LyricService extends ChangeNotifier {
   /// 供 widget 使用
   Future<Lyric?> currLyricFuture = Future.value(null);
   LyricSourceType _activeLyricSourceType = LyricSourceType.local;
+  // 本地来源细分：true=外置文件，false=内嵌标签，null=指定外置文件/未加载完
+  bool? _activeLocalIsExternal;
+
+  /// 当前正在使用的歌词来源（加载期间为预设值，完成后为实际命中源）
+  LyricSourceType get activeLyricSourceType => _activeLyricSourceType;
+
+  /// 本地来源时，true=外置文件，false=内嵌标签，null=指定外置文件或未确定
+  bool? get activeLocalIsExternal => _activeLocalIsExternal;
 
   /// 当前歌词是否已加载
   bool get hasLyric => _currLyric != null;
@@ -1286,7 +1294,11 @@ class LyricService extends ChangeNotifier {
     required bool notifyFailure,
   }) async {
     final selectedPath = lyricSources[audioPath]?.localLyricPath;
-    if (selectedPath == null) return loadLyricFromAudio(audioPath);
+    if (selectedPath == null) {
+      final result = await loadLyricFromAudio(audioPath);
+      if (result != null) _activeLocalIsExternal = result.isExternal;
+      return result?.lyric;
+    }
     if (!await File(selectedPath).exists()) {
       if (notifyFailure) {
         showTextOnSnackBar('指定的歌词文件不存在', variant: ToastVariant.error);
@@ -1294,6 +1306,8 @@ class LyricService extends ChangeNotifier {
       return null;
     }
 
+    // 指定了外置文件路径，来源明确为外置
+    _activeLocalIsExternal = true;
     final lyric = await loadLyricFromFile(selectedPath);
     if (lyric == null && notifyFailure) {
       showTextOnSnackBar('指定的歌词文件读取或解析失败', variant: ToastVariant.error);
@@ -1358,6 +1372,7 @@ class LyricService extends ChangeNotifier {
 
     final requestToken = _beginLyricRequest(audioPath);
     _activeLyricSourceType = LyricSourceType.local;
+    _activeLocalIsExternal = null;
 
     final lyricSource = lyricSources[audioPath];
     final isFromWeb =
@@ -1600,6 +1615,7 @@ class LyricService extends ChangeNotifier {
     final audioPath = nowPlaying.path;
     final requestToken = _beginLyricRequest(audioPath);
     _activeLyricSourceType = LyricSourceType.local;
+    _activeLocalIsExternal = null;
 
     final cacheKey = _localLyricCacheKey(audioPath);
     currLyricFuture = _loadLocalLyric(audioPath, notifyFailure: true);
@@ -1695,6 +1711,7 @@ class LyricService extends ChangeNotifier {
     final audioPath = nowPlaying.path;
     final requestToken = _beginLyricRequest(audioPath);
     _activeLyricSourceType = LyricSourceType.local;
+    _activeLocalIsExternal = true; // useSpecificLyric 由用户手动选择外置文件触发
 
     currLyricFuture = Future.value(lyric);
     final future = currLyricFuture;

@@ -327,7 +327,7 @@ Lyric? _parseEmbeddedToPureLyric(
 // 🎯 对外统一入口：加载歌词（外挂优先 → 内嵌回退）
 // ──────────────────────────────────────────────
 
-/// 加载音频文件的歌词。
+/// 加载音频文件的歌词，同时返回实际来源标记。
 ///
 /// 策略：
 /// 1. 在音频文件同目录搜索外挂歌词文件（.yrc > .qrc > .krc > .ttml > .lrc > .vtt）
@@ -335,7 +335,11 @@ Lyric? _parseEmbeddedToPureLyric(
 /// 3. 外挂 YRC/QRC 自动配对同目录 .lrc 作为翻译
 /// 4. 若无外挂文件，回退到 Rust FFI 读取音频标签内嵌歌词
 /// 5. 内嵌歌词自动检测 TTML / 增强 LRC / 逐字 LRC / 普通 LRC
-Future<Lyric?> loadLyricFromAudio(
+///
+/// 返回 `({Lyric lyric, bool isExternal})?`：
+/// - `isExternal == true`：歌词来自外置文件
+/// - `isExternal == false`：歌词来自音频内嵌标签
+Future<({Lyric lyric, bool isExternal})?> loadLyricFromAudio(
   String audioPath, {
   String? separator = '┃',
 }) async {
@@ -371,7 +375,7 @@ Future<Lyric?> loadLyricFromAudio(
         logger.i(
           'lyric_loader: external return lines=${stripped?.lines.length ?? "null"}',
         );
-        return stripped;
+        if (stripped != null) return (lyric: stripped, isExternal: true);
       } else {
         logger.i('lyric_loader: external ${external.ext} parse FAILED');
       }
@@ -396,7 +400,7 @@ Future<Lyric?> loadLyricFromAudio(
         logger.i(
           'lyric_loader: embedded return lines=${stripped?.lines.length ?? "null"}',
         );
-        return stripped;
+        if (stripped != null) return (lyric: stripped, isExternal: false);
       } else {
         logger.i('lyric_loader: embedded lyric parse FAILED');
       }
