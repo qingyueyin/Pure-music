@@ -84,6 +84,7 @@ Thumbs.db
 # Build artifacts
 output/
 /output/
+desktop_lyric/
 
 # Project notes / scratch
 todo/
