@@ -48,12 +48,18 @@ Future<void> _pumpAsyncWork(WidgetTester tester) async {
 
 void main() {
   test('upper bass joins the low-frequency beat energy', () {
-    final upperBassHit = AudioReactiveFlowResponse.fromBands(
-      const [0.12, 0.70, 0.10, 0.05],
-    );
-    final subBassHit = AudioReactiveFlowResponse.fromBands(
-      const [0.68, 0.20, 0.10, 0.05],
-    );
+    final upperBassHit = AudioReactiveFlowResponse.fromBands(const [
+      0.12,
+      0.70,
+      0.10,
+      0.05,
+    ]);
+    final subBassHit = AudioReactiveFlowResponse.fromBands(const [
+      0.68,
+      0.20,
+      0.10,
+      0.05,
+    ]);
 
     expect(upperBassHit.low, closeTo(0.595, 0.001));
     expect(subBassHit.low, closeTo(0.68, 0.001));
@@ -96,19 +102,22 @@ void main() {
     expect(output.low, closeTo(0.033, 0.001));
   });
 
-  test('visual normalization keeps silence silent and reset clears its peak',
-      () {
-    final normalizer = AudioReactiveFlowNormalizer();
-    normalizer.update(const AudioReactiveFlowResponse(0.4, 0.2, 0.1));
-    normalizer.reset();
+  test(
+    'visual normalization keeps silence silent and reset clears its peak',
+    () {
+      final normalizer = AudioReactiveFlowNormalizer();
+      normalizer.update(const AudioReactiveFlowResponse(0.4, 0.2, 0.1));
+      normalizer.reset();
 
-    final silence = normalizer.update(AudioReactiveFlowResponse.zero);
-    final afterReset =
-        normalizer.update(const AudioReactiveFlowResponse(0.1, 0.05, 0.02));
+      final silence = normalizer.update(AudioReactiveFlowResponse.zero);
+      final afterReset = normalizer.update(
+        const AudioReactiveFlowResponse(0.1, 0.05, 0.02),
+      );
 
-    expect(silence.isNearlySilent, isTrue);
-    expect(afterReset.low, greaterThan(0.2));
-  });
+      expect(silence.isNearlySilent, isTrue);
+      expect(afterReset.low, greaterThan(0.2));
+    },
+  );
 
   test('bass transient ignores startup and reacts to a real rising edge', () {
     final detector = AudioReactiveFlowTransientDetector();
@@ -160,16 +169,18 @@ void main() {
     expect(pulse.value, lessThan(0.05));
   });
 
-  test('bass pulse rejects weak fluctuations and immediate duplicate frames',
-      () {
-    final pulse = AudioReactiveFlowPulseEnvelope();
+  test(
+    'bass pulse rejects weak fluctuations and immediate duplicate frames',
+    () {
+      final pulse = AudioReactiveFlowPulseEnvelope();
 
-    expect(pulse.trigger(0.15), isFalse);
-    expect(pulse.trigger(0.8), isTrue);
-    expect(pulse.trigger(1), isFalse);
-    pulse.advance(0.046);
-    expect(pulse.trigger(1), isTrue);
-  });
+      expect(pulse.trigger(0.15), isFalse);
+      expect(pulse.trigger(0.8), isTrue);
+      expect(pulse.trigger(1), isFalse);
+      pulse.advance(0.046);
+      expect(pulse.trigger(1), isTrue);
+    },
+  );
 
   test('closely spaced bass hits create a new visible accent', () {
     final pulse = AudioReactiveFlowPulseEnvelope()..trigger(1);
@@ -196,10 +207,7 @@ void main() {
   test('audio breathing stays visible without oversized face movement', () {
     expect(flowingLightBreathingScale(0.5), closeTo(1.04, 0.001));
     expect(flowingLightBreathingScale(1), closeTo(1.08, 0.001));
-    expect(
-      flowingLightBreathingScale(0.5, bassTransient: 1),
-      1.22,
-    );
+    expect(flowingLightBreathingScale(0.5, bassTransient: 1), 1.22);
     expect(flowingLightBreathingScale(1, bassTransient: 1), 1.22);
   });
 
@@ -421,48 +429,48 @@ void main() {
     }
   });
 
-  testWidgets('invalid current cover falls back instead of keeping old artwork',
-      (
-    tester,
-  ) async {
-    final cover = await _createCoverPng();
+  testWidgets(
+    'invalid current cover falls back instead of keeping old artwork',
+    (tester) async {
+      final cover = await _createCoverPng();
 
-    Widget buildSubject(Uint8List bytes) {
-      return MaterialApp(
-        home: FlowingLightBackground(
-          inputs: NowPlayingBackgroundInputs(
-            albumCoverBytes: bytes,
-            enableAnimation: false,
-            isVisible: true,
-            playerState: PlayerState.paused,
+      Widget buildSubject(Uint8List bytes) {
+        return MaterialApp(
+          home: FlowingLightBackground(
+            inputs: NowPlayingBackgroundInputs(
+              albumCoverBytes: bytes,
+              enableAnimation: false,
+              isVisible: true,
+              playerState: PlayerState.paused,
+            ),
           ),
-        ),
+        );
+      }
+
+      final flowingPaint = find.descendant(
+        of: find.byType(FlowingLightBackground),
+        matching: find.byType(CustomPaint),
       );
-    }
+      final flowingOpacity = find.descendant(
+        of: find.byType(FlowingLightBackground),
+        matching: find.byType(AnimatedOpacity),
+      );
 
-    final flowingPaint = find.descendant(
-      of: find.byType(FlowingLightBackground),
-      matching: find.byType(CustomPaint),
-    );
-    final flowingOpacity = find.descendant(
-      of: find.byType(FlowingLightBackground),
-      matching: find.byType(AnimatedOpacity),
-    );
+      try {
+        await tester.pumpWidget(buildSubject(cover));
+        await _pumpAsyncWork(tester);
+        expect(flowingPaint, findsOneWidget);
+        expect(tester.widget<AnimatedOpacity>(flowingOpacity).opacity, 1);
 
-    try {
-      await tester.pumpWidget(buildSubject(cover));
-      await _pumpAsyncWork(tester);
-      expect(flowingPaint, findsOneWidget);
-      expect(tester.widget<AnimatedOpacity>(flowingOpacity).opacity, 1);
-
-      await tester.pumpWidget(buildSubject(Uint8List.fromList([1, 2, 3])));
-      await _pumpAsyncWork(tester);
-      await tester.pump(const Duration(milliseconds: 600));
-      expect(flowingPaint, findsOneWidget);
-      expect(tester.widget<AnimatedOpacity>(flowingOpacity).opacity, 0);
-    } finally {
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pump();
-    }
-  });
+        await tester.pumpWidget(buildSubject(Uint8List.fromList([1, 2, 3])));
+        await _pumpAsyncWork(tester);
+        await tester.pump(const Duration(milliseconds: 600));
+        expect(flowingPaint, findsOneWidget);
+        expect(tester.widget<AnimatedOpacity>(flowingOpacity).opacity, 0);
+      } finally {
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+      }
+    },
+  );
 }

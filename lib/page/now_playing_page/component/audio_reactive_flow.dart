@@ -79,6 +79,7 @@ final class AudioReactiveFlowNormalizer {
   static const _maxGain = 30.0;
 
   double _smoothedPeak = 0;
+  bool _hasPeak = false;
 
   AudioReactiveFlowResponse update(AudioReactiveFlowResponse input) {
     if (input.isNearlySilent) {
@@ -87,8 +88,13 @@ final class AudioReactiveFlowNormalizer {
     }
 
     final peak = math.max(input.low, math.max(input.mid, input.high));
-    final coefficient = peak > _smoothedPeak ? _attack : _release;
-    _smoothedPeak += (peak - _smoothedPeak) * coefficient;
+    if (!_hasPeak) {
+      _smoothedPeak = peak;
+      _hasPeak = true;
+    } else {
+      final coefficient = peak > _smoothedPeak ? _attack : _release;
+      _smoothedPeak += (peak - _smoothedPeak) * coefficient;
+    }
     final gain = (_targetPeak / math.max(_smoothedPeak, 0.001))
         .clamp(0.1, _maxGain)
         .toDouble();
@@ -102,7 +108,10 @@ final class AudioReactiveFlowNormalizer {
     );
   }
 
-  void reset() => _smoothedPeak = 0;
+  void reset() {
+    _smoothedPeak = 0;
+    _hasPeak = false;
+  }
 }
 
 final class AudioReactiveFlowTransientDetector {
@@ -149,8 +158,8 @@ final class AudioReactiveFlowTransientDetector {
 
 final class AudioReactiveFlowPulseEnvelope {
   static const _attackSeconds = .025;
-  static const _releaseSeconds = .10;
-  static const _targetDecaySeconds = .06;
+  static const _releaseSeconds = .16;
+  static const _targetDecaySeconds = .08;
   static const _minimumTriggerStrength = .16;
   static const _retriggerDelaySeconds = .045;
   static const _retriggerLift = .35;
@@ -174,8 +183,10 @@ final class AudioReactiveFlowPulseEnvelope {
 
   double advance(double deltaSeconds) {
     if (!deltaSeconds.isFinite || deltaSeconds <= 0) return _value;
-    _retriggerDelayRemaining =
-        math.max(0.0, _retriggerDelayRemaining - deltaSeconds);
+    _retriggerDelayRemaining = math.max(
+      0.0,
+      _retriggerDelayRemaining - deltaSeconds,
+    );
     final timeConstant = _target > _value ? _attackSeconds : _releaseSeconds;
     final response = 1 - math.exp(-deltaSeconds / timeConstant);
     _value += (_target - _value) * response;
