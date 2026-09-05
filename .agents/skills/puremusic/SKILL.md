@@ -26,6 +26,7 @@ description: Pure-music 项目开发指南，覆盖 Windows Flutter/Dart 前端�
 
 - 应用入口与路由：`lib/main.dart`、`lib/entry.dart`。
 - 全局设置与播放偏好：`lib/core/settings.dart`、`lib/core/preference.dart`。
+- 应用内快捷键与全局热键：`lib/core/hotkeys.dart`、`lib/core/hotkey_binding.dart`、`lib/page/settings_page/hotkey_settings.dart`；设置入口在「播放 → 应用内快捷键 / 全局热键」。
 - 主题与颜色：`lib/core/theme.dart`、`lib/core/color_extraction.dart`、`lib/core/desktop_lyric_colors.dart`；封面取色实现位于 `rust/src/api/color_extraction.rs`。
 - 歌词模型和解析：`lib/lyric/`；在线歌词获取与转换：`lib/services/online_lyric/`。
 - 播放页和歌词 UI：`lib/page/now_playing_page/`，组件集中在其 `component/` 目录。

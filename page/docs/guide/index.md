@@ -48,7 +48,7 @@ outline: deep
 2. [快速上手](/guide/quickstart) — 导入曲库并播放
 3. [演出模式](/guide/concert) — 自动生成一场有开场、压轴和尾声的播放顺序
 4. [歌词](/guide/lyrics) — 外挂、同步高亮与动效
-5. [外观与设置](/guide/settings) — 设置项一览
+5. [设置](/guide/settings) — 设置项一览
 6. [常见问题](/guide/faq) — 安装、曲库、播放、歌词动效、桌面歌词、热键
 
 开发者请看 [架构](/dev/) 与 [构建](/dev/build)。

@@ -56,6 +56,7 @@ flutter:
     - app_icon.ico
   shaders:
     - assets/shaders/mesh_gradient_runtime.frag
+    - assets/shaders/pulse_gaussian.frag
     - assets/shaders/soft_mesh_gradient.frag
   fonts:
     - family: MiSans

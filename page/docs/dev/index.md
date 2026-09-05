@@ -99,12 +99,6 @@ Flutter / Dart UI
 | `CP_ECHO_LOG_DIR` | 目录 | 重定向回声日志目录（默认写入应用数据目录下的 `audio_echo_logs/`） |
 | `CP_MEMORY_LOG` | `1` | 内存监控输出统计日志 |
 
-## 测试页
-
-无 UI 入口，通过路由直接访问：
-
-- `/test/background` — 静态封面背景测试页（`lib/test/static_cover_background_test_page.dart`），生成渐变 / 色条 / 人脸三种测试图案，验证背景压暗参数。
-
 ## 下一步
 
 - [构建](/dev/build)
