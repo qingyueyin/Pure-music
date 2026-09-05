@@ -42,6 +42,16 @@ bool alwaysShowLyricViewControls = false;
 bool shouldForceLyricScrollForPositionSync(PlayerState state) =>
     state == PlayerState.playing;
 
+bool shouldSnapLyricScroll({
+  required double distancePx,
+  required bool forceJump,
+  required bool animatingToSameTarget,
+}) {
+  if (distancePx < 0.5) return true;
+  if (forceJump && !animatingToSameTarget) return true;
+  return false;
+}
+
 @visibleForTesting
 int lyricDisplayPrimaryIndex({
   required int fallbackPrimaryIndex,
@@ -1184,8 +1194,15 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
     final from = scrollController.offset;
     final dist = (to - from).abs();
-
-    if (dist < 0.5 || (duration != null && duration.inMilliseconds <= 16)) {
+    final forceJump = duration != null && duration.inMilliseconds <= 16;
+    final animatingToSameTarget =
+        _scrollTransition.isActive &&
+        (to - _scrollTransition.target).abs() < 0.5;
+    if (shouldSnapLyricScroll(
+      distancePx: dist,
+      forceJump: forceJump,
+      animatingToSameTarget: animatingToSameTarget,
+    )) {
       scrollController.jumpTo(to);
       _scrollTransition.jumpTo(to);
       _stopScrollTicker();
@@ -1195,6 +1212,9 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
         _scrollState = LyricScrollState.idle;
       }
       _collapseDepartingBackgroundVocal();
+      return;
+    }
+    if (forceJump && animatingToSameTarget) {
       return;
     }
 
@@ -1890,8 +1910,14 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     }
   }
 
-  void _updateNextLyricLine(LyricLineUpdate _) {
-    _syncToPlaybackPosition(forceScroll: false);
+  void _updateNextLyricLine(LyricLineUpdate update) {
+    if (_disposed || !mounted) return;
+    if (widget.lyric.lines.isEmpty ||
+        update.primaryIndex >= widget.lyric.lines.length) {
+      _syncToPlaybackPosition(forceScroll: false);
+      return;
+    }
+    _applyLyricLineUpdate(update, forceScroll: false);
   }
 
   @override

@@ -14,12 +14,14 @@ class ValueTransition<T extends num> {
     required T begin,
     required T Function(double t, T start, T end) interpolator,
     required this.duration,
-  })  : value = begin,
-        _start = begin,
-        _target = begin,
-        _interpolator = interpolator;
+  }) : value = begin,
+       _start = begin,
+       _target = begin,
+       _interpolator = interpolator;
 
   bool get isActive => _active;
+
+  T get target => _target;
 
   set interpolator(T Function(double t, T start, T end) value) {
     _interpolator = value;

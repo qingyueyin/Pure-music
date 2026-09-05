@@ -8,6 +8,33 @@ void main() {
     expect(shouldForceLyricScrollForPositionSync(PlayerState.paused), isFalse);
   });
 
+  test('force jump does not cut a scroll already moving to the same line', () {
+    expect(
+      shouldSnapLyricScroll(
+        distancePx: 80,
+        forceJump: true,
+        animatingToSameTarget: true,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldSnapLyricScroll(
+        distancePx: 80,
+        forceJump: true,
+        animatingToSameTarget: false,
+      ),
+      isTrue,
+    );
+    expect(
+      shouldSnapLyricScroll(
+        distancePx: 0.2,
+        forceJump: false,
+        animatingToSameTarget: false,
+      ),
+      isTrue,
+    );
+  });
+
   test('next pre-switch does not take over a single-word line early', () {
     expect(
       lyricLineSwitchStartMs(
