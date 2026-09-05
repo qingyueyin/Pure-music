@@ -23,7 +23,6 @@ import 'package:pure_music/page/settings_page/create_issue.dart';
 import 'package:pure_music/page/stats_page/page.dart';
 import 'package:pure_music/page/settings_page/page.dart';
 import 'package:pure_music/page/settings_page/settings_tabs.dart';
-import 'package:pure_music/test/static_cover_background_test_page.dart';
 import 'package:pure_music/page/updating_page.dart';
 import 'package:pure_music/page/welcoming_page.dart';
 import 'package:pure_music/page/uni_page.dart';
@@ -775,14 +774,6 @@ class _EntryState extends State<Entry>
             );
           },
           child: const NowPlayingPage(),
-        ),
-      ),
-
-      GoRoute(
-        path: app_paths.TEST_BACKGROUND,
-        pageBuilder: (context, state) => _slidePage(
-          key: state.pageKey,
-          child: const StaticCoverBackgroundTestPage(),
         ),
       ),
 

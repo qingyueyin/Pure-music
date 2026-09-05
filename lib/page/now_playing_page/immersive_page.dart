@@ -138,18 +138,39 @@ class _ImmersiveHelpOverlayState extends State<_ImmersiveHelpOverlay> {
           content: SingleChildScrollView(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 320.0),
-              child: const Column(
+              child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _ImmersiveShortcutRow(keys: 'Space', label: '播放 / 暂停'),
-                  _ImmersiveShortcutRow(keys: 'Ctrl + ←', label: '上一曲'),
-                  _ImmersiveShortcutRow(keys: 'Ctrl + →', label: '下一曲'),
-                  _ImmersiveShortcutRow(keys: 'Ctrl + ↑', label: '提高音量'),
-                  _ImmersiveShortcutRow(keys: 'Ctrl + ↓', label: '降低音量'),
-                  _ImmersiveShortcutRow(keys: 'F1', label: '进入 / 退出沉浸模式'),
-                  _ImmersiveShortcutRow(keys: 'F11', label: '全屏 / 还原窗口'),
                   _ImmersiveShortcutRow(
-                    keys: 'ESC',
+                    keys: HotkeysHelper.inAppLabel(HotkeyAction.playPause),
+                    label: '播放 / 暂停',
+                  ),
+                  _ImmersiveShortcutRow(
+                    keys: HotkeysHelper.inAppLabel(HotkeyAction.previous),
+                    label: '上一曲',
+                  ),
+                  _ImmersiveShortcutRow(
+                    keys: HotkeysHelper.inAppLabel(HotkeyAction.next),
+                    label: '下一曲',
+                  ),
+                  _ImmersiveShortcutRow(
+                    keys: HotkeysHelper.inAppLabel(HotkeyAction.volumeUp),
+                    label: '提高音量',
+                  ),
+                  _ImmersiveShortcutRow(
+                    keys: HotkeysHelper.inAppLabel(HotkeyAction.volumeDown),
+                    label: '降低音量',
+                  ),
+                  _ImmersiveShortcutRow(
+                    keys: HotkeysHelper.inAppLabel(HotkeyAction.immersive),
+                    label: '进入 / 退出沉浸模式',
+                  ),
+                  _ImmersiveShortcutRow(
+                    keys: HotkeysHelper.inAppLabel(HotkeyAction.fullscreen),
+                    label: '全屏 / 还原窗口',
+                  ),
+                  _ImmersiveShortcutRow(
+                    keys: HotkeysHelper.inAppLabel(HotkeyAction.escape),
                     label: '退出沉浸并回到主界面',
                     isLast: true,
                   ),

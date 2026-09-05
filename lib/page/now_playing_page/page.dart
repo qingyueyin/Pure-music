@@ -17,6 +17,8 @@ import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/memory_monitor.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/enums.dart';
+import 'package:pure_music/core/hotkey_binding.dart';
+import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/core/immersive.dart';
 import 'package:flutter/foundation.dart';
 import 'package:pure_music/core/settings.dart';

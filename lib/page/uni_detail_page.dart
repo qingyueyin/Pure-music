@@ -120,6 +120,8 @@ class UniDetailPage<P, S, T> extends StatefulWidget {
 
 class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
   static const _headerCollapseExtent = 120.0;
+  static const _listItemExtent = 64.0;
+  static const _sectionHeaderExtent = 44.0;
 
   late SortMethodDesc<S>? currSortMethod = resolveSortMethod(
     widget.pref,
@@ -132,7 +134,6 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
   final _secondaryScrollController = SmoothScrollController();
   final _tertiaryScrollController = SmoothScrollController();
   final _combinedScrollController = SmoothScrollController();
-  final _itemKeys = <int, GlobalKey>{};
   Map<String, int> _alphabetSectionIndexes = const {};
   double _contentCrossAxisExtent = 0;
 
@@ -190,18 +191,28 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
     }
   }
 
-  /// 定位到指定行（行高不固定时按行 key 滚动，保证精确）。
+  /// 平滑滚动到指定位置。行滚出视口后 key 会被卸掉，所以按偏移定位，不依赖 item context。
+  void _smoothScrollTo(double offset) {
+    final controller = _activeScrollController;
+    if (!controller.hasClients) return;
+    final position = controller.position;
+    if (position is SmoothScrollPosition) {
+      position.smoothScrollTo(offset);
+      return;
+    }
+    controller.animateTo(
+      offset.clamp(position.minScrollExtent, position.maxScrollExtent),
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.fastOutSlowIn,
+    );
+  }
+
+  /// 定位到指定行。
   void _scrollToIndex(int targetAt) {
     if (targetAt < 0 || targetAt >= widget.secondaryContent.length) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final ctx = _itemKeys[targetAt]?.currentContext;
-      if (ctx == null) return;
-      Scrollable.ensureVisible(
-        ctx,
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.fastOutSlowIn,
-      );
+      if (!mounted || !_activeScrollController.hasClients) return;
+      _smoothScrollTo(_offsetForIndex(targetAt));
     });
   }
 
@@ -236,7 +247,23 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
 
   int _indexForOffset(double offset) {
     if (currContentView == ContentView.list) {
-      return (offset / 64).floor().clamp(0, widget.secondaryContent.length - 1);
+      final sectionBuilder = widget.secondaryContentSectionBuilder;
+      if (sectionBuilder == null) {
+        return (offset / _listItemExtent).floor().clamp(
+          0,
+          widget.secondaryContent.length - 1,
+        );
+      }
+      if (widget.secondaryContent.isEmpty) return 0;
+      var y = 0.0;
+      for (var i = 0; i < widget.secondaryContent.length; i++) {
+        final section = sectionBuilder(context, widget.secondaryContent[i], i);
+        final height =
+            _listItemExtent + (section != null ? _sectionHeaderExtent : 0.0);
+        if (offset < y + height) return i;
+        y += height;
+      }
+      return widget.secondaryContent.length - 1;
     }
     final crossAxisCount = _gridCrossAxisCount();
     final mainAxisStep =
@@ -257,18 +284,21 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
   }
 
   double _offsetForIndex(int index) {
-    if (currContentView == ContentView.list) return index * 64.0;
+    if (currContentView == ContentView.list) {
+      final sectionBuilder = widget.secondaryContentSectionBuilder;
+      if (sectionBuilder == null) return index * _listItemExtent;
+      var offset = 0.0;
+      for (var i = 0; i <= index && i < widget.secondaryContent.length; i++) {
+        final section = sectionBuilder(context, widget.secondaryContent[i], i);
+        if (section != null) offset += _sectionHeaderExtent;
+        if (i < index) offset += _listItemExtent;
+      }
+      return offset;
+    }
     final crossAxisCount = _gridCrossAxisCount();
     final mainAxisStep =
         gridDelegate.mainAxisExtent! + gridDelegate.mainAxisSpacing;
     return (index ~/ crossAxisCount) * mainAxisStep;
-  }
-
-  Widget _keyedItem(int index, Widget child) {
-    return KeyedSubtree(
-      key: _itemKeys.putIfAbsent(index, GlobalKey.new),
-      child: child,
-    );
   }
 
   @override
@@ -606,66 +636,57 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
                         item,
                         i,
                       );
-                      return _keyedItem(
-                        i,
-                        Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            ?section,
-                            SizedBox(
-                              height: 64,
-                              child: widget.secondaryContentBuilder(
-                                context,
-                                item,
-                                i,
-                                multiSelectController,
-                                ContentView.list,
-                              ),
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ?section,
+                          SizedBox(
+                            height: _listItemExtent,
+                            child: widget.secondaryContentBuilder(
+                              context,
+                              item,
+                              i,
+                              multiSelectController,
+                              ContentView.list,
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       );
                     },
                   ),
                 ContentView.list => SliverFixedExtentList.builder(
-                  itemExtent: 64,
+                  itemExtent: _listItemExtent,
                   itemCount: widget.secondaryContent.length,
-                  itemBuilder: (context, i) => _keyedItem(
-                    i,
-                    StackedSliverItem(
-                      controller: _secondaryScrollController,
-                      rowIndex: i,
-                      itemExtent: 64,
-                      enabled: enableStackedEffect,
-                      child: widget.secondaryContentBuilder(
-                        context,
-                        widget.secondaryContent[i],
-                        i,
-                        multiSelectController,
-                        ContentView.list,
-                      ),
+                  itemBuilder: (context, i) => StackedSliverItem(
+                    controller: _secondaryScrollController,
+                    rowIndex: i,
+                    itemExtent: _listItemExtent,
+                    enabled: enableStackedEffect,
+                    child: widget.secondaryContentBuilder(
+                      context,
+                      widget.secondaryContent[i],
+                      i,
+                      multiSelectController,
+                      ContentView.list,
                     ),
                   ),
                 ),
                 ContentView.table => SliverGrid.builder(
                   gridDelegate: gridDelegate,
                   itemCount: widget.secondaryContent.length,
-                  itemBuilder: (context, i) => _keyedItem(
-                    i,
-                    StackedSliverItem(
-                      controller: _secondaryScrollController,
-                      rowIndex: i ~/ crossAxisCount,
-                      itemExtent:
-                          gridDelegate.mainAxisExtent! +
-                          gridDelegate.mainAxisSpacing,
-                      enabled: enableStackedEffect,
-                      child: widget.secondaryContentBuilder(
-                        context,
-                        widget.secondaryContent[i],
-                        i,
-                        multiSelectController,
-                        ContentView.table,
-                      ),
+                  itemBuilder: (context, i) => StackedSliverItem(
+                    controller: _secondaryScrollController,
+                    rowIndex: i ~/ crossAxisCount,
+                    itemExtent:
+                        gridDelegate.mainAxisExtent! +
+                        gridDelegate.mainAxisSpacing,
+                    enabled: enableStackedEffect,
+                    child: widget.secondaryContentBuilder(
+                      context,
+                      widget.secondaryContent[i],
+                      i,
+                      multiSelectController,
+                      ContentView.table,
                     ),
                   ),
                 ),
@@ -764,66 +785,57 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
                         item,
                         i,
                       );
-                      return _keyedItem(
-                        i,
-                        Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            ?section,
-                            SizedBox(
-                              height: 64,
-                              child: widget.secondaryContentBuilder(
-                                context,
-                                item,
-                                i,
-                                multiSelectController,
-                                ContentView.list,
-                              ),
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ?section,
+                          SizedBox(
+                            height: _listItemExtent,
+                            child: widget.secondaryContentBuilder(
+                              context,
+                              item,
+                              i,
+                              multiSelectController,
+                              ContentView.list,
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       );
                     },
                   ),
                 ContentView.list => SliverFixedExtentList.builder(
-                  itemExtent: 64,
+                  itemExtent: _listItemExtent,
                   itemCount: widget.secondaryContent.length,
-                  itemBuilder: (context, i) => _keyedItem(
-                    i,
-                    StackedSliverItem(
-                      controller: _combinedScrollController,
-                      rowIndex: i,
-                      itemExtent: 64,
-                      enabled: enableStackedEffect,
-                      child: widget.secondaryContentBuilder(
-                        context,
-                        widget.secondaryContent[i],
-                        i,
-                        multiSelectController,
-                        ContentView.list,
-                      ),
+                  itemBuilder: (context, i) => StackedSliverItem(
+                    controller: _combinedScrollController,
+                    rowIndex: i,
+                    itemExtent: _listItemExtent,
+                    enabled: enableStackedEffect,
+                    child: widget.secondaryContentBuilder(
+                      context,
+                      widget.secondaryContent[i],
+                      i,
+                      multiSelectController,
+                      ContentView.list,
                     ),
                   ),
                 ),
                 ContentView.table => SliverGrid.builder(
                   gridDelegate: gridDelegate,
                   itemCount: widget.secondaryContent.length,
-                  itemBuilder: (context, i) => _keyedItem(
-                    i,
-                    StackedSliverItem(
-                      controller: _combinedScrollController,
-                      rowIndex: i ~/ crossAxisCount,
-                      itemExtent:
-                          gridDelegate.mainAxisExtent! +
-                          gridDelegate.mainAxisSpacing,
-                      enabled: enableStackedEffect,
-                      child: widget.secondaryContentBuilder(
-                        context,
-                        widget.secondaryContent[i],
-                        i,
-                        multiSelectController,
-                        ContentView.table,
-                      ),
+                  itemBuilder: (context, i) => StackedSliverItem(
+                    controller: _combinedScrollController,
+                    rowIndex: i ~/ crossAxisCount,
+                    itemExtent:
+                        gridDelegate.mainAxisExtent! +
+                        gridDelegate.mainAxisSpacing,
+                    enabled: enableStackedEffect,
+                    child: widget.secondaryContentBuilder(
+                      context,
+                      widget.secondaryContent[i],
+                      i,
+                      multiSelectController,
+                      ContentView.table,
                     ),
                   ),
                 ),
