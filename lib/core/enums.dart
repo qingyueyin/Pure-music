@@ -50,7 +50,8 @@ enum NowPlayingBackgroundMode {
 
   static NowPlayingBackgroundMode? fromString(String? backgroundMode) {
     if (backgroundMode == null) return null;
-    if (_matchesStoredEnumName(backgroundMode, 'meshGradientV2')) {
+    if (_matchesStoredEnumName(backgroundMode, 'meshGradientV2') ||
+        _matchesStoredEnumName(backgroundMode, 'staticCover')) {
       return NowPlayingBackgroundMode.meshGradient;
     }
     if (_matchesStoredEnumName(backgroundMode, 'pureColor') ||

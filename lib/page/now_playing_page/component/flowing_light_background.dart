@@ -12,7 +12,11 @@ import 'package:pure_music/page/now_playing_page/component/now_playing_backgroun
 
 const _kDecodeSize = 512;
 const _kRenderExtent = 320.0;
+const _kGaussianShaderAssetPath = 'assets/shaders/pulse_gaussian.frag';
+const _kBlurExtent = 256;
 const _kBlurSigma = 12.0;
+const _kInv2s2 = 1.0 / (2.0 * _kBlurSigma * _kBlurSigma);
+const _kBlurChromaBoost = 1.08;
 const _kDarkNeutralBackground = Color(0xFF171717);
 const _kLightNeutralBackground = Color(0xFFF0F0F0);
 const _kFrameInterval = Duration(milliseconds: 42);
@@ -20,20 +24,20 @@ const _kArtworkTransitionDuration = Duration(milliseconds: 300);
 
 const _kPlaybackSpeedTransitionDuration = Duration(milliseconds: 650);
 
-const _kPeriod1 = 54.0;
-const _kPeriod2 = 40.0;
-const _kPeriod3 = 30.0;
+const _kPeriod1 = 58.0;
+const _kPeriod2 = 42.0;
+const _kPeriod3 = 32.0;
 
-const _kPrimaryLayerScale = 1.30;
-const _kSecondaryLayerScale = 1.50;
-const _kLightLayerScale = 1.76;
+const _kPrimaryLayerScale = 1.42;
+const _kSecondaryLayerScale = 1.68;
+const _kLightLayerScale = 1.94;
 const _kPrimaryLayerPhase = 0.0;
 const _kSecondaryLayerPhase = -0.08 * pi;
 const _kLightLayerPhase = 0.12 * pi;
 const _kPrimaryLayerAlpha = 224;
-const _kSecondaryLayerAlpha = 82;
-const _kLightLayerAlpha = 56;
-const _kWarpGridDivisions = 5;
+const _kSecondaryLayerAlpha = 118;
+const _kLightLayerAlpha = 86;
+const _kWarpGridDivisions = 9;
 
 enum _FlowingLightLayer { primary, secondary, light }
 
@@ -97,21 +101,31 @@ Float32List _buildWarpCoordinates() {
 }
 
 const _kDarkFlowingLightStyle = _FlowingLightVisualStyle(
-  edgeAlpha: 0.05,
-  artworkSaturation: 1.18,
-  artworkBrightness: 0.72,
-  artworkBlackLift: 0.09,
+  edgeAlpha: 0.07,
+  artworkSaturation: 1.34,
+  artworkBrightness: 0.82,
+  artworkBlackLift: 0.05,
   overlays: <Color>[
-    Color(0x08000000),
+    Color(0x0C000000),
+  ],
+  wash: <Color>[
+    Color(0x1A000000),
+    Color(0x05000000),
+    Color(0x2A000000),
   ],
 );
 const _kLightFlowingLightStyle = _FlowingLightVisualStyle(
-  edgeAlpha: 0.04,
-  artworkSaturation: 1.15,
-  artworkBrightness: 1.0,
+  edgeAlpha: 0.05,
+  artworkSaturation: 1.22,
+  artworkBrightness: 0.98,
   artworkBlackLift: 0.0,
   overlays: <Color>[
+    Color(0x12FFFFFF),
+  ],
+  wash: <Color>[
     Color(0x14FFFFFF),
+    Color(0x05FFFFFF),
+    Color(0x1CFFFFFF),
   ],
 );
 
@@ -137,9 +151,9 @@ double flowingLightBreathingScale(
   double bassTransient = 0.0,
 }) {
   return (1.0 +
-          audioLevel.clamp(0.0, 1.0) * 0.09 +
-          bassTransient.clamp(0.0, 1.0) * 0.26)
-      .clamp(1.0, 1.30)
+          audioLevel.clamp(0.0, 1.0) * 0.08 +
+          bassTransient.clamp(0.0, 1.0) * 0.18)
+      .clamp(1.0, 1.22)
       .toDouble();
 }
 
@@ -151,7 +165,7 @@ double flowingLightWarpStrength(
       audioLevel.isFinite ? audioLevel.clamp(0.0, 1.0).toDouble() : 0.0;
   final transient =
       bassTransient.isFinite ? bassTransient.clamp(0.0, 1.0).toDouble() : 0.0;
-  return (level * 0.018 + transient * 0.07).clamp(0.0, 0.085).toDouble();
+  return (level * 0.014 + transient * 0.042).clamp(0.0, 0.055).toDouble();
 }
 
 double flowingLightArtworkOpacityCeiling() {
@@ -193,6 +207,8 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
       AudioReactiveFlowTransientDetector();
   final _FlowAudioState _audio = _FlowAudioState();
   final _FlowingLightShaderCache _shaderCache = _FlowingLightShaderCache();
+  ui.FragmentShader? _gaussianHorizontal;
+  ui.FragmentShader? _gaussianVertical;
   StreamSubscription<Float32List>? _spectrumSubscription;
   int _decodeGeneration = 0;
   bool _disposed = false;
@@ -452,7 +468,82 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     }
   }
 
-  Future<ui.Image> _createBlurredCover(ui.Image source) async {
+  Future<void> _ensureGaussianShaders() async {
+    if (_gaussianHorizontal != null && _gaussianVertical != null) return;
+    try {
+      final program = await ui.FragmentProgram.fromAsset(
+        _kGaussianShaderAssetPath,
+      );
+      final horizontal = program.fragmentShader();
+      final vertical = program.fragmentShader();
+      if (_disposed) {
+        horizontal.dispose();
+        vertical.dispose();
+        return;
+      }
+      _gaussianHorizontal?.dispose();
+      _gaussianVertical?.dispose();
+      _gaussianHorizontal = horizontal;
+      _gaussianVertical = vertical;
+    } catch (_) {
+      _gaussianHorizontal?.dispose();
+      _gaussianVertical?.dispose();
+      _gaussianHorizontal = null;
+      _gaussianVertical = null;
+    }
+  }
+
+  Future<ui.Image> _runGaussianPass({
+    required ui.Image source,
+    required ui.FragmentShader shader,
+    required bool horizontal,
+  }) async {
+    final width = source.width.toDouble();
+    final height = source.height.toDouble();
+    shader
+      ..setFloat(0, width)
+      ..setFloat(1, height)
+      ..setFloat(2, horizontal ? 1.0 : 0.0)
+      ..setFloat(3, horizontal ? 0.0 : 1.0)
+      ..setFloat(4, _kInv2s2)
+      ..setFloat(5, horizontal ? 1.0 : _kBlurChromaBoost)
+      ..setImageSampler(0, source);
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, width, height),
+      Paint()..shader = shader,
+    );
+    final picture = recorder.endRecording();
+    try {
+      return await picture.toImage(source.width, source.height);
+    } finally {
+      picture.dispose();
+    }
+  }
+
+  Future<ui.Image> _rasterizeBlurSource(ui.Image source) async {
+    final longest = max(source.width, source.height).clamp(1, 4096);
+    final scale = _kBlurExtent / longest;
+    final width = (source.width * scale).round().clamp(32, _kBlurExtent);
+    final height = (source.height * scale).round().clamp(32, _kBlurExtent);
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    canvas.drawImageRect(
+      source,
+      Rect.fromLTWH(0, 0, source.width.toDouble(), source.height.toDouble()),
+      Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
+      Paint()..filterQuality = FilterQuality.medium,
+    );
+    final picture = recorder.endRecording();
+    try {
+      return await picture.toImage(width, height);
+    } finally {
+      picture.dispose();
+    }
+  }
+
+  Future<ui.Image> _fallbackBlur(ui.Image source) async {
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
     final bounds = Rect.fromLTWH(
@@ -475,6 +566,41 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
       return await picture.toImage(source.width, source.height);
     } finally {
       picture.dispose();
+    }
+  }
+
+  Future<ui.Image> _createBlurredCover(ui.Image source) async {
+    final working = await _rasterizeBlurSource(source);
+    try {
+      await _ensureGaussianShaders();
+      final horizontal = _gaussianHorizontal;
+      final vertical = _gaussianVertical;
+      if (horizontal != null && vertical != null) {
+        ui.Image? pass;
+        try {
+          pass = await _runGaussianPass(
+            source: working,
+            shader: horizontal,
+            horizontal: true,
+          );
+          if (_disposed) {
+            throw StateError('disposed');
+          }
+          final blurred = await _runGaussianPass(
+            source: pass,
+            shader: vertical,
+            horizontal: false,
+          );
+          pass.dispose();
+          pass = null;
+          return blurred;
+        } catch (_) {
+          pass?.dispose();
+        }
+      }
+      return await _fallbackBlur(working);
+    } finally {
+      working.dispose();
     }
   }
 
@@ -579,6 +705,10 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     _ticker.dispose();
     _transitionClock.stop();
     _shaderCache.dispose();
+    _gaussianHorizontal?.dispose();
+    _gaussianHorizontal = null;
+    _gaussianVertical?.dispose();
+    _gaussianVertical = null;
     _coverImage?.dispose();
     _previousCoverImage?.dispose();
     _pendingCover?.image.dispose();
@@ -679,6 +809,7 @@ class _FlowingLightVisualStyle {
     required this.artworkBrightness,
     required this.artworkBlackLift,
     required this.overlays,
+    required this.wash,
   });
 
   final double edgeAlpha;
@@ -686,6 +817,7 @@ class _FlowingLightVisualStyle {
   final double artworkBrightness;
   final double artworkBlackLift;
   final List<Color> overlays;
+  final List<Color> wash;
 }
 
 class _WarpMeshBuffer {
@@ -721,7 +853,7 @@ class _FlowingLightShaderCache {
         TileMode.clamp,
         TileMode.clamp,
         _kIdentityShaderMatrix,
-        filterQuality: FilterQuality.medium,
+        filterQuality: FilterQuality.high,
       ),
     );
   }
@@ -818,6 +950,9 @@ class _FlowingLightPainter extends CustomPainter {
   ui.Paint? _edgePaint;
   Size? _edgePaintSize;
   double? _edgePaintAlpha;
+  ui.Paint? _washPaint;
+  Size? _washPaintSize;
+  List<Color>? _washPaintColors;
 
   double get _motionTime => motion.time;
 
@@ -850,6 +985,7 @@ class _FlowingLightPainter extends CustomPainter {
     for (final overlay in style.overlays) {
       canvas.drawColor(overlay, BlendMode.srcOver);
     }
+    canvas.drawRect(Offset.zero & size, _washPaintFor(size));
     canvas.drawRect(Offset.zero & size, _edgePaintFor(size));
   }
 
@@ -863,24 +999,28 @@ class _FlowingLightPainter extends CustomPainter {
     final alpha = (opacity * 255).round().clamp(0, 255);
     if (alpha == 0 || image == null) return;
 
-    const driftAmp = 0.052;
-    final primaryDriftX = sin(time * 0.5) * driftAmp;
-    final primaryDriftY = cos(time * 0.6) * driftAmp;
-    final secondaryDriftX = sin(time * 0.7 + 1.0) * driftAmp;
-    final secondaryDriftY = cos(time * 0.8 + 1.0) * driftAmp;
-    final lightDriftX = sin(time * 0.9 + 2.0) * driftAmp * 1.2;
-    final lightDriftY = cos(time + 2.0) * driftAmp * 1.2;
+    const driftAmp = 0.05;
+    final primaryDriftX = sin(time * 0.46) * driftAmp;
+    final primaryDriftY = cos(time * 0.54) * driftAmp;
+    final secondaryDriftX = sin(time * 0.62 + 1.0) * driftAmp;
+    final secondaryDriftY = cos(time * 0.7 + 1.0) * driftAmp;
+    final lightDriftX = sin(time * 0.78 + 2.0) * driftAmp * 1.2;
+    final lightDriftY = cos(time * 0.88 + 2.0) * driftAmp * 1.2;
 
+    final hit = audioReactiveFlow
+        ? audio.bassTransient.clamp(0.0, 1.0).toDouble()
+        : 0.0;
     final primaryBreathe = audioReactiveFlow
         ? flowingLightBreathingScale(
             audio.low,
-            bassTransient: audio.bassTransient,
+            bassTransient: hit,
           )
         : 1.0;
+    final accentBreathe = primaryBreathe + hit * 0.06;
     final warpStrength = audioReactiveFlow
         ? flowingLightWarpStrength(
             audio.low,
-            bassTransient: audio.bassTransient,
+            bassTransient: hit,
           )
         : 0.0;
     final imageShader = shaderCache.get(image);
@@ -900,7 +1040,7 @@ class _FlowingLightPainter extends CustomPainter {
       layer: _FlowingLightLayer.primary,
       mesh: _primaryMesh,
       warpAmplitude: warpStrength,
-      warpPhase: time * 3.2,
+      warpPhase: time * 1.05,
       shader: imageShader,
       opacity: opacity,
     );
@@ -911,33 +1051,33 @@ class _FlowingLightPainter extends CustomPainter {
       primaryScale /
           _kPrimaryLayerScale *
           _kSecondaryLayerScale *
-          primaryBreathe,
+          accentBreathe,
       -time / _kPeriod2 * 2 * pi + _kSecondaryLayerPhase,
-      0.41 + secondaryDriftX,
-      0.23 + secondaryDriftY,
+      0.46 + secondaryDriftX,
+      0.26 + secondaryDriftY,
       _secondaryPaint,
       layer: _FlowingLightLayer.secondary,
       mesh: _secondaryMesh,
-      warpAmplitude: warpStrength * 0.76,
-      warpPhase: -time * 2.4 + 0.8,
+      warpAmplitude: warpStrength * 0.82,
+      warpPhase: -time * 0.84 + 0.8,
       shader: imageShader,
-      opacity: opacity,
+      opacity: opacity * (1.0 + hit * 0.16),
     );
     _drawLayer(
       canvas,
       size,
       image,
-      primaryScale / _kPrimaryLayerScale * _kLightLayerScale * primaryBreathe,
+      primaryScale / _kPrimaryLayerScale * _kLightLayerScale * accentBreathe,
       -time / _kPeriod3 * 2 * pi + _kLightLayerPhase,
-      -0.42 + lightDriftX,
-      0.28 + lightDriftY,
+      -0.46 + lightDriftX,
+      0.30 + lightDriftY,
       _lightPaint,
       layer: _FlowingLightLayer.light,
       mesh: _lightMesh,
-      warpAmplitude: warpStrength * 0.56,
-      warpPhase: time * 4.4 + 1.5,
+      warpAmplitude: warpStrength * 0.64,
+      warpPhase: time * 1.18 + 1.5,
       shader: imageShader,
-      opacity: opacity,
+      opacity: opacity * (1.0 + hit * 0.28),
     );
   }
 
@@ -1021,10 +1161,10 @@ class _FlowingLightPainter extends CustomPainter {
       final localY = (sourceY - imageCenter.dy) * scale;
       final rotatedX = localX * cosRotation - localY * sinRotation;
       final rotatedY = localX * sinRotation + localY * cosRotation;
-      final waveX = sin(v * 2 * pi + phase) * displacementX;
-      final waveY = cos(u * 2 * pi + phase * 0.73) * displacementY;
+      final waveX = sin(v * pi + phase) * displacementX;
+      final waveY = cos(u * pi + phase * 0.73) * displacementY;
       final crossWave =
-          sin((u + v) * 2 * pi + phase * 1.17) * crossDisplacement;
+          sin((u + v) * pi + phase * 0.9) * crossDisplacement;
       final outputX = center.dx + offsetX * size.width + rotatedX + waveX;
       final outputY = center.dy + offsetY * size.height + rotatedY + waveY;
       final x = outputX + crossWave;
@@ -1050,27 +1190,27 @@ class _FlowingLightPainter extends CustomPainter {
     return switch (layer) {
       _FlowingLightLayer.primary => (
           centerX: size.width * 0.50,
-          centerY: size.height * 0.40,
-          radius: size.shortestSide * 1.12,
-          middleStop: 0.58,
-          outerStop: 0.82,
+          centerY: size.height * 0.42,
+          radius: size.shortestSide * 1.28,
+          middleStop: 0.62,
+          outerStop: 0.88,
           middleAlpha: 210 / 255,
         ),
       _FlowingLightLayer.secondary => (
-          centerX: size.width * 0.84,
-          centerY: size.height * 0.68,
-          radius: size.shortestSide * 0.95,
-          middleStop: 0.52,
-          outerStop: 0.82,
-          middleAlpha: 100 / 255,
+          centerX: size.width * 0.82,
+          centerY: size.height * 0.66,
+          radius: size.shortestSide * 1.08,
+          middleStop: 0.56,
+          outerStop: 0.86,
+          middleAlpha: 120 / 255,
         ),
       _FlowingLightLayer.light => (
-          centerX: size.width * 0.16,
-          centerY: size.height * 0.72,
-          radius: size.shortestSide * 0.95,
-          middleStop: 0.52,
-          outerStop: 0.82,
-          middleAlpha: 100 / 255,
+          centerX: size.width * 0.18,
+          centerY: size.height * 0.70,
+          radius: size.shortestSide * 1.08,
+          middleStop: 0.56,
+          outerStop: 0.86,
+          middleAlpha: 120 / 255,
         ),
     };
   }
@@ -1092,6 +1232,23 @@ class _FlowingLightPainter extends CustomPainter {
     return mask.middleAlpha * (1.0 - local);
   }
 
+  ui.Paint _washPaintFor(Size size) {
+    if (_washPaint == null ||
+        _washPaintSize != size ||
+        _washPaintColors != style.wash) {
+      _washPaintSize = size;
+      _washPaintColors = style.wash;
+      _washPaint = ui.Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(size.width * 0.5, 0),
+          Offset(size.width * 0.5, size.height),
+          style.wash,
+          const <double>[0.0, 0.46, 1.0],
+        );
+    }
+    return _washPaint!;
+  }
+
   ui.Paint _edgePaintFor(Size size) {
     if (_edgePaint == null ||
         _edgePaintSize != size ||
@@ -1101,7 +1258,7 @@ class _FlowingLightPainter extends CustomPainter {
       _edgePaint = ui.Paint()
         ..shader = ui.Gradient.radial(
           size.center(Offset.zero),
-          size.longestSide * 0.64,
+          size.longestSide * 0.72,
           [
             Colors.transparent,
             Colors.black.withValues(alpha: style.edgeAlpha),

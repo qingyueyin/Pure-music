@@ -22,12 +22,12 @@ class NowPlayingBackground extends StatelessWidget {
   Widget build(BuildContext context) {
     return switch (mode) {
       NowPlayingBackgroundMode.meshGradient => MeshGradientBackground(
-          inputs: inputs,
-          fallbackColor: fallbackColor,
-        ),
+        inputs: inputs,
+        fallbackColor: fallbackColor,
+      ),
       NowPlayingBackgroundMode.flowingCover => FlowingLightBackground(
-          inputs: inputs,
-        ),
+        inputs: inputs,
+      ),
     };
   }
 }

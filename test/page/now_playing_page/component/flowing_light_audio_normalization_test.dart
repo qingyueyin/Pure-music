@@ -194,23 +194,23 @@ void main() {
   });
 
   test('audio breathing stays visible without oversized face movement', () {
-    expect(flowingLightBreathingScale(0.5), closeTo(1.045, 0.001));
-    expect(flowingLightBreathingScale(1), closeTo(1.09, 0.001));
+    expect(flowingLightBreathingScale(0.5), closeTo(1.04, 0.001));
+    expect(flowingLightBreathingScale(1), closeTo(1.08, 0.001));
     expect(
       flowingLightBreathingScale(0.5, bassTransient: 1),
-      1.30,
+      1.22,
     );
-    expect(flowingLightBreathingScale(1, bassTransient: 1), 1.30);
+    expect(flowingLightBreathingScale(1, bassTransient: 1), 1.22);
   });
 
   test('bass transient adds a bounded local cover warp', () {
     expect(flowingLightWarpStrength(0), 0);
-    expect(flowingLightWarpStrength(0.5), closeTo(0.009, 0.001));
+    expect(flowingLightWarpStrength(0.5), closeTo(0.007, 0.0001));
     expect(
       flowingLightWarpStrength(0.5, bassTransient: 1),
-      closeTo(0.079, 0.001),
+      closeTo(0.049, 0.0001),
     );
-    expect(flowingLightWarpStrength(1, bassTransient: 1), 0.085);
+    expect(flowingLightWarpStrength(1, bassTransient: 1), 0.055);
   });
 
   test('artwork layers carry the cover color over the neutral fallback', () {
