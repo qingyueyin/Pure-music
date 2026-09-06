@@ -1989,7 +1989,6 @@ class _CoverSearchDialogState extends State<_CoverSearchDialog> {
   }
 
   Future<List<int>?> _downloadImage(String url) async {
-    const maxBytes = 8 * 1024 * 1024;
     io.HttpClient? client;
     try {
       client = io.HttpClient();
@@ -2000,7 +1999,6 @@ class _CoverSearchDialogState extends State<_CoverSearchDialog> {
       final builder = BytesBuilder(copy: false);
       await for (final chunk in response) {
         builder.add(chunk);
-        if (builder.length > maxBytes) return null;
       }
       return builder.takeBytes();
     } catch (_) {
