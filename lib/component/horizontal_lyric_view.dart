@@ -13,10 +13,7 @@ import 'package:flutter/material.dart';
 
 class HorizontalLyricView extends StatelessWidget {
   final bool compact;
-  const HorizontalLyricView({
-    super.key,
-    this.compact = false,
-  });
+  const HorizontalLyricView({super.key, this.compact = false});
 
   @override
   Widget build(BuildContext context) {
@@ -113,12 +110,14 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
       currContent = '';
     } else {
       final newContent = switch (line) {
-        LrcLine l => l.translation == null
-            ? l.content
-            : '${l.content}\u2503${l.translation}',
-        SyncLyricLine s => s.translation == null
-            ? s.content
-            : '${s.content}\u2503${s.translation}',
+        LrcLine l =>
+          l.translation == null
+              ? l.content
+              : '${l.content}\u2503${l.translation}',
+        SyncLyricLine s =>
+          s.translation == null
+              ? s.content
+              : '${s.content}\u2503${s.translation}',
         _ => '',
       };
       if (newContent == currContent && !_isTransition) return;
@@ -189,8 +188,14 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
     return _buildText(currContent, scheme);
   }
 
-  Widget _buildAnimLayer(String content, ColorScheme scheme, double t,
-      bool isPrev, TopBarLyricAnimation anim, double h) {
+  Widget _buildAnimLayer(
+    String content,
+    ColorScheme scheme,
+    double t,
+    bool isPrev,
+    TopBarLyricAnimation anim,
+    double h,
+  ) {
     Widget child = _buildText(content, scheme);
 
     switch (anim) {
@@ -302,10 +307,7 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     if (nowMs - _lastPositionResyncMs < 200) return;
     _lastPositionResyncMs = nowMs;
-    final update = lyricService.lineUpdateForLyric(
-      widget.lyric,
-      position,
-    );
+    final update = lyricService.lineUpdateForLyric(widget.lyric, position);
     if (update == null) return;
     final nextLine = _nearestRenderableLineIndex(update.primaryIndex);
     if (nextLine == null) return;
@@ -322,6 +324,7 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
       preferForward: preferForward,
     );
     if (lineIndex == null || !mounted) return;
+    if (lineIndex == _currentLineIndex) return;
     final currLine = widget.lyric.lines[lineIndex];
     _currentLineIndex = lineIndex;
 
@@ -386,8 +389,8 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
       _setContent(widget.lyric.lines.first);
     }
 
-    lyricLineStreamSubscription = lyricService.lyricLineStream.listen((_) {
-      _syncToPlaybackPosition(preferUpcoming: false);
+    lyricLineStreamSubscription = lyricService.lyricLineStream.listen((update) {
+      _applyLyricLineUpdate(update, preferForward: false);
     });
     _playbackResyncListener = _queuePlaybackResync;
     playbackService.positionSyncNotifier.addListener(_playbackResyncListener);
@@ -510,8 +513,9 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12.0),
           child: ScrollConfiguration(
-            behavior:
-                ScrollConfiguration.of(context).copyWith(scrollbars: false),
+            behavior: ScrollConfiguration.of(
+              context,
+            ).copyWith(scrollbars: false),
             child: SingleChildScrollView(
               controller: scrollController,
               scrollDirection: Axis.horizontal,
@@ -531,8 +535,9 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
     _slideController?.dispose();
     routeVisibilityObserver.unsubscribe(this);
     lyricLineStreamSubscription.cancel();
-    playbackService.positionSyncNotifier
-        .removeListener(_playbackResyncListener);
+    playbackService.positionSyncNotifier.removeListener(
+      _playbackResyncListener,
+    );
     _positionResyncTimer?.cancel();
     _positionResyncStopTimer?.cancel();
     scrollController.dispose();

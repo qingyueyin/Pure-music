@@ -473,7 +473,9 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
     }
 
     if (widget.freezeHeight && !oldWidget.freezeHeight) {
-      if (_cachedPainter != null && _cachedLineWidth > 0) {
+      if (widget.distance == 0) {
+        _frozenHeight = null;
+      } else if (_cachedPainter != null && _cachedLineWidth > 0) {
         _frozenHeight = _cachedPainter!.measureHeight(
           _cachedLineWidth,
           reserveBackgroundVocalHeight: widget.reserveBackgroundVocalHeight,
@@ -498,11 +500,9 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
     if (isActive != wasActive) {
       _animateScale();
       _animateFloat();
-
-      if (!isActive) {
-        _cachedPainter = null;
-        _clearHeightCache();
-      }
+      _cachedPainter = null;
+      _clearHeightCache();
+      if (isActive) _frozenHeight = null;
     }
 
     if (widget.backgroundVocalVisibilityListenable !=
@@ -573,6 +573,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
       LyricTextAlign.center => Alignment.center,
       LyricTextAlign.right => Alignment.centerRight,
     };
+    final layoutScaleAlignment = lyricLineScaleAlignment(effectiveTextAlign);
     final scheme = Theme.of(context).colorScheme;
     final blurSigma = widget.isUserScrolling
         ? 0.0
@@ -788,7 +789,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
       builder: (context, child) {
         return Transform.scale(
           scale: _scaleController.value,
-          alignment: scaleAlignment,
+          alignment: layoutScaleAlignment,
           child: child!,
         );
       },
@@ -827,7 +828,6 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
     }
 
     inner = LyricStaggerTransition(
-      key: ValueKey('stagger_${widget.jumpTriggerId}'),
       enabled:
           renderConfig.enableStaggeredAnimation &&
           renderConfig.staggerStyle == LyricStaggerStyle.spring,

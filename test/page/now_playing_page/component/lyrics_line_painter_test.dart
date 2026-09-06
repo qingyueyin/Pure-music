@@ -1,4 +1,6 @@
+import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/page/now_playing_page/component/lyrics_line_painter.dart';
 
 void main() {
@@ -292,6 +294,21 @@ void main() {
         ),
         376,
       );
+    });
+  });
+
+  group('lyricLayoutFontSize', () {
+    test('uses the larger size so current and other lines wrap the same', () {
+      expect(lyricLayoutFontSize(mainFontSize: 32, subFontSize: 28), 32);
+      expect(lyricLayoutFontSize(mainFontSize: 28, subFontSize: 32), 32);
+    });
+  });
+
+  group('lyricLineScaleAlignment', () {
+    test('scales a wrapped line from the top so the second visual line stays put', () {
+      expect(lyricLineScaleAlignment(LyricTextAlign.left), Alignment.topLeft);
+      expect(lyricLineScaleAlignment(LyricTextAlign.center), Alignment.topCenter);
+      expect(lyricLineScaleAlignment(LyricTextAlign.right), Alignment.topRight);
     });
   });
 

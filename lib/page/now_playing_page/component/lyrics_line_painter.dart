@@ -73,6 +73,25 @@ double lyricUnifiedWrapScale({
   return active > inactive ? active : inactive;
 }
 
+/// 折行字号取主行/副行里更大的那个，避免切到当前行时字变大把词挤去下一行。
+double lyricLayoutFontSize({
+  required double mainFontSize,
+  required double subFontSize,
+}) {
+  final main = mainFontSize <= 0 ? 1.0 : mainFontSize;
+  final sub = subFontSize <= 0 ? 1.0 : subFontSize;
+  return main > sub ? main : sub;
+}
+
+/// 从行顶放大，折开的第二行不会跟着垂直中心被撑开。
+Alignment lyricLineScaleAlignment(LyricTextAlign align) {
+  return switch (align) {
+    LyricTextAlign.left => Alignment.topLeft,
+    LyricTextAlign.center => Alignment.topCenter,
+    LyricTextAlign.right => Alignment.topRight,
+  };
+}
+
 enum LyricWordEffect { none, scale, scaleAndGlow }
 
 LyricWordEffect lyricWordEffect({
@@ -432,6 +451,28 @@ class LyricsLinePainter extends CustomPainter {
     return color.withValues(alpha: color.a * factor);
   }
 
+  Color _unplayedLyricColor({
+    required bool isDarkMode,
+    required Color neutralBase,
+  }) {
+    // 深色主行未唱提高不透明度；浅色黑字保持原值，避免糊成一块
+    final double alpha;
+    if (isMainLine) {
+      alpha = useMaterialYouColor
+          ? (isDarkMode ? 0.55 : 0.50)
+          : (isDarkMode ? 0.55 : 0.45);
+    } else {
+      alpha = useMaterialYouColor
+          ? (isDarkMode ? 0.40 : 0.50)
+          : (isDarkMode ? 0.35 : 0.45);
+    }
+    return _applyOpacity(
+      useMaterialYouColor
+          ? scheme.onSurface.withValues(alpha: alpha)
+          : neutralBase.withValues(alpha: alpha),
+    );
+  }
+
   Paint? _blurForeground(Color color) {
     if (blurSigma <= 0.01 || color.a <= 0.0) return null;
     final sigmaKey = (blurSigma * 2).round();
@@ -659,7 +700,10 @@ class LyricsLinePainter extends CustomPainter {
 
     canvas.save();
 
-    final fontSize = config.primaryFontSize(isMainLine: isMainLine);
+    final fontSize = lyricLayoutFontSize(
+      mainFontSize: config.primaryFontSize(isMainLine: true),
+      subFontSize: config.primaryFontSize(isMainLine: false),
+    );
     final letterSpace = config.letterSpacing(fontSize: fontSize);
     final fontWeight = config.discreteFontWeight(config.fontWeight);
     final verticalPad = config.syncVerticalPadding(isMainLine: true);
@@ -679,10 +723,9 @@ class LyricsLinePainter extends CustomPainter {
     final playedColor = useMaterialYouColor
         ? _applyOpacity(scheme.primary.withValues(alpha: 1.0))
         : mainPlayedColor;
-    final unplayedColor = _applyOpacity(
-      useMaterialYouColor
-          ? scheme.onSurface.withValues(alpha: isDarkMode ? 0.40 : 0.50)
-          : neutralBase.withValues(alpha: isDarkMode ? 0.35 : 0.45),
+    final unplayedColor = _unplayedLyricColor(
+      isDarkMode: isDarkMode,
+      neutralBase: neutralBase,
     );
     final secondaryColor = _applyOpacity(
       useMaterialYouColor
@@ -1046,9 +1089,12 @@ class LyricsLinePainter extends CustomPainter {
       final hasScale = effect != LyricWordEffect.none;
       if (!useLift && !hasScale && !hasGlow) {
         if (paintText) {
-          tp.text = TextSpan(text: word.text, style: style);
-          tp.layout();
-          tp.paint(canvas, Offset(wc.first.x, wc.first.y));
+          // 按逐字布局坐标画，避免整词 TextSpan 的 kerning 和测量 x 不一致。
+          for (final info in wc) {
+            tp.text = TextSpan(text: info.char, style: style);
+            tp.layout();
+            tp.paint(canvas, Offset(info.x, info.y));
+          }
         }
         return;
       }
@@ -1701,10 +1747,9 @@ class LyricsLinePainter extends CustomPainter {
     final playedColor = useMaterialYouColor
         ? _applyOpacity(scheme.primary.withValues(alpha: 1.0))
         : mainPlayedColor;
-    final unplayedColor = _applyOpacity(
-      useMaterialYouColor
-          ? scheme.onSurface.withValues(alpha: isDarkMode ? 0.40 : 0.50)
-          : neutralBase.withValues(alpha: isDarkMode ? 0.35 : 0.45),
+    final unplayedColor = _unplayedLyricColor(
+      isDarkMode: isDarkMode,
+      neutralBase: neutralBase,
     );
     final dimColor = unplayedColor;
     final mainColor = isMainLine ? playedColor : dimColor;
@@ -1923,10 +1968,9 @@ class LyricsLinePainter extends CustomPainter {
     final playedColor = useMaterialYouColor
         ? _applyOpacity(scheme.primary.withValues(alpha: 1.0))
         : mainPlayedColor;
-    final unplayedColor = _applyOpacity(
-      useMaterialYouColor
-          ? scheme.onSurface.withValues(alpha: isDarkMode ? 0.40 : 0.50)
-          : neutralBase.withValues(alpha: isDarkMode ? 0.35 : 0.45),
+    final unplayedColor = _unplayedLyricColor(
+      isDarkMode: isDarkMode,
+      neutralBase: neutralBase,
     );
     final dimColor = unplayedColor;
     final mainColor = isMainLine ? playedColor : dimColor;
@@ -2203,7 +2247,10 @@ class LyricsLinePainter extends CustomPainter {
       final syncLine = line as SyncLyricLine;
       if (syncLine.words.isEmpty) return 0;
 
-      final fontSize = config.primaryFontSize(isMainLine: isMainLine);
+      final fontSize = lyricLayoutFontSize(
+        mainFontSize: config.primaryFontSize(isMainLine: true),
+        subFontSize: config.primaryFontSize(isMainLine: false),
+      );
       final fontWeight = config.discreteFontWeight(config.fontWeight);
       final lineH = fontSize * config.primaryLineHeight();
 
