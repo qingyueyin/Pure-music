@@ -68,7 +68,7 @@ String _kgNormalizeCover(String url) =>
     url.replaceFirst('{size}', '480').replaceFirst('http:', 'https:');
 
 String _kgCoverUrl(Map item, List? groupList) {
-  // 1) fallback 接口字段：item['Image']  ← Lyrico 用的也是这个
+  // 1) fallback 接口字段：item['Image']
   final imgRaw = item['Image']?.toString() ?? '';
   if (imgRaw.isNotEmpty) return _kgNormalizeCover(imgRaw);
 
@@ -114,7 +114,7 @@ Future<String?> _httpPost(
   }
 }
 
-/// MD5 签名参数，Lyrico 酷狗插件 `signParams` 的 Dart 复现。
+/// 酷狗搜索签名：按参数名排序后 MD5(`salt + k=v... + salt`)。
 Map<String, String> _kgSignParams(Map<String, String> custom) {
   final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
   final params = <String, String>{
