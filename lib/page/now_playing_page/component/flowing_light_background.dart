@@ -682,8 +682,11 @@ class _FlowAudioState {
   double high = 0.0;
   final AudioReactiveFlowPulseEnvelope _bassPulse =
       AudioReactiveFlowPulseEnvelope();
+  final AudioReactiveFlowVisualSpring _visualHit =
+      AudioReactiveFlowVisualSpring();
 
   double get bassTransient => _bassPulse.value;
+  double get visualHit => _visualHit.value;
 
   void captureBass(double transient) {
     _bassPulse.trigger(transient);
@@ -691,6 +694,7 @@ class _FlowAudioState {
 
   void updateBassPulse(double deltaSeconds) {
     _bassPulse.advance(deltaSeconds);
+    _visualHit.follow(_bassPulse.value, deltaSeconds);
   }
 
   void reset() {
@@ -698,6 +702,7 @@ class _FlowAudioState {
     mid = 0.0;
     high = 0.0;
     _bassPulse.reset();
+    _visualHit.reset();
   }
 }
 
@@ -815,25 +820,23 @@ class _FlowingLightPainter extends CustomPainter {
     double opacity,
   ) {
     if (opacity <= 0 || image == null) return;
+    // 形变跟平滑能量和滞后节拍，不跟原始脉冲硬切，也不闪透明度。
     final hit = audioReactiveFlow
-        ? audio.bassTransient.clamp(0.0, 1.0).toDouble()
+        ? audio.visualHit.clamp(0.0, 1.0).toDouble()
         : 0.0;
     final low = audioReactiveFlow ? audio.low.clamp(0.0, 1.0).toDouble() : 0.0;
     final mid = audioReactiveFlow ? audio.mid.clamp(0.0, 1.0).toDouble() : 0.0;
+    final high = audioReactiveFlow ? audio.high.clamp(0.0, 1.0).toDouble() : 0.0;
     final breathe = audioReactiveFlow
         ? flowingLightBreathingScale(low, bassTransient: hit)
         : 1.0;
     final warp = audioReactiveFlow
         ? flowingLightWarpStrength(low, bassTransient: hit)
         : 0.0;
+    final pulse = (breathe - 1.0).clamp(0.0, 0.22);
     _compositePaint.color = const Color(
       0xFFFFFFFF,
     ).withValues(alpha: opacity.clamp(0.0, 1.0));
-    final center = size.center(Offset.zero);
-    canvas.save();
-    canvas.translate(center.dx, center.dy);
-    canvas.scale(breathe);
-    canvas.translate(-center.dx, -center.dy);
     canvas.saveLayer(Offset.zero & size, _compositePaint);
     _drawCoverLayer(
       canvas,
@@ -842,10 +845,15 @@ class _FlowingLightPainter extends CustomPainter {
       time: time,
       period: _kPeriod1,
       clockwise: false,
-      offset: Offset(low * 0.04, -hit * 0.03),
+      offset: Offset(low * 0.015, -low * 0.01),
       extraRotation: false,
+      extraSpin: 0,
+      squash: Offset(
+        1.0 + low * 0.02 + hit * 0.03,
+        1.0 - low * 0.012 - hit * 0.018,
+      ),
       alpha: _kPrimaryLayerAlpha,
-      scaleMul: 1.0,
+      scaleMul: 1.0 + pulse * 0.40,
     );
     _drawCoverLayer(
       canvas,
@@ -855,14 +863,17 @@ class _FlowingLightPainter extends CustomPainter {
       period: _kPeriod2,
       clockwise: true,
       offset: Offset(
-        _kSecondaryOffset.dx - warp - mid * 0.08,
-        _kSecondaryOffset.dy + hit * 0.06,
+        _kSecondaryOffset.dx - warp * 0.35 - mid * 0.03,
+        _kSecondaryOffset.dy + low * 0.02,
       ),
       extraRotation: false,
-      alpha: (_kSecondaryLayerAlpha * (0.75 + low * 0.4 + hit * 0.35))
-          .round()
-          .clamp(0, 255),
-      scaleMul: 1.22,
+      extraSpin: 0,
+      squash: Offset(
+        1.0 - mid * 0.025 - hit * 0.035,
+        1.0 + mid * 0.03 + hit * 0.045,
+      ),
+      alpha: _kSecondaryLayerAlpha,
+      scaleMul: 1.22 + pulse * 0.62,
     );
     _drawCoverLayer(
       canvas,
@@ -872,19 +883,20 @@ class _FlowingLightPainter extends CustomPainter {
       period: _kPeriod3,
       clockwise: true,
       offset: Offset(
-        _kLightOffset.dx + warp * 0.8,
-        _kLightOffset.dy - low * 0.08,
+        _kLightOffset.dx + warp * 0.4,
+        _kLightOffset.dy - low * 0.03,
       ),
       extraRotation: true,
-      alpha: (_kLightLayerAlpha * (0.7 + mid * 0.5 + hit * 0.45)).round().clamp(
-        0,
-        255,
+      extraSpin: 0,
+      squash: Offset(
+        1.0 + high * 0.03 + hit * 0.05,
+        1.0 - high * 0.02 - hit * 0.035,
       ),
-      scaleMul: 1.38,
+      alpha: _kLightLayerAlpha,
+      scaleMul: 1.38 + pulse * 0.88,
     );
     canvas.drawColor(style.washPrimary, BlendMode.srcOver);
     canvas.drawColor(style.washSecondary, BlendMode.srcOver);
-    canvas.restore();
     canvas.restore();
   }
 
@@ -897,11 +909,13 @@ class _FlowingLightPainter extends CustomPainter {
     required bool clockwise,
     required Offset offset,
     required bool extraRotation,
+    required double extraSpin,
+    required Offset squash,
     required int alpha,
     required double scaleMul,
   }) {
     final turns = (time / period) * 2 * pi;
-    final rotation = clockwise ? turns : -turns;
+    final rotation = (clockwise ? turns : -turns) + extraSpin;
     final extra = extraRotation ? rotation : 0.0;
     final diagonal = max(size.width, size.height) * _kOverscan;
     final coverScale = diagonal / max(image.height.toDouble(), 1.0) * scaleMul;
@@ -922,7 +936,7 @@ class _FlowingLightPainter extends CustomPainter {
       ..translate(rotatePivot, rotatePivot)
       ..rotate(rotation)
       ..translate(-rotatePivot, -rotatePivot)
-      ..scale(coverScale);
+      ..scale(coverScale * squash.dx, coverScale * squash.dy);
     canvas.drawImage(image, Offset.zero, _coverPaint);
     canvas.restore();
     canvas.restore();

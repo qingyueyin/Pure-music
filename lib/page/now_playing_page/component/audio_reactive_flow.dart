@@ -39,29 +39,35 @@ final class AudioReactiveFlowResponse {
 final class AudioReactiveFlowEnvelope {
   static const _release = .12;
 
+  final _BandSmoother _low = _BandSmoother(50);
+  final _BandSmoother _mid = _BandSmoother(100);
+  final _BandSmoother _high = _BandSmoother(1000);
   AudioReactiveFlowResponse _value = AudioReactiveFlowResponse.zero;
 
   AudioReactiveFlowResponse get value => _value;
 
   AudioReactiveFlowResponse update(AudioReactiveFlowResponse target) {
     _value = AudioReactiveFlowResponse(
-      _sanitize(target.low),
-      _sanitize(target.mid),
-      _sanitize(target.high),
+      _low.push(_sanitize(target.low)),
+      _mid.push(_sanitize(target.mid)),
+      _high.push(_sanitize(target.high)),
     );
     return _value;
   }
 
   AudioReactiveFlowResponse release() {
     _value = AudioReactiveFlowResponse(
-      _value.low * (1.0 - _release),
-      _value.mid * (1.0 - _release),
-      _value.high * (1.0 - _release),
+      _low.decay(_release),
+      _mid.decay(_release),
+      _high.decay(_release),
     );
     return _value;
   }
 
   void reset() {
+    _low.reset();
+    _mid.reset();
+    _high.reset();
     _value = AudioReactiveFlowResponse.zero;
   }
 
@@ -69,6 +75,51 @@ final class AudioReactiveFlowEnvelope {
     return value.isFinite && value >= 0
         ? value.clamp(0.0, 1.0).toDouble()
         : 0.0;
+  }
+}
+
+final class _BandSmoother {
+  _BandSmoother(this._peakDivisor);
+
+  final double _peakDivisor;
+  final List<double> _hist = List<double>.filled(4, 0);
+  double _peak = 0;
+  double _smoothed = 0;
+
+  double push(double incoming) {
+    _hist[0] = _hist[1];
+    _hist[1] = _hist[2];
+    _hist[2] = _hist[3];
+    _hist[3] = incoming;
+    final fir =
+        _hist[0] * 0.1 + _hist[1] * 0.2 + _hist[2] * 0.3 + _hist[3] * 0.4;
+    if (fir > _peak) {
+      _peak = fir;
+    } else {
+      _peak *= 1.0 - 1.0 / _peakDivisor;
+    }
+    _smoothed += (_peak - _smoothed) * 0.5;
+    return _smoothed.clamp(0.0, 1.0).toDouble();
+  }
+
+  double decay(double amount) {
+    final keep = (1.0 - amount).clamp(0.0, 1.0).toDouble();
+    _hist[0] *= keep;
+    _hist[1] *= keep;
+    _hist[2] *= keep;
+    _hist[3] *= keep;
+    _peak *= keep;
+    _smoothed *= keep;
+    return _smoothed.clamp(0.0, 1.0).toDouble();
+  }
+
+  void reset() {
+    _hist[0] = 0;
+    _hist[1] = 0;
+    _hist[2] = 0;
+    _hist[3] = 0;
+    _peak = 0;
+    _smoothed = 0;
   }
 }
 
@@ -140,7 +191,7 @@ final class AudioReactiveFlowTransientDetector {
     final rise = math.max(0.0, value - _previous) / reference;
     final excess = math.max(0.0, value - _baseline * 1.12) / reference;
     final transient = math
-        .max(rise * .72, math.min(rise * 1.15, excess * .42))
+        .max(rise * .88, math.min(rise * 1.2, excess * .55))
         .clamp(0.0, 1.0)
         .toDouble();
     final baselineResponse = value > _baseline ? .045 : .14;
@@ -157,12 +208,12 @@ final class AudioReactiveFlowTransientDetector {
 }
 
 final class AudioReactiveFlowPulseEnvelope {
-  static const _attackSeconds = .025;
-  static const _releaseSeconds = .16;
-  static const _targetDecaySeconds = .08;
-  static const _minimumTriggerStrength = .16;
+  static const _attackSeconds = .038;
+  static const _releaseSeconds = .22;
+  static const _targetDecaySeconds = .10;
+  static const _minimumTriggerStrength = .12;
   static const _retriggerDelaySeconds = .045;
-  static const _retriggerLift = .35;
+  static const _retriggerLift = .30;
 
   double _value = 0;
   double _target = 0;
@@ -199,5 +250,38 @@ final class AudioReactiveFlowPulseEnvelope {
     _value = 0;
     _target = 0;
     _retriggerDelayRemaining = 0;
+  }
+}
+
+final class AudioReactiveFlowVisualSpring {
+  static const _attackResponse = 0.16;
+  static const _releaseResponse = 0.22;
+
+  double _value = 0;
+  double _velocity = 0;
+
+  double get value => _value;
+
+  double follow(double target, double deltaSeconds) {
+    final next = target.isFinite ? target.clamp(0.0, 1.0).toDouble() : 0.0;
+    if (!deltaSeconds.isFinite || deltaSeconds <= 0) return _value;
+    final dt = math.min(deltaSeconds, 0.05);
+    final response = next > _value ? _attackResponse : _releaseResponse;
+    final omega = 2 * math.pi / response;
+    final y0 = _value - next;
+    final b = _velocity + omega * y0;
+    final decay = math.exp(-omega * dt);
+    final y = (y0 + b * dt) * decay;
+    _velocity = (b - omega * (y0 + b * dt)) * decay;
+    _value = (next + y).clamp(0.0, 1.0).toDouble();
+    if (_value <= 0 && _velocity < 0) _velocity = 0;
+    if (_value >= 1 && _velocity > 0) _velocity = 0;
+    if (_value < .001 && _velocity.abs() < .001 && next < .001) reset();
+    return _value;
+  }
+
+  void reset() {
+    _value = 0;
+    _velocity = 0;
   }
 }

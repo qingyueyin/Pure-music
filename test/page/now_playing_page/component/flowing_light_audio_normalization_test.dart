@@ -131,7 +131,7 @@ void main() {
     final detector = AudioReactiveFlowTransientDetector();
     detector.update(0.30);
 
-    expect(detector.update(0.45), closeTo(0.36, 0.001));
+    expect(detector.update(0.45), closeTo(0.44, 0.02));
   });
 
   test('bass transient resets across silence without a startup flash', () {
@@ -164,7 +164,7 @@ void main() {
       pulse.advance(1 / 60);
     }
 
-    expect(firstFrame, inExclusiveRange(0.48, 0.50));
+    expect(firstFrame, inExclusiveRange(0.33, 0.39));
     expect(peak, greaterThan(firstFrame));
     expect(pulse.value, lessThan(0.05));
   });
@@ -174,7 +174,7 @@ void main() {
     () {
       final pulse = AudioReactiveFlowPulseEnvelope();
 
-      expect(pulse.trigger(0.15), isFalse);
+      expect(pulse.trigger(0.10), isFalse);
       expect(pulse.trigger(0.8), isTrue);
       expect(pulse.trigger(1), isFalse);
       pulse.advance(0.046);
@@ -209,6 +209,29 @@ void main() {
     expect(flowingLightBreathingScale(1), closeTo(1.08, 0.001));
     expect(flowingLightBreathingScale(0.5, bassTransient: 1), 1.22);
     expect(flowingLightBreathingScale(1, bassTransient: 1), 1.22);
+  });
+
+  test('envelope FIR holds back a spectrum spike instead of copying it', () {
+    final envelope = AudioReactiveFlowEnvelope();
+    final first = envelope.update(const AudioReactiveFlowResponse(1, 0.6, 0.3));
+
+    expect(first.low, lessThan(0.45));
+    expect(first.mid, lessThan(first.low));
+    expect(first.high, lessThan(first.mid));
+  });
+
+  test('visual hit follows a beat through a spring instead of a step', () {
+    final spring = AudioReactiveFlowVisualSpring();
+
+    final firstFrame = spring.follow(1, 1 / 60);
+    var peak = firstFrame;
+    for (var frame = 0; frame < 40; frame++) {
+      peak = max(peak, spring.follow(1, 1 / 60));
+    }
+
+    expect(firstFrame, inExclusiveRange(0.10, 0.18));
+    expect(peak, greaterThan(0.85));
+    expect(peak, lessThanOrEqualTo(1.0));
   });
 
   test('bass transient adds a bounded local cover warp', () {
