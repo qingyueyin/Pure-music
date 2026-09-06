@@ -1498,7 +1498,7 @@ class _LyricsTabContent extends StatelessWidget {
         _GroupEntry(
           icon: Symbols.download,
           title: '歌词来源',
-          subtitle: '本地与在线来源',
+          subtitle: '外置、内嵌与在线来源',
           groupId: 'lyric-source',
         ),
         SizedBox(height: 8.0),
@@ -2679,7 +2679,7 @@ class _DefaultLyricSourceControlState extends State<DefaultLyricSourceControl> {
               ButtonSegment<bool>(
                 value: true,
                 icon: Icon(Symbols.cloud_off),
-                label: Text('本地'),
+                label: Text('外置 / 内嵌'),
               ),
               ButtonSegment<bool>(
                 value: false,
@@ -3284,7 +3284,7 @@ const _settingsGroups = <String, _SettingsGroupDesc>{
     '播放页背景与配色',
     _AppearancePlayerGroup(),
   ),
-  'lyric-source': _SettingsGroupDesc('歌词来源', '本地与在线来源', _LyricSourceGroup()),
+  'lyric-source': _SettingsGroupDesc('歌词来源', '外置、内嵌与在线来源', _LyricSourceGroup()),
   'lyric-content': _SettingsGroupDesc(
     '歌词内容',
     '歌曲信息与文字转换',
@@ -4280,7 +4280,7 @@ class _DesktopWindowGroupState extends State<_DesktopWindowGroup>
         ),
         const SizedBox(height: 16),
         SettingsTile(
-          description: '锁定后鼠标移入时显示',
+          description: '锁定后鼠标移入时隐藏',
           action: Switch(
             value: settings.desktopHoverHide,
             onChanged: (v) =>

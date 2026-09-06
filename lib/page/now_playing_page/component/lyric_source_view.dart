@@ -831,9 +831,12 @@ class SetLyricSourceBtn extends StatelessWidget {
           final nowPlaying = PlayService.instance.playbackService.nowPlaying;
           final lyricService = PlayService.instance.lyricService;
           // 加载中用持久化来源预填，加载完成后用实际命中源
-          final activeSourceType = snapshot.connectionState == ConnectionState.done
+          final activeSourceType =
+              snapshot.connectionState == ConnectionState.done
               ? lyricService.activeLyricSourceType
-              : (nowPlaying == null ? null : lyricSources[nowPlaying.path]?.source);
+              : (nowPlaying == null
+                    ? null
+                    : lyricSources[nowPlaying.path]?.source);
           final isExternal = snapshot.connectionState == ConnectionState.done
               ? lyricService.activeLocalIsExternal
               : null;
@@ -852,9 +855,24 @@ class SetLyricSourceBtn extends StatelessWidget {
   }
 }
 
+String _lyricSourceTooltip(LyricSourceType? sourceType, bool? isExternal) {
+  return switch (sourceType) {
+    LyricSourceType.qq => '歌词来源：QQ',
+    LyricSourceType.ne => '歌词来源：网易',
+    LyricSourceType.kugou => '歌词来源：酷狗',
+    LyricSourceType.amll => '歌词来源：AMLL',
+    LyricSourceType.local => switch (isExternal) {
+      true => '歌词来源：外置',
+      false => '歌词来源：内嵌',
+      null => '歌词来源',
+    },
+    null => '歌词来源',
+  };
+}
+
 class _SetLyricSourceBtn extends StatelessWidget {
   final LyricSourceType? sourceType;
-  // 本地来源细分：true=外置，false=内嵌，null=未确定
+  // 非在线来源细分：true=外置，false=内嵌，null=尚未确定
   final bool? isExternal;
   const _SetLyricSourceBtn({this.sourceType, this.isExternal});
 
@@ -866,18 +884,7 @@ class _SetLyricSourceBtn extends StatelessWidget {
       LyricSourceType.local => Symbols.lyrics,
       _ => Symbols.cloud,
     };
-    final String localSubLabel = switch (isExternal) {
-      true => '外置',
-      false => '内嵌',
-      null => '本地',
-    };
-    final tooltip = switch (sourceType) {
-      null || LyricSourceType.local => '歌词来源：$localSubLabel',
-      LyricSourceType.qq => '歌词来源：QQ',
-      LyricSourceType.ne => '歌词来源：网易',
-      LyricSourceType.kugou => '歌词来源：酷狗',
-      LyricSourceType.amll => '歌词来源：AMLL',
-    };
+    final tooltip = _lyricSourceTooltip(sourceType, isExternal);
     return IconButton(
       tooltip: tooltip,
       onPressed: PlayService.instance.playbackService.nowPlaying == null
@@ -1129,7 +1136,7 @@ class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
               ),
               ListTile(
                 leading: const Icon(Symbols.folder_open),
-                title: const Text('选择本地歌词文件'),
+                title: const Text('选择外置歌词文件'),
                 subtitle: selectedLocalPath == null
                     ? null
                     : Text(
@@ -1158,7 +1165,7 @@ class _SetLyricSourceDialogState extends State<SetLyricSourceDialog> {
               ),
               ListTile(
                 leading: const Icon(Symbols.restart_alt),
-                title: const Text('自动匹配本地歌词'),
+                title: const Text('自动匹配外置 / 内嵌'),
                 selected: isAutomaticLocalSelected,
                 selectedTileColor: scheme.secondaryContainer.withValues(
                   alpha: 0.5,

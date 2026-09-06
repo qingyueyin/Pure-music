@@ -6,11 +6,7 @@ import 'package:flutter/widgets.dart';
 const lyricSmoothTransitionDuration = Duration(milliseconds: 700);
 const lyricSmoothTransitionCurve = Cubic(0.25, 0.0, 0.2, 1.0);
 
-double lyricSmoothTransitionInterpolator(
-  double t,
-  double start,
-  double end,
-) {
+double lyricSmoothTransitionInterpolator(double t, double start, double end) {
   final progress = lyricSmoothTransitionCurve.transform(t);
   return start + (end - start) * progress;
 }
@@ -43,12 +39,7 @@ bool canStartLyricStagger({
   return (nextIndex - previousIndex).abs() <= 10;
 }
 
-enum LyricUserScrollPhase {
-  ignored,
-  started,
-  updated,
-  ended,
-}
+enum LyricUserScrollPhase { ignored, started, updated, ended }
 
 class LyricUserScrollTracker {
   bool _isActive = false;
@@ -106,7 +97,8 @@ class _LyricStaggerTransitionState extends State<LyricStaggerTransition>
   void didUpdateWidget(covariant LyricStaggerTransition oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.enabled != oldWidget.enabled ||
-        widget.generation != oldWidget.generation) {
+        widget.generation != oldWidget.generation ||
+        widget.shiftY != oldWidget.shiftY) {
       _scheduleTransition();
     }
   }
@@ -157,11 +149,9 @@ class _LyricStaggerTransitionState extends State<LyricStaggerTransition>
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
-        animation: _controller,
-        builder: (context, child) => Transform.translate(
-          offset: Offset(0, _controller.value),
-          child: child,
-        ),
-        child: widget.child,
-      );
+    animation: _controller,
+    builder: (context, child) =>
+        Transform.translate(offset: Offset(0, _controller.value), child: child),
+    child: widget.child,
+  );
 }
