@@ -18,7 +18,9 @@ void main() {
       );
       expect(LrcLine.isLyricMetadataLine("I said: don't leave"), isFalse);
       expect(
-          LrcLine.isLyricMetadataLine('You - me, against the world'), isFalse);
+        LrcLine.isLyricMetadataLine('You - me, against the world'),
+        isFalse,
+      );
       expect(LrcLine.isLyricMetadataLine('They provide the light'), isFalse);
     });
 
@@ -50,10 +52,7 @@ void main() {
       expect(LrcLine.isLyricMetadataLine('执行制作：Someone'), isTrue);
       expect(LrcLine.isLyricMetadataLine('后期协力：Someone'), isTrue);
       expect(LrcLine.isLyricMetadataLine('和声编写及演唱：Someone'), isTrue);
-      expect(
-        LrcLine.isLyricMetadataLine('吉他、贝斯及键盘演奏：Someone'),
-        isTrue,
-      );
+      expect(LrcLine.isLyricMetadataLine('吉他、贝斯及键盘演奏：Someone'), isTrue);
       expect(LrcLine.isLyricMetadataLine('周杰伦 人声录制：Someone'), isTrue);
       const additionalCredits = <String>[
         '【乐器：吉他 / 贝斯】',
@@ -79,6 +78,83 @@ void main() {
         'Recording Location: Some Studio',
         'Mixing Studio: Some Studio',
         'Mastered at: Some Studio',
+        '音乐总监：梁翘柏',
+        '音乐设计：Eric',
+        '改编编曲：达日丹',
+        '改编词：赵潮',
+        '乐队队长/键盘：达日丹',
+        '伴唱：薛之谦',
+        '女声：孟楠',
+        '童声：少儿艺术团',
+        '合音：薛之谦/张石狄',
+        '缩混：刘巨然/许钧',
+        '电贝斯：Ray Vaughn Covington',
+        '鼓和钢琴：Soulboy',
+        '弦乐总监：Marc Cargill',
+        '弦乐编配：田汨',
+        '出品人/总监制：赵凯',
+        '次中音萨克斯/长笛：Charlie',
+        '主歌混音：Eric',
+        '编曲 Arrangement：李荣浩 Ronghao Li',
+        '词Lyrics by：崔惟楷 Luke "skywalker" Tsui',
+        'Program：尹岳洋',
+        'Produce：米津玄师',
+        'Mix：Giga',
+        'Rec & Mix Engineer：Toru Matake',
+        'Sound Director：Kohei Matsumoto',
+        'Brass Arrange：100kai Outo',
+        'Other Instrumental：100回呕吐/ACAね',
+        'Electric Guitar：Brian May',
+        'Bass Guitar：John Deacon',
+        'Background Vocals：Roger Taylor',
+        'Lead Vocals：Freddie Mercury',
+        'Tack Piano：Freddie Mercury',
+        'Finger Snaps：Freddie Mercury',
+        'Assistant Engineer：Joseph Wander',
+        'Modular Synth by：Benjamin Lanz',
+        'Trombone by：Dave Nelson',
+        'Lyricsby：MaxMartin/ArianaGrande',
+        'Composedby：MaxMartin',
+        '【セルフライナーノーツ：思い入れの强いセカンドシングル】',
+        '翻译水平有限 授权网易云音乐使用',
+        '[ti:マトリョシカ]',
+        '[tool:LDDC v0.9.3]',
+        '主唱：乔西',
+        '制作人（美国）：Xueran Chen',
+        '中文词：小蝶',
+        '混音Mixing：TINY7',
+        '编曲 Music Arrangement：YELLOW黄宣',
+        '低音吉他 BASS GUITAR：宁子达',
+        '吉他/贝斯Guitar&Bass：吴余涛',
+        '声乐指导：刘芳',
+        '官方指定音乐合作伙伴：韶愔音乐娱乐(北京)有限公司',
+        '制作：塞达音乐',
+        'Rap填词：严艺丹',
+        '贝司：韩阳',
+        '古筝：Someone',
+        'Engineered by：Jeremy Hatcher',
+        'All instruments by：Tat Tong',
+        'Produced and Mixed by：Darren Seltmann',
+        'Upright Piano：Tyler Johnson',
+        'Pedal Steel by：Mikey Freedom Hart',
+        '1st Viola：Bruce White',
+        'Saxophones, Clarinet by：Evan Smith',
+        'Strings & Brass Recorded at：RAK Studios',
+        '呗：IA',
+        '音乐：ryo',
+        '曲絵: 瀬川あをじ',
+        'PV: 羽生まゐご',
+        'Executive Produce：川村元気',
+        '【セルフライナーノーツ：思い入れの强いセカンドシングル。',
+        'Self Liner Notes：压倒性的嗓音',
+        '藤井风个人自序：循序渐进逐渐达到高潮',
+        '[hash:34c27556c6f321fc10342466002826bb]',
+        'Vocal录音室：Lights Up Studio',
+        '封面设计 Cover Designer：何晓婷',
+        '中国笛：Chris Bleth',
+        '口哨 Whistle：DT',
+        '编曲 & 键盘 MUSIC ARRANGEMENT & KEYBOARDS：吴庆隆',
+        'Drums鼓：荒井十一',
       ];
       for (final credit in additionalCredits) {
         expect(LrcLine.isLyricMetadataLine(credit), isTrue, reason: credit);
@@ -86,11 +162,7 @@ void main() {
     });
 
     test('preserves artist labels', () {
-      const labels = <String>[
-        '艺术家：Someone',
-        '藝術家: Someone',
-        'Artist: Someone',
-      ];
+      const labels = <String>['艺术家：Someone', '藝術家: Someone', 'Artist: Someone'];
       for (final label in labels) {
         expect(LrcLine.isLyricMetadataLine(label), isFalse, reason: label);
       }
@@ -208,13 +280,7 @@ void main() {
       final mixedLine = SyncLyricLine(
         Duration.zero,
         const Duration(seconds: 2),
-        [
-          SyncLyricWord(
-            Duration.zero,
-            const Duration(seconds: 2),
-            '我说：别走',
-          ),
-        ],
+        [SyncLyricWord(Duration.zero, const Duration(seconds: 2), '我说：别走')],
         '作词：Someone',
       );
       final creditLines = <LrcLine>[
@@ -238,40 +304,30 @@ void main() {
     });
 
     test('AMLL TTML only blanks its exact creator row', () {
-      final creatorLine = TtmlLine(
-        const Duration(seconds: 10),
-        const Duration(seconds: 2),
-        [
-          SyncLyricWord(
-            const Duration(seconds: 10),
-            const Duration(seconds: 2),
-            '【创作者：Someone】',
-          ),
-        ],
-        'Creator: Someone',
-      );
-      final firstLyricLine = TtmlLine(
-        const Duration(seconds: 12),
-        const Duration(seconds: 2),
-        [
-          SyncLyricWord(
-            const Duration(seconds: 12),
-            const Duration(seconds: 2),
-            'Mmm, mmm',
-          ),
-        ],
-      );
-      final genericMetadataLine = TtmlLine(
-        const Duration(seconds: 14),
-        const Duration(seconds: 2),
-        [
-          SyncLyricWord(
-            const Duration(seconds: 14),
-            const Duration(seconds: 2),
-            '作词：Someone',
-          ),
-        ],
-      );
+      final creatorLine =
+          TtmlLine(const Duration(seconds: 10), const Duration(seconds: 2), [
+            SyncLyricWord(
+              const Duration(seconds: 10),
+              const Duration(seconds: 2),
+              '【创作者：Someone】',
+            ),
+          ], 'Creator: Someone');
+      final firstLyricLine =
+          TtmlLine(const Duration(seconds: 12), const Duration(seconds: 2), [
+            SyncLyricWord(
+              const Duration(seconds: 12),
+              const Duration(seconds: 2),
+              'Mmm, mmm',
+            ),
+          ]);
+      final genericMetadataLine =
+          TtmlLine(const Duration(seconds: 14), const Duration(seconds: 2), [
+            SyncLyricWord(
+              const Duration(seconds: 14),
+              const Duration(seconds: 2),
+              '作词：Someone',
+            ),
+          ]);
 
       blankAmllTtmlCreatorLines([
         creatorLine,
@@ -298,14 +354,8 @@ void main() {
       expect(LrcLine.isLyricMetadataLine('混音在回忆里：我听见你'), isFalse);
       expect(LrcLine.isLyricMetadataLine('女：'), isFalse);
       expect(LrcLine.isLyricMetadataLine('我说：别走'), isFalse);
-      expect(
-        LrcLine.isLyricMetadataLine('把回忆重新制作：送给你'),
-        isFalse,
-      );
-      expect(
-        LrcLine.isLyricMetadataLine('你的声音与吉他：都留在雨里'),
-        isFalse,
-      );
+      expect(LrcLine.isLyricMetadataLine('把回忆重新制作：送给你'), isFalse);
+      expect(LrcLine.isLyricMetadataLine('你的声音与吉他：都留在雨里'), isFalse);
       expect(
         LrcLine.isLyricMetadataLine('I was recorded by the river: all night'),
         isFalse,
@@ -327,25 +377,21 @@ void main() {
         LrcLine.isLyricMetadataLine('This company keeps me waiting'),
         isFalse,
       );
+      expect(LrcLine.isLyricMetadataLine('摇摆不定的我染上紫色（翻译：Mes）'), isFalse);
+      expect(LrcLine.isLyricMetadataLine('无法解决的荒谬之处：学校泳装'), isFalse);
+      expect(
+        LrcLine.isLyricMetadataLine(
+          'I close my eyes and the flashback starts:',
+        ),
+        isFalse,
+      );
     });
 
     test('blanks standalone company and publishing lines at the header', () {
       final metadataLines = <LrcLine>[
-        LrcLine(
-          Duration.zero,
-          '北京星河文化传媒有限公司',
-          requiredIsBlank: false,
-        ),
-        LrcLine(
-          const Duration(seconds: 1),
-          '星河唱片公司',
-          requiredIsBlank: false,
-        ),
-        LrcLine(
-          const Duration(seconds: 2),
-          '星河音乐出版',
-          requiredIsBlank: false,
-        ),
+        LrcLine(Duration.zero, '北京星河文化传媒有限公司', requiredIsBlank: false),
+        LrcLine(const Duration(seconds: 1), '星河唱片公司', requiredIsBlank: false),
+        LrcLine(const Duration(seconds: 2), '星河音乐出版', requiredIsBlank: false),
         LrcLine(
           const Duration(seconds: 3),
           'Universal Music Publishing Group',
@@ -444,9 +490,11 @@ void main() {
         LyricFormat.local,
       );
 
-      final first = lyric!.lines.firstWhere(
-        (line) => line is SyncLyricLine && line.words.isNotEmpty,
-      ) as SyncLyricLine;
+      final first =
+          lyric!.lines.firstWhere(
+                (line) => line is SyncLyricLine && line.words.isNotEmpty,
+              )
+              as SyncLyricLine;
       expect(
         first.words.map((word) => word.content).join().trim(),
         "I can see you're standing on the edge",
@@ -483,18 +531,14 @@ void main() {
         '我看见你正站在悬崖边缘',
       );
       final lines = <LyricLine>[
-        SyncLyricLine(
-          Duration.zero,
-          const Duration(milliseconds: 300),
-          [
-            SyncLyricWord(
-              Duration.zero,
-              const Duration(milliseconds: 300),
-              '母带后期处理录音室 Mastering Studio：原艾母带工程 '
-              '东京 Mugwort Mastering Tokyo',
-            ),
-          ],
-        ),
+        SyncLyricLine(Duration.zero, const Duration(milliseconds: 300), [
+          SyncLyricWord(
+            Duration.zero,
+            const Duration(milliseconds: 300),
+            '母带后期处理录音室 Mastering Studio：原艾母带工程 '
+            '东京 Mugwort Mastering Tokyo',
+          ),
+        ]),
         lyricLine,
       ];
 
@@ -511,13 +555,13 @@ void main() {
         (
           'Too Good At Goodbyes - Sam Smith',
           'Too Good At Goodbyes',
-          ['Sam Smith']
+          ['Sam Smith'],
         ),
         ('我要的幸福 - 孙燕姿', '我要的幸福', ['孙燕姿']),
         (
           'Beautiful Things - Benson Boone',
           'Beautiful Things',
-          ['Benson Boone']
+          ['Benson Boone'],
         ),
       ];
 
@@ -544,61 +588,68 @@ void main() {
       }
     });
 
-    test('matches title versions and artist aliases without exact spelling',
-        () {
-      const samples = <(String, String, List<String>)>[
-        ('大人中 (Live Version) - Crowd Lu', '大人中', ['卢广仲 (Crowd Lu)']),
-        ('光年之外（重混版） - G.E.M.', '光年之外', ['G.E.M.邓紫棋']),
-        ('晴天 Remix - 周杰倫', '晴天', ['周杰伦']),
-        (
-          'exile - Taylor Swift feat. Bon Iver',
-          'exile (Live)',
-          ['Taylor Swift', 'Bon Iver'],
-        ),
-        ('光年之外 (Light Years Away) - 邓紫棋', '光年之外', ['G.E.M.邓紫棋']),
-        (
-          'みんなの謎なぞ - 100回嘔吐/歌愛ユキ/v flower',
-          'みんなの謎なぞ',
-          ['100回嘔吐/歌愛ユキ/v flower'],
-        ),
-        ('心的距离(国) - 陈奕迅 (Eason Chan)', '心的距离', ['陈奕迅']),
-        ('♪藤井风 - もうええわ 算了吧', 'もうええわ', ['藤井風']),
-        (
-          'Born Again ft. Doja Cat & RAYE - LISA/Doja Cat/RAYE',
-          'Born Again',
-          ['LISA/Doja Cat/RAYE'],
-        ),
-        ('Song Name - Artist Name', 'Song Name', ['Artist Name']),
-        ('Artist Name - Song Name', 'Song Name', ['Artist Name']),
-        (
-          'Artist Name - Song Name (Remix/Explicit)',
-          'Song Name',
-          ['Artist Name'],
-        ),
-      ];
+    test(
+      'matches title versions and artist aliases without exact spelling',
+      () {
+        const samples = <(String, String, List<String>)>[
+          ('大人中 (Live Version) - Crowd Lu', '大人中', ['卢广仲 (Crowd Lu)']),
+          ('光年之外（重混版） - G.E.M.', '光年之外', ['G.E.M.邓紫棋']),
+          ('晴天 Remix - 周杰倫', '晴天', ['周杰伦']),
+          (
+            'exile - Taylor Swift feat. Bon Iver',
+            'exile (Live)',
+            ['Taylor Swift', 'Bon Iver'],
+          ),
+          ('光年之外 (Light Years Away) - 邓紫棋', '光年之外', ['G.E.M.邓紫棋']),
+          (
+            'みんなの謎なぞ - 100回嘔吐/歌愛ユキ/v flower',
+            'みんなの謎なぞ',
+            ['100回嘔吐/歌愛ユキ/v flower'],
+          ),
+          ('心的距离(国) - 陈奕迅 (Eason Chan)', '心的距离', ['陈奕迅']),
+          ('寂寞先生 - 曹格 (Gary Cao)', '寂寞先生', ['曹格']),
+          ('Killer Queen (Remastered 2011) - Queen', 'Killer Queen', ['Queen']),
+          ('机械油 - ずっと真夜中でいいのに。 (永远是深夜有多好｡)', '机械油', ['ずっと真夜中でいいのに。']),
+          ('刻在我心底的名字 (《刻在你心底的名字》 电影主题曲) - 卢广仲', '刻在我心底的名字', ['卢广仲']),
+          ('优しい人 (原唱:音街ウナ) - 芝麻mochi', '优しい人', ['芝麻mochi']),
+          ('♪藤井风 - もうええわ 算了吧', 'もうええわ', ['藤井風']),
+          (
+            'Born Again ft. Doja Cat & RAYE - LISA/Doja Cat/RAYE',
+            'Born Again',
+            ['LISA/Doja Cat/RAYE'],
+          ),
+          ('Song Name - Artist Name', 'Song Name', ['Artist Name']),
+          ('Artist Name - Song Name', 'Song Name', ['Artist Name']),
+          (
+            'Artist Name - Song Name (Remix/Explicit)',
+            'Song Name',
+            ['Artist Name'],
+          ),
+        ];
 
-      for (final sample in samples) {
-        final titleLine = LrcLine(
-          Duration.zero,
-          sample.$1,
-          requiredIsBlank: false,
-        );
-        final lyricLine = LrcLine(
-          const Duration(seconds: 5),
-          '真正的第一句歌词',
-          requiredIsBlank: false,
-        );
-        final lines = <LyricLine>[titleLine, lyricLine];
+        for (final sample in samples) {
+          final titleLine = LrcLine(
+            Duration.zero,
+            sample.$1,
+            requiredIsBlank: false,
+          );
+          final lyricLine = LrcLine(
+            const Duration(seconds: 5),
+            '真正的第一句歌词',
+            requiredIsBlank: false,
+          );
+          final lines = <LyricLine>[titleLine, lyricLine];
 
-        blankMetadataLines(
-          lines,
-          StripOptions(matchTitle: sample.$2, matchArtists: sample.$3),
-        );
+          blankMetadataLines(
+            lines,
+            StripOptions(matchTitle: sample.$2, matchArtists: sample.$3),
+          );
 
-        expect(titleLine.isBlank, isTrue, reason: sample.$1);
-        expect(lyricLine.content, '真正的第一句歌词');
-      }
-    });
+          expect(titleLine.isBlank, isTrue, reason: sample.$1);
+          expect(lyricLine.content, '真正的第一句歌词');
+        }
+      },
+    );
 
     test('blanks a reversed title line with a music-note prefix', () {
       final titleLine = LrcLine(
@@ -617,10 +668,7 @@ void main() {
 
       blankMetadataLines(
         lines,
-        const StripOptions(
-          matchTitle: '调子にのっちゃって',
-          matchArtists: ['藤井風'],
-        ),
+        const StripOptions(matchTitle: '调子にのっちゃって', matchArtists: ['藤井風']),
       );
 
       expect(lines, hasLength(2));
@@ -697,23 +745,49 @@ void main() {
       }
     });
 
-    test('stops the metadata block before a trailing dialogue label', () {
+    test('stops the metadata block before an English singer label', () {
       final metadataLines = <LrcLine>[
         LrcLine(
           Duration.zero,
-          '吉他录制录音棚：劳国贤工作室',
+          'Lyrics by：Taylor Swift',
           requiredIsBlank: false,
         ),
+        LrcLine(
+          const Duration(seconds: 1),
+          'Composed by：Taylor Swift',
+          requiredIsBlank: false,
+        ),
+      ];
+      final singerLabel = LrcLine(
+        const Duration(seconds: 2),
+        'Taylor Swift：',
+        requiredIsBlank: false,
+      );
+      final lyricLine = LrcLine(
+        const Duration(seconds: 3),
+        'Charlie：We don\'t talk anymore',
+        requiredIsBlank: false,
+      );
+      final lines = <LyricLine>[...metadataLines, singerLabel, lyricLine];
+
+      blankMetadataLines(lines);
+
+      expect(metadataLines.every((line) => line.isBlank), isTrue);
+      expect(singerLabel.content, 'Taylor Swift：');
+      expect(singerLabel.isBlank, isFalse);
+      expect(lyricLine.content, 'Charlie：We don\'t talk anymore');
+      expect(lyricLine.isBlank, isFalse);
+    });
+
+    test('stops the metadata block before a trailing dialogue label', () {
+      final metadataLines = <LrcLine>[
+        LrcLine(Duration.zero, '吉他录制录音棚：劳国贤工作室', requiredIsBlank: false),
         LrcLine(
           const Duration(seconds: 1),
           '人声录制录音棚：BIG.J Studio',
           requiredIsBlank: false,
         ),
-        LrcLine(
-          const Duration(seconds: 2),
-          '混音师：赵靖',
-          requiredIsBlank: false,
-        ),
+        LrcLine(const Duration(seconds: 2), '混音师：赵靖', requiredIsBlank: false),
         LrcLine(
           const Duration(seconds: 3),
           '混音母带棚：BIG.J Studio',
@@ -730,11 +804,7 @@ void main() {
         '有些东西',
         requiredIsBlank: false,
       );
-      final lines = <LyricLine>[
-        ...metadataLines,
-        dialogueLabel,
-        lyricLine,
-      ];
+      final lines = <LyricLine>[...metadataLines, dialogueLabel, lyricLine];
 
       blankMetadataLines(lines);
 
