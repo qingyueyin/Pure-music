@@ -1,4 +1,5 @@
 import 'dart:io' as io;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
@@ -260,6 +261,7 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
 
   Future<void> _saveEdit() async {
     setState(() => _isSaving = true);
+    var coverWritten = false;
     try {
       if (_pendingCoverBytes != null) {
         await rust_tag_reader.writeAudioCover(
@@ -267,6 +269,7 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
           bytes: _pendingCoverBytes!,
         );
         audio.evictCoverCache();
+        coverWritten = true;
       }
       final payload = _controllers.buildPayload();
       await rust_tag_reader.writeAudioTags(
@@ -290,7 +293,9 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
     } catch (e, trace) {
       logger.e('保存音频标签失败', error: e, stackTrace: trace);
       if (mounted) {
-        showTextOnSnackBar('保存标签失败，请查看日志');
+        showTextOnSnackBar(
+          coverWritten ? '封面已写入，标签保存失败，请查看日志' : '保存标签失败，请查看日志',
+        );
       }
     } finally {
       if (mounted) {
@@ -1984,6 +1989,7 @@ class _CoverSearchDialogState extends State<_CoverSearchDialog> {
   }
 
   Future<List<int>?> _downloadImage(String url) async {
+    const maxBytes = 8 * 1024 * 1024;
     io.HttpClient? client;
     try {
       client = io.HttpClient();
@@ -1991,11 +1997,12 @@ class _CoverSearchDialogState extends State<_CoverSearchDialog> {
       final request = await client.getUrl(Uri.parse(url));
       final response = await request.close();
       if (response.statusCode != 200) return null;
-      final bytes = <int>[];
+      final builder = BytesBuilder(copy: false);
       await for (final chunk in response) {
-        bytes.addAll(chunk);
+        builder.add(chunk);
+        if (builder.length > maxBytes) return null;
       }
-      return bytes;
+      return builder.takeBytes();
     } catch (_) {
       return null;
     } finally {
