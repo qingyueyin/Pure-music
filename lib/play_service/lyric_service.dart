@@ -41,6 +41,34 @@ bool lyricLineAdvanceIsSeekJump({
   return delta > maxForwardSec;
 }
 
+/// 顺序播放每次只推进一行，避免定时器迟到时一次跳过多行把切换动画吞掉。
+int lyricSequentialAdvanceCursor({
+  required int nextLyricLine,
+  required int posMs,
+  required List<int> lineSwitchStartMs,
+}) {
+  if (nextLyricLine < lineSwitchStartMs.length &&
+      posMs >= lineSwitchStartMs[nextLyricLine]) {
+    return nextLyricLine + 1;
+  }
+  return nextLyricLine;
+}
+
+int? lyricNextAdvanceBoundaryMs({
+  required int posMs,
+  required int nextLyricLine,
+  required List<int> lineSwitchStartMs,
+}) {
+  if (nextLyricLine >= 0 &&
+      nextLyricLine < lineSwitchStartMs.length &&
+      posMs >= lineSwitchStartMs[nextLyricLine]) {
+    return posMs;
+  }
+  final nextStart = _lyricLowerBoundGreater(lineSwitchStartMs, posMs);
+  if (nextStart == -1) return null;
+  return lineSwitchStartMs[nextStart];
+}
+
 int lyricSwitchCursorAt({
   required int timeMs,
   required List<int> switchStartMs,
@@ -277,10 +305,12 @@ int? lyricHighlightDeadlineMsForLine(Lyric lyric, int lineIndex) {
   return null;
 }
 
-class LyricCache {
-  final LinkedHashMap<String, Lyric> _cache = LinkedHashMap();
+typedef _CachedLocalLyric = ({Lyric lyric, bool isExternal});
 
-  Lyric? get(String path) {
+class _LyricCache {
+  final LinkedHashMap<String, _CachedLocalLyric> _cache = LinkedHashMap();
+
+  _CachedLocalLyric? get(String path) {
     final lyric = _cache[path];
     if (lyric != null) {
       _cache.remove(path);
@@ -291,7 +321,7 @@ class LyricCache {
 
   bool containsKey(String path) => _cache.containsKey(path);
 
-  void put(String path, Lyric lyric) {
+  void put(String path, _CachedLocalLyric lyric) {
     if (_cache.containsKey(path)) {
       _cache.remove(path);
     } else if (_cache.length >= _kLyricCacheCapacity) {
@@ -309,7 +339,7 @@ class LyricCache {
   }
 }
 
-final LyricCache _lyricCache = LyricCache();
+final _LyricCache _lyricCache = _LyricCache();
 
 /// 只通知 lyric 变更
 class LyricService extends ChangeNotifier {
@@ -328,7 +358,7 @@ class LyricService extends ChangeNotifier {
   bool _desktopPreludeShown = false;
   int _lyricRequestToken = 0;
   int _prefetchGeneration = 0;
-  final Map<String, Future<Lyric?>> _lyricPrefetches = {};
+  final Map<String, Future<_CachedLocalLyric?>> _lyricPrefetches = {};
   String? _activeLyricPath;
 
   final LyricWritePromptHistory _lyricWritePromptHistory =
@@ -382,11 +412,15 @@ class LyricService extends ChangeNotifier {
   }
 
   int? _nextLyricBoundaryAfter(int posMs) {
-    int? candidate;
-    final nextStart = _lowerBoundGreater(_lineSwitchStartMs, posMs);
-    if (nextStart != -1) {
-      candidate = _lineSwitchStartMs[nextStart];
+    final sequential = lyricNextAdvanceBoundaryMs(
+      posMs: posMs,
+      nextLyricLine: _nextLyricLine,
+      lineSwitchStartMs: _lineSwitchStartMs,
+    );
+    if (sequential != null && sequential <= posMs) {
+      return sequential;
     }
+    int? candidate = sequential;
     if (_hasOverlappingActiveLines) {
       for (final startMs in _lineRenderStartMs) {
         final entryMs = startMs - lyricWordPreSwitchMs;
@@ -408,7 +442,11 @@ class LyricService extends ChangeNotifier {
   void _advanceLyricLineAt(double pos) {
     final previous = _lastPos;
     _lastPos = pos;
-    if (pos + 0.05 < previous) {
+    if (lyricLineAdvanceIsSeekJump(
+      previousPositionSec: previous,
+      nextPositionSec: pos,
+      rate: playService.playbackService.rate.value,
+    )) {
       findCurrLyricLineAt(pos);
       return;
     }
@@ -422,10 +460,11 @@ class LyricService extends ChangeNotifier {
       findCurrLyricLineAt(pos);
       return;
     }
-    while (_nextLyricLine < _lineSwitchStartMs.length &&
-        posMs >= _lineSwitchStartMs[_nextLyricLine]) {
-      _nextLyricLine += 1;
-    }
+    _nextLyricLine = lyricSequentialAdvanceCursor(
+      nextLyricLine: _nextLyricLine,
+      posMs: posMs,
+      lineSwitchStartMs: _lineSwitchStartMs,
+    );
 
     final currLineIndex = _nextLyricLine - 1;
     final activity = _lineActivityForSwitchPosition(currLineIndex, posMs);
@@ -655,13 +694,13 @@ class LyricService extends ChangeNotifier {
   /// 供 widget 使用
   Future<Lyric?> currLyricFuture = Future.value(null);
   LyricSourceType _activeLyricSourceType = LyricSourceType.local;
-  // 本地来源细分：true=外置文件，false=内嵌标签，null=指定外置文件/未加载完
+  // 非在线来源细分：true=外置文件，false=内嵌标签，null=尚未确定
   bool? _activeLocalIsExternal;
 
   /// 当前正在使用的歌词来源（加载期间为预设值，完成后为实际命中源）
   LyricSourceType get activeLyricSourceType => _activeLyricSourceType;
 
-  /// 本地来源时，true=外置文件，false=内嵌标签，null=指定外置文件或未确定
+  /// 非在线来源时，true=外置文件，false=内嵌标签，null=尚未确定
   bool? get activeLocalIsExternal => _activeLocalIsExternal;
 
   /// 当前歌词是否已加载
@@ -1159,10 +1198,6 @@ class LyricService extends ChangeNotifier {
     return layout.toList()..sort();
   }
 
-  int _lowerBoundGreater(List<int> arr, int x) {
-    return _lyricLowerBoundGreater(arr, x);
-  }
-
   List<int> _buildLineStarts(Lyric lyric) {
     return lyric.lines.map(_lyricLineRenderStartMs).toList();
   }
@@ -1307,29 +1342,38 @@ class LyricService extends ChangeNotifier {
   }) async {
     final cacheKey = _localLyricCacheKey(audioPath);
     final selectedPath = lyricSources[audioPath]?.localLyricPath;
-    if (selectedPath != null && !await File(selectedPath).exists()) {
-      _lyricCache.remove(cacheKey);
-      _lyricPrefetches.remove(cacheKey);
-      if (notifyFailure) {
-        showTextOnSnackBar('指定的歌词文件不存在', variant: ToastVariant.error);
+    if (selectedPath != null) {
+      _activeLocalIsExternal = true;
+      if (!await File(selectedPath).exists()) {
+        _lyricCache.remove(cacheKey);
+        _lyricPrefetches.remove(cacheKey);
+        if (notifyFailure) {
+          showTextOnSnackBar('指定的歌词文件不存在', variant: ToastVariant.error);
+        }
+        return null;
       }
-      return null;
     }
     final cached = _lyricCache.get(cacheKey);
-    if (cached != null) return cached;
-    return _lyricPrefetches[cacheKey] ??
-        _readLocalLyric(audioPath, notifyFailure: notifyFailure);
+    if (cached != null) {
+      _activeLocalIsExternal = cached.isExternal;
+      return cached.lyric;
+    }
+    final loaded =
+        await (_lyricPrefetches[cacheKey] ??
+            _readLocalLyric(audioPath, notifyFailure: notifyFailure));
+    if (loaded != null) _activeLocalIsExternal = loaded.isExternal;
+    return loaded?.lyric;
   }
 
-  Future<Lyric?> _readLocalLyric(
+  Future<_CachedLocalLyric?> _readLocalLyric(
     String audioPath, {
     required bool notifyFailure,
   }) async {
     final selectedPath = lyricSources[audioPath]?.localLyricPath;
     if (selectedPath == null) {
       final result = await loadLyricFromAudio(audioPath);
-      if (result != null) _activeLocalIsExternal = result.isExternal;
-      return result?.lyric;
+      if (result == null) return null;
+      return (lyric: result.lyric, isExternal: result.isExternal);
     }
     if (!await File(selectedPath).exists()) {
       if (notifyFailure) {
@@ -1338,13 +1382,20 @@ class LyricService extends ChangeNotifier {
       return null;
     }
 
-    // 指定了外置文件路径，来源明确为外置
-    _activeLocalIsExternal = true;
     final lyric = await loadLyricFromFile(selectedPath);
-    if (lyric == null && notifyFailure) {
-      showTextOnSnackBar('指定的歌词文件读取或解析失败', variant: ToastVariant.error);
+    if (lyric == null) {
+      if (notifyFailure) {
+        showTextOnSnackBar('指定的歌词文件读取或解析失败', variant: ToastVariant.error);
+      }
+      return null;
     }
-    return lyric;
+    return (lyric: lyric, isExternal: true);
+  }
+
+  void _putLocalLyricCache(String cacheKey, Lyric lyric) {
+    final isExternal = _activeLocalIsExternal;
+    if (isExternal == null) return;
+    _lyricCache.put(cacheKey, (lyric: lyric, isExternal: isExternal));
   }
 
   static LyricSourceType _lyricSourceTypeFromResultSource(ResultSource source) {
@@ -1472,7 +1523,7 @@ class LyricService extends ChangeNotifier {
         _nextLyricLine = 0;
         _setCurrLyric(value);
         if (usesLocalLyric) {
-          _lyricCache.put(localCacheKey!, value);
+          _putLocalLyricCache(localCacheKey!, value);
         }
         // 网络歌词加载成功后，安排写入标签提示
         if (isFromWeb || value.source == LyricFormat.web) {
@@ -1621,7 +1672,7 @@ class LyricService extends ChangeNotifier {
     final generation = _prefetchGeneration;
 
     // 触发加载但不等待结果
-    late final Future<Lyric?> future;
+    late final Future<_CachedLocalLyric?> future;
     future = (() async {
       try {
         final value = await _readLocalLyric(path, notifyFailure: false);
@@ -1656,7 +1707,7 @@ class LyricService extends ChangeNotifier {
       if (!_isCurrentLyricRequest(requestToken, audioPath, future)) return;
       if (value != null) {
         _setCurrLyric(value);
-        _lyricCache.put(cacheKey, value);
+        _putLocalLyricCache(cacheKey, value);
       } else {
         _currLyric = null;
       }

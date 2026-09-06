@@ -48,6 +48,54 @@ void main() {
     });
   });
 
+  group('lyricSequentialAdvanceCursor', () {
+    test('advances only one line even if two switch starts are overdue', () {
+      expect(
+        lyricSequentialAdvanceCursor(
+          nextLyricLine: 1,
+          posMs: 9000,
+          lineSwitchStartMs: const [0, 4000, 8000, 12000],
+        ),
+        2,
+      );
+    });
+
+    test('stays put before the next switch start', () {
+      expect(
+        lyricSequentialAdvanceCursor(
+          nextLyricLine: 1,
+          posMs: 3900,
+          lineSwitchStartMs: const [0, 4000, 8000],
+        ),
+        1,
+      );
+    });
+  });
+
+  group('lyricNextAdvanceBoundaryMs', () {
+    test('catches up an overdue line instead of jumping to a future start', () {
+      expect(
+        lyricNextAdvanceBoundaryMs(
+          posMs: 9000,
+          nextLyricLine: 2,
+          lineSwitchStartMs: const [0, 4000, 8000, 12000],
+        ),
+        9000,
+      );
+    });
+
+    test('keeps the next future switch when the cursor is on time', () {
+      expect(
+        lyricNextAdvanceBoundaryMs(
+          posMs: 5000,
+          nextLyricLine: 2,
+          lineSwitchStartMs: const [0, 4000, 8000, 12000],
+        ),
+        8000,
+      );
+    });
+  });
+
   group('lyricSwitchCursorAt', () {
     test('hint advances at the next line pre-switch', () {
       expect(
