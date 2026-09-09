@@ -52,13 +52,13 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/fonts/MiSans/MiSansVF.ttf
+    - assets/fonts/Pretendard/PretendardVariable.ttf
     - app_icon.ico
   shaders:
     - assets/shaders/mesh_gradient_runtime.frag
     - assets/shaders/pulse_gaussian.frag
     - assets/shaders/soft_mesh_gradient.frag
   fonts:
-    - family: MiSans
+    - family: Pretendard Variable
       fonts:
-        - asset: assets/fonts/MiSans/MiSansVF.ttf
+        - asset: assets/fonts/Pretendard/PretendardVariable.ttf

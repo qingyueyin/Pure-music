@@ -31,6 +31,7 @@ import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/taskbar_thumbnail_service.dart';
 import 'package:pure_music/component/app_scroll_behavior.dart';
+import 'package:pure_music/core/app_fonts.dart';
 import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/core/immersive.dart';
 import 'package:pure_music/core/memory_monitor.dart';
@@ -349,12 +350,15 @@ class _EntryState extends State<Entry>
     final defaultTextTheme = isDark
         ? Typography.material2021().white
         : Typography.material2021().black;
-    final textTheme = fontFamily != null
-        ? defaultTextTheme.apply(fontFamily: fontFamily)
-        : defaultTextTheme;
+    final familyFallback = appFontFamilyFallback(fontFamily);
+    final textTheme = defaultTextTheme.apply(
+      fontFamily: fontFamily,
+      fontFamilyFallback: familyFallback,
+    );
 
     return ThemeData(
       fontFamily: fontFamily,
+      fontFamilyFallback: familyFallback,
       colorScheme: colorScheme,
       brightness: colorScheme.brightness,
       primaryColor: primarySurfaceColor,

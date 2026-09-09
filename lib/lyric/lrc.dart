@@ -216,7 +216,7 @@ class Lrc extends Lyric {
   bool _hasWordTimestamps(String text) {
     return RegExp(r'<\d+:\d{2}(?:\.\d+)>').hasMatch(text) ||
         RegExp(
-          r'<\d+>[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]',
+          r'<\d+>[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]',
         ).hasMatch(text);
   }
 
@@ -237,6 +237,20 @@ class Lrc extends Lyric {
       // 两行都有逐词标签 → 数据源按 原文、翻译 顺序排列
       a.translation = _extractTranslation(b.content, separator);
       return a;
+    }
+
+    // 韩文对纯拉丁：韩文固定原文（罗马音启发式对韩语拼音不稳）。
+    // 韩文对中/日：按行序，避免把中文原文抢走。
+    final aHasHangul = _hasHangul(a.content);
+    final bHasHangul = _hasHangul(b.content);
+    if (aHasHangul != bHasHangul) {
+      final original = aHasHangul ? a : b;
+      final other = aHasHangul ? b : a;
+      final otherText = _stripTags(other.content);
+      if (!_hasAsianChars(otherText)) {
+        original.romanLyric = otherText;
+        return original;
+      }
     }
 
     // 都没有逐词标签，第一行永远是原文
@@ -289,15 +303,27 @@ class Lrc extends Lyric {
     if (linesWithTags.isNotEmpty) {
       primary = linesWithTags.first;
     } else if (group.length >= 3) {
-      // 3 行以上: 第 1 行是原文，第 2 行纯拉丁→罗马音，其余是翻译
-      primary = group[0] as LrcLine;
+      final first = group[0] as LrcLine;
+      if (_hasAsianChars(first.content)) {
+        primary = first;
+      } else {
+        LrcLine? hangulPrimary;
+        for (final line in group) {
+          final l = line as LrcLine;
+          if (_hasHangul(l.content)) {
+            hangulPrimary = l;
+            break;
+          }
+        }
+        primary = hangulPrimary ?? first;
+      }
     } else if (group.length == 2) {
       // 2 行: 有 CJK 的优先做原文
       final a = group[0] as LrcLine;
       final b = group[1] as LrcLine;
-      if (_hasCjk(a.content) && !_hasCjk(b.content)) {
+      if (_hasAsianChars(a.content) && !_hasAsianChars(b.content)) {
         primary = a;
-      } else if (!_hasCjk(a.content) && _hasCjk(b.content)) {
+      } else if (!_hasAsianChars(a.content) && _hasAsianChars(b.content)) {
         primary = b;
       } else {
         primary = a;
@@ -337,9 +363,8 @@ class Lrc extends Lyric {
     return primary;
   }
 
-  /// 判断文本是否含 CJK 字符（中日韩统一表意文字）
-  static bool _hasCjk(String text) {
-    return RegExp(r'[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]').hasMatch(text);
+  static bool _hasHangul(String text) {
+    return RegExp(r'[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]').hasMatch(text);
   }
 
   /// 判断文本是否为罗马音（注音）
@@ -356,7 +381,7 @@ class Lrc extends Lyric {
   /// 检测文本是否含东方文字（CJK 汉字 / 日文假名 / 韩文 Hangul）
   /// 用于统一判断「这行是不是亚洲语言原文/翻译」
   static bool _hasAsianChars(String text) => RegExp(
-    r'[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]',
+    r'[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]',
   ).hasMatch(text);
 
   /// 在同一时间戳的歌词行组中，智能选择最佳的主歌词行（原文）。
@@ -421,13 +446,16 @@ class Lrc extends Lyric {
     final katakanaCount = RegExp(
       r'[\u30a0-\u30ff]',
     ).allMatches(stripped).length;
+    final hangulCount = RegExp(
+      r'[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]',
+    ).allMatches(stripped).length;
     final kanaCount = hiraganaCount + katakanaCount;
     final alphaCount = RegExp(r'[a-zA-Z]').allMatches(stripped).length;
 
     if (alphaCount == 0) return false;
 
-    // 有假名或汉字 → 不是罗马音
-    if (cjkCount > 0 || kanaCount > 0) return false;
+    // 有假名、汉字或韩文 → 不是罗马音
+    if (cjkCount > 0 || kanaCount > 0 || hangulCount > 0) return false;
 
     // 纯英文文本的排除规则
 
@@ -771,10 +799,9 @@ class Lrc extends Lyric {
               continue;
             }
             final text = group[i].words.map((w) => w.content).join().trim();
-            posRole[i] =
-                (!_hasAsianChars(text) || _isRomanizationStatic(text))
-                    ? kRomanization
-                    : kTranslation;
+            posRole[i] = (!_hasAsianChars(text) || _isRomanizationStatic(text))
+                ? kRomanization
+                : kTranslation;
           }
           sampleRoles.putIfAbsent(group.length, () => []).add(posRole);
         }

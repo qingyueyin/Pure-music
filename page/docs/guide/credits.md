@@ -32,7 +32,7 @@ outline: deep
 | 项目 | 项目链接 |
 |------|----------|
 | Silicon7921 图标 | [项目主页](https://ray.so/icon) |
-| MiSans VF 字体 | [项目主页](https://hyperos.mi.com/font/zh/) |
+| Pretendard Variable 字体 | [项目主页](https://github.com/orioncactus/pretendard) |
 
 ## 参考项目
 

@@ -3,6 +3,7 @@ import 'dart:math' show cos, max, pi;
 import 'package:flutter/foundation.dart' show Listenable, ValueListenable;
 import 'package:flutter/material.dart';
 
+import 'package:pure_music/core/app_fonts.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/lyric_render_config.dart';
 import 'package:pure_music/core/settings.dart';
@@ -504,6 +505,7 @@ class LyricsLinePainter extends CustomPainter {
     final foreground = _blurForeground(color);
     return TextStyle(
       fontFamily: fontFamily,
+      fontFamilyFallback: appFontFamilyFallback(fontFamily),
       fontSize: fontSize,
       color: foreground == null ? color : null,
       foreground: foreground,
@@ -511,9 +513,7 @@ class LyricsLinePainter extends CustomPainter {
       letterSpacing: letterSpacing,
       shadows: shadows,
       height: height,
-      fontVariations: fontFamily == null
-          ? [FontVariation('wght', fontWeight.value.toDouble())]
-          : null,
+      fontVariations: [FontVariation('wght', fontWeight.value.toDouble())],
     );
   }
 
@@ -524,6 +524,7 @@ class LyricsLinePainter extends CustomPainter {
   }) {
     return TextStyle(
       fontFamily: base.fontFamily,
+      fontFamilyFallback: base.fontFamilyFallback,
       fontSize: base.fontSize,
       foreground: foreground,
       fontWeight: base.fontWeight,
@@ -814,13 +815,12 @@ class LyricsLinePainter extends CustomPainter {
     final measureTp = obtainTextPainter();
     TextStyle measureStyle(double fs, FontWeight fw) => TextStyle(
       fontFamily: fontFamily,
+      fontFamilyFallback: appFontFamilyFallback(fontFamily),
       fontSize: fs,
       fontWeight: fw,
       letterSpacing: 0,
       height: config.primaryLineHeight(),
-      fontVariations: fontFamily == null
-          ? [FontVariation('wght', fw.value.toDouble())]
-          : null,
+      fontVariations: [FontVariation('wght', fw.value.toDouble())],
     );
 
     // ── Collect all character positions ─────────────────────────────────────
@@ -2264,13 +2264,12 @@ class LyricsLinePainter extends CustomPainter {
       final charTp = obtainTextPainter(); // 复用单个 TextPainter 测量字符宽度
       final charStyle = TextStyle(
         fontFamily: fontFamily,
+        fontFamilyFallback: appFontFamilyFallback(fontFamily),
         fontSize: fontSize,
         fontWeight: fontWeight,
         letterSpacing: 0,
         height: config.primaryLineHeight(),
-        fontVariations: fontFamily == null
-            ? [FontVariation('wght', fontWeight.value.toDouble())]
-            : null,
+        fontVariations: [FontVariation('wght', fontWeight.value.toDouble())],
       );
       final zhMode = LyricViewController.instance.zhConversionMode;
       final convertedChars = <String>[];

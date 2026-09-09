@@ -128,7 +128,7 @@ flutter_rust_bridge_codegen generate
 <details>
 <summary>开源库</summary>
 
-图标：[Silicon7921](https://ray.so/icon)、字体：[MiSans VF](https://hyperos.mi.com/font/zh/)
+图标：[Silicon7921](https://ray.so/icon)、字体：[Pretendard Variable](https://github.com/orioncactus/pretendard)
 
 BASS、flutter_rust_bridge、dio、lofty、provider、go_router、window_manager、hotkey_manager、flutter_single_instance、material_symbols_icons、sqlite3、file_picker、flutter_volume_controller、pinyin、fl_charset、logger、xml
 
