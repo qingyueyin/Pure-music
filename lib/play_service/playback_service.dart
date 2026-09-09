@@ -17,6 +17,8 @@ import 'package:pure_music/native/rust/api/library_db.dart' as rust_library_db;
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/services/lastfm/lastfm_models.dart';
+import 'package:pure_music/services/lastfm/lastfm_service.dart';
 import 'package:flutter/foundation.dart';
 
 final class _PendingGaplessTransition {
@@ -58,6 +60,10 @@ class PlaybackService extends ChangeNotifier {
   bool _listenRecorded = false;
   int _listenSessionToken = 0;
   int? _listenRecordingToken;
+  double _lastFmAccumulatedSec = 0;
+  bool _lastFmQueued = false;
+  int _lastFmStartedAt = 0;
+  int _lastFmThresholdMs = -1;
   String? _supportPath;
   bool _closed = false;
   int _playlistRevision = 0;
@@ -83,6 +89,7 @@ class PlaybackService extends ChangeNotifier {
   }
 
   PlaybackService(this.playService) {
+    unawaited(LastFmService.instance.ensureLoaded());
     _player.onExclusiveModeChanged = (exclusive) {
       _wasapiExclusive.value = exclusive;
       _rebuildGaplessPreparation();
@@ -872,23 +879,62 @@ class PlaybackService extends ChangeNotifier {
     _listenLastPositionSec = 0;
     _listenRecorded = false;
     _thresholdSec = durationSec > 0 ? math.min(60.0, 0.9 * durationSec) : 0;
+    _lastFmAccumulatedSec = 0;
+    _lastFmQueued = false;
+    _lastFmStartedAt = DateTime.now().millisecondsSinceEpoch;
+    _lastFmThresholdMs = lastFmScrobbleThresholdMs(durationSec.round());
+    final audio = nowPlaying;
+    if (audio != null) {
+      unawaited(
+        LastFmService.instance.updateNowPlaying(
+          title: audio.title,
+          artist: audio.artist,
+          album: audio.album,
+          durationSec: audio.duration,
+        ),
+      );
+    }
   }
 
   void _onPositionUpdate(double positionSec) {
-    if (_closed || _listenRecorded || playerState != PlayerState.playing) {
+    if (_closed || playerState != PlayerState.playing) {
       _listenLastPositionSec = positionSec;
       return;
     }
-    if (_thresholdSec <= 0) return;
 
     final delta = positionSec - _listenLastPositionSec;
     _listenLastPositionSec = positionSec;
     if (delta <= 0 || delta > 2.0) return;
 
-    _listenAccumulatedSec += delta;
-    if (_listenAccumulatedSec >= _thresholdSec) {
-      unawaited(_recordListen());
+    if (!_listenRecorded && _thresholdSec > 0) {
+      _listenAccumulatedSec += delta;
+      if (_listenAccumulatedSec >= _thresholdSec) {
+        unawaited(_recordListen());
+      }
     }
+    _maybeQueueLastFmScrobble(delta);
+  }
+
+  void _maybeQueueLastFmScrobble(double deltaSec) {
+    if (_lastFmQueued || _lastFmThresholdMs < 0) return;
+    _lastFmAccumulatedSec += deltaSec;
+    if (_lastFmAccumulatedSec * 1000 < _lastFmThresholdMs) return;
+    if (!AppSettings.instance.lastFmEnabled ||
+        !LastFmService.instance.isAuthorized) {
+      return;
+    }
+    final audio = nowPlaying;
+    if (audio == null) return;
+    _lastFmQueued = true;
+    unawaited(
+      LastFmService.instance.enqueueScrobble(
+        title: audio.title,
+        artist: audio.artist,
+        album: audio.album,
+        durationSec: audio.duration,
+        startedAt: _lastFmStartedAt,
+      ),
+    );
   }
 
   Future<void> _recordListen() async {
