@@ -1,3 +1,4 @@
+export 'app_fonts.dart';
 export 'cache.dart';
 export 'database.dart';
 export 'enums.dart';

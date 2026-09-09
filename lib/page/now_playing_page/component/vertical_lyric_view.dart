@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:math';
 
+import 'package:pure_music/core/app_fonts.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/lyric_render_config.dart';
 import 'package:pure_music/core/settings.dart';
@@ -797,6 +798,24 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
         theme.textTheme.bodyMedium?.fontFamily ??
         theme.textTheme.bodySmall?.fontFamily;
 
+    TextStyle measureTextStyle({
+      required double fontSize,
+      required FontWeight fontWeight,
+      required double height,
+      required double letterSpacing,
+      List<FontVariation>? fontVariations,
+    }) {
+      return TextStyle(
+        fontFamily: fontFamily,
+        fontFamilyFallback: appFontFamilyFallback(fontFamily),
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        height: height,
+        letterSpacing: letterSpacing,
+        fontVariations: fontVariations,
+      );
+    }
+
     final painter = LyricsLinePainter.obtainTextPainter();
 
     final lineLayoutWidth = lyricLineLayoutWidth(maxWidth);
@@ -865,7 +884,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
       painter.text = TextSpan(
         text: text,
-        style: TextStyle(
+        style: measureTextStyle(
           fontSize: primarySize,
           fontVariations: [FontVariation('wght', weight.toDouble())],
           fontWeight: discreteWeight,
@@ -911,7 +930,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
               line.translation != null) {
             painter.text = TextSpan(
               text: line.translation!,
-              style: TextStyle(
+              style: measureTextStyle(
                 fontSize: transSize,
                 fontVariations: [
                   FontVariation('wght', translationWeight.toDouble()),
@@ -930,7 +949,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
             for (int i = 1; i < parts.length; i++) {
               painter.text = TextSpan(
                 text: parts[i],
-                style: TextStyle(
+                style: measureTextStyle(
                   fontSize: transSize,
                   fontVariations: [
                     FontVariation('wght', translationWeight.toDouble()),
@@ -959,7 +978,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
             final romanWeight = (weight - 150).clamp(100, 900);
             painter.text = TextSpan(
               text: roman,
-              style: TextStyle(
+              style: measureTextStyle(
                 fontSize: transSize * 0.85,
                 fontVariations: [FontVariation('wght', romanWeight.toDouble())],
                 fontWeight: FontWeight
@@ -991,7 +1010,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                 line.translation != null) {
               painter.text = TextSpan(
                 text: line.translation!,
-                style: TextStyle(
+                style: measureTextStyle(
                   fontSize: transSize,
                   fontVariations: [
                     FontVariation('wght', translationWeight.toDouble()),
@@ -1018,7 +1037,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
               for (int i = 1; i < parts.length; i++) {
                 painter.text = TextSpan(
                   text: parts[i],
-                  style: TextStyle(
+                  style: measureTextStyle(
                     fontSize: transSize,
                     fontVariations: [
                       FontVariation('wght', translationWeight.toDouble()),
@@ -1048,7 +1067,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
               final romanWeight = (weight - 150).clamp(100, 900);
               painter.text = TextSpan(
                 text: roman,
-                style: TextStyle(
+                style: measureTextStyle(
                   fontSize: transSize * 0.85,
                   fontVariations: [
                     FontVariation('wght', romanWeight.toDouble()),
@@ -1092,7 +1111,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
           text: hasText
               ? line.bgText!
               : line.bgWords.map((word) => word.content).join(),
-          style: TextStyle(
+          style: measureTextStyle(
             fontSize: bgFontSize,
             fontWeight: bgWeight,
             height: primaryHeight,
@@ -1105,7 +1124,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       if (hasRoman) {
         painter.text = TextSpan(
           text: bgRomanLyric,
-          style: TextStyle(
+          style: measureTextStyle(
             fontSize: bgFontSize * 0.85,
             fontWeight: bgWeight,
             height: primaryHeight,
@@ -1118,7 +1137,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       if (hasTranslation) {
         painter.text = TextSpan(
           text: line.bgTranslation!,
-          style: TextStyle(
+          style: measureTextStyle(
             fontSize: bgFontSize * 0.90,
             fontWeight: bgWeight,
             height: primaryHeight,
