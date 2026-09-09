@@ -151,6 +151,45 @@ class LrcLine extends UnsyncLyricLine {
 class Lrc extends Lyric {
   Lrc(super.lines, super.source, [super.rawText]);
 
+  static const _strongEnglishIndicators = {
+    'the', 'a', 'an',
+    'you', 'he', 'she', 'it', 'we', 'they',
+    'me', 'him', 'her', 'us', 'them',
+    'my', 'your', 'his', 'its', 'our', 'their',
+    'mine', 'yours', 'hers', 'ours', 'theirs',
+    'myself', 'yourself', 'himself', 'herself', 'itself',
+    'ourselves', 'yourselves', 'themselves',
+    'this', 'that', 'these', 'those',
+    'am', 'is', 'are', 'was', 'were', 'been', 'being',
+    'have', 'has', 'had', 'do', 'does', 'did', 'done',
+    'can', 'could', 'will', 'would', 'shall', 'should',
+    'may', 'might', 'must', 'need',
+    'of', 'in', 'on', 'at', 'to', 'for', 'with', 'by', 'from', 'into',
+    'about', 'above', 'across', 'after', 'against', 'along', 'among',
+    'around', 'before', 'behind', 'below', 'beneath', 'beside', 'between',
+    'beyond', 'down', 'during', 'except', 'inside', 'near', 'off',
+    'out', 'outside', 'over', 'through', 'throughout', 'toward', 'under',
+    'underneath', 'until', 'up', 'upon', 'within', 'without',
+    'and', 'or', 'but', 'so', 'because', 'while', 'when', 'if',
+    'though', 'although', 'since', 'unless',
+    "don't", "doesn't", "didn't", "won't", "can't", "couldn't",
+    "shouldn't", "mustn't", "isn't", "aren't", "wasn't", "weren't",
+    "i'm", "you're", "he's", "she's", "it's", "we're", "they're",
+    "i've", "you've", "we've", "they've",
+    "i'll", "you'll", "he'll", "she'll", "we'll", "they'll",
+    "let's", "that's", "there's", "here's", "who's", "what's",
+    "how's", "where's", "why's",
+    "i'd", "you'd", "he'd", "she'd", "we'd", "they'd",
+    'gonna', 'gotta', 'wanna', "ain't", 'gimme', 'lemme',
+    'kinda', 'sorta', 'outta', 'lotsa',
+    'who', 'what', 'where', 'why', 'how',
+    'which', 'whose', 'whom',
+    'not', 'just', 'now', 'then', 'here', 'there',
+    'always', 'never', 'sometimes', 'often', 'usually',
+    'really', 'quite', 'already', 'still', 'yet',
+    'even', 'only', 'also', 'again', 'ever',
+  };
+
   @override
   String toString() {
     return {'type': source, 'lyric': lines}.toString();
@@ -175,14 +214,70 @@ class Lrc extends Lyric {
   ///
   /// 判断优先级：
   /// 1. 有逐词时间戳标签（<mm:ss.xx>）→ 原文
-  /// 2. 纯拉丁字母无 CJK → 罗马音
-  /// 3. 有 CJK/假名 → 原文或翻译
-  /// 4. 都不是罗马音：第一行原文，其余翻译
+  /// 2. 假名 / 西里尔压过纯汉字
+  /// 3. 注音（拼音/罗马音）不当原文
+  /// 4. 其余按行序：第一行非注音是原文，其余按内容进翻译或罗马音
   Lrc _combineLrcLine(String separator, {required bool keepMetadata}) {
     final grouped = <Duration, List<LyricLine>>{};
     for (final line in lines) {
       grouped.putIfAbsent(line.start, () => []).add(line);
     }
+
+    const kOriginal = 0;
+    const kTranslation = 1;
+    const kRomanization = 2;
+    final sampleRoles = <int, List<Map<int, int>>>{};
+    for (final group in grouped.values) {
+      final validLines = group
+          .whereType<LrcLine>()
+          .where((line) => !line.isMetadata)
+          .toList();
+      if (validLines.length < 2) continue;
+      final confident = validLines.any(
+        (line) =>
+            _hasWordTimestamps(line.content) ||
+            _hasKana(line.content) ||
+            _hasCyrillic(line.content),
+      );
+      if (!confident) continue;
+      final primary = _selectPrimaryLine(validLines);
+      final posRole = <int, int>{};
+      for (int i = 0; i < validLines.length; i++) {
+        if (identical(validLines[i], primary)) {
+          posRole[i] = kOriginal;
+          continue;
+        }
+        final text = _stripTags(validLines[i].content);
+        posRole[i] = _isAnnotationTrack(primary.content, text)
+            ? kRomanization
+            : kTranslation;
+      }
+      sampleRoles.putIfAbsent(validLines.length, () => []).add(posRole);
+    }
+    final roleMap = <int, Map<int, int>>{};
+    sampleRoles.forEach((size, list) {
+      final posCounts = <int, Map<int, int>>{};
+      for (final pr in list) {
+        pr.forEach((pos, role) {
+          posCounts
+              .putIfAbsent(pos, () => {})
+              .update(role, (v) => v + 1, ifAbsent: () => 1);
+        });
+      }
+      final map = <int, int>{};
+      posCounts.forEach((pos, counts) {
+        int bestRole = kOriginal;
+        int best = 0;
+        counts.forEach((role, c) {
+          if (c > best) {
+            best = c;
+            bestRole = role;
+          }
+        });
+        map[pos] = bestRole;
+      });
+      roleMap[size] = map;
+    });
 
     final combinedLines = <LrcLine>[];
 
@@ -193,20 +288,25 @@ class Lrc extends Lyric {
           .where((line) => line.isMetadata)
           .toList();
       final validLines = group
-          .where((l) => l is LrcLine && !l.isMetadata)
+          .whereType<LrcLine>()
+          .where((l) => !l.isMetadata)
           .toList();
       if (keepMetadata) combinedLines.addAll(metadataLines);
       if (validLines.isEmpty) continue;
       if (validLines.length == 1) {
-        combinedLines.add(validLines[0] as LrcLine);
-      } else if (validLines.length == 2) {
-        final a = validLines[0] as LrcLine;
-        final b = validLines[1] as LrcLine;
-        combinedLines.add(_combineTwoLines(a, b, separator));
-      } else {
-        final result = _combineMultipleLines(validLines, separator);
-        combinedLines.add(result);
+        combinedLines.add(validLines[0]);
+        continue;
       }
+      int? learnedPrimary;
+      final learned = roleMap[validLines.length];
+      if (learned != null) {
+        learned.forEach((pos, role) {
+          if (role == kOriginal) learnedPrimary = pos;
+        });
+      }
+      combinedLines.add(
+        _combineGroup(validLines, separator, learnedPrimary: learnedPrimary),
+      );
     }
 
     return Lrc(combinedLines, source);
@@ -216,155 +316,149 @@ class Lrc extends Lyric {
   bool _hasWordTimestamps(String text) {
     return RegExp(r'<\d+:\d{2}(?:\.\d+)>').hasMatch(text) ||
         RegExp(
-          r'<\d+>[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]',
+          r'<\d+>[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\u1100-\u11ff\u3130-\u318f\uac00-\ud7af\u0400-\u04ff]',
         ).hasMatch(text);
   }
 
-  /// 合并两行歌词（原文 + 翻译 或 罗马音 + 原文）
-  LrcLine _combineTwoLines(LrcLine a, LrcLine b, String separator) {
-    final aHasTags = _hasWordTimestamps(a.content);
-    final bHasTags = _hasWordTimestamps(b.content);
-
-    if (aHasTags && !bHasTags) {
-      // a 有逐词标签 → a 是原文，b 是翻译
-      a.translation = _extractTranslation(b.content, separator);
-      return a;
-    } else if (!aHasTags && bHasTags) {
-      // b 有逐词标签 → b 是原文，a 是翻译
-      b.translation = _extractTranslation(a.content, separator);
-      return b;
-    } else if (aHasTags && bHasTags) {
-      // 两行都有逐词标签 → 数据源按 原文、翻译 顺序排列
-      a.translation = _extractTranslation(b.content, separator);
-      return a;
-    }
-
-    // 韩文对纯拉丁：韩文固定原文（罗马音启发式对韩语拼音不稳）。
-    // 韩文对中/日：按行序，避免把中文原文抢走。
-    final aHasHangul = _hasHangul(a.content);
-    final bHasHangul = _hasHangul(b.content);
-    if (aHasHangul != bHasHangul) {
-      final original = aHasHangul ? a : b;
-      final other = aHasHangul ? b : a;
-      final otherText = _stripTags(other.content);
-      if (!_hasAsianChars(otherText)) {
-        original.romanLyric = otherText;
-        return original;
-      }
-    }
-
-    // 都没有逐词标签，第一行永远是原文
-    // 第二行：纯拉丁→罗马音，CJK→翻译
-    final aIsRoman = _isRomanization(a.content);
-    final bIsRoman = _isRomanization(b.content);
-
-    if (!aIsRoman && bIsRoman) {
-      // a 是 CJK 原文，b 是拉丁罗马音
-      a.romanLyric = _stripTags(b.content);
-      return a;
-    } else if (aIsRoman && !bIsRoman) {
-      // a 是拉丁原文（如英文歌），b 是 CJK 翻译
-      a.translation = _stripTags(b.content);
-      return a;
-    } else if (aIsRoman && bIsRoman) {
-      // 两行都是拉丁（英文+翻译）：第一行原文，第二行翻译
-      a.translation = _extractTranslation(b.content, separator);
-      return a;
-    } else {
-      // 两行都是 CJK：第一行原文，第二行翻译
-      a.translation = _stripTags(b.content);
-      return a;
-    }
-  }
-
-  /// 合并三行或更多歌词
-  LrcLine _combineMultipleLines(List<LyricLine> group, String separator) {
-    // 分离：有逐词标签的行、罗马音行、普通行
-    final linesWithTags = <LrcLine>[];
-    final romans = <LrcLine>[];
-    final plainLines = <LrcLine>[];
-
-    for (final line in group) {
-      final l = line as LrcLine;
-      if (_hasWordTimestamps(l.content)) {
-        linesWithTags.add(l);
-      } else if (_isRomanization(l.content)) {
-        romans.add(l);
-      } else {
-        plainLines.add(l);
-      }
-    }
-
-    // 确定原文（primary）：
-    // 3+ 行: [0]=原文, [1]纯拉丁→罗马音否则翻译, [2+]=翻译
-    // 2 行: [0]=原文(有CJK) or [1]=原文(有CJK), 另一行为翻译/罗马音
-    // 1 行: 就是原文
-    LrcLine? primary;
-    if (linesWithTags.isNotEmpty) {
-      primary = linesWithTags.first;
-    } else if (group.length >= 3) {
-      final first = group[0] as LrcLine;
-      if (_hasAsianChars(first.content)) {
-        primary = first;
-      } else {
-        LrcLine? hangulPrimary;
-        for (final line in group) {
-          final l = line as LrcLine;
-          if (_hasHangul(l.content)) {
-            hangulPrimary = l;
-            break;
-          }
-        }
-        primary = hangulPrimary ?? first;
-      }
-    } else if (group.length == 2) {
-      // 2 行: 有 CJK 的优先做原文
-      final a = group[0] as LrcLine;
-      final b = group[1] as LrcLine;
-      if (_hasAsianChars(a.content) && !_hasAsianChars(b.content)) {
-        primary = a;
-      } else if (!_hasAsianChars(a.content) && _hasAsianChars(b.content)) {
-        primary = b;
-      } else {
-        primary = a;
-      }
-    } else {
-      primary = group[0] as LrcLine;
-    }
-
-    // 合并非原文行
-    final allNonPrimary = group.where((l) => l != primary).cast<LrcLine>();
-    final romanParts = <String>[];
-    final transParts = <String>[];
-    final primaryHasAsianChars = _hasAsianChars(primary.content);
-
-    for (final line in allNonPrimary) {
-      final text = _stripTags(line.content).trim();
-      if (text.isEmpty) continue;
-      // 亚洲语言原文的纯拉丁副行按罗马音处理，与其他 LRC 格式保持一致。
-      if ((primaryHasAsianChars && !_hasAsianChars(text)) ||
-          _isRomanizationStatic(text)) {
-        romanParts.add(text);
-      } else {
-        transParts.add(text);
-      }
-    }
-
-    // 设置罗马音
-    if (romanParts.isNotEmpty) {
-      primary.romanLyric = romanParts.join(' ');
-    }
-
-    // 设置翻译
-    if (transParts.isNotEmpty) {
-      primary.translation = transParts.join(separator);
-    }
-
+  LrcLine _combineGroup(
+    List<LrcLine> lines,
+    String separator, {
+    int? learnedPrimary,
+  }) {
+    final primary = _selectPrimaryLine(lines, learnedPrimary: learnedPrimary);
+    _assignNonPrimary(
+      primary,
+      lines.where((line) => !identical(line, primary)),
+      separator,
+    );
     return primary;
   }
 
+  /// 同时间多行里选原文：逐字时间戳优先；假名/西里尔压过纯汉字；
+  /// 注音不当原文；韩文对汉字跟行序，避免把中文原文抢走。
+  LrcLine _selectPrimaryLine(List<LrcLine> group, {int? learnedPrimary}) {
+    LrcLine? tagged;
+    LrcLine? kana;
+    LrcLine? cyrillic;
+    LrcLine? hangul;
+    LrcLine? firstNonRoman;
+    for (final line in group) {
+      if (tagged == null && _hasWordTimestamps(line.content)) tagged = line;
+      if (kana == null && _hasKana(line.content)) kana = line;
+      if (cyrillic == null && _hasCyrillic(line.content)) cyrillic = line;
+      if (hangul == null && _hasHangul(line.content)) hangul = line;
+      if (firstNonRoman == null && !_isRomanization(line.content)) {
+        firstNonRoman = line;
+      }
+    }
+    final selected = tagged ?? kana ?? cyrillic;
+    if (selected != null) return selected;
+    // 韩文对纯拉丁固定原文；对汉字跟行序，避免抢走中文原文。
+    if (hangul != null &&
+        !group.any(
+          (line) =>
+              _hasHanzi(line.content) &&
+              !_hasHangul(line.content) &&
+              !_hasKana(line.content),
+        )) {
+      return hangul;
+    }
+    if (learnedPrimary != null &&
+        learnedPrimary >= 0 &&
+        learnedPrimary < group.length &&
+        !_isRomanization(group[learnedPrimary].content)) {
+      return group[learnedPrimary];
+    }
+    return firstNonRoman ?? group.first;
+  }
+
+  void _assignNonPrimary(
+    LrcLine primary,
+    Iterable<LrcLine> others,
+    String separator,
+  ) {
+    final romanParts = <String>[];
+    final transParts = <String>[];
+    for (final line in others) {
+      final extracted = _extractTranslation(line.content, separator);
+      final part = _stripTags(
+        (extracted != null && extracted.isNotEmpty) ? extracted : line.content,
+      ).trim();
+      if (part.isEmpty) continue;
+      if (_isAnnotationTrack(primary.content, part)) {
+        romanParts.add(part);
+      } else {
+        transParts.add(part);
+      }
+    }
+    if (romanParts.isNotEmpty) {
+      primary.romanLyric = romanParts.join(' ');
+    }
+    if (transParts.isNotEmpty) {
+      primary.translation = transParts.join(separator);
+    }
+  }
+
+  static bool _hasKana(String text) {
+    return RegExp(r'[぀-ゟ゠-ヿ]').hasMatch(text);
+  }
+
+  static bool _hasCyrillic(String text) {
+    return RegExp(r'[Ѐ-ӿ]').hasMatch(text);
+  }
+
   static bool _hasHangul(String text) {
-    return RegExp(r'[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]').hasMatch(text);
+    return RegExp(r'[ᄀ-ᇿ㄰-㆏가-힯]').hasMatch(text);
+  }
+
+  static bool _hasHanzi(String text) {
+    return RegExp(r'[一-鿿]').hasMatch(text);
+  }
+
+  /// 注音进罗马音轨；亚洲/西里尔原文后的拉丁默认也是注音，
+  /// 明显英文歌词除外，避免中文原文的英译被当成拼音。
+  static bool _isAnnotationTrack(String primaryText, String part) {
+    if (_isRomanizationStatic(part)) return true;
+    if ((_hasAsianChars(primaryText) || _hasCyrillic(primaryText)) &&
+        !_hasAsianChars(part) &&
+        !_hasCyrillic(part)) {
+      return !_hasEnglishLyricSignals(part);
+    }
+    return false;
+  }
+
+  static bool _hasEnglishLyricSignals(String text) {
+    final stripped = text.replaceAll(RegExp(r'<[^>]*>'), '').trim();
+    if (stripped.isEmpty) return false;
+    if (stripped.contains('&')) return true;
+    if (stripped.contains(' - ') || stripped.contains(' — ')) return true;
+    if (RegExp(r'[.,;!?]').hasMatch(stripped)) return true;
+    if (stripped.contains("'")) return true;
+    if (RegExp(
+      r'[bcdfghjklmnpqrstvwxyz]{3,}',
+    ).hasMatch(stripped.toLowerCase())) {
+      return true;
+    }
+    if (RegExp(
+      r'\b[a-z]+(ing|ed|ly|tion|sion|ment|ness|ful|ous|able|ible|ture|ize|ise)\b',
+      caseSensitive: false,
+    ).hasMatch(stripped)) {
+      return true;
+    }
+    final words = stripped
+        .split(RegExp(r'\s+'))
+        .where((w) => w.isNotEmpty)
+        .toList();
+    for (final w in words) {
+      final clean = w.toLowerCase().replaceAll(RegExp(r"[^a-z']"), '');
+      if (clean.length <= 1) continue;
+      if (_strongEnglishIndicators.contains(clean)) return true;
+    }
+    for (final w in words) {
+      final alpha = w.replaceAll(RegExp(r'[^a-zA-Z]'), '');
+      if (alpha.length > 7) return true;
+    }
+    return false;
   }
 
   /// 判断文本是否为罗马音（注音）
@@ -387,14 +481,12 @@ class Lrc extends Lyric {
   /// 在同一时间戳的歌词行组中，智能选择最佳的主歌词行（原文）。
   ///
   /// 优先级（从高到低）：
-  ///   100 = 东方文字 + 逐字时间戳   → 最有可能是原文（日语/中文/韩语）
-  ///    80 = 拉丁 + 逐字 + 非罗马音   → 英文原文
-  ///    50 = 东方文字，无逐字         → 翻译
-  ///    20 = 拉丁 + 逐字 + 罗马音     → 注音
-  ///    10 = 拉丁，无逐字             → 低置信度
-  ///
-  /// 这既解决了「罗马音/日语/中文翻译」三行格式，
-  /// 也解决了「英文原文 + 中文翻译」的英文歌场景。
+  ///   100 = 假名/韩文/西里尔/汉字 + 逐字时间戳
+  ///    80 = 拉丁歌词 + 逐字（非注音）
+  ///    55 = 假名或西里尔，无逐字（压过纯汉字翻译）
+  ///    40 = 汉字 / 韩文 / 拉丁歌词，无逐字（同分跟行序）
+  ///    20 = 注音 + 逐字
+  ///    10 = 其余
   static int _bestPrimaryIndex(List<SyncLyricLine> group) {
     if (group.length <= 1) return 0;
 
@@ -403,18 +495,24 @@ class Lrc extends Lyric {
 
     for (int i = 0; i < group.length; i++) {
       final text = group[i].words.map((w) => w.content).join();
-      final hasAsian = _hasAsianChars(text);
       final hasWordTs = group[i].words.length > 1;
+      final isRoman = _isRomanizationStatic(text);
+      final hasKana = _hasKana(text);
+      final hasCyrillic = _hasCyrillic(text);
+      final hasAsian = _hasAsianChars(text);
 
       int priority;
-      if (hasAsian && hasWordTs) {
+      if (hasWordTs && (hasAsian || hasCyrillic) && !isRoman) {
         priority = 100;
-      } else if (hasAsian) {
-        priority = 50;
-      } else if (hasWordTs && !_isRomanizationStatic(text)) {
+      } else if (hasWordTs && !isRoman) {
         priority = 80;
-      } else if (hasWordTs) {
+      } else if (hasKana || hasCyrillic) {
+        priority = 55;
+      } else if (hasWordTs && isRoman) {
         priority = 20;
+      } else if (hasAsian || !isRoman) {
+        // 汉字 / 韩文 / 英文歌词同分，跟行序，避免中文翻译抢走英文原文。
+        priority = 40;
       } else {
         priority = 10;
       }
@@ -457,119 +555,43 @@ class Lrc extends Lyric {
     // 有假名、汉字或韩文 → 不是罗马音
     if (cjkCount > 0 || kanaCount > 0 || hangulCount > 0) return false;
 
+    // 带调号的拼音/粤拼（wo3 / ngo5）按注音处理，跳过英文启发式。
+    if (RegExp(r'[a-zA-Z]+[1-6]').hasMatch(stripped)) return true;
+
     // 纯英文文本的排除规则
-
-    // 有 & 符号 → 不是罗马音（标题特征）
     if (stripped.contains('&')) return false;
-
-    // 有空格+横线组合 → 不是罗马音（标题连接符）
     if (stripped.contains(' - ') || stripped.contains(' — ')) return false;
-
-    // 有英文标点 → 不是罗马音
     if (RegExp(r'[.,;!?]').hasMatch(stripped)) return false;
-
-    // 有撇号 → 不是罗马音（英文缩写）
     if (stripped.contains("'")) return false;
 
-    // 计算元音比例
-    // 罗马音（日/韩/中拼音）元音比例通常 ≥ 0.5（CV 音节结构）
-    // 英文歌词元音比例通常 < 0.5（辅音更多）
-    // 例: "kimi no namae wa" → 7元音/13字母 = 0.54 → 罗马音 ✓
-    // 例: "hello world" → 3元音/11字母 = 0.27 → 英文 ✓
-    // 例: "no one knows" → 4元音/11字母 = 0.36 → 英文 ✓
-    final vowelCount = RegExp(
-      r'[aeiou]',
-    ).allMatches(stripped.toLowerCase()).length;
-    final consCount = RegExp(
-      r'[bcdfghjklmnpqrstvwxyz]',
-    ).allMatches(stripped.toLowerCase()).length;
-    final totalLetters = vowelCount + consCount;
-    if (totalLetters > 0) {
-      final vowelRatio = vowelCount / totalLetters;
-      if (vowelRatio < 0.5) return false;
-    }
-
-    // 分析单词
     final words = stripped
         .split(RegExp(r'\s+'))
         .where((w) => w.isNotEmpty)
         .toList();
     if (words.isEmpty) return false;
 
-    // 强英文指示词（罗马音不会用的词）
-    // 关键：只保留最明确的介词、冠词、代词、缩写，不要太多
-    final strongEnglishIndicators = {
-      // 冠词
-      'the', 'a', 'an',
-      // 代词（罗马音不会单独出现这些词）
-      'i', 'you', 'he', 'she', 'it', 'we', 'they',
-      'me', 'him', 'her', 'us', 'them',
-      'my', 'your', 'his', 'its', 'our', 'their',
-      'mine', 'yours', 'hers', 'ours', 'theirs',
-      'myself', 'yourself', 'himself', 'herself', 'itself',
-      'ourselves', 'yourselves', 'themselves',
-      'this', 'that', 'these', 'those',
-      // 系动词
-      'am', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
-      // 助动词
-      'have', 'has', 'had', 'do', 'does', 'did', 'done',
-      'can', 'could', 'will', 'would', 'shall', 'should',
-      'may', 'might', 'must', 'need',
-      // 介词（罗马音绝对不用）
-      // 注意：不包含 'no' — 它是日语罗马音常用助词（の），用于元音比例判别即可
-      'of', 'in', 'on', 'at', 'to', 'for', 'with', 'by', 'from', 'into',
-      'about', 'above', 'across', 'after', 'against', 'along', 'among',
-      'around', 'before', 'behind', 'below', 'beneath', 'beside', 'between',
-      'beyond', 'down', 'during', 'except', 'inside', 'near', 'off',
-      'out', 'outside', 'over', 'through', 'throughout', 'toward', 'under',
-      'underneath', 'until', 'up', 'upon', 'within', 'without',
-      // 连词
-      'and', 'or', 'but', 'so', 'because', 'while', 'when', 'if',
-      'though', 'although', 'since', 'unless',
-      // 缩写
-      "don't", "doesn't", "didn't", "won't", "can't", "couldn't",
-      "shouldn't", "mustn't", "isn't", "aren't", "wasn't", "weren't",
-      "i'm", "you're", "he's", "she's", "it's", "we're", "they're",
-      "i've", "you've", "we've", "they've",
-      "i'll", "you'll", "he'll", "she'll", "we'll", "they'll",
-      "let's", "that's", "there's", "here's", "who's", "what's",
-      "how's", "where's", "why's",
-      "i'd", "you'd", "he'd", "she'd", "we'd", "they'd",
-      // 口语化
-      'gonna', 'gotta', 'wanna', "ain't", 'gimme', 'lemme',
-      'kinda', 'sorta', 'outta', 'lotsa',
-      // 常见英语疑问词
-      'who', 'what', 'where', 'why', 'how',
-      'which', 'whose', 'whom',
-      // 常见英语副词
-      'not', 'just', 'now', 'then', 'here', 'there',
-      'always', 'never', 'sometimes', 'often', 'usually',
-      'really', 'quite', 'already', 'still', 'yet',
-      'even', 'only', 'also', 'again', 'ever',
-    };
-
     final lowerWords = words.map((w) => w.toLowerCase()).toList();
     int indicatorCount = 0;
     for (final w in lowerWords) {
       final clean = w.replaceAll(RegExp(r"[^a-z']"), '');
-      if (strongEnglishIndicators.contains(clean)) indicatorCount++;
+      // 单字母是日/韩罗马音常见音节，不当英文指示词。
+      if (clean.length <= 1) continue;
+      if (_strongEnglishIndicators.contains(clean)) indicatorCount++;
     }
 
     // 有强英文指示词 → 不是罗马音
     if (indicatorCount >= 1) return false;
 
-    // 多单词时按平均词长判断：
-    // 罗马音单词几乎全是 1-3 字母的短音节（CV 结构），
-    // 英文歌词平均词长通常 > 3 字母。
-    // 例: "ko do u su ru ka ge ni" (8词, 平均 2 字母) → 罗马音 ✓
-    // 例: "can you feel my heart" (5词) → 会被 strongEnglishIndicators 拦截
+    // 多单词时按平均词长判断。
+    // 日/韩罗马音、拼音多是短音节，韩文罗马音平均可到 3.5（sa rang hae neo reul）。
+    // 英文歌词平均词长通常更长，且多半已被指示词拦截。
     if (words.length >= 5) {
       final totalLetters = words.fold<int>(
         0,
         (sum, w) => sum + w.replaceAll(RegExp(r'[^a-zA-Z]'), '').length,
       );
       final avgLen = totalLetters / words.length;
-      if (avgLen > 3.0) return false;
+      if (avgLen > 4.0) return false;
     }
 
     // 检测 3+ 连续辅音 → 不可能是罗马音
@@ -799,7 +821,10 @@ class Lrc extends Lyric {
               continue;
             }
             final text = group[i].words.map((w) => w.content).join().trim();
-            posRole[i] = (!_hasAsianChars(text) || _isRomanizationStatic(text))
+            final primaryText = group[primaryIdx].words
+                .map((w) => w.content)
+                .join();
+            posRole[i] = _isAnnotationTrack(primaryText, text)
                 ? kRomanization
                 : kTranslation;
           }
@@ -863,12 +888,11 @@ class Lrc extends Lyric {
             final text = group[i].words.map((w) => w.content).join().trim();
             if (text.isEmpty) continue;
             // 使用抽样角色时按学到的位置判断翻译/注音；
-            // 否则按内容判断：不含东方文字 → 罗马音/拼音，
-            // 不用走 _isRomanizationStatic 的英文词检测（防止 "I love you"
-            // 等英文借词被误判成翻译）。
+            // 否则只把注音（拼音/罗马音）放进罗马音轨，英文歌词进翻译。
+            final primaryText = pri.words.map((w) => w.content).join();
             final isRoman = useLearned
                 ? roleMap[group.length]![i] == kRomanization
-                : (!_hasAsianChars(text) || _isRomanizationStatic(text));
+                : _isAnnotationTrack(primaryText, text);
             if (isRoman) {
               romanParts.add(text);
             } else {
@@ -1657,18 +1681,12 @@ class Lrc extends Lyric {
         }
       }
 
-      // 判断罗马音（仅对没有逐词标签的行使用）
-      // 无东方文字 → 直接判为罗马音，不经过 _isRomanizationStatic 的
-      // 英文词检测（防止 "ko do u su ru ka ge ni" 等多音节 romaji 被
-      // words.length >= 5 规则误杀）。
+      // 判断罗马音（仅对没有逐词标签的行使用）。
+      // 英文歌词不是注音，不能因为无东方文字就进罗马音轨。
       final romanContents = <String>[];
       final otherContents = <String>[];
       for (final c in contentsWithoutTags) {
-        if (!_hasAsianChars(c) || _isRomanizationStatic(c)) {
-          romanContents.add(c);
-        } else {
-          otherContents.add(c);
-        }
+        otherContents.add(c);
       }
 
       // 原文 = 有逐词标签的行（最可靠）；如果没有，从 otherContents 里选标签最多的
@@ -1691,15 +1709,10 @@ class Lrc extends Lyric {
         primaryRaw = contentsWithTags[bestTagIdx];
         primaryIndex = null;
 
-        // 剩余有标签的行：拉丁→罗马音，CJK→翻译
+        // 剩余有标签的行先放进 other，原文确定后再按注音/翻译拆。
         for (int i = 0; i < contentsWithTags.length; i++) {
           if (i == bestTagIdx) continue;
-          final r = contentsWithTags[i];
-          if (!_hasAsianChars(r) || _isRomanizationStatic(r)) {
-            romanContents.add(r);
-          } else {
-            otherContents.add(r);
-          }
+          otherContents.add(contentsWithTags[i]);
         }
       } else if (otherContents.isNotEmpty) {
         int maxTags = -1;
@@ -1726,7 +1739,10 @@ class Lrc extends Lyric {
         translations.add(primaryParts.sublist(1).join(separator ?? '').trim());
       }
 
-      // Process other non-primary lines
+      String? primaryCleaned = primaryText
+          .replaceAll(RegExp(r'<[^>]*>'), '')
+          .trim();
+
       for (int i = 0; i < otherContents.length; i++) {
         if (i == primaryIndex) continue;
         final parts = separator == null
@@ -1738,19 +1754,16 @@ class Lrc extends Lyric {
             : null;
         if (inlineTrans != null && inlineTrans.trim().isNotEmpty) {
           translations.add(inlineTrans.trim());
+          continue;
+        }
+        final cleaned = inlinePrimary.replaceAll(RegExp(r'<[^>]*>'), '').trim();
+        if (cleaned.isEmpty || cleaned == primaryCleaned) continue;
+        if (_isAnnotationTrack(primaryCleaned, cleaned)) {
+          romanContents.add(otherContents[i]);
         } else {
-          final cleaned = inlinePrimary
-              .replaceAll(RegExp(r'<[^>]*>'), '')
-              .trim();
-          if (cleaned.isNotEmpty) translations.add(cleaned);
+          translations.add(cleaned);
         }
       }
-
-      // Extract romanization from identified roman lines
-      // Only extract if different from primary (skip pure English lines that get misclassified)
-      String? primaryCleaned = primaryText
-          .replaceAll(RegExp(r'<[^>]*>'), '')
-          .trim();
 
       for (final r in romanContents) {
         final parts = separator == null ? <String>[r] : r.split(separator);
