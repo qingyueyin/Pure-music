@@ -1,4 +1,5 @@
 import 'package:file_picker/file_picker.dart';
+import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/hotkeys.dart';
 import 'package:pure_music/core/list_action_state.dart';
@@ -569,7 +570,8 @@ class _ManualLyricSearchDialogState extends State<ManualLyricSearchDialog> {
     return GestureDetector(
       onTap: canSwitch ? () => _switchSource(source) : null,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
+        duration: MotionDuration.fast,
+        curve: MotionCurve.standard,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
           color: isActive ? scheme.primaryContainer : Colors.transparent,

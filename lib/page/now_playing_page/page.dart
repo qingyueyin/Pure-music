@@ -494,7 +494,8 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                                     viewMode == NowPlayingViewMode.withPlaylist;
                                 final shouldHide = cursorHidden || inPlaylist;
                                 return AnimatedOpacity(
-                                  duration: const Duration(milliseconds: 150),
+                                  duration: MotionDuration.xFast,
+                                  curve: MotionCurve.standard,
                                   opacity: shouldHide ? 0.0 : 1.0,
                                   child: IgnorePointer(
                                     ignoring: shouldHide,
