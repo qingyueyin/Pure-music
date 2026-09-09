@@ -199,7 +199,9 @@ class _SearchDialogState extends State<SearchDialog> {
           ),
           onPressed: canAddNext ? () => _addSearchResultToNext(audio) : null,
           icon: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 180),
+            duration: MotionDuration.xFast,
+            switchInCurve: MotionCurve.standard,
+            switchOutCurve: MotionCurve.standard,
             child: Icon(
               isQueuedNext ? Symbols.check : Symbols.plus_one,
               key: ValueKey(isQueuedNext),
@@ -306,7 +308,9 @@ class _SearchDialogState extends State<SearchDialog> {
           ValueListenableBuilder(
             valueListenable: _isSearching,
             builder: (context, searching, _) => AnimatedSwitcher(
-              duration: const Duration(milliseconds: 150),
+              duration: MotionDuration.xFast,
+              switchInCurve: MotionCurve.standard,
+              switchOutCurve: MotionCurve.standard,
               child: searching
                   ? const Padding(
                       padding: EdgeInsets.only(top: 8.0),
