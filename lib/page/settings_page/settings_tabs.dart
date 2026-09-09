@@ -32,6 +32,7 @@ import 'package:pure_music/page/settings_page/artist_separator_editor.dart';
 import 'package:pure_music/page/settings_page/settings_group_entry.dart';
 import 'package:pure_music/page/settings_page/hotkey_settings.dart'
     show HotkeySettingsPanel, GlobalHotkeySettingsPanel;
+import 'package:pure_music/page/settings_page/lastfm_settings.dart';
 import 'package:pure_music/page/settings_page/other_settings.dart'
     show AudioEchoLogRecordControl, ReplayGainControl, TransitionControl;
 import 'package:pure_music/native/rust/api/utils.dart' as rust_utils;
@@ -1542,6 +1543,13 @@ class _PlaybackTabContent extends StatelessWidget {
           title: '播放行为',
           subtitle: 'ReplayGain 与切歌过渡',
           groupId: 'playback-behavior',
+        ),
+        SizedBox(height: 8.0),
+        _GroupEntry(
+          icon: Symbols.graphic_eq,
+          title: 'Last.fm',
+          subtitle: '授权账号并提交播放记录',
+          groupId: 'playback-lastfm',
         ),
         SizedBox(height: 8.0),
         _SettingsSectionHeader('任务栏和热键'),
@@ -3301,6 +3309,11 @@ const _settingsGroups = <String, _SettingsGroupDesc>{
     'ReplayGain 与切歌过渡',
     _PlaybackBehaviorGroup(),
   ),
+  'playback-lastfm': _SettingsGroupDesc(
+    'Last.fm',
+    '授权账号并提交播放记录',
+    _PlaybackLastFmGroup(),
+  ),
   'taskbar-control': _SettingsGroupDesc(
     '任务栏',
     '播放按钮与封面预览',
@@ -3924,6 +3937,22 @@ class _PlaybackBehaviorGroup extends StatelessWidget {
         ReplayGainControl(),
         SizedBox(height: 16.0),
         TransitionControl(),
+      ],
+    );
+  }
+}
+
+class _PlaybackLastFmGroup extends StatelessWidget {
+  const _PlaybackLastFmGroup();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+      children: const [
+        _SettingsSectionHeader('Last.fm'),
+        SizedBox(height: 4.0),
+        LastFmSettingsPanel(),
       ],
     );
   }
