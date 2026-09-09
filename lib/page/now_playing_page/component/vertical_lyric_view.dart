@@ -1388,6 +1388,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     _jumpDeltaY = lyricStaggerJumpDeltaY(from: from, to: to);
     if (_jumpDeltaY.abs() > 0.5) {
       _jumpTriggerId++;
+      final triggerId = _jumpTriggerId;
       setState(() {});
       _runProgrammaticScroll(() => scrollController.jumpTo(to));
       _userScrollHoldTimer?.cancel();
@@ -1397,6 +1398,12 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       _needsInitialScroll = false;
       _positionResyncExtensionCount = 0;
       _scheduleDepartingBackgroundVocalRelease();
+      // 补偿只给这一帧，避免稍后新挂上的行把弹簧再放一遍。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_disposed || !mounted) return;
+        if (_jumpTriggerId != triggerId || _jumpDeltaY == 0) return;
+        setState(() => _jumpDeltaY = 0);
+      });
     } else {
       _jumpDeltaY = 0;
       _collapseDepartingBackgroundVocal();

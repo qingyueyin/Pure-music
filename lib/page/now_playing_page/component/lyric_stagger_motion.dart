@@ -96,33 +96,44 @@ class _LyricStaggerTransitionState extends State<LyricStaggerTransition>
   @override
   void didUpdateWidget(covariant LyricStaggerTransition oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.enabled != oldWidget.enabled ||
-        widget.generation != oldWidget.generation ||
-        widget.shiftY != oldWidget.shiftY) {
+    if (widget.enabled != oldWidget.enabled) {
       _scheduleTransition();
+      return;
+    }
+    if (widget.generation != oldWidget.generation) {
+      // 只在新的补偿到来时接上当前位移，shiftY 被清零不能把弹簧打回 0。
+      _scheduleTransition(composeCurrent: widget.shiftY.abs() >= 0.5);
     }
   }
 
-  void _scheduleTransition() {
-    _delayTimer?.cancel();
-    _controller.stop();
+  void _scheduleTransition({bool composeCurrent = false}) {
     if (!widget.enabled ||
         widget.generation <= 0 ||
-        widget.shiftY.abs() < 0.5) {
+        (!composeCurrent && widget.shiftY.abs() < 0.5)) {
+      _delayTimer?.cancel();
+      _controller.stop();
       _controller.value = 0;
       return;
     }
 
-    _controller.value = widget.shiftY;
+    final velocity = composeCurrent ? _controller.velocity : 0.0;
+    final start = composeCurrent
+        ? _controller.value + widget.shiftY
+        : widget.shiftY;
+    final springRunning =
+        composeCurrent && _delayTimer == null && _controller.isAnimating;
+    _delayTimer?.cancel();
+    _controller.stop();
+    _controller.value = start;
     final generation = widget.generation;
-    if (widget.delay <= Duration.zero) {
-      _startSpring(generation);
+    if (springRunning || widget.delay <= Duration.zero) {
+      _startSpring(generation, velocity: velocity);
       return;
     }
     _delayTimer = Timer(widget.delay, () => _startSpring(generation));
   }
 
-  void _startSpring(int generation) {
+  void _startSpring(int generation, {double velocity = 0}) {
     if (!mounted || !widget.enabled || generation != widget.generation) return;
     final spring = SpringDescription.withDampingRatio(
       mass: 1,
@@ -134,7 +145,7 @@ class _LyricStaggerTransitionState extends State<LyricStaggerTransition>
         spring,
         _controller.value,
         0,
-        0,
+        velocity,
         tolerance: const Tolerance(distance: 0.5, velocity: 0.1),
       ),
     );

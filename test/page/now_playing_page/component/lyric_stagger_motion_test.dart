@@ -146,11 +146,107 @@ void main() {
       host(generation: 2, shiftY: 40, delay: Duration.zero),
     );
 
-    expect(_translationY(tester), 40);
+    expect(_translationY(tester), 160);
     await tester.pumpAndSettle();
     expect(_translationY(tester), closeTo(0, 0.01));
     await tester.pump(const Duration(milliseconds: 600));
     expect(_translationY(tester), closeTo(0, 0.01));
+  });
+
+  testWidgets('a newer generation keeps the remaining spring offset',
+      (tester) async {
+    Widget host({
+      required int generation,
+      required double shiftY,
+    }) {
+      return Directionality(
+        textDirection: TextDirection.ltr,
+        child: LyricStaggerTransition(
+          enabled: true,
+          generation: generation,
+          shiftY: shiftY,
+          delay: Duration.zero,
+          child: const SizedBox(key: ValueKey('line'), width: 20, height: 20),
+        ),
+      );
+    }
+
+    await tester.pumpWidget(host(generation: 1, shiftY: 120));
+    await tester.pump(const Duration(milliseconds: 80));
+    final remaining = _translationY(tester);
+    expect(remaining, lessThan(120));
+    expect(remaining, greaterThan(0));
+
+    await tester.pumpWidget(host(generation: 2, shiftY: 40));
+    expect(_translationY(tester), closeTo(remaining + 40, 0.5));
+  });
+
+  testWidgets('clearing shiftY without a new generation keeps the spring',
+      (tester) async {
+    Widget host({
+      required int generation,
+      required double shiftY,
+    }) {
+      return Directionality(
+        textDirection: TextDirection.ltr,
+        child: LyricStaggerTransition(
+          enabled: true,
+          generation: generation,
+          shiftY: shiftY,
+          delay: Duration.zero,
+          child: const SizedBox(key: ValueKey('line'), width: 20, height: 20),
+        ),
+      );
+    }
+
+    await tester.pumpWidget(host(generation: 1, shiftY: 120));
+    await tester.pump(const Duration(milliseconds: 80));
+    final remaining = _translationY(tester);
+    expect(remaining, greaterThan(0));
+
+    await tester.pumpWidget(host(generation: 1, shiftY: 0));
+    expect(_translationY(tester), closeTo(remaining, 0.5));
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(_translationY(tester), lessThan(remaining));
+  });
+
+  testWidgets('a running spring is not delayed again on the next jump',
+      (tester) async {
+    Widget host({
+      required int generation,
+      required double shiftY,
+      required Duration delay,
+    }) {
+      return Directionality(
+        textDirection: TextDirection.ltr,
+        child: LyricStaggerTransition(
+          enabled: true,
+          generation: generation,
+          shiftY: shiftY,
+          delay: delay,
+          child: const SizedBox(key: ValueKey('line'), width: 20, height: 20),
+        ),
+      );
+    }
+
+    await tester.pumpWidget(
+      host(generation: 1, shiftY: 120, delay: Duration.zero),
+    );
+    await tester.pump(const Duration(milliseconds: 80));
+    final remaining = _translationY(tester);
+    expect(remaining, greaterThan(0));
+
+    await tester.pumpWidget(
+      host(
+        generation: 2,
+        shiftY: 40,
+        delay: const Duration(milliseconds: 400),
+      ),
+    );
+    final composed = _translationY(tester);
+    expect(composed, closeTo(remaining + 40, 0.5));
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(_translationY(tester), lessThan(composed));
   });
 
   testWidgets('disabling the effect cancels a delayed spring immediately',
