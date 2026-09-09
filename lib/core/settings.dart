@@ -307,6 +307,7 @@ class AppSettings {
   bool useMaterialYouForTransition = false;
   bool useMaterialYouForControls = false;
   bool keepPitch = true;
+  bool lastFmEnabled = false;
   Set<NowPlayingMode> wavyBarEnabledModes = defaultWavyBarEnabledModes();
   TopBarLyricAnimation topBarLyricAnimation = TopBarLyricAnimation.slideUp;
   bool enableCoverColorExtraction = true;
@@ -668,6 +669,11 @@ class AppSettings {
     if (kp != null) {
       _instance.keepPitch = normalizedBoolSetting(kp, defaultValue: true);
     }
+
+    _instance.lastFmEnabled = normalizedBoolSetting(
+      settingsMap['LastFmEnabled'],
+      defaultValue: false,
+    );
 
     if (settingsMap.containsKey('WavyBarEnabledModes')) {
       _instance.wavyBarEnabledModes = normalizedWavyBarEnabledModes(
@@ -1031,6 +1037,7 @@ class AppSettings {
         'UseMaterialYouForTransition': useMaterialYouForTransition,
         'UseMaterialYouForControls': useMaterialYouForControls,
         'KeepPitch': keepPitch,
+        'LastFmEnabled': lastFmEnabled,
         'WavyBarEnabledModes': NowPlayingMode.toList(wavyBarEnabledModes),
         'TopBarLyricAnimation': topBarLyricAnimation.name,
         'EnableCoverColorExtraction': enableCoverColorExtraction,
