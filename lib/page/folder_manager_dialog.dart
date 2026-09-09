@@ -3,6 +3,7 @@ import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/component/build_index_state_view.dart';
+import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/danger_confirm_dialog.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/lyric/lyric_source.dart';
@@ -351,7 +352,9 @@ class _FolderManagerDialogState extends State<FolderManagerDialog> {
               ),
               Expanded(
                 child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 150),
+                  duration: MotionDuration.xFast,
+                  switchInCurve: MotionCurve.standard,
+                  switchOutCurve: MotionCurve.standard,
                   child: editing
                       ? folders.isEmpty
                             ? const _EmptyManagedFolderState()

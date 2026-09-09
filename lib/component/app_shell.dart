@@ -150,7 +150,8 @@ class _AppBackgroundState extends State<_AppBackground> {
                 : _backgroundImage(imagePath),
           ),
           AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
+            duration: MotionDuration.fast,
+            curve: MotionCurve.standard,
             color: maskColor.withValues(alpha: maskAlpha),
           ),
         ],

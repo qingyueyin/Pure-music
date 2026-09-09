@@ -411,8 +411,9 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
                               return const SizedBox(
                                 width: 156,
                                 height: 156,
-                                child:
-                                    Center(child: CircularProgressIndicator()),
+                                child: Center(
+                                  child: CircularProgressIndicator(),
+                                ),
                               );
                             }
                             if (snapshot.data == null) return placeholder;
@@ -549,7 +550,9 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
               tooltip: '编辑内嵌歌词',
               onPressed: () => _showLyricsEditDialog(context, scheme),
               style: IconButton.styleFrom(
-                shape: RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
+                shape: RoundedRectangleBorder(
+                  borderRadius: AppRadius.smCircular,
+                ),
               ),
               icon: const Icon(Symbols.edit, size: 18),
             ),
@@ -1340,7 +1343,9 @@ class _LyricsEditDialogState extends State<_LyricsEditDialog> {
 
   Future<void> _loadEmbeddedLyric() async {
     try {
-      final lyric = await rust_tag_reader.getLyricFromPath(path: widget.audio.path);
+      final lyric = await rust_tag_reader.getLyricFromPath(
+        path: widget.audio.path,
+      );
       if (!mounted) return;
       setState(() {
         _ctrl.text = lyric ?? '';
@@ -1473,7 +1478,8 @@ class _FetchLyricFromNetDialog extends StatefulWidget {
   final Audio audio;
 
   @override
-  State<_FetchLyricFromNetDialog> createState() => _FetchLyricFromNetDialogState();
+  State<_FetchLyricFromNetDialog> createState() =>
+      _FetchLyricFromNetDialogState();
 }
 
 class _FetchLyricFromNetDialogState extends State<_FetchLyricFromNetDialog> {
@@ -1528,35 +1534,44 @@ class _FetchLyricFromNetDialogState extends State<_FetchLyricFromNetDialog> {
     _LyricNetSource source,
   ) async {
     return switch (source) {
-      _LyricNetSource.qq => (await net_api.qqSearchLyric(keyword: query))
-          .map((e) => _LyricSearchItem(
+      _LyricNetSource.qq =>
+        (await net_api.qqSearchLyric(keyword: query))
+            .map(
+              (e) => _LyricSearchItem(
                 source: source,
                 id: e.id,
                 title: e.title,
                 artist: e.artist,
                 album: e.album,
                 extras: {'id': e.id, 'mid': e.mid},
-              ))
-          .toList(),
-      _LyricNetSource.ne => (await net_api.neSearchLyric(keyword: query))
-          .map((e) => _LyricSearchItem(
+              ),
+            )
+            .toList(),
+      _LyricNetSource.ne =>
+        (await net_api.neSearchLyric(keyword: query))
+            .map(
+              (e) => _LyricSearchItem(
                 source: source,
                 id: e.id,
                 title: e.title,
                 artist: e.artist,
                 album: e.album,
-              ))
-          .toList(),
-      _LyricNetSource.kugou => (await net_api.kgSearchLyric(keyword: query))
-          .map((e) => _LyricSearchItem(
+              ),
+            )
+            .toList(),
+      _LyricNetSource.kugou =>
+        (await net_api.kgSearchLyric(keyword: query))
+            .map(
+              (e) => _LyricSearchItem(
                 source: source,
                 id: e.hash,
                 title: e.title,
                 artist: e.artist,
                 album: e.album,
                 extras: {'hash': e.hash},
-              ))
-          .toList(),
+              ),
+            )
+            .toList(),
     };
   }
 
@@ -1665,7 +1680,10 @@ class _FetchLyricFromNetDialogState extends State<_FetchLyricFromNetDialog> {
                     child: TextField(
                       controller: _searchCtrl,
                       autofocus: true,
-                      style: TextStyle(fontSize: AppType.body, color: scheme.onSurface),
+                      style: TextStyle(
+                        fontSize: AppType.body,
+                        color: scheme.onSurface,
+                      ),
                       decoration: const InputDecoration(
                         hintText: '输入歌曲名或歌手...',
                         border: OutlineInputBorder(),
@@ -1707,67 +1725,66 @@ class _FetchLyricFromNetDialogState extends State<_FetchLyricFromNetDialog> {
                 child: _isSearching
                     ? const Center(child: CircularProgressIndicator())
                     : _results.isEmpty
-                        ? Center(
-                            child: Text(
-                              '无结果',
+                    ? Center(
+                        child: Text(
+                          '无结果',
+                          style: TextStyle(
+                            color: scheme.onSurfaceVariant,
+                            fontSize: AppType.body,
+                          ),
+                        ),
+                      )
+                    : ListView.builder(
+                        itemCount: _results.length,
+                        itemBuilder: (context, index) {
+                          final item = _results[index];
+                          final isFetching = _fetchingItem == item;
+                          return ListTile(
+                            dense: true,
+                            title: Text(
+                              item.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                color: scheme.onSurfaceVariant,
                                 fontSize: AppType.body,
+                                color: scheme.onSurface,
                               ),
                             ),
-                          )
-                        : ListView.builder(
-                            itemCount: _results.length,
-                            itemBuilder: (context, index) {
-                              final item = _results[index];
-                              final isFetching = _fetchingItem == item;
-                              return ListTile(
-                                dense: true,
-                                title: Text(
-                                  item.title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: AppType.body,
-                                    color: scheme.onSurface,
+                            subtitle: Text(
+                              '${item.artist}${item.album.isNotEmpty ? ' · ${item.album}' : ''}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: AppType.caption,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                            trailing: isFetching
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : IconButton(
+                                    tooltip: '直接写入标签',
+                                    visualDensity: VisualDensity.compact,
+                                    icon: const Icon(
+                                      Symbols.task_alt,
+                                      size: 18,
+                                    ),
+                                    onPressed: () => _selectResult(
+                                      item,
+                                      writeDirectly: true,
+                                    ),
                                   ),
-                                ),
-                                subtitle: Text(
-                                  '${item.artist}${item.album.isNotEmpty ? ' · ${item.album}' : ''}',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: AppType.caption,
-                                    color: scheme.onSurfaceVariant,
-                                  ),
-                                ),
-                                trailing: isFetching
-                                    ? const SizedBox(
-                                        width: 16,
-                                        height: 16,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                    : IconButton(
-                                        tooltip: '直接写入标签',
-                                        visualDensity: VisualDensity.compact,
-                                        icon: const Icon(
-                                          Symbols.task_alt,
-                                          size: 18,
-                                        ),
-                                        onPressed: () =>
-                                            _selectResult(
-                                              item,
-                                              writeDirectly: true,
-                                            ),
-                                      ),
-                                onTap: isFetching
-                                    ? null
-                                    : () => _selectResult(item),
-                              );
-                            },
-                          ),
+                            onTap: isFetching
+                                ? null
+                                : () => _selectResult(item),
+                          );
+                        },
+                      ),
               ),
             ],
           ),
@@ -1789,7 +1806,8 @@ class _FetchLyricFromNetDialogState extends State<_FetchLyricFromNetDialog> {
         _search();
       },
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
+        duration: MotionDuration.fast,
+        curve: MotionCurve.standard,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         decoration: BoxDecoration(
           color: isActive ? scheme.primaryContainer : Colors.transparent,
@@ -1884,8 +1902,8 @@ class _CoverSearchDialogState extends State<_CoverSearchDialog> {
   @override
   void initState() {
     super.initState();
-    final query = widget.audio.artist.isNotEmpty &&
-            widget.audio.artist != 'UNKNOWN'
+    final query =
+        widget.audio.artist.isNotEmpty && widget.audio.artist != 'UNKNOWN'
         ? '${widget.audio.title} ${widget.audio.artist}'
         : widget.audio.title;
     _searchCtrl = TextEditingController(text: query);
@@ -1922,51 +1940,45 @@ class _CoverSearchDialogState extends State<_CoverSearchDialog> {
     _CoverSource source,
   ) async {
     return switch (source) {
-      _CoverSource.qq => (await net_api.qqSearchLyric(
-              keyword: query,
-              pageSize: 12,
-            ))
-          .where((e) => e.picUrl.isNotEmpty)
-          .map(
-            (e) => _CoverSearchResult(
-              title: e.title,
-              artist: e.artist,
-              album: e.album,
-              picUrl: e.picUrl,
-              source: _CoverSource.qq,
-            ),
-          )
-          .toList(),
-      _CoverSource.ne => (await net_api.neSearchLyric(
-              keyword: query,
-              pageSize: 12,
-            ))
-          .where((e) => e.picUrl.isNotEmpty)
-          .map(
-            (e) => _CoverSearchResult(
-              title: e.title,
-              artist: e.artist,
-              album: e.album,
-              picUrl: e.picUrl,
-              source: _CoverSource.ne,
-            ),
-          )
-          .toList(),
-      _CoverSource.kugou => (await net_api.kgSearchLyric(
-              keyword: query,
-              pageSize: 12,
-            ))
-          .where((e) => e.picUrl.isNotEmpty)
-          .map(
-            (e) => _CoverSearchResult(
-              title: e.title,
-              artist: e.artist,
-              album: e.album,
-              picUrl: e.picUrl,
-              source: _CoverSource.kugou,
-            ),
-          )
-          .toList(),
+      _CoverSource.qq =>
+        (await net_api.qqSearchLyric(keyword: query, pageSize: 12))
+            .where((e) => e.picUrl.isNotEmpty)
+            .map(
+              (e) => _CoverSearchResult(
+                title: e.title,
+                artist: e.artist,
+                album: e.album,
+                picUrl: e.picUrl,
+                source: _CoverSource.qq,
+              ),
+            )
+            .toList(),
+      _CoverSource.ne =>
+        (await net_api.neSearchLyric(keyword: query, pageSize: 12))
+            .where((e) => e.picUrl.isNotEmpty)
+            .map(
+              (e) => _CoverSearchResult(
+                title: e.title,
+                artist: e.artist,
+                album: e.album,
+                picUrl: e.picUrl,
+                source: _CoverSource.ne,
+              ),
+            )
+            .toList(),
+      _CoverSource.kugou =>
+        (await net_api.kgSearchLyric(keyword: query, pageSize: 12))
+            .where((e) => e.picUrl.isNotEmpty)
+            .map(
+              (e) => _CoverSearchResult(
+                title: e.title,
+                artist: e.artist,
+                album: e.album,
+                picUrl: e.picUrl,
+                source: _CoverSource.kugou,
+              ),
+            )
+            .toList(),
     };
   }
 
@@ -2090,44 +2102,49 @@ class _CoverSearchDialogState extends State<_CoverSearchDialog> {
                 child: _isSearching
                     ? const Center(child: CircularProgressIndicator())
                     : _results.isEmpty
-                        ? Center(
-                            child: Text(
-                              '无结果',
-                              style: TextStyle(
-                                color: scheme.onSurfaceVariant,
-                                fontSize: AppType.body,
-                              ),
-                            ),
-                          )
-                        : GridView.builder(
-                            gridDelegate:
-                                const SliverGridDelegateWithFixedCrossAxisCount(
+                    ? Center(
+                        child: Text(
+                          '无结果',
+                          style: TextStyle(
+                            color: scheme.onSurfaceVariant,
+                            fontSize: AppType.body,
+                          ),
+                        ),
+                      )
+                    : GridView.builder(
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
                               crossAxisCount: 4,
                               crossAxisSpacing: 8,
                               mainAxisSpacing: 8,
                             ),
-                            itemCount: _results.length,
-                            itemBuilder: (context, index) {
-                              final item = _results[index];
-                              final size = _coverImageSizeCache[item.picUrl];
-                              return Tooltip(
-                                message:
-                                    '${item.title}\n${item.artist}${item.album.isNotEmpty ? '\n${item.album}' : ''}',
-                                child: InkWell(
-                                  onTap: _isDownloading
-                                      ? null
-                                      : () => _selectResult(item),
-                                  borderRadius: AppRadius.smCircular,
-                                  child: ClipRRect(
-                                    borderRadius: AppRadius.smCircular,
-                                    child: Stack(
-                                      fit: StackFit.expand,
-                                      children: [
-                                        Image.network(
-                                          item.picUrl,
-                                          fit: BoxFit.cover,
-                                          frameBuilder:
-                                              (ctx, child, frame, wasSynchronouslyLoaded) {
+                        itemCount: _results.length,
+                        itemBuilder: (context, index) {
+                          final item = _results[index];
+                          final size = _coverImageSizeCache[item.picUrl];
+                          return Tooltip(
+                            message:
+                                '${item.title}\n${item.artist}${item.album.isNotEmpty ? '\n${item.album}' : ''}',
+                            child: InkWell(
+                              onTap: _isDownloading
+                                  ? null
+                                  : () => _selectResult(item),
+                              borderRadius: AppRadius.smCircular,
+                              child: ClipRRect(
+                                borderRadius: AppRadius.smCircular,
+                                child: Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    Image.network(
+                                      item.picUrl,
+                                      fit: BoxFit.cover,
+                                      frameBuilder:
+                                          (
+                                            ctx,
+                                            child,
+                                            frame,
+                                            wasSynchronouslyLoaded,
+                                          ) {
                                             if (frame != null &&
                                                 !_coverImageSizeCache
                                                     .containsKey(item.picUrl)) {
@@ -2135,62 +2152,69 @@ class _CoverSearchDialogState extends State<_CoverSearchDialog> {
                                             }
                                             return child;
                                           },
-                                          errorBuilder: (_, _, _) => DecoratedBox(
-                                            decoration: BoxDecoration(
-                                              color: scheme.surfaceContainerHighest,
-                                              borderRadius: AppRadius.smCircular,
-                                            ),
-                                            child: Icon(
-                                              Symbols.broken_image,
-                                              color: scheme.onSurfaceVariant,
+                                      errorBuilder: (_, _, _) => DecoratedBox(
+                                        decoration: BoxDecoration(
+                                          color: scheme.surfaceContainerHighest,
+                                          borderRadius: AppRadius.smCircular,
+                                        ),
+                                        child: Icon(
+                                          Symbols.broken_image,
+                                          color: scheme.onSurfaceVariant,
+                                        ),
+                                      ),
+                                    ),
+                                    if (size != null)
+                                      Positioned(
+                                        left: 0,
+                                        right: 0,
+                                        bottom: 0,
+                                        child: DecoratedBox(
+                                          decoration: BoxDecoration(
+                                            gradient: LinearGradient(
+                                              begin: Alignment.topCenter,
+                                              end: Alignment.bottomCenter,
+                                              colors: [
+                                                Colors.transparent,
+                                                Colors.black.withValues(
+                                                  alpha: 0.55,
+                                                ),
+                                              ],
                                             ),
                                           ),
-                                        ),
-                                        if (size != null)
-                                          Positioned(
-                                            left: 0,
-                                            right: 0,
-                                            bottom: 0,
-                                            child: DecoratedBox(
-                                              decoration: BoxDecoration(
-                                                gradient: LinearGradient(
-                                                  begin: Alignment.topCenter,
-                                                  end: Alignment.bottomCenter,
-                                                  colors: [
-                                                    Colors.transparent,
-                                                    Colors.black.withValues(alpha: 0.55),
+                                          child: Padding(
+                                            padding: const EdgeInsets.fromLTRB(
+                                              0,
+                                              8,
+                                              4,
+                                              3,
+                                            ),
+                                            child: Align(
+                                              alignment: Alignment.bottomRight,
+                                              child: Text(
+                                                '${size.$1}×${size.$2}',
+                                                style: const TextStyle(
+                                                  fontSize: 9,
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.w600,
+                                                  shadows: [
+                                                    Shadow(
+                                                      color: Colors.black54,
+                                                      blurRadius: 2,
+                                                    ),
                                                   ],
                                                 ),
                                               ),
-                                              child: Padding(
-                                                padding: const EdgeInsets.fromLTRB(0, 8, 4, 3),
-                                                child: Align(
-                                                  alignment: Alignment.bottomRight,
-                                                  child: Text(
-                                                    '${size.$1}×${size.$2}',
-                                                    style: const TextStyle(
-                                                      fontSize: 9,
-                                                      color: Colors.white,
-                                                      fontWeight: FontWeight.w600,
-                                                      shadows: [
-                                                        Shadow(
-                                                          color: Colors.black54,
-                                                          blurRadius: 2,
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
                                             ),
                                           ),
-                                      ],
-                                    ),
-                                  ),
+                                        ),
+                                      ),
+                                  ],
                                 ),
-                              );
-                            },
-                          ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
               ),
               if (_isDownloading)
                 Padding(
@@ -2219,7 +2243,8 @@ class _CoverSearchDialogState extends State<_CoverSearchDialog> {
         _search();
       },
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
+        duration: MotionDuration.fast,
+        curve: MotionCurve.standard,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         decoration: BoxDecoration(
           color: isActive ? scheme.primaryContainer : Colors.transparent,

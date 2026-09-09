@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.dart';
 
 class CollapsibleLyricControls extends StatefulWidget {
@@ -21,20 +22,19 @@ class _CollapsibleLyricControlsState extends State<CollapsibleLyricControls>
   void initState() {
     super.initState();
     _animationController = AnimationController(
-      duration: const Duration(milliseconds: 250),
+      duration: MotionDuration.base,
       vsync: this,
     );
     _fadeAnimation = CurvedAnimation(
       parent: _animationController,
-      curve: Curves.easeInOut,
+      curve: MotionCurve.emphasized,
     );
-    _slideAnimation = Tween<double>(
-      begin: 8.0,
-      end: 0.0,
-    ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.easeOutCubic,
-    ));
+    _slideAnimation = Tween<double>(begin: 8.0, end: 0.0).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: MotionCurve.entrance,
+      ),
+    );
   }
 
   @override
@@ -95,12 +95,9 @@ class _CollapsibleLyricControlsState extends State<CollapsibleLyricControls>
                   color: scheme.onSecondaryContainer,
                   icon: AnimatedRotation(
                     turns: _isExpanded ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 250),
-                    curve: Curves.easeInOut,
-                    child: const Icon(
-                      Symbols.expand_more,
-                      size: 22,
-                    ),
+                    duration: MotionDuration.base,
+                    curve: MotionCurve.emphasized,
+                    child: const Icon(Symbols.expand_more, size: 22),
                   ),
                 ),
               ],
