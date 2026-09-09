@@ -6,6 +6,7 @@ import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/window_lifecycle.dart';
 import 'package:pure_music/component/build_index_state_view.dart';
+import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/lyric/lyric_source.dart';
@@ -105,7 +106,9 @@ class _FolderSelectorViewState extends State<FolderSelectorView> {
       width: width,
       height: height,
       child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 150),
+        duration: MotionDuration.xFast,
+        switchInCurve: MotionCurve.standard,
+        switchOutCurve: MotionCurve.standard,
         child: selecting
             ? folderSelector(scheme)
             : FutureBuilder(
