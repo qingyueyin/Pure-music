@@ -117,10 +117,16 @@ class SlideTransitionPage<T> extends CustomTransitionPage<T> {
       begin: Offset.zero,
       end: const Offset(-1.0 / 3.0, 0.0),
     ).animate(secondaryCurve);
+    // 淡出用独立曲线：返回时立即恢复不透明，避免模糊背景先露出来。
+    final secondaryFadeCurve = CurvedAnimation(
+      parent: secondaryAnimation,
+      curve: Curves.linearToEaseOut,
+      reverseCurve: const Threshold(1.0),
+    );
     final secondaryFade = Tween<double>(
       begin: 1.0,
       end: 0.0,
-    ).animate(secondaryCurve);
+    ).animate(secondaryFadeCurve);
 
     // 旧页淡出 + 左移次层，新页右滑入顶层。
     // 被上层路由覆盖（退出中或已退出）时禁用命中测试，

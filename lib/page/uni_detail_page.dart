@@ -1138,11 +1138,17 @@ class _UniDetailPageHeader extends StatelessWidget {
                   builder: (context, snapshot) {
                     if (snapshot.data == null) return const SizedBox.shrink();
 
-                    return Image(
-                      image: snapshot.data!,
-                      fit: BoxFit.cover,
-                      gaplessPlayback: true,
-                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                    // 只模糊封面本身，避免 BackdropFilter 在退出转场时把下层页面一起糊掉。
+                    return ClipRect(
+                      child: ImageFiltered(
+                        imageFilter: _UniDetailPageHeader._blurFilter,
+                        child: Image(
+                          image: snapshot.data!,
+                          fit: BoxFit.cover,
+                          gaplessPlayback: true,
+                          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                        ),
+                      ),
                     );
                   },
                 ),
@@ -1156,12 +1162,6 @@ class _UniDetailPageHeader extends StatelessWidget {
                     color: scheme.surface.withValues(alpha: 0.70),
                   ),
                 },
-              ),
-              Positioned.fill(
-                child: BackdropFilter(
-                  filter: _UniDetailPageHeader._blurFilter,
-                  child: const ColoredBox(color: Colors.transparent),
-                ),
               ),
             ],
             Row(
