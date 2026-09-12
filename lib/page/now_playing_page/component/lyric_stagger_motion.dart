@@ -107,9 +107,20 @@ class _LyricStaggerTransitionState extends State<LyricStaggerTransition>
   }
 
   void _scheduleTransition({bool composeCurrent = false}) {
-    if (!widget.enabled ||
-        widget.generation <= 0 ||
-        (!composeCurrent && widget.shiftY.abs() < 0.5)) {
+    if (!widget.enabled || widget.generation <= 0) {
+      _delayTimer?.cancel();
+      _controller.stop();
+      _controller.value = 0;
+      return;
+    }
+    // 如果动画正在进行中且 shiftY 很小，继续当前动画而不是中断
+    if (!composeCurrent &&
+        widget.shiftY.abs() < 0.2 &&
+        _controller.isAnimating) {
+      return;
+    }
+    // 小位移时直接跳到目标，不启动弹簧
+    if (!composeCurrent && widget.shiftY.abs() < 0.2) {
       _delayTimer?.cancel();
       _controller.stop();
       _controller.value = 0;

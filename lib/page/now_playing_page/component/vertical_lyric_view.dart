@@ -47,7 +47,8 @@ bool shouldForceLyricScrollForViewportChange() => false;
 
 double lyricStaggerJumpDeltaY({required double from, required double to}) {
   final delta = to - from;
-  return delta.abs() > 0.5 ? delta : 0;
+  // 阈值从 0.5 降到 0.2，减少小幅度切换时的动画丢失
+  return delta.abs() > 0.2 ? delta : 0;
 }
 
 double lyricLineLayoutWidth(double viewportWidth) {

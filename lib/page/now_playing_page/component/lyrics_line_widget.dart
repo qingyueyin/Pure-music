@@ -222,7 +222,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
 
   void _animateFloat() {
     final target = widget.distance == 0 ? 1.0 : 0.0;
-    if ((_floatController.value - target).abs() < 0.001) return;
+    // 不在这里提前返回，让动画有机会完成
     final style = context.read<LyricViewController>().renderConfig.staggerStyle;
     if (style == LyricStaggerStyle.smooth) {
       _floatController.animateTo(
@@ -243,11 +243,24 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
     );
   }
 
-  bool get _needsProgressTicker =>
-      (widget.distance == 0 || widget.isHighlightActive) &&
-      widget.line is SyncLyricLine &&
-      (widget.line as SyncLyricLine).words.isNotEmpty &&
-      _config.displayMode == LyricDisplayMode.wordByWord;
+  bool _tickerHoldActive = false;
+  DateTime? _tickerHoldUntil;
+
+  bool get _needsProgressTicker {
+    final baseCondition =
+        (widget.distance == 0 || widget.isHighlightActive) &&
+        widget.line is SyncLyricLine &&
+        (widget.line as SyncLyricLine).words.isNotEmpty &&
+        _config.displayMode == LyricDisplayMode.wordByWord;
+    if (baseCondition) return true;
+    // 给 ticker 最小持有时间，避免歌词行切换时频繁启停导致动画丢失
+    if (_tickerHoldActive &&
+        _tickerHoldUntil != null &&
+        DateTime.now().isBefore(_tickerHoldUntil!)) {
+      return true;
+    }
+    return false;
+  }
 
   void _syncProgressTicker() {
     if (_needsProgressTicker) {
@@ -266,6 +279,9 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
       }
       final ticker = _ticker ??= createTicker(_onTick);
       if (!ticker.isActive) ticker.start();
+      // 设置持有时间：歌词行切换后保持 200ms，避免频繁启停
+      _tickerHoldActive = true;
+      _tickerHoldUntil = DateTime.now().add(const Duration(milliseconds: 200));
     } else {
       _ticker?.stop();
     }
