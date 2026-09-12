@@ -491,7 +491,7 @@ impl NetEaseCloud {
         limit: i32,
     ) -> Result<Vec<HashMap<String, String>>, String> {
         self.init()?;
-        ne_log!("I", "search: keyword='{}', limit={}", keyword, limit);
+        ne_log!("I", "search: starting request, limit={}", limit);
 
         let params = serde_json::json!({
             "limit": limit.to_string(),
