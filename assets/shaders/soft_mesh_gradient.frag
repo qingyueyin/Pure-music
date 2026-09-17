@@ -40,6 +40,12 @@ float gradientNoise(vec2 point) {
   return 0.5 + 0.5 * mix(bottom, top, curve.y);
 }
 
+vec2 flowField(vec2 point, float time) {
+  float x = gradientNoise(point * 1.45 + vec2(time * 0.08, -time * 0.05));
+  float y = gradientNoise(point * 1.20 + vec2(-time * 0.06, time * 0.07) + 17.3);
+  return vec2(x - 0.5, y - 0.5);
+}
+
 void main() {
   vec2 uv = FlutterFragCoord().xy / uSize;
   float ratio = uSize.x / uSize.y;
@@ -53,9 +59,12 @@ void main() {
   float speed = uTime * 0.6;
   warped.x += sin(warped.y * 5.0 + speed) / 30.0;
   warped.y += sin(warped.x * 7.5 + speed) / 15.0;
-  // 多一折空间扭曲，四色块会多出几片区域，颜色本身不变。
   warped.x += sin(warped.y * 3.1 - speed * 0.55) / 42.0;
   warped.y += cos(warped.x * 4.4 + speed * 0.38) / 26.0;
+
+  vec2 flow = flowField(warped * 2.1, uTime * 0.18);
+  warped += flow * 0.11;
+  warped += vec2(-flow.y, flow.x) * 0.05;
 
   float horizontalBlend = S(-0.3, 0.2, dot(warped, vec2(0.9961947, 0.0871557)));
   vec3 upper = mix(uColor1, uColor2, horizontalBlend);

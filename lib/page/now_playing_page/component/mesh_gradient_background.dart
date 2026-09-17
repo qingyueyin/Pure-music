@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show ValueListenable;
@@ -124,6 +125,11 @@ class MeshGradientBackground extends StatelessWidget {
     required this.fallbackColor,
   });
 
+  static const shaderAssetPath = 'assets/shaders/soft_mesh_gradient.frag';
+
+  static Future<void> precache() =>
+      ShaderBuilder.precacheShader(shaderAssetPath);
+
   @override
   Widget build(BuildContext context) {
     return MeshGradientBackgroundInternal(
@@ -166,16 +172,27 @@ class _MeshGradientBackgroundInternalState
   static const Duration _paletteTransitionDuration = Duration(
     milliseconds: 360,
   );
+  static const Duration _kRotationTransitionDuration = Duration(
+    milliseconds: 6000,
+  );
 
   final _MeshAnimationController _meshController = _MeshAnimationController();
 
   int? _lastCoverHash;
   int? _lastPaletteSignature;
 
+  List<Color> _paletteColorPool = const [];
+  Timer? _rotationTimer;
+  final Random _rotationRandom = Random();
+
+  static const Duration _minRotationInterval = Duration(seconds: 60);
+  static const Duration _maxRotationInterval = Duration(seconds: 90);
+
   @override
   void initState() {
     super.initState();
     _syncPaletteFromInputs(animate: false);
+    _updateColorPool(widget.inputs.preExtractedColors);
     _syncMeshController();
   }
 
@@ -198,6 +215,7 @@ class _MeshGradientBackgroundInternalState
     final newBytes = widget.inputs.albumCoverBytes;
     if (!identical(newBytes, oldWidget.inputs.albumCoverBytes)) {
       _coverBytesChanged(newBytes);
+      _updateColorPool(widget.inputs.preExtractedColors);
     } else if (!identical(
       widget.inputs.preExtractedColors,
       oldWidget.inputs.preExtractedColors,
@@ -205,6 +223,7 @@ class _MeshGradientBackgroundInternalState
       if (!_syncPaletteFromInputs(animate: true)) {
         _showFallbackPalette();
       }
+      _updateColorPool(widget.inputs.preExtractedColors);
     }
 
     final wasVisible = oldWidget.inputs.isVisible;
@@ -278,9 +297,10 @@ class _MeshGradientBackgroundInternalState
     _isTransitioning = false;
   }
 
-  void _applyPaletteColors(List<Color> colors) {
+  void _applyPaletteColors(List<Color> colors, {Duration? duration}) {
     final target = _padPalette(colors);
     final displayedColors = _currentDisplayedPalette();
+    final transitionDuration = duration ?? _paletteTransitionDuration;
     _lastPaletteSignature = _paletteSignature(target);
     _transitionTicker?.dispose();
     _transitionTicker = null;
@@ -303,8 +323,10 @@ class _MeshGradientBackgroundInternalState
         return;
       }
       final value =
-          (elapsed.inMicroseconds / _paletteTransitionDuration.inMicroseconds)
-              .clamp(0.0, 1.0);
+          (elapsed.inMicroseconds / transitionDuration.inMicroseconds).clamp(
+            0.0,
+            1.0,
+          );
       if (value >= 1.0) {
         _transitionTicker?.dispose();
         _transitionTicker = null;
@@ -390,11 +412,71 @@ class _MeshGradientBackgroundInternalState
     } else {
       _meshController.stop();
     }
+    _syncRotationTimer();
+  }
+
+  void _updateColorPool(List<Color>? colors) {
+    if (colors == null || colors.length <= _kMeshColorCount) {
+      _paletteColorPool = const [];
+      _stopRotationTimer();
+      return;
+    }
+    _paletteColorPool = List<Color>.unmodifiable(colors);
+    _stopRotationTimer();
+    _syncRotationTimer();
+  }
+
+  void _syncRotationTimer() {
+    final canRotate =
+        !_disposed &&
+        widget.inputs.isVisible &&
+        _paletteColorPool.length > _kMeshColorCount;
+    if (!canRotate) {
+      _stopRotationTimer();
+      return;
+    }
+    _rotationTimer ??= Timer(_nextRotationDelay(), _rotateColorPool);
+  }
+
+  Duration _nextRotationDelay() {
+    final span = _maxRotationInterval - _minRotationInterval;
+    final jitterMs = _rotationRandom.nextInt(span.inMilliseconds + 1);
+    return _minRotationInterval + Duration(milliseconds: jitterMs);
+  }
+
+  void _rotateColorPool() {
+    _rotationTimer = null;
+    if (_disposed || !mounted) return;
+    final pool = _paletteColorPool;
+    if (!widget.inputs.isVisible || pool.length <= _kMeshColorCount) {
+      _syncRotationTimer();
+      return;
+    }
+    final current = _currentDisplayedPalette();
+    final base = current.length == _kMeshColorCount
+        ? current
+        : _padPalette(current);
+    final slot = _rotationRandom.nextInt(_kMeshColorCount);
+    final replacement = pool[_rotationRandom.nextInt(pool.length)];
+    if (base[slot].toARGB32() == replacement.toARGB32()) {
+      _syncRotationTimer();
+      return;
+    }
+    final next = List<Color>.of(base);
+    next[slot] = replacement;
+    _applyPaletteColors(next, duration: _kRotationTransitionDuration);
+    _syncRotationTimer();
+  }
+
+  void _stopRotationTimer() {
+    _rotationTimer?.cancel();
+    _rotationTimer = null;
   }
 
   @override
   void dispose() {
     _disposed = true;
+    _stopRotationTimer();
     _meshController.dispose();
     _transitionTicker?.dispose();
     _paletteColors = const [];
@@ -493,7 +575,7 @@ class _SoftMeshGradient extends StatefulWidget {
 }
 
 class _SoftMeshGradientState extends State<_SoftMeshGradient> {
-  static const _shaderAssetPath = 'assets/shaders/soft_mesh_gradient.frag';
+  static const _shaderAssetPath = MeshGradientBackground.shaderAssetPath;
   static const Duration _meshFrameInterval = Duration(milliseconds: 42);
   static const double _timeScale = 1.0;
 
