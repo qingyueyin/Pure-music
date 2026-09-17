@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/page/now_playing_page/component/vertical_lyric_view.dart';
 import 'package:pure_music/play_service/lyric_service.dart';
@@ -8,8 +9,74 @@ void main() {
     expect(shouldForceLyricScrollForPositionSync(PlayerState.paused), isFalse);
   });
 
+  test('playing position sync does not steal a user lyric browse', () {
+    expect(shouldForceLyricScrollForPositionSync(PlayerState.playing), isFalse);
+  });
+
+  test('user browsing still blocks follow even before the first line settles', () {
+    expect(
+      shouldIgnoreLyricFollowWhileUserScrolling(isUserDragging: true),
+      isTrue,
+    );
+    expect(
+      shouldIgnoreLyricFollowWhileUserScrolling(isUserDragging: false),
+      isFalse,
+    );
+  });
+
   test('viewport height jitter does not force lyric scroll', () {
     expect(shouldForceLyricScrollForViewportChange(), isFalse);
+  });
+
+  test('entering the page still force-scrolls after viewport settles', () {
+    expect(
+      shouldForceLyricScrollForViewportChange(needsInitialScroll: true),
+      isTrue,
+    );
+  });
+
+  test('position sync still force-scrolls until the first line is found', () {
+    expect(
+      shouldForceLyricScrollForPositionSync(
+        PlayerState.playing,
+        needsInitialScroll: true,
+      ),
+      isTrue,
+    );
+    expect(
+      shouldForceLyricScrollForPositionSync(
+        PlayerState.paused,
+        needsInitialScroll: true,
+      ),
+      isTrue,
+    );
+  });
+
+  test('playing resync does not skip the first current-line scroll', () {
+    expect(
+      shouldEnqueuePlayingLyricResync(
+        forceScroll: false,
+        needsInitialScroll: true,
+        isPlaying: true,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldEnqueuePlayingLyricResync(
+        forceScroll: false,
+        needsInitialScroll: false,
+        isPlaying: true,
+      ),
+      isTrue,
+    );
+    expect(
+      shouldEnqueuePlayingLyricResync(
+        forceScroll: true,
+        needsInitialScroll: false,
+        isPlaying: true,
+      ),
+      isFalse,
+    );
   });
 
   test('offset cache measures wrapped lines at the tile content width', () {
@@ -180,6 +247,63 @@ void main() {
     );
   });
 
+  test(
+    'same-frame lyric updates keep intermediate lines and merge one line',
+    () {
+      const first = LyricLineUpdate(
+        primaryIndex: 1,
+        activeIndices: [1],
+        positionMs: 1000,
+      );
+      const second = LyricLineUpdate(
+        primaryIndex: 2,
+        activeIndices: [2],
+        positionMs: 1016,
+      );
+      var queued = lyricLineUpdateQueueAfterEnqueue(
+        queued: const <LyricLineUpdate>[],
+        update: first,
+        currentIndex: 0,
+        isPlaying: true,
+      );
+      queued = lyricLineUpdateQueueAfterEnqueue(
+        queued: queued,
+        update: second,
+        currentIndex: 0,
+        isPlaying: true,
+      );
+
+      expect(queued.map((update) => update.primaryIndex), [1, 2]);
+
+      const merged = LyricLineUpdate(
+        primaryIndex: 2,
+        activeIndices: [2, 3],
+        positionMs: 1020,
+      );
+      queued = lyricLineUpdateQueueAfterEnqueue(
+        queued: queued,
+        update: merged,
+        currentIndex: 0,
+        isPlaying: true,
+      );
+      expect(queued, hasLength(2));
+      expect(queued.last.activeIndices, [2, 3]);
+
+      const stale = LyricLineUpdate(
+        primaryIndex: 1,
+        activeIndices: [1],
+        positionMs: 1021,
+      );
+      queued = lyricLineUpdateQueueAfterEnqueue(
+        queued: queued,
+        update: stale,
+        currentIndex: 0,
+        isPlaying: true,
+      );
+      expect(queued.map((update) => update.primaryIndex), [1, 2]);
+    },
+  );
+
   test('force resync only drops the queue on a real jump', () {
     expect(
       shouldDiscardQueuedLyricUpdatesForResync(
@@ -279,6 +403,30 @@ void main() {
         parallelGroupLines: {82, 84, 85},
       ),
       4,
+    );
+  });
+
+  test('offset computation still force-scrolls the first current line', () {
+    expect(
+      shouldForceLyricScrollAfterOffsetsComputed(
+        needsInitialScroll: true,
+        isUserDragging: false,
+      ),
+      isTrue,
+    );
+    expect(
+      shouldForceLyricScrollAfterOffsetsComputed(
+        needsInitialScroll: true,
+        isUserDragging: true,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldForceLyricScrollAfterOffsetsComputed(
+        needsInitialScroll: false,
+        isUserDragging: false,
+      ),
+      isFalse,
     );
   });
 }
