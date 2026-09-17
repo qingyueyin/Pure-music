@@ -20,6 +20,7 @@ import 'package:pure_music/lyric/lrc_serializer.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart' as rust_tag_reader;
 import 'package:pure_music/native/rust/api/utils.dart';
 import 'package:pure_music/play_service/play_service.dart';
+import 'package:pure_music/play_service/taskbar_thumbnail_service.dart';
 import 'package:pure_music/services/online_lyric/api/net_lyric_api.dart'
     as net_api;
 
@@ -259,6 +260,14 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
     });
   }
 
+  void _refreshSystemNowPlaying() {
+    final playback = PlayService.existingPlaybackService;
+    if (playback == null) return;
+    if (playback.nowPlaying?.path != audio.path) return;
+    playback.refreshNowPlayingArtwork();
+    TaskbarThumbnailService.instance.refreshNowPlaying();
+  }
+
   Future<void> _saveEdit() async {
     setState(() => _isSaving = true);
     var coverWritten = false;
@@ -286,12 +295,14 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
         track: int.tryParse(_controllers.track.text.trim()) ?? 0,
         disc: int.tryParse(_controllers.disc.text.trim()),
       );
+      _refreshSystemNowPlaying();
       if (mounted) {
         showTextOnSnackBar('标签已保存');
         _cancelEdit();
       }
     } catch (e, trace) {
       logger.e('保存音频标签失败', error: e, stackTrace: trace);
+      if (coverWritten) _refreshSystemNowPlaying();
       if (mounted) {
         showTextOnSnackBar(
           coverWritten ? '封面已写入，标签保存失败，请查看日志' : '保存标签失败，请查看日志',
