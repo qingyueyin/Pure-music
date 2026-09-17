@@ -1,6 +1,7 @@
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/component/danger_confirm_dialog.dart';
+import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:flutter/material.dart';
@@ -228,11 +229,28 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
       onReorderItem: (oldIndex, newIndex) {
         playbackService.reorderPlaylist(oldIndex, newIndex);
       },
-      proxyDecorator: (child, index, animation) => Material(
-        elevation: 4,
-        borderRadius: AppRadius.smCircular,
-        child: child,
-      ),
+      proxyDecorator: (child, index, animation) {
+        return AnimatedBuilder(
+          animation: animation,
+          builder: (context, child) {
+            final t = MediaQuery.disableAnimationsOf(context)
+                ? 1.0
+                : MotionCurve.entrance.transform(animation.value);
+            return Transform.rotate(
+              angle: 0.105 * t,
+              child: Transform.scale(
+                scale: 1.0 + 0.03 * t,
+                child: Material(
+                  elevation: 4 * t,
+                  borderRadius: AppRadius.smCircular,
+                  child: child,
+                ),
+              ),
+            );
+          },
+          child: child,
+        );
+      },
       itemBuilder: (context, i) {
         final audio = playlist[i];
         final isNowPlaying = playbackService.nowPlaying?.path == audio.path;
