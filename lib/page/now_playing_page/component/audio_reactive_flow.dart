@@ -36,6 +36,38 @@ final class AudioReactiveFlowResponse {
       high < _nearlySilentThreshold;
 }
 
+double audioReactiveFlowBeatEnergy(AudioReactiveFlowResponse response) {
+  final weightedEnergy =
+      response.low * 0.52 + response.mid * 0.30 + response.high * 0.18;
+  return math.pow(weightedEnergy.clamp(0.0, 1.0), 0.62).toDouble();
+}
+
+double audioReactiveFlowOnsetPulse({
+  required double currentEnergy,
+  required double previousEnergy,
+  required double previousPulse,
+}) {
+  final current = currentEnergy.isFinite
+      ? currentEnergy.clamp(0.0, 1.0).toDouble()
+      : 0.0;
+  final previous = previousEnergy.isFinite
+      ? previousEnergy.clamp(0.0, 1.0).toDouble()
+      : 0.0;
+  final decayed =
+      (previousPulse.isFinite ? previousPulse : 0.0).clamp(0.0, 1.0) * 0.82;
+  final rise = ((current - previous) * 6.2).clamp(0.0, 1.0).toDouble();
+  return math.max(decayed, rise);
+}
+
+double audioReactiveFlowMotionSpeedTarget({
+  required double energy,
+  required double onset,
+}) {
+  final safeEnergy = energy.isFinite ? energy.clamp(0.0, 1.0).toDouble() : 0.0;
+  final safeOnset = onset.isFinite ? onset.clamp(0.0, 1.0).toDouble() : 0.0;
+  return (1.0 + safeEnergy * 0.30 + safeOnset * 1.0).clamp(1.0, 2.4).toDouble();
+}
+
 final class AudioReactiveFlowEnvelope {
   static const _release = .12;
 
@@ -172,7 +204,12 @@ final class AudioReactiveFlowTransientDetector {
   double _previous = 0;
   bool _initialized = false;
 
-  double update(double low) {
+  double update(double low) => _updateEnergy(low);
+
+  double updateResponse(AudioReactiveFlowResponse response) =>
+      _updateEnergy(audioReactiveFlowBeatEnergy(response));
+
+  double _updateEnergy(double low) {
     final value = low.isFinite ? low.clamp(0.0, 1.0).toDouble() : 0.0;
     if (value < _silenceThreshold) {
       _baseline *= .86;

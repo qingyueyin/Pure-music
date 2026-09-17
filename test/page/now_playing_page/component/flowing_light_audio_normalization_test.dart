@@ -127,6 +127,65 @@ void main() {
     expect(detector.update(0.62), greaterThan(0.9));
   });
 
+  test('onset pulse follows energy rises instead of loudness', () {
+    final first = audioReactiveFlowOnsetPulse(
+      currentEnergy: 0.40,
+      previousEnergy: 0.12,
+      previousPulse: 0,
+    );
+    final held = audioReactiveFlowOnsetPulse(
+      currentEnergy: 0.40,
+      previousEnergy: 0.40,
+      previousPulse: first,
+    );
+    final louder = audioReactiveFlowOnsetPulse(
+      currentEnergy: 0.80,
+      previousEnergy: 0.78,
+      previousPulse: 0,
+    );
+
+    expect(first, greaterThan(0.9));
+    expect(held, closeTo(first * 0.82, 0.001));
+    expect(louder, lessThan(first));
+  });
+
+  test('motion speed accents onsets over a loud sustain', () {
+    expect(
+      audioReactiveFlowMotionSpeedTarget(energy: 0.20, onset: 0.90),
+      greaterThan(
+        audioReactiveFlowMotionSpeedTarget(energy: 0.90, onset: 0.05),
+      ),
+    );
+    expect(
+      audioReactiveFlowMotionSpeedTarget(energy: 0, onset: 0),
+      closeTo(1.0, 0.001),
+    );
+  });
+
+  test(
+    'beat transient includes broadband rises while keeping low emphasis',
+    () {
+      expect(
+        audioReactiveFlowBeatEnergy(const AudioReactiveFlowResponse(1, 0, 0)),
+        greaterThan(
+          audioReactiveFlowBeatEnergy(const AudioReactiveFlowResponse(0, 1, 0)),
+        ),
+      );
+
+      final detector = AudioReactiveFlowTransientDetector();
+      detector.updateResponse(
+        const AudioReactiveFlowResponse(0.12, 0.12, 0.12),
+      );
+
+      expect(
+        detector.updateResponse(
+          const AudioReactiveFlowResponse(0.12, 0.72, 0.12),
+        ),
+        greaterThan(0.8),
+      );
+    },
+  );
+
   test('bass transient gives a medium rising edge visible strength', () {
     final detector = AudioReactiveFlowTransientDetector();
     detector.update(0.30);
@@ -205,10 +264,10 @@ void main() {
   });
 
   test('audio breathing stays visible without oversized face movement', () {
-    expect(flowingLightBreathingScale(0.5), closeTo(1.04, 0.001));
-    expect(flowingLightBreathingScale(1), closeTo(1.08, 0.001));
-    expect(flowingLightBreathingScale(0.5, bassTransient: 1), 1.22);
-    expect(flowingLightBreathingScale(1, bassTransient: 1), 1.22);
+    expect(flowingLightBreathingScale(0.5), closeTo(1.02, 0.001));
+    expect(flowingLightBreathingScale(1), closeTo(1.04, 0.001));
+    expect(flowingLightBreathingScale(0.5, bassTransient: 1), 1.08);
+    expect(flowingLightBreathingScale(1, bassTransient: 1), 1.10);
   });
 
   test('envelope FIR holds back a spectrum spike instead of copying it', () {
