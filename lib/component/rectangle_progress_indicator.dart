@@ -72,6 +72,7 @@ class RectangleProgressIndicator extends StatefulWidget {
     required this.child,
     this.onSeek,
     this.onDragActiveChanged,
+    this.onDragPreview,
   });
 
   final Size size;
@@ -84,6 +85,9 @@ class RectangleProgressIndicator extends StatefulWidget {
   /// 拖拽激活状态变化回调（长按开始 true，结束/取消 false）。
   /// 外层可用它控制整个控件的缩放反馈。
   final ValueChanged<bool>? onDragActiveChanged;
+
+  /// 拖拽预览进度（0-1）。开始/移动时给当前值，结束/取消时给 null。
+  final ValueChanged<double?>? onDragPreview;
 
   @override
   State<RectangleProgressIndicator> createState() =>
@@ -169,6 +173,7 @@ class _RectangleProgressIndicatorState
       _activeDragGesture = null;
       _dragController.cancelOnTrackChange();
       widget.onDragActiveChanged?.call(false);
+      widget.onDragPreview?.call(null);
     }
     _syncNativeProgress();
   }
@@ -184,6 +189,7 @@ class _RectangleProgressIndicatorState
     _dragFraction = fraction.clamp(0.0, 1.0);
     progress.value = _dragFraction!;
     widget.onDragActiveChanged?.call(true);
+    widget.onDragPreview?.call(_dragFraction);
   }
 
   void _handleLongPressStart(LongPressStartDetails d) {
@@ -199,6 +205,7 @@ class _RectangleProgressIndicatorState
     if (width <= 0 || _dragFraction == null) return;
     _dragFraction = (d.localPosition.dx / width).clamp(0.0, 1.0);
     progress.value = _dragFraction!;
+    widget.onDragPreview?.call(_dragFraction);
   }
 
   void _handleLongPressEnd(LongPressEndDetails d) {
@@ -225,6 +232,7 @@ class _RectangleProgressIndicatorState
     if (width <= 0 || _dragFraction == null) return;
     _dragFraction = (d.localPosition.dx / width).clamp(0.0, 1.0);
     progress.value = _dragFraction!;
+    widget.onDragPreview?.call(_dragFraction);
   }
 
   void _handleDragEnd(DragEndDetails d) {
@@ -242,6 +250,7 @@ class _RectangleProgressIndicatorState
     _dragFraction = null;
     _activeDragGesture = null;
     widget.onDragActiveChanged?.call(false);
+    widget.onDragPreview?.call(null);
     final shouldSeek = _dragController.end(
       currentIdentity: playbackService.nowPlaying?.path,
       applySeek: applySeek,
