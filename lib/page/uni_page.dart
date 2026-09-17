@@ -853,7 +853,7 @@ class _UniPageState<T> extends State<UniPage<T>> {
 
       return LayoutBuilder(
         builder: (context, constraints) {
-          final showAlphabetIndex = _alphabetSectionIndexes.isNotEmpty;
+          final showAlphabetIndex = _alphabetSectionIndexes.length >= 3;
           _contentCrossAxisExtent =
               constraints.maxWidth - (showAlphabetIndex ? 32 : 0);
           return Row(
