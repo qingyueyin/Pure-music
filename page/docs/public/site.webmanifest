@@ -1,0 +1,16 @@
+{
+  "name": "Pure Music",
+  "short_name": "Pure Music",
+  "description": "Windows 本地音乐播放器。导入文件夹即可播放。",
+  "start_url": "/Pure-music/",
+  "display": "browser",
+  "background_color": "#F7F3EA",
+  "theme_color": "#BDA12F",
+  "icons": [
+    {
+      "src": "/Pure-music/logo.png",
+      "sizes": "256x256",
+      "type": "image/png"
+    }
+  ]
+}
