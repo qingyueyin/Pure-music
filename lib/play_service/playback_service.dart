@@ -21,6 +21,7 @@ import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/services/lastfm/lastfm_models.dart';
 import 'package:pure_music/services/lastfm/lastfm_service.dart';
+import 'package:pure_music/play_service/sleep_timer.dart';
 import 'package:flutter/foundation.dart';
 
 final class _PendingGaplessTransition {
@@ -111,7 +112,15 @@ class PlaybackService extends ChangeNotifier {
       if (event == PlayerState.playing) {
         SleepBlocker.instance.setPlayerPlaying(true);
         SleepBlocker.instance.reevaluate();
-      } else if (event == PlayerState.paused || event == PlayerState.stopped) {
+      } else if (event == PlayerState.completed) {
+        SleepTimerService.instance.onSongCompleted();
+      } else if (event == PlayerState.paused) {
+        SleepBlocker.instance.setPlayerPlaying(false);
+        SleepBlocker.instance.reevaluate();
+        if (SleepTimerService.instance.isExtending) {
+          SleepTimerService.instance.onManualPause();
+        }
+      } else if (event == PlayerState.stopped) {
         SleepBlocker.instance.setPlayerPlaying(false);
         SleepBlocker.instance.reevaluate();
       }
@@ -171,6 +180,11 @@ class PlaybackService extends ChangeNotifier {
       prepareFallback: _prepareSmartFallback,
       prepareAfterCompletion: _rebuildGaplessPreparation,
     );
+
+    SleepTimerService.instance.setOnExpired(pause);
+    SleepTimerService.instance.setOnManualPauseWhileExtending(() {
+      showTextOnSnackBar('睡眠定时已取消', variant: ToastVariant.info);
+    });
 
     Future.microtask(() async {
       try {
@@ -845,6 +859,7 @@ class PlaybackService extends ChangeNotifier {
 
     _playlistIndex = audioIndex;
     _nowPlaying.value = audio;
+    SleepTimerService.instance.onSongChanged(audio.path);
     _lastNowPlayingChangedMs = DateTime.now().millisecondsSinceEpoch;
     _resetListenAccumulator(audio.duration.toDouble());
     unawaited(audio.loadSmallCoverBytes());
@@ -1594,6 +1609,7 @@ class PlaybackService extends ChangeNotifier {
   Future<void> close() async {
     _closed = true;
     SleepBlocker.instance.unblock();
+    SleepTimerService.instance.cancel();
     _songChangeTaskToken++;
     _cancelSongChangeTasks();
     _cancelPositionSyncBurst();
