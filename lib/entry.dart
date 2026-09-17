@@ -44,6 +44,7 @@ import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/update_checker.dart';
 import 'package:pure_music/core/utils.dart';
+import 'package:pure_music/core/window_render_gate.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:go_router/go_router.dart';
@@ -239,8 +240,8 @@ class _EntryState extends State<Entry>
 
   @override
   void onWindowMinimize() {
-    MemoryMonitorService.instance.trimAll();
-    logger.i('[mem] window minimized - cleared invisible caches');
+    MemoryMonitorService.instance.trimTrayHidden();
+    logger.i('[mem] window minimized - trimmed invisible caches');
     PlayService.existingPlaybackService?.startSmtcKeepAlive();
   }
 
@@ -541,10 +542,16 @@ class _EntryState extends State<Entry>
             builder: (context, child) => ValueListenableBuilder<bool>(
               valueListenable: _windowResizing,
               child: child,
-              builder: (context, resizing, child) => TickerMode(
-                enabled: !resizing,
-                child: child ?? const SizedBox.shrink(),
-              ),
+              builder: (context, resizing, child) =>
+                  ValueListenableBuilder<bool>(
+                    valueListenable: WindowRenderGate.instance.framesEnabled,
+                    child: child,
+                    builder: (context, windowFramesEnabled, child) =>
+                        TickerMode(
+                          enabled: !resizing && windowFramesEnabled,
+                          child: child ?? const SizedBox.shrink(),
+                        ),
+                  ),
             ),
             theme: fromSchemeAndFontFamily(
               fontFamily: theme.fontFamily,
