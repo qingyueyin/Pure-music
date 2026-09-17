@@ -331,6 +331,7 @@ class AppSettings {
   Size windowSize = const Size(1280, 756);
   bool isWindowMaximized = false;
   WindowCloseBehavior windowCloseBehavior = WindowCloseBehavior.exit;
+  bool preventSleepOnNowPlaying = false;
 
   String? fontFamily;
   String? fontPath;
@@ -491,6 +492,10 @@ class AppSettings {
           WindowCloseBehavior.values,
         ) ??
         WindowCloseBehavior.exit;
+    _instance.preventSleepOnNowPlaying = normalizedBoolSetting(
+      settingsMap['PreventSleepOnNowPlaying'],
+      defaultValue: false,
+    );
   }
 
   @visibleForTesting
@@ -780,6 +785,10 @@ class AppSettings {
           WindowCloseBehavior.values,
         ) ??
         WindowCloseBehavior.exit;
+    _instance.preventSleepOnNowPlaying = normalizedBoolSetting(
+      settingsMap['PreventSleepOnNowPlaying'],
+      defaultValue: false,
+    );
 
     final sdlr = settingsMap['ShowDesktopLyricRoman'];
     if (sdlr != null) {
@@ -1118,6 +1127,7 @@ class AppSettings {
         'LyricFontFollowsUi': lyricFontFollowsUi,
         'LyricFontFamily': lyricFontFamily,
         'LyricFontPath': lyricFontPath,
+        'PreventSleepOnNowPlaying': preventSleepOnNowPlaying,
       };
 
       Size sizeToSave = windowSize;
