@@ -1893,6 +1893,17 @@ fn _picture_cache_key(path: &str, width: u32, height: u32) -> String {
     format!("{path}|{modified_secs}|{width}x{height}")
 }
 
+fn evict_picture_cache_for_path(path: &str) {
+    let Ok(mut cache) = PICTURE_CACHE
+        .get_or_init(|| Mutex::new(VecDeque::new()))
+        .lock()
+    else {
+        return;
+    };
+    let prefix = format!("{path}|");
+    cache.retain(|(key, _)| !key.starts_with(&prefix));
+}
+
 /// for Flutter  
 /// 一次调用完成封面读取+颜色提取，避免 image bytes 穿越 FFI 两次
 pub fn get_picture_and_colors(
@@ -2344,6 +2355,7 @@ pub fn write_audio_cover(path: String, bytes: Vec<u8>) -> Result<(), String> {
     tagged_file
         .save_to_path(&path, WriteOptions::default())
         .map_err(|e| format!("Error saving cover: {:?}", e.kind()))?;
+    evict_picture_cache_for_path(&path);
     Ok(())
 }
 
