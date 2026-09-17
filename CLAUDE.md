@@ -6,7 +6,7 @@
 - 回答不超过 3 句，除非我问细节
 
 ## 项目概况
-Windows 本地音乐播放器。前端 Flutter/Dart，后端 Rust（lofty 读标签、flutter_rust_bridge FFI）。歌词引擎同时支持 TTML、LRC、增强 LRC。背景系统支持封面模糊/流光动效，流光背景可选音频律动模式。
+Windows 本地音乐播放器。前端 Flutter/Dart，后端 Rust（lofty 读标签、flutter_rust_bridge FFI）。歌词引擎同时支持 TTML、LRC、增强 LRC。播放页背景为封面取色网格渐变或封面律动。
 
 ## 代码规范
 - 注释只写做了什么、为什么做，不写灵感来源或参考对象

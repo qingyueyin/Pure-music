@@ -50,17 +50,8 @@ enum NowPlayingBackgroundMode {
 
   static NowPlayingBackgroundMode? fromString(String? backgroundMode) {
     if (backgroundMode == null) return null;
-    if (_matchesStoredEnumName(backgroundMode, 'meshGradientV2') ||
-        _matchesStoredEnumName(backgroundMode, 'staticCover')) {
+    if (_matchesStoredEnumName(backgroundMode, 'meshGradientV2')) {
       return NowPlayingBackgroundMode.meshGradient;
-    }
-    if (_matchesStoredEnumName(backgroundMode, 'pureColor') ||
-        _matchesStoredEnumName(backgroundMode, 'simpleFallback') ||
-        _matchesStoredEnumName(backgroundMode, 'blurCover') ||
-        _matchesStoredEnumName(backgroundMode, 'fluidBlob') ||
-        _matchesStoredEnumName(backgroundMode, 'hybrid') ||
-        _matchesStoredEnumName(backgroundMode, 'coverBlurTest')) {
-      return NowPlayingBackgroundMode.flowingCover;
     }
     for (var value in NowPlayingBackgroundMode.values) {
       if (_matchesStoredEnumName(backgroundMode, value.name)) return value;
