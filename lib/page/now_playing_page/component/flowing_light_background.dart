@@ -14,8 +14,8 @@ import 'package:pure_music/page/now_playing_page/component/now_playing_backgroun
 const _kDecodeSize = 256;
 const _kGaussianShaderAssetPath = 'assets/shaders/pulse_gaussian.frag';
 const _kOverscan = 1.3;
-const _kDownsampleLow = 12.0;
-const _kDownsampleHigh = 18.0;
+const _kDownsampleLow = 16.0;
+const _kDownsampleHigh = 24.0;
 const _kHighDpiThreshold = 2.625;
 const _kMinCropLongest = 96.0;
 const _kBlurSigma = 12.0;
@@ -26,14 +26,15 @@ const _kFrameInterval = Duration(milliseconds: 42);
 const _kArtworkTransitionDuration = Duration(milliseconds: 300);
 const _kPlaybackSpeedTransitionDuration = Duration(milliseconds: 650);
 
-const _kPeriod1 = 90.0;
-const _kPeriod2 = 70.0;
-const _kPeriod3 = 50.0;
+const _kCoverPeriod1 = 65.0;
+const _kCoverPeriod2 = 50.0;
+const _kCoverPeriod3 = 36.0;
 
 const _kPrimaryLayerScale = 1.42;
 const _kPrimaryLayerAlpha = 255;
-const _kSecondaryLayerAlpha = 140;
-const _kLightLayerAlpha = 96;
+const _kSecondaryLayerAlpha = 124;
+const _kLightLayerAlpha = 82;
+const _kPrimaryOffset = Offset(0.12, -0.10);
 const _kSecondaryOffset = Offset(-0.95, -0.7);
 const _kLightOffset = Offset(-0.5, 0.7);
 
@@ -65,7 +66,7 @@ Size _flowingLightOverscanSize(Size cropSize) {
 }
 
 double _flowingLightCompositeSigma(Size size) {
-  return (size.shortestSide * 0.08).clamp(6.0, 12.0);
+  return (size.shortestSide * 0.12).clamp(8.0, 12.0);
 }
 
 const _kDarkFlowingLightStyle = _FlowingLightVisualStyle(
@@ -94,9 +95,9 @@ double flowingLightBreathingScale(
   double bassTransient = 0.0,
 }) {
   return (1.0 +
-          audioLevel.clamp(0.0, 1.0) * 0.08 +
-          bassTransient.clamp(0.0, 1.0) * 0.18)
-      .clamp(1.0, 1.22)
+          audioLevel.clamp(0.0, 1.0) * 0.11 +
+          bassTransient.clamp(0.0, 1.0) * 0.07)
+      .clamp(1.0, 1.18)
       .toDouble();
 }
 
@@ -110,7 +111,7 @@ double flowingLightWarpStrength(
   final transient = bassTransient.isFinite
       ? bassTransient.clamp(0.0, 1.0).toDouble()
       : 0.0;
-  return (level * 0.014 + transient * 0.042).clamp(0.0, 0.055).toDouble();
+  return (level * 0.052 + transient * 0.038).clamp(0.0, 0.09).toDouble();
 }
 
 double flowingLightArtworkOpacityCeiling() {
@@ -120,10 +121,17 @@ double flowingLightArtworkOpacityCeiling() {
   return 1 - (1 - primary) * (1 - secondary) * (1 - light);
 }
 
+double _flowingLightVisualResponse(double value, {double exponent = 0.72}) {
+  final safe = value.isFinite ? value.clamp(0.0, 1.0).toDouble() : 0.0;
+  return safe <= 0 ? 0.0 : pow(safe, exponent).toDouble();
+}
+
 class FlowingLightBackground extends StatefulWidget {
   final NowPlayingBackgroundInputs inputs;
 
   const FlowingLightBackground({super.key, required this.inputs});
+
+  static Future<void> precache() => _FlowingLightBackgroundState.precache();
 
   @override
   State<FlowingLightBackground> createState() => _FlowingLightBackgroundState();
@@ -145,12 +153,14 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
   final ValueNotifier<int> _frameNotifier = ValueNotifier(0);
   final AudioReactiveFlowEnvelope _envelope = AudioReactiveFlowEnvelope();
   final AudioReactiveFlowNormalizer _normalizer = AudioReactiveFlowNormalizer();
-  final AudioReactiveFlowTransientDetector _transientDetector =
+  final AudioReactiveFlowTransientDetector _lowTransientDetector =
+      AudioReactiveFlowTransientDetector();
+  final AudioReactiveFlowTransientDetector _broadbandTransientDetector =
       AudioReactiveFlowTransientDetector();
   final _FlowAudioState _audio = _FlowAudioState();
   ui.FragmentShader? _gaussianHorizontal;
   ui.FragmentShader? _gaussianVertical;
-  late ui.ImageFilter _blurFilter;
+  final _BlurFilterHandle _blurHandle = _BlurFilterHandle();
   Size? _blurFilterSize;
   StreamSubscription<Float32List>? _spectrumSubscription;
   int _decodeGeneration = 0;
@@ -159,6 +169,31 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
 
   static const double _kIdleSpeed = 0.0;
   static const double _kActiveSpeed = 1.0;
+  static ui.FragmentProgram? _cachedGaussianProgram;
+  static Future<ui.FragmentProgram?>? _gaussianProgramFuture;
+
+  static Future<void> precache() async {
+    if (!ui.ImageFilter.isShaderFilterSupported) return;
+    await _gaussianProgram();
+  }
+
+  static Future<ui.FragmentProgram?> _gaussianProgram() {
+    final cached = _cachedGaussianProgram;
+    if (cached != null) return Future<ui.FragmentProgram?>.value(cached);
+    return _gaussianProgramFuture ??= () async {
+      try {
+        final program = await ui.FragmentProgram.fromAsset(
+          _kGaussianShaderAssetPath,
+        );
+        _cachedGaussianProgram = program;
+        return program;
+      } catch (_) {
+        _gaussianProgramFuture = null;
+        return null;
+      }
+    }();
+  }
+
   double _smoothedPlaybackSpeed = _kIdleSpeed;
   double _targetPlaybackSpeed = _kIdleSpeed;
   double _playbackSpeedTransitionFrom = _kIdleSpeed;
@@ -169,9 +204,14 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     super.initState();
     _transitionClock = Stopwatch();
     _ticker = createTicker(_onTick);
-    _blurFilter = _fallbackBlurFilter(_kBlurSigma);
+    _blurHandle.filter = _fallbackBlurFilter(_kBlurSigma);
     _scheduleCoverDecode();
-    _loadGaussianFilters();
+    final cachedProgram = _cachedGaussianProgram;
+    if (cachedProgram != null) {
+      _applyGaussianProgram(cachedProgram);
+    } else {
+      _loadGaussianFilters();
+    }
     _syncSpectrumSubscription();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _syncAnimationState();
@@ -238,11 +278,17 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     final useNormalized = AppPreference.instance.playbackPref.volumeDsp < 0.98;
     final driven = useNormalized ? normalized : response;
     _envelope.update(driven);
-    _audio.captureBass(_transientDetector.update(driven.low));
+    final lowTransient = _lowTransientDetector.update(driven.low);
+    final broadbandTransient = _broadbandTransientDetector.updateResponse(
+      driven,
+    );
+    _audio.captureTransient(lowTransient, broadbandTransient);
+    _audio.noteEnergy(audioReactiveFlowBeatEnergy(driven));
   }
 
   void _resetAudioVisual() {
-    _transientDetector.reset();
+    _lowTransientDetector.reset();
+    _broadbandTransientDetector.reset();
     _envelope.reset();
     _audio.reset();
   }
@@ -334,7 +380,11 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
         : (elapsed - previousTick).inMicroseconds /
               Duration.microsecondsPerSecond;
     final averageSpeed = _updatePlaybackSpeed(deltaSeconds);
-    _motion.time += deltaSeconds * widget.inputs.flowSpeed * averageSpeed;
+    final audioSpeed = widget.inputs.audioReactiveFlow
+        ? _audio.motionSpeed
+        : 1.0;
+    _motion.time +=
+        deltaSeconds * widget.inputs.flowSpeed * averageSpeed * audioSpeed;
     _updatePulses(deltaSeconds);
 
     final lastPaintElapsed = _lastPaintElapsed;
@@ -375,7 +425,7 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     _audio.low = _followEnergy(_audio.low, env.low, deltaSeconds);
     _audio.mid = _followEnergy(_audio.mid, env.mid, deltaSeconds);
     _audio.high = _followEnergy(_audio.high, env.high, deltaSeconds);
-    _audio.updateBassPulse(deltaSeconds);
+    _audio.updatePulses(deltaSeconds);
   }
 
   double _followEnergy(double current, double energy, double deltaSeconds) {
@@ -432,34 +482,41 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
   Future<void> _loadGaussianFilters() async {
     if (!ui.ImageFilter.isShaderFilterSupported) return;
     try {
-      final program = await ui.FragmentProgram.fromAsset(
-        _kGaussianShaderAssetPath,
-      );
-      final horizontal = program.fragmentShader();
-      final vertical = program.fragmentShader();
-      if (_disposed) {
-        horizontal.dispose();
-        vertical.dispose();
-        return;
-      }
-      _configureSeparableBlurShader(horizontal, horizontal: true);
-      _configureSeparableBlurShader(vertical, horizontal: false);
-      final filter = ui.ImageFilter.compose(
-        inner: ui.ImageFilter.shader(horizontal),
-        outer: ui.ImageFilter.shader(vertical),
-      );
-      _gaussianHorizontal?.dispose();
-      _gaussianVertical?.dispose();
-      _gaussianHorizontal = horizontal;
-      _gaussianVertical = vertical;
-      _blurFilter = filter;
-      _blurFilterSize = null;
-      if (mounted) setState(() {});
+      final program = await _gaussianProgram();
+      if (program == null || _disposed) return;
+      _applyGaussianProgram(program);
+      if (mounted && _blurFilterSize != null) _frameNotifier.value++;
     } catch (_) {
       _gaussianHorizontal?.dispose();
       _gaussianVertical?.dispose();
       _gaussianHorizontal = null;
       _gaussianVertical = null;
+    }
+  }
+
+  void _applyGaussianProgram(ui.FragmentProgram program) {
+    final horizontal = program.fragmentShader();
+    final vertical = program.fragmentShader();
+    if (_disposed) {
+      horizontal.dispose();
+      vertical.dispose();
+      return;
+    }
+    _configureSeparableBlurShader(horizontal, horizontal: true);
+    _configureSeparableBlurShader(vertical, horizontal: false);
+    final filter = ui.ImageFilter.compose(
+      inner: ui.ImageFilter.shader(horizontal),
+      outer: ui.ImageFilter.shader(vertical),
+    );
+    _gaussianHorizontal?.dispose();
+    _gaussianVertical?.dispose();
+    _gaussianHorizontal = horizontal;
+    _gaussianVertical = vertical;
+    _blurHandle.filter = filter;
+    final knownSize = _blurFilterSize;
+    _blurFilterSize = null;
+    if (knownSize != null) {
+      _blurFilterFor(knownSize);
     }
   }
 
@@ -477,7 +534,7 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
   }
 
   ui.ImageFilter _blurFilterFor(Size size) {
-    if (_blurFilterSize == size) return _blurFilter;
+    if (_blurFilterSize == size) return _blurHandle.filter;
     final sigma = _flowingLightCompositeSigma(size);
     final horizontal = _gaussianHorizontal;
     final vertical = _gaussianVertical;
@@ -485,10 +542,10 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
       _configureSeparableBlurShader(horizontal, horizontal: true, sigma: sigma);
       _configureSeparableBlurShader(vertical, horizontal: false, sigma: sigma);
     } else {
-      _blurFilter = _fallbackBlurFilter(sigma);
+      _blurHandle.filter = _fallbackBlurFilter(sigma);
     }
     _blurFilterSize = size;
-    return _blurFilter;
+    return _blurHandle.filter;
   }
 
   void _acceptDecodedCover(_DecodedCover decoded) {
@@ -624,6 +681,7 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
             if (cropSize.isEmpty || overscanSize.isEmpty) {
               return const SizedBox.shrink();
             }
+            _blurFilterFor(overscanSize);
             return AnimatedOpacity(
               opacity: coverImage != null ? 1.0 : 0.0,
               duration: _kArtworkTransitionDuration,
@@ -649,7 +707,7 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
                           audioReactiveFlow: widget.inputs.audioReactiveFlow,
                           audio: _audio,
                           style: style,
-                          blurFilter: _blurFilterFor(overscanSize),
+                          blurHandle: _blurHandle,
                           repaint: _frameNotifier,
                         ),
                         size: overscanSize,
@@ -672,6 +730,14 @@ class _DecodedCover {
   final ui.Image image;
 }
 
+class _BlurFilterHandle {
+  ui.ImageFilter filter = ui.ImageFilter.blur(
+    sigmaX: _kBlurSigma,
+    sigmaY: _kBlurSigma,
+    tileMode: TileMode.clamp,
+  );
+}
+
 class _FlowMotionState {
   double time = 0.0;
 }
@@ -680,28 +746,66 @@ class _FlowAudioState {
   double low = 0.0;
   double mid = 0.0;
   double high = 0.0;
-  final AudioReactiveFlowPulseEnvelope _bassPulse =
+  double onset = 0.0;
+  double motionSpeed = 1.0;
+  double _latestEnergy = 0.0;
+  double _previousEnergy = 0.0;
+  final AudioReactiveFlowPulseEnvelope _lowPulse =
+      AudioReactiveFlowPulseEnvelope();
+  final AudioReactiveFlowPulseEnvelope _broadbandPulse =
       AudioReactiveFlowPulseEnvelope();
   final AudioReactiveFlowVisualSpring _visualHit =
       AudioReactiveFlowVisualSpring();
 
-  double get bassTransient => _bassPulse.value;
+  double get lowTransient => _lowPulse.value;
+  double get broadbandTransient => _broadbandPulse.value;
   double get visualHit => _visualHit.value;
 
-  void captureBass(double transient) {
-    _bassPulse.trigger(transient);
+  void captureTransient(double lowTransient, double broadbandTransient) {
+    _lowPulse.trigger(lowTransient);
+    _broadbandPulse.trigger(broadbandTransient);
   }
 
-  void updateBassPulse(double deltaSeconds) {
-    _bassPulse.advance(deltaSeconds);
-    _visualHit.follow(_bassPulse.value, deltaSeconds);
+  void noteEnergy(double energy) {
+    _latestEnergy = energy.isFinite ? energy.clamp(0.0, 1.0).toDouble() : 0.0;
+  }
+
+  void updatePulses(double deltaSeconds) {
+    _lowPulse.advance(deltaSeconds);
+    _broadbandPulse.advance(deltaSeconds);
+    onset = audioReactiveFlowOnsetPulse(
+      currentEnergy: _latestEnergy,
+      previousEnergy: _previousEnergy,
+      previousPulse: onset,
+    );
+    _previousEnergy = _latestEnergy;
+    final visualTarget =
+        (_lowPulse.value * 0.48 + _broadbandPulse.value * 0.18 + onset * 0.46)
+            .clamp(0.0, 1.0)
+            .toDouble();
+    _visualHit.follow(visualTarget, deltaSeconds);
+    final energy = audioReactiveFlowBeatEnergy(
+      AudioReactiveFlowResponse(low, mid, high),
+    );
+    final target = audioReactiveFlowMotionSpeedTarget(
+      energy: energy,
+      onset: onset,
+    );
+    final timeConstant = target > motionSpeed ? 0.07 : 0.22;
+    final response = 1 - exp(-deltaSeconds / timeConstant);
+    motionSpeed += (target - motionSpeed) * response;
   }
 
   void reset() {
     low = 0.0;
     mid = 0.0;
     high = 0.0;
-    _bassPulse.reset();
+    onset = 0.0;
+    motionSpeed = 1.0;
+    _latestEnergy = 0.0;
+    _previousEnergy = 0.0;
+    _lowPulse.reset();
+    _broadbandPulse.reset();
     _visualHit.reset();
   }
 }
@@ -761,7 +865,7 @@ class _FlowingLightPainter extends CustomPainter {
     required this.audioReactiveFlow,
     required this.audio,
     required this.style,
-    required this.blurFilter,
+    required this.blurHandle,
     required ValueNotifier<int> repaint,
   }) : _linearColorFilter = _flowingLightColorFilter(
          style.artworkSaturation,
@@ -777,17 +881,15 @@ class _FlowingLightPainter extends CustomPainter {
   final bool audioReactiveFlow;
   final _FlowAudioState audio;
   final _FlowingLightVisualStyle style;
-  final ui.ImageFilter blurFilter;
+  final _BlurFilterHandle blurHandle;
   final ui.ColorFilter _linearColorFilter;
 
   static const _artworkCurve = Cubic(0, 0, 0.3, 1);
   late final ui.Paint _coverPaint = ui.Paint()
     ..filterQuality = FilterQuality.low
     ..colorFilter = _linearColorFilter;
-  late final ui.Paint _layerAlphaPaint = ui.Paint();
   late final ui.Paint _compositePaint = ui.Paint()
-    ..filterQuality = FilterQuality.low
-    ..imageFilter = blurFilter;
+    ..filterQuality = FilterQuality.low;
   ui.Paint? _scrimPaint;
   Size? _scrimPaintSize;
   List<Color>? _scrimPaintColors;
@@ -804,9 +906,10 @@ class _FlowingLightPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    _compositePaint.imageFilter = blurHandle.filter;
     final previous = previousCoverImage;
     if (previous != null) {
-      _drawFrame(canvas, size, previous, previousMotionTime, 1);
+      _drawFrame(canvas, size, previous, previousMotionTime, 1.0);
     }
     _drawFrame(canvas, size, coverImage, _motionTime, _transitionProgress);
     canvas.drawRect(Offset.zero & size, _scrimPaintFor(size));
@@ -819,21 +922,34 @@ class _FlowingLightPainter extends CustomPainter {
     double time,
     double opacity,
   ) {
-    if (opacity <= 0 || image == null) return;
-    // 形变跟平滑能量和滞后节拍，不跟原始脉冲硬切，也不闪透明度。
-    final hit = audioReactiveFlow
-        ? audio.visualHit.clamp(0.0, 1.0).toDouble()
+    if (image == null || opacity <= 0) return;
+    final low = audioReactiveFlow
+        ? _flowingLightVisualResponse(audio.low, exponent: 0.78)
         : 0.0;
-    final low = audioReactiveFlow ? audio.low.clamp(0.0, 1.0).toDouble() : 0.0;
-    final mid = audioReactiveFlow ? audio.mid.clamp(0.0, 1.0).toDouble() : 0.0;
-    final high = audioReactiveFlow ? audio.high.clamp(0.0, 1.0).toDouble() : 0.0;
-    final breathe = audioReactiveFlow
-        ? flowingLightBreathingScale(low, bassTransient: hit)
-        : 1.0;
+    final mid = audioReactiveFlow
+        ? _flowingLightVisualResponse(audio.mid, exponent: 0.80)
+        : 0.0;
+    final high = audioReactiveFlow
+        ? _flowingLightVisualResponse(audio.high, exponent: 0.82)
+        : 0.0;
+    final broadbandHit = audioReactiveFlow
+        ? _flowingLightVisualResponse(audio.broadbandTransient, exponent: 0.66)
+        : 0.0;
+    final visualHit = audioReactiveFlow
+        ? _flowingLightVisualResponse(audio.visualHit, exponent: 0.62)
+        : 0.0;
     final warp = audioReactiveFlow
-        ? flowingLightWarpStrength(low, bassTransient: hit)
+        ? flowingLightWarpStrength(
+            low * 0.52 + mid * 0.30 + high * 0.18,
+            bassTransient: (broadbandHit * 0.38 + visualHit * 0.62)
+                .clamp(0.0, 1.0)
+                .toDouble(),
+          )
         : 0.0;
-    final pulse = (breathe - 1.0).clamp(0.0, 0.22);
+    final breathe = audioReactiveFlow
+        ? flowingLightBreathingScale(low, bassTransient: visualHit)
+        : 1.0;
+    final pulse = (breathe - 1.0).clamp(0.0, 0.10);
     _compositePaint.color = const Color(
       0xFFFFFFFF,
     ).withValues(alpha: opacity.clamp(0.0, 1.0));
@@ -843,57 +959,60 @@ class _FlowingLightPainter extends CustomPainter {
       size,
       image,
       time: time,
-      period: _kPeriod1,
+      period: _kCoverPeriod1,
       clockwise: false,
-      offset: Offset(low * 0.015, -low * 0.01),
+      offset: Offset(
+        _kPrimaryOffset.dx + low * 0.015,
+        _kPrimaryOffset.dy - low * 0.01,
+      ),
       extraRotation: false,
-      extraSpin: 0,
       squash: Offset(
-        1.0 + low * 0.02 + hit * 0.03,
-        1.0 - low * 0.012 - hit * 0.018,
+        1.0 + low * 0.02 + visualHit * 0.03,
+        1.0 - low * 0.012 - visualHit * 0.018,
       ),
       alpha: _kPrimaryLayerAlpha,
       scaleMul: 1.0 + pulse * 0.40,
+      phase: 0.2,
     );
     _drawCoverLayer(
       canvas,
       size,
       image,
       time: time,
-      period: _kPeriod2,
+      period: _kCoverPeriod2,
       clockwise: true,
       offset: Offset(
         _kSecondaryOffset.dx - warp * 0.35 - mid * 0.03,
         _kSecondaryOffset.dy + low * 0.02,
       ),
       extraRotation: false,
-      extraSpin: 0,
       squash: Offset(
-        1.0 - mid * 0.025 - hit * 0.035,
-        1.0 + mid * 0.03 + hit * 0.045,
+        1.0 - mid * 0.025 - visualHit * 0.035,
+        1.0 + mid * 0.03 + visualHit * 0.045,
       ),
       alpha: _kSecondaryLayerAlpha,
       scaleMul: 1.22 + pulse * 0.62,
+      phase: 1.7,
     );
     _drawCoverLayer(
       canvas,
       size,
       image,
       time: time,
-      period: _kPeriod3,
+      period: _kCoverPeriod3,
       clockwise: true,
       offset: Offset(
         _kLightOffset.dx + warp * 0.4,
         _kLightOffset.dy - low * 0.03,
       ),
       extraRotation: true,
-      extraSpin: 0,
       squash: Offset(
-        1.0 + high * 0.03 + hit * 0.05,
-        1.0 - high * 0.02 - hit * 0.035,
+        1.0 + high * 0.03 + visualHit * 0.05,
+        1.0 - high * 0.02 - visualHit * 0.035,
       ),
       alpha: _kLightLayerAlpha,
       scaleMul: 1.38 + pulse * 0.88,
+      phase: 3.1,
     );
     canvas.drawColor(style.washPrimary, BlendMode.srcOver);
     canvas.drawColor(style.washSecondary, BlendMode.srcOver);
@@ -909,36 +1028,34 @@ class _FlowingLightPainter extends CustomPainter {
     required bool clockwise,
     required Offset offset,
     required bool extraRotation,
-    required double extraSpin,
     required Offset squash,
     required int alpha,
     required double scaleMul,
+    required double phase,
   }) {
-    final turns = (time / period) * 2 * pi;
-    final rotation = (clockwise ? turns : -turns) + extraSpin;
-    final extra = extraRotation ? rotation : 0.0;
+    final cycle = time / period * 2 * pi;
+    final rotation =
+        (clockwise ? cycle : -cycle) * (extraRotation ? 1.35 : 1.0);
     final diagonal = max(size.width, size.height) * _kOverscan;
     final coverScale = diagonal / max(image.height.toDouble(), 1.0) * scaleMul;
-    final rotatePivot = diagonal / 2;
     final translateX = -(diagonal - size.width) / 2;
     final translateY = -(diagonal - size.height) / 2;
-    _layerAlphaPaint.color = Color.fromARGB(alpha, 255, 255, 255);
-    canvas.saveLayer(Offset.zero & size, _layerAlphaPaint);
+    final rotatePivot = Offset(
+      diagonal / 2 + sin(cycle * 0.47 + phase) * size.width * 0.22,
+      diagonal / 2 + cos(cycle * 0.39 - phase) * size.height * 0.18,
+    );
+    _coverPaint.color = Color.fromARGB(alpha, 255, 255, 255);
     canvas.save();
-    if (extra != 0) {
-      canvas.translate(size.width / 2, size.height / 2);
-      canvas.rotate(extra);
-      canvas.translate(-size.width / 2, -size.height / 2);
-    }
     canvas
-      ..translate(size.width * offset.dx, size.height * offset.dy)
-      ..translate(translateX, translateY)
-      ..translate(rotatePivot, rotatePivot)
+      ..translate(
+        size.width * offset.dx + translateX,
+        size.height * offset.dy + translateY,
+      )
+      ..translate(rotatePivot.dx, rotatePivot.dy)
       ..rotate(rotation)
-      ..translate(-rotatePivot, -rotatePivot)
+      ..translate(-rotatePivot.dx, -rotatePivot.dy)
       ..scale(coverScale * squash.dx, coverScale * squash.dy);
     canvas.drawImage(image, Offset.zero, _coverPaint);
-    canvas.restore();
     canvas.restore();
   }
 
@@ -967,7 +1084,7 @@ class _FlowingLightPainter extends CustomPainter {
         oldDelegate.audioReactiveFlow != audioReactiveFlow ||
         !identical(oldDelegate.audio, audio) ||
         oldDelegate.style != style ||
-        !identical(oldDelegate.blurFilter, blurFilter);
+        !identical(oldDelegate.blurHandle, blurHandle);
   }
 
   @override
