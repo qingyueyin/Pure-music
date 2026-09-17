@@ -1,5 +1,6 @@
 ---
 outline: deep
+description: Pure Music 使用的开源项目与依赖致谢。
 ---
 
 # 致谢

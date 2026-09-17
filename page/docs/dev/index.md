@@ -1,5 +1,6 @@
 ---
 outline: deep
+description: Pure Music 架构：Flutter UI、BASS 播放引擎、Rust FFI 与曲库。
 ---
 
 # 架构

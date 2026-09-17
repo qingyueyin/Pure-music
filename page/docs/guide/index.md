@@ -1,5 +1,6 @@
 ---
 outline: deep
+description: Pure Music 简介：本地曲库、多格式歌词、专业音频。导入文件夹即可播放，不改动源文件。
 ---
 
 # 简介

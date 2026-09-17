@@ -1,5 +1,6 @@
 ---
 outline: deep
+description: Pure Music 可能继续完善的功能规划，不代表开发顺序。
 ---
 
 # 待办 / 规划

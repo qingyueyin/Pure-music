@@ -1,5 +1,6 @@
 ---
 outline: deep
+description: Pure Music 安装说明。Windows 10 / 11，安装版与便携版的路径、卸载与数据目录。
 ---
 
 # 安装

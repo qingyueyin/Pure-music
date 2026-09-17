@@ -1,5 +1,6 @@
 ---
 outline: deep
+description: 如何报告问题、提交代码或改进文档。
 ---
 
 # 贡献指南

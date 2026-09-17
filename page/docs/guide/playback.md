@@ -1,5 +1,6 @@
 ---
 outline: deep
+description: 播放模式、音调与速度、10 段 EQ、ReplayGain 与 WASAPI 独占。
 ---
 
 # 播放与音频

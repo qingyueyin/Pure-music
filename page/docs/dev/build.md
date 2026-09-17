@@ -1,5 +1,6 @@
 ---
 outline: deep
+description: 从源码构建 Pure Music：Flutter、Rust、Visual Studio 与发布流程。
 ---
 
 # 构建
