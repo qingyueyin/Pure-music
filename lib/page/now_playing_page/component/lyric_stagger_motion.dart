@@ -52,7 +52,10 @@ class LyricUserScrollTracker {
     return LyricUserScrollPhase.started;
   }
 
-  LyricUserScrollPhase update() => start();
+  LyricUserScrollPhase update() {
+    if (!_isActive) return LyricUserScrollPhase.ignored;
+    return LyricUserScrollPhase.updated;
+  }
 
   LyricUserScrollPhase end() {
     if (!_isActive) return LyricUserScrollPhase.ignored;
@@ -60,6 +63,12 @@ class LyricUserScrollTracker {
     return LyricUserScrollPhase.ended;
   }
 }
+
+/// 滚轮没有 dragDetails，不能走 update()，否则永远进不了用户翻看 hold。
+LyricUserScrollPhase lyricPhaseForUserScrollNotification({
+  required LyricUserScrollTracker tracker,
+  required bool idle,
+}) => idle ? tracker.end() : tracker.start();
 
 class LyricStaggerTransition extends StatefulWidget {
   const LyricStaggerTransition({
@@ -101,8 +110,8 @@ class _LyricStaggerTransitionState extends State<LyricStaggerTransition>
       return;
     }
     if (widget.generation != oldWidget.generation) {
-      // 只在新的补偿到来时接上当前位移，shiftY 被清零不能把弹簧打回 0。
-      _scheduleTransition(composeCurrent: widget.shiftY.abs() >= 0.5);
+      // 新补偿只要过跳过阈值就接上剩余弹簧，避免 0.2~0.5 的切行把回弹掐掉。
+      _scheduleTransition(composeCurrent: widget.shiftY.abs() >= 0.2);
     }
   }
 
@@ -149,7 +158,7 @@ class _LyricStaggerTransitionState extends State<LyricStaggerTransition>
     final spring = SpringDescription.withDampingRatio(
       mass: 1,
       stiffness: 200,
-      ratio: 1.1,
+      ratio: 0.9,
     );
     _controller.animateWith(
       SpringSimulation(
@@ -157,7 +166,7 @@ class _LyricStaggerTransitionState extends State<LyricStaggerTransition>
         _controller.value,
         0,
         velocity,
-        tolerance: const Tolerance(distance: 0.5, velocity: 0.1),
+        tolerance: const Tolerance(distance: 0.05, velocity: 0.1),
       ),
     );
   }

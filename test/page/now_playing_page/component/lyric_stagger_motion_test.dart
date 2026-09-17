@@ -46,10 +46,7 @@ void main() {
       expect(decide(previousIndex: -1, nextIndex: 1), isFalse);
       expect(decide(previousIndex: 3, nextIndex: 3), isFalse);
       expect(decide(previousIndex: 3, nextIndex: 14), isFalse);
-      expect(
-        decide(previousIndex: 3, nextIndex: 4, enabled: false),
-        isFalse,
-      );
+      expect(decide(previousIndex: 3, nextIndex: 4, enabled: false), isFalse);
       expect(
         decide(previousIndex: 3, nextIndex: 4, isUserDragging: true),
         isFalse,
@@ -81,10 +78,37 @@ void main() {
       expect(tracker.end(), LyricUserScrollPhase.ended);
       expect(tracker.end(), LyricUserScrollPhase.ignored);
     });
+
+    test('layout updates do not start a user scroll session', () {
+      final tracker = LyricUserScrollTracker();
+
+      expect(tracker.update(), LyricUserScrollPhase.ignored);
+      expect(tracker.isActive, isFalse);
+      expect(tracker.end(), LyricUserScrollPhase.ignored);
+    });
+
+    test('wheel scroll starts a hold without a prior drag', () {
+      final tracker = LyricUserScrollTracker();
+
+      expect(
+        lyricPhaseForUserScrollNotification(tracker: tracker, idle: false),
+        LyricUserScrollPhase.started,
+      );
+      expect(tracker.isActive, isTrue);
+      expect(
+        lyricPhaseForUserScrollNotification(tracker: tracker, idle: false),
+        LyricUserScrollPhase.updated,
+      );
+      expect(
+        lyricPhaseForUserScrollNotification(tracker: tracker, idle: true),
+        LyricUserScrollPhase.ended,
+      );
+    });
   });
 
-  testWidgets('a new generation starts from the captured displacement',
-      (tester) async {
+  testWidgets('a new generation starts from the captured displacement', (
+    tester,
+  ) async {
     Widget host({
       required int generation,
       required double shiftY,
@@ -113,8 +137,9 @@ void main() {
     expect(_translationY(tester), closeTo(0, 0.01));
   });
 
-  testWidgets('a newer generation cancels the previous delayed spring',
-      (tester) async {
+  testWidgets('a newer generation cancels the previous delayed spring', (
+    tester,
+  ) async {
     Widget host({
       required int generation,
       required double shiftY,
@@ -153,12 +178,10 @@ void main() {
     expect(_translationY(tester), closeTo(0, 0.01));
   });
 
-  testWidgets('a newer generation keeps the remaining spring offset',
-      (tester) async {
-    Widget host({
-      required int generation,
-      required double shiftY,
-    }) {
+  testWidgets('a newer generation keeps the remaining spring offset', (
+    tester,
+  ) async {
+    Widget host({required int generation, required double shiftY}) {
       return Directionality(
         textDirection: TextDirection.ltr,
         child: LyricStaggerTransition(
@@ -181,12 +204,35 @@ void main() {
     expect(_translationY(tester), closeTo(remaining + 40, 0.5));
   });
 
-  testWidgets('clearing shiftY without a new generation keeps the spring',
-      (tester) async {
-    Widget host({
-      required int generation,
-      required double shiftY,
-    }) {
+  testWidgets('a jump just above the skip threshold still composes', (
+    tester,
+  ) async {
+    Widget host({required int generation, required double shiftY}) {
+      return Directionality(
+        textDirection: TextDirection.ltr,
+        child: LyricStaggerTransition(
+          enabled: true,
+          generation: generation,
+          shiftY: shiftY,
+          delay: Duration.zero,
+          child: const SizedBox(key: ValueKey('line'), width: 20, height: 20),
+        ),
+      );
+    }
+
+    await tester.pumpWidget(host(generation: 1, shiftY: 120));
+    await tester.pump(const Duration(milliseconds: 80));
+    final remaining = _translationY(tester);
+    expect(remaining, greaterThan(0));
+
+    await tester.pumpWidget(host(generation: 2, shiftY: 0.3));
+    expect(_translationY(tester), closeTo(remaining + 0.3, 0.5));
+  });
+
+  testWidgets('clearing shiftY without a new generation keeps the spring', (
+    tester,
+  ) async {
+    Widget host({required int generation, required double shiftY}) {
       return Directionality(
         textDirection: TextDirection.ltr,
         child: LyricStaggerTransition(
@@ -210,8 +256,9 @@ void main() {
     expect(_translationY(tester), lessThan(remaining));
   });
 
-  testWidgets('a running spring is not delayed again on the next jump',
-      (tester) async {
+  testWidgets('a running spring is not delayed again on the next jump', (
+    tester,
+  ) async {
     Widget host({
       required int generation,
       required double shiftY,
@@ -237,11 +284,7 @@ void main() {
     expect(remaining, greaterThan(0));
 
     await tester.pumpWidget(
-      host(
-        generation: 2,
-        shiftY: 40,
-        delay: const Duration(milliseconds: 400),
-      ),
+      host(generation: 2, shiftY: 40, delay: const Duration(milliseconds: 400)),
     );
     final composed = _translationY(tester);
     expect(composed, closeTo(remaining + 40, 0.5));
@@ -249,8 +292,9 @@ void main() {
     expect(_translationY(tester), lessThan(composed));
   });
 
-  testWidgets('disabling the effect cancels a delayed spring immediately',
-      (tester) async {
+  testWidgets('disabling the effect cancels a delayed spring immediately', (
+    tester,
+  ) async {
     Widget host({required bool enabled}) {
       return Directionality(
         textDirection: TextDirection.ltr,
