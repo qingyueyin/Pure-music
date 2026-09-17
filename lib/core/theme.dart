@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:pure_music/core/app_fonts.dart' as app_fonts;
 import 'package:pure_music/core/color_extraction.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/library/audio_library.dart';
@@ -160,6 +161,14 @@ class ThemeProvider extends ChangeNotifier {
   late ColorScheme darkScheme;
 
   String? fontFamily = AppSettings.instance.fontFamily;
+  String? lyricFontFamily = AppSettings.instance.lyricFontFamily;
+  bool lyricFontFollowsUi = AppSettings.instance.lyricFontFollowsUi;
+
+  String? get resolvedLyricFontFamily => app_fonts.resolvedLyricFontFamily(
+        followsUi: lyricFontFollowsUi,
+        lyricFontFamily: lyricFontFamily,
+        uiFontFamily: fontFamily,
+      );
 
   Brightness get effectiveBrightness => switch (themeMode) {
     ThemeMode.light => Brightness.light,
@@ -360,6 +369,25 @@ class ThemeProvider extends ChangeNotifier {
 
   void changeFontFamily(String? fontFamily) {
     this.fontFamily = fontFamily;
+    notifyListeners();
+  }
+
+  void changeLyricFontFamily(String? fontFamily) {
+    lyricFontFamily = fontFamily;
+    notifyListeners();
+  }
+
+  void changeLyricFontFollowsUi(bool follows) {
+    if (lyricFontFollowsUi == follows) return;
+    lyricFontFollowsUi = follows;
+    notifyListeners();
+  }
+
+  void applyLoadedFonts() {
+    final settings = AppSettings.instance;
+    fontFamily = settings.fontFamily;
+    lyricFontFamily = settings.lyricFontFamily;
+    lyricFontFollowsUi = settings.lyricFontFollowsUi;
     notifyListeners();
   }
 

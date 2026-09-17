@@ -14,11 +14,11 @@ import 'package:pure_music/core/immersive.dart';
 import 'package:pure_music/core/memory_monitor.dart';
 import 'package:pure_music/native/rust/api/logger.dart';
 import 'package:pure_music/native/rust/frb_generated.dart';
+import 'package:pure_music/core/app_fonts.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/core/window_lifecycle.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:flutter_single_instance/flutter_single_instance.dart';
 
@@ -66,21 +66,18 @@ Future<void> initWindow() async {
 
 Future<void> loadPrefFont() async {
   final settings = AppSettings.instance;
-  if (settings.fontFamily != null) {
+  Future<void> load(String? family, String? path) async {
+    if (family == null || path == null) return;
     try {
-      final fontLoader = FontLoader(settings.fontFamily!);
-
-      fontLoader.addFont(
-        File(settings.fontPath!).readAsBytes().then((value) {
-          return ByteData.sublistView(value);
-        }),
-      );
-      await fontLoader.load();
-      ThemeProvider.instance.changeFontFamily(settings.fontFamily!);
+      await loadAppFontFile(family: family, path: path);
     } catch (err, trace) {
       logger.e(err, stackTrace: trace);
     }
   }
+
+  await load(settings.fontFamily, settings.fontPath);
+  await load(settings.lyricFontFamily, settings.lyricFontPath);
+  ThemeProvider.instance.applyLoadedFonts();
 }
 
 void _installGlobalErrorLogging() {

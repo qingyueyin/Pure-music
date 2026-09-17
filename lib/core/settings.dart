@@ -333,6 +333,9 @@ class AppSettings {
 
   String? fontFamily;
   String? fontPath;
+  bool lyricFontFollowsUi = true;
+  String? lyricFontFamily;
+  String? lyricFontPath;
 
   late String artistSplitPattern = artistSeparator.join('|');
   RegExp? _cachedArtistSplitRegex;
@@ -983,6 +986,29 @@ class AppSettings {
         _instance.fontPath = fontPath;
       }
     }
+
+    final lff = settingsMap['LyricFontFamily'];
+    final lfp = settingsMap['LyricFontPath'];
+    if (lff != null || lfp != null) {
+      final fontFamily = normalizedStringSetting(lff);
+      final fontPath = normalizedPathSetting(lfp);
+      if (fontFamily == null || fontPath == null) {
+        _instance.lyricFontFamily = null;
+        _instance.lyricFontPath = null;
+      } else {
+        _instance.lyricFontFamily = fontFamily;
+        _instance.lyricFontPath = fontPath;
+      }
+    }
+
+    if (settingsMap.containsKey('LyricFontFollowsUi')) {
+      _instance.lyricFontFollowsUi = normalizedBoolSetting(
+        settingsMap['LyricFontFollowsUi'],
+        defaultValue: true,
+      );
+    } else {
+      _instance.lyricFontFollowsUi = _instance.lyricFontFamily == null;
+    }
   }
 
   static Future<void> readFromJson() async {
@@ -1079,6 +1105,9 @@ class AppSettings {
         'WindowCloseBehavior': windowCloseBehavior.name,
         'FontFamily': fontFamily,
         'FontPath': fontPath,
+        'LyricFontFollowsUi': lyricFontFollowsUi,
+        'LyricFontFamily': lyricFontFamily,
+        'LyricFontPath': lyricFontPath,
       };
 
       Size sizeToSave = windowSize;
