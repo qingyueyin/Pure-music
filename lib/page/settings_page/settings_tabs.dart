@@ -1,6 +1,5 @@
-import 'dart:io';
-
 import 'package:file_picker/file_picker.dart';
+import 'package:pure_music/core/app_fonts.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/desktop_lyric_colors.dart';
 import 'package:pure_music/core/enums.dart';
@@ -2344,7 +2343,7 @@ class _AdvancedTabContent extends StatelessWidget {
         _GroupEntry(
           icon: Symbols.settings_suggest,
           title: '系统行为',
-          subtitle: '关闭窗口与日志',
+          subtitle: '关闭窗口、防休眠与日志',
           groupId: 'advanced-system',
         ),
         SizedBox(height: 8.0),
@@ -2508,21 +2507,183 @@ class _WindowCloseBehaviorControlState
   }
 }
 
-class SelectFontCombobox extends StatefulWidget {
-  const SelectFontCombobox({super.key});
+enum _FontTarget { ui, lyric }
+
+class _FontPreviewCard extends StatelessWidget {
+  const _FontPreviewCard();
 
   @override
-  State<SelectFontCombobox> createState() => _SelectFontComboboxState();
+  Widget build(BuildContext context) {
+    final theme = context.watch<ThemeProvider>();
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainer,
+        borderRadius: AppRadius.smCircular,
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _FontPreviewSample(
+            label: '界面',
+            sample: '界面预览  ABC  あいう',
+            fontFamily: theme.fontFamily,
+          ),
+          const SizedBox(height: 12),
+          _FontPreviewSample(
+            label: '歌词',
+            sample: '时光的河入海流',
+            fontFamily: theme.resolvedLyricFontFamily,
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-class _SelectFontComboboxState extends State<SelectFontCombobox> {
+class _FontPreviewSample extends StatelessWidget {
+  const _FontPreviewSample({
+    required this.label,
+    required this.sample,
+    required this.fontFamily,
+  });
+
+  final String label;
+  final String sample;
+  final String? fontFamily;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            color: scheme.onSurfaceVariant,
+            fontSize: AppType.caption,
+            fontWeight: AppType.weightSemibold,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          sample,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: scheme.onSurface,
+            fontSize: AppType.sectionTitle,
+            fontFamily: fontFamily,
+            fontFamilyFallback: appFontFamilyFallback(fontFamily),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LyricFontFollowsUiSwitch extends StatefulWidget {
+  const _LyricFontFollowsUiSwitch();
+
+  @override
+  State<_LyricFontFollowsUiSwitch> createState() =>
+      _LyricFontFollowsUiSwitchState();
+}
+
+class _LyricFontFollowsUiSwitchState extends State<_LyricFontFollowsUiSwitch> {
+  bool _saving = false;
+
+  Future<void> _setFollows(bool value) async {
+    if (_saving) return;
+    final settings = AppSettings.instance;
+    if (settings.lyricFontFollowsUi == value) return;
+    final previous = settings.lyricFontFollowsUi;
+    final previousLyricFamily = settings.lyricFontFamily;
+    final previousLyricPath = settings.lyricFontPath;
+    final copyUiFont = !value && settings.lyricFontFamily == null;
+    setState(() {
+      _saving = true;
+      settings.lyricFontFollowsUi = value;
+      if (copyUiFont) {
+        settings.lyricFontFamily = settings.fontFamily;
+        settings.lyricFontPath = settings.fontPath;
+      }
+    });
+    final theme = ThemeProvider.instance;
+    theme.changeLyricFontFollowsUi(value);
+    if (copyUiFont) theme.changeLyricFontFamily(settings.lyricFontFamily);
+    try {
+      if (!await settings.saveSettings()) {
+        settings.lyricFontFollowsUi = previous;
+        settings.lyricFontFamily = previousLyricFamily;
+        settings.lyricFontPath = previousLyricPath;
+        theme.changeLyricFontFollowsUi(previous);
+        if (copyUiFont) theme.changeLyricFontFamily(previousLyricFamily);
+        if (mounted) {
+          showTextOnSnackBar('保存字体设置失败', variant: ToastVariant.error);
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final follows = context.watch<ThemeProvider>().lyricFontFollowsUi;
+    return SettingsTile(
+      description: '歌词字体跟随界面',
+      subtitle: follows ? '播放页歌词使用界面字体' : '播放页歌词可单独选择字体',
+      action: Switch(
+        value: follows,
+        onChanged: _saving ? null : _setFollows,
+      ),
+    );
+  }
+}
+
+class _FontPickerTile extends StatefulWidget {
+  const _FontPickerTile({required this.target});
+
+  final _FontTarget target;
+
+  @override
+  State<_FontPickerTile> createState() => _FontPickerTileState();
+}
+
+class _FontPickerTileState extends State<_FontPickerTile> {
   String? _busyLabel;
 
   bool get _isBusy => _busyLabel != null;
 
   void _setBusyLabel(String? label) {
-    if (mounted) {
-      setState(() => _busyLabel = label);
+    if (mounted) setState(() => _busyLabel = label);
+  }
+
+  String? _currentFamily(ThemeProvider theme) => widget.target == _FontTarget.ui
+      ? theme.fontFamily
+      : theme.lyricFontFamily;
+
+  void _applyTheme(String? family) {
+    final theme = ThemeProvider.instance;
+    if (widget.target == _FontTarget.ui) {
+      theme.changeFontFamily(family);
+    } else {
+      theme.changeLyricFontFamily(family);
+    }
+  }
+
+  void _writeSettings({String? family, String? path}) {
+    final settings = AppSettings.instance;
+    if (widget.target == _FontTarget.ui) {
+      settings.fontFamily = family;
+      settings.fontPath = path;
+    } else {
+      settings.lyricFontFamily = family;
+      settings.lyricFontPath = path;
     }
   }
 
@@ -2537,29 +2698,34 @@ class _SelectFontComboboxState extends State<SelectFontCombobox> {
         return;
       }
 
+      final theme = ThemeProvider.instance;
       final selection = await showDialog<_FontSelection>(
         context: context,
-        builder: (context) => _FontSelector(installedFont: installedFont),
+        builder: (context) => _FontSelector(
+          installedFont: installedFont,
+          currentFont: _currentFamily(theme),
+        ),
       );
       if (!mounted || selection == null) return;
 
-      final selectedFont = selection.font;
       final settings = AppSettings.instance;
-      final oldFontFamily = settings.fontFamily;
-      final oldFontPath = settings.fontPath;
+      final oldFontFamily = widget.target == _FontTarget.ui
+          ? settings.fontFamily
+          : settings.lyricFontFamily;
+      final oldFontPath = widget.target == _FontTarget.ui
+          ? settings.fontPath
+          : settings.lyricFontPath;
+      final selectedFont = selection.font;
       if (selectedFont == null) {
         try {
           _setBusyLabel('恢复默认');
-          ThemeProvider.instance.changeFontFamily(null);
-
+          _applyTheme(null);
           _setBusyLabel('保存中');
-          settings.fontFamily = null;
-          settings.fontPath = null;
+          _writeSettings(family: null, path: null);
           final saved = await settings.saveSettings();
           if (!saved) {
-            settings.fontFamily = oldFontFamily;
-            settings.fontPath = oldFontPath;
-            ThemeProvider.instance.changeFontFamily(oldFontFamily);
+            _writeSettings(family: oldFontFamily, path: oldFontPath);
+            _applyTheme(oldFontFamily);
             showTextOnSnackBar('保存字体设置失败', variant: ToastVariant.error);
           } else if (mounted) {
             showTextOnSnackBar('已恢复默认字体', variant: ToastVariant.success);
@@ -2575,29 +2741,22 @@ class _SelectFontComboboxState extends State<SelectFontCombobox> {
 
       try {
         _setBusyLabel('应用中');
-        final fontLoader = FontLoader(selectedFont.fullName);
-        fontLoader.addFont(
-          File(selectedFont.path).readAsBytes().then((value) {
-            return ByteData.sublistView(value);
-          }),
+        await loadAppFontFile(
+          family: selectedFont.fullName,
+          path: selectedFont.path,
         );
-        await fontLoader.load();
-        ThemeProvider.instance.changeFontFamily(selectedFont.fullName);
-
+        _applyTheme(selectedFont.fullName);
         _setBusyLabel('保存中');
-        settings.fontFamily = selectedFont.fullName;
-        settings.fontPath = selectedFont.path;
+        _writeSettings(family: selectedFont.fullName, path: selectedFont.path);
         final saved = await settings.saveSettings();
         if (!saved) {
-          settings.fontFamily = oldFontFamily;
-          settings.fontPath = oldFontPath;
-          ThemeProvider.instance.changeFontFamily(oldFontFamily);
+          _writeSettings(family: oldFontFamily, path: oldFontPath);
+          _applyTheme(oldFontFamily);
           showTextOnSnackBar('保存字体设置失败');
         } else if (mounted) {
           showTextOnSnackBar('已应用字体');
         }
       } catch (err, trace) {
-        ThemeProvider.instance.changeFontFamily(null);
         logger.e('应用字体失败', error: err, stackTrace: trace);
         if (mounted) {
           showTextOnSnackBar('应用字体失败，请查看日志');
@@ -2610,9 +2769,12 @@ class _SelectFontComboboxState extends State<SelectFontCombobox> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<ThemeProvider>();
+    final current = _currentFamily(theme);
+    final isUi = widget.target == _FontTarget.ui;
     return SettingsTile(
-      description: '界面字体',
-      subtitle: _busyLabel,
+      description: isUi ? '界面字体' : '歌词字体',
+      subtitle: _busyLabel ?? current ?? '默认字体',
       action: FilledButton.icon(
         onPressed: _isBusy ? null : _selectFont,
         label: Text(_busyLabel ?? '选择字体'),
@@ -2634,18 +2796,52 @@ class _FontSelection {
   final InstalledFont? font;
 }
 
-class _FontSelector extends StatelessWidget {
-  const _FontSelector({required this.installedFont});
+class _FontSelector extends StatefulWidget {
+  const _FontSelector({
+    required this.installedFont,
+    required this.currentFont,
+  });
+
   final List<InstalledFont> installedFont;
+  final String? currentFont;
+
+  @override
+  State<_FontSelector> createState() => _FontSelectorState();
+}
+
+class _FontSelectorState extends State<_FontSelector> {
+  final _queryController = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _queryController.dispose();
+    super.dispose();
+  }
+
+  List<InstalledFont> get _filtered {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return widget.installedFont;
+    return widget.installedFont
+        .where((font) => font.fullName.toLowerCase().contains(q))
+        .toList();
+  }
+
+  bool get _showDefault {
+    final q = _query.trim().toLowerCase();
+    return q.isEmpty || '默认字体'.contains(q);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Provider.of<ThemeProvider>(context);
     final scheme = Theme.of(context).colorScheme;
     final size = MediaQuery.sizeOf(context);
     final width = (size.width - 48.0).clamp(300.0, 520.0).toDouble();
     final height = (size.height - 96.0).clamp(320.0, 560.0).toDouble();
-    final currentFont = theme.fontFamily;
+    final currentFont = widget.currentFont;
+    final filtered = _filtered;
+    final showDefault = _showDefault;
+    final itemCount = (showDefault ? 1 : 0) + filtered.length;
 
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(
@@ -2662,94 +2858,153 @@ class _FontSelector extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Padding(
-                padding: const EdgeInsets.only(bottom: 16.0),
+                padding: const EdgeInsets.only(bottom: 12.0),
                 child: Wrap(
                   spacing: 8.0,
                   runSpacing: 8.0,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text(
-                      '\u9009\u62e9\u5b57\u4f53',
+                      '选择字体',
                       style: TextStyle(
                         color: scheme.onSurface,
                         fontSize: AppType.sectionTitle,
                         fontWeight: AppType.weightBold,
                       ),
                     ),
-                    _CurrentFontPill(label: currentFont ?? '\u9ed8\u8ba4'),
+                    _CurrentFontPill(label: currentFont ?? '默认'),
                   ],
                 ),
               ),
-              Expanded(
-                child: Material(
-                  type: MaterialType.transparency,
-                  child: ListView.builder(
-                    itemCount: installedFont.length + 1,
-                    itemExtent: 56.0,
-                    itemBuilder: (context, i) {
-                      if (i == 0) {
-                        final selected = currentFont == null;
-                        return ListTile(
-                          selected: selected,
-                          selectedTileColor: scheme.secondaryContainer
-                              .withValues(alpha: 0.45),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: AppRadius.mdCircular,
+              Focus(
+                onFocusChange: HotkeysHelper.onFocusChanges,
+                child: TextField(
+                  controller: _queryController,
+                  onChanged: (value) => setState(() => _query = value),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    hintText: '搜索字体',
+                    prefixIcon: const Icon(Symbols.search, size: 20),
+                    prefixIconConstraints: const BoxConstraints(
+                      minWidth: 40,
+                      minHeight: 36,
+                    ),
+                    suffixIcon: _query.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: const Icon(Symbols.close, size: 18),
+                            onPressed: () {
+                              _queryController.clear();
+                              setState(() => _query = '');
+                            },
                           ),
-                          leading: Icon(
-                            selected
-                                ? Symbols.check_circle
-                                : Symbols.format_clear,
-                            color: selected
-                                ? scheme.primary
-                                : scheme.onSurfaceVariant,
-                          ),
-                          title: const Text('默认字体'),
-                          trailing: selected ? const Icon(Symbols.check) : null,
-                          onTap:
-                              !canResetOptionalSetting<String>(
-                                current: currentFont,
-                                isSaving: false,
-                              )
-                              ? null
-                              : () => Navigator.pop(
-                                  context,
-                                  const _FontSelection(null),
-                                ),
-                        );
-                      }
-
-                      final fontIndex = i - 1;
-                      final font = installedFont[fontIndex];
-                      final selected = font.fullName == currentFont;
-                      return ListTile(
-                        selected: selected,
-                        selectedTileColor: scheme.secondaryContainer.withValues(
-                          alpha: 0.45,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: AppRadius.mdCircular,
-                        ),
-                        leading: Icon(
-                          selected ? Symbols.check_circle : Symbols.text_fields,
-                          color: selected
-                              ? scheme.primary
-                              : scheme.onSurfaceVariant,
-                        ),
-                        title: Text(
-                          font.fullName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        trailing: selected ? const Icon(Symbols.check) : null,
-                        onTap: selected
-                            ? null
-                            : () =>
-                                  Navigator.pop(context, _FontSelection(font)),
-                      );
-                    },
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: AppRadius.smCircular,
+                    ),
                   ),
                 ),
+              ),
+              const SizedBox(height: 12.0),
+              Expanded(
+                child: itemCount == 0
+                    ? Center(
+                        child: Text(
+                          '没有匹配的字体',
+                          style: TextStyle(
+                            color: scheme.onSurfaceVariant,
+                            fontSize: AppType.body,
+                          ),
+                        ),
+                      )
+                    : Material(
+                        type: MaterialType.transparency,
+                        child: ListView.builder(
+                          itemCount: itemCount,
+                          itemExtent: 56.0,
+                          itemBuilder: (context, i) {
+                            if (showDefault && i == 0) {
+                              final selected = currentFont == null;
+                              return ListTile(
+                                selected: selected,
+                                selectedTileColor: scheme.secondaryContainer
+                                    .withValues(alpha: 0.45),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: AppRadius.mdCircular,
+                                ),
+                                leading: Icon(
+                                  selected
+                                      ? Symbols.check_circle
+                                      : Symbols.format_clear,
+                                  color: selected
+                                      ? scheme.primary
+                                      : scheme.onSurfaceVariant,
+                                ),
+                                title: const Text('默认字体'),
+                                trailing: selected
+                                    ? const Icon(Symbols.check)
+                                    : null,
+                                onTap:
+                                    !canResetOptionalSetting<String>(
+                                      current: currentFont,
+                                      isSaving: false,
+                                    )
+                                    ? null
+                                    : () => Navigator.pop(
+                                        context,
+                                        const _FontSelection(null),
+                                      ),
+                              );
+                            }
+
+                            final font = filtered[showDefault ? i - 1 : i];
+                            final selected = font.fullName == currentFont;
+                            final loaded = isAppFontLoaded(font.fullName);
+                            return ListTile(
+                              selected: selected,
+                              selectedTileColor: scheme.secondaryContainer
+                                  .withValues(alpha: 0.45),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: AppRadius.mdCircular,
+                              ),
+                              leading: Icon(
+                                selected
+                                    ? Symbols.check_circle
+                                    : Symbols.text_fields,
+                                color: selected
+                                    ? scheme.primary
+                                    : scheme.onSurfaceVariant,
+                              ),
+                              title: Text(
+                                font.fullName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: loaded
+                                    ? TextStyle(
+                                        fontFamily: font.fullName,
+                                        fontFamilyFallback:
+                                            appFontFamilyFallback(
+                                          font.fullName,
+                                        ),
+                                      )
+                                    : null,
+                              ),
+                              trailing: selected
+                                  ? const Icon(Symbols.check)
+                                  : null,
+                              onTap: selected
+                                  ? null
+                                  : () => Navigator.pop(
+                                      context,
+                                      _FontSelection(font),
+                                    ),
+                            );
+                          },
+                        ),
+                      ),
               ),
               const SizedBox(height: 16.0),
               OverflowBar(
@@ -2759,7 +3014,7 @@ class _FontSelector extends StatelessWidget {
                 children: [
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text('\u53d6\u6d88'),
+                    child: const Text('取消'),
                   ),
                 ],
               ),
@@ -2781,7 +3036,7 @@ class _CurrentFontPill extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
 
     return Text(
-      '\u5f53\u524d\uff1a$label',
+      '当前：$label',
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: TextStyle(
@@ -4775,12 +5030,21 @@ class _AdvancedFontGroup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final followsUi = context.watch<ThemeProvider>().lyricFontFollowsUi;
     return ListView(
       padding: const EdgeInsets.only(bottom: 96.0, right: 20),
-      children: const [
-        _SettingsSectionHeader('字体'),
-        SizedBox(height: 4.0),
-        SelectFontCombobox(),
+      children: [
+        const _SettingsSectionHeader('字体'),
+        const SizedBox(height: 4.0),
+        const _FontPreviewCard(),
+        const SizedBox(height: 16.0),
+        const _FontPickerTile(target: _FontTarget.ui),
+        const SizedBox(height: 16.0),
+        const _LyricFontFollowsUiSwitch(),
+        if (!followsUi) ...[
+          const SizedBox(height: 16.0),
+          const _FontPickerTile(target: _FontTarget.lyric),
+        ],
       ],
     );
   }
