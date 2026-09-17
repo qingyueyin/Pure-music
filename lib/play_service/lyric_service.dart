@@ -135,8 +135,9 @@ bool isDesktopLyricTransitionLine(LyricLine line) {
   return false;
 }
 
-class _ParallelLyricGroup {
-  const _ParallelLyricGroup(this.members, this.endMs);
+@visibleForTesting
+class ParallelLyricGroup {
+  const ParallelLyricGroup(this.members, this.endMs);
 
   final List<int> members;
   final int endMs;
@@ -173,7 +174,20 @@ int _lyricLineRenderEndMs(Lyric lyric, LyricLine line) {
   return end;
 }
 
-List<_ParallelLyricGroup> _buildParallelLyricGroups({
+// 主词结束时间，不含 bg 和声尾部：分组重叠判定专用，避免和声拖尾把下一行误判为并行。
+int _lyricLineMainEndMs(LyricLine line) {
+  var end = line.start.inMilliseconds + line.length.inMilliseconds;
+  if (line is SyncLyricLine && line.words.isNotEmpty) {
+    final lastWord = line.words.last;
+    final wordEnd =
+        lastWord.start.inMilliseconds + lastWord.length.inMilliseconds;
+    end = max(end, wordEnd);
+  }
+  return end;
+}
+
+@visibleForTesting
+List<ParallelLyricGroup> buildParallelLyricGroups({
   required Lyric lyric,
   required List<int> lineStartMs,
   required List<int> lineEndMs,
@@ -182,35 +196,38 @@ List<_ParallelLyricGroup> _buildParallelLyricGroups({
     return const [];
   }
 
-  final groups = <_ParallelLyricGroup>[];
+  // 分组重叠判定用主词结束时间，避免和声拖尾把下一行误判为并行组成员。
+  final mainEndMs = lyric.lines.map(_lyricLineMainEndMs).toList();
+
+  final groups = <ParallelLyricGroup>[];
   var members = <int>[0];
   var sharedStart = lineStartMs.first;
-  var sharedEnd = lineEndMs.first;
+  var sharedEnd = mainEndMs.first;
   var groupEnd = lineEndMs.first;
 
   for (var i = 1; i < lyric.lines.length; i++) {
     final start = lineStartMs[i];
-    final end = lineEndMs[i];
+    final end = mainEndMs[i];
     final sharedOverlapMs = min(sharedEnd, end) - max(sharedStart, start);
     if (sharedOverlapMs > lyricWordPreSwitchMs) {
       members.add(i);
       sharedStart = max(sharedStart, start);
       sharedEnd = min(sharedEnd, end);
-      groupEnd = max(groupEnd, end);
+      groupEnd = max(groupEnd, lineEndMs[i]);
       continue;
     }
 
     if (members.length > 1) {
-      groups.add(_ParallelLyricGroup(List.unmodifiable(members), groupEnd));
+      groups.add(ParallelLyricGroup(List.unmodifiable(members), groupEnd));
     }
     members = <int>[i];
     sharedStart = start;
     sharedEnd = end;
-    groupEnd = end;
+    groupEnd = lineEndMs[i];
   }
 
   if (members.length > 1) {
-    groups.add(_ParallelLyricGroup(List.unmodifiable(members), groupEnd));
+    groups.add(ParallelLyricGroup(List.unmodifiable(members), groupEnd));
   }
   return groups;
 }
@@ -278,8 +295,8 @@ int? lyricHighlightDeadlineMsForLine(Lyric lyric, int lineIndex) {
   final lineEndMs = lines
       .map((line) => _lyricLineRenderEndMs(lyric, line))
       .toList();
-  _ParallelLyricGroup? parallelGroup;
-  for (final group in _buildParallelLyricGroups(
+  ParallelLyricGroup? parallelGroup;
+  for (final group in buildParallelLyricGroups(
     lyric: lyric,
     lineStartMs: lineStartMs,
     lineEndMs: lineEndMs,
@@ -1181,7 +1198,7 @@ class LyricService extends ChangeNotifier {
         ? preferredIndex
         : activeIndices.last;
     final layout = activeIndices.toSet();
-    for (final group in _buildParallelLyricGroups(
+    for (final group in buildParallelLyricGroups(
       lyric: lyric,
       lineStartMs: lineRenderStartMs,
       lineEndMs: lineEndMs,
@@ -1214,8 +1231,8 @@ class LyricService extends ChangeNotifier {
     List<int> lineEndMs,
   ) {
     final switchStarts = List<int>.of(renderStartMs);
-    final groupByLine = <int, _ParallelLyricGroup>{};
-    for (final group in _buildParallelLyricGroups(
+    final groupByLine = <int, ParallelLyricGroup>{};
+    for (final group in buildParallelLyricGroups(
       lyric: lyric,
       lineStartMs: renderStartMs,
       lineEndMs: lineEndMs,
