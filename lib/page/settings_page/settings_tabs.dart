@@ -6,6 +6,7 @@ import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/setting_action_state.dart';
+import 'package:pure_music/core/sleep_blocker.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/update_checker.dart';
 import 'package:pure_music/core/utils.dart';
@@ -2451,6 +2452,35 @@ class _WindowCloseBehaviorControl extends StatefulWidget {
       _WindowCloseBehaviorControlState();
 }
 
+class _PreventSleepOnNowPlayingControl extends StatefulWidget {
+  const _PreventSleepOnNowPlayingControl();
+
+  @override
+  State<_PreventSleepOnNowPlayingControl> createState() =>
+      _PreventSleepOnNowPlayingControlState();
+}
+
+class _PreventSleepOnNowPlayingControlState
+    extends State<_PreventSleepOnNowPlayingControl> {
+  final settings = AppSettings.instance;
+
+  @override
+  Widget build(BuildContext context) {
+    return SettingsTile(
+      description: '播放页防休眠',
+      subtitle: '仅在播放页时阻止系统休眠',
+      action: Switch(
+        value: settings.preventSleepOnNowPlaying,
+        onChanged: (v) {
+          setState(() => settings.preventSleepOnNowPlaying = v);
+          SleepBlocker.instance.reevaluate();
+          settings.saveSettings();
+        },
+      ),
+    );
+  }
+}
+
 class _WindowCloseBehaviorControlState
     extends State<_WindowCloseBehaviorControl> {
   final settings = AppSettings.instance;
@@ -3738,7 +3768,7 @@ const _settingsGroups = <String, _SettingsGroupDesc>{
   'desktop-color': _SettingsGroupDesc('颜色', '主题色或自定义', _DesktopColorGroup()),
   'advanced-system': _SettingsGroupDesc(
     '系统行为',
-    '关闭窗口与日志',
+    '关闭窗口、防休眠与日志',
     _AdvancedSystemGroup(),
   ),
   'advanced-custom': _SettingsGroupDesc(
@@ -5010,6 +5040,8 @@ class _AdvancedSystemGroup extends StatelessWidget {
         _SettingsSectionHeader('系统行为'),
         SizedBox(height: 4.0),
         _WindowCloseBehaviorControl(),
+        SizedBox(height: 16.0),
+        _PreventSleepOnNowPlayingControl(),
         SizedBox(height: 16.0),
         AudioEchoLogRecordControl(),
       ],
