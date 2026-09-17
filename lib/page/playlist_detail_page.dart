@@ -33,7 +33,6 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
   bool _isRemovingSelected = false;
   bool _isPickingCover = false;
   late Future<ImageProvider?> _primaryPicFuture;
-  late Future<ImageProvider?> _backgroundPicFuture;
   final _reorderScrollController = SmoothScrollController();
   String _searchQuery = '';
 
@@ -43,15 +42,8 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
     return widget.playlist.firstAudio?.mediumCover;
   }
 
-  Future<ImageProvider?> _loadBackgroundPic() async {
-    final custom = await widget.playlist.resolveCoverProvider(size: 600);
-    if (custom != null) return custom;
-    return widget.playlist.firstAudio?.cover;
-  }
-
   void _refreshCoverFutures() {
     _primaryPicFuture = _loadPrimaryPic();
-    _backgroundPicFuture = _loadBackgroundPic();
   }
 
   @override
@@ -252,7 +244,6 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
       pref: pref,
       primaryContent: widget.playlist,
       primaryPic: _primaryPicFuture,
-      backgroundPic: _backgroundPicFuture,
       picShape: PicShape.rrect,
       title: widget.playlist.name,
       subtitle: _searchQuery.isEmpty

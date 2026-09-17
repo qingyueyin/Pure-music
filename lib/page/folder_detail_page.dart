@@ -24,7 +24,6 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
   final multiSelectController = MultiSelectController<Audio>();
   late final List<Audio> _contentList;
   late final Future<ImageProvider?> _primaryPicFuture;
-  late final Future<ImageProvider?> _backgroundPicFuture;
   String _searchQuery = '';
 
   Future<ImageProvider?> _loadPrimaryPic() {
@@ -32,18 +31,11 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
         Future<ImageProvider?>.value(null);
   }
 
-  Future<ImageProvider?> _loadBackgroundPic() {
-    return widget.folder.audios.isEmpty
-        ? Future<ImageProvider?>.value(null)
-        : widget.folder.audios.first.cover;
-  }
-
   @override
   void initState() {
     super.initState();
     _contentList = List<Audio>.from(widget.folder.audios);
     _primaryPicFuture = _loadPrimaryPic();
-    _backgroundPicFuture = _loadBackgroundPic();
   }
 
   @override
@@ -86,7 +78,6 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
       pref: AppPreference.instance.folderDetailPagePref,
       primaryContent: widget.folder,
       primaryPic: _primaryPicFuture,
-      backgroundPic: _backgroundPicFuture,
       picShape: PicShape.rrect,
       title: widget.folder.displayName,
       subtitle: _searchQuery.isEmpty
