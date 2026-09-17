@@ -23,6 +23,10 @@ const _alphaBase = 0.05;
 const _activeAlphaBase = 0.22;
 const _staggerStep = 1 / 3;
 const _breathingStep = 1 / 180;
+const _staleInterludeTick = Duration(milliseconds: 200);
+
+bool shouldIgnoreStaleInterludeTick(Duration delta) =>
+    delta > _staleInterludeTick;
 
 /// 歌词间奏表示
 /// lrcLine 和 syncLine 必须有且只有一个不为空
@@ -336,6 +340,11 @@ class _TransitionControllerManager {
         ? Duration.zero
         : elapsed - _lastTickElapsed;
     _lastTickElapsed = elapsed;
+    if (shouldIgnoreStaleInterludeTick(tickDelta)) {
+      _syncNativePosition();
+      _updateControllers(_estimatedPosition);
+      return;
+    }
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     if (nowMs - _lastNativeSyncMs >= _nativeSyncMs) {
       _syncNativePosition();
