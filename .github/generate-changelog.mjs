@@ -135,6 +135,7 @@ function buildChangelogMarkdown(releases) {
 
   return `---
 outline: false
+description: Pure Music 更新日志，自 2.0.0 起按版本折叠。
 ---
 
 # 更新日志
@@ -213,10 +214,22 @@ function writeVersionJson(release) {
   console.log(`wrote ${versionJsonPath} -> ${payload.tag_name}`)
 }
 
-/** 文档站下载卡片用：最新版号 + GitHub / Gitee 入口 */
+function pickReleaseAsset(release, pattern) {
+  const assets = Array.isArray(release?.assets) ? release.assets : []
+  const hit = assets.find((a) => pattern.test(a?.name || ''))
+  if (!hit) return { url: '', name: '' }
+  return {
+    url: hit.browser_download_url || '',
+    name: hit.name || '',
+  }
+}
+
+/** 文档站下载卡片用：最新版号 + GitHub / Gitee 入口 + 安装包直链 */
 function writeLatestReleaseJson(release) {
   if (!release) return
   const ver = displayVersion(release.tag_name, release.name)
+  const installer = pickReleaseAsset(release, /installer\.exe$/i)
+  const portable = pickReleaseAsset(release, /portable\.zip$/i)
   const payload = {
     tag_name: release.tag_name,
     name: release.name || release.tag_name,
@@ -227,6 +240,10 @@ function writeLatestReleaseJson(release) {
       `https://github.com/${repo}/releases/tag/${release.tag_name}`,
     gitee_repo_url: `https://gitee.com/${giteeRepo}`,
     gitee_releases_url: `https://gitee.com/${giteeRepo}/releases`,
+    installer_url: installer.url,
+    installer_name: installer.name,
+    portable_url: portable.url,
+    portable_name: portable.name,
     // Gitee 镜像同步常滞后，前端可展示提示
     gitee_may_lag: true,
     generated_at: new Date().toISOString(),
