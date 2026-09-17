@@ -1,26 +1,21 @@
 ---
 outline: deep
+description: 下载 Pure Music 安装版或便携版。Windows 10 / 11，无需管理员权限。
 ---
 
 # 下载
 
-提供两种 Windows 发行形态：安装版与便携版。
+提供两种 Windows 发行形态：安装版与便携版。上方按钮直达当前最新包。
 
 <DownloadCard />
 
-::: tip 从哪下、下哪个文件？
+::: tip 下哪个文件？
 
-| 渠道 | 说明 |
-|------|------|
-| **GitHub Releases** | 推荐；版本与安装包最全 |
-| **[Gitee](https://gitee.com/qingyueyin/Pure-music)** | 访问慢时用；镜像常滞后，请核对版本号 |
+- **安装版**：名称中带 `installer` 的 `.exe`
+- **便携版**：名称中带 `portable` 的 `.zip`
+- `Source code` 是源码归档，不是可直接运行的程序
 
-进入最新版本后：
-
-- 安装版：名称中带 `installer` 的 `.exe`
-- 便携版：名称中带 `portable` 的 `.zip`
-
-`Source code` 是源码归档，不是可直接运行的程序。
+历史版本见 [GitHub Releases](https://github.com/qingyueyin/Pure-music/releases)。GitHub 访问慢可用 [Gitee](https://gitee.com/qingyueyin/Pure-music)，镜像常滞后，请核对版本号。
 :::
 
 ## 系统要求
