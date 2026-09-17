@@ -780,32 +780,39 @@ class _EntryState extends State<Entry>
       /// now playing page
       GoRoute(
         path: app_paths.NOW_PLAYING_PAGE,
-        pageBuilder: (context, state) => CustomTransitionPage(
-          key: state.pageKey,
-          maintainState: false,
-          transitionDuration: MotionDuration.medium,
-          reverseTransitionDuration: MotionDuration.medium,
-          transitionsBuilder: (context, animation, _, child) {
-            if (MediaQuery.disableAnimationsOf(context)) {
-              return child;
-            }
-            final curved = CurvedAnimation(
-              parent: animation,
-              curve: Curves.easeOutCubic,
-              reverseCurve: Curves.easeInCubic,
-            );
-            final slide = Tween<Offset>(
-              begin: const Offset(0.0, 0.06),
-              end: Offset.zero,
-            ).animate(curved);
-            final fade = Tween<double>(begin: 0.0, end: 1.0).animate(curved);
-            return FadeTransition(
-              opacity: fade,
-              child: SlideTransition(position: slide, child: child),
-            );
-          },
-          child: const NowPlayingPage(),
-        ),
+        pageBuilder: (context, state) {
+          final motionEnabled =
+              AppSettings.instance.enableContentTransitionMotion &&
+              !MediaQuery.disableAnimationsOf(context);
+          return CustomTransitionPage(
+            key: state.pageKey,
+            maintainState: false,
+            transitionDuration: motionEnabled
+                ? MotionDuration.medium
+                : Duration.zero,
+            reverseTransitionDuration: motionEnabled
+                ? MotionDuration.medium
+                : Duration.zero,
+            transitionsBuilder: (context, animation, _, child) {
+              if (!motionEnabled) return child;
+              final curved = CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeOutCubic,
+                reverseCurve: Curves.easeInCubic,
+              );
+              final slide = Tween<Offset>(
+                begin: const Offset(0.0, 0.06),
+                end: Offset.zero,
+              ).animate(curved);
+              final fade = Tween<double>(begin: 0.0, end: 1.0).animate(curved);
+              return FadeTransition(
+                opacity: fade,
+                child: SlideTransition(position: slide, child: child),
+              );
+            },
+            child: const NowPlayingPage(),
+          );
+        },
       ),
 
       /// welcoming page
