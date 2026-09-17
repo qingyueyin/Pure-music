@@ -15,6 +15,7 @@ import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/native/rust/api/smtc_flutter.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart' as rust_tag_reader;
 import 'package:pure_music/native/rust/api/library_db.dart' as rust_library_db;
+import 'package:pure_music/core/sleep_blocker.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/settings.dart';
@@ -107,6 +108,13 @@ class PlaybackService extends ChangeNotifier {
         );
       }
       _playerState.value = event;
+      if (event == PlayerState.playing) {
+        SleepBlocker.instance.setPlayerPlaying(true);
+        SleepBlocker.instance.reevaluate();
+      } else if (event == PlayerState.paused || event == PlayerState.stopped) {
+        SleepBlocker.instance.setPlayerPlaying(false);
+        SleepBlocker.instance.reevaluate();
+      }
       _notifyPositionSync();
       _syncSmtcPositionTimer();
       if (event == PlayerState.completed && shouldAutoAdvance) {
@@ -1585,6 +1593,7 @@ class PlaybackService extends ChangeNotifier {
 
   Future<void> close() async {
     _closed = true;
+    SleepBlocker.instance.unblock();
     _songChangeTaskToken++;
     _cancelSongChangeTasks();
     _cancelPositionSyncBurst();
