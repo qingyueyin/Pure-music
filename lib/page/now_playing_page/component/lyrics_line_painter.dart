@@ -18,6 +18,17 @@ const lyricBackgroundVocalEntryDuration = Duration(milliseconds: 400);
 const _bgEntryDuration = 400.0;
 const lyricBackgroundVocalExitDuration = Duration(milliseconds: 400);
 
+double lyricExitLift(double lastLift, double floatProgress) {
+  if (lastLift == 0) return 0;
+  final t = floatProgress.clamp(0.0, 1.0);
+  if (t <= 0) return 0;
+  return lastLift * t;
+}
+
+class LyricCharLiftCache {
+  List<double> values = const [];
+}
+
 double lyricHighlightTimeMs({
   required double currentTimeMs,
   required double lineStartMs,
@@ -395,6 +406,8 @@ class LyricsLinePainter extends CustomPainter {
   final double opacity;
   final double? highlightDeadlineMs;
   final Duration lineMedianWordDuration;
+  final LyricCharLiftCache? liftCache;
+  final ValueListenable<double>? liftDecayListenable;
 
   // 多声部时按 agent 强制对齐：v1 左对齐，v2 右对齐
   LyricTextAlign get _effectiveTextAlign {
@@ -434,10 +447,13 @@ class LyricsLinePainter extends CustomPainter {
     this.opacity = 1.0,
     this.highlightDeadlineMs,
     required this.lineMedianWordDuration,
+    this.liftCache,
+    this.liftDecayListenable,
   }) : super(
          repaint: Listenable.merge([
            currentTimeListenable,
            backgroundVocalVisibilityListenable,
+           liftDecayListenable,
          ]),
        );
 
@@ -1042,6 +1058,10 @@ class LyricsLinePainter extends CustomPainter {
       }
     }
 
+    if (!isHighlightActive) {
+      _applyExitCharLifts(charInfos);
+    }
+
     // ── Pre-build shared TextPainter + styles ──────────────────────────────
     final tp = obtainTextPainter();
     final dimStyle = _textStyle(
@@ -1222,7 +1242,7 @@ class LyricsLinePainter extends CustomPainter {
 
       if (!isHighlightActive) {
         for (final wc in words) {
-          paintWord(wc, dimStyle, false);
+          paintWord(wc, dimStyle, wc.hasLift);
         }
         continue;
       }
@@ -1426,6 +1446,10 @@ class LyricsLinePainter extends CustomPainter {
         paintPlayedLayer(gradientPlayedStyle);
         canvas.restore();
       }
+    }
+
+    if (isHighlightActive) {
+      _captureCharLifts(charInfos);
     }
 
     // ── Post-original sub-tracks ─────────────────────────────────────────────
@@ -2219,7 +2243,26 @@ class LyricsLinePainter extends CustomPainter {
         highlightDeadlineMs != oldDelegate.highlightDeadlineMs ||
         isMainLine != oldDelegate.isMainLine ||
         isHighlightActive != oldDelegate.isHighlightActive ||
-        accelerateTailHighlight != oldDelegate.accelerateTailHighlight;
+        accelerateTailHighlight != oldDelegate.accelerateTailHighlight ||
+        liftCache != oldDelegate.liftCache ||
+        liftDecayListenable != oldDelegate.liftDecayListenable;
+  }
+
+  void _captureCharLifts(List<_CharInfo> charInfos) {
+    final cache = liftCache;
+    if (cache == null) return;
+    cache.values = [for (final info in charInfos) info.yLift];
+  }
+
+  void _applyExitCharLifts(List<_CharInfo> charInfos) {
+    final cache = liftCache;
+    if (cache == null || cache.values.isEmpty) return;
+    final progress = liftDecayListenable?.value ?? 0.0;
+    final last = cache.values;
+    final n = charInfos.length < last.length ? charInfos.length : last.length;
+    for (var i = 0; i < n; i++) {
+      charInfos[i].yLift = lyricExitLift(last[i], progress);
+    }
   }
 
   double measureHeight(

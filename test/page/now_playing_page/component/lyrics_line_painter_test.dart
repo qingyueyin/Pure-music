@@ -312,6 +312,14 @@ void main() {
     });
   });
 
+  group('lyricExitLift', () {
+    test('falls with the line float instead of snapping off', () {
+      expect(lyricExitLift(-2, 1), -2);
+      expect(lyricExitLift(-2, 0.5), -1);
+      expect(lyricExitLift(-2, 0), 0);
+    });
+  });
+
   group('layoutTimedWordChars', () {
     LyricWordLayoutCursor cursor({
       double x = 0,
