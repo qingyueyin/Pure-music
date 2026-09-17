@@ -580,6 +580,8 @@ class Lrc extends Lyric {
     int indicatorCount = 0;
     for (final w in lowerWords) {
       final clean = w.replaceAll(RegExp(r"[^a-z']"), '');
+      // 单字母（如罗马音里孤立的 i/a）不算强英文指示词，避免与假名音节撞车
+      if (clean.length <= 1) continue;
       if (strongEnglishIndicators.contains(clean)) indicatorCount++;
     }
 
