@@ -114,6 +114,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   Animation<double>? _routeAnimation;
   int _coverRequestToken = 0;
   final ValueNotifier<bool> _cursorHiddenNotifier = ValueNotifier(false);
+  final ValueNotifier<bool> _routeReadyNotifier = ValueNotifier(false);
   bool _lastImmersive = false;
   bool _routeReady = false;
   bool _backgroundUsesCachedLargeCover = false;
@@ -146,12 +147,12 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     final ready = status == AnimationStatus.completed;
     if (_routeReady == ready) return;
     _routeReady = ready;
+    _routeReadyNotifier.value = ready;
     if (ready) {
       _scheduleCoverDetails();
     } else {
       _coverDebounceTimer?.cancel();
     }
-    if (mounted) setState(() {});
   }
 
   void _scheduleCoverDetails() {
@@ -177,7 +178,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
           path: path,
           width: 160,
           height: 160,
-          numColors: 4,
+          numColors: 8,
         );
         bytes = loadedBytes;
         if (rustColors.isNotEmpty) {
@@ -298,7 +299,6 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       FocusManager.instance.primaryFocus?.unfocus();
-      PlayService.instance.lyricService.forceEmitCurrentLine();
     });
   }
 
@@ -312,6 +312,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     _routeAnimation?.addStatusListener(_onRouteAnimationStatus);
     _routeReady =
         animation == null || animation.status == AnimationStatus.completed;
+    _routeReadyNotifier.value = _routeReady;
     if (_routeReady) {
       _scheduleCoverDetails();
     }
@@ -319,14 +320,15 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
 
   @override
   void dispose() {
-    playbackService.nowPlayingNotifier.removeListener(updateCover);
     SleepBlocker.instance.setPageVisible(false);
     SleepBlocker.instance.reevaluate();
+    playbackService.nowPlayingNotifier.removeListener(updateCover);
     nowPlayingViewMode.removeListener(_onViewModeChanged);
     _coverDebounceTimer?.cancel();
     _songChangeTrimTimer?.cancel();
     _cursorHideTimer?.cancel();
     _cursorHiddenNotifier.dispose();
+    _routeReadyNotifier.dispose();
     _routeAnimation?.removeStatusListener(_onRouteAnimationStatus);
     CoverImageCache.instance.trimMemory(keepPath: _nowPlayingCoverPath);
     super.dispose();
@@ -347,30 +349,39 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                   return ValueListenableBuilder<bool>(
                     valueListenable: nowPlayingAudioReactiveFlowNotifier,
                     builder: (context, audioReactiveFlow, _) {
-                      return StreamBuilder<PlayerState>(
-                        stream: playbackService.playerStateStream,
-                        initialData: playbackService.playerState,
-                        builder: (context, snapshot) {
-                          final playerState =
-                              snapshot.data ?? playbackService.playerState;
-                          final backgroundInputs = NowPlayingBackgroundInputs(
-                            albumCoverBytes: _nowPlayingCoverBytes,
-                            dominantColor: _dominantColor,
-                            spectrumStream: playbackService.spectrumStream,
-                            enableAnimation: dynamicFlowingLight,
-                            isVisible: _routeReady,
-                            playerState: playerState,
-                            flowSpeed: 1.0,
-                            intensity: brightness == Brightness.dark
-                                ? 1.0
-                                : 0.9,
-                            audioReactiveFlow: audioReactiveFlow,
-                            preExtractedColors: _preExtractedPalette,
-                          );
-                          return NowPlayingBackground(
-                            mode: backgroundMode,
-                            inputs: backgroundInputs,
-                            fallbackColor: _neutralBackgroundColor(brightness),
+                      return ValueListenableBuilder<bool>(
+                        valueListenable: _routeReadyNotifier,
+                        builder: (context, routeReady, _) {
+                          return StreamBuilder<PlayerState>(
+                            stream: playbackService.playerStateStream,
+                            initialData: playbackService.playerState,
+                            builder: (context, snapshot) {
+                              final playerState =
+                                  snapshot.data ?? playbackService.playerState;
+                              final backgroundInputs =
+                                  NowPlayingBackgroundInputs(
+                                    albumCoverBytes: _nowPlayingCoverBytes,
+                                    dominantColor: _dominantColor,
+                                    spectrumStream:
+                                        playbackService.spectrumStream,
+                                    enableAnimation: dynamicFlowingLight,
+                                    isVisible: routeReady,
+                                    playerState: playerState,
+                                    flowSpeed: 1.0,
+                                    intensity: brightness == Brightness.dark
+                                        ? 1.0
+                                        : 0.9,
+                                    audioReactiveFlow: audioReactiveFlow,
+                                    preExtractedColors: _preExtractedPalette,
+                                  );
+                              return NowPlayingBackground(
+                                mode: backgroundMode,
+                                inputs: backgroundInputs,
+                                fallbackColor: _neutralBackgroundColor(
+                                  brightness,
+                                ),
+                              );
+                            },
                           );
                         },
                       );
@@ -432,8 +443,11 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                   builder: (context, _) {
                     final useMonet =
                         AppSettings.instance.useMaterialYouForControls;
-                    return TickerMode(
-                      enabled: _routeReady,
+                    return ValueListenableBuilder<bool>(
+                      valueListenable: _routeReadyNotifier,
+                      builder: (context, routeReady, child) {
+                        return TickerMode(enabled: routeReady, child: child!);
+                      },
                       child: IconButtonTheme(
                         data: IconButtonThemeData(
                           style: ButtonStyle(
@@ -1501,7 +1515,7 @@ class _GlowingIconButtonState extends State<_GlowingIconButton> {
                 AnimatedScale(
                   duration: const Duration(milliseconds: 120),
                   curve: const Cubic(0.4, 0, 0.2, 1),
-                  scale: _isPressed ? 0.9 : 1.0,
+                  scale: _isPressed ? 0.97 : 1.0,
                   child: Icon(
                     widget.iconData,
                     size: widget.size,
@@ -1666,7 +1680,7 @@ class _MorphPlayPauseButtonState extends State<_MorphPlayPauseButton>
                   AnimatedScale(
                     duration: const Duration(milliseconds: 120),
                     curve: const Cubic(0.4, 0, 0.2, 1),
-                    scale: _isPressed ? 0.9 : 1.0,
+                    scale: _isPressed ? 0.97 : 1.0,
                     child: IconButton(
                       tooltip: isPlaying ? '暂停' : '播放',
                       onPressed: onPressed,
@@ -1778,6 +1792,7 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
   final livePosition = ValueNotifier(0.0);
   final livePositionSeconds = ValueNotifier(0);
   final isDragging = ValueNotifier(false);
+  final isHovering = ValueNotifier(false);
   late final PlaybackService _playbackService;
   late final VoidCallback _playerStateListener;
   late final VoidCallback _nowPlayingListener;
@@ -1787,6 +1802,7 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
   Duration _lastProcessedElapsed = Duration.zero;
   static const _progressTickInterval = Duration(milliseconds: 33); // ~30fps
   int _lastPositionMs = -1;
+  bool _tickerModeEnabled = true;
   bool _isPlaying = false;
   double _trackLength = 1.0;
   late final AnimationController _wavyController;
@@ -1817,7 +1833,21 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
     _playbackService.nowPlayingNotifier.addListener(_nowPlayingListener);
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final tickerModeEnabled = TickerMode.of(context);
+    if (_tickerModeEnabled == tickerModeEnabled) return;
+    _tickerModeEnabled = tickerModeEnabled;
+    if (!tickerModeEnabled) return;
+    _lastProgressTickElapsed = Duration.zero;
+    _lastProcessedElapsed = Duration.zero;
+    _syncFromNative(force: true);
+    _syncWavyAnimation(_playbackService.playerState);
+  }
+
   void _syncFromNative({bool force = false}) {
+    if (isDragging.value) return;
     _trackLength = _playbackService.length;
     _syncLivePosition(_playbackService.position, force: force);
   }
@@ -1858,6 +1888,11 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
 
   void _onProgressTick(Duration elapsed) {
     if (!_isPlaying) return;
+    if (isDragging.value) {
+      _lastProgressTickElapsed = elapsed;
+      _lastProcessedElapsed = elapsed;
+      return;
+    }
     if (_lastProgressTickElapsed == Duration.zero) {
       _lastProgressTickElapsed = elapsed;
       _lastProcessedElapsed = elapsed;
@@ -1902,6 +1937,7 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
     livePosition.dispose();
     livePositionSeconds.dispose();
     isDragging.dispose();
+    isHovering.dispose();
     _wavyController.dispose();
     super.dispose();
   }
@@ -1955,48 +1991,76 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
               builder: (context, constraints) {
                 final width = constraints.maxWidth;
                 final max = nowPlayingLength > 0 ? nowPlayingLength : 1.0;
-                return GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onHorizontalDragStart: (details) {
-                    isDragging.value = true;
-                    final value =
-                        (details.localPosition.dx / width).clamp(0.0, 1.0) *
-                        max;
-                    dragPosition.value = value;
-                  },
-                  onHorizontalDragUpdate: (details) {
-                    final value =
-                        (details.localPosition.dx / width).clamp(0.0, 1.0) *
-                        max;
-                    dragPosition.value = value;
-                  },
-                  onHorizontalDragEnd: (details) {
-                    isDragging.value = false;
-                    _syncLivePosition(dragPosition.value, force: true);
-                    playbackService.seek(dragPosition.value);
-                  },
-                  onTapDown: (details) {
-                    final value =
-                        (details.localPosition.dx / width).clamp(0.0, 1.0) *
-                        max;
-                    _syncLivePosition(value, force: true);
-                    playbackService.seek(value);
-                  },
-                  child: CustomPaint(
-                    painter: _ProgressSliderPainter(
-                      livePosition: livePosition,
-                      dragPosition: dragPosition,
-                      isDragging: isDragging,
-                      max: max,
-                      color: barColor,
-                      glowColor: barGlow,
-                      inactiveColor: scheme.brightness == Brightness.dark
-                          ? scheme.surfaceContainerHighest
-                          : const Color(0x33FFFFFF),
-                      useWavyBar: useWavyBar,
-                      wavyController: _wavyController,
+                return MouseRegion(
+                  onEnter: (_) => isHovering.value = true,
+                  onExit: (_) => isHovering.value = false,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onHorizontalDragStart: (details) {
+                      isDragging.value = true;
+                      final value =
+                          (details.localPosition.dx / width).clamp(0.0, 1.0) *
+                          max;
+                      dragPosition.value = value;
+                      _syncLivePosition(value, force: true);
+                    },
+                    onHorizontalDragUpdate: (details) {
+                      final value =
+                          (details.localPosition.dx / width).clamp(0.0, 1.0) *
+                          max;
+                      dragPosition.value = value;
+                      _syncLivePosition(value, force: true);
+                    },
+                    onHorizontalDragEnd: (details) {
+                      isDragging.value = false;
+                      _syncLivePosition(dragPosition.value, force: true);
+                      playbackService.seek(dragPosition.value);
+                    },
+                    onTapDown: (details) {
+                      final value =
+                          (details.localPosition.dx / width).clamp(0.0, 1.0) *
+                          max;
+                      _syncLivePosition(value, force: true);
+                      playbackService.seek(value);
+                    },
+                    child: ListenableBuilder(
+                      listenable: Listenable.merge([isDragging, isHovering]),
+                      builder: (context, _) {
+                        final reduceMotion = MediaQuery.disableAnimationsOf(
+                          context,
+                        );
+                        final thumbRadius = isDragging.value
+                            ? 10.0
+                            : (isHovering.value ? 8.0 : 6.0);
+                        return TweenAnimationBuilder<double>(
+                          duration: reduceMotion
+                              ? Duration.zero
+                              : MotionDuration.xFast,
+                          curve: MotionCurve.entrance,
+                          tween: Tween(begin: thumbRadius, end: thumbRadius),
+                          builder: (context, radius, _) {
+                            return CustomPaint(
+                              painter: _ProgressSliderPainter(
+                                livePosition: livePosition,
+                                dragPosition: dragPosition,
+                                isDragging: isDragging,
+                                max: max,
+                                color: barColor,
+                                glowColor: barGlow,
+                                inactiveColor:
+                                    scheme.brightness == Brightness.dark
+                                    ? scheme.surfaceContainerHighest
+                                    : const Color(0x33FFFFFF),
+                                useWavyBar: useWavyBar,
+                                wavyController: _wavyController,
+                                thumbRadius: radius,
+                              ),
+                              size: Size(width, 24),
+                            );
+                          },
+                        );
+                      },
                     ),
-                    size: Size(width, 24),
                   ),
                 );
               },
@@ -2080,6 +2144,7 @@ class _ProgressSliderPainter extends CustomPainter {
   final Color inactiveColor;
   final bool useWavyBar;
   final Animation<double> wavyController;
+  final double thumbRadius;
   final Paint _paint = Paint()
     ..strokeCap = StrokeCap.round
     ..style = PaintingStyle.fill;
@@ -2097,6 +2162,7 @@ class _ProgressSliderPainter extends CustomPainter {
     required this.inactiveColor,
     required this.useWavyBar,
     required this.wavyController,
+    this.thumbRadius = 6.0,
   }) : super(
          repaint: Listenable.merge([
            livePosition,
@@ -2159,15 +2225,16 @@ class _ProgressSliderPainter extends CustomPainter {
       );
     }
 
-    // Thumb
     _paint
       ..shader = null
       ..color = color;
-    // Draw thumb shadow (very subtle, avoid visual distraction)
     _thumbGlowPaint.color = glowColor.withValues(alpha: 0.15);
-    canvas.drawCircle(Offset(activeWidth, centerY), 5, _thumbGlowPaint);
-    // Draw thumb
-    canvas.drawCircle(Offset(activeWidth, centerY), 6, _paint);
+    canvas.drawCircle(
+      Offset(activeWidth, centerY),
+      thumbRadius - 1,
+      _thumbGlowPaint,
+    );
+    canvas.drawCircle(Offset(activeWidth, centerY), thumbRadius, _paint);
   }
 
   void _paintWavy(Canvas canvas, Size size, double fraction, double phase) {
@@ -2213,19 +2280,17 @@ class _ProgressSliderPainter extends CustomPainter {
     paint.color = color;
     canvas.drawPath(wavePath, paint);
 
-    // Thumb glow
     paint
       ..style = PaintingStyle.fill
       ..color = glowColor.withValues(alpha: 0.15)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
-    canvas.drawCircle(Offset(activeWidth, centerY), 5, paint);
+    canvas.drawCircle(Offset(activeWidth, centerY), thumbRadius - 1, paint);
 
-    // Thumb
     paint
       ..shader = null
       ..maskFilter = null
       ..color = color;
-    canvas.drawCircle(Offset(activeWidth, centerY), 6, paint);
+    canvas.drawCircle(Offset(activeWidth, centerY), thumbRadius, paint);
   }
 
   @override
@@ -2238,7 +2303,8 @@ class _ProgressSliderPainter extends CustomPainter {
         oldDelegate.glowColor != glowColor ||
         oldDelegate.inactiveColor != inactiveColor ||
         oldDelegate.useWavyBar != useWavyBar ||
-        oldDelegate.wavyController != wavyController;
+        oldDelegate.wavyController != wavyController ||
+        oldDelegate.thumbRadius != thumbRadius;
   }
 }
 
@@ -2455,7 +2521,9 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
                     image: currentCover ?? fallbackCover!,
                     fit: BoxFit.cover,
                     gaplessPlayback: true,
-                    filterQuality: FilterQuality.high,
+                    filterQuality: _routeReady
+                        ? FilterQuality.high
+                        : FilterQuality.medium,
                     errorBuilder: (_, _, _) =>
                         FittedBox(fit: BoxFit.contain, child: placeholder),
                   ),
