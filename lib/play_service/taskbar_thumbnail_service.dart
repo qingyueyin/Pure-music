@@ -106,12 +106,17 @@ class TaskbarThumbnailService {
     unawaited(AppPreference.instance.save());
   }
 
-  void _onNowPlayingChanged() {
+  void refreshNowPlaying() {
+    if (!_initialized) return;
     unawaited(_setTitle());
     unawaited(_setControls());
     if (!_coverPreviewEnabled) return;
     final generation = ++_coverGeneration;
     unawaited(_updateCoverFor(_nowPlayingNotifier?.value, generation));
+  }
+
+  void _onNowPlayingChanged() {
+    refreshNowPlaying();
   }
 
   void _onPlaylistChanged() {

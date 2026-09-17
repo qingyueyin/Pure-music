@@ -970,6 +970,21 @@ class PlaybackService extends ChangeNotifier {
     showTextOnSnackBar(message, variant: ToastVariant.error);
   }
 
+  void refreshNowPlayingArtwork() {
+    if (_closed) return;
+    final audio = nowPlaying;
+    if (audio == null) return;
+    unawaited(
+      _smtc.updateDisplay(
+        title: audio.title,
+        artist: audio.artist,
+        album: audio.album,
+        duration: audio.duration * 1000,
+        path: audio.path,
+      ),
+    );
+  }
+
   bool _isCurrentSongChangeTask(int token, Audio audio) {
     return token == _songChangeTaskToken && identical(nowPlaying, audio);
   }
