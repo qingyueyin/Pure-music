@@ -46,6 +46,18 @@ void main() {
         isTrue,
       );
     });
+
+    test('a delayed timer tick keeps forward playback sequential', () {
+      expect(
+        lyricLineAdvanceIsSeekJump(
+          previousPositionSec: 10.0,
+          nextPositionSec: 12.0,
+          rate: 1.0,
+          allowForwardJump: false,
+        ),
+        isFalse,
+      );
+    });
   });
 
   group('lyricSequentialAdvanceCursor', () {

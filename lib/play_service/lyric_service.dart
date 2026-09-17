@@ -28,14 +28,16 @@ const int lyricHighlightCatchUpDurationMs = 260;
 const int lyricHighlightFinishLeadMs = 32;
 const int lyricLineAdvanceTimerMaxMs = 1000;
 
-/// 行推进定时器最多 1 秒对齐一次；只有明显回退或超过「定时器间隔 × 倍速」才当 seek。
+/// 判断一次位置变化是否应按跳转处理；定时器回调可关闭正向跳转判定。
 bool lyricLineAdvanceIsSeekJump({
   required double previousPositionSec,
   required double nextPositionSec,
   required double rate,
+  bool allowForwardJump = true,
 }) {
   final delta = nextPositionSec - previousPositionSec;
   if (delta < -0.05) return true;
+  if (!allowForwardJump) return false;
   final speed = rate > 1.0 ? rate : 1.0;
   final maxForwardSec = (lyricLineAdvanceTimerMaxMs / 1000.0) * speed + 0.35;
   return delta > maxForwardSec;
@@ -463,6 +465,8 @@ class LyricService extends ChangeNotifier {
       previousPositionSec: previous,
       nextPositionSec: pos,
       rate: playService.playbackService.rate.value,
+      // 定时器正向迟到仍是正常播放，交给顺序游标逐行补发更新。
+      allowForwardJump: false,
     )) {
       findCurrLyricLineAt(pos);
       return;
