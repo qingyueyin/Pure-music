@@ -506,6 +506,7 @@ class LyricService extends ChangeNotifier {
             primaryIndex: 0,
             activeIndices: activeIndices,
             layoutIndices: layoutIndices,
+            positionMs: posMs,
           ),
         );
       }
@@ -526,6 +527,7 @@ class LyricService extends ChangeNotifier {
             primaryIndex: p,
             activeIndices: activeIndices,
             layoutIndices: layoutIndices,
+            positionMs: posMs,
           ),
         );
       }
@@ -552,6 +554,7 @@ class LyricService extends ChangeNotifier {
           primaryIndex: primaryIndex,
           activeIndices: activeIndices,
           layoutIndices: layoutIndices,
+          positionMs: posMs,
         ),
       );
     }
@@ -806,6 +809,7 @@ class LyricService extends ChangeNotifier {
         primaryIndex: 0,
         activeIndices: activeIndices,
         layoutIndices: layoutIndices,
+        positionMs: posMs,
       );
     }
     if (currLineIndex >= lyric.lines.length) {
@@ -813,6 +817,7 @@ class LyricService extends ChangeNotifier {
         primaryIndex: lyric.lines.length - 1,
         activeIndices: activeIndices,
         layoutIndices: layoutIndices,
+        positionMs: posMs,
       );
     }
 
@@ -822,6 +827,7 @@ class LyricService extends ChangeNotifier {
         primaryIndex: minActive,
         activeIndices: activeIndices,
         layoutIndices: layoutIndices,
+        positionMs: posMs,
       );
     }
 
@@ -830,6 +836,7 @@ class LyricService extends ChangeNotifier {
       primaryIndex: primaryIndex,
       activeIndices: activeIndices,
       layoutIndices: layoutIndices,
+      positionMs: posMs,
     );
   }
 
@@ -890,6 +897,7 @@ class LyricService extends ChangeNotifier {
             primaryIndex: 0,
             activeIndices: activeIndices,
             layoutIndices: layoutIndices,
+            positionMs: posMs,
           ),
         );
       }
@@ -911,6 +919,7 @@ class LyricService extends ChangeNotifier {
             primaryIndex: p,
             activeIndices: activeIndices,
             layoutIndices: layoutIndices,
+            positionMs: posMs,
           ),
         );
       }
@@ -933,6 +942,7 @@ class LyricService extends ChangeNotifier {
         primaryIndex: primaryIndex,
         activeIndices: activeIndices,
         layoutIndices: layoutIndices,
+        positionMs: posMs,
       ),
     );
 
@@ -1003,6 +1013,7 @@ class LyricService extends ChangeNotifier {
             primaryIndex: 0,
             activeIndices: activeIndices,
             layoutIndices: layoutIndices,
+            positionMs: posMs,
           ),
         );
       }
@@ -1024,6 +1035,7 @@ class LyricService extends ChangeNotifier {
             primaryIndex: p,
             activeIndices: activeIndices,
             layoutIndices: layoutIndices,
+            positionMs: posMs,
           ),
         );
       }
@@ -1049,6 +1061,7 @@ class LyricService extends ChangeNotifier {
           primaryIndex: primaryIndex,
           activeIndices: activeIndices,
           layoutIndices: layoutIndices,
+          positionMs: posMs,
         ),
       );
     }

@@ -109,10 +109,13 @@ class LyricLineUpdate {
   final int primaryIndex;
   final List<int> activeIndices;
   final List<int> layoutIndices;
+  final int? positionMs;
+
   const LyricLineUpdate({
     required this.primaryIndex,
     required this.activeIndices,
     List<int>? layoutIndices,
+    this.positionMs,
   }) : layoutIndices = layoutIndices ?? activeIndices;
 
   bool isActive(int lineIndex) => activeIndices.contains(lineIndex);
