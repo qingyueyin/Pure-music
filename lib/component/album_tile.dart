@@ -1,4 +1,5 @@
 import 'package:pure_music/library/audio_library.dart';
+import 'package:pure_music/component/cover_pointer_sheen.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/scroll_aware_future_builder.dart';
 import 'package:pure_music/page/uni_page.dart';
@@ -68,17 +69,21 @@ class _AlbumTileState extends State<AlbumTile> {
                   ),
                 );
         }
-        return ClipRRect(
-          borderRadius: borderRadius,
-          child: Image(
-            image: snapshot.data!,
-            width: widget.view == ContentView.list ? 48.0 : null,
-            height: widget.view == ContentView.list ? 48.0 : null,
-            errorBuilder: (_, _, _) => placeholder,
-            fit: BoxFit.cover,
-            gaplessPlayback: true,
-          ),
+        Widget image = Image(
+          image: snapshot.data!,
+          width: widget.view == ContentView.list ? 48.0 : null,
+          height: widget.view == ContentView.list ? 48.0 : null,
+          errorBuilder: (_, _, _) => placeholder,
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
         );
+        if (widget.view != ContentView.list) {
+          image = CoverPointerSheen(
+            enabled: AppSettings.instance.enableCoverPointerSheen,
+            child: image,
+          );
+        }
+        return ClipRRect(borderRadius: borderRadius, child: image);
       },
     );
     final isSelected =
