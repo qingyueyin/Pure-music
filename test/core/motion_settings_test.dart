@@ -15,6 +15,7 @@ void main() {
     expect(AppSettings.instance.enableStackedScrollEffect, isTrue);
     expect(AppSettings.instance.enableContentTransitionMotion, isTrue);
     expect(AppSettings.instance.enableInteractiveSurfaceMotion, isTrue);
+    expect(AppSettings.instance.enableCoverPointerSheen, isTrue);
     expect(AppSettings.instance.enableDetailHeaderCollapseMotion, isTrue);
     expect(AppSettings.instance.enableDataTransitionMotion, isTrue);
   });
@@ -28,6 +29,7 @@ void main() {
     expect(AppSettings.instance.enableStackedScrollEffect, isFalse);
     expect(AppSettings.instance.enableContentTransitionMotion, isTrue);
     expect(AppSettings.instance.enableInteractiveSurfaceMotion, isFalse);
+    expect(AppSettings.instance.enableCoverPointerSheen, isFalse);
     expect(AppSettings.instance.enableDetailHeaderCollapseMotion, isFalse);
     expect(AppSettings.instance.enableDataTransitionMotion, isFalse);
   });
@@ -38,13 +40,25 @@ void main() {
       'EnableStackedScrollEffect': false,
       'EnableContentTransitionMotion': false,
       'EnableInteractiveSurfaceMotion': true,
+      'EnableCoverPointerSheen': true,
       'EnableDetailHeaderCollapseMotion': true,
       'EnableDataTransitionMotion': true,
     });
 
     expect(AppSettings.instance.enableContentTransitionMotion, isFalse);
     expect(AppSettings.instance.enableInteractiveSurfaceMotion, isTrue);
+    expect(AppSettings.instance.enableCoverPointerSheen, isTrue);
     expect(AppSettings.instance.enableDetailHeaderCollapseMotion, isTrue);
     expect(AppSettings.instance.enableDataTransitionMotion, isTrue);
+  });
+
+  test('explicit cover sheen setting overrides legacy fallback', () async {
+    await AppSettings.readFromSettingsMapForTest({
+      'Version': 'test',
+      'EnableStackedScrollEffect': false,
+      'EnableCoverPointerSheen': true,
+    });
+
+    expect(AppSettings.instance.enableCoverPointerSheen, isTrue);
   });
 }

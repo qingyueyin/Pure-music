@@ -314,6 +314,7 @@ class AppSettings {
   bool enableStackedScrollEffect = true;
   bool enableContentTransitionMotion = true;
   bool enableInteractiveSurfaceMotion = true;
+  bool enableCoverPointerSheen = true;
   bool enableDetailHeaderCollapseMotion = true;
   bool enableDataTransitionMotion = true;
   bool alwaysShowNowPlayingControls = false;
@@ -390,6 +391,10 @@ class AppSettings {
     );
     _instance.enableInteractiveSurfaceMotion = normalizedBoolSetting(
       settingsMap['EnableInteractiveSurfaceMotion'],
+      defaultValue: stackedScrollEffect,
+    );
+    _instance.enableCoverPointerSheen = normalizedBoolSetting(
+      settingsMap['EnableCoverPointerSheen'],
       defaultValue: stackedScrollEffect,
     );
     _instance.enableDetailHeaderCollapseMotion = normalizedBoolSetting(
@@ -515,6 +520,10 @@ class AppSettings {
     );
     _instance.enableInteractiveSurfaceMotion = normalizedBoolSetting(
       settingsMap['EnableInteractiveSurfaceMotion'],
+      defaultValue: stackedScrollEffect,
+    );
+    _instance.enableCoverPointerSheen = normalizedBoolSetting(
+      settingsMap['EnableCoverPointerSheen'],
       defaultValue: stackedScrollEffect,
     );
     _instance.enableDetailHeaderCollapseMotion = normalizedBoolSetting(
@@ -1036,6 +1045,7 @@ class AppSettings {
         'EnableStackedScrollEffect': enableStackedScrollEffect,
         'EnableContentTransitionMotion': enableContentTransitionMotion,
         'EnableInteractiveSurfaceMotion': enableInteractiveSurfaceMotion,
+        'EnableCoverPointerSheen': enableCoverPointerSheen,
         'EnableDetailHeaderCollapseMotion': enableDetailHeaderCollapseMotion,
         'EnableDataTransitionMotion': enableDataTransitionMotion,
         'AlwaysShowNowPlayingControls': alwaysShowNowPlayingControls,
