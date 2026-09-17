@@ -7,6 +7,7 @@ import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/utils.dart';
+import 'package:pure_music/core/window_render_gate.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/lyric/lyric_source.dart';
@@ -41,6 +42,7 @@ class WindowLifecycleService with WindowListener, TrayListener {
     _initialized = true;
     windowManager.addListener(this);
     trayManager.addListener(this);
+    WindowRenderGate.instance.attach();
     await syncTrayIcon();
   }
 
@@ -285,7 +287,9 @@ class WindowLifecycleService with WindowListener, TrayListener {
             WindowCloseBehavior.minimizeToTray) {
       return false;
     }
+    WindowRenderGate.instance.setTrayHidden(true);
     PlayService.existingPlaybackService?.startSmtcKeepAlive();
+    MemoryMonitorService.instance.trimTrayHidden();
     _scheduleTrayTrim();
     return true;
   }
@@ -293,6 +297,9 @@ class WindowLifecycleService with WindowListener, TrayListener {
   Future<void> showWindow() async {
     if (_isExiting) return;
     _cancelTrayTrim();
+    WindowRenderGate.instance.enterForeground();
+    await WindowRenderGate.instance.waitForWarmup();
+    if (_isExiting) return;
     await windowManager.show();
     if (_isExiting) return;
     await windowManager.setSkipTaskbar(false);
@@ -336,6 +343,7 @@ class WindowLifecycleService with WindowListener, TrayListener {
       await _run('disposeRuntimeResources', disposeRuntimeResources());
     }
     MemoryMonitorService.instance.stop();
+    WindowRenderGate.instance.detach();
     _bindRetryTimer?.cancel();
     _bindRetryTimer = null;
     _cancelTrayTrim();
@@ -362,6 +370,16 @@ class WindowLifecycleService with WindowListener, TrayListener {
   @override
   void onWindowClose() {
     requestClose();
+  }
+
+  @override
+  void onWindowFocus() {
+    WindowRenderGate.instance.enterForeground();
+  }
+
+  @override
+  void onWindowRestore() {
+    WindowRenderGate.instance.enterForeground();
   }
 
   @override
