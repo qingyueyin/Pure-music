@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' show max;
 
 import 'package:flutter/material.dart';
@@ -10,6 +11,7 @@ import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/lyric_render_config.dart';
 import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
@@ -90,6 +92,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
 
   // 缓存 Painter，避免每帧重建
   LyricsLinePainter? _cachedPainter;
+  final LyricCharLiftCache _liftCache = LyricCharLiftCache();
   double? _cachedLineHeight;
   double _cachedLineWidth = 0.0;
   LyricLine? _heightLine;
@@ -245,14 +248,17 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
 
   bool _tickerHoldActive = false;
   DateTime? _tickerHoldUntil;
+  Timer? _tickerHoldTimer;
+
+  bool _hasBaseProgressTickerFor(LyricsLineWidget target) {
+    return (target.distance == 0 || target.isHighlightActive) &&
+        target.line is SyncLyricLine &&
+        (target.line as SyncLyricLine).words.isNotEmpty &&
+        _config.displayMode == LyricDisplayMode.wordByWord;
+  }
 
   bool get _needsProgressTicker {
-    final baseCondition =
-        (widget.distance == 0 || widget.isHighlightActive) &&
-        widget.line is SyncLyricLine &&
-        (widget.line as SyncLyricLine).words.isNotEmpty &&
-        _config.displayMode == LyricDisplayMode.wordByWord;
-    if (baseCondition) return true;
+    if (_hasBaseProgressTickerFor(widget)) return true;
     // 给 ticker 最小持有时间，避免歌词行切换时频繁启停导致动画丢失
     if (_tickerHoldActive &&
         _tickerHoldUntil != null &&
@@ -262,7 +268,26 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
     return false;
   }
 
+  void _holdProgressTickerForLineTransition() {
+    _tickerHoldTimer?.cancel();
+    _tickerHoldActive = true;
+    _tickerHoldUntil = DateTime.now().add(const Duration(milliseconds: 200));
+    _tickerHoldTimer = Timer(const Duration(milliseconds: 200), () {
+      _tickerHoldTimer = null;
+      _tickerHoldActive = false;
+      _tickerHoldUntil = null;
+      if (mounted) _syncProgressTicker();
+    });
+  }
+
   void _syncProgressTicker() {
+    final hasBaseProgressTicker = _hasBaseProgressTickerFor(widget);
+    if (hasBaseProgressTicker) {
+      _tickerHoldTimer?.cancel();
+      _tickerHoldTimer = null;
+      _tickerHoldActive = false;
+      _tickerHoldUntil = null;
+    }
     if (_needsProgressTicker) {
       _syncToNativePosition();
       _lastTickElapsed = Duration.zero;
@@ -279,9 +304,6 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
       }
       final ticker = _ticker ??= createTicker(_onTick);
       if (!ticker.isActive) ticker.start();
-      // 设置持有时间：歌词行切换后保持 200ms，避免频繁启停
-      _tickerHoldActive = true;
-      _tickerHoldUntil = DateTime.now().add(const Duration(milliseconds: 200));
     } else {
       _ticker?.stop();
     }
@@ -510,6 +532,10 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
 
     if (isHighlightActive != wasHighlightActive ||
         widget.line != oldWidget.line) {
+      if (_hasBaseProgressTickerFor(oldWidget) &&
+          !_hasBaseProgressTickerFor(widget)) {
+        _holdProgressTickerForLineTransition();
+      }
       _syncProgressTicker();
     }
 
@@ -539,6 +565,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
 
     if (widget.line != oldWidget.line) {
       _cachedPainter = null;
+      _liftCache.values = const [];
       _clearHeightCache();
       _frozenHeight = null;
       _pendingSeekMs = null;
@@ -553,6 +580,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
       _playerStateListener,
     );
     _ticker?.dispose();
+    _tickerHoldTimer?.cancel();
     _scaleController.dispose();
     _floatController.dispose();
     widget.backgroundVocalVisibilityListenable?.removeListener(
@@ -671,10 +699,9 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
           builder: (context, animatedBlurSigma, _) {
             return LayoutBuilder(
               builder: (context, constraints) {
-                final theme = Theme.of(context);
-                final fontFamily =
-                    theme.textTheme.bodyMedium?.fontFamily ??
-                    theme.textTheme.bodySmall?.fontFamily;
+                final fontFamily = context
+                    .watch<ThemeProvider>()
+                    .resolvedLyricFontFamily;
 
                 final lineWidth = constraints.maxWidth;
                 final agent = widget.line is SyncLyricLine
@@ -713,7 +740,9 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
                     _cachedPainter!.highlightDeadlineMs !=
                         widget.highlightDeadlineMs ||
                     _cachedPainter!.lineMedianWordDuration !=
-                        lineMedianWordDuration) {
+                        lineMedianWordDuration ||
+                    _cachedPainter!.liftDecayListenable !=
+                        (isHighlightActive ? null : _floatController)) {
                   _cachedPainter = LyricsLinePainter(
                     line: widget.line,
                     currentTimeMs: _currentTimeMs,
@@ -732,6 +761,10 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
                     agent: agent,
                     highlightDeadlineMs: widget.highlightDeadlineMs,
                     lineMedianWordDuration: lineMedianWordDuration,
+                    liftCache: _liftCache,
+                    liftDecayListenable: isHighlightActive
+                        ? null
+                        : _floatController,
                   );
                 }
 
