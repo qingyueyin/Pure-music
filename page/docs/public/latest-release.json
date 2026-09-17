@@ -1,11 +1,15 @@
 {
-  "tag_name": "v2.2.4",
-  "name": "2.2.4",
-  "version": "2.2.4",
+  "tag_name": "v2.2.5",
+  "name": "2.2.5",
+  "version": "2.2.5",
   "github_releases_url": "https://github.com/qingyueyin/Pure-music/releases",
-  "github_release_url": "https://github.com/qingyueyin/Pure-music/releases/tag/v2.2.4",
+  "github_release_url": "https://github.com/qingyueyin/Pure-music/releases/tag/v2.2.5",
   "gitee_repo_url": "https://gitee.com/qingyueyin/Pure-music",
   "gitee_releases_url": "https://gitee.com/qingyueyin/Pure-music/releases",
+  "installer_url": "https://github.com/qingyueyin/Pure-music/releases/download/v2.2.5/pure_music_2.2.5_release_installer.exe",
+  "installer_name": "pure_music_2.2.5_release_installer.exe",
+  "portable_url": "https://github.com/qingyueyin/Pure-music/releases/download/v2.2.5/pure_music_2.2.5_release_portable.zip",
+  "portable_name": "pure_music_2.2.5_release_portable.zip",
   "gitee_may_lag": true,
-  "generated_at": "2026-09-06T13:53:26.820Z"
+  "generated_at": "2026-09-15T12:18:03.515Z"
 }
