@@ -15,6 +15,7 @@ import 'package:pure_music/core/menu_styles.dart';
 import 'package:pure_music/core/color_extraction.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/memory_monitor.dart';
+import 'package:pure_music/core/sleep_blocker.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/hotkey_binding.dart';
@@ -30,6 +31,7 @@ import 'package:pure_music/component/responsive_builder.dart';
 import 'package:pure_music/page/now_playing_page/component/current_playlist_view.dart';
 import 'package:pure_music/page/now_playing_page/component/equalizer_dialog.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_source_view.dart';
+import 'package:pure_music/page/now_playing_page/component/sleep_timer_dialog.dart';
 import 'package:pure_music/page/now_playing_page/component/pitch_control.dart';
 import 'package:pure_music/page/now_playing_page/component/vertical_lyric_view.dart';
 import 'package:pure_music/page/now_playing_page/component/now_playing_background.dart';
@@ -285,6 +287,8 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   @override
   void initState() {
     super.initState();
+    SleepBlocker.instance.setPageVisible(true);
+    SleepBlocker.instance.reevaluate();
     playbackService.nowPlayingNotifier.addListener(updateCover);
     nowPlayingViewMode.addListener(_onViewModeChanged);
     updateCover();
@@ -314,6 +318,8 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   @override
   void dispose() {
     playbackService.nowPlayingNotifier.removeListener(updateCover);
+    SleepBlocker.instance.setPageVisible(false);
+    SleepBlocker.instance.reevaluate();
     nowPlayingViewMode.removeListener(_onViewModeChanged);
     _coverDebounceTimer?.cancel();
     _songChangeTrimTimer?.cancel();
@@ -751,6 +757,19 @@ class _NowPlayingMoreActionState extends State<_NowPlayingMoreAction> {
               leadingIcon: const Icon(Symbols.lyrics),
               child: const Text('歌词来源'),
             ),
+          MenuItemButton(
+            style: menuItemStyle,
+            onPressed: () {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                showDialog<void>(
+                  context: context,
+                  builder: (context) => const SleepTimerDialog(),
+                );
+              });
+            },
+            leadingIcon: const Icon(Symbols.bedtime),
+            child: const Text('睡眠定时'),
+          ),
           MenuItemButton(
             style: menuItemStyle,
             onPressed: () {
