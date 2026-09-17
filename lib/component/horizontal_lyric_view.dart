@@ -5,6 +5,7 @@ import 'package:pure_music/component/search_dialog.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/route_visibility.dart';
+import 'package:pure_music/core/window_render_gate.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
@@ -21,47 +22,54 @@ class HorizontalLyricView extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
-    return Tooltip(
-      message: '点我唤起搜索',
-      child: InteractiveSurfaceMotion(
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTapUp: (_) => SearchDialog.show(context),
-          child: MouseRegion(
-            cursor: SystemMouseCursors.click,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: scheme.secondaryContainer,
-                borderRadius: AppRadius.mdCircular,
-              ),
-              child: ListenableBuilder(
-                listenable: Listenable.merge([
-                  PlayService.instance.lyricService,
-                  LyricViewController.instance,
-                ]),
-                builder: (context, _) => FutureBuilder(
-                  key: ValueKey(
-                    PlayService.instance.lyricService.currLyricFuture,
-                  ),
-                  future: PlayService.instance.lyricService.currLyricFuture,
-                  builder: (context, snapshot) {
-                    if (snapshot.data == null) {
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            '快来播放音乐吧~',
-                            style: TextStyle(
-                              color: scheme.onSecondaryContainer,
+    return ListenableBuilder(
+      listenable: AppSettings.listMotionNotifier,
+      builder: (context, _) => Tooltip(
+        message: '点我唤起搜索',
+        child: InteractiveSurfaceMotion(
+          enabled: AppSettings.instance.enableInteractiveSurfaceMotion,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapUp: (_) => SearchDialog.show(context),
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: scheme.secondaryContainer,
+                  borderRadius: AppRadius.mdCircular,
+                ),
+                child: ListenableBuilder(
+                  listenable: Listenable.merge([
+                    PlayService.instance.lyricService,
+                    LyricViewController.instance,
+                  ]),
+                  builder: (context, _) => FutureBuilder(
+                    key: ValueKey(
+                      PlayService.instance.lyricService.currLyricFuture,
+                    ),
+                    future: PlayService.instance.lyricService.currLyricFuture,
+                    builder: (context, snapshot) {
+                      if (snapshot.data == null) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              '快来播放音乐吧~',
+                              style: TextStyle(
+                                color: scheme.onSecondaryContainer,
+                              ),
                             ),
                           ),
-                        ),
-                      );
-                    }
+                        );
+                      }
 
-                    return _LyricHorizontalScrollArea(snapshot.data!, compact);
-                  },
+                      return _LyricHorizontalScrollArea(
+                        snapshot.data!,
+                        compact,
+                      );
+                    },
+                  ),
                 ),
               ),
             ),
@@ -321,6 +329,11 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
   }
 
   void _resyncFromPositionTick(double position) {
+    if (!shouldAcceptLyricUiUpdate(
+      windowFramesEnabled: WindowRenderGate.instance.shouldRender,
+    )) {
+      return;
+    }
     if (!mounted || widget.lyric.lines.isEmpty) return;
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     if (nowMs - _lastPositionResyncMs < 200) return;
@@ -333,10 +346,26 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
     _applyLyricLineUpdate(update);
   }
 
+  void _onWindowFramesEnabled() {
+    if (!shouldAcceptLyricUiUpdate(
+      windowFramesEnabled: WindowRenderGate.instance.shouldRender,
+    )) {
+      return;
+    }
+    if (!mounted) return;
+    lyricService.forceEmitCurrentLine();
+    _syncToPlaybackPosition(preferUpcoming: true);
+  }
+
   void _applyLyricLineUpdate(
     LyricLineUpdate update, {
     bool preferForward = false,
   }) {
+    if (!shouldAcceptLyricUiUpdate(
+      windowFramesEnabled: WindowRenderGate.instance.shouldRender,
+    )) {
+      return;
+    }
     final lineIndex = _nearestRenderableLineIndex(
       update.primaryIndex,
       preferForward: preferForward,
@@ -410,6 +439,9 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
     lyricLineStreamSubscription = lyricService.lyricLineStream.listen((update) {
       _applyLyricLineUpdate(update, preferForward: false);
     });
+    WindowRenderGate.instance.framesEnabled.addListener(
+      _onWindowFramesEnabled,
+    );
     _playbackResyncListener = _queuePlaybackResync;
     playbackService.positionSyncNotifier.addListener(_playbackResyncListener);
     _startPositionResyncWindow();
@@ -445,6 +477,11 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
   }
 
   void _queuePlaybackResync() {
+    if (!shouldAcceptLyricUiUpdate(
+      windowFramesEnabled: WindowRenderGate.instance.shouldRender,
+    )) {
+      return;
+    }
     if (!mounted) return;
     _startPositionResyncWindow();
     _syncToPlaybackPosition(preferUpcoming: true);
@@ -553,6 +590,9 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
     _slideController?.dispose();
     routeVisibilityObserver.unsubscribe(this);
     lyricLineStreamSubscription.cancel();
+    WindowRenderGate.instance.framesEnabled.removeListener(
+      _onWindowFramesEnabled,
+    );
     playbackService.positionSyncNotifier.removeListener(
       _playbackResyncListener,
     );
