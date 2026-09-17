@@ -18,6 +18,13 @@ class NowPlayingBackground extends StatelessWidget {
     required this.fallbackColor,
   });
 
+  static Future<void> precache() {
+    return Future.wait([
+      MeshGradientBackground.precache(),
+      FlowingLightBackground.precache(),
+    ]);
+  }
+
   @override
   Widget build(BuildContext context) {
     return switch (mode) {

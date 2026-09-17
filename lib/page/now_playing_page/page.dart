@@ -98,6 +98,8 @@ double _portraitNowPlayingCoverSize({
 class NowPlayingPage extends StatefulWidget {
   const NowPlayingPage({super.key});
 
+  static Future<void> precacheBackgrounds() => NowPlayingBackground.precache();
+
   @override
   State<NowPlayingPage> createState() => _NowPlayingPageState();
 }

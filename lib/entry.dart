@@ -197,6 +197,8 @@ class _EntryState extends State<Entry>
       );
       // 任务栏缩略图自定义封面（主窗口已创建完成）
       TaskbarThumbnailService.instance.init();
+      // 预编译播放页背景 shader，避免首次进入时卡顿。
+      NowPlayingPage.precacheBackgrounds();
       // 启动后延迟检查更新
       _autoCheckUpdate();
     });
