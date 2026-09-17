@@ -31,7 +31,7 @@ const List<String> _settingsFiles = [
 ];
 
 /// 设置里引用外部文件的字段，导出时把文件一并打包，导入时还原并改写路径。
-const List<String> _externalPathKeys = ['FontPath'];
+const List<String> _externalPathKeys = ['FontPath', 'LyricFontPath'];
 
 const String _manifestName = 'manifest.json';
 const String _externalDir = 'external';
