@@ -313,28 +313,35 @@ class _NowPlayingSmallViewSwitch extends StatefulWidget {
 
 class _NowPlayingSmallViewSwitchState
     extends State<_NowPlayingSmallViewSwitch> {
-  bool visible = false;
+  bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final useMonet = AppSettings.instance.useMaterialYouForControls;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4.0),
       child: SizedBox(
-        width: 32,
+        width: 40,
+        height: 48,
         child: Material(
           borderRadius: AppRadius.mdCircular,
           type: MaterialType.transparency,
-          child: AnimatedOpacity(
-            duration: MotionDuration.fast,
+          child: AnimatedContainer(
+            duration: reduceMotion ? Duration.zero : MotionDuration.fast,
             curve: MotionCurve.standard,
-            opacity: visible ? 1.0 : 0.0,
+            decoration: BoxDecoration(
+              color: _hovered && widget.enabled
+                  ? scheme.onSecondaryContainer.withValues(alpha: 0.06)
+                  : Colors.transparent,
+              borderRadius: AppRadius.mdCircular,
+            ),
             child: AnimatedScale(
-              duration: MotionDuration.fast,
+              duration: reduceMotion ? Duration.zero : MotionDuration.fast,
               curve: MotionCurve.standard,
-              scale: visible ? 1.0 : 0.94,
+              scale: _hovered && widget.enabled ? 1.04 : 1.0,
               child: InkWell(
                 borderRadius: AppRadius.mdCircular,
                 hoverColor: scheme.onSecondaryContainer.withValues(alpha: 0.02),
@@ -344,10 +351,9 @@ class _NowPlayingSmallViewSwitchState
                 splashColor: Colors.transparent,
                 onTap: widget.enabled ? widget.onTap : null,
                 onHover: (hasEntered) {
-                  if (!widget.enabled) return;
-                  setState(() {
-                    visible = hasEntered;
-                  });
+                  final hovered = hasEntered && widget.enabled;
+                  if (_hovered == hovered) return;
+                  setState(() => _hovered = hovered);
                 },
                 child: Center(
                   child: widget.busy
