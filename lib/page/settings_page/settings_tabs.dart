@@ -618,6 +618,7 @@ enum _MotionEffect {
   stackedScroll,
   contentTransition,
   interactiveSurface,
+  coverPointerSheen,
   detailHeaderCollapse,
   dataTransition,
 }
@@ -639,6 +640,7 @@ class _MotionEffectSwitchState extends State<_MotionEffectSwitch> {
     _MotionEffect.stackedScroll => settings.enableStackedScrollEffect,
     _MotionEffect.contentTransition => settings.enableContentTransitionMotion,
     _MotionEffect.interactiveSurface => settings.enableInteractiveSurfaceMotion,
+    _MotionEffect.coverPointerSheen => settings.enableCoverPointerSheen,
     _MotionEffect.detailHeaderCollapse =>
       settings.enableDetailHeaderCollapseMotion,
     _MotionEffect.dataTransition => settings.enableDataTransitionMotion,
@@ -648,6 +650,7 @@ class _MotionEffectSwitchState extends State<_MotionEffectSwitch> {
     _MotionEffect.stackedScroll => '堆叠滚动',
     _MotionEffect.contentTransition => '内容切换过渡',
     _MotionEffect.interactiveSurface => '卡片交互',
+    _MotionEffect.coverPointerSheen => '封面光斑',
     _MotionEffect.detailHeaderCollapse => '详情头部收拢',
     _MotionEffect.dataTransition => '数据更新过渡',
   };
@@ -656,6 +659,7 @@ class _MotionEffectSwitchState extends State<_MotionEffectSwitch> {
     _MotionEffect.stackedScroll => '列表滚动时使用堆叠与平滑滚动',
     _MotionEffect.contentTransition => '页面切换时使用层级推入',
     _MotionEffect.interactiveSurface => '专辑、艺术家、歌单和文件夹卡片的悬停与按压',
+    _MotionEffect.coverPointerSheen => '鼠标在专辑封面上时显示跟随光晕',
     _MotionEffect.detailHeaderCollapse => '详情页头部随滚动收拢',
     _MotionEffect.dataTransition => '统计页数值更新时使用过渡',
   };
@@ -668,6 +672,8 @@ class _MotionEffectSwitchState extends State<_MotionEffectSwitch> {
         settings.enableContentTransitionMotion = value;
       case _MotionEffect.interactiveSurface:
         settings.enableInteractiveSurfaceMotion = value;
+      case _MotionEffect.coverPointerSheen:
+        settings.enableCoverPointerSheen = value;
       case _MotionEffect.detailHeaderCollapse:
         settings.enableDetailHeaderCollapseMotion = value;
       case _MotionEffect.dataTransition:
@@ -3892,6 +3898,8 @@ class _AppearanceListGroup extends StatelessWidget {
         _MotionEffectSwitch(effect: _MotionEffect.contentTransition),
         SizedBox(height: 16.0),
         _MotionEffectSwitch(effect: _MotionEffect.interactiveSurface),
+        SizedBox(height: 16.0),
+        _MotionEffectSwitch(effect: _MotionEffect.coverPointerSheen),
         SizedBox(height: 16.0),
         _MotionEffectSwitch(effect: _MotionEffect.detailHeaderCollapse),
         SizedBox(height: 16.0),
