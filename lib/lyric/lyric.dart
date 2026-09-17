@@ -6,8 +6,12 @@ class Lyric {
   final String? rawText;
   final bool isDuet; // TTML 对唱标记：同时存在 v1 和 v2
 
-  const Lyric(this.lines,
-      [this.source = LyricFormat.local, this.rawText, this.isDuet = false]);
+  const Lyric(
+    this.lines, [
+    this.source = LyricFormat.local,
+    this.rawText,
+    this.isDuet = false,
+  ]);
 
   static const Lyric empty = Lyric([]);
 
@@ -64,8 +68,13 @@ class SyncLyricLine extends LyricLine {
   Duration? bgEnd;
   BackgroundVocal? bg;
 
-  SyncLyricLine(super.start, super.length, this.words,
-      [super.translation, String? romanLyric]) {
+  SyncLyricLine(
+    super.start,
+    super.length,
+    this.words, [
+    super.translation,
+    String? romanLyric,
+  ]) {
     this.romanLyric = romanLyric;
   }
 
@@ -90,17 +99,16 @@ class SyncLyricWord {
   List<RubyTag>? ruby; // tts:ruby 注音
 
   SyncLyricWord(this.start, this.length, this.content)
-      : obscene = false,
-        isMerged = false,
-        emptyBeat = null,
-        ruby = null;
+    : obscene = false,
+      isMerged = false,
+      emptyBeat = null,
+      ruby = null;
 }
 
 class LyricLineUpdate {
   final int primaryIndex;
   final List<int> activeIndices;
   final List<int> layoutIndices;
-
   const LyricLineUpdate({
     required this.primaryIndex,
     required this.activeIndices,
