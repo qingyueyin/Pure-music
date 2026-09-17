@@ -14,6 +14,8 @@ class CollapsibleLyricControls extends StatefulWidget {
 class _CollapsibleLyricControlsState extends State<CollapsibleLyricControls>
     with SingleTickerProviderStateMixin {
   bool _isExpanded = false;
+  bool _showControls = false;
+  bool _reduceMotion = false;
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<double> _slideAnimation;
@@ -35,6 +37,7 @@ class _CollapsibleLyricControlsState extends State<CollapsibleLyricControls>
         curve: MotionCurve.entrance,
       ),
     );
+    _animationController.addStatusListener(_handleAnimationStatus);
   }
 
   @override
@@ -43,11 +46,47 @@ class _CollapsibleLyricControlsState extends State<CollapsibleLyricControls>
     super.dispose();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    if (reduceMotion && !_reduceMotion) {
+      _animationController
+        ..stop()
+        ..value = _isExpanded ? 1.0 : 0.0;
+      _showControls = _isExpanded;
+    }
+    _reduceMotion = reduceMotion;
+  }
+
+  void _handleAnimationStatus(AnimationStatus status) {
+    if (status != AnimationStatus.dismissed ||
+        _isExpanded ||
+        !_showControls ||
+        !mounted) {
+      return;
+    }
+    setState(() => _showControls = false);
+  }
+
   void _toggleExpanded() {
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
     setState(() {
       _isExpanded = !_isExpanded;
       if (_isExpanded) {
-        _animationController.forward();
+        _showControls = true;
+        if (reduceMotion) {
+          _animationController
+            ..stop()
+            ..value = 1.0;
+        } else {
+          _animationController.forward();
+        }
+      } else if (reduceMotion) {
+        _animationController
+          ..stop()
+          ..value = 0.0;
+        _showControls = false;
       } else {
         _animationController.reverse();
       }
@@ -57,6 +96,7 @@ class _CollapsibleLyricControlsState extends State<CollapsibleLyricControls>
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
     const radius = 28.0;
 
     return Container(
@@ -74,7 +114,7 @@ class _CollapsibleLyricControlsState extends State<CollapsibleLyricControls>
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                if (_isExpanded) ...[
+                if (_showControls) ...[
                   AnimatedBuilder(
                     animation: _animationController,
                     builder: (context, child) {
@@ -95,7 +135,9 @@ class _CollapsibleLyricControlsState extends State<CollapsibleLyricControls>
                   color: scheme.onSecondaryContainer,
                   icon: AnimatedRotation(
                     turns: _isExpanded ? 0.5 : 0,
-                    duration: MotionDuration.base,
+                    duration: reduceMotion
+                        ? Duration.zero
+                        : MotionDuration.base,
                     curve: MotionCurve.emphasized,
                     child: const Icon(Symbols.expand_more, size: 22),
                   ),
