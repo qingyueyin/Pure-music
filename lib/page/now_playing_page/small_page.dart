@@ -1,7 +1,9 @@
 part of 'page.dart';
 
 class _NowPlayingSmallPage extends StatefulWidget {
-  const _NowPlayingSmallPage();
+  const _NowPlayingSmallPage({required this.cursorHidden});
+
+  final ValueListenable<bool> cursorHidden;
 
   @override
   State<_NowPlayingSmallPage> createState() => _NowPlayingSmallPageState();
@@ -29,8 +31,6 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
         NowPlayingViewMode.withLyric => viewWithLyric,
         NowPlayingViewMode.withPlaylist => viewWithPlaylist,
       };
-  NowPlayingViewMode? _savingViewMode;
-
   IconData viewSwitchIcon(NowPlayingViewMode viewMode) {
     return switch (viewMode) {
       NowPlayingViewMode.onlyMain => Symbols.music_note,
@@ -39,9 +39,15 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
     };
   }
 
-  Future<void> changeView(NowPlayingViewMode viewMode) async {
-    if (_savingViewMode != null) return;
+  String viewSwitchTooltip(NowPlayingViewMode viewMode) {
+    return switch (viewMode) {
+      NowPlayingViewMode.onlyMain => '封面',
+      NowPlayingViewMode.withLyric => '歌词',
+      NowPlayingViewMode.withPlaylist => '播放列表',
+    };
+  }
 
+  void changeView(NowPlayingViewMode viewMode) {
     late final List<NowPlayingViewMode> desView;
     switch (viewMode) {
       case NowPlayingViewMode.onlyMain:
@@ -54,19 +60,10 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
         desView = viewWithPlaylist;
         break;
     }
-    setState(() {
-      views = desView;
-      _savingViewMode = viewMode;
-    });
+    setState(() => views = desView);
     nowPlayingViewMode.value = viewMode;
     AppPreference.instance.nowPlayingPagePref.nowPlayingViewMode = viewMode;
-    try {
-      await AppPreference.instance.save();
-    } finally {
-      if (mounted) {
-        setState(() => _savingViewMode = null);
-      }
-    }
+    unawaited(AppPreference.instance.save());
   }
 
   @override
@@ -78,12 +75,13 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
           Expanded(
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _NowPlayingSmallViewSwitch(
+                _PortraitViewSwitch(
+                  cursorHidden: widget.cursorHidden,
                   onTap: () => changeView(views[0]),
                   icon: viewSwitchIcon(views[0]),
-                  busy: _savingViewMode == views[0],
-                  enabled: _savingViewMode == null,
+                  tooltip: viewSwitchTooltip(views[0]),
                 ),
                 Expanded(
                   child: AnimatedSwitcher(
@@ -112,11 +110,11 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
                     },
                   ),
                 ),
-                _NowPlayingSmallViewSwitch(
+                _PortraitViewSwitch(
+                  cursorHidden: widget.cursorHidden,
                   onTap: () => changeView(views[2]),
                   icon: viewSwitchIcon(views[2]),
-                  busy: _savingViewMode == views[2],
-                  enabled: _savingViewMode == null,
+                  tooltip: viewSwitchTooltip(views[2]),
                 ),
               ],
             ),
@@ -129,7 +127,45 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
   }
 }
 
-/// 竖屏底部控制区：进度条 + 主控排常驻，次要功能排随鼠标离开淡出
+class _PortraitViewSwitch extends StatelessWidget {
+  const _PortraitViewSwitch({
+    required this.cursorHidden,
+    required this.onTap,
+    required this.icon,
+    required this.tooltip,
+  });
+
+  final ValueListenable<bool> cursorHidden;
+  final VoidCallback onTap;
+  final IconData icon;
+  final String tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: AppSettings.rebuildNotifier,
+      builder: (context, _) {
+        return ValueListenableBuilder<bool>(
+          valueListenable: cursorHidden,
+          builder: (context, hidden, _) {
+            return NowPlayingSmallViewSwitch(
+              onTap: onTap,
+              icon: icon,
+              tooltip: tooltip,
+              revealed: nowPlayingSmallViewSwitchRevealed(
+                alwaysShowControls:
+                    AppSettings.instance.alwaysShowNowPlayingControls,
+                cursorHidden: hidden,
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+/// 竖屏底部控制区：进度条 + 主控排常驻；次要功能排悬停展开，离开后收回高度
 class _NowPlayingSmallControlZone extends StatefulWidget {
   const _NowPlayingSmallControlZone();
 
@@ -166,23 +202,16 @@ class _NowPlayingSmallControlZoneState
           ),
           const SizedBox(height: 4.0),
           const _NowPlayingSmallMainControls(),
-          const SizedBox(height: 4.0),
           ListenableBuilder(
             listenable: AppSettings.rebuildNotifier,
-            builder: (context, _) => AnimatedOpacity(
-              duration: MotionDuration.base,
-              curve: MotionCurve.standard,
-              opacity:
+            builder: (context, _) {
+              final visible =
                   AppSettings.instance.alwaysShowNowPlayingControls ||
-                      _isHovering
-                  ? 1.0
-                  : 0.0,
-              child: IgnorePointer(
-                ignoring:
-                    !AppSettings.instance.alwaysShowNowPlayingControls &&
-                    !_isHovering,
+                  _isHovering;
+              return NowPlayingCollapsibleChrome(
+                visible: visible,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                  padding: const EdgeInsets.fromLTRB(8.0, 4.0, 8.0, 0),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
@@ -204,8 +233,8 @@ class _NowPlayingSmallControlZoneState
                     ],
                   ),
                 ),
-              ),
-            ),
+              );
+            },
           ),
         ],
       ),
@@ -244,11 +273,9 @@ class _NowPlayingSmallMainControls extends StatelessWidget {
               disabledColor: disabledColor,
             ),
             const SizedBox(width: 16),
-            StreamBuilder(
-              stream: playbackService.playerStateStream,
-              initialData: playbackService.playerState,
-              builder: (context, snapshot) {
-                final playerState = snapshot.data!;
+            ValueListenableBuilder<PlayerState>(
+              valueListenable: playbackService.playerStateNotifier,
+              builder: (context, playerState, _) {
                 final isPlaying = playerState == PlayerState.playing;
                 final isCompleted = playerState == PlayerState.completed;
 
@@ -289,95 +316,6 @@ class _NowPlayingSmallMainControls extends StatelessWidget {
           ],
         );
       },
-    );
-  }
-}
-
-class _NowPlayingSmallViewSwitch extends StatefulWidget {
-  const _NowPlayingSmallViewSwitch({
-    required this.onTap,
-    required this.icon,
-    this.busy = false,
-    this.enabled = true,
-  });
-
-  final void Function() onTap;
-  final IconData icon;
-  final bool busy;
-  final bool enabled;
-
-  @override
-  State<_NowPlayingSmallViewSwitch> createState() =>
-      _NowPlayingSmallViewSwitchState();
-}
-
-class _NowPlayingSmallViewSwitchState
-    extends State<_NowPlayingSmallViewSwitch> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final useMonet = AppSettings.instance.useMaterialYouForControls;
-    final reduceMotion = MediaQuery.disableAnimationsOf(context);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4.0),
-      child: SizedBox(
-        width: 40,
-        height: 48,
-        child: Material(
-          borderRadius: AppRadius.mdCircular,
-          type: MaterialType.transparency,
-          child: AnimatedContainer(
-            duration: reduceMotion ? Duration.zero : MotionDuration.fast,
-            curve: MotionCurve.standard,
-            decoration: BoxDecoration(
-              color: _hovered && widget.enabled
-                  ? scheme.onSecondaryContainer.withValues(alpha: 0.06)
-                  : Colors.transparent,
-              borderRadius: AppRadius.mdCircular,
-            ),
-            child: AnimatedScale(
-              duration: reduceMotion ? Duration.zero : MotionDuration.fast,
-              curve: MotionCurve.standard,
-              scale: _hovered && widget.enabled ? 1.04 : 1.0,
-              child: InkWell(
-                borderRadius: AppRadius.mdCircular,
-                hoverColor: scheme.onSecondaryContainer.withValues(alpha: 0.02),
-                highlightColor: scheme.onSecondaryContainer.withValues(
-                  alpha: 0.04,
-                ),
-                splashColor: Colors.transparent,
-                onTap: widget.enabled ? widget.onTap : null,
-                onHover: (hasEntered) {
-                  final hovered = hasEntered && widget.enabled;
-                  if (_hovered == hovered) return;
-                  setState(() => _hovered = hovered);
-                },
-                child: Center(
-                  child: widget.busy
-                      ? SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: useMonet ? scheme.primary : scheme.onSurface,
-                          ),
-                        )
-                      : Icon(
-                          widget.icon,
-                          color: widget.enabled
-                              ? (useMonet ? scheme.primary : scheme.onSurface)
-                              : (useMonet ? scheme.primary : scheme.onSurface)
-                                    .withValues(alpha: 0.38),
-                        ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

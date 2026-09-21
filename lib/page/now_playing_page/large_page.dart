@@ -144,11 +144,10 @@ class _NowPlayingLargePage extends StatelessWidget {
                               disabledColor: disabledColor,
                             ),
                             spacer,
-                            StreamBuilder(
-                              stream: playbackService.playerStateStream,
-                              initialData: playbackService.playerState,
-                              builder: (context, snapshot) {
-                                final state = snapshot.data!;
+                            ValueListenableBuilder<PlayerState>(
+                              valueListenable:
+                                  playbackService.playerStateNotifier,
+                              builder: (context, state, _) {
                                 final isPlaying = state == PlayerState.playing;
                                 final isCompleted =
                                     state == PlayerState.completed;

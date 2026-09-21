@@ -17,6 +17,38 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+/// Fixed-width slot for [AudioTile.leading] so index labels of different
+/// glyph widths (`03` vs `13`) keep covers and titles on one vertical line.
+class AudioTileLeadingSlot extends StatelessWidget {
+  const AudioTileLeadingSlot({
+    super.key,
+    required this.child,
+    this.width = AudioTile.defaultLeadingWidth,
+  });
+
+  final Widget child;
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 16.0),
+      child: SizedBox(
+        width: width,
+        child: Align(
+          alignment: Alignment.centerRight,
+          child: DefaultTextStyle.merge(
+            style: const TextStyle(
+              fontFeatures: [FontFeature.tabularFigures()],
+            ),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// 由[playlist]和[audioIndex]确定audio，而不是直接传入audio，
 /// 这是为了实现点击列表项播放乐曲时指定该列表为播放列表。
 /// 同时，播放乐曲时也是需要index和playlist来定位audio和设置播放列表。
@@ -27,15 +59,20 @@ class AudioTile extends StatefulWidget {
     required this.playlist,
     this.focus = false,
     this.leading,
+    this.leadingWidth = defaultLeadingWidth,
     this.action,
     this.multiSelectController,
     this.onRemoveFromPlaylist,
   });
 
+  static const double defaultLeadingWidth = 32;
+  static const double discLeadingWidth = 40;
+
   final int audioIndex;
   final List<Audio> playlist;
   final bool focus;
   final Widget? leading;
+  final double leadingWidth;
   final Widget? action;
   final MultiSelectController? multiSelectController;
   final FutureOr<void> Function(Audio audio)? onRemoveFromPlaylist;
@@ -462,8 +499,8 @@ class _AudioTileState extends State<AudioTile> {
                           child: Row(
                             children: [
                               if (widget.leading != null)
-                                Padding(
-                                  padding: const EdgeInsets.only(right: 16.0),
+                                AudioTileLeadingSlot(
+                                  width: widget.leadingWidth,
                                   child: widget.leading!,
                                 ),
 
@@ -502,7 +539,12 @@ class _AudioTileState extends State<AudioTile> {
                                 Duration(
                                   seconds: audio.duration,
                                 ).toStringHMMSS(),
-                                style: TextStyle(color: metadataColor),
+                                style: TextStyle(
+                                  color: metadataColor,
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures(),
+                                  ],
+                                ),
                               ),
                               if (widget.multiSelectController != null &&
                                   widget

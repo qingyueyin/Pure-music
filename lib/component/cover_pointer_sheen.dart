@@ -100,12 +100,16 @@ class _CoverPointerSheenState extends State<CoverPointerSheen>
     final enabled = widget.enabled && !MediaQuery.disableAnimationsOf(context);
     if (!enabled) return widget.child;
 
+    final sheenColor = Theme.of(context).colorScheme.onSurface;
+
     return MouseRegion(
       opaque: false,
       onEnter: _onEnter,
       onHover: _onHover,
       onExit: _onExit,
       child: Stack(
+        fit: StackFit.expand,
+        clipBehavior: Clip.none,
         children: [
           widget.child,
           Positioned.fill(
@@ -120,6 +124,7 @@ class _CoverPointerSheenState extends State<CoverPointerSheen>
                       painter: CoverPointerSheenPainter(
                         center: _position.value,
                         opacity: opacity,
+                        color: sheenColor,
                       ),
                     );
                   },
@@ -134,10 +139,15 @@ class _CoverPointerSheenState extends State<CoverPointerSheen>
 }
 
 class CoverPointerSheenPainter extends CustomPainter {
-  const CoverPointerSheenPainter({required this.center, required this.opacity});
+  const CoverPointerSheenPainter({
+    required this.center,
+    required this.opacity,
+    required this.color,
+  });
 
   final Offset center;
   final double opacity;
+  final Color color;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -145,9 +155,9 @@ class CoverPointerSheenPainter extends CustomPainter {
     final radius = size.shortestSide * 0.6;
     final shader = RadialGradient(
       colors: [
-        const Color(0xFFFFFFFF).withValues(alpha: 0.14 * opacity),
-        const Color(0xFFFFFFFF).withValues(alpha: 0.05 * opacity),
-        const Color(0x00FFFFFF),
+        color.withValues(alpha: 0.18 * opacity),
+        color.withValues(alpha: 0.06 * opacity),
+        color.withValues(alpha: 0.0),
       ],
       stops: const [0.0, 0.45, 1.0],
     ).createShader(Rect.fromCircle(center: center, radius: radius));
@@ -156,6 +166,8 @@ class CoverPointerSheenPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(CoverPointerSheenPainter oldDelegate) {
-    return oldDelegate.center != center || oldDelegate.opacity != opacity;
+    return oldDelegate.center != center ||
+        oldDelegate.opacity != opacity ||
+        oldDelegate.color != color;
   }
 }

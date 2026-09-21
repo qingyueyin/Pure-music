@@ -123,6 +123,7 @@ class _RectangleProgressIndicatorState
     super.initState();
     playbackService.playerStateNotifier.addListener(_syncTimer);
     playbackService.nowPlayingNotifier.addListener(_onNowPlayingChanged);
+    playbackService.positionSyncNotifier.addListener(_onPositionSync);
     _syncNativeProgress();
     _syncTimer();
   }
@@ -145,6 +146,10 @@ class _RectangleProgressIndicatorState
         isPlaying ? _syncedPosition + elapsedMs / 1000.0 : _syncedPosition;
     progress.value =
         _syncedLength > 0 ? (position / _syncedLength).clamp(0.0, 1.0) : 0;
+  }
+
+  void _onPositionSync() {
+    _syncNativeProgress();
   }
 
   void _syncTimer() {
@@ -317,6 +322,7 @@ class _RectangleProgressIndicatorState
   void dispose() {
     playbackService.playerStateNotifier.removeListener(_syncTimer);
     playbackService.nowPlayingNotifier.removeListener(_onNowPlayingChanged);
+    playbackService.positionSyncNotifier.removeListener(_onPositionSync);
     _progressTimer?.cancel();
     progress.dispose();
     super.dispose();

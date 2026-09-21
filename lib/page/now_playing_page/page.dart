@@ -35,9 +35,10 @@ import 'package:pure_music/page/now_playing_page/component/sleep_timer_dialog.da
 import 'package:pure_music/page/now_playing_page/component/pitch_control.dart';
 import 'package:pure_music/page/now_playing_page/component/vertical_lyric_view.dart';
 import 'package:pure_music/page/now_playing_page/component/now_playing_background.dart';
+import 'package:pure_music/page/now_playing_page/component/now_playing_collapsible_chrome.dart';
+import 'package:pure_music/page/now_playing_page/component/now_playing_small_view_switch.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:pure_music/play_service/play_service.dart';
-import 'package:pure_music/play_service/playback_service.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart';
 import 'package:flutter/material.dart';
@@ -352,12 +353,10 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                       return ValueListenableBuilder<bool>(
                         valueListenable: _routeReadyNotifier,
                         builder: (context, routeReady, _) {
-                          return StreamBuilder<PlayerState>(
-                            stream: playbackService.playerStateStream,
-                            initialData: playbackService.playerState,
-                            builder: (context, snapshot) {
-                              final playerState =
-                                  snapshot.data ?? playbackService.playerState;
+                          return ValueListenableBuilder<PlayerState>(
+                            valueListenable:
+                                playbackService.playerStateNotifier,
+                            builder: (context, playerState, _) {
                               final backgroundInputs =
                                   NowPlayingBackgroundInputs(
                                     albumCoverBytes: _nowPlayingCoverBytes,
@@ -485,7 +484,9 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                                       context,
                                       screenType,
                                     )) {
-                                      return const _NowPlayingSmallPage();
+                                      return _NowPlayingSmallPage(
+                                        cursorHidden: _cursorHiddenNotifier,
+                                      );
                                     }
                                     return const _NowPlayingLargePage();
                                   },
@@ -1836,7 +1837,7 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final tickerModeEnabled = TickerMode.of(context);
+    final tickerModeEnabled = TickerMode.valuesOf(context).enabled;
     if (_tickerModeEnabled == tickerModeEnabled) return;
     _tickerModeEnabled = tickerModeEnabled;
     if (!tickerModeEnabled) return;

@@ -59,17 +59,18 @@ class AlbumDetailPage extends StatelessWidget {
       subtitle: '${album.works.length} 首作品',
       secondaryContent: secondaryContent,
       secondaryContentBuilder:
-          (context, audio, i, multiSelectController, view) => AudioTile(
-            leading: Text(
-              _trackNumber(
-                audio,
-                includeDisc: showDiscSections && view == ContentView.table,
-              ),
-            ),
-            audioIndex: i,
-            playlist: secondaryContent,
-            multiSelectController: multiSelectController,
-          ),
+          (context, audio, i, multiSelectController, view) {
+            final includeDisc = showDiscSections && view == ContentView.table;
+            return AudioTile(
+              leading: Text(_trackNumber(audio, includeDisc: includeDisc)),
+              leadingWidth: includeDisc
+                  ? AudioTile.discLeadingWidth
+                  : AudioTile.defaultLeadingWidth,
+              audioIndex: i,
+              playlist: secondaryContent,
+              multiSelectController: multiSelectController,
+            );
+          },
       secondaryContentSectionBuilder: showDiscSections
           ? (context, audio, i) {
               final disc = _discNumber(audio);
