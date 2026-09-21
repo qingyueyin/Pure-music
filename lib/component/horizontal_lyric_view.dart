@@ -14,6 +14,32 @@ import 'package:pure_music/page/now_playing_page/component/lyric_view_tile.dart'
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:flutter/material.dart';
 
+Color titleBarLyricStripWellColor(ColorScheme scheme) {
+  final fill = scheme.secondaryContainer;
+  if (scheme.brightness == Brightness.dark) {
+    return Color.alphaBlend(scheme.shadow.withValues(alpha: 0.22), fill);
+  }
+  return Color.alphaBlend(scheme.onSurface.withValues(alpha: 0.10), fill);
+}
+
+class TitleBarLyricStripSurface extends StatelessWidget {
+  const TitleBarLyricStripSurface({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: titleBarLyricStripWellColor(scheme),
+        borderRadius: AppRadius.mdCircular,
+      ),
+      child: child,
+    );
+  }
+}
+
 class HorizontalLyricView extends StatelessWidget {
   final bool compact;
   const HorizontalLyricView({super.key, this.compact = false});
@@ -33,11 +59,7 @@ class HorizontalLyricView extends StatelessWidget {
             onTapUp: (_) => SearchDialog.show(context),
             child: MouseRegion(
               cursor: SystemMouseCursors.click,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: scheme.secondaryContainer,
-                  borderRadius: AppRadius.mdCircular,
-                ),
+              child: TitleBarLyricStripSurface(
                 child: ListenableBuilder(
                   listenable: Listenable.merge([
                     PlayService.instance.lyricService,
@@ -439,9 +461,7 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
     lyricLineStreamSubscription = lyricService.lyricLineStream.listen((update) {
       _applyLyricLineUpdate(update, preferForward: false);
     });
-    WindowRenderGate.instance.framesEnabled.addListener(
-      _onWindowFramesEnabled,
-    );
+    WindowRenderGate.instance.framesEnabled.addListener(_onWindowFramesEnabled);
     _playbackResyncListener = _queuePlaybackResync;
     playbackService.positionSyncNotifier.addListener(_playbackResyncListener);
     _startPositionResyncWindow();

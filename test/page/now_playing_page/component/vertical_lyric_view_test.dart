@@ -5,6 +5,55 @@ import 'package:pure_music/page/now_playing_page/component/vertical_lyric_view.d
 import 'package:pure_music/play_service/lyric_service.dart';
 
 void main() {
+  group('initial lyric scroll completion', () {
+    bool finished({
+      bool hasContentDimensions = true,
+      double viewportDimension = 600,
+      double targetHeight = 64,
+      double requestedOffset = 420,
+      double appliedOffset = 420,
+    }) => shouldFinishInitialLyricScroll(
+      hasContentDimensions: hasContentDimensions,
+      viewportDimension: viewportDimension,
+      targetHeight: targetHeight,
+      requestedOffset: requestedOffset,
+      appliedOffset: appliedOffset,
+    );
+
+    test('waits for the interlude to expand before ending restoration', () {
+      expect(finished(targetHeight: 0), isFalse);
+      expect(finished(targetHeight: 40), isTrue);
+    });
+
+    test('waits for scroll content and viewport layout', () {
+      expect(finished(hasContentDimensions: false), isFalse);
+      expect(finished(viewportDimension: 0), isFalse);
+      expect(finished(viewportDimension: 1), isFalse);
+      expect(finished(viewportDimension: double.infinity), isFalse);
+      expect(finished(), isTrue);
+    });
+
+    test('does not finish at a temporarily clamped or estimated offset', () {
+      expect(finished(appliedOffset: 0), isFalse);
+      expect(finished(appliedOffset: 400), isFalse);
+      expect(finished(appliedOffset: 419.75), isTrue);
+      expect(finished(appliedOffset: 420.25), isTrue);
+      expect(finished(appliedOffset: 420.5), isFalse);
+    });
+
+    test('rejects non-finite geometry', () {
+      for (final value in [
+        double.nan,
+        double.infinity,
+        double.negativeInfinity,
+      ]) {
+        expect(finished(targetHeight: value), isFalse);
+        expect(finished(requestedOffset: value), isFalse);
+        expect(finished(appliedOffset: value), isFalse);
+      }
+    });
+  });
+
   test('paused position sync does not force lyric scroll', () {
     expect(shouldForceLyricScrollForPositionSync(PlayerState.paused), isFalse);
   });
@@ -13,16 +62,19 @@ void main() {
     expect(shouldForceLyricScrollForPositionSync(PlayerState.playing), isFalse);
   });
 
-  test('user browsing still blocks follow even before the first line settles', () {
-    expect(
-      shouldIgnoreLyricFollowWhileUserScrolling(isUserDragging: true),
-      isTrue,
-    );
-    expect(
-      shouldIgnoreLyricFollowWhileUserScrolling(isUserDragging: false),
-      isFalse,
-    );
-  });
+  test(
+    'user browsing still blocks follow even before the first line settles',
+    () {
+      expect(
+        shouldIgnoreLyricFollowWhileUserScrolling(isUserDragging: true),
+        isTrue,
+      );
+      expect(
+        shouldIgnoreLyricFollowWhileUserScrolling(isUserDragging: false),
+        isFalse,
+      );
+    },
+  );
 
   test('viewport height jitter does not force lyric scroll', () {
     expect(shouldForceLyricScrollForViewportChange(), isFalse);

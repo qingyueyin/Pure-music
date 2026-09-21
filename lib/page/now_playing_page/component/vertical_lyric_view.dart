@@ -107,6 +107,24 @@ bool shouldForceLyricScrollAfterOffsetsComputed({
   return needsInitialScroll && !isUserDragging;
 }
 
+@visibleForTesting
+bool shouldFinishInitialLyricScroll({
+  required bool hasContentDimensions,
+  required double viewportDimension,
+  required double targetHeight,
+  required double requestedOffset,
+  required double appliedOffset,
+}) {
+  return hasContentDimensions &&
+      viewportDimension.isFinite &&
+      viewportDimension > 1 &&
+      targetHeight.isFinite &&
+      targetHeight > 0 &&
+      requestedOffset.isFinite &&
+      appliedOffset.isFinite &&
+      (requestedOffset - appliedOffset).abs() < 0.5;
+}
+
 bool shouldRestartLyricScroll({
   required bool animatingToSameTarget,
   required bool forceJump,
@@ -527,9 +545,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     lyricLineStreamSubscription = lyricService.lyricLineStream.listen(
       _updateNextLyricLine,
     );
-    WindowRenderGate.instance.framesEnabled.addListener(
-      _onWindowFramesEnabled,
-    );
+    WindowRenderGate.instance.framesEnabled.addListener(_onWindowFramesEnabled);
     _contentResyncListener = _queueContentResync;
     _positionResyncListener = _queuePositionResync;
     playbackService.nowPlayingNotifier.addListener(_contentResyncListener);
@@ -608,6 +624,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   @override
   void activate() {
     super.activate();
+    _discardPendingLyricLineUpdates();
     _needsInitialScroll = true;
     _startPositionResyncWindow();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1343,6 +1360,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
   void _syncWhenRouteVisible() {
     if (_disposed || !mounted) return;
+    _discardPendingLyricLineUpdates();
     _userScrollTracker.end();
     _userScrollHoldTimer?.cancel();
     _userScrollHoldTimer = null;
@@ -1494,10 +1512,19 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
   void _markInitialScrollFinished({
     required double requestedOffset,
-    required double appliedOffset,
+    required double targetHeight,
   }) {
     if (!scrollController.hasClients) return;
-    if (scrollController.position.viewportDimension <= 1) return;
+    final position = scrollController.position;
+    if (!shouldFinishInitialLyricScroll(
+      hasContentDimensions: position.hasContentDimensions,
+      viewportDimension: position.viewportDimension,
+      targetHeight: targetHeight,
+      requestedOffset: requestedOffset,
+      appliedOffset: position.pixels,
+    )) {
+      return;
+    }
     _needsInitialScroll = false;
     _positionResyncExtensionCount = 0;
   }
@@ -1538,10 +1565,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       _userScrollHoldTimer = null;
       _scrollTransition.jumpTo(to);
       _stopScrollTicker();
-      _markInitialScrollFinished(
-        requestedOffset: targetOffset,
-        appliedOffset: to,
-      );
       _scheduleDepartingBackgroundVocalRelease();
       // 补偿只给这一帧，避免稍后新挂上的行把弹簧再放一遍。
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1577,10 +1600,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       _runProgrammaticScroll(() => scrollController.jumpTo(to));
       _scrollTransition.jumpTo(to);
       _stopScrollTicker();
-      _markInitialScrollFinished(
-        requestedOffset: targetOffset,
-        appliedOffset: to,
-      );
       if (_scrollState == LyricScrollState.programScrolling) {
         _scrollState = LyricScrollState.idle;
       }
@@ -1609,10 +1628,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
             : _scrollDurationForDistance(dist));
     _scrollTransition.start(to);
     _startScrollTicker();
-    _markInitialScrollFinished(
-      requestedOffset: targetOffset,
-      appliedOffset: to,
-    );
 
     if (_scrollState != LyricScrollState.userDragging) {
       _scrollState = LyricScrollState.programScrolling;
@@ -1735,6 +1750,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
     _scrollState = LyricScrollState.programScrolling;
 
+    final useStagger = request.useStagger && !_needsInitialScroll;
+    final duration = _needsInitialScroll ? Duration.zero : request.duration;
     final targetKey = _lineKeys[request.lineIndex];
     final targetContext = targetKey?.currentContext;
     if (targetContext != null && targetContext.mounted) {
@@ -1742,33 +1759,42 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       try {
         targetObject = targetContext.findRenderObject() as RenderBox?;
       } catch (_) {}
-      if (targetObject != null) {
+      if (targetObject != null &&
+          targetObject.hasSize &&
+          targetObject.size.height > 0) {
         final viewport = RenderAbstractViewport.of(targetObject);
         final alignment = widget.currentLineAlignment;
         final revealed = viewport.getOffsetToReveal(targetObject, alignment);
-        if (request.useStagger) {
+        if (useStagger) {
           _staggerScrollTo(
             revealed.offset,
             clearPendingStagger: request.lineIndex == _mainLine,
           );
           _scrollState = LyricScrollState.idle;
         } else {
-          _animateTo(revealed.offset, duration: request.duration);
+          _animateTo(revealed.offset, duration: duration);
+        }
+        if (request.lineIndex == _mainLine) {
+          _markInitialScrollFinished(
+            requestedOffset: revealed.offset,
+            targetHeight: targetObject.size.height,
+          );
         }
         return;
       }
     }
 
+    // A cached offset only mounts the target; finish after its real layout.
     final cachedTarget = _targetScrollOffsetFor(request.lineIndex);
     if (cachedTarget != null) {
-      if (request.useStagger) {
+      if (useStagger) {
         _staggerScrollTo(
           cachedTarget,
           clearPendingStagger: request.lineIndex == _mainLine,
         );
         _scrollState = LyricScrollState.idle;
       } else {
-        _animateTo(cachedTarget, duration: request.duration);
+        _animateTo(cachedTarget, duration: duration);
       }
       return;
     }
@@ -2471,8 +2497,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                       _handleUserScrollPhase(
                         lyricPhaseForUserScrollNotification(
                           tracker: _userScrollTracker,
-                          idle:
-                              notification.direction == ScrollDirection.idle,
+                          idle: notification.direction == ScrollDirection.idle,
                         ),
                       );
                     } else if (notification is ScrollEndNotification) {
