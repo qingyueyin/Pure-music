@@ -173,7 +173,7 @@ class _MeshGradientBackgroundInternalState
     milliseconds: 360,
   );
   static const Duration _kRotationTransitionDuration = Duration(
-    milliseconds: 6000,
+    milliseconds: 4000,
   );
 
   final _MeshAnimationController _meshController = _MeshAnimationController();
