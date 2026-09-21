@@ -429,132 +429,136 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
           color: useAppBackground
               ? Colors.transparent
               : scheme.surfaceContainer,
-          child: Column(
+          child: Stack(
             children: [
-              ListenableBuilder(
-                listenable: AppSettings.listMotionNotifier,
-                builder: (context, _) {
-                  final headerBlur = DetailHeaderBlurredCover(
-                    pic: widget.primaryPic,
-                  );
-                  Widget buildHeader(
-                    double collapseProgress,
-                    Widget blurredCover,
-                  ) => _UniDetailPageHeader(
-                    pic: widget.primaryPic,
-                    picShape: widget.picShape,
-                    title: widget.title,
-                    subtitle: widget.subtitle,
-                    actions: actions,
-                    multiSelectController: multiSelectController,
-                    multiSelectViewActions: widget.multiSelectViewActions,
-                    onPicTap: widget.onPrimaryPicTap,
-                    picBusy: widget.primaryPicBusy,
-                    searchController: widget.enableSearch
-                        ? _searchController
-                        : null,
-                    searchQuery: widget.searchQuery,
-                    onSearchChanged: widget.onSearchChanged,
-                    collapseProgress: collapseProgress,
-                    blurredCover: blurredCover,
-                  );
-                  if (!_enableHeaderCollapse(context)) {
-                    return buildHeader(0, headerBlur);
-                  }
-                  return AnimatedBuilder(
-                    animation: _activeScrollController,
-                    child: headerBlur,
-                    builder: (context, child) =>
-                        buildHeader(_headerCollapseProgress, child!),
-                  );
-                },
-              ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16.0, 0.0, 16.0, 16.0),
-                  child: Column(
-                    children: [
-                      if (widget.enableTabs && hasTertiaryContent) ...[
-                        const SizedBox(height: 16.0),
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: _buildTabBar(scheme),
-                        ),
-                      ],
-                      const SizedBox(height: 16.0),
-                      Expanded(
-                        child: Stack(
-                          children: [
-                            Positioned.fill(
-                              child: LayoutBuilder(
-                                builder: (context, constraints) {
-                                  final showAlphabetIndex =
-                                      widget.bodyOverride == null &&
-                                      currentTabIndex == 0 &&
-                                      _alphabetSectionIndexes.length >= 3;
-                                  _contentCrossAxisExtent =
-                                      constraints.maxWidth -
-                                      (showAlphabetIndex ? 32 : 0);
-                                  return Row(
-                                    children: [
-                                      Expanded(
-                                        child: MultiSelectPointerRegion<S>(
-                                          controller: multiSelectController,
-                                          child: ListenableBuilder(
-                                            listenable:
-                                                AppSettings.listMotionNotifier,
-                                            builder: (context, _) =>
-                                                widget.bodyOverride ??
-                                                (widget.enableTabs
-                                                    ? DirectionalTabView(
-                                                        index: currentTabIndex,
-                                                        children: [
-                                                          _buildSecondaryContent(
-                                                            multiSelectController,
-                                                            scheme,
-                                                          ),
-                                                          if (hasTertiaryContent)
-                                                            _buildTertiaryContent(
-                                                              scheme,
-                                                            ),
-                                                        ],
-                                                      )
-                                                    : _buildCombinedContent(
-                                                        multiSelectController,
-                                                        scheme,
-                                                      )),
-                                          ),
-                                        ),
-                                      ),
-                                      if (showAlphabetIndex)
-                                        AlphabetIndexBar(
-                                          controller: _activeScrollController,
-                                          sectionIndexes:
-                                              _alphabetSectionIndexes,
-                                          indexForOffset: _indexForOffset,
-                                          onSelectIndex: _jumpToIndex,
-                                          onWheel: _forwardWheelToList,
-                                          descending:
-                                              currSortOrder ==
-                                              SortOrder.decending,
-                                        ),
-                                    ],
-                                  );
-                                },
-                              ),
-                            ),
-                            ListLocateButtons(
-                              controller: _activeScrollController,
-                              locateTargetAt: _locateTargetAt,
-                              onScrollToIndex: _scrollToIndex,
-                              onWheel: _forwardWheelToList,
+              if (!useAppBackground)
+                Positioned.fill(
+                  child: DetailCoverAtmosphere(pic: widget.primaryPic),
+                ),
+              Column(
+                children: [
+                  ListenableBuilder(
+                    listenable: AppSettings.listMotionNotifier,
+                    builder: (context, _) {
+                      Widget buildHeader(double collapseProgress) =>
+                          _UniDetailPageHeader(
+                            pic: widget.primaryPic,
+                            picShape: widget.picShape,
+                            title: widget.title,
+                            subtitle: widget.subtitle,
+                            actions: actions,
+                            multiSelectController: multiSelectController,
+                            multiSelectViewActions:
+                                widget.multiSelectViewActions,
+                            onPicTap: widget.onPrimaryPicTap,
+                            picBusy: widget.primaryPicBusy,
+                            searchController: widget.enableSearch
+                                ? _searchController
+                                : null,
+                            searchQuery: widget.searchQuery,
+                            onSearchChanged: widget.onSearchChanged,
+                            collapseProgress: collapseProgress,
+                          );
+                      if (!_enableHeaderCollapse(context)) {
+                        return buildHeader(0);
+                      }
+                      return AnimatedBuilder(
+                        animation: _activeScrollController,
+                        builder: (context, _) =>
+                            buildHeader(_headerCollapseProgress),
+                      );
+                    },
+                  ),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16.0, 0.0, 16.0, 16.0),
+                      child: Column(
+                        children: [
+                          if (widget.enableTabs && hasTertiaryContent) ...[
+                            const SizedBox(height: 16.0),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: _buildTabBar(scheme),
                             ),
                           ],
-                        ),
+                          const SizedBox(height: 16.0),
+                          Expanded(
+                            child: Stack(
+                              children: [
+                                Positioned.fill(
+                                  child: LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      final showAlphabetIndex =
+                                          widget.bodyOverride == null &&
+                                          currentTabIndex == 0 &&
+                                          _alphabetSectionIndexes.length >= 3;
+                                      _contentCrossAxisExtent =
+                                          constraints.maxWidth -
+                                          (showAlphabetIndex ? 32 : 0);
+                                      return Row(
+                                        children: [
+                                          Expanded(
+                                            child: MultiSelectPointerRegion<S>(
+                                              controller: multiSelectController,
+                                              child: ListenableBuilder(
+                                                listenable: AppSettings
+                                                    .listMotionNotifier,
+                                                builder: (context, _) =>
+                                                    widget.bodyOverride ??
+                                                    (widget.enableTabs
+                                                        ? DirectionalTabView(
+                                                            index:
+                                                                currentTabIndex,
+                                                            children: [
+                                                              _buildSecondaryContent(
+                                                                multiSelectController,
+                                                                scheme,
+                                                              ),
+                                                              if (hasTertiaryContent)
+                                                                _buildTertiaryContent(
+                                                                  scheme,
+                                                                ),
+                                                            ],
+                                                          )
+                                                        : _buildCombinedContent(
+                                                            multiSelectController,
+                                                            scheme,
+                                                          )),
+                                              ),
+                                            ),
+                                          ),
+                                          if (showAlphabetIndex)
+                                            AlphabetIndexBar(
+                                              controller:
+                                                  _activeScrollController,
+                                              sectionIndexes:
+                                                  _alphabetSectionIndexes,
+                                              indexForOffset: _indexForOffset,
+                                              onSelectIndex: _jumpToIndex,
+                                              onWheel: _forwardWheelToList,
+                                              descending:
+                                                  currSortOrder ==
+                                                  SortOrder.decending,
+                                            ),
+                                        ],
+                                      );
+                                    },
+                                  ),
+                                ),
+                                ListLocateButtons(
+                                  controller: _activeScrollController,
+                                  locateTargetAt: _locateTargetAt,
+                                  onScrollToIndex: _scrollToIndex,
+                                  onWheel: _forwardWheelToList,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
+                ],
               ),
             ],
           ),
@@ -1094,7 +1098,6 @@ class _UniDetailPageHeader extends StatelessWidget {
     this.searchQuery = '',
     this.onSearchChanged,
     this.collapseProgress = 0,
-    required this.blurredCover,
   });
 
   final Future<ImageProvider?> pic;
@@ -1111,7 +1114,6 @@ class _UniDetailPageHeader extends StatelessWidget {
   final String searchQuery;
   final ValueChanged<String>? onSearchChanged;
   final double collapseProgress;
-  final Widget blurredCover;
 
   @override
   Widget build(BuildContext context) {
@@ -1123,9 +1125,12 @@ class _UniDetailPageHeader extends StatelessWidget {
         final compact =
             constraints.maxWidth.isFinite && constraints.maxWidth < 560;
         final expandedCoverSize = compact ? 156.0 : 200.0;
+        // Scroll-scrubbed layout stays 1:1 with pixels. Easing the scrub
+        // front-loads the collapse (easeOutCubic(0.5) ≈ 0.875) so the first
+        // ticks read as a snap and the rest crawls.
         final progress = compact
             ? 0.0
-            : Curves.easeOutCubic.transform(collapseProgress.clamp(0.0, 1.0));
+            : MotionCurve.scrub(collapseProgress);
         final coverSize = lerpDouble(expandedCoverSize, 72.0, progress)!;
         final gap = lerpDouble(compact ? 12.0 : 16.0, 12.0, progress)!;
         final titleSize = lerpDouble(
@@ -1140,15 +1145,6 @@ class _UniDetailPageHeader extends StatelessWidget {
           progress,
         )!;
         final verticalInset = lerpDouble(12.0, 8.0, progress)!;
-        final panelRadiusValue = lerpDouble(
-          compact ? 16.0 : 20.0,
-          AppRadius.md,
-          progress,
-        )!;
-        final panelRadius = BorderRadius.only(
-          bottomLeft: Radius.circular(panelRadiusValue),
-          bottomRight: Radius.circular(panelRadiusValue),
-        );
         final coverDecoration = BoxDecoration(
           shape: picShape == PicShape.oval
               ? BoxShape.circle
@@ -1168,80 +1164,72 @@ class _UniDetailPageHeader extends StatelessWidget {
           ],
         );
 
-        return ClipRRect(
-          borderRadius: panelRadius,
-          child: Stack(
+        return Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: horizontalInset,
+            vertical: verticalInset,
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Positioned.fill(child: blurredCover),
-              Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: horizontalInset,
-                  vertical: verticalInset,
+              DecoratedBox(
+                decoration: coverDecoration,
+                child: _HoverableCover(
+                  futurePic: pic,
+                  picShape: picShape,
+                  scheme: scheme,
+                  size: coverSize,
+                  onTap: onPicTap,
+                  busy: picBusy,
+                  placeholder: Icon(
+                    Symbols.queue_music,
+                    size: coverSize,
+                    color: scheme.onSurface,
+                  ),
                 ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
+              ),
+              SizedBox(width: gap),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    DecoratedBox(
-                      decoration: coverDecoration,
-                      child: _HoverableCover(
-                        futurePic: pic,
-                        picShape: picShape,
-                        scheme: scheme,
-                        size: coverSize,
-                        onTap: onPicTap,
-                        busy: picBusy,
-                        placeholder: Icon(
-                          Symbols.queue_music,
-                          size: coverSize,
-                          color: scheme.onSurface,
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: titleSize,
+                        color: scheme.onSurface,
+                        fontWeight: AppType.weightBold,
+                      ),
+                    ),
+                    ClipRect(
+                      child: Align(
+                        alignment: Alignment.topLeft,
+                        heightFactor: expandedContentOpacity,
+                        child: Opacity(
+                          opacity: expandedContentOpacity,
+                          child: Text(
+                            subtitle,
+                            style: TextStyle(
+                              fontSize: AppType.body,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                    SizedBox(width: gap),
-                    Expanded(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            title,
-                            style: TextStyle(
-                              fontSize: titleSize,
-                              color: scheme.onSurface,
-                              fontWeight: AppType.weightBold,
-                            ),
-                          ),
-                          ClipRect(
-                            child: Align(
-                              alignment: Alignment.topLeft,
-                              heightFactor: expandedContentOpacity,
-                              child: Opacity(
-                                opacity: expandedContentOpacity,
-                                child: Text(
-                                  subtitle,
-                                  style: TextStyle(
-                                    fontSize: AppType.body,
-                                    color: scheme.onSurfaceVariant,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          SizedBox(height: 8.0 * expandedContentOpacity),
-                          _ActionsRow(
-                            actions: multiSelectController == null
-                                ? actions
-                                : multiSelectController!.enableMultiSelectView
-                                ? multiSelectViewActions!
-                                : actions,
-                            searchController: searchController,
-                            searchQuery: searchQuery,
-                            onSearchChanged: onSearchChanged,
-                            scheme: scheme,
-                          ),
-                        ],
-                      ),
+                    SizedBox(height: 8.0 * expandedContentOpacity),
+                    _ActionsRow(
+                      actions: multiSelectController == null
+                          ? actions
+                          : multiSelectController!.enableMultiSelectView
+                          ? multiSelectViewActions!
+                          : actions,
+                      searchController: searchController,
+                      searchQuery: searchQuery,
+                      onSearchChanged: onSearchChanged,
+                      scheme: scheme,
                     ),
                   ],
                 ),

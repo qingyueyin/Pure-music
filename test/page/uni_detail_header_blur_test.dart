@@ -36,9 +36,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: SizedBox.expand(
-          child: DetailHeaderBlurredCover(
-            pic: Future<ImageProvider?>.value(null),
-          ),
+          child: DetailCoverAtmosphere(pic: Future<ImageProvider?>.value(null)),
         ),
       ),
     );

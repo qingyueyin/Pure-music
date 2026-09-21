@@ -4,22 +4,21 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 const int kDetailHeaderBlurOutputSize = 200;
-const double kDetailHeaderBlurSigma = 28;
+const double kDetailHeaderBlurSigma = 48;
 
 /// Decode a cover, blur it once, and keep a static texture.
 ///
 /// The Gaussian blur runs off-screen, not as a per-frame [ImageFilter].
-class DetailHeaderBlurredCover extends StatefulWidget {
-  const DetailHeaderBlurredCover({super.key, required this.pic});
+class DetailCoverAtmosphere extends StatefulWidget {
+  const DetailCoverAtmosphere({super.key, required this.pic});
 
   final Future<ImageProvider?> pic;
 
   @override
-  State<DetailHeaderBlurredCover> createState() =>
-      _DetailHeaderBlurredCoverState();
+  State<DetailCoverAtmosphere> createState() => _DetailCoverAtmosphereState();
 }
 
-class _DetailHeaderBlurredCoverState extends State<DetailHeaderBlurredCover> {
+class _DetailCoverAtmosphereState extends State<DetailCoverAtmosphere> {
   ImageProvider? _provider;
   ui.Image? _blurred;
   int _requestId = 0;
@@ -31,7 +30,7 @@ class _DetailHeaderBlurredCoverState extends State<DetailHeaderBlurredCover> {
   }
 
   @override
-  void didUpdateWidget(covariant DetailHeaderBlurredCover oldWidget) {
+  void didUpdateWidget(covariant DetailCoverAtmosphere oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(widget.pic, oldWidget.pic)) {
       unawaited(_load());
@@ -78,40 +77,26 @@ class _DetailHeaderBlurredCoverState extends State<DetailHeaderBlurredCover> {
     final blurred = _blurred;
     if (blurred == null) return const SizedBox.shrink();
 
-    final scheme = Theme.of(context).colorScheme;
-    final isDark = scheme.brightness == Brightness.dark;
-    // Same frost family as the title bar (surface ~12%), slightly thicker
-    // because this surface is larger. Bottom dissolves so the page shows through.
-    final frost = scheme.surface.withValues(alpha: isDark ? 0.16 : 0.22);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return ShaderMask(
-      blendMode: BlendMode.dstIn,
-      shaderCallback: (bounds) => const LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        stops: [0.62, 1.0],
-        colors: [Colors.white, Colors.transparent],
-      ).createShader(bounds),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          RepaintBoundary(
+    return IgnorePointer(
+      child: Opacity(
+        opacity: isDark ? 0.9 : 0.6,
+        child: ShaderMask(
+          blendMode: BlendMode.modulate,
+          shaderCallback: (bounds) => LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Colors.white.withValues(alpha: 0.4), Colors.transparent],
+          ).createShader(bounds),
+          child: RepaintBoundary(
             child: RawImage(
               image: blurred,
               fit: BoxFit.cover,
               filterQuality: FilterQuality.low,
             ),
           ),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [frost, frost.withValues(alpha: 0)],
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
