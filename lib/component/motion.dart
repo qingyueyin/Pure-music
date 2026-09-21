@@ -1,4 +1,5 @@
 import 'dart:collection';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -6,11 +7,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 
 const _listItemEntryDistance = 12.0;
-const _listItemEntrySpring = SpringDescription(
-  mass: 1,
-  stiffness: 625,
-  damping: 50,
-);
 const _tabSwitchDistance = 20.0;
 const _tabExitDistance = 12.0;
 final Expando<double> _listItemEntryOffsets = Expando<double>();
@@ -47,6 +43,207 @@ class MotionCurve {
   static const standard = Curves.fastOutSlowIn;
   static const emphasized = Curves.easeInOutCubic;
   static const entrance = Cubic(0.23, 1, 0.32, 1);
+
+  /// Identity clamp for scroll-scrubbed layout.
+  ///
+  /// Easing a scrub changes how fast the source is read, not how often a new
+  /// state appears. `easeOutCubic(0.5) ≈ 0.875` front-loads a collapse so the
+  /// first pixels read as a snap.
+  static double scrub(double t) => t.clamp(0.0, 1.0);
+}
+
+class MotionSpring {
+  /// Critically damped, ~160ms settle. List entrance, selection rails.
+  static const entrance = SpringDescription(
+    mass: 1,
+    stiffness: 625,
+    damping: 50,
+  );
+
+  /// Critically damped, ~280ms settle. Sidebar / constraint animation.
+  ///
+  /// Layout widths must not overshoot: wrapping past the target reads as a
+  /// snap. Damping is `2 * sqrt(stiffness * mass)`.
+  static final layout = SpringDescription(
+    mass: 1,
+    stiffness: 280,
+    damping: 2 * math.sqrt(280),
+  );
+}
+
+/// Interruptible spring from the live value, with velocity carried on retarget.
+///
+/// Starts at [target] (no intro animation). Jumps when animations are disabled.
+class SpringProgress extends StatefulWidget {
+  const SpringProgress({
+    super.key,
+    required this.target,
+    required this.builder,
+    this.spring,
+    this.child,
+  });
+
+  final double target;
+  final SpringDescription? spring;
+  final ValueWidgetBuilder<double> builder;
+  final Widget? child;
+
+  @override
+  State<SpringProgress> createState() => _SpringProgressState();
+}
+
+class _SpringProgressState extends State<SpringProgress>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  bool _reduceMotion = false;
+
+  SpringDescription get _spring => widget.spring ?? MotionSpring.layout;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController.unbounded(
+      vsync: this,
+      value: widget.target,
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    if (reduceMotion == _reduceMotion) return;
+    _reduceMotion = reduceMotion;
+    _sync(immediate: reduceMotion);
+  }
+
+  @override
+  void didUpdateWidget(covariant SpringProgress oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.target == widget.target &&
+        oldWidget.spring == widget.spring) {
+      return;
+    }
+    _sync(immediate: _reduceMotion);
+  }
+
+  void _sync({required bool immediate}) {
+    if (immediate) {
+      _controller
+        ..stop()
+        ..value = widget.target;
+      return;
+    }
+    if ((_controller.value - widget.target).abs() < 0.0005 &&
+        _controller.velocity.abs() < 0.0005) {
+      _controller.value = widget.target;
+      return;
+    }
+    final target = widget.target;
+    _controller
+        .animateWith(
+          SpringSimulation(
+            _spring,
+            _controller.value,
+            target,
+            _controller.velocity,
+          ),
+        )
+        .whenComplete(() {
+          if (!mounted || widget.target != target || _controller.isAnimating) {
+            return;
+          }
+          _controller.value = target;
+        });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) =>
+          widget.builder(context, _controller.value, child),
+      child: widget.child,
+    );
+  }
+}
+
+/// Sprung rail + body without relaying out the body every frame.
+///
+/// The rail width follows [progress]. While the spring is in flight the body
+/// keeps the *wider* layout (sidebar collapsed) and extra width is clipped on
+/// the right. Album grids keep square covers and a stable column count; the
+/// narrow layout is committed only after the rail settles.
+class SpringRailScaffold extends StatelessWidget {
+  const SpringRailScaffold({
+    super.key,
+    required this.progress,
+    required this.expanded,
+    required this.collapsedWidth,
+    required this.expandedWidth,
+    required this.rail,
+    required this.body,
+  });
+
+  final double progress;
+  final bool expanded;
+  final double collapsedWidth;
+  final double expandedWidth;
+  final Widget rail;
+  final Widget body;
+
+  static const _restEpsilon = 0.001;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final t = progress.clamp(0.0, 1.0);
+        final railWidth = collapsedWidth + (expandedWidth - collapsedWidth) * t;
+        final layoutRailWidth = expanded && t >= 1.0 - _restEpsilon
+            ? expandedWidth
+            : collapsedWidth;
+        final bodyLayoutWidth = math.max(
+          0.0,
+          constraints.maxWidth - layoutRailWidth,
+        );
+        final visualBodyWidth = math.max(0.0, constraints.maxWidth - railWidth);
+        return Stack(
+          clipBehavior: Clip.hardEdge,
+          children: [
+            Positioned(
+              left: railWidth,
+              top: 0,
+              bottom: 0,
+              width: visualBodyWidth,
+              // Keep the body mounted while its layout width changes.
+              child: ClipRect(
+                child: OverflowBox(
+                  alignment: Alignment.topLeft,
+                  minWidth: bodyLayoutWidth,
+                  maxWidth: bodyLayoutWidth,
+                  child: body,
+                ),
+              ),
+            ),
+            Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: railWidth,
+              child: rail,
+            ),
+          ],
+        );
+      },
+    );
+  }
 }
 
 class InteractiveSurfaceMotion extends StatefulWidget {
@@ -355,7 +552,7 @@ class _TabMotionChannel {
   }) {
     final opacityAnimation = this.opacity.animateWith(
       SpringSimulation(
-        _listItemEntrySpring,
+        MotionSpring.entrance,
         this.opacity.value,
         opacity,
         this.opacity.velocity,
@@ -363,7 +560,7 @@ class _TabMotionChannel {
     );
     final offsetAnimation = this.offset.animateWith(
       SpringSimulation(
-        _listItemEntrySpring,
+        MotionSpring.entrance,
         this.offset.value,
         offset,
         this.offset.velocity,
@@ -455,7 +652,7 @@ class _DirectionalListItemEntranceState
     if (_controller.value < 1 && !_controller.isAnimating) {
       _controller.animateWith(
         SpringSimulation(
-          _listItemEntrySpring,
+          MotionSpring.entrance,
           _controller.value,
           1,
           _controller.velocity,

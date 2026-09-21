@@ -209,6 +209,209 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.getTopLeft(incoming), Offset(0, verticalPosition));
   });
+
+  testWidgets('SpringProgress starts at the target without an intro', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(home: _SpringProgressReadout(target: 1)),
+    );
+    expect(_springReadout(tester), closeTo(1, 0.0001));
+  });
+
+  testWidgets('SpringProgress retargets from the live value', (tester) async {
+    final harnessKey = GlobalKey<_SpringProgressReadoutState>();
+    await tester.pumpWidget(
+      MaterialApp(home: _SpringProgressReadout(key: harnessKey, target: 0)),
+    );
+    harnessKey.currentState!.setTarget(1);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 48));
+    final midFlight = _springReadout(tester);
+    expect(midFlight, greaterThan(0.02));
+    expect(midFlight, lessThan(0.98));
+
+    harnessKey.currentState!.setTarget(0);
+    await tester.pump();
+    final afterRetarget = _springReadout(tester);
+    expect(afterRetarget, closeTo(midFlight, 0.08));
+    expect(afterRetarget, isNot(closeTo(0, 0.01)));
+    expect(afterRetarget, isNot(closeTo(1, 0.01)));
+  });
+
+  testWidgets('SpringProgress jumps when animations are disabled', (
+    tester,
+  ) async {
+    final harnessKey = GlobalKey<_SpringProgressReadoutState>();
+    await tester.pumpWidget(
+      MediaQuery(
+        data: const MediaQueryData(disableAnimations: true),
+        child: MaterialApp(
+          home: _SpringProgressReadout(key: harnessKey, target: 0),
+        ),
+      ),
+    );
+    harnessKey.currentState!.setTarget(1);
+    await tester.pump();
+    expect(_springReadout(tester), closeTo(1, 0.0001));
+  });
+
+  testWidgets('sidebar spring clips a wide body instead of stretching it', (
+    tester,
+  ) async {
+    final harnessKey = GlobalKey<_LayoutSpringHarnessState>();
+    await tester.pumpWidget(
+      MaterialApp(home: _LayoutSpringHarness(key: harnessKey)),
+    );
+    expect(tester.getSize(find.byKey(const ValueKey('rail'))).width, 80);
+    expect(tester.getSize(find.byKey(const ValueKey('body'))).width, 320);
+
+    harnessKey.currentState!.setExpanded(true);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 48));
+    final railWidth = tester.getSize(find.byKey(const ValueKey('rail'))).width;
+    expect(railWidth, greaterThan(80));
+    expect(railWidth, lessThan(240));
+    // Album grids stay on the wide column count while the rail moves.
+    expect(tester.getSize(find.byKey(const ValueKey('body'))).width, 320);
+    expect(find.byType(OverflowBox), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.byKey(const ValueKey('body'))).dx,
+      closeTo(tester.getTopRight(find.byKey(const ValueKey('rail'))).dx, 0.5),
+    );
+
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSize(find.byKey(const ValueKey('rail'))).width,
+      closeTo(240, 0.05),
+    );
+    expect(tester.getSize(find.byKey(const ValueKey('body'))).width, 160);
+    expect(find.byType(OverflowBox), findsOneWidget);
+
+    harnessKey.currentState!.setExpanded(false);
+    await tester.pump();
+    expect(tester.getSize(find.byKey(const ValueKey('body'))).width, 320);
+    await tester.pumpAndSettle();
+    expect(tester.getSize(find.byKey(const ValueKey('body'))).width, 320);
+  });
+
+  testWidgets('sidebar animation preserves body state across layout changes', (
+    tester,
+  ) async {
+    Widget build({required bool expanded, required double progress}) {
+      return MaterialApp(
+        home: Material(
+          child: SizedBox(
+            width: 400,
+            height: 80,
+            child: SpringRailScaffold(
+              expanded: expanded,
+              progress: progress,
+              collapsedWidth: 80,
+              expandedWidth: 240,
+              rail: const SizedBox.expand(),
+              body: const TextField(),
+            ),
+          ),
+        ),
+      );
+    }
+
+    await tester.pumpWidget(build(expanded: false, progress: 0));
+    await tester.enterText(find.byType(TextField), 'keep cover state');
+    final state = tester.state(find.byType(TextField));
+    for (final step in [
+      (true, 0.0),
+      (true, 0.4),
+      (true, 1.0),
+      (false, 1.0),
+      (false, 0.5),
+      (false, 0.0),
+    ]) {
+      await tester.pumpWidget(build(expanded: step.$1, progress: step.$2));
+      expect(tester.state(find.byType(TextField)), same(state));
+      expect(find.text('keep cover state'), findsOneWidget);
+    }
+  });
+
+  test('scroll-scrubbed layout progress stays linear', () {
+    expect(MotionCurve.scrub(0.25), 0.25);
+    expect(MotionCurve.scrub(0.5), 0.5);
+    expect(MotionCurve.scrub(1.2), 1.0);
+    expect(Curves.easeOutCubic.transform(0.5), closeTo(0.875, 0.01));
+  });
+}
+
+double _springReadout(WidgetTester tester) {
+  return double.parse(
+    tester.widget<Text>(find.byKey(const ValueKey('t'))).data!,
+  );
+}
+
+class _SpringProgressReadout extends StatefulWidget {
+  const _SpringProgressReadout({super.key, required this.target});
+
+  final double target;
+
+  @override
+  State<_SpringProgressReadout> createState() => _SpringProgressReadoutState();
+}
+
+class _SpringProgressReadoutState extends State<_SpringProgressReadout> {
+  late double target = widget.target;
+
+  void setTarget(double value) => setState(() => target = value);
+
+  @override
+  Widget build(BuildContext context) {
+    return SpringProgress(
+      target: target,
+      builder: (context, t, _) =>
+          Text(t.toStringAsFixed(6), key: const ValueKey('t')),
+    );
+  }
+}
+
+class _LayoutSpringHarness extends StatefulWidget {
+  const _LayoutSpringHarness({super.key});
+
+  @override
+  State<_LayoutSpringHarness> createState() => _LayoutSpringHarnessState();
+}
+
+class _LayoutSpringHarnessState extends State<_LayoutSpringHarness> {
+  bool expanded = false;
+
+  void setExpanded(bool value) => setState(() => expanded = value);
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: SizedBox(
+        width: 400,
+        height: 80,
+        child: SpringProgress(
+          target: expanded ? 1.0 : 0.0,
+          builder: (context, t, _) {
+            return SpringRailScaffold(
+              progress: t,
+              expanded: expanded,
+              collapsedWidth: 80,
+              expandedWidth: 240,
+              rail: const ColoredBox(
+                key: ValueKey('rail'),
+                color: Color(0xFF000000),
+              ),
+              body: const ColoredBox(
+                key: ValueKey('body'),
+                color: Color(0xFFFFFFFF),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
 }
 
 class _TabHarness extends StatefulWidget {
