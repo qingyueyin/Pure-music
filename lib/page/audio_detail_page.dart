@@ -19,6 +19,7 @@ import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/lyric/lrc_serializer.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart' as rust_tag_reader;
 import 'package:pure_music/native/rust/api/utils.dart';
+import 'package:pure_music/page/audio_detail_cover.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/taskbar_thumbnail_service.dart';
 import 'package:pure_music/services/online_lyric/api/net_lyric_api.dart'
@@ -173,6 +174,7 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
   late _FieldControllers _controllers;
   int _currentTabIndex = 0;
   Future<String?>? _lyricFuture;
+  int _coverRevision = 0;
   // 编辑模式下的封面预览字节（null = 无变化，空列表 = 移除封面）
   Uint8List? _pendingCoverBytes;
 
@@ -278,6 +280,7 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
           bytes: _pendingCoverBytes!,
         );
         audio.evictCoverCache();
+        _coverRevision++;
         coverWritten = true;
       }
       final payload = _controllers.buildPayload();
@@ -414,31 +417,10 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
                   final narrow = constraints.maxWidth < 560.0;
                   final cover = _isEditing
                       ? _buildEditCover(scheme, placeholder)
-                      : FutureBuilder(
-                          future: audio.mediumCover,
-                          builder: (context, snapshot) {
-                            if (snapshot.connectionState !=
-                                ConnectionState.done) {
-                              return const SizedBox(
-                                width: 156,
-                                height: 156,
-                                child: Center(
-                                  child: CircularProgressIndicator(),
-                                ),
-                              );
-                            }
-                            if (snapshot.data == null) return placeholder;
-                            return ClipRRect(
-                              borderRadius: AppRadius.mdCircular,
-                              child: Image(
-                                image: snapshot.data!,
-                                width: 156,
-                                height: 156,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) => placeholder,
-                              ),
-                            );
-                          },
+                      : AudioDetailCover(
+                          audio: audio,
+                          revision: _coverRevision,
+                          placeholder: placeholder,
                         );
                   final info = _isEditing
                       ? _buildEditInfo(scheme)
@@ -447,27 +429,21 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
                     constraints: const BoxConstraints(maxWidth: 640),
                     child: info,
                   );
-                  if (narrow) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        cover,
-                        const SizedBox(height: 16.0),
-                        constrainedInfo,
-                      ],
-                    );
-                  }
-                  return Row(
+                  return Flex(
+                    direction: narrow ? Axis.vertical : Axis.horizontal,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       cover,
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Align(
-                          alignment: Alignment.topLeft,
-                          child: constrainedInfo,
+                      SizedBox(width: narrow ? 0 : 16, height: narrow ? 16 : 0),
+                      if (narrow)
+                        constrainedInfo
+                      else
+                        Expanded(
+                          child: Align(
+                            alignment: Alignment.topLeft,
+                            child: constrainedInfo,
+                          ),
                         ),
-                      ),
                     ],
                   );
                 },
@@ -559,7 +535,7 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
             padding: const EdgeInsets.all(16.0),
             child: IconButton.filledTonal(
               tooltip: '编辑内嵌歌词',
-              onPressed: () => _showLyricsEditDialog(context, scheme),
+              onPressed: () => _showLyricsEditDialog(context),
               style: IconButton.styleFrom(
                 shape: RoundedRectangleBorder(
                   borderRadius: AppRadius.smCircular,
@@ -573,11 +549,15 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
     );
   }
 
-  void _showLyricsEditDialog(BuildContext context, ColorScheme scheme) {
-    showDialog(
+  Future<void> _showLyricsEditDialog(BuildContext context) async {
+    final written = await showDialog<bool>(
       context: context,
       builder: (_) => _LyricsEditDialog(audio: audio),
     );
+    if (written != true || !mounted) return;
+    setState(() {
+      _lyricFuture = rust_tag_reader.getLyricFromPath(path: audio.path);
+    });
   }
 
   Widget _buildViewInfo(ColorScheme scheme) {
@@ -723,33 +703,10 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
         ),
       );
     } else {
-      coverWidget = FutureBuilder(
-        future: audio.mediumCover,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return SizedBox(
-              width: 156,
-              height: 156,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                  borderRadius: AppRadius.mdCircular,
-                ),
-              ),
-            );
-          }
-          if (snapshot.data == null) return placeholder;
-          return ClipRRect(
-            borderRadius: AppRadius.mdCircular,
-            child: Image(
-              image: snapshot.data!,
-              width: 156,
-              height: 156,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => placeholder,
-            ),
-          );
-        },
+      coverWidget = AudioDetailCover(
+        audio: audio,
+        revision: _coverRevision,
+        placeholder: placeholder,
       );
     }
     return Stack(
@@ -1381,7 +1338,7 @@ class _LyricsEditDialogState extends State<_LyricsEditDialog> {
       );
       _refreshNowPlayingLyricIfCurrent(widget.audio.path);
       if (mounted) {
-        Navigator.pop(context);
+        Navigator.pop(context, true);
         showTextOnSnackBar('歌词已写入标签', variant: ToastVariant.success);
       }
     } catch (e, trace) {
@@ -1403,7 +1360,7 @@ class _LyricsEditDialogState extends State<_LyricsEditDialog> {
     );
     if (!mounted || result == null) return;
     if (result.written) {
-      Navigator.pop(context);
+      Navigator.pop(context, true);
       showTextOnSnackBar('歌词已写入标签', variant: ToastVariant.success);
     } else if (result.text.isNotEmpty) {
       setState(() => _ctrl.text = result.text);
