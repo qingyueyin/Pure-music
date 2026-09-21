@@ -1,10 +1,9 @@
 // ignore_for_file: camel_case_types
 
-import 'dart:ui';
-
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/window_lifecycle.dart';
+import 'package:pure_music/component/frosted_chrome.dart';
 import 'package:pure_music/component/horizontal_lyric_view.dart';
 import 'package:pure_music/component/responsive_builder.dart';
 import 'package:pure_music/component/search_dialog.dart';
@@ -14,77 +13,76 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:window_manager/window_manager.dart';
 
 class TitleBar extends StatelessWidget {
-  static final _blurFilter = ImageFilter.blur(sigmaX: 20, sigmaY: 20);
-
   const TitleBar({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return ResponsiveBuilder(
-      builder: (context, screenType) {
-        switch (screenType) {
-          case ScreenType.small:
-            return const _TitleBar_Small();
-          case ScreenType.medium:
-            return const _TitleBar_Medium();
-          case ScreenType.large:
-            return const _TitleBar_Large();
-        }
+    return ListenableBuilder(
+      listenable: AppSettings.backgroundNotifier,
+      builder: (context, _) {
+        return ResponsiveBuilder(
+          builder: (context, screenType) {
+            final frosted = AppSettings.instance.enableTitleBarFrostedGlass;
+            switch (screenType) {
+              case ScreenType.small:
+                return _TitleBar_Small(frosted: frosted);
+              case ScreenType.medium:
+                return _TitleBar_Medium(frosted: frosted);
+              case ScreenType.large:
+                return _TitleBar_Large(frosted: frosted);
+            }
+          },
+        );
       },
     );
   }
 }
 
 class _TitleBar_Small extends StatelessWidget {
-  const _TitleBar_Small();
+  const _TitleBar_Small({required this.frosted});
+
+  final bool frosted;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
-    return ClipRect(
-      child: BackdropFilter(
-        filter: TitleBar._blurFilter,
-        child: Container(
-          color: scheme.surface.withAlpha(31),
-          height: 56.0,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8.0),
-            child: Row(
-              children: [
-                const _OpenDrawerBtn(),
-                const SizedBox(width: 8.0),
-                const NavBackBtn(),
-                Expanded(
-                  child: DragToMoveArea(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                      child: Text(
-                        'Pure Music',
-                        style: TextStyle(
-                          color: scheme.onSurface,
-                          fontSize: AppType.subtitle,
-                        ),
-                      ),
+    return FrostedChrome(
+      enabled: frosted,
+      height: 56.0,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8.0),
+        child: Row(
+          children: [
+            const _OpenDrawerBtn(),
+            const SizedBox(width: 8.0),
+            const NavBackBtn(),
+            Expanded(
+              child: DragToMoveArea(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                  child: Text(
+                    'Pure Music',
+                    style: TextStyle(
+                      color: scheme.onSurface,
+                      fontSize: AppType.subtitle,
                     ),
                   ),
                 ),
-                IconButton(
-                  tooltip: '搜索',
-                  onPressed: () => SearchDialog.show(context),
-                  style: ButtonStyle(
-                    shape: WidgetStatePropertyAll(
-                      RoundedRectangleBorder(
-                        borderRadius: AppRadius.smCircular,
-                      ),
-                    ),
-                  ),
-                  icon: const Icon(Symbols.search),
-                ),
-                const WindowControlls(),
-              ],
+              ),
             ),
-          ),
+            IconButton(
+              tooltip: '搜索',
+              onPressed: () => SearchDialog.show(context),
+              style: ButtonStyle(
+                shape: WidgetStatePropertyAll(
+                  RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
+                ),
+              ),
+              icon: const Icon(Symbols.search),
+            ),
+            const WindowControlls(),
+          ],
         ),
       ),
     );
@@ -92,132 +90,120 @@ class _TitleBar_Small extends StatelessWidget {
 }
 
 class _TitleBar_Medium extends StatelessWidget {
-  const _TitleBar_Medium();
+  const _TitleBar_Medium({required this.frosted});
+
+  final bool frosted;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
-    return ClipRect(
-      child: BackdropFilter(
-        filter: TitleBar._blurFilter,
-        child: Container(
-          color: scheme.surface.withAlpha(31),
-          child: Row(
-            children: [
-              const SizedBox(width: 80, child: Center(child: NavBackBtn())),
-              Expanded(
-                child: DragToMoveArea(
-                  child: Row(
-                    children: [
-                      Text(
-                        'Pure Music',
-                        style: TextStyle(
-                          color: scheme.onSurface,
-                          fontSize: AppType.subtitle,
-                        ),
-                      ),
-                      const Expanded(
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: 16.0,
-                            vertical: 8.0,
-                          ),
-                          child: HorizontalLyricView(),
-                        ),
-                      ),
-                    ],
+    return FrostedChrome(
+      enabled: frosted,
+      child: Row(
+        children: [
+          const SizedBox(width: 80, child: Center(child: NavBackBtn())),
+          Expanded(
+            child: DragToMoveArea(
+              child: Row(
+                children: [
+                  Text(
+                    'Pure Music',
+                    style: TextStyle(
+                      color: scheme.onSurface,
+                      fontSize: AppType.subtitle,
+                    ),
                   ),
-                ),
-              ),
-              IconButton(
-                tooltip: '搜索',
-                onPressed: () => SearchDialog.show(context),
-                style: ButtonStyle(
-                  shape: WidgetStatePropertyAll(
-                    RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
+                  const Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 16.0,
+                        vertical: 8.0,
+                      ),
+                      child: HorizontalLyricView(),
+                    ),
                   ),
-                ),
-                icon: const Icon(Symbols.search),
+                ],
               ),
-              const WindowControlls(),
-              const SizedBox(width: 8.0),
-            ],
+            ),
           ),
-        ),
+          IconButton(
+            tooltip: '搜索',
+            onPressed: () => SearchDialog.show(context),
+            style: ButtonStyle(
+              shape: WidgetStatePropertyAll(
+                RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
+              ),
+            ),
+            icon: const Icon(Symbols.search),
+          ),
+          const WindowControlls(),
+          const SizedBox(width: 8.0),
+        ],
       ),
     );
   }
 }
 
 class _TitleBar_Large extends StatelessWidget {
-  const _TitleBar_Large();
+  const _TitleBar_Large({required this.frosted});
+
+  final bool frosted;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
-    return ClipRect(
-      child: BackdropFilter(
-        filter: TitleBar._blurFilter,
-        child: Container(
-          color: scheme.surface.withAlpha(31),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8.0),
-            child: Row(
-              children: [
-                const NavBackBtn(),
-                const SizedBox(width: 8.0),
-                Expanded(
-                  child: DragToMoveArea(
-                    child: Row(
-                      children: [
-                        SizedBox(
-                          width: 200,
-                          child: Row(
-                            children: [
-                              Image.asset(
-                                'app_icon.ico',
-                                width: 24,
-                                height: 24,
-                              ),
-                              const SizedBox(width: 8.0),
-                              Text(
-                                'Pure Music',
-                                style: TextStyle(
-                                  color: scheme.onSurface,
-                                  fontSize: AppType.subtitle,
-                                ),
-                              ),
-                            ],
+    return FrostedChrome(
+      enabled: frosted,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8.0),
+        child: Row(
+          children: [
+            const NavBackBtn(),
+            const SizedBox(width: 8.0),
+            Expanded(
+              child: DragToMoveArea(
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 200,
+                      child: Row(
+                        children: [
+                          Image.asset('app_icon.ico', width: 24, height: 24),
+                          const SizedBox(width: 8.0),
+                          Text(
+                            'Pure Music',
+                            style: TextStyle(
+                              color: scheme.onSurface,
+                              fontSize: AppType.subtitle,
+                            ),
                           ),
-                        ),
-                        const Expanded(
-                          child: Padding(
-                            padding: EdgeInsets.fromLTRB(16, 8.0, 16.0, 8.0),
-                            child: HorizontalLyricView(compact: true),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                IconButton(
-                  tooltip: '搜索',
-                  onPressed: () => SearchDialog.show(context),
-                  style: ButtonStyle(
-                    shape: WidgetStatePropertyAll(
-                      RoundedRectangleBorder(
-                        borderRadius: AppRadius.smCircular,
+                        ],
                       ),
                     ),
-                  ),
-                  icon: const Icon(Symbols.search),
+                    const Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(16, 8.0, 16.0, 8.0),
+                        child: HorizontalLyricView(compact: true),
+                      ),
+                    ),
+                  ],
                 ),
-                const WindowControlls(),
-              ],
+              ),
             ),
-          ),
+            IconButton(
+              tooltip: '搜索',
+              onPressed: () => SearchDialog.show(context),
+              style: ButtonStyle(
+                shape: WidgetStatePropertyAll(
+                  RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
+                ),
+              ),
+              icon: const Icon(Symbols.search),
+            ),
+            const WindowControlls(),
+          ],
         ),
       ),
     );

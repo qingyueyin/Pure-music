@@ -310,14 +310,11 @@ class _AppShell_LargeState extends State<_AppShell_Large> {
   late Color _backgroundColor;
   late final VoidCallback _onNowPlayingChanged;
   late bool _sidebarExpanded;
-  late bool _bodyUsesExpandedLayout;
-  bool _sidebarAnimating = false;
 
   @override
   void initState() {
     super.initState();
     _sidebarExpanded = AppPreference.instance.sidebarExpanded;
-    _bodyUsesExpandedLayout = _sidebarExpanded;
     _onNowPlayingChanged = () {
       final newColor = _resolveDynamicColor(Theme.of(context).colorScheme);
       if (newColor != _backgroundColor) {
@@ -345,27 +342,11 @@ class _AppShell_LargeState extends State<_AppShell_Large> {
 
   void _handleSidebarExpandedChanged(bool expanded) {
     if (_sidebarExpanded == expanded) return;
-    setState(() {
-      _sidebarExpanded = expanded;
-      _sidebarAnimating = true;
-      if (!expanded) _bodyUsesExpandedLayout = false;
-    });
-  }
-
-  void _handleSidebarAnimationEnd() {
-    if (!_sidebarAnimating) return;
-    setState(() {
-      _sidebarAnimating = false;
-      _bodyUsesExpandedLayout = _sidebarExpanded;
-    });
+    setState(() => _sidebarExpanded = expanded);
   }
 
   @override
   Widget build(BuildContext context) {
-    final bodyLeft = _bodyUsesExpandedLayout
-        ? SideNav.expandedWidth
-        : SideNav.collapsedWidth;
-    const sidebarTravel = SideNav.expandedWidth - SideNav.collapsedWidth;
     return ListenableBuilder(
       listenable: AppSettings.backgroundNotifier,
       builder: (context, _) => _AppBackground(
@@ -377,53 +358,29 @@ class _AppShell_LargeState extends State<_AppShell_Large> {
             preferredSize: Size.fromHeight(48.0),
             child: TitleBar(),
           ),
-          body: Stack(
-            clipBehavior: Clip.hardEdge,
-            children: [
-              Positioned(
-                left: bodyLeft,
-                top: 0,
-                right: 0,
-                bottom: 0,
-                child: TweenAnimationBuilder<double>(
-                  duration: MotionDuration.base,
-                  curve: MotionCurve.standard,
-                  tween: Tween<double>(
-                    begin: _sidebarExpanded ? 1.0 : 0.0,
-                    end: _sidebarExpanded ? 1.0 : 0.0,
-                  ),
-                  onEnd: _handleSidebarAnimationEnd,
-                  builder: (context, progress, child) {
-                    final offset = _sidebarAnimating
-                        ? progress * sidebarTravel
-                        : 0.0;
-                    return Transform.translate(
-                      offset: Offset(offset, 0),
-                      child: child,
-                    );
-                  },
-                  child: RepaintBoundary(
-                    child: Stack(
-                      children: [
-                        widget.navigationShell,
-                        const MiniNowPlaying(),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 0,
-                top: 0,
-                bottom: 0,
-                child: ClipRect(
+          body: SpringProgress(
+            target: _sidebarExpanded ? 1.0 : 0.0,
+            builder: (context, t, child) {
+              return SpringRailScaffold(
+                progress: t,
+                expanded: _sidebarExpanded,
+                collapsedWidth: SideNav.collapsedWidth,
+                expandedWidth: SideNav.expandedWidth,
+                rail: ClipRect(
                   child: SideNav(
                     navigationShell: widget.navigationShell,
+                    expansion: t.clamp(0.0, 1.0),
                     onExpandedChanged: _handleSidebarExpandedChanged,
                   ),
                 ),
+                body: child!,
+              );
+            },
+            child: RepaintBoundary(
+              child: Stack(
+                children: [widget.navigationShell, const MiniNowPlaying()],
               ),
-            ],
+            ),
           ),
         ),
       ),

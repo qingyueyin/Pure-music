@@ -6,6 +6,8 @@ import 'dart:math' as math;
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/mouse_back_exit.dart';
 import 'package:pure_music/core/preference.dart';
+import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/component/frosted_chrome.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/responsive_builder.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
@@ -32,12 +34,23 @@ final destinations = <DestinationDesc>[
 ];
 
 class SideNav extends StatefulWidget {
-  const SideNav({super.key, this.navigationShell, this.onExpandedChanged});
+  const SideNav({
+    super.key,
+    this.navigationShell,
+    this.onExpandedChanged,
+    this.expansion,
+  });
 
   final StatefulNavigationShell? navigationShell;
   final ValueChanged<bool>? onExpandedChanged;
+
+  /// When set, width is owned by the parent and this value only drives labels.
+  final double? expansion;
   static const double collapsedWidth = 80.0;
   static const double expandedWidth = 240.0;
+
+  static double widthFor(double expansion) =>
+      lerpDouble(collapsedWidth, expandedWidth, expansion.clamp(0.0, 1.0))!;
 
   @override
   State<SideNav> createState() => _SideNavState();
@@ -123,6 +136,7 @@ class _SideNavState extends State<SideNav> {
                 return _SmoothLargeSideNav(
                   isDrawer: isDrawer,
                   expanded: effectiveExpanded,
+                  expansion: widget.expansion,
                   expandedWidth: expandedWidth,
                   colorScheme: scheme,
                   selectedIndex: selectedIndex,
@@ -143,6 +157,7 @@ class _SmoothLargeSideNav extends StatelessWidget {
   const _SmoothLargeSideNav({
     required this.isDrawer,
     required this.expanded,
+    this.expansion,
     required this.expandedWidth,
     required this.colorScheme,
     required this.selectedIndex,
@@ -153,6 +168,7 @@ class _SmoothLargeSideNav extends StatelessWidget {
 
   final bool isDrawer;
   final bool expanded;
+  final double? expansion;
   final double expandedWidth;
   final ColorScheme colorScheme;
   final int? selectedIndex;
@@ -165,126 +181,136 @@ class _SmoothLargeSideNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final expansion = this.expansion;
+    if (expansion != null) {
+      return RepaintBoundary(child: _buildPanel(context, expansion));
+    }
     return RepaintBoundary(
-      child: TweenAnimationBuilder<double>(
-        duration: MotionDuration.base,
-        curve: MotionCurve.standard,
-        tween: Tween(begin: 0.0, end: expanded ? 1.0 : 0.0),
+      child: SpringProgress(
+        target: expanded ? 1.0 : 0.0,
         builder: (context, t, _) => _buildPanel(context, t),
       ),
     );
   }
 
   Widget _buildPanel(BuildContext context, double t) {
-    final visibleWidth =
-        (lerpDouble(_collapsedWidth, expandedWidth, t) ?? _collapsedWidth)
-            .clamp(_collapsedWidth, expandedWidth);
-    final itemWidth = math.max(0.0, visibleWidth - 16.0);
-    final expandedVisual = t >= 0.5;
-    return SizedBox(
-      width: visibleWidth,
-      height: double.infinity,
-      child: Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: colorScheme.surface,
-            borderRadius: AppRadius.mdCircular,
-          ),
-          child: ClipRRect(
-            borderRadius: AppRadius.mdCircular,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SizedBox(height: 12),
-                _NavItem(
-                  height: _itemHeight,
-                  width: itemWidth,
-                  icon: isDrawer
-                      ? Symbols.close
-                      : expandedVisual
-                      ? Symbols.menu_open
-                      : Symbols.menu,
-                  label: isDrawer
-                      ? '关闭'
-                      : expandedVisual
-                      ? '收起'
-                      : '展开',
-                  expandedT: t,
-                  selected: false,
-                  onTap: onToggle,
-                ),
-                const SizedBox(height: 8),
-                Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
+    final fillParent = expansion != null;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final visibleWidth = fillParent
+            ? constraints.maxWidth
+            : SideNav.widthFor(t).clamp(_collapsedWidth, expandedWidth);
+        final itemWidth = math.max(0.0, visibleWidth - 16.0);
+        final expandedVisual = t >= 0.5;
+        return SizedBox(
+          width: fillParent ? double.infinity : visibleWidth,
+          height: double.infinity,
+          child: Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: ListenableBuilder(
+              listenable: AppSettings.backgroundNotifier,
+              builder: (context, _) {
+                return FrostedChrome(
+                  enabled: AppSettings.instance.enableSidebarFrostedGlass,
+                  borderRadius: AppRadius.mdCircular,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      SizedBox(
-                        height: _itemHeight * destinations.length,
-                        child: Stack(
+                      const SizedBox(height: 12),
+                      _NavItem(
+                        height: _itemHeight,
+                        width: itemWidth,
+                        icon: isDrawer
+                            ? Symbols.close
+                            : expandedVisual
+                            ? Symbols.menu_open
+                            : Symbols.menu,
+                        label: isDrawer
+                            ? '关闭'
+                            : expandedVisual
+                            ? '收起'
+                            : '展开',
+                        expandedT: t,
+                        selected: false,
+                        onTap: onToggle,
+                      ),
+                      const SizedBox(height: 8),
+                      Expanded(
+                        child: ListView(
+                          padding: const EdgeInsets.symmetric(vertical: 6),
                           children: [
-                            if (selectedIndex != null && selectedIndex! >= 0)
-                              TweenAnimationBuilder<double>(
-                                duration:
-                                    MediaQuery.disableAnimationsOf(context)
-                                    ? Duration.zero
-                                    : MotionDuration.fast,
-                                curve: MotionCurve.entrance,
-                                tween: Tween<double>(
-                                  begin: selectedIndex!.toDouble(),
-                                  end: selectedIndex!.toDouble(),
-                                ),
-                                builder: (context, index, child) =>
-                                    Transform.translate(
-                                      offset: Offset(0, index * _itemHeight),
-                                      child: child,
+                            SizedBox(
+                              height: _itemHeight * destinations.length,
+                              child: Stack(
+                                children: [
+                                  if (selectedIndex != null &&
+                                      selectedIndex! >= 0)
+                                    SpringProgress(
+                                      target: selectedIndex!.toDouble(),
+                                      spring: MotionSpring.entrance,
+                                      builder: (context, index, child) =>
+                                          Transform.translate(
+                                            offset: Offset(
+                                              0,
+                                              index * _itemHeight,
+                                            ),
+                                            child: child,
+                                          ),
+                                      child: SizedBox(
+                                        width: itemWidth,
+                                        height: _itemHeight,
+                                        child: DecoratedBox(
+                                          decoration: BoxDecoration(
+                                            color: colorScheme
+                                                .secondaryContainer
+                                                .withValues(alpha: 0.85),
+                                            borderRadius: AppRadius.smCircular,
+                                          ),
+                                        ),
+                                      ),
                                     ),
-                                child: SizedBox(
-                                  width: itemWidth,
-                                  height: _itemHeight,
-                                  child: DecoratedBox(
-                                    decoration: BoxDecoration(
-                                      color: colorScheme.secondaryContainer
-                                          .withValues(alpha: 0.85),
-                                      borderRadius: AppRadius.smCircular,
+                                  Column(
+                                    children: List.generate(
+                                      destinations.length,
+                                      (i) {
+                                        final selected = selectedIndex == i;
+                                        return _NavItem(
+                                          height: _itemHeight,
+                                          width: itemWidth,
+                                          icon: destinations[i].icon,
+                                          label: destinations[i].label,
+                                          expandedT: t,
+                                          selected: selected,
+                                          onTap: () {
+                                            onSelect(i);
+                                            final scaffold = Scaffold.of(
+                                              context,
+                                            );
+                                            if (scaffold.hasDrawer) {
+                                              scaffold.closeDrawer();
+                                            }
+                                          },
+                                          onDoubleTap: selected
+                                              ? () => onReturnHome(i)
+                                              : null,
+                                        );
+                                      },
                                     ),
                                   ),
-                                ),
+                                ],
                               ),
-                            Column(
-                              children: List.generate(destinations.length, (i) {
-                                final selected = selectedIndex == i;
-                                return _NavItem(
-                                  height: _itemHeight,
-                                  width: itemWidth,
-                                  icon: destinations[i].icon,
-                                  label: destinations[i].label,
-                                  expandedT: t,
-                                  selected: selected,
-                                  onTap: () {
-                                    onSelect(i);
-                                    final scaffold = Scaffold.of(context);
-                                    if (scaffold.hasDrawer) {
-                                      scaffold.closeDrawer();
-                                    }
-                                  },
-                                  onDoubleTap: selected
-                                      ? () => onReturnHome(i)
-                                      : null,
-                                );
-                              }),
                             ),
                           ],
                         ),
                       ),
                     ],
                   ),
-                ),
-              ],
+                );
+              },
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -333,39 +359,41 @@ class _NavItem extends StatelessWidget {
             onDoubleTap: onDoubleTap,
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  const SizedBox(width: iconLeftPad),
-                  SizedBox(
-                    width: iconSize,
-                    child: Icon(
-                      icon,
-                      size: iconSize,
-                      color: fg.withValues(alpha: 0.90),
+              child: ClipRect(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    const SizedBox(width: iconLeftPad),
+                    SizedBox(
+                      width: iconSize,
+                      child: Icon(
+                        icon,
+                        size: iconSize,
+                        color: fg.withValues(alpha: 0.90),
+                      ),
                     ),
-                  ),
-                  Opacity(
-                    opacity: textOpacity,
-                    child: Padding(
-                      padding: const EdgeInsets.only(left: textLeftPad),
-                      child: Text(
-                        label,
-                        maxLines: 1,
-                        overflow: TextOverflow.fade,
-                        softWrap: false,
-                        style: TextStyle(
-                          color: fg,
-                          fontSize: 14.5,
-                          fontWeight: selected
-                              ? AppType.weightSemibold
-                              : AppType.weightMedium,
+                    Opacity(
+                      opacity: textOpacity,
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: textLeftPad),
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.fade,
+                          softWrap: false,
+                          style: TextStyle(
+                            color: fg,
+                            fontSize: 14.5,
+                            fontWeight: selected
+                                ? AppType.weightSemibold
+                                : AppType.weightMedium,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  const Spacer(),
-                ],
+                    const Spacer(),
+                  ],
+                ),
               ),
             ),
           ),
