@@ -52,6 +52,7 @@ lib/page/settings_page/cpfeedback_key.dart
 .agent/
 .opencode/
 .superpowers/
+.qlty/
 
 # Trae specific - ignore rules and skills but keep other .trae files
 .trae/rules/
