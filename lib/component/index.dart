@@ -12,6 +12,7 @@ export 'rectangle_progress_indicator.dart';
 export 'responsive_builder.dart';
 export 'scroll_aware_future_builder.dart';
 export 'search_dialog.dart';
+export 'frosted_chrome.dart';
 export 'settings_tile.dart';
 export 'side_nav.dart';
 export 'title_bar.dart';
