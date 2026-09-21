@@ -593,6 +593,7 @@ class PlaybackPreference {
   int lastPlaylistIndex;
   bool lastShuffleActive;
   List<String> lastOriginalPlaylistPaths;
+  double lastPositionSeconds;
   bool reinitOnSetSource;
   bool replayGainEnabled;
   TransitionMode transitionMode;
@@ -616,6 +617,7 @@ class PlaybackPreference {
     this.lastPlaylistIndex = 0,
     this.lastShuffleActive = false,
     this.lastOriginalPlaylistPaths = const [],
+    this.lastPositionSeconds = 0.0,
     this.reinitOnSetSource = false,
     this.transitionMode = TransitionMode.seamless,
     this.transitionFadeOutMs = 300,
@@ -638,6 +640,7 @@ class PlaybackPreference {
     'lastPlaylistIndex': lastPlaylistIndex,
     'lastShuffleActive': lastShuffleActive,
     'lastOriginalPlaylistPaths': lastOriginalPlaylistPaths,
+    'lastPositionSeconds': lastPositionSeconds,
     'reinitOnSetSource': reinitOnSetSource,
     'replayGainEnabled': replayGainEnabled,
     'transitionMode': transitionMode.name,
@@ -692,6 +695,12 @@ class PlaybackPreference {
         defaultValue: false,
       ),
       lastOriginalPlaylistPaths: lastOriginalPlaylistPaths,
+      lastPositionSeconds: _normalizedBoundedDouble(
+        map['lastPositionSeconds'],
+        defaultValue: 0.0,
+        min: 0.0,
+        max: 24 * 60 * 60,
+      ),
       reinitOnSetSource: _normalizedBool(
         map['reinitOnSetSource'],
         defaultValue: false,

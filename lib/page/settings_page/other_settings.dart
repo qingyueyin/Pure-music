@@ -1,12 +1,43 @@
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/preference.dart';
+import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/component/settings_tile.dart';
 import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+
+class RememberPlaybackPositionControl extends StatefulWidget {
+  const RememberPlaybackPositionControl({super.key});
+
+  @override
+  State<RememberPlaybackPositionControl> createState() =>
+      _RememberPlaybackPositionControlState();
+}
+
+class _RememberPlaybackPositionControlState
+    extends State<RememberPlaybackPositionControl> {
+  final settings = AppSettings.instance;
+
+  @override
+  Widget build(BuildContext context) {
+    return SettingsTile(
+      description: '记住播放进度',
+      subtitle: settings.rememberPlaybackPosition
+          ? '下次启动从退出前的位置继续'
+          : '下次启动从歌曲开头播放',
+      action: Switch(
+        value: settings.rememberPlaybackPosition,
+        onChanged: (value) {
+          setState(() => settings.rememberPlaybackPosition = value);
+          settings.saveSettings();
+        },
+      ),
+    );
+  }
+}
 
 class ReplayGainControl extends StatefulWidget {
   const ReplayGainControl({super.key});

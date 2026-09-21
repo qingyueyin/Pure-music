@@ -125,6 +125,7 @@ class _SettingsIssuePageState extends State<SettingsIssuePage> {
       'enableCoverColorExtraction': s.enableCoverColorExtraction,
       'customCoverColor': s.customCoverColor,
       'windowCloseBehavior': s.windowCloseBehavior.name,
+      'rememberPlaybackPosition': s.rememberPlaybackPosition,
     });
   }
 

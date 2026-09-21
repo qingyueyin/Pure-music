@@ -329,6 +329,7 @@ class WindowLifecycleService with WindowListener, TrayListener {
       );
     }
     if (!skipSave) {
+      PlayService.existingPlaybackService?.persistPlaybackPositionForExit();
       await _run('savePreference', AppPreference.instance.save());
     }
     if (PlayService.isInitialized) {

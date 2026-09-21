@@ -328,10 +328,13 @@ class AppSettings {
   bool appWindowTransparent = false;
   double appWindowOpacity = 1.0;
   double appWindowBlur = 0;
+  bool enableTitleBarFrostedGlass = false;
+  bool enableSidebarFrostedGlass = false;
   Size windowSize = const Size(1280, 756);
   bool isWindowMaximized = false;
   WindowCloseBehavior windowCloseBehavior = WindowCloseBehavior.exit;
   bool preventSleepOnNowPlaying = false;
+  bool rememberPlaybackPosition = false;
 
   String? fontFamily;
   String? fontPath;
@@ -439,6 +442,14 @@ class AppSettings {
     _instance.appWindowBlur = windowBlur is num
         ? windowBlur.clamp(0.0, 30.0).toDouble()
         : 0.0;
+    _instance.enableTitleBarFrostedGlass = normalizedBoolSetting(
+      settingsMap['EnableTitleBarFrostedGlass'],
+      defaultValue: false,
+    );
+    _instance.enableSidebarFrostedGlass = normalizedBoolSetting(
+      settingsMap['EnableSidebarFrostedGlass'],
+      defaultValue: false,
+    );
     final oldSep = settingsMap['ArtistSeparator'];
     if (oldSep != null) {
       _instance.artistSeparator = normalizedArtistSeparators(oldSep);
@@ -494,6 +505,10 @@ class AppSettings {
         WindowCloseBehavior.exit;
     _instance.preventSleepOnNowPlaying = normalizedBoolSetting(
       settingsMap['PreventSleepOnNowPlaying'],
+      defaultValue: false,
+    );
+    _instance.rememberPlaybackPosition = normalizedBoolSetting(
+      settingsMap['RememberPlaybackPosition'],
       defaultValue: false,
     );
   }
@@ -764,6 +779,14 @@ class AppSettings {
     _instance.appWindowBlur = windowBlur is num
         ? windowBlur.clamp(0.0, 30.0).toDouble()
         : 0.0;
+    _instance.enableTitleBarFrostedGlass = normalizedBoolSetting(
+      settingsMap['EnableTitleBarFrostedGlass'],
+      defaultValue: false,
+    );
+    _instance.enableSidebarFrostedGlass = normalizedBoolSetting(
+      settingsMap['EnableSidebarFrostedGlass'],
+      defaultValue: false,
+    );
 
     final sizeStr = settingsMap['WindowSize'];
     if (sizeStr != null) {
@@ -787,6 +810,10 @@ class AppSettings {
         WindowCloseBehavior.exit;
     _instance.preventSleepOnNowPlaying = normalizedBoolSetting(
       settingsMap['PreventSleepOnNowPlaying'],
+      defaultValue: false,
+    );
+    _instance.rememberPlaybackPosition = normalizedBoolSetting(
+      settingsMap['RememberPlaybackPosition'],
       defaultValue: false,
     );
 
@@ -1120,6 +1147,8 @@ class AppSettings {
         'AppWindowTransparent': appWindowTransparent,
         'AppWindowOpacity': appWindowOpacity,
         'AppWindowBlur': appWindowBlur,
+        'EnableTitleBarFrostedGlass': enableTitleBarFrostedGlass,
+        'EnableSidebarFrostedGlass': enableSidebarFrostedGlass,
         'IsWindowMaximized': isMaximized,
         'WindowCloseBehavior': windowCloseBehavior.name,
         'FontFamily': fontFamily,
@@ -1128,6 +1157,7 @@ class AppSettings {
         'LyricFontFamily': lyricFontFamily,
         'LyricFontPath': lyricFontPath,
         'PreventSleepOnNowPlaying': preventSleepOnNowPlaying,
+        'RememberPlaybackPosition': rememberPlaybackPosition,
       };
 
       Size sizeToSave = windowSize;
