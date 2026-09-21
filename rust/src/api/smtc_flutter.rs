@@ -583,6 +583,46 @@ impl SMTCFlutter {
         }
     }
 
+    /// 等待并取出下一个待处理的缩略图任务，worker 已关闭时返回 None
+    fn _wait_for_job(
+        pending: &Mutex<Option<(String, u64)>>,
+        wake: &Condvar,
+        closed: &AtomicBool,
+    ) -> Option<(String, u64)> {
+        loop {
+            let mut guard = match pending.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            while guard.is_none() && !closed.load(Ordering::Acquire) {
+                guard = match wake.wait(guard) {
+                    Ok(guard) => guard,
+                    Err(poisoned) => poisoned.into_inner(),
+                };
+            }
+            if closed.load(Ordering::Acquire) {
+                return None;
+            }
+            if let Some(job) = guard.take() {
+                return Some(job);
+            }
+        }
+    }
+
+    /// 将缩略图（或清空）应用到 SMTC DisplayUpdater 并提交更新
+    fn _apply_thumbnail(
+        smtc: &SystemMediaTransportControls,
+        thumbnail: Option<RandomAccessStreamReference>,
+    ) -> Result<(), windows::core::Error> {
+        let updater = smtc.DisplayUpdater()?;
+        match thumbnail {
+            Some(thumbnail) => updater.SetThumbnail(&thumbnail)?,
+            None => updater.SetThumbnail(None::<&RandomAccessStreamReference>)?,
+        }
+        updater.Update()?;
+        Ok(())
+    }
+
     fn _start_thumbnail_worker(
         smtc: SystemMediaTransportControls,
         display_revision: Arc<AtomicU64>,
@@ -608,24 +648,9 @@ impl SMTCFlutter {
                 }
                 let _winrt_guard = WinRtThreadGuard;
                 loop {
-                    let job = {
-                        let mut pending = match worker_pending.lock() {
-                            Ok(pending) => pending,
-                            Err(poisoned) => poisoned.into_inner(),
-                        };
-                        while pending.is_none() && !worker_closed.load(Ordering::Acquire) {
-                            pending = match worker_wake.wait(pending) {
-                                Ok(pending) => pending,
-                                Err(poisoned) => poisoned.into_inner(),
-                            };
-                        }
-                        if worker_closed.load(Ordering::Acquire) {
-                            return;
-                        }
-                        match pending.take() {
-                            Some(job) => job,
-                            None => continue,
-                        }
+                    let job = match Self::_wait_for_job(&worker_pending, &worker_wake, &worker_closed) {
+                        Some(job) => job,
+                        None => return,
                     };
                     let thumbnail = match Self::_try_get_thumbnail(&HSTRING::from(job.0)) {
                         Ok(thumbnail) => thumbnail,
@@ -641,16 +666,7 @@ impl SMTCFlutter {
                     if display_revision.load(Ordering::Acquire) != job.1 {
                         continue;
                     }
-                    let result = (|| -> Result<(), windows::core::Error> {
-                        let updater = smtc.DisplayUpdater()?;
-                        match thumbnail {
-                            Some(thumbnail) => updater.SetThumbnail(&thumbnail)?,
-                            None => updater.SetThumbnail(None::<&RandomAccessStreamReference>)?,
-                        }
-                        updater.Update()?;
-                        Ok(())
-                    })();
-                    if let Err(error) = result {
+                    if let Err(error) = Self::_apply_thumbnail(&smtc, thumbnail) {
                         log_to_dart(format!("SMTC: thumbnail update err: {}", error));
                     }
                 }

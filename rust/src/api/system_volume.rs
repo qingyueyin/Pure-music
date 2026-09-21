@@ -60,12 +60,7 @@ mod imp {
             pnotify: *mut AUDIO_VOLUME_NOTIFICATION_DATA,
         ) -> windows::core::Result<()> {
             if let Some(data) = unsafe { pnotify.as_ref() } {
-                let volume = data.fMasterVolume;
-                if let Ok(guard) = self.sink.lock() {
-                    if let Some(sink) = guard.as_ref() {
-                        let _ = sink.add(volume as f64);
-                    }
-                }
+                notify_sink(&self.sink, data.fMasterVolume as f64);
             }
             Ok(())
         }
@@ -115,6 +110,15 @@ mod imp {
             _key: &windows::Win32::UI::Shell::PropertiesSystem::PROPERTYKEY,
         ) -> windows::core::Result<()> {
             Ok(())
+        }
+    }
+
+    /// 向 sink 推送一个音量值，忽略 sink 未设置或已中毒的情况
+    fn notify_sink(sink: &Mutex<Option<StreamSink<f64>>>, val: f64) {
+        if let Ok(guard) = sink.lock() {
+            if let Some(sink) = guard.as_ref() {
+                let _ = sink.add(val);
+            }
         }
     }
 
@@ -180,20 +184,12 @@ mod imp {
             self.volume_callback = None;
 
             if let Err(e) = self.init_volume_interface() {
-                if let Ok(guard) = self.sink.lock() {
-                    if let Some(sink) = guard.as_ref() {
-                        let _ = sink.add(0.0);
-                    }
-                }
+                notify_sink(&self.sink, 0.0);
                 return Err(e);
             }
 
             if let Some(vol) = self.get_volume() {
-                if let Ok(guard) = self.sink.lock() {
-                    if let Some(sink) = guard.as_ref() {
-                        let _ = sink.add(vol as f64);
-                    }
-                }
+                notify_sink(&self.sink, vol as f64);
             }
 
             Ok(())
@@ -250,6 +246,15 @@ mod imp {
 
     static GLOBAL_MANAGER: Mutex<Option<Arc<Mutex<Option<VolumeManager>>>>> = Mutex::new(None);
 
+    /// 依次锁 GLOBAL_MANAGER 和内层 manager，取到可用的 VolumeManager 后调用 f
+    fn with_manager<R>(f: impl FnOnce(&VolumeManager) -> R) -> Option<R> {
+        let global_guard = GLOBAL_MANAGER.lock().ok()?;
+        let manager_arc = global_guard.as_ref()?;
+        let manager_guard = manager_arc.lock().ok()?;
+        let manager = manager_guard.as_ref()?;
+        Some(f(manager))
+    }
+
     pub(super) fn system_volume_init(sink: StreamSink<f64>) -> Result<f64> {
         let mut com_guard = COM_GUARD
             .lock()
@@ -280,33 +285,11 @@ mod imp {
     }
 
     pub(super) fn system_volume_set(val: f64) -> Result<()> {
-        if let Some(manager_arc) = GLOBAL_MANAGER
-            .lock()
-            .map_err(|e| anyhow::anyhow!("Mutex poisoned: {}", e))?
-            .as_ref()
-        {
-            if let Ok(guard) = manager_arc.lock() {
-                if let Some(manager) = guard.as_ref() {
-                    manager.set_volume(val as f32)?;
-                }
-            }
-        }
-        Ok(())
+        with_manager(|manager| manager.set_volume(val as f32)).unwrap_or(Ok(()))
     }
 
     pub(super) fn system_volume_get() -> Result<f64> {
-        if let Some(manager_arc) = GLOBAL_MANAGER
-            .lock()
-            .map_err(|e| anyhow::anyhow!("Mutex poisoned: {}", e))?
-            .as_ref()
-        {
-            if let Ok(guard) = manager_arc.lock() {
-                if let Some(manager) = guard.as_ref() {
-                    return Ok(manager.get_volume().unwrap_or(0.0) as f64);
-                }
-            }
-        }
-        Ok(0.0)
+        Ok(with_manager(|manager| manager.get_volume().unwrap_or(0.0) as f64).unwrap_or(0.0))
     }
 
     pub(super) fn system_volume_dispose() {

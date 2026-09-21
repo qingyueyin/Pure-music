@@ -11,7 +11,7 @@ use std::time::{Duration, Instant, UNIX_EPOCH};
 use anyhow::{anyhow, Result};
 use flutter_rust_bridge::frb;
 use md5::{Digest, Md5};
-use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
+use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 
 use super::logger::log_to_dart;
 
@@ -1114,6 +1114,102 @@ fn unique_play_count(candidates: &HashMap<String, Vec<i64>>, key: &str) -> Optio
     }
 }
 
+struct ParsedAudioEntry {
+    path: String,
+    path_key: String,
+    title: String,
+    artist: String,
+    album: String,
+    album_artist: Option<String>,
+    track: u64,
+    disc: u64,
+    duration: u64,
+    bitrate: Option<u64>,
+    sample_rate: Option<u64>,
+    modified: u64,
+    created: u64,
+    by: Option<String>,
+}
+
+struct ParsedFolder {
+    path: String,
+    modified: u64,
+    latest: u64,
+    audios: Vec<ParsedAudioEntry>,
+}
+
+fn parse_index_folders(folders: &[serde_json::Value]) -> Result<Vec<ParsedFolder>> {
+    let mut result = Vec::new();
+    let mut seen_paths = HashSet::new();
+    for folder in folders {
+        let folder_path = folder
+            .get("path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow!("folder.path missing"))?;
+        if !seen_paths.insert(folder_path.to_string()) {
+            return Err(anyhow!("duplicate folder path"));
+        }
+        let modified = folder.get("modified").and_then(|v| v.as_u64()).unwrap_or(0);
+        let latest = folder.get("latest").and_then(|v| v.as_u64()).unwrap_or(0);
+        let audios = folder
+            .get("audios")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| anyhow!("folder.audios missing"))?;
+        let mut parsed_audios = Vec::new();
+        for audio in audios {
+            let path = audio
+                .get("path")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow!("audio.path missing"))?;
+            parsed_audios.push(ParsedAudioEntry {
+                path: path.to_string(),
+                path_key: path_lookup_key(path),
+                title: audio.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                artist: audio.get("artist").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                album: audio.get("album").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                album_artist: audio.get("album_artist").and_then(|v| v.as_str()).map(String::from),
+                track: audio.get("track").and_then(|v| v.as_u64()).unwrap_or(0),
+                disc: audio.get("disc").and_then(|v| v.as_u64()).unwrap_or(0),
+                duration: audio.get("duration").and_then(|v| v.as_u64()).unwrap_or(0),
+                bitrate: audio.get("bitrate").and_then(|v| v.as_u64()),
+                sample_rate: audio.get("sample_rate").and_then(|v| v.as_u64()),
+                modified: audio.get("modified").and_then(|v| v.as_u64()).unwrap_or(0),
+                created: audio.get("created").and_then(|v| v.as_u64()).unwrap_or(0),
+                by: audio.get("by").and_then(|v| v.as_str()).map(String::from),
+            });
+        }
+        result.push(ParsedFolder {
+            path: folder_path.to_string(),
+            modified,
+            latest,
+            audios: parsed_audios,
+        });
+    }
+    Ok(result)
+}
+
+struct StoredAudioStats {
+    path: String,
+    media_id: Option<String>,
+    metadata_key: Option<String>,
+    play_count: i64,
+    modified: i64,
+}
+
+fn load_stored_audio_stats(tx: &Transaction) -> Result<Vec<StoredAudioStats>> {
+    let mut stmt = tx.prepare("SELECT path, media_id, metadata_key, play_count, modified FROM audios")?;
+    let rows = stmt.query_map([], |row| {
+        Ok(StoredAudioStats {
+            path: row.get(0)?,
+            media_id: row.get(1)?,
+            metadata_key: row.get(2)?,
+            play_count: row.get(3)?,
+            modified: row.get(4)?,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
 fn write_index_value_to_sqlite(index_dir: &Path, index: &serde_json::Value) -> Result<()> {
     let stopwatch = Instant::now();
     let folders = index
@@ -1124,57 +1220,18 @@ fn write_index_value_to_sqlite(index_dir: &Path, index: &serde_json::Value) -> R
     let version = index.get("version").and_then(|v| v.as_u64()).unwrap_or(0);
     let (index_modified, index_size) = index_source_signature(index_dir)?;
 
-    let mut current_audio_paths = HashSet::<String>::new();
-    let mut current_audio_exact_paths = HashSet::<String>::new();
-    let mut current_folder_paths = HashSet::<String>::new();
-    let mut current_identity_inputs = Vec::<(&str, String, u64, String)>::new();
-    for folder in folders {
-        let folder_path = folder
-            .get("path")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow!("folder.path missing"))?;
-        if !current_folder_paths.insert(folder_path.to_string()) {
-            return Err(anyhow!("duplicate folder path"));
-        }
-        let audios = folder
-            .get("audios")
-            .and_then(|v| v.as_array())
-            .ok_or_else(|| anyhow!("folder.audios missing"))?;
-        for audio in audios {
-            let path = audio
-                .get("path")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow!("audio.path missing"))?;
-            if !current_audio_exact_paths.insert(path.to_string()) {
+    let parsed_folders = parse_index_folders(folders)?;
+
+    let mut current_audio_paths = HashSet::new();
+    let mut current_audio_exact_paths = HashSet::new();
+    let mut current_folder_paths = HashSet::new();
+    for folder in &parsed_folders {
+        current_folder_paths.insert(folder.path.clone());
+        for audio in &folder.audios {
+            if !current_audio_exact_paths.insert(audio.path.clone()) {
                 return Err(anyhow!("duplicate audio path"));
             }
-            let title = audio.get("title").and_then(|v| v.as_str()).unwrap_or("");
-            let artist = audio.get("artist").and_then(|v| v.as_str()).unwrap_or("");
-            let album = audio.get("album").and_then(|v| v.as_str()).unwrap_or("");
-            let album_artist = audio.get("album_artist").and_then(|v| v.as_str());
-            let track = audio.get("track").and_then(|v| v.as_u64()).unwrap_or(0);
-            let duration = audio.get("duration").and_then(|v| v.as_u64()).unwrap_or(0);
-            let bitrate = audio.get("bitrate").and_then(|v| v.as_u64());
-            let sample_rate = audio.get("sample_rate").and_then(|v| v.as_u64());
-            let modified = audio.get("modified").and_then(|v| v.as_u64()).unwrap_or(0);
-            let path_key = path_lookup_key(path);
-            current_audio_paths.insert(path_key.clone());
-            current_identity_inputs.push((
-                path,
-                path_key,
-                modified,
-                metadata_match_key(
-                    Path::new(path),
-                    title,
-                    artist,
-                    album,
-                    album_artist,
-                    track,
-                    duration,
-                    bitrate,
-                    sample_rate,
-                ),
-            ));
+            current_audio_paths.insert(audio.path_key.clone());
         }
     }
 
@@ -1189,56 +1246,44 @@ fn write_index_value_to_sqlite(index_dir: &Path, index: &serde_json::Value) -> R
         rows.collect::<rusqlite::Result<Vec<_>>>()?
     };
 
-    let stored_stats = {
-        let mut stmt =
-            tx.prepare("SELECT path, media_id, metadata_key, play_count, modified FROM audios")?;
-        let rows = stmt.query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, Option<String>>(1)?,
-                row.get::<_, Option<String>>(2)?,
-                row.get::<_, i64>(3)?,
-                row.get::<_, i64>(4)?,
-            ))
-        })?;
-        rows.collect::<rusqlite::Result<Vec<_>>>()?
-    };
+    let stored_stats = load_stored_audio_stats(&tx)?;
+
     let mut play_count_by_path = HashMap::<String, i64>::new();
     let mut orphan_counts_by_media_id = HashMap::<String, Vec<i64>>::new();
     let mut orphan_counts_by_metadata_key = HashMap::<String, Vec<i64>>::new();
     let mut stored_identities = HashMap::<String, (AudioIdentity, u64)>::new();
-    let mut stale_audio_paths = Vec::<String>::new();
-    for (path, media_id, metadata_key, play_count, modified) in stored_stats {
-        let path_key = path_lookup_key(&path);
+    let mut stale_audio_paths = Vec::new();
+    for stat in &stored_stats {
+        let path_key = path_lookup_key(&stat.path);
         play_count_by_path
             .entry(path_key.clone())
-            .and_modify(|count| *count = (*count).max(play_count))
-            .or_insert(play_count);
-        if !current_audio_exact_paths.contains(&path) {
-            stale_audio_paths.push(path.clone());
+            .and_modify(|count: &mut i64| *count = (*count).max(stat.play_count))
+            .or_insert(stat.play_count);
+        if !current_audio_exact_paths.contains(&stat.path) {
+            stale_audio_paths.push(stat.path.clone());
         }
         if !current_audio_paths.contains(&path_key) {
-            if let Some(media_id) = media_id.as_ref() {
+            if let Some(media_id) = stat.media_id.as_ref() {
                 orphan_counts_by_media_id
                     .entry(media_id.clone())
                     .or_default()
-                    .push(play_count);
+                    .push(stat.play_count);
             }
-            if let Some(metadata_key) = metadata_key.as_ref() {
+            if let Some(metadata_key) = stat.metadata_key.as_ref() {
                 orphan_counts_by_metadata_key
                     .entry(metadata_key.clone())
                     .or_default()
-                    .push(play_count);
+                    .push(stat.play_count);
             }
         }
         stored_identities.insert(
-            path,
+            stat.path.clone(),
             (
                 AudioIdentity {
-                    media_id,
-                    metadata_key,
+                    media_id: stat.media_id.clone(),
+                    metadata_key: stat.metadata_key.clone(),
                 },
-                modified.max(0) as u64,
+                (stat.modified.max(0) as u64),
             ),
         );
     }
@@ -1247,35 +1292,47 @@ fn write_index_value_to_sqlite(index_dir: &Path, index: &serde_json::Value) -> R
         .filter(|path| !current_folder_paths.contains(path))
         .collect();
 
-    let mut identities = HashMap::<String, AudioIdentity>::new();
-    let mut current_media_id_counts = HashMap::<String, usize>::new();
-    let mut current_metadata_key_counts = HashMap::<String, usize>::new();
+    let mut identities = HashMap::new();
+    let mut current_media_id_counts = HashMap::new();
+    let mut current_metadata_key_counts = HashMap::new();
     let mut reused_media_ids = 0_usize;
     let mut refreshed_media_ids = 0_usize;
-    for (path, path_key, modified, metadata_key) in current_identity_inputs {
-        let media_id = match stored_identities.get(path) {
-            Some((identity, stored_modified)) if *stored_modified == modified => {
-                reused_media_ids += 1;
-                identity.media_id.clone()
+    for folder in &parsed_folders {
+        for audio in &folder.audios {
+            let media_id = match stored_identities.get(&audio.path) {
+                Some((identity, stored_modified)) if *stored_modified == audio.modified => {
+                    reused_media_ids += 1;
+                    identity.media_id.clone()
+                }
+                _ => {
+                    refreshed_media_ids += 1;
+                    stable_file_id(Path::new(&audio.path))
+                }
+            };
+            let identity = AudioIdentity {
+                media_id,
+                metadata_key: Some(metadata_match_key(
+                    Path::new(&audio.path),
+                    &audio.title,
+                    &audio.artist,
+                    &audio.album,
+                    audio.album_artist.as_deref(),
+                    audio.track,
+                    audio.duration,
+                    audio.bitrate,
+                    audio.sample_rate,
+                )),
+            };
+            if let Some(media_id) = identity.media_id.as_ref() {
+                *current_media_id_counts.entry(media_id.clone()).or_default() += 1;
             }
-            _ => {
-                refreshed_media_ids += 1;
-                stable_file_id(Path::new(path))
+            if let Some(metadata_key) = identity.metadata_key.as_ref() {
+                *current_metadata_key_counts
+                    .entry(metadata_key.clone())
+                    .or_default() += 1;
             }
-        };
-        let identity = AudioIdentity {
-            media_id,
-            metadata_key: Some(metadata_key),
-        };
-        if let Some(media_id) = identity.media_id.as_ref() {
-            *current_media_id_counts.entry(media_id.clone()).or_default() += 1;
+            identities.insert(audio.path_key.clone(), identity);
         }
-        if let Some(metadata_key) = identity.metadata_key.as_ref() {
-            *current_metadata_key_counts
-                .entry(metadata_key.clone())
-                .or_default() += 1;
-        }
-        identities.insert(path_key, identity);
     }
 
     let mut meta_changes = 0_usize;
@@ -1339,48 +1396,15 @@ fn write_index_value_to_sqlite(index_dir: &Path, index: &serde_json::Value) -> R
                 OR audios.metadata_key IS NOT excluded.metadata_key",
         )?;
 
-        for folder in folders {
-            let folder_path = folder
-                .get("path")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow!("folder.path missing"))?;
-            let modified = folder.get("modified").and_then(|v| v.as_u64()).unwrap_or(0);
-            let latest = folder.get("latest").and_then(|v| v.as_u64()).unwrap_or(0);
+        for folder in &parsed_folders {
             folder_changes +=
-                folder_stmt.execute(params![folder_path, modified as i64, latest as i64])?;
+                folder_stmt.execute(params![folder.path, folder.modified as i64, folder.latest as i64])?;
 
-            let audios = folder
-                .get("audios")
-                .and_then(|v| v.as_array())
-                .ok_or_else(|| anyhow!("folder.audios missing"))?;
-
-            for audio in audios {
-                let path = audio
-                    .get("path")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| anyhow!("audio.path missing"))?;
-                let title = audio.get("title").and_then(|v| v.as_str()).unwrap_or("");
-                let artist = audio.get("artist").and_then(|v| v.as_str()).unwrap_or("");
-                let album = audio.get("album").and_then(|v| v.as_str()).unwrap_or("");
-                let album_artist = audio
-                    .get("album_artist")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
-                let track = audio.get("track").and_then(|v| v.as_u64()).unwrap_or(0);
-                let disc = audio.get("disc").and_then(|v| v.as_u64()).unwrap_or(0);
-                let duration = audio.get("duration").and_then(|v| v.as_u64()).unwrap_or(0);
-                let bitrate = audio.get("bitrate").and_then(|v| v.as_u64());
-                let sample_rate = audio.get("sample_rate").and_then(|v| v.as_u64());
-                let modified = audio.get("modified").and_then(|v| v.as_u64()).unwrap_or(0);
-                let created = audio.get("created").and_then(|v| v.as_u64()).unwrap_or(0);
-                let by = audio
-                    .get("by")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
-                let path_key = path_lookup_key(path);
-                let identity = identities.get(&path_key).cloned().unwrap_or_default();
+            for audio in &folder.audios {
+                let path_key = &audio.path_key;
+                let identity = identities.get(path_key).cloned().unwrap_or_default();
                 let play_count = play_count_by_path
-                    .get(&path_key)
+                    .get(path_key)
                     .copied()
                     .or_else(|| {
                         identity.media_id.as_deref().and_then(|media_id| {
@@ -1403,20 +1427,20 @@ fn write_index_value_to_sqlite(index_dir: &Path, index: &serde_json::Value) -> R
                     .unwrap_or(0);
 
                 audio_changes += audio_stmt.execute(params![
-                    path,
-                    folder_path,
-                    title,
-                    artist,
-                    album,
-                    album_artist,
-                    track as i64,
-                    disc as i64,
-                    duration as i64,
-                    bitrate.map(|v| v as i64),
-                    sample_rate.map(|v| v as i64),
-                    modified as i64,
-                    created as i64,
-                    by,
+                    audio.path,
+                    folder.path,
+                    audio.title,
+                    audio.artist,
+                    audio.album,
+                    audio.album_artist,
+                    audio.track as i64,
+                    audio.disc as i64,
+                    audio.duration as i64,
+                    audio.bitrate.map(|v| v as i64),
+                    audio.sample_rate.map(|v| v as i64),
+                    audio.modified as i64,
+                    audio.created as i64,
+                    audio.by,
                     play_count,
                     identity.media_id,
                     identity.metadata_key,

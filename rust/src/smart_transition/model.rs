@@ -181,6 +181,50 @@ fn validate_region(
 }
 
 /// 校验 TrackProfile：有限数、时间顺序、置信度范围、拍点单调性。
+fn validate_tempo_block(t: &TempoProfile, duration_ms: u64) -> Result<(), ValidationError> {
+    check_finite(t.bpm, "tempo.bpm")?;
+    if t.bpm <= 0.0 {
+        return Err(ValidationError::OutOfRange {
+            field: "tempo.bpm".to_string(),
+            min: 0.0,
+            max: f64::INFINITY,
+        });
+    }
+    check_range(t.beat_confidence, "tempo.beat_confidence", 0.0, 1.0)?;
+    check_range(t.downbeat_confidence, "tempo.downbeat_confidence", 0.0, 1.0)?;
+    check_range(t.stability, "tempo.stability", 0.0, 1.0)?;
+    check_finite(t.downbeat_offset_ms, "tempo.downbeat_offset_ms")?;
+    if t.downbeat_offset_ms < 0.0 || t.downbeat_offset_ms > duration_ms as f64 {
+        return Err(ValidationError::OutOfRange {
+            field: "tempo.downbeat_offset_ms".to_string(),
+            min: 0.0,
+            max: f64::INFINITY,
+        });
+    }
+    if t.beat_times_ms.len() < 2 {
+        return Err(ValidationError::InvalidValue {
+            field: "tempo.beat_times_ms".to_string(),
+            reason: "must contain at least two beats".to_string(),
+        });
+    }
+    let mut prev = f64::NEG_INFINITY;
+    for (i, &b) in t.beat_times_ms.iter().enumerate() {
+        check_finite(b, "tempo.beat_times_ms")?;
+        if b < 0.0 || b > duration_ms as f64 {
+            return Err(ValidationError::OutOfRange {
+                field: format!("tempo.beat_times_ms[{i}]"),
+                min: 0.0,
+                max: duration_ms as f64,
+            });
+        }
+        if b <= prev {
+            return Err(ValidationError::NonMonotonicBeats { index: i });
+        }
+        prev = b;
+    }
+    Ok(())
+}
+
 pub fn validate_track_profile(p: &TrackProfile) -> Result<(), ValidationError> {
     if p.profile_key.is_empty() {
         return Err(ValidationError::InvalidValue {
@@ -210,46 +254,7 @@ pub fn validate_track_profile(p: &TrackProfile) -> Result<(), ValidationError> {
     validate_region(&p.entrance, "entrance", p.duration_ms)?;
     validate_region(&p.exit, "exit", p.duration_ms)?;
     if let Some(t) = &p.tempo {
-        check_finite(t.bpm, "tempo.bpm")?;
-        if t.bpm <= 0.0 {
-            return Err(ValidationError::OutOfRange {
-                field: "tempo.bpm".to_string(),
-                min: 0.0,
-                max: f64::INFINITY,
-            });
-        }
-        check_range(t.beat_confidence, "tempo.beat_confidence", 0.0, 1.0)?;
-        check_range(t.downbeat_confidence, "tempo.downbeat_confidence", 0.0, 1.0)?;
-        check_range(t.stability, "tempo.stability", 0.0, 1.0)?;
-        check_finite(t.downbeat_offset_ms, "tempo.downbeat_offset_ms")?;
-        if t.downbeat_offset_ms < 0.0 || t.downbeat_offset_ms > p.duration_ms as f64 {
-            return Err(ValidationError::OutOfRange {
-                field: "tempo.downbeat_offset_ms".to_string(),
-                min: 0.0,
-                max: f64::INFINITY,
-            });
-        }
-        if t.beat_times_ms.len() < 2 {
-            return Err(ValidationError::InvalidValue {
-                field: "tempo.beat_times_ms".to_string(),
-                reason: "must contain at least two beats".to_string(),
-            });
-        }
-        let mut prev = f64::NEG_INFINITY;
-        for (i, &b) in t.beat_times_ms.iter().enumerate() {
-            check_finite(b, "tempo.beat_times_ms")?;
-            if b < 0.0 || b > p.duration_ms as f64 {
-                return Err(ValidationError::OutOfRange {
-                    field: format!("tempo.beat_times_ms[{i}]"),
-                    min: 0.0,
-                    max: p.duration_ms as f64,
-                });
-            }
-            if b <= prev {
-                return Err(ValidationError::NonMonotonicBeats { index: i });
-            }
-            prev = b;
-        }
+        validate_tempo_block(t, p.duration_ms)?;
     }
     Ok(())
 }

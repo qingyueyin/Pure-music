@@ -2137,6 +2137,27 @@ pub struct WriteTagPayload {
     pub license: Option<String>,
 }
 
+/// 获取或创建音频文件的主标签。若无现有标签则插入新标签后再获取。
+macro_rules! get_or_create_tag {
+    ($tagged_file:expr) => {
+        if let Some(tag) = $tagged_file.primary_tag_mut() {
+            tag
+        } else if let Some(tag) = $tagged_file.first_tag_mut() {
+            tag
+        } else {
+            let tag_type = $tagged_file.primary_tag_type();
+            $tagged_file.insert_tag(Tag::new(tag_type));
+            if let Some(tag) = $tagged_file.primary_tag_mut() {
+                tag
+            } else if let Some(tag) = $tagged_file.first_tag_mut() {
+                tag
+            } else {
+                return Err("failed to create tag".to_string());
+            }
+        }
+    };
+}
+
 /// for Flutter
 /// 通用标签写入函数。only_changed=true 时只写非 None 字段
 pub fn write_audio_tags(
@@ -2159,21 +2180,7 @@ pub fn write_audio_tags(
         Err(err) => return Err(format!("Error opening file: {:?}", err.kind())),
     };
 
-    let tag = if let Some(tag) = tagged_file.primary_tag_mut() {
-        tag
-    } else if let Some(tag) = tagged_file.first_tag_mut() {
-        tag
-    } else {
-        let tag_type = tagged_file.primary_tag_type();
-        tagged_file.insert_tag(Tag::new(tag_type));
-        if let Some(tag) = tagged_file.primary_tag_mut() {
-            tag
-        } else if let Some(tag) = tagged_file.first_tag_mut() {
-            tag
-        } else {
-            return Err("failed to create tag".to_string());
-        }
-    };
+    let tag = get_or_create_tag!(tagged_file);
 
     macro_rules! write_field {
         ($val:expr, $key:expr) => {
@@ -2268,21 +2275,7 @@ pub fn write_lyric_to_path(path: String, lyric: String) -> Result<(), String> {
         Err(err) => return Err(format!("Error opening file: {:?}", err.kind())),
     };
 
-    let tag = if let Some(tag) = tagged_file.primary_tag_mut() {
-        tag
-    } else if let Some(tag) = tagged_file.first_tag_mut() {
-        tag
-    } else {
-        let tag_type = tagged_file.primary_tag_type();
-        tagged_file.insert_tag(Tag::new(tag_type));
-        if let Some(tag) = tagged_file.primary_tag_mut() {
-            tag
-        } else if let Some(tag) = tagged_file.first_tag_mut() {
-            tag
-        } else {
-            return Err("failed to create tag".to_string());
-        }
-    };
+    let tag = get_or_create_tag!(tagged_file);
 
     let _ = tag.remove_key(&ItemKey::Lyrics);
     tag.insert_text(ItemKey::Lyrics, lyric.clone());
@@ -2316,21 +2309,7 @@ pub fn write_audio_cover(path: String, bytes: Vec<u8>) -> Result<(), String> {
         Err(err) => return Err(format!("Error opening file: {:?}", err.kind())),
     };
 
-    let tag = if let Some(tag) = tagged_file.primary_tag_mut() {
-        tag
-    } else if let Some(tag) = tagged_file.first_tag_mut() {
-        tag
-    } else {
-        let tag_type = tagged_file.primary_tag_type();
-        tagged_file.insert_tag(Tag::new(tag_type));
-        if let Some(tag) = tagged_file.primary_tag_mut() {
-            tag
-        } else if let Some(tag) = tagged_file.first_tag_mut() {
-            tag
-        } else {
-            return Err("failed to create tag".to_string());
-        }
-    };
+    let tag = get_or_create_tag!(tagged_file);
 
     tag.remove_picture_type(PictureType::CoverFront);
 
