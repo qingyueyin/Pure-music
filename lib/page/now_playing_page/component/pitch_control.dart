@@ -146,7 +146,7 @@ class _NowPlayingPitchPanelState extends State<NowPlayingPitchPanel> {
           ),
           const SizedBox(height: 8),
           // 音调调节
-          ValueListenableBuilder(
+          ValueListenableBuilder<double>(
             valueListenable: playbackService.pitch,
             builder: (context, pitchValue, _) {
               final canReset = playbackService.isBassFxLoaded &&

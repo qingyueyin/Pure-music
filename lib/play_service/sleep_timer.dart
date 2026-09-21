@@ -13,13 +13,13 @@ class SleepTimerService {
   Timer? _timer;
   DateTime? _endTime;
   VoidCallback? _onExpired;
-  VoidCallback? _onManualPauseWhileExtending;
+  VoidCallback? _onEnterExtending;
+  VoidCallback? _onCancelExtending;
 
   SleepTimerState _state = SleepTimerState.idle;
   final stateNotifier = ValueNotifier<SleepTimerState>(SleepTimerState.idle);
   final remainingNotifier = ValueNotifier<Duration>(Duration.zero);
   final autoExtendNotifier = ValueNotifier<bool>(true);
-  String? _currentSongPath;
 
   SleepTimerState get state => _state;
   bool get isActive => _state != SleepTimerState.idle;
@@ -29,8 +29,12 @@ class SleepTimerService {
     _onExpired = callback;
   }
 
-  void setOnManualPauseWhileExtending(VoidCallback callback) {
-    _onManualPauseWhileExtending = callback;
+  void setOnEnterExtending(VoidCallback callback) {
+    _onEnterExtending = callback;
+  }
+
+  void setOnCancelExtending(VoidCallback callback) {
+    _onCancelExtending = callback;
   }
 
   Duration? get remaining {
@@ -40,12 +44,12 @@ class SleepTimerService {
     return left.isNegative ? Duration.zero : left;
   }
 
-  void start(Duration duration, {String? currentSongPath}) {
+  void start(Duration duration) {
     cancel();
     _endTime = DateTime.now().add(duration);
-    _currentSongPath = currentSongPath;
     _setState(SleepTimerState.counting);
     _updateRemaining();
+    showTextOnSnackBar('睡眠定时 ${formatDuration(duration)}');
 
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       final left = remaining;
@@ -55,10 +59,13 @@ class SleepTimerService {
         if (autoExtendNotifier.value) {
           logger.i('[sleep_timer] expired, entering extending state');
           _setState(SleepTimerState.extending);
+          _onEnterExtending?.call();
+          showTextOnSnackBar('睡眠定时结束，等待当前歌曲播完');
         } else {
           logger.i('[sleep_timer] expired, pausing playback');
           _setState(SleepTimerState.idle);
           _onExpired?.call();
+          showTextOnSnackBar('睡眠定时结束，已暂停播放');
         }
       } else {
         _updateRemaining();
@@ -70,36 +77,35 @@ class SleepTimerService {
   void onSongCompleted() {
     if (!isExtending) return;
     logger.i('[sleep_timer] song completed while extending, pausing');
-    cancel();
+    _cancel();
     _onExpired?.call();
+    showTextOnSnackBar('睡眠定时结束，已暂停播放');
   }
 
   /// 用户手动暂停时调用
   void onManualPause() {
     if (!isExtending) return;
     logger.i('[sleep_timer] manual pause while extending, cancelling');
-    cancel();
-    _onManualPauseWhileExtending?.call();
+    _cancel();
   }
 
   /// 切歌时调用
   void onSongChanged(String newPath) {
-    if (!isExtending) {
-      _currentSongPath = newPath;
-      return;
-    }
-    if (_currentSongPath == newPath) return;
+    if (!isExtending) return;
     logger.i('[sleep_timer] song changed while extending, cancelling');
-    _currentSongPath = newPath;
-    cancel();
-    _onManualPauseWhileExtending?.call();
+    _cancel();
   }
 
   void cancel() {
+    final wasExtending = isExtending;
+    _cancel();
+    if (wasExtending) _onCancelExtending?.call();
+  }
+
+  void _cancel() {
     _timer?.cancel();
     _timer = null;
     _endTime = null;
-    _currentSongPath = null;
     remainingNotifier.value = Duration.zero;
     _setState(SleepTimerState.idle);
   }

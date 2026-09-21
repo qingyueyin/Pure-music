@@ -41,13 +41,17 @@ class SleepBlocker {
   }
 
   void setPageVisible(bool visible) {
+    if (visible == _pageVisible) return;
     logger.i('[sleep_blocker] setPageVisible: $visible (was: $_pageVisible)');
     _pageVisible = visible;
+    reevaluate();
   }
 
   void setPlayerPlaying(bool playing) {
+    if (playing == _playerPlaying) return;
     logger.i('[sleep_blocker] setPlayerPlaying: $playing (was: $_playerPlaying)');
     _playerPlaying = playing;
+    reevaluate();
   }
 
   void block() {
@@ -81,8 +85,10 @@ class SleepBlocker {
 
   /// 页面可见性、播放状态或设置变更时调用，重新评估是否需要阻止
   void reevaluate() {
-    logger.i('[sleep_blocker] reevaluate: _pageVisible=$_pageVisible, _playerPlaying=$_playerPlaying, preventSleep=${AppSettings.instance.preventSleepOnNowPlaying}, _shouldBlock=$_shouldBlock, _blocked=$_blocked');
-    if (_shouldBlock) {
+    final shouldBlock = _shouldBlock;
+    if (shouldBlock == _blocked) return;
+    logger.i('[sleep_blocker] state change: _pageVisible=$_pageVisible, _playerPlaying=$_playerPlaying, preventSleep=${AppSettings.instance.preventSleepOnNowPlaying}, _shouldBlock=$shouldBlock, _blocked=$_blocked');
+    if (shouldBlock) {
       block();
     } else {
       unblock();

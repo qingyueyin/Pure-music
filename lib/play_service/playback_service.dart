@@ -91,6 +91,69 @@ class PlaybackService extends ChangeNotifier {
     return true;
   }
 
+  @visibleForTesting
+  static double rememberedPositionSeconds({
+    required bool enabled,
+    required double position,
+    required double length,
+  }) {
+    if (!enabled) {
+      logger.i('[remember] disabled by setting');
+      return 0.0;
+    }
+    if (!position.isFinite || !length.isFinite) {
+      logger.i('[remember] position or length not finite');
+      return 0.0;
+    }
+    if (length <= 1.0 || position <= 1.0) {
+      logger.i('[remember] too early: length=$length, position=$position');
+      return 0.0;
+    }
+    if (length - position <= 1.0) {
+      logger.i('[remember] too close to end: remaining=${length - position}s');
+      return 0.0;
+    }
+    final remembered = position.clamp(0.0, length).toDouble();
+    logger.i('[remember] will save position=$remembered (length=$length)');
+    return remembered;
+  }
+
+  @visibleForTesting
+  static double restoredPositionSeconds({
+    required bool enabled,
+    required double savedPosition,
+    required double length,
+    required String savedAudioPath,
+    required String restoredAudioPath,
+  }) {
+    if (savedAudioPath.isEmpty || savedAudioPath != restoredAudioPath) {
+      return 0.0;
+    }
+    if (!enabled) {
+      logger.i('[restore] disabled by setting');
+      return 0.0;
+    }
+    if (!savedPosition.isFinite || savedPosition <= 1.0) {
+      logger.i('[restore] savedPosition too small: $savedPosition');
+      return 0.0;
+    }
+    if (!length.isFinite || length <= 1.0) {
+      logger.i('[restore] invalid length: $length');
+      return 0.0;
+    }
+    if (length - savedPosition <= 1.0) {
+      logger.i(
+        '[restore] too close to end: saved=$savedPosition, length=$length, remaining=${length - savedPosition}',
+      );
+      return 0.0;
+    }
+    final restored = savedPosition.clamp(0.0, length).toDouble();
+    logger.i(
+      '[restore] will seek to position=$restored (saved=$savedPosition, length=$length)',
+    );
+    return restored;
+  }
+
   PlaybackService(this.playService) {
     unawaited(LastFmService.instance.ensureLoaded());
     _player.onExclusiveModeChanged = (exclusive) {
@@ -111,18 +174,20 @@ class PlaybackService extends ChangeNotifier {
       _playerState.value = event;
       if (event == PlayerState.playing) {
         SleepBlocker.instance.setPlayerPlaying(true);
-        SleepBlocker.instance.reevaluate();
       } else if (event == PlayerState.completed) {
+        final wasExtending = SleepTimerService.instance.isExtending;
         SleepTimerService.instance.onSongCompleted();
+        if (wasExtending) shouldAutoAdvance = false;
+        if (_player.playerState == PlayerState.stopped) {
+          SleepBlocker.instance.setPlayerPlaying(false);
+        }
       } else if (event == PlayerState.paused) {
         SleepBlocker.instance.setPlayerPlaying(false);
-        SleepBlocker.instance.reevaluate();
         if (SleepTimerService.instance.isExtending) {
           SleepTimerService.instance.onManualPause();
         }
       } else if (event == PlayerState.stopped) {
         SleepBlocker.instance.setPlayerPlaying(false);
-        SleepBlocker.instance.reevaluate();
       }
       _notifyPositionSync();
       _syncSmtcPositionTimer();
@@ -181,9 +246,12 @@ class PlaybackService extends ChangeNotifier {
       prepareAfterCompletion: _rebuildGaplessPreparation,
     );
 
-    SleepTimerService.instance.setOnExpired(pause);
-    SleepTimerService.instance.setOnManualPauseWhileExtending(() {
-      showTextOnSnackBar('睡眠定时已取消', variant: ToastVariant.info);
+    SleepTimerService.instance.setOnExpired(_pauseForSleepTimer);
+    SleepTimerService.instance.setOnEnterExtending(
+      _abortQueuedTransitionsForSleepTimer,
+    );
+    SleepTimerService.instance.setOnCancelExtending(() {
+      if (!_closed) _rebuildGaplessPreparation();
     });
 
     Future.microtask(() async {
@@ -658,6 +726,7 @@ class PlaybackService extends ChangeNotifier {
 
   SmartTransitionTarget? _currentSmartTarget() {
     if (_closed ||
+        SleepTimerService.instance.isExtending ||
         _pref.transitionMode != TransitionMode.smart ||
         _player.playerState != PlayerState.playing) {
       return null;
@@ -751,6 +820,10 @@ class PlaybackService extends ChangeNotifier {
 
   void _onSmartTransitionCommit(SmartTransitionCommit commit) {
     if (_closed || !_isCurrentSmartTarget(commit.target)) return;
+    if (SleepTimerService.instance.isExtending) {
+      SleepTimerService.instance.onSongCompleted();
+      return;
+    }
     final previousAudio = nowPlaying;
     if (previousAudio != null) {
       _onPositionUpdate(previousAudio.duration.toDouble());
@@ -766,7 +839,35 @@ class PlaybackService extends ChangeNotifier {
     );
   }
 
+  void _abortQueuedTransitionsForSleepTimer() {
+    _smartTransitions.cancel('sleep_timer_extending');
+    _player.discardQueuedGaplessSource();
+    _pendingGaplessTransition = null;
+  }
+
+  void _pauseForSleepTimer() {
+    try {
+      logger.i('[action] pauseForSleepTimer');
+      _abortQueuedTransitionsForSleepTimer();
+      if (_player.playerState == PlayerState.playing ||
+          _player.playerState == PlayerState.stalled) {
+        _player.pause();
+      }
+      unawaited(_smtc.updateState(SMTCState.paused));
+      playService.desktopLyricService.canSendMessage.then((canSend) {
+        if (!canSend) return;
+        playService.desktopLyricService.sendPlayerStateMessage(false);
+      });
+    } catch (err, trace) {
+      logger.e('睡眠定时暂停失败', error: err, stackTrace: trace);
+    }
+  }
+
   void _rebuildGaplessPreparation() {
+    if (SleepTimerService.instance.isExtending) {
+      _pendingGaplessTransition = null;
+      return;
+    }
     if (_invalidateGaplessPreparation()) return;
     if (_pref.transitionMode == TransitionMode.smart) {
       if (!_closed) _smartTransitions.rebuild();
@@ -817,6 +918,10 @@ class PlaybackService extends ChangeNotifier {
         pending.targetIndex >= items.length ||
         !identical(items[pending.targetIndex], pending.audio)) {
       _pendingGaplessTransition = null;
+      if (SleepTimerService.instance.isExtending) {
+        SleepTimerService.instance.onSongCompleted();
+        return;
+      }
       _loadAndPlayInDirection(
         startIndex: (_playlistIndex ?? -1) + 1,
         playlist: items,
@@ -827,6 +932,10 @@ class PlaybackService extends ChangeNotifier {
     }
 
     _pendingGaplessTransition = null;
+    if (SleepTimerService.instance.isExtending) {
+      SleepTimerService.instance.onSongCompleted();
+      return;
+    }
     final previousAudio = nowPlaying;
     if (previousAudio != null) {
       _onPositionUpdate(previousAudio.duration.toDouble());
@@ -1390,6 +1499,7 @@ class PlaybackService extends ChangeNotifier {
     _pref.lastOriginalPlaylistPaths = shuffle.value
         ? _playlistBackup.map((e) => e.path).toList()
         : const [];
+    _pref.lastPositionSeconds = _rememberedPositionSeconds();
     _savePlaybackOnly();
   }
 
@@ -1415,11 +1525,46 @@ class PlaybackService extends ChangeNotifier {
     _pref.lastPlaylistIndex = 0;
     _pref.lastShuffleActive = false;
     _pref.lastOriginalPlaylistPaths = const [];
+    _pref.lastPositionSeconds = 0.0;
     _savePlaybackOnly();
+  }
+
+  double _rememberedPositionSeconds() {
+    return rememberedPositionSeconds(
+      enabled: AppSettings.instance.rememberPlaybackPosition,
+      position: position,
+      length: length,
+    );
+  }
+
+  void persistPlaybackPositionForExit() {
+    if (_closed) return;
+    if (!AppSettings.instance.rememberPlaybackPosition) {
+      if (_pref.lastPositionSeconds != 0.0) {
+        _pref.lastPositionSeconds = 0.0;
+        _savePlaybackOnly();
+      }
+      logger.i('[persist] rememberPlaybackPosition disabled, cleared position');
+      return;
+    }
+    final currentAudio = nowPlaying;
+    if (currentAudio == null || _playlist.value.isEmpty) {
+      _pref.lastPositionSeconds = 0.0;
+      _savePlaybackOnly();
+      logger.i('[persist] no audio playing, cleared position');
+      return;
+    }
+    final remembered = _rememberedPositionSeconds();
+    _pref.lastPositionSeconds = remembered;
+    _savePlaybackOnly();
+    logger.i(
+      '[persist] saved position: $remembered (from pos=$position, len=$length)',
+    );
   }
 
   Future<void> _restoreLastSession() async {
     final lastPath = _pref.lastAudioPath;
+    final savedPosition = _pref.lastPositionSeconds;
     if (lastPath.isEmpty) return;
 
     for (int i = 0; i < 10; i++) {
@@ -1491,6 +1636,24 @@ class PlaybackService extends ChangeNotifier {
         path: restoredAudio.path,
       );
       await _smtc.updateState(SMTCState.paused);
+      if (_closed || !identical(nowPlaying, restoredAudio)) return;
+      final restoreTo = restoredPositionSeconds(
+        enabled: AppSettings.instance.rememberPlaybackPosition,
+        savedPosition: savedPosition,
+        length: _player.length,
+        savedAudioPath: lastPath,
+        restoredAudioPath: restoredAudio.path,
+      );
+      logger.i(
+        '[restore] rememberPlaybackPosition=${AppSettings.instance.rememberPlaybackPosition}, '
+        'savedPosition=${_pref.lastPositionSeconds}, '
+        'playerLength=${_player.length}, '
+        'restoreTo=$restoreTo',
+      );
+      if (restoreTo > 0) {
+        _player.seek(restoreTo);
+      }
+      _schedulePositionSyncBurst();
       _syncSmtcPositionTimer();
       _rebuildGaplessPreparation();
     } catch (err) {

@@ -12,6 +12,8 @@ import 'package:pure_music/play_service/desktop_lyric_service.dart';
 import 'package:pure_music/play_service/lyric_service.dart';
 import 'package:pure_music/play_service/playback_service.dart';
 
+export 'package:pure_music/play_service/playback_service.dart';
+
 class PlayService {
   PlaybackService? _playbackService;
   LyricService? _lyricService;

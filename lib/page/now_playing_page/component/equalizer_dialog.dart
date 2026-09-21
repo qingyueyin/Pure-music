@@ -5,7 +5,6 @@ import 'package:pure_music/core/audio_dsp_settings.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/play_service/play_service.dart';
-import 'package:pure_music/play_service/playback_service.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/core/hotkeys.dart';
 import 'dart:io';

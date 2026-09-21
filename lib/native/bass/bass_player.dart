@@ -2161,6 +2161,17 @@ class BassPlayer {
     _unreportedGaplessTransition = null;
     _cancelTransition();
     if (transition != null) return transition;
+    _dropQueuedGaplessSource();
+    return null;
+  }
+
+  void discardQueuedGaplessSource() {
+    _unreportedGaplessTransition = null;
+    _cancelTransition();
+    _dropQueuedGaplessSource();
+  }
+
+  void _dropQueuedGaplessSource() {
     final queued = _queuedStream;
     final queuedWasAttached = _queuedStreamAttached;
     _queuedStream = null;
@@ -2170,13 +2181,12 @@ class BassPlayer {
     _queuedReplayGainDb = null;
     _queuedTransitionId = null;
     _queuedTransitionMode = null;
-    if (queued == null) return null;
+    if (queued == null) return;
     if (queuedWasAttached) {
       _bassMix?.channelRemove(queued);
     } else {
       _bass.BASS_StreamFree(queued);
     }
-    return null;
   }
 
   bool _attachQueuedStream(int generation, int stream) {
@@ -3282,7 +3292,11 @@ class BassPlayer {
             'handle is a decoding channel, so cannot be played or paused.',
           );
         case bass.BASS_ERROR_NOPLAY:
-          throw const FormatException('The channel is not playing.');
+          _playerStateStreamController.add(playerState);
+          _positionUpdater?.cancel();
+          _emitPositionSnapshot();
+          _logAudioState('pause(noplay)');
+          return;
       }
     }
 

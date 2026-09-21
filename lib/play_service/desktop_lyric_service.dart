@@ -8,7 +8,6 @@ import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/lyric/ttml.dart' show Ttml;
 import 'package:pure_music/play_service/play_service.dart';
-import 'package:pure_music/play_service/playback_service.dart';
 import 'package:pure_music/play_service/lyric_service.dart'
     show
         lyricHighlightCatchUpDurationMs,
@@ -945,8 +944,7 @@ class DesktopLyricService extends ChangeNotifier {
       translationPosition: settings.desktopUseVerticalDisplayMode
           ? settings.desktopLyricTranslationPosition
           : 1,
-      lyricTextAlign:
-          showDoubleLine && settings.desktopLyricTextAlign == 3
+      lyricTextAlign: showDoubleLine && settings.desktopLyricTextAlign == 3
           ? 3
           : settings.desktopLyricTextAlign.clamp(0, 2).toInt(),
       lyricAnimation: settings.desktopLyricAnimation.index,
