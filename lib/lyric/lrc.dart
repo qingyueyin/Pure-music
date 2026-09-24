@@ -403,6 +403,7 @@ class Lrc extends Lyric {
 
   static bool _isAnnotationTrack(String primaryText, String text) {
     if (RegExp(r'[a-zA-Z]+[1-6]').hasMatch(text)) return true;
+    if (_hasHangul(primaryText) && !_hasAsianChars(text)) return true;
     if (!_hasAsianChars(primaryText) && !_hasCyrillic(primaryText)) {
       return false;
     }
@@ -1681,8 +1682,44 @@ class Lrc extends Lyric {
       if (kanaIndices.length == 1) return kanaIndices.single;
       if (cyrillicIndices.length == 1) return cyrillicIndices.single;
 
-      // 没有更强证据时按行序处理：同组第一行是主歌词。
-      return 0;
+      final hangulIndices = timedIndices
+          .where((index) => _hasHangul(lyricText(contents[index])))
+          .toList();
+      if (hangulIndices.length == 1) return hangulIndices.single;
+
+      final asianIndices = timedIndices
+          .where((index) => _hasAsianChars(lyricText(contents[index])))
+          .toList();
+      final nonAsianIndices = timedIndices
+          .where((index) => !_hasAsianChars(lyricText(contents[index])))
+          .toList();
+      if (asianIndices.isNotEmpty && nonAsianIndices.isNotEmpty) {
+        if (nonAsianIndices.length == 1) {
+          final nonAsianText = lyricText(contents[nonAsianIndices.single]);
+          return _isRomanizationStatic(nonAsianText)
+              ? asianIndices.first
+              : nonAsianIndices.single;
+        }
+        if (nonAsianIndices.every(
+          (index) => _isRomanizationStatic(lyricText(contents[index])),
+        )) {
+          return asianIndices.first;
+        }
+      }
+
+      // 同组都是拉丁文本时，逐词标签更多的通常是完整原文。
+      var bestIndex = timedIndices.first;
+      var bestScore = -1;
+      for (final index in timedIndices) {
+        final tagCount = wordTagRe.allMatches(contents[index]).length;
+        final textLength = lyricText(contents[index]).runes.length;
+        final score = tagCount * 1000 + textLength;
+        if (score > bestScore) {
+          bestIndex = index;
+          bestScore = score;
+        }
+      }
+      return bestIndex;
     }
 
     // 从整首歌的 2/3 行组中均匀抽取代表行，避免单个分组决定整首歌的角色。
@@ -1725,6 +1762,11 @@ class Lrc extends Lyric {
         for (int i = 0; i < contents.length; i++) {
           final role = i == primaryIndex
               ? kOriginal
+              : (hasTimedContent(contents[i]) &&
+                    !_hasAsianChars(lyricText(contents[i])) &&
+                    lyricText(contents[i]).runes.length <= 4 &&
+                    _isRomanizationStatic(lyricText(contents[i])))
+              ? kRomanization
               : (_isAnnotationTrack(
                       lyricText(contents[primaryIndex]),
                       lyricText(contents[i]),
