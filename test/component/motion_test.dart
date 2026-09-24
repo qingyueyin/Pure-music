@@ -300,18 +300,20 @@ void main() {
   ) async {
     Widget build(double progress) {
       return MaterialApp(
-        home: SizedBox(
-          width: 400,
-          height: 80,
-          child: SpringRailScaffold(
-            expanded: true,
-            progress: progress,
-            collapsedWidth: 80,
-            expandedWidth: 240,
-            rail: const SizedBox.expand(),
-            body: const ColoredBox(
-              key: ValueKey('threshold-body'),
-              color: Color(0xFFFFFFFF),
+        home: Center(
+          child: SizedBox(
+            width: 400,
+            height: 80,
+            child: SpringRailScaffold(
+              expanded: true,
+              progress: progress,
+              collapsedWidth: 80,
+              expandedWidth: 240,
+              rail: const SizedBox.expand(),
+              body: const ColoredBox(
+                key: ValueKey('threshold-body'),
+                color: Color(0xFFFFFFFF),
+              ),
             ),
           ),
         ),
