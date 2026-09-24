@@ -38,7 +38,7 @@ final class AudioReactiveFlowResponse {
 
 double audioReactiveFlowBeatEnergy(AudioReactiveFlowResponse response) {
   final weightedEnergy =
-      response.low * 0.52 + response.mid * 0.30 + response.high * 0.18;
+      response.low * 0.52 + response.mid * 0.40 + response.high * 0.08;
   return math.pow(weightedEnergy.clamp(0.0, 1.0), 0.62).toDouble();
 }
 

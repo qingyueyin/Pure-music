@@ -95,9 +95,9 @@ double flowingLightBreathingScale(
   double bassTransient = 0.0,
 }) {
   return (1.0 +
-          audioLevel.clamp(0.0, 1.0) * 0.11 +
-          bassTransient.clamp(0.0, 1.0) * 0.07)
-      .clamp(1.0, 1.18)
+          audioLevel.clamp(0.0, 1.0) * 0.04 +
+          bassTransient.clamp(0.0, 1.0) * 0.06)
+      .clamp(1.0, 1.10)
       .toDouble();
 }
 
@@ -111,7 +111,7 @@ double flowingLightWarpStrength(
   final transient = bassTransient.isFinite
       ? bassTransient.clamp(0.0, 1.0).toDouble()
       : 0.0;
-  return (level * 0.052 + transient * 0.038).clamp(0.0, 0.09).toDouble();
+  return (level * 0.014 + transient * 0.042).clamp(0.0, 0.055).toDouble();
 }
 
 double flowingLightArtworkOpacityCeiling() {
