@@ -295,6 +295,42 @@ void main() {
     expect(tester.getSize(find.byKey(const ValueKey('body'))).width, 320);
   });
 
+  testWidgets('sidebar expansion commits the narrow layout at 80 percent', (
+    tester,
+  ) async {
+    Widget build(double progress) {
+      return MaterialApp(
+        home: SizedBox(
+          width: 400,
+          height: 80,
+          child: SpringRailScaffold(
+            expanded: true,
+            progress: progress,
+            collapsedWidth: 80,
+            expandedWidth: 240,
+            rail: const SizedBox.expand(),
+            body: const ColoredBox(
+              key: ValueKey('threshold-body'),
+              color: Color(0xFFFFFFFF),
+            ),
+          ),
+        ),
+      );
+    }
+
+    await tester.pumpWidget(build(0.79));
+    expect(
+      tester.getSize(find.byKey(const ValueKey('threshold-body'))).width,
+      320,
+    );
+
+    await tester.pumpWidget(build(0.8));
+    expect(
+      tester.getSize(find.byKey(const ValueKey('threshold-body'))).width,
+      160,
+    );
+  });
+
   testWidgets('sidebar animation preserves body state across layout changes', (
     tester,
   ) async {

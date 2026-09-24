@@ -174,6 +174,105 @@ class _SpringProgressState extends State<SpringProgress>
   }
 }
 
+/// Horizontal anchor for [SidebarGlue].
+enum SidebarGlueAnchor { left, center, right }
+
+/// Rail spring metrics exposed to body descendants during sidebar motion.
+///
+/// Body layout width stays frozen while the rail springs, so elements pinned
+/// to the layout's right/center edge would jump when the narrow layout commits.
+/// [SidebarGlue] reads these offsets to land them on the visual edge instead.
+class SidebarGlueScope extends InheritedWidget {
+  const SidebarGlueScope({
+    super.key,
+    required this.railWidth,
+    required this.layoutRailWidth,
+    required super.child,
+  });
+
+  /// Current rail width (follows the spring every frame).
+  final double railWidth;
+
+  /// Rail width the body is currently laid out against (commits at rest only).
+  final double layoutRailWidth;
+
+  /// Translation that puts a layout-right-edge element on the visual right edge.
+  double get rightGlueOffset => layoutRailWidth - railWidth;
+
+  /// Translation that re-centers a layout-centered element in the visual body.
+  double get centerGlueOffset => rightGlueOffset * 0.5;
+
+  static SidebarGlueScope? maybeOf(BuildContext context) {
+    return context.dependOnInheritedWidgetOfExactType<SidebarGlueScope>();
+  }
+
+  @override
+  bool updateShouldNotify(SidebarGlueScope oldWidget) {
+    return railWidth != oldWidget.railWidth ||
+        layoutRailWidth != oldWidget.layoutRailWidth;
+  }
+}
+
+/// Keeps an element glued to its visual edge while the sidebar rail springs.
+///
+/// Wrap right-edge controls with [SidebarGlueAnchor.right] and centered
+/// overlays with [SidebarGlueAnchor.center]. No-op outside [SidebarGlueScope].
+class SidebarGlue extends StatelessWidget {
+  const SidebarGlue({super.key, required this.anchor, required this.child});
+
+  final SidebarGlueAnchor anchor;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final scope = SidebarGlueScope.maybeOf(context);
+    if (scope == null) return child;
+    final offset = switch (anchor) {
+      SidebarGlueAnchor.left => 0.0,
+      SidebarGlueAnchor.center => scope.centerGlueOffset,
+      SidebarGlueAnchor.right => scope.rightGlueOffset,
+    };
+    return Transform.translate(offset: Offset(offset, 0), child: child);
+  }
+}
+
+/// Scales the page surface with the visible body while the sidebar rail moves.
+class SidebarLayoutTransform extends StatelessWidget {
+  const SidebarLayoutTransform({
+    super.key,
+    required this.child,
+    this.enabled = true,
+  });
+
+  final Widget child;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!enabled) return child;
+    final scope = SidebarGlueScope.maybeOf(context);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final layoutWidth = constraints.maxWidth;
+        final visibleWidth = scope == null
+            ? layoutWidth
+            : (layoutWidth + scope.layoutRailWidth - scope.railWidth).clamp(
+                0.0,
+                layoutWidth,
+              );
+        final scale = layoutWidth <= 0.0
+            ? 1.0
+            : (visibleWidth / layoutWidth).clamp(0.01, 1.0);
+        return Transform(
+          alignment: Alignment.topLeft,
+          transform: Matrix4.diagonal3Values(scale, 1.0, 1.0),
+          child: child,
+        );
+      },
+    );
+  }
+}
+
 /// Sprung rail + body without relaying out the body every frame.
 ///
 /// The rail width follows [progress]. While the spring is in flight the body
@@ -198,7 +297,7 @@ class SpringRailScaffold extends StatelessWidget {
   final Widget rail;
   final Widget body;
 
-  static const _restEpsilon = 0.001;
+  static const _layoutCommitProgress = 0.8;
 
   @override
   Widget build(BuildContext context) {
@@ -206,7 +305,7 @@ class SpringRailScaffold extends StatelessWidget {
       builder: (context, constraints) {
         final t = progress.clamp(0.0, 1.0);
         final railWidth = collapsedWidth + (expandedWidth - collapsedWidth) * t;
-        final layoutRailWidth = expanded && t >= 1.0 - _restEpsilon
+        final layoutRailWidth = expanded && t >= _layoutCommitProgress
             ? expandedWidth
             : collapsedWidth;
         final bodyLayoutWidth = math.max(
@@ -214,32 +313,36 @@ class SpringRailScaffold extends StatelessWidget {
           constraints.maxWidth - layoutRailWidth,
         );
         final visualBodyWidth = math.max(0.0, constraints.maxWidth - railWidth);
-        return Stack(
-          clipBehavior: Clip.hardEdge,
-          children: [
-            Positioned(
-              left: railWidth,
-              top: 0,
-              bottom: 0,
-              width: visualBodyWidth,
-              // Keep the body mounted while its layout width changes.
-              child: ClipRect(
-                child: OverflowBox(
-                  alignment: Alignment.topLeft,
-                  minWidth: bodyLayoutWidth,
-                  maxWidth: bodyLayoutWidth,
-                  child: body,
+        return SidebarGlueScope(
+          railWidth: railWidth,
+          layoutRailWidth: layoutRailWidth,
+          child: Stack(
+            clipBehavior: Clip.hardEdge,
+            children: [
+              Positioned(
+                left: railWidth,
+                top: 0,
+                bottom: 0,
+                width: visualBodyWidth,
+                // Keep the body mounted while its layout width changes.
+                child: ClipRect(
+                  child: OverflowBox(
+                    alignment: Alignment.topLeft,
+                    minWidth: bodyLayoutWidth,
+                    maxWidth: bodyLayoutWidth,
+                    child: body,
+                  ),
                 ),
               ),
-            ),
-            Positioned(
-              left: 0,
-              top: 0,
-              bottom: 0,
-              width: railWidth,
-              child: rail,
-            ),
-          ],
+              Positioned(
+                left: 0,
+                top: 0,
+                bottom: 0,
+                width: railWidth,
+                child: rail,
+              ),
+            ],
+          ),
         );
       },
     );
