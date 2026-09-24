@@ -56,10 +56,22 @@ Color _resolveDynamicColor(ColorScheme scheme) {
 }
 
 final Map<String, double> _backgroundLuminanceCache = {};
+const _backgroundLuminanceCacheLimit = 24;
+
+void _cacheBackgroundLuminance(String path, double luminance) {
+  _backgroundLuminanceCache.remove(path);
+  _backgroundLuminanceCache[path] = luminance;
+  if (_backgroundLuminanceCache.length > _backgroundLuminanceCacheLimit) {
+    _backgroundLuminanceCache.remove(_backgroundLuminanceCache.keys.first);
+  }
+}
 
 Future<double> _resolveBackgroundLuminance(String path) async {
   final cached = _backgroundLuminanceCache[path];
-  if (cached != null) return cached;
+  if (cached != null) {
+    _cacheBackgroundLuminance(path, cached);
+    return cached;
+  }
   Codec? codec;
   try {
     final bytes = await File(path).readAsBytes();
@@ -78,13 +90,13 @@ Future<double> _resolveBackgroundLuminance(String path) async {
         sum += 0.2126 * r + 0.7152 * g + 0.0722 * b;
       }
       final luminance = sum / (pixels.length / 4);
-      _backgroundLuminanceCache[path] = luminance;
+      _cacheBackgroundLuminance(path, luminance);
       return luminance;
     } finally {
       image.dispose();
     }
   } catch (_) {
-    _backgroundLuminanceCache[path] = 0.5;
+    _cacheBackgroundLuminance(path, 0.5);
     return 0.5;
   } finally {
     codec?.dispose();
@@ -126,7 +138,7 @@ class _AppBackgroundState extends State<_AppBackground> {
   Future<void> _resolveLuminance() async {
     final imagePath = widget.imagePath;
     if (imagePath == null) {
-      setState(() => _imageLuminance = 0.5);
+      if (mounted) setState(() => _imageLuminance = 0.5);
       return;
     }
     final luminance = await _resolveBackgroundLuminance(imagePath);
