@@ -28,74 +28,77 @@ class _MiniNowPlayingState extends State<MiniNowPlaying> {
 
   @override
   Widget build(BuildContext context) {
-    return ResponsiveBuilder(
-      builder: (context, screenType) {
-        return Align(
-          alignment: Alignment.bottomCenter,
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              8.0,
-              0,
-              8.0,
-              screenType == ScreenType.small ? 8.0 : 32.0,
-            ),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 600.0),
-              child: AnimatedScale(
-                scale: _dragActive ? 1.04 : 1.0,
-                duration: const Duration(milliseconds: 180),
-                curve: Curves.easeOutCubic,
-                child: SizedBox(
-                  height: 64.0,
-                  width: double.infinity,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      borderRadius: AppRadius.smCircular,
-                      boxShadow: kElevationToShadow[4],
-                    ),
-                    child: ClipRRect(
-                      borderRadius: AppRadius.smCircular,
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          return RectangleProgressIndicator(
-                            size: Size(
-                              constraints.maxWidth,
-                              constraints.maxHeight,
-                            ),
-                            onSeek: (fraction) {
-                              final playbackService =
-                                  PlayService.instance.playbackService;
-                              final length = playbackService.length;
-                              if (length <= 0 ||
-                                  playbackService.nowPlaying == null) {
-                                return;
-                              }
-                              playbackService.seek(fraction * length);
-                            },
-                            onDragActiveChanged: (active) {
-                              if (mounted && _dragActive != active) {
-                                setState(() => _dragActive = active);
-                              }
-                            },
-                            onDragPreview: (fraction) {
-                              if (!mounted) return;
-                              if (_dragPreviewFraction == fraction) return;
-                              setState(() => _dragPreviewFraction = fraction);
-                            },
-                            child: _NowPlayingForeground(
-                              dragPreviewFraction: _dragPreviewFraction,
-                            ),
-                          );
-                        },
+    return SidebarGlue(
+      anchor: SidebarGlueAnchor.center,
+      child: ResponsiveBuilder(
+        builder: (context, screenType) {
+          return Align(
+            alignment: Alignment.bottomCenter,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                8.0,
+                0,
+                8.0,
+                screenType == ScreenType.small ? 8.0 : 32.0,
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 600.0),
+                child: AnimatedScale(
+                  scale: _dragActive ? 1.04 : 1.0,
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  child: SizedBox(
+                    height: 64.0,
+                    width: double.infinity,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: AppRadius.smCircular,
+                        boxShadow: kElevationToShadow[4],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: AppRadius.smCircular,
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            return RectangleProgressIndicator(
+                              size: Size(
+                                constraints.maxWidth,
+                                constraints.maxHeight,
+                              ),
+                              onSeek: (fraction) {
+                                final playbackService =
+                                    PlayService.instance.playbackService;
+                                final length = playbackService.length;
+                                if (length <= 0 ||
+                                    playbackService.nowPlaying == null) {
+                                  return;
+                                }
+                                playbackService.seek(fraction * length);
+                              },
+                              onDragActiveChanged: (active) {
+                                if (mounted && _dragActive != active) {
+                                  setState(() => _dragActive = active);
+                                }
+                              },
+                              onDragPreview: (fraction) {
+                                if (!mounted) return;
+                                if (_dragPreviewFraction == fraction) return;
+                                setState(() => _dragPreviewFraction = fraction);
+                              },
+                              child: _NowPlayingForeground(
+                                dragPreviewFraction: _dragPreviewFraction,
+                              ),
+                            );
+                          },
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }

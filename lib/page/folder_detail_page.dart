@@ -84,10 +84,11 @@ class _FolderDetailPageState extends State<FolderDetailPage> {
           ? '${_contentList.length} 首乐曲'
           : '${contentList.length} / ${_contentList.length} 首乐曲',
       secondaryContent: contentList,
-      secondaryContentBuilder: (context, item, i, msc, _) => AudioTile(
+      secondaryContentBuilder: (context, item, i, msc, view) => AudioTile(
         audioIndex: i,
         playlist: contentList,
         multiSelectController: msc,
+        view: view,
       ),
       enableShufflePlay: canPlaySongs,
       enableSortMethod: canSortSongs,

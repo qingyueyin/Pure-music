@@ -127,38 +127,41 @@ class _ListLocateButtonsState extends State<ListLocateButtons> {
             return Positioned(
               right: right,
               bottom: bottom,
-              child: Listener(
-                onPointerSignal: (event) {
-                  if (event is PointerScrollEvent) {
-                    _forwardWheelToList(event.scrollDelta.dy);
-                  }
-                },
-                child: TweenAnimationBuilder<double>(
-                  key: ValueKey(nowPlayingPath),
-                  tween: Tween(begin: 0.0, end: 1.0),
-                  duration: MotionDuration.fast,
-                  curve: MotionCurve.standard,
-                  builder: (context, t, child) => Opacity(
-                    opacity: t,
-                    child: Transform.scale(
-                      scale: reduceMotion ? 1.0 : 0.7 + t * 0.3,
-                      filterQuality: FilterQuality.low,
-                      child: child,
-                    ),
-                  ),
-                  child: IconButton.filledTonal(
-                    tooltip: '定位正在播放',
-                    onPressed: () => widget.onScrollToIndex?.call(targetAt),
-                    style: ButtonStyle(
-                      fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
-                      padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-                      shape: WidgetStatePropertyAll(
-                        RoundedRectangleBorder(
-                          borderRadius: AppRadius.smCircular,
-                        ),
+              child: SidebarGlue(
+                anchor: SidebarGlueAnchor.right,
+                child: Listener(
+                  onPointerSignal: (event) {
+                    if (event is PointerScrollEvent) {
+                      _forwardWheelToList(event.scrollDelta.dy);
+                    }
+                  },
+                  child: TweenAnimationBuilder<double>(
+                    key: ValueKey(nowPlayingPath),
+                    tween: Tween(begin: 0.0, end: 1.0),
+                    duration: MotionDuration.fast,
+                    curve: MotionCurve.standard,
+                    builder: (context, t, child) => Opacity(
+                      opacity: t,
+                      child: Transform.scale(
+                        scale: reduceMotion ? 1.0 : 0.7 + t * 0.3,
+                        filterQuality: FilterQuality.low,
+                        child: child,
                       ),
                     ),
-                    icon: const Icon(Symbols.my_location),
+                    child: IconButton.filledTonal(
+                      tooltip: '定位正在播放',
+                      onPressed: () => widget.onScrollToIndex?.call(targetAt),
+                      style: ButtonStyle(
+                        fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
+                        padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+                        shape: WidgetStatePropertyAll(
+                          RoundedRectangleBorder(
+                            borderRadius: AppRadius.smCircular,
+                          ),
+                        ),
+                      ),
+                      icon: const Icon(Symbols.my_location),
+                    ),
                   ),
                 ),
               ),
@@ -175,41 +178,46 @@ class _ListLocateButtonsState extends State<ListLocateButtons> {
         final bottom = screenType == ScreenType.small ? 88.0 : 112.0;
         final right = screenType == ScreenType.small ? 88.0 : 128.0;
         final reduceMotion = MediaQuery.disableAnimationsOf(context);
-        return Positioned(
+return Positioned(
           right: right,
           bottom: bottom + 56.0,
-          child: Listener(
-            onPointerSignal: (event) {
-              if (event is PointerScrollEvent) {
-                _forwardWheelToList(event.scrollDelta.dy);
-              }
-            },
-            child: TweenAnimationBuilder<double>(
-              tween: Tween(begin: 0.0, end: _showScrollToTop ? 1.0 : 0.0),
-              duration: MotionDuration.fast,
-              curve: MotionCurve.standard,
-              builder: (context, t, child) => IgnorePointer(
-                ignoring: t <= 0.01,
-                child: Opacity(
-                  opacity: t,
-                  child: Transform.scale(
-                    scale: reduceMotion ? 1.0 : 0.7 + t * 0.3,
-                    filterQuality: FilterQuality.low,
-                    child: child,
+          child: SidebarGlue(
+            anchor: SidebarGlueAnchor.right,
+            child: Listener(
+              onPointerSignal: (event) {
+                if (event is PointerScrollEvent) {
+                  _forwardWheelToList(event.scrollDelta.dy);
+                }
+              },
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0.0, end: _showScrollToTop ? 1.0 : 0.0),
+                duration: MotionDuration.fast,
+                curve: MotionCurve.standard,
+                builder: (context, t, child) => IgnorePointer(
+                  ignoring: t <= 0.01,
+                  child: Opacity(
+                    opacity: t,
+                    child: Transform.scale(
+                      scale: reduceMotion ? 1.0 : 0.7 + t * 0.3,
+                      filterQuality: FilterQuality.low,
+                      child: child,
+                    ),
                   ),
                 ),
-              ),
-              child: IconButton.filledTonal(
-                tooltip: '回到顶部',
-                onPressed: () => _smoothScrollTo(0.0),
-                style: ButtonStyle(
-                  fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
-                  padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-                  shape: WidgetStatePropertyAll(
-                    RoundedRectangleBorder(borderRadius: AppRadius.smCircular),
+                child: IconButton.filledTonal(
+                  tooltip: '回到顶部',
+                  onPressed: () => _smoothScrollTo(0.0),
+                  style: ButtonStyle(
+                    fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
+                    padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+                    shape: WidgetStatePropertyAll(
+                      RoundedRectangleBorder(
+                        borderRadius: AppRadius.smCircular,
+                      ),
+                    ),
                   ),
+                  icon: const Icon(Symbols.vertical_align_top),
                 ),
-                icon: const Icon(Symbols.vertical_align_top),
               ),
             ),
           ),

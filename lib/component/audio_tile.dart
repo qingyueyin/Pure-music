@@ -4,6 +4,7 @@ import 'package:pure_music/component/danger_confirm_dialog.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/scroll_aware_future_builder.dart';
 import 'package:pure_music/core/cache.dart';
+import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/core/design_tokens.dart';
@@ -63,6 +64,7 @@ class AudioTile extends StatefulWidget {
     this.action,
     this.multiSelectController,
     this.onRemoveFromPlaylist,
+    this.view = ContentView.list,
   });
 
   static const double defaultLeadingWidth = 32;
@@ -76,6 +78,7 @@ class AudioTile extends StatefulWidget {
   final Widget? action;
   final MultiSelectController? multiSelectController;
   final FutureOr<void> Function(Audio audio)? onRemoveFromPlaylist;
+  final ContentView view;
 
   @override
   State<AudioTile> createState() => _AudioTileState();
@@ -494,8 +497,8 @@ class _AudioTileState extends State<AudioTile> {
                             }
                           }
                         },
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                        child: _GlueRowPad(
+                          view: widget.view,
                           child: Row(
                             children: [
                               if (widget.leading != null)
@@ -534,44 +537,47 @@ class _AudioTileState extends State<AudioTile> {
                                   ],
                                 ),
                               ),
-                              const SizedBox(width: 8.0),
-                              Text(
-                                Duration(
-                                  seconds: audio.duration,
-                                ).toStringHMMSS(),
-                                style: TextStyle(
-                                  color: metadataColor,
-                                  fontFeatures: const [
-                                    FontFeature.tabularFigures(),
-                                  ],
-                                ),
-                              ),
-                              if (widget.multiSelectController != null &&
-                                  widget
-                                      .multiSelectController!
-                                      .enableMultiSelectView)
-                                Padding(
-                                  padding: const EdgeInsets.only(left: 8.0),
-                                  child: Checkbox(
-                                    value: isSelected,
-                                    onChanged: (v) {
-                                      if (v == true) {
-                                        widget.multiSelectController!.select(
-                                          audio,
-                                        );
-                                      } else {
-                                        widget.multiSelectController!.unselect(
-                                          audio,
-                                        );
-                                      }
-                                    },
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const SizedBox(width: 8.0),
+                                  Text(
+                                    Duration(
+                                      seconds: audio.duration,
+                                    ).toStringHMMSS(),
+                                    style: TextStyle(
+                                      color: metadataColor,
+                                      fontFeatures: const [
+                                        FontFeature.tabularFigures(),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                              if (widget.action != null)
-                                Padding(
-                                  padding: const EdgeInsets.only(left: 8.0),
-                                  child: widget.action!,
-                                ),
+                                  if (widget.multiSelectController != null &&
+                                      widget
+                                          .multiSelectController!
+                                          .enableMultiSelectView)
+                                    Padding(
+                                      padding: const EdgeInsets.only(left: 8.0),
+                                      child: Checkbox(
+                                        value: isSelected,
+                                        onChanged: (v) {
+                                          if (v == true) {
+                                            widget.multiSelectController!
+                                                .select(audio);
+                                          } else {
+                                            widget.multiSelectController!
+                                                .unselect(audio);
+                                          }
+                                        },
+                                      ),
+                                    ),
+                                  if (widget.action != null)
+                                    Padding(
+                                      padding: const EdgeInsets.only(left: 8.0),
+                                      child: widget.action!,
+                                    ),
+                                ],
+                              ),
                             ],
                           ),
                         ),
@@ -584,6 +590,31 @@ class _AudioTileState extends State<AudioTile> {
           ),
         );
       },
+    );
+  }
+}
+
+/// List rows shrink with [SidebarGlueScope.rightGlueOffset] so trailing
+/// content tracks the visual body edge without paint-only overlap.
+/// Table cells keep fixed width and never read the scope.
+class _GlueRowPad extends StatelessWidget {
+  const _GlueRowPad({required this.view, required this.child});
+
+  final ContentView view;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (view != ContentView.list) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8.0),
+        child: child,
+      );
+    }
+    final offset = SidebarGlueScope.maybeOf(context)?.rightGlueOffset ?? 0.0;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(8.0, 0.0, 8.0 - offset, 0.0),
+      child: child,
     );
   }
 }

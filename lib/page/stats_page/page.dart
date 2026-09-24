@@ -137,7 +137,9 @@ class _StatsPageState extends State<StatsPage> {
       ],
       body: Stack(
         children: [
-          Positioned.fill(child: _buildBody(scheme)),
+          Positioned.fill(
+            child: SidebarLayoutTransform(child: _buildBody(scheme)),
+          ),
           ListLocateButtons(
             controller: _scrollController,
             locateTargetAt: _locateTargetAt,

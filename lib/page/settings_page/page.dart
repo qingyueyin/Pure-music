@@ -1,3 +1,4 @@
+import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/page/page_scaffold.dart';
 import 'package:pure_music/page/settings_page/settings_tabs.dart';
 import 'package:flutter/material.dart';
@@ -11,7 +12,7 @@ class SettingsPage extends StatelessWidget {
       title: '设置',
       subtitle: '调整并自定义',
       actions: [],
-      body: SettingsTabs(),
+      body: SidebarLayoutTransform(child: SettingsTabs()),
     );
   }
 }

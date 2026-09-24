@@ -125,6 +125,7 @@ class _ArtistsPageState extends State<ArtistsPage> {
           enableSortMethod: canSortItems,
           enableSortOrder: canSortItems,
           enableContentViewSwitch: false,
+          layoutMode: LayoutMode.frozen,
           multiSelectController: _multiSelectController,
           multiSelectViewActions: [
             MultiSelectPlaySelectedAudios(

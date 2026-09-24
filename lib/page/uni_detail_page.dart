@@ -528,17 +528,21 @@ class _UniDetailPageState<P, S, T> extends State<UniDetailPage<P, S, T>> {
                                             ),
                                           ),
                                           if (showAlphabetIndex)
-                                            AlphabetIndexBar(
-                                              controller:
-                                                  _activeScrollController,
-                                              sectionIndexes:
-                                                  _alphabetSectionIndexes,
-                                              indexForOffset: _indexForOffset,
-                                              onSelectIndex: _jumpToIndex,
-                                              onWheel: _forwardWheelToList,
-                                              descending:
-                                                  currSortOrder ==
-                                                  SortOrder.decending,
+                                            SidebarGlue(
+                                              anchor:
+                                                  SidebarGlueAnchor.right,
+                                              child: AlphabetIndexBar(
+                                                controller:
+                                                    _activeScrollController,
+                                                sectionIndexes:
+                                                    _alphabetSectionIndexes,
+                                                indexForOffset: _indexForOffset,
+                                                onSelectIndex: _jumpToIndex,
+                                                onWheel: _forwardWheelToList,
+                                                descending:
+                                                    currSortOrder ==
+                                                    SortOrder.decending,
+                                              ),
                                             ),
                                         ],
                                       );
@@ -920,7 +924,6 @@ class _ActionsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final compact = MediaQuery.sizeOf(context).width < 560;
     final showSearch = searchController != null;
 
     if (!showSearch) {
@@ -934,23 +937,27 @@ class _ActionsRow extends StatelessWidget {
       scheme: scheme,
     );
 
-    if (compact) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Wrap(spacing: 8.0, runSpacing: 8.0, children: actions),
-          const SizedBox(height: 8.0),
-          searchField,
-        ],
-      );
-    }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 600;
+        if (compact) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Wrap(spacing: 8.0, runSpacing: 8.0, children: actions),
+              const SizedBox(height: 8.0),
+              searchField,
+            ],
+          );
+        }
 
-    return Row(
-      children: [
-        Expanded(child: Wrap(spacing: 8.0, runSpacing: 8.0, children: actions)),
-        const SizedBox(width: 12.0),
-        SizedBox(width: 220, child: searchField),
-      ],
+        return Wrap(
+          spacing: 8.0,
+          runSpacing: 8.0,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [...actions, SizedBox(width: 220, child: searchField)],
+        );
+      },
     );
   }
 }

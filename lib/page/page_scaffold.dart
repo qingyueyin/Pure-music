@@ -1,3 +1,4 @@
+import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/responsive_builder.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:flutter/material.dart';
@@ -87,13 +88,16 @@ class PageScaffold extends StatelessWidget {
         Expanded(child: _titleWidget(scheme)),
         const SizedBox(width: 16.0),
         Flexible(
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: Wrap(
-              alignment: WrapAlignment.end,
-              spacing: 8.0,
-              runSpacing: 8.0,
-              children: actions,
+          child: SidebarGlue(
+            anchor: SidebarGlueAnchor.right,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8.0,
+                runSpacing: 8.0,
+                children: actions,
+              ),
             ),
           ),
         ),

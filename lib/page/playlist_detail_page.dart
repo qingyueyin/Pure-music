@@ -250,10 +250,11 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
           ? '${allAudios.length} 首乐曲'
           : '${contentList.length} / ${allAudios.length} 首乐曲',
       secondaryContent: contentList,
-      secondaryContentBuilder: (context, audio, i, msc, _) => AudioTile(
+      secondaryContentBuilder: (context, audio, i, msc, view) => AudioTile(
         audioIndex: i,
         playlist: contentList,
         multiSelectController: msc,
+        view: view,
         onRemoveFromPlaylist: (removedAudio) async {
           final oldPaths = List<String>.from(widget.playlist.paths);
           setState(() {

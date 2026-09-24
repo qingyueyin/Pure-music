@@ -270,6 +270,8 @@ class MultiSelectPointerRegion<T> extends StatelessWidget {
   }
 }
 
+enum LayoutMode { frozen, realtime }
+
 /// `AudiosPage`, `ArtistsPage`, `AlbumsPage`, `FoldersPage`, `FolderDetailPage` 页面的主要组件，
 /// 提供随机播放以及更改排序方式、排序顺序、内容视图的支持。
 ///
@@ -302,6 +304,7 @@ class UniPage<T> extends StatefulWidget {
     this.contentRevision,
     this.contentIsPrepared = false,
     this.enableStackedEffect = true,
+    this.layoutMode = LayoutMode.realtime,
   });
 
   final PagePreference pref;
@@ -332,6 +335,7 @@ class UniPage<T> extends StatefulWidget {
 
   /// 是否启用堆叠滚动效果（平滑滚轮始终启用）。
   final bool enableStackedEffect;
+  final LayoutMode layoutMode;
 
   @override
   State<UniPage<T>> createState() => _UniPageState<T>();
@@ -850,6 +854,9 @@ class _UniPageState<T> extends State<UniPage<T>> {
                 ContentView.table,
               ),
             );
+      final tableMotionView = widget.layoutMode == LayoutMode.frozen
+          ? SidebarLayoutTransform(child: tableView)
+          : tableView;
 
       return LayoutBuilder(
         builder: (context, constraints) {
@@ -864,19 +871,22 @@ class _UniPageState<T> extends State<UniPage<T>> {
                   child: widget.enableContentViewSwitch
                       ? DirectionalTabView(
                           index: currContentView == ContentView.list ? 0 : 1,
-                          children: [listView, tableView],
+                          children: [listView, tableMotionView],
                         )
-                      : tableView,
+                      : tableMotionView,
                 ),
               ),
               if (showAlphabetIndex)
-                AlphabetIndexBar(
-                  controller: scrollController,
-                  sectionIndexes: _alphabetSectionIndexes,
-                  indexForOffset: _indexForOffset,
-                  onSelectIndex: _jumpToIndex,
-                  onWheel: _forwardWheelToList,
-                  descending: currSortOrder == SortOrder.decending,
+                SidebarGlue(
+                  anchor: SidebarGlueAnchor.right,
+                  child: AlphabetIndexBar(
+                    controller: scrollController,
+                    sectionIndexes: _alphabetSectionIndexes,
+                    indexForOffset: _indexForOffset,
+                    onSelectIndex: _jumpToIndex,
+                    onWheel: _forwardWheelToList,
+                    descending: currSortOrder == SortOrder.decending,
+                  ),
                 ),
             ],
           );

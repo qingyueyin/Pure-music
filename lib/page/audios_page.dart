@@ -58,17 +58,19 @@ class _AudiosPageState extends State<AudiosPage> {
           contentList: contentList,
           contentRevision: version,
           contentIsPrepared: _contentIsPrepared,
-          contentBuilder: (context, item, i, multiSelectController, _) =>
+          contentBuilder: (context, item, i, multiSelectController, view) =>
               AudioTile(
                 audioIndex: i,
                 playlist: contentList,
                 focus: item == widget.locateTo,
                 multiSelectController: _multiSelectController,
+                view: view,
               ),
           enableShufflePlay: hasSongs,
           enableSortMethod: canSortSongs,
           enableSortOrder: canSortSongs,
           enableContentViewSwitch: hasSongs,
+          layoutMode: LayoutMode.realtime,
           locateTo: widget.locateTo,
           multiSelectController: _multiSelectController,
           multiSelectViewActions: [
