@@ -8,6 +8,7 @@ import 'package:pure_music/native/rust/api/smart_sort.dart' as smart_sort;
 import 'package:pure_music/native/rust/api/smart_transition.dart'
     as smart_transition;
 import 'package:pure_music/services/smart_sort_cache.dart';
+import 'package:pure_music/services/smart_sort_options.dart';
 
 class SmartSortResult {
   const SmartSortResult({
@@ -43,17 +44,16 @@ class SmartSortService {
   /// [takeCount] 大于 0 时先按采样键分层采样该数量再编排，0 表示使用全部曲目。
   /// [smoothness] 0 叙事优先 / 1 顺滑优先；[outroStyle] 0 温暖 / 1 渐弱 / 2 燃尽；
   /// [taste] 0 全部 / 1 换口味 / 2 常听的（按播放次数偏置采样）。
-  static Future<SmartSortResult> run({
-    required List<Audio> tracks,
-    double climaxPosition = 0.82,
-    double contrast = 0.85,
-    int takeCount = 0,
-    double smoothness = 0.5,
-    int outroStyle = 0,
-    int taste = 0,
-    void Function(int done, int total)? onProgress,
-    bool Function()? isCancelled,
-  }) async {
+  static Future<SmartSortResult> run(SmartSortOptions options) async {
+    final tracks = options.tracks;
+    final climaxPosition = options.climaxPosition;
+    final contrast = options.contrast;
+    final takeCount = options.takeCount;
+    final smoothness = options.smoothness;
+    final outroStyle = options.outroStyle;
+    final taste = options.taste;
+    final onProgress = options.onProgress;
+    final isCancelled = options.isCancelled;
     if (tracks.isEmpty) throw StateError('没有可排序的乐曲');
     final libraryRoot = (await getAppDataDir()).path;
     final cache = SmartSortFeatureCache.instance;

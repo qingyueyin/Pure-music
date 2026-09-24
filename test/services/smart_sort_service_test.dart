@@ -1,11 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/services/smart_sort_service.dart';
+import 'package:pure_music/services/smart_sort_options.dart';
 
 void main() {
   test('rejects an empty playlist before touching analysis services', () async {
     await expectLater(
-      SmartSortService.run(tracks: const []),
+      SmartSortService.run(const SmartSortOptions(tracks: [])),
       throwsA(isA<StateError>()),
     );
   });
@@ -27,7 +28,9 @@ void main() {
     );
 
     await expectLater(
-      SmartSortService.run(tracks: [track], isCancelled: () => true),
+      SmartSortService.run(
+        SmartSortOptions(tracks: [track], isCancelled: () => true),
+      ),
       throwsA(isA<SmartSortCancelledException>()),
     );
   });

@@ -18,6 +18,7 @@ import 'package:pure_music/page/page_scaffold.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/services/concert_program_store.dart';
 import 'package:pure_music/services/smart_sort_service.dart';
+import 'package:pure_music/services/smart_sort_options.dart';
 
 /// 演出模式：圈定素材 → 生成演唱会式编排顺序 → 替换当前队列开演。
 /// 编排顺序由算法所有，页内不提供手动排序；原歌单不做任何修改。
@@ -221,19 +222,21 @@ class _ConcertPageState extends State<ConcertPage> {
     }
     try {
       final result = await SmartSortService.run(
-        tracks: tracks,
-        climaxPosition: _climaxPosition,
-        contrast: _contrast,
-        takeCount: takeCount ?? _setSize,
-        smoothness: _smoothness,
-        outroStyle: _outroStyle,
-        taste: _taste,
-        onProgress: (done, _) {
-          if (mounted && generation == _generation) {
-            setState(() => _analyzedCount = done);
-          }
-        },
-        isCancelled: () => _stopRequested || generation != _generation,
+        SmartSortOptions(
+          tracks: tracks,
+          climaxPosition: _climaxPosition,
+          contrast: _contrast,
+          takeCount: takeCount ?? _setSize,
+          smoothness: _smoothness,
+          outroStyle: _outroStyle,
+          taste: _taste,
+          onProgress: (done, _) {
+            if (mounted && generation == _generation) {
+              setState(() => _analyzedCount = done);
+            }
+          },
+          isCancelled: () => _stopRequested || generation != _generation,
+        ),
       );
       if (!mounted || generation != _generation) return;
       _activeProgramId =
@@ -533,13 +536,15 @@ class _ConcertPageState extends State<ConcertPage> {
       title: '演出模式',
       subtitle: _subtitle,
       actions: actions,
-      body: ListenableBuilder(
-        listenable: AppSettings.listMotionNotifier,
-        builder: (context, _) => switch (_phase) {
-          _ConcertPhase.select => _buildSelectBody(context),
-          _ConcertPhase.analyzing => _buildAnalyzingBody(context),
-          _ConcertPhase.result => _buildResultBody(context),
-        },
+      body: SidebarLayoutTransform(
+        child: ListenableBuilder(
+          listenable: AppSettings.listMotionNotifier,
+          builder: (context, _) => switch (_phase) {
+            _ConcertPhase.select => _buildSelectBody(context),
+            _ConcertPhase.analyzing => _buildAnalyzingBody(context),
+            _ConcertPhase.result => _buildResultBody(context),
+          },
+        ),
       ),
     );
   }
