@@ -21,9 +21,10 @@ class SystemVolumeService {
   Timer? _windowsPollTimer;
   bool _windowsPollBusy = false;
   int _windowsReadFailures = 0;
+  bool _disposed = false;
 
   void ensureBound() {
-    if (_bound) return;
+    if (_bound || _disposed) return;
     _pluginListener = (v) {
       if ((v - volume.value).abs() > 0.0001) {
         volume.value = v;
@@ -39,7 +40,8 @@ class SystemVolumeService {
 
   Future<double?> read({required Duration timeout}) async {
     try {
-      return await FlutterVolumeController.getVolume().timeout(timeout);
+      final value = await FlutterVolumeController.getVolume().timeout(timeout);
+      return _normalizeVolume(value);
     } catch (_) {
       return null;
     }
@@ -47,13 +49,25 @@ class SystemVolumeService {
 
   Future<void> refresh({required Duration timeout}) async {
     final v = await read(timeout: timeout);
-    if (v != null && (v - volume.value).abs() > 0.0001) {
-      volume.value = v;
-    }
+    _publishVolume(v);
   }
 
   Future<void> set(double v) async {
-    await FlutterVolumeController.setVolume(v);
+    final normalized = _normalizeVolume(v);
+    if (normalized == null || _disposed) return;
+    await FlutterVolumeController.setVolume(normalized);
+  }
+
+  double? _normalizeVolume(double? value) {
+    if (value == null || !value.isFinite) return null;
+    return value.clamp(0.0, 1.0).toDouble();
+  }
+
+  void _publishVolume(double? value) {
+    if (_disposed || value == null) return;
+    if ((value - volume.value).abs() > 0.0001) {
+      volume.value = value;
+    }
   }
 
   void _rebindPluginListener() {
@@ -63,12 +77,14 @@ class SystemVolumeService {
 
   void _startWindowsPoll() {
     _windowsPollTimer?.cancel();
-    _windowsPollTimer =
-        Timer.periodic(const Duration(milliseconds: 250), (_) async {
-      if (_windowsPollBusy) return;
+    _windowsPollTimer = Timer.periodic(const Duration(milliseconds: 250), (
+      _,
+    ) async {
+      if (_disposed || _windowsPollBusy) return;
       _windowsPollBusy = true;
       try {
         final v = await read(timeout: const Duration(seconds: 1));
+        if (_disposed) return;
         if (v == null) {
           _windowsReadFailures += 1;
           if (_windowsReadFailures >= 3) {
@@ -78,9 +94,7 @@ class SystemVolumeService {
           return;
         }
         _windowsReadFailures = 0;
-        if ((v - volume.value).abs() > 0.005) {
-          volume.value = v;
-        }
+        _publishVolume(v);
       } finally {
         _windowsPollBusy = false;
       }
@@ -88,12 +102,14 @@ class SystemVolumeService {
   }
 
   void dispose() {
+    if (_disposed) return;
+    _disposed = true;
     _windowsPollTimer?.cancel();
     if (_bound) {
       FlutterVolumeController.removeListener();
       _bound = false;
     }
     volume.dispose();
+    _instance = null;
   }
 }
-
