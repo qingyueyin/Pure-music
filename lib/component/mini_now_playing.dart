@@ -14,6 +14,33 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+enum MiniNowPlayingSlideDirection { none, previous, next }
+
+MiniNowPlayingSlideDirection miniNowPlayingSlideDirection({
+  required int? previousIndex,
+  required int currentIndex,
+  required int playlistLength,
+}) {
+  if (previousIndex == null ||
+      playlistLength < 2 ||
+      previousIndex < 0 ||
+      previousIndex >= playlistLength ||
+      currentIndex < 0 ||
+      currentIndex >= playlistLength ||
+      previousIndex == currentIndex) {
+    return MiniNowPlayingSlideDirection.none;
+  }
+  if (currentIndex == previousIndex - 1 ||
+      (previousIndex == 0 && currentIndex == playlistLength - 1)) {
+    return MiniNowPlayingSlideDirection.previous;
+  }
+  if (currentIndex == previousIndex + 1 ||
+      (previousIndex == playlistLength - 1 && currentIndex == 0)) {
+    return MiniNowPlayingSlideDirection.next;
+  }
+  return MiniNowPlayingSlideDirection.none;
+}
+
 class MiniNowPlaying extends StatefulWidget {
   const MiniNowPlaying({super.key});
 
@@ -28,6 +55,8 @@ class _MiniNowPlayingState extends State<MiniNowPlaying> {
 
   @override
   Widget build(BuildContext context) {
+    final animateTrackChanges =
+        GoRouterState.of(context).uri.path != app_paths.NOW_PLAYING_PAGE;
     return SidebarGlue(
       anchor: SidebarGlueAnchor.center,
       child: ResponsiveBuilder(
@@ -86,6 +115,7 @@ class _MiniNowPlayingState extends State<MiniNowPlaying> {
                               },
                               child: _NowPlayingForeground(
                                 dragPreviewFraction: _dragPreviewFraction,
+                                animateTrackChanges: animateTrackChanges,
                               ),
                             );
                           },
@@ -104,9 +134,13 @@ class _MiniNowPlayingState extends State<MiniNowPlaying> {
 }
 
 class _NowPlayingForeground extends StatefulWidget {
-  const _NowPlayingForeground({this.dragPreviewFraction});
+  const _NowPlayingForeground({
+    this.dragPreviewFraction,
+    required this.animateTrackChanges,
+  });
 
   final double? dragPreviewFraction;
+  final bool animateTrackChanges;
 
   @override
   State<_NowPlayingForeground> createState() => _NowPlayingForegroundState();
@@ -116,6 +150,44 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
   bool _hovered = false;
   bool _controlsVisible = false;
   Timer? _controlsHideTimer;
+  String? _trackPath;
+  MiniNowPlayingSlideDirection _slideDirection =
+      MiniNowPlayingSlideDirection.none;
+
+  @override
+  void initState() {
+    super.initState();
+    final playbackService = PlayService.instance.playbackService;
+    _trackPath = playbackService.nowPlaying?.path;
+    playbackService.nowPlayingNotifier.addListener(_onNowPlayingChanged);
+  }
+
+  void _onNowPlayingChanged() {
+    final playbackService = PlayService.instance.playbackService;
+    final previousPath = _trackPath;
+    final currentAudio = playbackService.nowPlaying;
+    final currentPath = currentAudio?.path;
+    final playlist = playbackService.playlist.value;
+    final previousIndex = previousPath == null
+        ? null
+        : playlist.indexWhere((audio) => audio.path == previousPath);
+    final currentIndex = currentAudio == null
+        ? -1
+        : playlist.indexWhere((audio) => audio.path == currentPath);
+    final direction = previousPath == null || currentPath == null
+        ? MiniNowPlayingSlideDirection.none
+        : miniNowPlayingSlideDirection(
+            previousIndex: previousIndex == -1 ? null : previousIndex,
+            currentIndex: currentIndex,
+            playlistLength: playlist.length,
+          );
+    _trackPath = currentPath;
+    if (!mounted) {
+      _slideDirection = direction;
+      return;
+    }
+    setState(() => _slideDirection = direction);
+  }
 
   void _setControlsVisible(bool visible) {
     if (_controlsVisible == visible) return;
@@ -271,7 +343,8 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
                             ),
                         ],
                       );
-                      return Row(
+                      final trackContent = Row(
+                        key: ValueKey(nowPlaying?.path),
                         children: [
                           nowPlaying != null
                               ? Builder(
@@ -327,6 +400,18 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
                               ],
                             ),
                           ),
+                        ],
+                      );
+                      return Row(
+                        children: [
+                          Expanded(
+                            child: _MiniTrackSwitcher(
+                              direction: _slideDirection,
+                              enabled:
+                                  widget.animateTrackChanges && !reduceMotion,
+                              child: trackContent,
+                            ),
+                          ),
                           const SizedBox(width: 8.0),
                           secondaryMotion(controls),
                         ],
@@ -344,8 +429,65 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
 
   @override
   void dispose() {
+    PlayService.instance.playbackService.nowPlayingNotifier.removeListener(
+      _onNowPlayingChanged,
+    );
     _controlsHideTimer?.cancel();
     super.dispose();
+  }
+}
+
+class _MiniTrackSwitcher extends StatelessWidget {
+  const _MiniTrackSwitcher({
+    required this.direction,
+    required this.enabled,
+    required this.child,
+  });
+
+  final MiniNowPlayingSlideDirection direction;
+  final bool enabled;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final sign = switch (direction) {
+      MiniNowPlayingSlideDirection.previous => -1.0,
+      MiniNowPlayingSlideDirection.next => 1.0,
+      MiniNowPlayingSlideDirection.none => 0.0,
+    };
+    final duration = enabled && sign != 0.0
+        ? MotionDuration.fast
+        : Duration.zero;
+    return ClipRect(
+      child: AnimatedSwitcher(
+        duration: duration,
+        reverseDuration: duration,
+        switchInCurve: MotionCurve.standard,
+        switchOutCurve: MotionCurve.standard,
+        layoutBuilder: (currentChild, previousChildren) => Stack(
+          fit: StackFit.passthrough,
+          clipBehavior: Clip.none,
+          children: [...previousChildren, ?currentChild],
+        ),
+        transitionBuilder: (child, animation) {
+          final incoming = child.key == this.child.key;
+          final begin = incoming ? Offset(sign, 0.0) : Offset(-sign, 0.0);
+          final curvedAnimation = CurvedAnimation(
+            parent: animation,
+            curve: MotionCurve.standard,
+            reverseCurve: MotionCurve.standard,
+          );
+          return SlideTransition(
+            position: Tween<Offset>(
+              begin: begin,
+              end: Offset.zero,
+            ).animate(curvedAnimation),
+            child: child,
+          );
+        },
+        child: child,
+      ),
+    );
   }
 }
 
@@ -663,9 +805,12 @@ class _MiniCoverWidgetState extends State<_MiniCoverWidget> {
   }
 
   Future<void> _load() async {
-    final bytes = await widget.audio.loadSmallCoverBytes();
+    final audio = widget.audio;
+    final bytes = await audio.loadSmallCoverBytes();
     if (mounted && bytes != null) {
-      setState(() => _cached = bytes);
+      if (identical(audio, widget.audio)) {
+        setState(() => _cached = bytes);
+      }
     }
   }
 
