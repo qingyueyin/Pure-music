@@ -94,7 +94,7 @@ class _TransitionControlState extends State<TransitionControl> {
               '淡出 ${pref.transitionFadeOutMs}ms / 淡入 ${pref.transitionFadeInMs}ms',
             TransitionMode.crossfade =>
               '淡出 ${pref.transitionFadeOutMs}ms / 淡入 ${pref.transitionFadeInMs}ms',
-            TransitionMode.smart => '根据歌曲内容选择衔接方式',
+            TransitionMode.smart => '根据歌曲内容自动选择衔接方式',
           },
           action: SegmentedButton<TransitionMode>(
             showSelectedIcon: false,
