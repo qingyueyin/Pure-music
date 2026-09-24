@@ -302,6 +302,20 @@ void main() {
       expect(lyricLayoutFontSize(mainFontSize: 32, subFontSize: 28), 32);
       expect(lyricLayoutFontSize(mainFontSize: 28, subFontSize: 32), 32);
     });
+
+    test('also keeps translation and romanization layout size stable', () {
+      final translationSize = lyricLayoutFontSize(
+        mainFontSize: 24.96,
+        subFontSize: 22.4,
+      );
+      final romanSize = lyricLayoutFontSize(
+        mainFontSize: 24.96 * 0.85,
+        subFontSize: 22.4 * 0.85,
+      );
+
+      expect(translationSize, 24.96);
+      expect(romanSize, closeTo(24.96 * 0.85, 0.0001));
+    });
   });
 
   group('lyricLineScaleAlignment', () {

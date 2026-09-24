@@ -18,6 +18,8 @@ import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_tile.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_stagger_motion.dart';
+import 'package:pure_music/page/now_playing_page/component/lyric_height_cache_key.dart';
+import 'package:pure_music/page/now_playing_page/component/lyric_painter_params.dart';
 import 'package:pure_music/page/now_playing_page/component/lyrics_line_painter.dart';
 import 'package:pure_music/play_service/play_service.dart';
 
@@ -94,14 +96,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
   LyricsLinePainter? _cachedPainter;
   final LyricCharLiftCache _liftCache = LyricCharLiftCache();
   double? _cachedLineHeight;
-  double _cachedLineWidth = 0.0;
-  LyricLine? _heightLine;
-  LyricRenderConfig? _heightConfig;
-  bool? _heightIsMainLine;
-  bool? _heightUseMaterialYouColor;
-  bool? _heightReservesBackgroundVocal;
-  String? _heightFontFamily;
-  String? _heightAgent;
+  LyricHeightCacheKey? _heightCacheKey;
   LyricLine? _effectTimingLine;
   Duration _effectLineMedian = Duration.zero;
   final ValueNotifier<double> _heightNotifier = ValueNotifier(0.0);
@@ -112,14 +107,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
 
   void _clearHeightCache() {
     _cachedLineHeight = null;
-    _cachedLineWidth = 0.0;
-    _heightLine = null;
-    _heightConfig = null;
-    _heightIsMainLine = null;
-    _heightUseMaterialYouColor = null;
-    _heightReservesBackgroundVocal = null;
-    _heightFontFamily = null;
-    _heightAgent = null;
+    _heightCacheKey = null;
   }
 
   void _applyMeasuredHeight(double measuredHeight) {
@@ -188,14 +176,19 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
 
   void _updateBackgroundVocalHeight() {
     if (!widget.reserveBackgroundVocalHeight) return;
-    if (!mounted || _cachedPainter == null || _cachedLineWidth <= 0) return;
+    if (!mounted ||
+        _cachedPainter == null ||
+        _heightCacheKey == null ||
+        _heightCacheKey!.lineWidth <= 0) {
+      return;
+    }
     final factor = widget.backgroundVocalVisibilityListenable?.value;
     if (factor != null) {
       if ((factor - _lastBackgroundVocalHeightFactor).abs() <= 0.002) return;
       _lastBackgroundVocalHeightFactor = factor;
     }
     final height = _cachedPainter!.measureHeight(
-      _cachedLineWidth,
+      _heightCacheKey!.lineWidth,
       reserveBackgroundVocalHeight: true,
     );
     _applyMeasuredHeight(height);
@@ -459,9 +452,10 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
             _lastBackgroundVocalHeightFactor = factor;
             if (widget.reserveBackgroundVocalHeight &&
                 _cachedPainter != null &&
-                _cachedLineWidth > 0) {
+                _heightCacheKey != null &&
+                _heightCacheKey!.lineWidth > 0) {
               final h = _cachedPainter!.measureHeight(
-                _cachedLineWidth,
+                _heightCacheKey!.lineWidth,
                 reserveBackgroundVocalHeight: true,
               );
               _applyMeasuredHeight(h);
@@ -513,9 +507,11 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
     if (widget.freezeHeight && !oldWidget.freezeHeight) {
       if (widget.distance == 0) {
         _frozenHeight = null;
-      } else if (_cachedPainter != null && _cachedLineWidth > 0) {
+      } else if (_cachedPainter != null &&
+          _heightCacheKey != null &&
+          _heightCacheKey!.lineWidth > 0) {
         _frozenHeight = _cachedPainter!.measureHeight(
-          _cachedLineWidth,
+          _heightCacheKey!.lineWidth,
           reserveBackgroundVocalHeight: widget.reserveBackgroundVocalHeight,
         );
       } else if (_heightNotifier.value > 0) {
@@ -718,67 +714,51 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
                   widget.line,
                 );
 
+                final newParams = LyricPainterParams(
+                  line: widget.line,
+                  currentTimeMs: _currentTimeMs,
+                  currentTimeListenable: currentTimeListenable,
+                  backgroundVocalVisibilityListenable:
+                      backgroundVocalVisibilityListenable,
+                  blurSigma: animatedBlurSigma,
+                  config: renderConfig,
+                  isMainLine: isCurrentLine,
+                  isHighlightActive: isHighlightActive,
+                  accelerateTailHighlight: widget.accelerateTailHighlight,
+                  useMaterialYouColor: useMaterialYouColor,
+                  opacity: animatedOpacity,
+                  fontFamily: fontFamily,
+                  agent: agent,
+                  highlightDeadlineMs: widget.highlightDeadlineMs,
+                  lineMedianWordDuration: lineMedianWordDuration,
+                  liftDecayListenable: isHighlightActive
+                      ? null
+                      : _floatController,
+                );
+
                 if (_cachedPainter == null ||
-                    _cachedPainter!.line != widget.line ||
-                    _cachedPainter!.currentTimeListenable !=
-                        currentTimeListenable ||
-                    _cachedPainter!.backgroundVocalVisibilityListenable !=
-                        backgroundVocalVisibilityListenable ||
-                    (currentTimeListenable == null &&
-                        _cachedPainter!.currentTimeMs != _currentTimeMs) ||
-                    _cachedPainter!.blurSigma != animatedBlurSigma ||
-                    _cachedPainter!.config != renderConfig ||
-                    _cachedPainter!.isMainLine != isCurrentLine ||
-                    _cachedPainter!.isHighlightActive != isHighlightActive ||
-                    _cachedPainter!.accelerateTailHighlight !=
-                        widget.accelerateTailHighlight ||
-                    _cachedPainter!.useMaterialYouColor !=
-                        useMaterialYouColor ||
-                    _cachedPainter!.opacity != animatedOpacity ||
-                    _cachedPainter!.fontFamily != fontFamily ||
-                    _cachedPainter!.agent != agent ||
-                    _cachedPainter!.highlightDeadlineMs !=
-                        widget.highlightDeadlineMs ||
-                    _cachedPainter!.lineMedianWordDuration !=
-                        lineMedianWordDuration ||
-                    _cachedPainter!.liftDecayListenable !=
-                        (isHighlightActive ? null : _floatController)) {
+                    _cachedPainter!.params != newParams) {
                   _cachedPainter = LyricsLinePainter(
-                    line: widget.line,
-                    currentTimeMs: _currentTimeMs,
-                    currentTimeListenable: currentTimeListenable,
-                    backgroundVocalVisibilityListenable:
-                        backgroundVocalVisibilityListenable,
-                    blurSigma: animatedBlurSigma,
-                    config: renderConfig,
+                    params: newParams,
                     scheme: scheme,
-                    isMainLine: isCurrentLine,
-                    isHighlightActive: isHighlightActive,
-                    accelerateTailHighlight: widget.accelerateTailHighlight,
-                    useMaterialYouColor: useMaterialYouColor,
-                    opacity: animatedOpacity,
-                    fontFamily: fontFamily,
-                    agent: agent,
-                    highlightDeadlineMs: widget.highlightDeadlineMs,
-                    lineMedianWordDuration: lineMedianWordDuration,
                     liftCache: _liftCache,
-                    liftDecayListenable: isHighlightActive
-                        ? null
-                        : _floatController,
                   );
                 }
 
+                final heightCacheKey = LyricHeightCacheKey(
+                  line: widget.line,
+                  lineWidth: lineWidth,
+                  config: renderConfig,
+                  isMainLine: isCurrentLine,
+                  useMaterialYouColor: useMaterialYouColor,
+                  reserveBackgroundVocalHeight:
+                      widget.reserveBackgroundVocalHeight,
+                  fontFamily: fontFamily,
+                  agent: agent,
+                );
                 final heightCacheValid =
                     _cachedLineHeight != null &&
-                    _cachedLineWidth == lineWidth &&
-                    identical(_heightLine, widget.line) &&
-                    _heightConfig == renderConfig &&
-                    _heightIsMainLine == isCurrentLine &&
-                    _heightUseMaterialYouColor == useMaterialYouColor &&
-                    _heightReservesBackgroundVocal ==
-                        widget.reserveBackgroundVocalHeight &&
-                    _heightFontFamily == fontFamily &&
-                    _heightAgent == agent;
+                    _heightCacheKey == heightCacheKey;
                 final lineHeight = heightCacheValid
                     ? _cachedLineHeight!
                     : _cachedPainter!.measureHeight(
@@ -789,15 +769,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
                 if (!heightCacheValid) {
                   if (widget.freezeHeight) _frozenHeight = null;
                   _cachedLineHeight = lineHeight;
-                  _cachedLineWidth = lineWidth;
-                  _heightLine = widget.line;
-                  _heightConfig = renderConfig;
-                  _heightIsMainLine = isCurrentLine;
-                  _heightUseMaterialYouColor = useMaterialYouColor;
-                  _heightReservesBackgroundVocal =
-                      widget.reserveBackgroundVocalHeight;
-                  _heightFontFamily = fontFamily;
-                  _heightAgent = agent;
+                  _heightCacheKey = heightCacheKey;
                 }
                 final resolvedHeight = widget.freezeHeight
                     ? _frozenHeight ??= lineHeight

@@ -17,6 +17,7 @@ import 'package:pure_music/page/now_playing_page/component/lyric_stagger_motion.
 import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_tile.dart';
 import 'package:pure_music/page/now_playing_page/component/lyrics_line_widget.dart';
+import 'package:pure_music/page/now_playing_page/component/lyric_painter_params.dart';
 import 'package:pure_music/page/now_playing_page/component/lyrics_line_painter.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_viewport_strategy.dart';
 import 'package:pure_music/page/now_playing_page/component/value_transition.dart';
@@ -919,7 +920,10 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     final discreteWeight = config.discreteFontWeight(weight);
 
     final mainSize = config.primaryFontSize(isMainLine: true);
-    final mainTransSize = config.translationFontSize(isMainLine: true);
+    final mainTransSize = lyricLayoutFontSize(
+      mainFontSize: config.translationFontSize(isMainLine: true),
+      subFontSize: config.translationFontSize(isMainLine: false),
+    );
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
 
@@ -950,16 +954,21 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
         return isMain && line.length > const Duration(seconds: 3) ? 40.0 : 0.0;
       }
       return LyricsLinePainter(
-        line: line,
-        currentTimeMs: 0.0,
-        blurSigma: 0.0,
-        config: config,
+        params: LyricPainterParams(
+          line: line,
+          currentTimeMs: 0.0,
+          blurSigma: 0.0,
+          config: config,
+          isMainLine: isMain,
+          isHighlightActive: false,
+          accelerateTailHighlight: false,
+          useMaterialYouColor: AppSettings.instance.useMaterialYouForLyrics,
+          fontFamily: fontFamily,
+          agent: line.agent,
+          opacity: 1.0,
+          lineMedianWordDuration: Duration.zero,
+        ),
         scheme: scheme,
-        isMainLine: isMain,
-        useMaterialYouColor: AppSettings.instance.useMaterialYouForLyrics,
-        fontFamily: fontFamily,
-        agent: line.agent,
-        lineMedianWordDuration: Duration.zero,
       ).measureHeight(lineLayoutWidth, reserveBackgroundVocalHeight: false);
     }
 

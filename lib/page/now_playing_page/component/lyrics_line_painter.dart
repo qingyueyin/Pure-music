@@ -10,6 +10,7 @@ import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/zh_converter.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
+import 'package:pure_music/page/now_playing_page/component/lyric_painter_params.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.dart';
 import 'package:pure_music/play_service/lyric_service.dart'
     show lyricHighlightCatchUpDurationMs, lyricHighlightFinishLeadMs;
@@ -390,24 +391,28 @@ void layoutTimedWordChars({
 }
 
 class LyricsLinePainter extends CustomPainter {
-  final LyricLine line;
-  final double currentTimeMs;
-  final ValueListenable<double>? currentTimeListenable;
-  final ValueListenable<double>? backgroundVocalVisibilityListenable;
-  final double blurSigma;
-  final LyricRenderConfig config;
+  final LyricPainterParams params;
   final ColorScheme scheme;
-  final bool isMainLine;
-  final bool isHighlightActive;
-  final bool accelerateTailHighlight;
-  final bool useMaterialYouColor;
-  final String? fontFamily;
-  final String? agent;
-  final double opacity;
-  final double? highlightDeadlineMs;
-  final Duration lineMedianWordDuration;
   final LyricCharLiftCache? liftCache;
-  final ValueListenable<double>? liftDecayListenable;
+
+  // 快捷访问器，避免大面积修改 paint 逻辑
+  LyricLine get line => params.line;
+  double get currentTimeMs => params.currentTimeMs;
+  ValueListenable<double>? get currentTimeListenable => params.currentTimeListenable;
+  ValueListenable<double>? get backgroundVocalVisibilityListenable =>
+      params.backgroundVocalVisibilityListenable;
+  double get blurSigma => params.blurSigma;
+  LyricRenderConfig get config => params.config;
+  bool get isMainLine => params.isMainLine;
+  bool get isHighlightActive => params.isHighlightActive;
+  bool get accelerateTailHighlight => params.accelerateTailHighlight;
+  bool get useMaterialYouColor => params.useMaterialYouColor;
+  String? get fontFamily => params.fontFamily;
+  String? get agent => params.agent;
+  double get opacity => params.opacity;
+  double? get highlightDeadlineMs => params.highlightDeadlineMs;
+  Duration get lineMedianWordDuration => params.lineMedianWordDuration;
+  ValueListenable<double>? get liftDecayListenable => params.liftDecayListenable;
 
   // 多声部时按 agent 强制对齐：v1 左对齐，v2 右对齐
   LyricTextAlign get _effectiveTextAlign {
@@ -431,29 +436,14 @@ class LyricsLinePainter extends CustomPainter {
   static const _maxBlurPaintCacheSize = 64;
 
   LyricsLinePainter({
-    required this.line,
-    required this.currentTimeMs,
-    this.currentTimeListenable,
-    this.backgroundVocalVisibilityListenable,
-    required this.blurSigma,
-    required this.config,
+    required this.params,
     required this.scheme,
-    this.isMainLine = false,
-    this.isHighlightActive = false,
-    this.accelerateTailHighlight = false,
-    this.useMaterialYouColor = false,
-    this.fontFamily,
-    this.agent,
-    this.opacity = 1.0,
-    this.highlightDeadlineMs,
-    required this.lineMedianWordDuration,
     this.liftCache,
-    this.liftDecayListenable,
   }) : super(
          repaint: Listenable.merge([
-           currentTimeListenable,
-           backgroundVocalVisibilityListenable,
-           liftDecayListenable,
+           params.currentTimeListenable,
+           params.backgroundVocalVisibilityListenable,
+           params.liftDecayListenable,
          ]),
        );
 
@@ -783,8 +773,9 @@ class LyricsLinePainter extends CustomPainter {
         LyricTextAlign.center => TextAlign.center,
         LyricTextAlign.right => TextAlign.right,
       };
-      final translationFontSize = config.translationFontSize(
-        isMainLine: isMainLine,
+      final translationFontSize = lyricLayoutFontSize(
+        mainFontSize: config.translationFontSize(isMainLine: true),
+        subFontSize: config.translationFontSize(isMainLine: false),
       );
       final romanFontSize = translationFontSize * 0.85;
       var hasPrev = false;
@@ -1459,8 +1450,9 @@ class LyricsLinePainter extends CustomPainter {
         LyricTextAlign.center => TextAlign.center,
         LyricTextAlign.right => TextAlign.right,
       };
-      final translationFontSize = config.translationFontSize(
-        isMainLine: isMainLine,
+      final translationFontSize = lyricLayoutFontSize(
+        mainFontSize: config.translationFontSize(isMainLine: true),
+        subFontSize: config.translationFontSize(isMainLine: false),
       );
       final romanFontSize = translationFontSize * 0.85;
       cursorY += config.syncTranslationGap(isMainLine: true);
@@ -1854,7 +1846,10 @@ class LyricsLinePainter extends CustomPainter {
     final romanWeight = config.discreteFontWeight(
       (config.fontWeight - 100).clamp(100, 900),
     );
-    final translationFontSize = config.translationFontSize(isMainLine: true);
+    final translationFontSize = lyricLayoutFontSize(
+      mainFontSize: config.translationFontSize(isMainLine: true),
+      subFontSize: config.translationFontSize(isMainLine: false),
+    );
     final romanFontSize = translationFontSize * 0.85;
 
     // ── Paint pre-original sub-tracks (before main text) ─────────────────────
@@ -2040,7 +2035,10 @@ class LyricsLinePainter extends CustomPainter {
     final romanWeight = config.discreteFontWeight(
       (config.fontWeight - 100).clamp(100, 900),
     );
-    final translationFontSize = config.translationFontSize(isMainLine: true);
+    final translationFontSize = lyricLayoutFontSize(
+      mainFontSize: config.translationFontSize(isMainLine: true),
+      subFontSize: config.translationFontSize(isMainLine: false),
+    );
     final romanFontSize = translationFontSize * 0.85;
 
     double preY = padding.top;
@@ -2228,24 +2226,7 @@ class LyricsLinePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant LyricsLinePainter oldDelegate) {
-    return currentTimeListenable != oldDelegate.currentTimeListenable ||
-        backgroundVocalVisibilityListenable !=
-            oldDelegate.backgroundVocalVisibilityListenable ||
-        (currentTimeListenable == null &&
-            currentTimeMs != oldDelegate.currentTimeMs) ||
-        blurSigma != oldDelegate.blurSigma ||
-        line != oldDelegate.line ||
-        config != oldDelegate.config ||
-        useMaterialYouColor != oldDelegate.useMaterialYouColor ||
-        opacity != oldDelegate.opacity ||
-        fontFamily != oldDelegate.fontFamily ||
-        agent != oldDelegate.agent ||
-        highlightDeadlineMs != oldDelegate.highlightDeadlineMs ||
-        isMainLine != oldDelegate.isMainLine ||
-        isHighlightActive != oldDelegate.isHighlightActive ||
-        accelerateTailHighlight != oldDelegate.accelerateTailHighlight ||
-        liftCache != oldDelegate.liftCache ||
-        liftDecayListenable != oldDelegate.liftDecayListenable;
+    return params != oldDelegate.params || liftCache != oldDelegate.liftCache;
   }
 
   void _captureCharLifts(List<_CharInfo> charInfos) {
@@ -2391,8 +2372,9 @@ class LyricsLinePainter extends CustomPainter {
       if (activeTracks.length > 1 ||
           (activeTracks.length == 1 &&
               activeTracks.first != LyricLineTrack.original)) {
-        final translationFontSize = config.translationFontSize(
-          isMainLine: true,
+        final translationFontSize = lyricLayoutFontSize(
+          mainFontSize: config.translationFontSize(isMainLine: true),
+          subFontSize: config.translationFontSize(isMainLine: false),
         );
         final romanFontSize = translationFontSize * 0.85;
         final translationWeight = config.discreteFontWeight(
@@ -2576,8 +2558,9 @@ class LyricsLinePainter extends CustomPainter {
       if (activeTracks.length > 1 ||
           (activeTracks.length == 1 &&
               activeTracks.first != LyricLineTrack.original)) {
-        final translationFontSize = config.translationFontSize(
-          isMainLine: true,
+        final translationFontSize = lyricLayoutFontSize(
+          mainFontSize: config.translationFontSize(isMainLine: true),
+          subFontSize: config.translationFontSize(isMainLine: false),
         );
         final romanFontSize = translationFontSize * 0.85;
         final translationWeight = config.discreteFontWeight(
@@ -2701,8 +2684,9 @@ class LyricsLinePainter extends CustomPainter {
       if (activeTracks.length > 1 ||
           (activeTracks.length == 1 &&
               activeTracks.first != LyricLineTrack.original)) {
-        final translationFontSize = config.translationFontSize(
-          isMainLine: true,
+        final translationFontSize = lyricLayoutFontSize(
+          mainFontSize: config.translationFontSize(isMainLine: true),
+          subFontSize: config.translationFontSize(isMainLine: false),
         );
         final romanFontSize = translationFontSize * 0.85;
         final translationWeight = config.discreteFontWeight(

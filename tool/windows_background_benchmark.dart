@@ -14,6 +14,7 @@ import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/native/rust/api/smtc_flutter.dart';
 import 'package:pure_music/native/rust/frb_generated.dart';
+import 'package:pure_music/page/now_playing_page/component/lyric_painter_params.dart';
 import 'package:pure_music/page/now_playing_page/component/lyrics_line_painter.dart';
 import 'package:pure_music/page/now_playing_page/component/now_playing_background.dart';
 import 'package:pure_music/play_service/smtc_bridge.dart';
@@ -438,15 +439,20 @@ class _BackgroundBenchmarkAppState extends State<_BackgroundBenchmarkApp> {
                   height: 260,
                   child: CustomPaint(
                     painter: LyricsLinePainter(
-                      line: _benchmarkLyric,
-                      currentTimeMs: 0,
-                      currentTimeListenable: _lyricTime,
-                      blurSigma: 0,
-                      config: _benchmarkLyricConfig,
+                      params: LyricPainterParams(
+                        line: _benchmarkLyric,
+                        currentTimeMs: 0,
+                        currentTimeListenable: _lyricTime,
+                        blurSigma: 0,
+                        config: _benchmarkLyricConfig,
+                        isMainLine: true,
+                        isHighlightActive: false,
+                        accelerateTailHighlight: false,
+                        useMaterialYouColor: false,
+                        opacity: 1.0,
+                        lineMedianWordDuration: const Duration(milliseconds: 900),
+                      ),
                       scheme: scheme,
-                      isMainLine: true,
-                      useMaterialYouColor: false,
-                      lineMedianWordDuration: const Duration(milliseconds: 900),
                     ),
                   ),
                 ),
