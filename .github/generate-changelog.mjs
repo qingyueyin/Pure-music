@@ -195,7 +195,88 @@ function pickLatestStable(releases) {
   return stable[0] || releases.find((r) => parseVersion(r.tag_name)) || null
 }
 
-function writeVersionJson(release) {
+function pickReleaseAsset(release, pattern) {
+  const assets = Array.isArray(release?.assets) ? release.assets : []
+  const hit = assets.find((a) => pattern.test(a?.name || ''))
+  if (!hit) return { url: '', name: '', size: null }
+  return {
+    url: hit.browser_download_url || '',
+    name: hit.name || '',
+    size: Number.isFinite(hit.size) ? hit.size : null,
+  }
+}
+
+/**
+ * 读取与资产同名的 .sha256 资产内容，解析出哈希。
+ * 资产缺失或内容非法时返回 null，应用端会在下载时再次尝试读取。
+ */
+async function readAssetSha256(release, assetName) {
+  if (!assetName) return null
+  const shaAsset = pickReleaseAsset(
+    release,
+    new RegExp(`^${escapeRegExp(assetName)}\\.sha256$`, 'i'),
+  )
+  if (!shaAsset.url) return null
+  try {
+    const headers = {
+      Accept: 'application/octet-stream',
+      'User-Agent': 'pure-music-changelog',
+    }
+    if (token) headers.Authorization = `Bearer ${token}`
+    const res = await fetch(shaAsset.url, { headers })
+    if (!res.ok) return null
+    const text = await res.text()
+    // 兼容 "hash" / "hash *filename" / "hash  filename"
+    const match = text.trim().match(/^([0-9a-fA-F]{64})/)
+    return match ? match[1].toLowerCase() : null
+  } catch {
+    return null
+  }
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function sha256Digest(asset) {
+  const digest = String(asset?.digest || '')
+  const match = digest.match(/^(?:sha256:)?([0-9a-f]{64})$/i)
+  return match ? match[1].toLowerCase() : null
+}
+
+function giteeAssetUrl(release, assetName) {
+  if (!assetName) return null
+  return `https://gitee.com/${giteeRepo}/releases/download/` +
+    `${encodeURIComponent(release.tag_name)}/${encodeURIComponent(assetName)}`
+}
+
+async function collectReleaseAssets(release) {
+  const installer = pickReleaseAsset(release, /installer\.exe$/i)
+  const portable = pickReleaseAsset(release, /portable\.zip$/i)
+  const readMetadata = async (asset) => ({
+    ...asset,
+    giteeUrl: giteeAssetUrl(release, asset.name),
+    checksumUrl:
+      pickReleaseAsset(
+        release,
+        new RegExp(`^${escapeRegExp(asset.name)}\\.sha256$`, 'i'),
+      ).url || null,
+    giteeChecksumUrl: giteeAssetUrl(release, `${asset.name}.sha256`),
+    sha256:
+      sha256Digest(
+        (Array.isArray(release?.assets) ? release.assets : []).find(
+          (candidate) => candidate?.name === asset.name,
+        ),
+      ) ?? (await readAssetSha256(release, asset.name)),
+  })
+  return {
+    installer: await readMetadata(installer),
+    portable: await readMetadata(portable),
+  }
+}
+
+/** 应用内检查更新用：版本信息 + 安装包/便携包直链与校验值 */
+function writeVersionJson(release, assets) {
   if (!release) return
   const githubUrl =
     release.html_url ||
@@ -208,28 +289,34 @@ function writeVersionJson(release) {
       '## 更新内容\n\n请前往 GitHub Releases 查看完整更新日志',
     // 应用内「获取更新」优先打开 GitHub；访问慢时可改用文档站上的 Gitee 镜像说明
     html_url: githubUrl,
+    gitee_release_url: `https://gitee.com/${giteeRepo}/releases/tag/${release.tag_name}`,
+    installer_url: assets.installer.url || null,
+    gitee_installer_url: assets.installer.giteeUrl,
+    installer_sha256: assets.installer.sha256,
+    installer_checksum_url: assets.installer.checksumUrl,
+    gitee_installer_checksum_url: assets.installer.checksumUrl
+      ? assets.installer.giteeChecksumUrl
+      : null,
+    installer_size: assets.installer.size,
+    portable_url: assets.portable.url || null,
+    gitee_portable_url: assets.portable.giteeUrl,
+    portable_sha256: assets.portable.sha256,
+    portable_checksum_url: assets.portable.checksumUrl,
+    gitee_portable_checksum_url: assets.portable.checksumUrl
+      ? assets.portable.giteeChecksumUrl
+      : null,
+    portable_size: assets.portable.size,
+    size: assets.installer.size ?? assets.portable.size,
   }
   mkdirSync(dirname(versionJsonPath), { recursive: true })
   writeFileSync(versionJsonPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
   console.log(`wrote ${versionJsonPath} -> ${payload.tag_name}`)
 }
 
-function pickReleaseAsset(release, pattern) {
-  const assets = Array.isArray(release?.assets) ? release.assets : []
-  const hit = assets.find((a) => pattern.test(a?.name || ''))
-  if (!hit) return { url: '', name: '' }
-  return {
-    url: hit.browser_download_url || '',
-    name: hit.name || '',
-  }
-}
-
 /** 文档站下载卡片用：最新版号 + GitHub / Gitee 入口 + 安装包直链 */
-function writeLatestReleaseJson(release) {
+function writeLatestReleaseJson(release, assets) {
   if (!release) return
   const ver = displayVersion(release.tag_name, release.name)
-  const installer = pickReleaseAsset(release, /installer\.exe$/i)
-  const portable = pickReleaseAsset(release, /portable\.zip$/i)
   const payload = {
     tag_name: release.tag_name,
     name: release.name || release.tag_name,
@@ -238,12 +325,27 @@ function writeLatestReleaseJson(release) {
     github_release_url:
       release.html_url ||
       `https://github.com/${repo}/releases/tag/${release.tag_name}`,
+    gitee_release_url: `https://gitee.com/${giteeRepo}/releases/tag/${release.tag_name}`,
     gitee_repo_url: `https://gitee.com/${giteeRepo}`,
     gitee_releases_url: `https://gitee.com/${giteeRepo}/releases`,
-    installer_url: installer.url,
-    installer_name: installer.name,
-    portable_url: portable.url,
-    portable_name: portable.name,
+    installer_url: assets.installer.url || null,
+    gitee_installer_url: assets.installer.giteeUrl,
+    installer_name: assets.installer.name || null,
+    installer_sha256: assets.installer.sha256,
+    installer_checksum_url: assets.installer.checksumUrl,
+    gitee_installer_checksum_url: assets.installer.checksumUrl
+      ? assets.installer.giteeChecksumUrl
+      : null,
+    installer_size: assets.installer.size,
+    portable_url: assets.portable.url || null,
+    gitee_portable_url: assets.portable.giteeUrl,
+    portable_name: assets.portable.name || null,
+    portable_sha256: assets.portable.sha256,
+    portable_checksum_url: assets.portable.checksumUrl,
+    gitee_portable_checksum_url: assets.portable.checksumUrl
+      ? assets.portable.giteeChecksumUrl
+      : null,
+    portable_size: assets.portable.size,
     // Gitee 镜像同步常滞后，前端可展示提示
     gitee_may_lag: true,
     generated_at: new Date().toISOString(),
@@ -271,8 +373,9 @@ async function main() {
   console.log(`wrote ${changelogPath} (${releases.length} versions)`)
 
   const latest = pickLatestStable(releases)
-  writeVersionJson(latest)
-  writeLatestReleaseJson(latest)
+  const assets = await collectReleaseAssets(latest)
+  writeVersionJson(latest, assets)
+  writeLatestReleaseJson(latest, assets)
 }
 
 main().catch((err) => {

@@ -163,14 +163,57 @@ function Update-RunnerRcVersion([string]$version) {
     Write-Host "Synced Runner.rc: ProductVersion=$major.$minor.$patch, FileVersion=$major.$minor.$patch.$build" -ForegroundColor Gray
 }
 
+function Get-FileSha256IfPresent([string]$path) {
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        return $null
+    }
+    return (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
 function Update-VersionJson([string]$version) {
     $versionJsonPath = Join-Path $PSScriptRoot "update\version.json"
+    $outputDir = Join-Path $PSScriptRoot "output"
+    $installerName = "pure_music_${version}_release_installer.exe"
+    $portableName = "pure_music_${version}_release_portable.zip"
+    $installerPath = Join-Path $outputDir $installerName
+    $portablePath = Join-Path $outputDir $portableName
+
+    $installerUrl = "https://github.com/qingyueyin/Pure-music/releases/download/v$version/$installerName"
+    $portableUrl = "https://github.com/qingyueyin/Pure-music/releases/download/v$version/$portableName"
+    $giteeReleaseUrl = "https://gitee.com/qingyueyin/Pure-music/releases/tag/v$version"
+    $giteeInstallerUrl = "https://gitee.com/qingyueyin/Pure-music/releases/download/v$version/$installerName"
+    $giteePortableUrl = "https://gitee.com/qingyueyin/Pure-music/releases/download/v$version/$portableName"
+    $installerSha = Get-FileSha256IfPresent $installerPath
+    $portableSha = Get-FileSha256IfPresent $portablePath
+    $installerSize = if (Test-Path -LiteralPath $installerPath -PathType Leaf) { (Get-Item -LiteralPath $installerPath).Length } else { $null }
+    $portableSize = if (Test-Path -LiteralPath $portablePath -PathType Leaf) { (Get-Item -LiteralPath $portablePath).Length } else { $null }
+
+    $shaInstallerJson = if ($null -eq $installerSha) { 'null' } else { '"' + $installerSha + '"' }
+    $shaPortableJson = if ($null -eq $portableSha) { 'null' } else { '"' + $portableSha + '"' }
+    $installerSizeJson = if ($null -eq $installerSize) { 'null' } else { [string]$installerSize }
+    $portableSizeJson = if ($null -eq $portableSize) { 'null' } else { [string]$portableSize }
+    $sizeJson = if ($null -eq $installerSize) { $portableSizeJson } else { [string]$installerSize }
+
     $json = [System.Text.StringBuilder]::new()
     [void]$json.AppendLine("{")
     [void]$json.AppendLine("  ""tag_name"": ""v$version"",")
     [void]$json.AppendLine("  ""name"": ""v$version"",")
     [void]$json.AppendLine("  ""body"": ""## 更新内容\n\n请前往 GitHub Releases 查看完整更新日志"",")
-    [void]$json.AppendLine("  ""html_url"": ""https://github.com/qingyueyin/Pure-music/releases""")
+    [void]$json.AppendLine("  ""html_url"": ""https://github.com/qingyueyin/Pure-music/releases"",")
+    [void]$json.AppendLine("  ""gitee_release_url"": ""$giteeReleaseUrl"",")
+    [void]$json.AppendLine("  ""installer_url"": ""$installerUrl"",")
+    [void]$json.AppendLine("  ""gitee_installer_url"": ""$giteeInstallerUrl"",")
+    [void]$json.AppendLine("  ""installer_sha256"": $shaInstallerJson,")
+    [void]$json.AppendLine("  ""installer_checksum_url"": null,")
+    [void]$json.AppendLine("  ""gitee_installer_checksum_url"": null,")
+    [void]$json.AppendLine("  ""installer_size"": $installerSizeJson,")
+    [void]$json.AppendLine("  ""portable_url"": ""$portableUrl"",")
+    [void]$json.AppendLine("  ""gitee_portable_url"": ""$giteePortableUrl"",")
+    [void]$json.AppendLine("  ""portable_sha256"": $shaPortableJson,")
+    [void]$json.AppendLine("  ""portable_checksum_url"": null,")
+    [void]$json.AppendLine("  ""gitee_portable_checksum_url"": null,")
+    [void]$json.AppendLine("  ""portable_size"": $portableSizeJson,")
+    [void]$json.AppendLine("  ""size"": $sizeJson")
     [void]$json.AppendLine("}")
     Write-Utf8NoBom $versionJsonPath $json.ToString()
     Write-Host "Generated update/version.json: tag=v$version" -ForegroundColor Gray
@@ -370,19 +413,96 @@ function Test-KeyFiles([string]$appDir) {
     Write-Host "Key file check passed." -ForegroundColor Green
 }
 
+function Write-PortableIntegrityFiles([string]$artifactRoot, [string]$version) {
+    $manifestEntries = @()
+    $checksumLines = @()
+    $excludedNames = @("package_manifest.json", "SHA256SUMS.txt")
+    $supportDir = Join-Path $artifactRoot ".update"
+
+    Get-ChildItem -LiteralPath $artifactRoot -Recurse -File | Sort-Object FullName | ForEach-Object {
+        if ($excludedNames -contains $_.Name) { return }
+        $relativePath = $_.FullName.Substring($artifactRoot.Length).TrimStart('\').Replace('\', '/')
+        $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+        $manifestEntries += [ordered]@{
+            path = $relativePath
+            size = $_.Length
+            sha256 = $hash
+        }
+        $checksumLines += "{0} *{1}" -f $hash, $relativePath
+    }
+
+    $manifest = [ordered]@{
+        version = $version
+        files = $manifestEntries
+    }
+    Write-Utf8NoBom (
+        Join-Path $supportDir "package_manifest.json"
+    ) (($manifest | ConvertTo-Json -Depth 5) + "`n")
+    Write-Utf8NoBom (
+        Join-Path $supportDir "SHA256SUMS.txt"
+    ) (($checksumLines -join "`n") + "`n")
+}
+
+function Set-PortableSupportHidden([string]$artifactRoot) {
+    $supportDir = Join-Path $artifactRoot ".update"
+    if (-not (Test-Path -LiteralPath $supportDir -PathType Container)) {
+        throw "Portable update directory not found: $supportDir"
+    }
+
+    Get-ChildItem -LiteralPath $supportDir -Force -Recurse | ForEach-Object {
+        $_.Attributes = $_.Attributes -bor [System.IO.FileAttributes]::Hidden
+    }
+    $directory = Get-Item -LiteralPath $supportDir -Force
+    $directory.Attributes = $directory.Attributes -bor [System.IO.FileAttributes]::Hidden
+}
+
+function Set-ZipPortableSupportHidden([string]$zipPath) {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $zip = [System.IO.Compression.ZipFile]::Open(
+        $zipPath,
+        [System.IO.Compression.ZipArchiveMode]::Update
+    )
+    try {
+        $directoryEntry = @($zip.Entries) | Where-Object {
+            $_.FullName -eq ".update/"
+        } | Select-Object -First 1
+        if ($null -eq $directoryEntry) {
+            $directoryEntry = $zip.CreateEntry(".update/")
+        }
+        $directoryEntry.ExternalAttributes =
+            ([int][System.IO.FileAttributes]::Hidden -bor
+            [int][System.IO.FileAttributes]::Directory)
+
+        foreach ($entry in @($zip.Entries)) {
+            if ($entry.FullName.StartsWith(
+                    ".update/",
+                    [System.StringComparison]::OrdinalIgnoreCase
+                ) -and -not $entry.FullName.EndsWith("/")) {
+                $entry.ExternalAttributes = [int][System.IO.FileAttributes]::Hidden
+            }
+        }
+    }
+    finally {
+        $zip.Dispose()
+    }
+}
+
 function New-PortablePackage([string]$version, [bool]$buildFirst, [bool]$makeZip) {
     if ($buildFirst) { Invoke-Build $version $true }
     $artifactName = "pure_music_{0}_release_portable" -f $version
     $publishedRoot = Join-Path $finalOutputDir $artifactName
     $publishedZip = Join-Path $finalOutputDir "$artifactName.zip"
+    $publishedChecksum = "$publishedZip.sha256"
 
     if (Test-Path -LiteralPath $publishedRoot) {
         Assert-PathWithin $publishedRoot $finalOutputDir
         Remove-Item -LiteralPath $publishedRoot -Recurse -Force
     }
-    if ($makeZip -and (Test-Path -LiteralPath $publishedZip)) {
-        Assert-PathWithin $publishedZip $finalOutputDir
-        Remove-Item -LiteralPath $publishedZip -Force
+    foreach ($path in @($publishedZip, $publishedChecksum)) {
+        if ($makeZip -and (Test-Path -LiteralPath $path)) {
+            Assert-PathWithin $path $finalOutputDir
+            Remove-Item -LiteralPath $path -Force
+        }
     }
 
     $staging = New-StagingContainer
@@ -390,6 +510,26 @@ function New-PortablePackage([string]$version, [bool]$buildFirst, [bool]$makeZip
         $artifactRoot = Join-Path $staging $artifactName
         New-Item -ItemType Directory -Force -Path $artifactRoot | Out-Null
         $finalAppDir = New-AppPackage $artifactRoot $version
+
+        Invoke-Step "copy portable update scripts" {
+            $supportDir = Join-Path $artifactRoot ".update"
+            New-Item -ItemType Directory -Force -Path $supportDir | Out-Null
+            foreach ($fileName in @(
+                "PORTABLE_README.txt",
+                "upgrade_from_previous.ps1",
+                "apply_portable_update.ps1"
+            )) {
+                $source = Join-Path $PSScriptRoot "tool\$fileName"
+                if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+                    throw "Portable update file not found: $source"
+                }
+                Copy-Item -LiteralPath $source -Destination (
+                    Join-Path $supportDir $fileName
+                ) -Force
+            }
+        }
+        Write-PortableIntegrityFiles $artifactRoot $version
+        Set-PortableSupportHidden $artifactRoot
 
         Invoke-Step "validate portable package" {
             Test-KeyFiles $finalAppDir
@@ -404,11 +544,17 @@ function New-PortablePackage([string]$version, [bool]$buildFirst, [bool]$makeZip
                     [System.IO.Compression.CompressionLevel]::Optimal,
                     $false
                 )
+                Set-ZipPortableSupportHidden $publishedZip
+                $hash = (Get-FileHash -LiteralPath $publishedZip -Algorithm SHA256).Hash.ToLowerInvariant()
+                Write-Utf8NoBom $publishedChecksum (
+                    "{0} *{1}`n" -f $hash, [System.IO.Path]::GetFileName($publishedZip)
+                )
             }
         }
 
         # 文件监视器可能锁定项目目录下新建目录的重命名，复制后由 finally 清理暂存目录。
         Copy-Item -LiteralPath $artifactRoot -Destination $publishedRoot -Recurse -Force
+        Set-PortableSupportHidden $publishedRoot
     }
     finally {
         Remove-StagingContainer
@@ -420,7 +566,9 @@ function New-PortablePackage([string]$version, [bool]$buildFirst, [bool]$makeZip
     Write-Host "Folder:   $publishedRoot" -ForegroundColor Yellow
     if ($makeZip) {
         Write-Host "Archive:  $publishedZip" -ForegroundColor Yellow
+        Write-Host "SHA256:   $publishedChecksum" -ForegroundColor Yellow
     }
+    Update-VersionJson $version
 }
 
 function New-InstallerPackage([string]$version, [bool]$buildFirst) {
@@ -490,6 +638,7 @@ function New-InstallerPackage([string]$version, [bool]$buildFirst) {
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host "Installer: $publishedInstaller" -ForegroundColor Yellow
     Write-Host "SHA256:   $publishedChecksum" -ForegroundColor Yellow
+    Update-VersionJson $version
 }
 
 # ---------- entry ----------
