@@ -170,6 +170,7 @@ class SmartSortService {
         if (cancellationSent || !isCancelled()) return;
         cancellationSent = true;
         smart_transition.cancelSmartTransitionAnalysis(jobId: jobId);
+        cancellationTimer?.cancel();
       });
     }
     try {
