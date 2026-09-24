@@ -316,7 +316,7 @@ class _EntryState extends State<Entry>
     }
   }
 
-  /// 启动后延迟检查更新
+  /// 启动后延迟检查更新（1 小时节流）
   Future<void> _autoCheckUpdate() async {
     if (!AppPreference.instance.autoCheckUpdate) return;
 
@@ -324,19 +324,51 @@ class _EntryState extends State<Entry>
     await Future.delayed(const Duration(seconds: 5));
     if (!mounted) return;
 
-    final newest = await UpdateChecker.checkForUpdate();
-    if (!mounted || newest == null) return;
+    final hadSavedChannel =
+        UpdateChannel.parse(AppPreference.instance.updateChannel) != null;
+    final overlayContext = routerKey.currentState?.overlay?.context;
+    if (overlayContext == null || !overlayContext.mounted) return;
+    final channel = await ensureUpdateChannel(overlayContext);
+    if (!mounted || !overlayContext.mounted || channel == null) return;
 
-    if (UpdateChecker.shouldNotify(newest.tagName)) {
+    final lastRaw = AppPreference.instance.lastUpdateCheckTime;
+    final last = lastRaw == null ? null : DateTime.tryParse(lastRaw);
+    final now = DateTime.now().toUtc();
+    if (hadSavedChannel &&
+        last != null &&
+        now.isBefore(last.toUtc().add(const Duration(hours: 1)))) {
+      return;
+    }
+
+    UpdateInfo? newest;
+    try {
+      newest = await UpdateChecker.checkForUpdate(channel: channel);
+    } catch (err, trace) {
+      logger.w(
+        '[UpdateChecker] automatic check failed',
+        error: err,
+        stackTrace: trace,
+      );
+    } finally {
+      // 请求后无论是否弹窗都记录节流时间
+      AppPreference.instance.lastUpdateCheckTime = DateTime.now()
+          .toUtc()
+          .toIso8601String();
+      await AppPreference.instance.save();
+    }
+
+    final update = newest;
+    if (!mounted || !overlayContext.mounted || update == null) return;
+
+    if (UpdateChecker.shouldNotify(update.tagName)) {
       // 记录已提醒版本，避免反复弹窗
-      AppPreference.instance.lastSeenUpdateTag = newest.tagName;
-      AppPreference.instance.save();
+      AppPreference.instance.lastSeenUpdateTag = update.tagName;
+      await AppPreference.instance.save();
 
-      final ctx = routerKey.currentState?.overlay?.context;
-      if (ctx == null || !ctx.mounted) return;
+      if (!mounted || !overlayContext.mounted) return;
       showDialog(
-        context: ctx,
-        builder: (context) => NewestUpdateView(info: newest),
+        context: overlayContext,
+        builder: (context) => NewestUpdateView(info: update, channel: channel),
       );
     }
   }
