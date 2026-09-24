@@ -810,6 +810,7 @@ class AppPreference {
 
   String customCpFeedbackKey = '';
   String updateRepoSlug = defaultUpdateRepoSlug;
+  String? updateChannel;
   bool autoCheckUpdate = true;
   String? lastUpdateCheckTime;
   String? lastSeenUpdateTag;
@@ -900,6 +901,7 @@ class AppPreference {
       prefMap['updateRepoSlug'],
       defaultValue: defaultUpdateRepoSlug,
     );
+    updateChannel = _normalizedNullableString(prefMap['updateChannel']);
     autoCheckUpdate = _normalizedBool(
       prefMap['autoCheckUpdate'],
       defaultValue: true,
@@ -953,6 +955,7 @@ class AppPreference {
         'nowPlayingPagePref': nowPlayingPagePref.toMap(),
         'customCpFeedbackKey': customCpFeedbackKey,
         'updateRepoSlug': updateRepoSlug,
+        'updateChannel': updateChannel,
         'autoCheckUpdate': autoCheckUpdate,
         'lastUpdateCheckTime': lastUpdateCheckTime,
         'lastSeenUpdateTag': lastSeenUpdateTag,
