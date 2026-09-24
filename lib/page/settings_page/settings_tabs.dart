@@ -3244,6 +3244,8 @@ class _AboutTabContent extends StatelessWidget {
         SizedBox(height: 4.0),
         _AboutVersionItem(),
         SizedBox(height: 16.0),
+        _AboutUpdateChannelItem(),
+        SizedBox(height: 16.0),
         _AboutAutoUpdateItem(),
         SizedBox(height: 24.0),
         _SettingsSectionHeader('相关链接'),
@@ -3611,14 +3613,17 @@ class _AboutVersionItemState extends State<_AboutVersionItem> {
     setState(() => _isChecking = true);
 
     try {
-      final newest = await UpdateChecker.checkForUpdate();
+      final channel = await ensureUpdateChannel(context);
+      if (!mounted || channel == null) return;
+      final newest = await UpdateChecker.checkForUpdate(channel: channel);
       if (!mounted) return;
 
       if (newest != null &&
           UpdateChecker.hasNewVersion(newest.tagName, AppSettings.version)) {
         showDialog(
           context: context,
-          builder: (context) => NewestUpdateView(info: newest),
+          builder: (context) =>
+              NewestUpdateView(info: newest, channel: channel),
         );
       } else {
         showTextOnSnackBar('无新版本');
@@ -3626,9 +3631,9 @@ class _AboutVersionItemState extends State<_AboutVersionItem> {
     } catch (err, trace) {
       logger.e(err, stackTrace: trace);
       if (mounted) showTextOnSnackBar('网络异常');
+    } finally {
+      if (mounted) setState(() => _isChecking = false);
     }
-
-    if (mounted) setState(() => _isChecking = false);
   }
 
   @override
@@ -3646,6 +3651,54 @@ class _AboutVersionItemState extends State<_AboutVersionItem> {
               )
             : const Icon(Symbols.update, size: 18),
         label: Text(_isChecking ? '检查中' : '检查更新'),
+      ),
+    );
+  }
+}
+
+class _AboutUpdateChannelItem extends StatefulWidget {
+  const _AboutUpdateChannelItem();
+
+  @override
+  State<_AboutUpdateChannelItem> createState() =>
+      _AboutUpdateChannelItemState();
+}
+
+class _AboutUpdateChannelItemState extends State<_AboutUpdateChannelItem> {
+  bool _changing = false;
+
+  Future<void> _chooseChannel() async {
+    if (_changing) return;
+    setState(() => _changing = true);
+    try {
+      await chooseAndSaveUpdateChannel(context);
+    } finally {
+      if (mounted) setState(() => _changing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final channel = UpdateChannel.parse(AppPreference.instance.updateChannel);
+    return SettingsTile(
+      description: '更新渠道',
+      subtitle: channel?.label ?? '首次检查更新时选择',
+      action: OutlinedButton.icon(
+        onPressed: _changing ? null : _chooseChannel,
+        icon: _changing
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Symbols.swap_horiz, size: 18),
+        label: Text(
+          _changing
+              ? '保存中'
+              : channel == null
+              ? '选择渠道'
+              : '切换渠道',
+        ),
       ),
     );
   }
