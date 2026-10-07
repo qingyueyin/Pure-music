@@ -603,6 +603,15 @@ class Lrc extends Lyric {
       if (avgLen > 3.0) return false;
     }
 
+    // 每个词都 ≥4 字母 → 英文单词，不是逐音节罗马音。
+    // 例: "each time"、"come back"；对比 "kimi no"、"sa rang" 含 1-3 字母音节。
+    if (words.length >= 2 &&
+        words.every(
+          (w) => w.replaceAll(RegExp(r'[^a-zA-Z]'), '').length >= 4,
+        )) {
+      return false;
+    }
+
     // 检测 3+ 连续辅音 → 不可能是罗马音
     // 罗马音几乎没有连续 3 个辅音的情况
     // 英文: "world"(rld), "night"(ght), "strong"(str)

@@ -147,6 +147,26 @@ void main() {
     expect(line.romanLyric, 'wo ai ni');
   });
 
+  test('keeps english word-by-word original with chinese translation', () {
+    const source = '''
+[00:32.620]each [00:32.870]time[00:33.830]
+[00:32.620]一再地
+''';
+
+    final lyric = Lrc.fromLrcTextAuto(
+      source,
+      LyricFormat.local,
+      separator: '┃',
+    )!;
+    final line = lyric.lines.whereType<SyncLyricLine>().firstWhere(
+      (line) => line.words.isNotEmpty,
+    );
+
+    expect(line.words.map((w) => w.content).join(), 'each time');
+    expect(line.translation, '一再地');
+    expect(line.romanLyric, isNull);
+  });
+
   test('keeps hangul original when word timestamps use millisecond tags', () {
     const source = '''
 [00:12.000]<0>사<120>랑<240>해
