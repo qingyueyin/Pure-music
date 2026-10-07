@@ -332,6 +332,7 @@ class UniPage<T> extends StatefulWidget {
   final Object? contentRevision;
   final bool contentIsPrepared;
 
+
   /// 是否启用堆叠滚动效果（平滑滚轮始终启用）。
   final bool enableStackedEffect;
   final PageActionPlacement actionPlacement;
@@ -897,14 +898,14 @@ class _UniPageState<T> extends State<UniPage<T>> {
             (widget.gridDelegate ?? gridDelegate)
                 as SliverGridDelegateWithMaxCrossAxisExtent,
         itemCount: widget.contentList.length,
-        padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+        padding: const EdgeInsets.only(top: 5.0, bottom: 96.0, right: 20),
         itemBuilder: itemBuilder,
       );
     }
     return SidebarGridTransition(
       controller: tableScrollController,
       physics: listMotion ? const SmoothScrollPhysics() : null,
-      padding: const EdgeInsets.only(bottom: 96.0, right: 20),
+      padding: const EdgeInsets.only(top: 5.0, bottom: 96.0, right: 20),
       gridDelegate: widget.gridDelegate ?? gridDelegate,
       revision: (widget.contentRevision, currSortMethod, currSortOrder),
       itemCount: widget.contentList.length,
