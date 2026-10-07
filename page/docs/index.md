@@ -9,8 +9,8 @@ hero:
   text: Windows<br>本地音乐播放器
   tagline: 一款 纯粹 简单 的本地音乐播放器~
   image:
-    src: /logo.png
-    alt: Pure Music
+    src: /showcase/library-light-default.webp
+    alt: 浅色主页
   actions:
     - theme: brand
       text: 立即下载
@@ -28,16 +28,16 @@ hero:
   </div>
   <div class="pm-collage">
     <figure class="pm-card-shot c1">
-      <img src="/showcase/library-light-default.png" alt="浅色界面" />
+      <img src="/showcase/library-light-default.webp" width="1920" height="1080" alt="浅色界面" decoding="async" />
     </figure>
     <figure class="pm-card-shot c2">
-      <img src="/showcase/library-dark-default.png" alt="深色界面" />
+      <img src="/showcase/library-dark-default.webp" width="1920" height="1080" alt="深色界面" decoding="async" />
     </figure>
     <figure class="pm-card-shot c3">
-      <img src="/showcase/library-light.png" alt="浅色，自定义背景" />
+      <img src="/showcase/library-light.webp" width="1920" height="1080" alt="浅色，自定义背景" decoding="async" />
     </figure>
     <figure class="pm-card-shot c4">
-      <img src="/showcase/library-dark.png" alt="深色，自定义背景" />
+      <img src="/showcase/library-dark.webp" width="1920" height="1080" alt="深色，自定义背景" decoding="async" />
     </figure>
   </div>
 </section>
@@ -50,13 +50,13 @@ hero:
   </div>
   <div class="pm-collage pm-collage-pair">
     <figure class="pm-card-shot a">
-      <img src="/showcase/light-flow-wavy.png" alt="浅色律动背景，波浪进度条" />
+      <img src="/showcase/light-flow-wavy.webp" width="1920" height="1080" alt="浅色律动背景，波浪进度条" loading="lazy" decoding="async" />
     </figure>
     <figure class="pm-card-shot b">
-      <img src="/showcase/light-mesh-smooth.png" alt="浅色网格背景，平滑进度条" />
+      <img src="/showcase/light-mesh-smooth.webp" width="1920" height="1080" alt="浅色网格背景，平滑进度条" loading="lazy" decoding="async" />
     </figure>
     <figure class="pm-card-shot c">
-      <img src="/showcase/inline-lyrics.png" alt="歌曲页里的歌词" />
+      <img src="/showcase/inline-lyrics.webp" width="1920" height="1080" alt="歌曲页里的歌词" loading="lazy" decoding="async" />
     </figure>
   </div>
 </section>
@@ -69,7 +69,7 @@ hero:
   </div>
   <div class="pm-collage pm-collage-solo">
     <figure class="pm-card-shot a">
-      <img src="/showcase/concert.png" alt="演出模式" />
+      <img src="/showcase/concert.webp" width="1920" height="1080" alt="演出模式" loading="lazy" decoding="async" />
     </figure>
   </div>
 </section>
@@ -82,16 +82,16 @@ hero:
   </div>
   <div class="pm-collage pm-collage-stack">
     <figure class="pm-card-shot a">
-      <img src="/showcase/albums-dark.png" alt="深色专辑页" />
+      <img src="/showcase/albums-dark.webp" width="1920" height="1080" alt="深色专辑页" loading="lazy" decoding="async" />
     </figure>
     <figure class="pm-card-shot b">
-      <img src="/showcase/folder-detail.png" alt="文件夹里的歌" />
+      <img src="/showcase/folder-detail.webp" width="1920" height="1080" alt="文件夹里的歌" loading="lazy" decoding="async" />
     </figure>
     <figure class="pm-card-shot c">
-      <img src="/showcase/playlist-detail.png" alt="歌单里的歌" />
+      <img src="/showcase/playlist-detail.webp" width="1920" height="1080" alt="歌单里的歌" loading="lazy" decoding="async" />
     </figure>
     <figure class="pm-card-shot d">
-      <img src="/showcase/album-detail.png" alt="专辑里的歌" />
+      <img src="/showcase/album-detail.webp" width="1920" height="1080" alt="专辑里的歌" loading="lazy" decoding="async" />
     </figure>
   </div>
 </section>
@@ -104,10 +104,10 @@ hero:
   </div>
   <div class="pm-collage pm-collage-immersive">
     <figure class="pm-card-shot c5">
-      <img src="/showcase/immersive-landscape.png" alt="横屏沉浸" />
+      <img src="/showcase/immersive-landscape.webp" width="1920" height="1080" alt="横屏沉浸" loading="lazy" decoding="async" />
     </figure>
     <figure class="pm-card-shot c6">
-      <img src="/showcase/immersive-portrait.png" alt="竖屏沉浸" />
+      <img src="/showcase/immersive-portrait.webp" width="639" height="1077" alt="竖屏沉浸" loading="lazy" decoding="async" />
     </figure>
   </div>
 </section>
@@ -120,10 +120,10 @@ hero:
   </div>
   <div class="pm-collage pm-collage-pair pm-collage-archive">
     <figure class="pm-card-shot a">
-      <img src="/showcase/track-detail.png" alt="乐曲详细页" />
+      <img src="/showcase/track-detail.webp" width="1920" height="1080" alt="乐曲详细页" loading="lazy" decoding="async" />
     </figure>
     <figure class="pm-card-shot b">
-      <img src="/showcase/stats.png" alt="统计页" />
+      <img src="/showcase/stats.webp" width="1920" height="1080" alt="统计页" loading="lazy" decoding="async" />
     </figure>
   </div>
 </section>

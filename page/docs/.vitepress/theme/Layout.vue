@@ -1,20 +1,25 @@
 <script setup>
 import DefaultTheme from 'vitepress/theme'
-import { onMounted, onUnmounted, watch, ref } from 'vue'
+import { computed, onMounted, onUnmounted, watch, ref } from 'vue'
 import { useRoute, useData, withBase } from 'vitepress'
 
 const { Layout } = DefaultTheme
 const route = useRoute()
-const { frontmatter } = useData()
+const { frontmatter, isDark } = useData()
 const logoUrl = withBase('/logo.webp')
+const heroShotUrl = computed(() =>
+  withBase(isDark.value ? '/showcase/library-dark-default.webp' : '/showcase/library-light-default.webp'),
+)
 const loading = ref(true)
 
 const bound = new WeakSet()
-const follow = new WeakMap()
-const tilts = new WeakMap()
 let mo
 let io
-let raf = 0
+let zFront = 8
+let scrollCur = 0
+let scrollTarget = 0
+let scrollTick = 0
+let smoothWheel = false
 
 const preview = ref(null)
 const previewAlt = ref('')
@@ -25,142 +30,61 @@ function prefersReduced() {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches
 }
 
-function needsTick(s) {
+function fancyDesktop() {
   return (
-    Math.abs(s.tx - s.x) > 0.4 ||
-    Math.abs(s.ty - s.y) > 0.4 ||
-    Math.abs(s.trx - s.rx) > 0.02 ||
-    Math.abs(s.ryT - s.ry) > 0.02
+    !prefersReduced() &&
+    window.matchMedia('(hover: hover) and (pointer: fine)').matches &&
+    window.innerWidth >= 960
   )
 }
 
-function tickFollow() {
-  raf = 0
-  document.querySelectorAll('.pm-hot').forEach((el) => {
-    const s = follow.get(el)
-    if (!s) return
-    s.x += (s.tx - s.x) * 0.18
-    s.y += (s.ty - s.y) * 0.18
-    el.style.setProperty('--mx', `${s.x}px`)
-    el.style.setProperty('--my', `${s.y}px`)
-    if (Math.abs(s.tx - s.x) > 0.4 || Math.abs(s.ty - s.y) > 0.4) {
-      if (!raf) raf = requestAnimationFrame(tickFollow)
-    }
-  })
-  document.querySelectorAll('.pm-card-shot').forEach((el) => {
-    const s = tilts.get(el)
-    if (!s) return
-    s.rx += (s.trx - s.rx) * 0.12
-    s.ry += (s.ryT - s.ry) * 0.12
-    s.x += (s.tx - s.x) * 0.16
-    s.y += (s.ty - s.y) * 0.16
-    el.style.setProperty('--rx-mouse', `${s.rx.toFixed(3)}deg`)
-    el.style.setProperty('--ry-mouse', `${s.ry.toFixed(3)}deg`)
-    el.style.setProperty('--mx', `${s.x.toFixed(1)}px`)
-    el.style.setProperty('--my', `${s.y.toFixed(1)}px`)
-    if (needsTick(s) && !raf) raf = requestAnimationFrame(tickFollow)
-  })
+function allowSmoothScroll() {
+  if (!fancyDesktop()) return false
+  const mem = navigator.deviceMemory
+  if (typeof mem === 'number' && mem <= 4) return false
+  return true
 }
 
-function onMove(e) {
+function onShotFront(e) {
   const el = e.currentTarget
-  const r = el.getBoundingClientRect()
-  const tx = e.clientX - r.left
-  const ty = e.clientY - r.top
-  let s = follow.get(el)
-  if (!s) {
-    s = { x: tx, y: ty, tx, ty }
-    follow.set(el, s)
-  }
-  s.tx = tx
-  s.ty = ty
-  if (!raf) raf = requestAnimationFrame(tickFollow)
-}
-
-function onEnter(e) {
-  e.currentTarget.classList.add('pm-hot')
-}
-
-function onLeave(e) {
-  e.currentTarget.classList.remove('pm-hot')
-  e.currentTarget.style.removeProperty('--mx')
-  e.currentTarget.style.removeProperty('--my')
+  if (el.classList.contains('is-front')) return
+  const pile = el.parentElement
+  pile?.querySelectorAll('.pm-card-shot.is-front').forEach((n) => {
+    n.classList.remove('is-front')
+  })
+  el.classList.add('is-front')
+  zFront += 1
+  el.style.zIndex = String(zFront)
 }
 
 function onTiltMove(e) {
-  if (prefersReduced()) return
-  if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return
+  if (!fancyDesktop()) return
   const el = e.currentTarget
   const r = el.getBoundingClientRect()
+  if (!r.width || !r.height) return
   const px = (e.clientX - r.left) / r.width - 0.5
   const py = (e.clientY - r.top) / r.height - 0.5
-  let s = tilts.get(el)
-  if (!s) {
-    s = { x: r.width / 2, y: r.height / 2, tx: 0, ty: 0, rx: 0, ry: 0, trx: 0, ryT: 0 }
-    tilts.set(el, s)
-  }
-  s.trx = -py * 9
-  s.ryT = px * 12
-  s.tx = e.clientX - r.left
-  s.ty = e.clientY - r.top
-  el.classList.add('is-tilting')
-  if (!raf) raf = requestAnimationFrame(tickFollow)
+  el.style.setProperty('--rx-mouse', `${(-py * 6).toFixed(2)}deg`)
+  el.style.setProperty('--ry-mouse', `${(px * 8).toFixed(2)}deg`)
 }
 
 function onTiltLeave(e) {
-  const el = e.currentTarget
-  const s = tilts.get(el)
-  if (s) {
-    s.trx = 0
-    s.ryT = 0
-  }
-  el.classList.remove('is-tilting')
-  if (!raf) raf = requestAnimationFrame(tickFollow)
+  e.currentTarget.style.setProperty('--rx-mouse', '0deg')
+  e.currentTarget.style.setProperty('--ry-mouse', '0deg')
 }
 
-function bindPointer() {
-  const nodes = document.querySelectorAll(
-    'a.VPFeature, .VPFeature.link, .download-btn, .VPButton, .VPDoc .pager-link',
-  )
-  nodes.forEach((el) => {
-    if (bound.has(el)) return
-    bound.add(el)
-    el.addEventListener('pointerenter', onEnter)
-    el.addEventListener('pointermove', onMove)
-    el.addEventListener('pointerleave', onLeave)
-  })
-}
-
-function bindTilt() {
+function bindShots() {
   document.querySelectorAll('.pm-card-shot').forEach((el) => {
     if (bound.has(el)) return
     bound.add(el)
+    el.addEventListener('pointerenter', onShotFront)
     el.addEventListener('pointermove', onTiltMove)
     el.addEventListener('pointerleave', onTiltLeave)
   })
 }
 
-function untiltFrames() {
-  if (CSS.supports('animation-timeline', 'view()')) return
-  const vh = window.innerHeight
-  document.querySelectorAll('.pm-card-shot').forEach((el) => {
-    const r = el.getBoundingClientRect()
-    const start = vh
-    const end = vh * 0.35
-    let t = (start - r.top) / (start - end)
-    t = Math.max(0, Math.min(1, t))
-    el.style.setProperty('--rx-scroll', `${((1 - t) * 42).toFixed(2)}deg`)
-    el.style.setProperty('--s-scroll', (0.9 + t * 0.1).toFixed(4))
-  })
-}
-
 function bindScroll() {
   io?.disconnect()
-  window.removeEventListener('scroll', untiltFrames)
-  if (!prefersReduced()) {
-    untiltFrames()
-    window.addEventListener('scroll', untiltFrames, { passive: true })
-  }
   io = new IntersectionObserver(
     (entries) => {
       entries.forEach((en) => {
@@ -169,13 +93,13 @@ function bindScroll() {
         io.unobserve(en.target)
       })
     },
-    { threshold: 0.2, rootMargin: '0px 0px -12% 0px' },
+    { threshold: 0.12, rootMargin: '0px 0px -8% 0px' },
   )
   document.querySelectorAll('.pm-stage, .pm-close, .pm-foot').forEach((el) => {
     const rect = el.getBoundingClientRect()
-    const seen = rect.top < window.innerHeight * 0.86 && rect.bottom > 48
+    const seen = rect.top < window.innerHeight * 0.9 && rect.bottom > 48
     if (seen) {
-      requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('is-in')))
+      requestAnimationFrame(() => el.classList.add('is-in'))
     } else {
       io.observe(el)
     }
@@ -236,12 +160,24 @@ function onKey(e) {
   }
 }
 
-let scrollCur = 0
-let scrollTarget = 0
-let scrollTick = 0
+function syncNavChrome() {
+  const onHome = frontmatter.value.layout === 'home'
+  const narrow = window.matchMedia('(max-width: 959.98px)').matches
+  const compact = narrow || !onHome || window.scrollY >= 96
+  document.documentElement.classList.toggle('pm-nav-compact', compact)
+}
+
+function onPageScroll() {
+  syncNavChrome()
+  if (scrollTick) return
+  const y = window.scrollY
+  scrollCur = y
+  scrollTarget = y
+  document.documentElement.style.setProperty('--pm-page-y', y.toFixed(1))
+}
 
 function onWheelSmooth(e) {
-  if (prefersReduced() || preview.value) return
+  if (!smoothWheel || preview.value) return
   if (frontmatter.value.layout !== 'home') return
   if (e.ctrlKey) return
   e.preventDefault()
@@ -251,7 +187,7 @@ function onWheelSmooth(e) {
 }
 
 function stepSmooth() {
-  scrollCur += (scrollTarget - scrollCur) * 0.16
+  scrollCur += (scrollTarget - scrollCur) * 0.28
   if (Math.abs(scrollTarget - scrollCur) < 0.4) {
     scrollCur = scrollTarget
     scrollTick = 0
@@ -263,24 +199,8 @@ function stepSmooth() {
   syncNavChrome()
 }
 
-function onNativeScroll() {
-  if (scrollTick) return
-  scrollCur = window.scrollY
-  scrollTarget = window.scrollY
-  document.documentElement.style.setProperty('--pm-page-y', String(window.scrollY))
-  syncNavChrome()
-}
-
-function syncNavChrome() {
-  const onHome = frontmatter.value.layout === 'home'
-  const narrow = window.matchMedia('(max-width: 959.98px)').matches
-  const compact = narrow || !onHome || window.scrollY >= 96
-  document.documentElement.classList.toggle('pm-nav-compact', compact)
-}
-
 function refresh() {
-  bindPointer()
-  bindTilt()
+  bindShots()
   bindScroll()
   syncNavChrome()
   collectPreviewImages().forEach((img) => {
@@ -292,19 +212,24 @@ function refresh() {
 
 onMounted(() => {
   refresh()
+  smoothWheel = allowSmoothScroll()
   document.addEventListener('click', onDocClick)
   document.addEventListener('keydown', onKey)
-  window.addEventListener('scroll', onNativeScroll, { passive: true })
-  window.addEventListener('wheel', onWheelSmooth, { passive: false })
-  window.addEventListener('resize', syncNavChrome)
+  window.addEventListener('scroll', onPageScroll, { passive: true })
+  window.addEventListener('resize', syncNavChrome, { passive: true })
+  if (smoothWheel) {
+    window.addEventListener('wheel', onWheelSmooth, { passive: false })
+  }
   scrollCur = window.scrollY
   scrollTarget = window.scrollY
   syncNavChrome()
-  window.setTimeout(() => { loading.value = false }, 640)
+  window.setTimeout(() => {
+    loading.value = false
+  }, 180)
   let moT
   mo = new MutationObserver(() => {
     clearTimeout(moT)
-    moT = setTimeout(refresh, 40)
+    moT = setTimeout(refresh, 80)
   })
   mo.observe(document.getElementById('app') || document.body, {
     childList: true,
@@ -325,20 +250,30 @@ watch(
 onUnmounted(() => {
   mo?.disconnect()
   io?.disconnect()
-  window.removeEventListener('scroll', untiltFrames)
-  if (raf) cancelAnimationFrame(raf)
   document.removeEventListener('click', onDocClick)
   document.removeEventListener('keydown', onKey)
-  window.removeEventListener('scroll', onNativeScroll)
-  window.removeEventListener('wheel', onWheelSmooth)
+  window.removeEventListener('scroll', onPageScroll)
   window.removeEventListener('resize', syncNavChrome)
+  window.removeEventListener('wheel', onWheelSmooth)
   if (scrollTick) cancelAnimationFrame(scrollTick)
   document.body.style.overflow = ''
 })
 </script>
 
 <template>
-  <Layout />
+  <Layout>
+    <template #home-hero-image>
+      <img
+        class="image-src pm-hero-shot"
+        :src="heroShotUrl"
+        width="1920"
+        height="1080"
+        alt="主页"
+        fetchpriority="high"
+        decoding="async"
+      />
+    </template>
+  </Layout>
   <div class="pm-loader" :class="{ out: !loading }" aria-hidden="true">
     <img :src="logoUrl" width="72" height="72" alt="" />
   </div>
