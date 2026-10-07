@@ -416,9 +416,9 @@ body {
 .pm-eyebrow,
 .download-kicker {
   color: var(--vp-c-brand-1);
-  font-size: 0.7rem;
+  font-size: 0.875rem;
   font-weight: 600;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.12em;
   line-height: 1.4;
   text-transform: uppercase;
 }
@@ -1410,9 +1410,7 @@ body {
     transform-origin: center center;
     transition: transform 140ms ease-out;
   }
-  .pm-card-shot.is-front img {
-    will-change: transform;
-  }
+
 }
 .pm-card-shot.c1 {
   width: 66%;
@@ -2223,7 +2221,7 @@ body::after {
   content: none;
 }
 
-.pm-collage-stack { height: 430px; }
+.pm-collage-stack { height: 720px; overflow: visible; }
 .pm-collage-stack .a {
   width: 76%;
   top: 0;
@@ -2236,13 +2234,13 @@ body::after {
 }
 .pm-collage-stack .c {
   width: 60%;
-  bottom: 0;
+  bottom: 4%;
   left: 4%;
 }
 .pm-collage-stack .d {
   width: 54%;
   right: -2%;
-  bottom: -8%;
+  bottom: 0;
 }
 
 .pm-collage-solo .a {
@@ -2534,11 +2532,10 @@ body {
   transition-delay: 0s;
 }
 @media (hover: hover) and (pointer: fine) and (min-width: 960px) {
-  .pm-card-shot.is-front {
-    rotate: 0deg;
-    scale: 1.08;
-    translate: 0 -14px;
-    box-shadow: 0 28px 56px -16px rgba(20, 16, 8, 0.45);
+  .pm-card-shot:hover {
+    rotate: calc(var(--rest-rot) * 0.35);
+    scale: 1.028;
+    translate: 0 -6px;
   }
 }
 
@@ -3079,7 +3076,7 @@ body,
 .pm-close.is-in > *:nth-child(3) { transition-delay: 0.16s !important; }
 .pm-collage .pm-card-shot {
   transition-property: opacity, translate, rotate, scale !important;
-  transition-duration: 0.5s, 380ms, 380ms, 380ms !important;
+  transition-duration: 0.5s, 560ms, 560ms, 560ms !important;
   transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1), cubic-bezier(0.22, 1, 0.36, 1), cubic-bezier(0.22, 1, 0.36, 1), cubic-bezier(0.22, 1, 0.36, 1) !important;
 }
 .pm-stage.is-in .pm-collage .pm-card-shot:nth-child(1) { transition-delay: 0.08s, 0s, 0s, 0s !important; }
@@ -3187,9 +3184,6 @@ html.dark .VPHero .pm-hero-shot.is-dark {
   .pm-collage .pm-card-shot {
     transform: none;
   }
-  .pm-collage .pm-card-shot.is-front {
-    will-change: rotate, scale, translate;
-  }
   .pm-collage .c1 { --rest-rot: -8deg; }
   .pm-collage .c2 { --rest-rot: 7deg; }
   .pm-collage .c3 { --rest-rot: 5deg; }
@@ -3209,16 +3203,96 @@ html.dark .VPHero .pm-hero-shot.is-dark {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pm-card-shot.is-front {
+  .pm-card-shot:hover {
     rotate: var(--rest-rot);
     scale: 1;
     translate: 0 0;
   }
 }
 
-@media (min-width: 960px) {
-  .pm-stage ~ .pm-stage ~ .pm-stage {
-    content-visibility: auto;
-    contain-intrinsic-size: 720px;
+/* 首页：只拉开区块盒子，不改叠图像素大小 */
+@media (min-width: 961px) {
+  .VPHome .VPHero {
+    margin-bottom: 48px;
+  }
+  .pm-stage {
+    gap: 32px 36px;
+    padding: 48px 32px 40px;
+  }
+  .pm-stage + .pm-stage {
+    margin-top: 96px;
+  }
+  .pm-close {
+    margin-top: 96px;
+    margin-bottom: 80px;
+  }
+}
+
+@media (max-width: 960px) {
+  .pm-stage,
+  .pm-stage-flip {
+    padding: 40px 20px 32px;
+  }
+  .pm-stage + .pm-stage {
+    margin-top: 48px;
+  }
+}
+
+/* 叠图：离开后缓慢回正 */
+@media (hover: hover) and (pointer: fine) and (min-width: 960px) {
+  .pm-card-shot img {
+    transition: transform 620ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .pm-card-shot:hover img {
+    transition-duration: 160ms;
+  }
+  .pm-collage .pm-card-shot {
+    transition-property: opacity, translate, rotate, scale, box-shadow !important;
+    transition-duration: 0.5s, 620ms, 620ms, 620ms, 620ms !important;
+    transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1), cubic-bezier(0.22, 1, 0.36, 1), cubic-bezier(0.22, 1, 0.36, 1), cubic-bezier(0.22, 1, 0.36, 1), cubic-bezier(0.22, 1, 0.36, 1) !important;
+  }
+  .pm-collage .pm-card-shot:hover {
+    box-shadow: 0 30px 60px -22px rgba(20, 16, 8, 0.5);
+  }
+}
+
+/* 字号比例：标题收一档，正文和按钮放一档 */
+.VPHero .tagline {
+  font-size: 20px !important;
+  font-weight: 400 !important;
+  line-height: 1.6 !important;
+}
+.VPHero .actions {
+  gap: 12px;
+  margin-top: 28px;
+}
+.VPHero .VPButton,
+.pm-close-go,
+.pm-close-alt {
+  height: 44px !important;
+  padding: 0 22px !important;
+  font-size: 15px !important;
+  line-height: 44px !important;
+  font-weight: 600 !important;
+}
+.pm-eyebrow {
+  font-size: 0.8125rem;
+  letter-spacing: 0.1em;
+}
+.pm-stage-copy h2,
+.pm-close h2 {
+  font-size: clamp(1.75rem, 2.4vw, 2.25rem);
+  line-height: 1.2;
+}
+.pm-stage-copy p:not(.pm-eyebrow),
+.pm-close p:not(.pm-eyebrow) {
+  font-size: 1rem;
+  line-height: 1.8;
+}
+@media (min-width: 961px) {
+  .VPHero .name,
+  .VPHero .text {
+    font-size: 52px !important;
+    line-height: 1.15 !important;
   }
 }

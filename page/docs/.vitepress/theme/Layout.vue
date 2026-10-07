@@ -45,16 +45,57 @@ function allowSmoothScroll() {
   return true
 }
 
+const raiseTimers = new WeakMap()
+const raiseAnims = new WeakMap()
+
+// 停留片刻再置顶，划过时不乱换层；置顶后保持在上层
 function onShotFront(e) {
   const el = e.currentTarget
-  if (el.classList.contains('is-front')) return
+  clearTimeout(raiseTimers.get(el))
+  raiseTimers.set(
+    el,
+    setTimeout(() => {
+      if (Number(el.style.zIndex) === zFront) return
+      raiseShot(el)
+    }, 90),
+  )
+}
+
+// 换层：先从牌堆里往外抽出，在最远处换到顶层，再落回原位
+function raiseShot(el) {
   const pile = el.parentElement
-  pile?.querySelectorAll('.pm-card-shot.is-front').forEach((n) => {
-    n.classList.remove('is-front')
-  })
-  el.classList.add('is-front')
-  zFront += 1
-  el.style.zIndex = String(zFront)
+  const top = () => {
+    zFront += 1
+    el.style.zIndex = String(zFront)
+  }
+  if (prefersReduced() || !pile || pile.children.length < 2 || !el.animate) {
+    top()
+    return
+  }
+  const a = el.getBoundingClientRect()
+  const b = pile.getBoundingClientRect()
+  let dx = a.left + a.width / 2 - (b.left + b.width / 2)
+  let dy = a.top + a.height / 2 - (b.top + b.height / 2)
+  const len = Math.hypot(dx, dy) || 1
+  dx = (dx / len) * 34
+  dy = (dy / len) * 34 - 10
+  raiseAnims.get(el)?.cancel()
+  const dur = 560
+  const anim = el.animate(
+    [
+      { transform: 'none', easing: 'cubic-bezier(0.3, 0, 0.2, 1)' },
+      { transform: `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px) scale(1.02)`, offset: 0.42, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
+      { transform: 'none' },
+    ],
+    { duration: dur },
+  )
+  raiseAnims.set(el, anim)
+  setTimeout(top, dur * 0.42)
+}
+
+function onShotLeave(e) {
+  clearTimeout(raiseTimers.get(e.currentTarget))
+  onTiltLeave(e)
 }
 
 function onTiltMove(e) {
@@ -79,7 +120,7 @@ function bindShots() {
     bound.add(el)
     el.addEventListener('pointerenter', onShotFront)
     el.addEventListener('pointermove', onTiltMove)
-    el.addEventListener('pointerleave', onTiltLeave)
+    el.addEventListener('pointerleave', onShotLeave)
   })
 }
 
