@@ -148,7 +148,10 @@ Future<_ExternalLyricResult?> _findLyricInDirectory(
     }
     return best;
   } catch (e) {
-    log.lyric.error('legacy', 'lyric_loader: directory scan failed: ${e.runtimeType}');
+    log.lyric.error(
+      'legacy',
+      'lyric_loader: directory scan failed: ${e.runtimeType}',
+    );
     return null;
   }
 }
@@ -207,7 +210,10 @@ Future<String?> _safeReadFile(String filePath) async {
     // 终极 fallback：容忍乱码
     return utf8.decode(bytes, allowMalformed: true);
   } catch (e) {
-    log.lyric.error('legacy', 'lyric_loader: file read failed: ${e.runtimeType}');
+    log.lyric.error(
+      'legacy',
+      'lyric_loader: file read failed: ${e.runtimeType}',
+    );
     return null;
   }
 }
@@ -377,53 +383,79 @@ Future<({Lyric lyric, bool isExternal})?> loadLyricFromAudio(
   final external = await _loadExternalLyric(audioPath);
 
   // 如果有外部歌词，检查内嵌歌词是否有逐字标签（如用户手动写入的场景）
-  String? embeddedRaw;
-  bool? embeddedHasWordTags; // null = not fetched yet
-
   if (external != null) {
+    String? embeddedRaw;
     try {
       embeddedRaw = await getLyricFromPath(path: audioPath);
     } catch (_) {}
-    embeddedHasWordTags =
+    final embeddedHasWordTags =
         embeddedRaw != null &&
-        RegExp(r'<(\d+:\d+\.\d+|\d+)>').hasMatch(embeddedRaw);
+        (RegExp(r'<(\d+:\d+\.\d+|\d+)>').hasMatch(embeddedRaw) ||
+            embeddedRaw.contains('[awlrc:'));
 
     if (embeddedHasWordTags) {
       log.lyric.debug(
         'lyric.candidate',
         'lyric_loader: embedded has word tags, preferring over external',
       );
+      // 内嵌标签可能损坏（如 LX 标签负载不可用）：确认解析出可用行后才优先使用，
+      // 否则回退到外挂歌词。
+      Lyric? embedded;
+      try {
+        embedded = _parseEmbeddedToPureLyric(embeddedRaw, separator: separator);
+      } catch (_) {}
+      final embeddedStripped = embedded == null
+          ? null
+          : _stripMetadata(embedded);
+      if (embeddedStripped != null && embeddedStripped.lines.isNotEmpty) {
+        log.lyric.debug(
+          'lyric.candidate',
+          'lyric_loader: loaded embedded lyric, lines=${embeddedStripped.lines.length}',
+        );
+        _reportLyricLoad(
+          found: true,
+          source: 'embedded',
+          lines: embeddedStripped.lines.length,
+          elapsedMs: watch.elapsedMilliseconds,
+        );
+        return (lyric: embeddedStripped, isExternal: false);
+      }
+      log.lyric.debug(
+        'lyric.candidate',
+        'lyric_loader: embedded word-tag lyric unusable, falling back to external',
+      );
     } else {
       log.lyric.debug(
         'lyric.candidate',
         'lyric_loader: found external ${external.ext}, content len=${external.content.length}',
       );
-      final lyric = _parseExternalToPureLyric(external, separator: separator);
-      if (lyric != null && lyric.lines.isNotEmpty) {
-        log.lyric.debug(
-          'lyric.candidate',
-          'lyric_loader: loaded external ${external.ext}',
+    }
+
+    final lyric = _parseExternalToPureLyric(external, separator: separator);
+    if (lyric != null && lyric.lines.isNotEmpty) {
+      log.lyric.debug(
+        'lyric.candidate',
+        'lyric_loader: loaded external ${external.ext}',
+      );
+      final stripped = _stripMetadata(lyric);
+      log.lyric.debug(
+        'lyric.candidate',
+        'lyric_loader: external return lines=${stripped?.lines.length ?? "null"}',
+      );
+      if (stripped != null) {
+        _reportLyricLoad(
+          found: true,
+          source: 'external',
+          lines: stripped.lines.length,
+          elapsedMs: watch.elapsedMilliseconds,
         );
-        final stripped = _stripMetadata(lyric);
-        log.lyric.debug(
-          'lyric.candidate',
-          'lyric_loader: external return lines=${stripped?.lines.length ?? "null"}',
-        );
-        if (stripped != null) {
-          _reportLyricLoad(
-            found: true,
-            source: 'external',
-            lines: stripped.lines.length,
-            elapsedMs: watch.elapsedMilliseconds,
-          );
-          return (lyric: stripped, isExternal: true);
-        }
-      } else {
-        log.lyric.debug(
-          'lyric.candidate',
-          'lyric_loader: external ${external.ext} parse FAILED',
-        );
+        return (lyric: stripped, isExternal: true);
       }
+    } else {
+      log.lyric.debug(
+        'lyric.candidate',
+        'lyric_loader: external ${external.ext} parse FAILED',
+      );
     }
   } else {
     log.lyric.debug('lyric.candidate', 'lyric_loader: no external lyric found');
@@ -431,9 +463,7 @@ Future<({Lyric lyric, bool isExternal})?> loadLyricFromAudio(
 
   // ── 第 2 步：内嵌歌词 ──
   try {
-    final embedded = embeddedHasWordTags == true
-        ? embeddedRaw
-        : await getLyricFromPath(path: audioPath);
+    final embedded = await getLyricFromPath(path: audioPath);
     if (embedded != null && embedded.isNotEmpty) {
       log.lyric.debug(
         'lyric.candidate',
@@ -472,7 +502,10 @@ Future<({Lyric lyric, bool isExternal})?> loadLyricFromAudio(
       );
     }
   } catch (e) {
-    log.lyric.error('legacy', 'lyric_loader: embedded lyric failed: ${e.runtimeType}');
+    log.lyric.error(
+      'legacy',
+      'lyric_loader: embedded lyric failed: ${e.runtimeType}',
+    );
   }
 
   log.lyric.debug('lyric.candidate', 'lyric_loader: returning null');

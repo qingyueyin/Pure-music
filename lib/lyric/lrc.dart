@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:pure_music/core/utils.dart';
@@ -800,6 +801,19 @@ class Lrc extends Lyric {
   }) {
     final shouldKeepMetadata =
         keepMetadata ?? AppSettings.instance.keepLyricMetadata;
+    // LX Music 内嵌标签（[awlrc:...]）携带独立的翻译/罗马音/逐字数据，优先使用。
+    if (_hasLxEmbeddedLyric(lrc)) {
+      final lx = _parseLxEmbedded(
+        lrc,
+        source,
+        separator: separator,
+        keepMetadata: shouldKeepMetadata,
+      );
+      if (lx != null && lx.lines.isNotEmpty) {
+        _reportParsed(lx, 'lx');
+        return lx;
+      }
+    }
     if (_isTtml(lrc)) {
       log.lyric.debug('lyric.line', '[lrc] fromLrcTextAuto: TTML detected');
       final parsed = Ttml.fromTtmlText(lrc, separator: separator);
@@ -1024,6 +1038,129 @@ class Lrc extends Lyric {
     }
     _reportParsed(result, 'enhanced');
     return result;
+  }
+
+  // ── LX Music 内嵌歌词标签 ──
+  // 标签格式：[awlrc:lrc:<base64>,tlrc:<base64>,rlrc:<base64>,awlrc:<base64>]
+  // lrc 普通歌词、tlrc 翻译、rlrc 罗马音、awlrc 逐字歌词，内容均为 base64 编码。
+  // awlrc 逐字格式：[mm:ss.mmm]<行内偏移,时长>文字（偏移相对该行起始时间）。
+  static final _lxTagRe = RegExp(r'\[awlrc:([^\]\r\n]*)\]');
+  static final _lxSubLineRe = RegExp(r'^\[(\d{1,3}):(\d{2})\.(\d{1,3})\](.*)$');
+  static final _lxWordRe = RegExp(r'<(\d+),(\d+)>([^<]*)');
+  static final _lxTimeTagRe = RegExp(r'\[\d{1,3}:\d{2}\.\d{1,3}\]');
+  static final _lxOffsetRe = RegExp(r'\[\s*offset\s*:\s*([+-]?\d+)\s*\]');
+
+  static bool _hasLxEmbeddedLyric(String text) => _lxTagRe.hasMatch(text);
+
+  static int _lxTimeToMs(String minute, String second, String fraction) {
+    final mm = int.tryParse(minute) ?? 0;
+    final ss = int.tryParse(second) ?? 0;
+    final frac = fraction.padRight(3, '0').substring(0, 3);
+    return mm * 60000 + ss * 1000 + (int.tryParse(frac) ?? 0);
+  }
+
+  static Map<String, String> _decodeLxParts(String value) {
+    final parts = <String, String>{};
+    for (final segment in value.split(',')) {
+      final index = segment.indexOf(':');
+      if (index <= 0) continue;
+      final key = segment.substring(0, index).trim().toLowerCase();
+      final encoded = segment.substring(index + 1).trim();
+      if (encoded.isEmpty) continue;
+      try {
+        parts[key] = utf8.decode(
+          base64.decode(base64.normalize(encoded)),
+          allowMalformed: true,
+        );
+      } catch (_) {}
+    }
+    return parts;
+  }
+
+  static Lyric? _parseLxEmbedded(
+    String text,
+    LyricFormat source, {
+    String? separator,
+    required bool keepMetadata,
+  }) {
+    final tagMatch = _lxTagRe.firstMatch(text);
+    if (tagMatch == null) return null;
+    final rebuilt = _lxRebuildText(_decodeLxParts(tagMatch.group(1)!));
+    if (rebuilt == null) return null;
+    // 递归交给现有解析管线处理分组、翻译/罗马音合并与间奏插入。
+    return fromLrcTextAuto(
+      rebuilt,
+      source,
+      separator: separator,
+      keepMetadata: keepMetadata,
+    );
+  }
+
+  /// awlrc 逐字行的 `<行内偏移,时长>` 换算为绝对时间 `<mm:ss.mmm>`；
+  /// tlrc/rlrc 与主歌词共用同一时间戳（LX 约定不一致即无效），由现有解析按时间戳分组合并。
+  static String? _lxRebuildText(Map<String, String> parts) {
+    final wordText = parts['awlrc'];
+    final mainText = parts['lrc'];
+    final hasWordText = wordText != null && wordText.trim().isNotEmpty;
+    final main = hasWordText ? wordText : mainText;
+    if (main == null || main.trim().isEmpty) return null;
+
+    final buffer = StringBuffer();
+    // 负载自带的 [offset:] 对整份歌词全局生效，交给现有解析处理。
+    for (final payload in parts.values) {
+      final offsetMatch = _lxOffsetRe.firstMatch(payload);
+      if (offsetMatch == null) continue;
+      buffer.writeln(offsetMatch.group(0)!);
+      break;
+    }
+
+    var emitted = 0;
+    for (final raw in main.split(RegExp(r'\r?\n'))) {
+      final match = _lxSubLineRe.firstMatch(raw.trim());
+      if (match == null) continue;
+      final startMs = _lxTimeToMs(
+        match.group(1)!,
+        match.group(2)!,
+        match.group(3)!,
+      );
+      final body = match.group(4)!.replaceAll(_lxTimeTagRe, '').trim();
+      if (body.isEmpty) continue;
+      if (hasWordText && _lxWordRe.hasMatch(body)) {
+        final converted = body.replaceAllMapped(_lxWordRe, (m) {
+          final relativeMs = int.tryParse(m.group(1)!) ?? 0;
+          return '<${_lxFormatTime(max(startMs + relativeMs, 0))}>'
+              '${m.group(3) ?? ''}';
+        });
+        buffer.writeln('[${_lxFormatTime(startMs)}]$converted');
+      } else {
+        buffer.writeln('[${_lxFormatTime(startMs)}]$body');
+      }
+      emitted++;
+    }
+    if (emitted == 0) return null;
+
+    for (final key in const ['tlrc', 'rlrc']) {
+      final subtitleText = parts[key];
+      if (subtitleText == null || subtitleText.trim().isEmpty) continue;
+      for (final raw in subtitleText.split(RegExp(r'\r?\n'))) {
+        final match = _lxSubLineRe.firstMatch(raw.trim());
+        if (match == null) continue;
+        final text = match.group(4)!.replaceAll(_lxTimeTagRe, '').trim();
+        if (text.isEmpty || text == '//') continue;
+        buffer.writeln(
+          '[${_lxFormatTime(_lxTimeToMs(match.group(1)!, match.group(2)!, match.group(3)!))}]'
+          '$text',
+        );
+      }
+    }
+    return buffer.toString();
+  }
+
+  static String _lxFormatTime(int ms) {
+    final minutes = (ms ~/ 60000).toString().padLeft(2, '0');
+    final seconds = ((ms % 60000) ~/ 1000).toString().padLeft(2, '0');
+    final millis = (ms % 1000).toString().padLeft(3, '0');
+    return '$minutes:$seconds.$millis';
   }
 
   /// 为 wordByWord 格式插入开头前奏和中间间奏空白行
