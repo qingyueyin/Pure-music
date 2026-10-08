@@ -386,7 +386,8 @@ Future<({Lyric lyric, bool isExternal})?> loadLyricFromAudio(
     } catch (_) {}
     embeddedHasWordTags =
         embeddedRaw != null &&
-        RegExp(r'<(\d+:\d+\.\d+|\d+)>').hasMatch(embeddedRaw);
+        (RegExp(r'<(\d+:\d+\.\d+|\d+)>').hasMatch(embeddedRaw) ||
+            embeddedRaw.contains('[awlrc:'));
 
     if (embeddedHasWordTags) {
       log.lyric.debug(

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:pure_music/core/utils.dart';
@@ -800,6 +801,19 @@ class Lrc extends Lyric {
   }) {
     final shouldKeepMetadata =
         keepMetadata ?? AppSettings.instance.keepLyricMetadata;
+    // LX Music 内嵌标签（[awlrc:...]）携带独立的翻译/罗马音/逐字数据，优先使用。
+    if (_hasLxEmbeddedLyric(lrc)) {
+      final lx = _parseLxEmbedded(
+        lrc,
+        source,
+        separator: separator,
+        keepMetadata: shouldKeepMetadata,
+      );
+      if (lx != null && lx.lines.isNotEmpty) {
+        _reportParsed(lx, 'lx');
+        return lx;
+      }
+    }
     if (_isTtml(lrc)) {
       log.lyric.debug('lyric.line', '[lrc] fromLrcTextAuto: TTML detected');
       final parsed = Ttml.fromTtmlText(lrc, separator: separator);
@@ -1024,6 +1038,239 @@ class Lrc extends Lyric {
     }
     _reportParsed(result, 'enhanced');
     return result;
+  }
+
+  // ── LX Music 内嵌歌词标签 ──
+  // 标签格式：[awlrc:lrc:<base64>,tlrc:<base64>,rlrc:<base64>,awlrc:<base64>]
+  // lrc 普通歌词、tlrc 翻译、rlrc 罗马音、awlrc 逐字歌词，内容均为 base64 编码。
+  // awlrc 逐字格式：[mm:ss.mmm]<行内偏移,时长>文字（偏移相对该行起始时间）。
+  static final _lxTagRe = RegExp(r'\[awlrc:([^\]\r\n]*)\]');
+  static final _lxSubLineRe = RegExp(r'^\[(\d{1,3}):(\d{2})\.(\d{1,3})\](.*)$');
+  static final _lxWordRe = RegExp(r'<(\d+),(\d+)>([^<]*)');
+  static final _lxTimeTagRe = RegExp(r'\[\d{1,3}:\d{2}\.\d{1,3}\]');
+  static final _lxOffsetRe = RegExp(r'\[\s*offset\s*:\s*([+-]?\d+)\s*\]');
+
+  static bool _hasLxEmbeddedLyric(String text) => _lxTagRe.hasMatch(text);
+
+  static int _lxFindOffsetMs(String text) {
+    final match = _lxOffsetRe.firstMatch(text);
+    return int.tryParse(match?.group(1) ?? '') ?? 0;
+  }
+
+  static int _lxTimeToMs(String minute, String second, String fraction) {
+    final mm = int.tryParse(minute) ?? 0;
+    final ss = int.tryParse(second) ?? 0;
+    final frac = fraction.padRight(3, '0').substring(0, 3);
+    return mm * 60000 + ss * 1000 + (int.tryParse(frac) ?? 0);
+  }
+
+  static Map<String, String> _decodeLxParts(String value) {
+    final parts = <String, String>{};
+    for (final segment in value.split(',')) {
+      final index = segment.indexOf(':');
+      if (index <= 0) continue;
+      final key = segment.substring(0, index).trim().toLowerCase();
+      final encoded = segment.substring(index + 1).trim();
+      if (encoded.isEmpty) continue;
+      try {
+        parts[key] = utf8.decode(
+          base64.decode(base64.normalize(encoded)),
+          allowMalformed: true,
+        );
+      } catch (_) {}
+    }
+    return parts;
+  }
+
+  static Lyric? _parseLxEmbedded(
+    String text,
+    LyricFormat source, {
+    String? separator,
+    required bool keepMetadata,
+  }) {
+    final tagMatch = _lxTagRe.firstMatch(text);
+    if (tagMatch == null) return null;
+    final parts = _decodeLxParts(tagMatch.group(1)!);
+
+    final wordText = parts['awlrc'];
+    if (wordText != null && wordText.trim().isNotEmpty) {
+      final lines = _parseLxWordLines(wordText, keepMetadata: keepMetadata);
+      if (lines.isNotEmpty) {
+        _mergeLxSubtitle(lines, parts['tlrc'], isRomanization: false);
+        _mergeLxSubtitle(lines, parts['rlrc'], isRomanization: true);
+        _insertLxInterludes(lines);
+        return Lyric(lines.cast<LyricLine>(), source);
+      }
+    }
+
+    // 无逐字数据时退回标签内的普通歌词，并补齐翻译/罗马音。
+    final mainText = parts['lrc'];
+    if (mainText == null || mainText.trim().isEmpty) return null;
+    final plain = fromLrcText(
+      mainText,
+      source,
+      separator: separator,
+      keepMetadata: keepMetadata,
+    );
+    if (plain == null || plain.lines.isEmpty) return null;
+    _mergeLxSubtitle(plain.lines, parts['tlrc'], isRomanization: false);
+    _mergeLxSubtitle(plain.lines, parts['rlrc'], isRomanization: true);
+    return plain;
+  }
+
+  static List<SyncLyricLine> _parseLxWordLines(
+    String text, {
+    required bool keepMetadata,
+  }) {
+    final offsetMs = _lxFindOffsetMs(text);
+    final entries = <({int start, List<SyncLyricWord>? words, String plain})>[];
+    for (final raw in text.split(RegExp(r'\r?\n'))) {
+      final line = raw.trim();
+      if (line.isEmpty) continue;
+      final lineMatch = _lxSubLineRe.firstMatch(line);
+      if (lineMatch == null) continue;
+
+      final lineStartMs = max(
+        _lxTimeToMs(lineMatch.group(1)!, lineMatch.group(2)!, lineMatch.group(3)!) -
+            offsetMs,
+        0,
+      );
+      final body = lineMatch.group(4)!;
+      if (_lxWordRe.hasMatch(body)) {
+        final words = _parseLxWords(body, lineStartMs);
+        if (words.isEmpty) continue;
+        final content = words.map((word) => word.content).join();
+        if (!keepMetadata && isLyricMetadataText(content)) continue;
+        entries.add((start: lineStartMs, words: words, plain: ''));
+      } else {
+        // 普通行夹在逐字行之间：整行作为单个词保留，时长按下一行起始补齐。
+        final plain = body.replaceAll(_lxTimeTagRe, '').trim();
+        if (plain.isEmpty) continue;
+        if (!keepMetadata && isLyricMetadataText(plain)) continue;
+        entries.add((start: lineStartMs, words: null, plain: plain));
+      }
+    }
+    if (entries.isEmpty) return const [];
+    entries.sort((a, b) => a.start.compareTo(b.start));
+
+    final result = <SyncLyricLine>[];
+    for (var i = 0; i < entries.length; i++) {
+      final entry = entries[i];
+      final start = Duration(milliseconds: entry.start);
+      final words = entry.words;
+      if (words != null) {
+        final endMs =
+            words.last.start.inMilliseconds + words.last.length.inMilliseconds;
+        result.add(SyncLyricLine(
+          start,
+          Duration(milliseconds: max(endMs - entry.start, 0)),
+          words,
+        ));
+      } else {
+        final nextStartMs = i + 1 < entries.length
+            ? entries[i + 1].start
+            : entry.start + 5000;
+        final lengthMs = max(nextStartMs - entry.start, 0);
+        if (lengthMs <= 0) continue;
+        result.add(SyncLyricLine(start, Duration(milliseconds: lengthMs), [
+          SyncLyricWord(
+            start,
+            Duration(milliseconds: lengthMs),
+            entry.plain,
+          ),
+        ]));
+      }
+    }
+    return result;
+  }
+
+  static List<SyncLyricWord> _parseLxWords(String content, int lineStartMs) {
+    final words = <SyncLyricWord>[];
+    for (final match in _lxWordRe.allMatches(content)) {
+      final relativeMs = int.tryParse(match.group(1)!) ?? 0;
+      final durationMs = int.tryParse(match.group(2)!) ?? 0;
+      final text = match.group(3)!.replaceAll('\n', '');
+      if (text.isEmpty) continue;
+
+      final startMs = lineStartMs + relativeMs;
+      final last = words.isEmpty ? null : words.last;
+      // 与 KRC/QRC 一致：合并零时长或处于同一时间点的碎词，避免无效高亮。
+      if (last != null &&
+          (startMs == last.start.inMilliseconds ||
+              ((durationMs <= 60 || last.length.inMilliseconds <= 60) &&
+                  last.start.inMilliseconds > 0)) &&
+          last.start.inMilliseconds + last.length.inMilliseconds >= startMs) {
+        words[words.length - 1] = SyncLyricWord(
+          last.start,
+          Duration(milliseconds: last.length.inMilliseconds + durationMs),
+          last.content + text,
+        );
+        continue;
+      }
+      words.add(SyncLyricWord(
+        Duration(milliseconds: startMs),
+        Duration(milliseconds: durationMs),
+        text,
+      ));
+    }
+    return words;
+  }
+
+  /// 按时间戳把 tlrc/rlrc 合并进主歌词行；时间戳不一致的行按 LX 规则丢弃。
+  static void _mergeLxSubtitle(
+    List<LyricLine> lines,
+    String? subtitleText, {
+    required bool isRomanization,
+  }) {
+    if (subtitleText == null || subtitleText.trim().isEmpty) return;
+    final offsetMs = _lxFindOffsetMs(subtitleText);
+    final subtitleMap = <int, String>{};
+    for (final raw in subtitleText.split(RegExp(r'\r?\n'))) {
+      final line = raw.trim();
+      if (line.isEmpty) continue;
+      final match = _lxSubLineRe.firstMatch(line);
+      if (match == null) continue;
+      final text = match.group(4)!.trim();
+      if (text.isEmpty || text == '//') continue;
+      subtitleMap[max(
+        _lxTimeToMs(match.group(1)!, match.group(2)!, match.group(3)!) -
+            offsetMs,
+        0,
+      )] = text;
+    }
+    if (subtitleMap.isEmpty) return;
+
+    for (final line in lines) {
+      if (line is SyncLyricLine && line.words.isEmpty) continue;
+      final text = subtitleMap[line.start.inMilliseconds];
+      if (text == null) continue;
+      if (isRomanization) {
+        line.romanLyric = text;
+      } else {
+        line.translation = text;
+      }
+    }
+  }
+
+  static void _insertLxInterludes(List<SyncLyricLine> lines) {
+    if (lines.isEmpty) return;
+    const gapThreshold = Duration(seconds: 5);
+    final result = <SyncLyricLine>[];
+    if (lines.first.start > gapThreshold) {
+      result.add(SyncLyricLine(Duration.zero, lines.first.start, []));
+    }
+    for (var i = 0; i < lines.length; i++) {
+      result.add(lines[i]);
+      if (i >= lines.length - 1) continue;
+      final gapStart = lines[i].start + lines[i].length;
+      final gap = lines[i + 1].start - gapStart;
+      if (gap > gapThreshold) {
+        result.add(SyncLyricLine(gapStart, gap, []));
+      }
+    }
+    lines
+      ..clear()
+      ..addAll(result);
   }
 
   /// 为 wordByWord 格式插入开头前奏和中间间奏空白行
