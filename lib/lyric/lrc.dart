@@ -1131,7 +1131,11 @@ class Lrc extends Lyric {
       if (lineMatch == null) continue;
 
       final lineStartMs = max(
-        _lxTimeToMs(lineMatch.group(1)!, lineMatch.group(2)!, lineMatch.group(3)!) -
+        _lxTimeToMs(
+              lineMatch.group(1)!,
+              lineMatch.group(2)!,
+              lineMatch.group(3)!,
+            ) -
             offsetMs,
         0,
       );
@@ -1161,24 +1165,24 @@ class Lrc extends Lyric {
       if (words != null) {
         final endMs =
             words.last.start.inMilliseconds + words.last.length.inMilliseconds;
-        result.add(SyncLyricLine(
-          start,
-          Duration(milliseconds: max(endMs - entry.start, 0)),
-          words,
-        ));
+        result.add(
+          SyncLyricLine(
+            start,
+            Duration(milliseconds: max(endMs - entry.start, 0)),
+            words,
+          ),
+        );
       } else {
         final nextStartMs = i + 1 < entries.length
             ? entries[i + 1].start
             : entry.start + 5000;
         final lengthMs = max(nextStartMs - entry.start, 0);
-        if (lengthMs <= 0) continue;
-        result.add(SyncLyricLine(start, Duration(milliseconds: lengthMs), [
-          SyncLyricWord(
-            start,
-            Duration(milliseconds: lengthMs),
-            entry.plain,
-          ),
-        ]));
+        // 与下一行同时间戳时推断时长为零，仍保留该行避免丢词。
+        result.add(
+          SyncLyricLine(start, Duration(milliseconds: lengthMs), [
+            SyncLyricWord(start, Duration(milliseconds: lengthMs), entry.plain),
+          ]),
+        );
       }
     }
     return result;
@@ -1207,11 +1211,13 @@ class Lrc extends Lyric {
         );
         continue;
       }
-      words.add(SyncLyricWord(
-        Duration(milliseconds: startMs),
-        Duration(milliseconds: durationMs),
-        text,
-      ));
+      words.add(
+        SyncLyricWord(
+          Duration(milliseconds: startMs),
+          Duration(milliseconds: durationMs),
+          text,
+        ),
+      );
     }
     return words;
   }
@@ -1224,7 +1230,7 @@ class Lrc extends Lyric {
   }) {
     if (subtitleText == null || subtitleText.trim().isEmpty) return;
     final offsetMs = _lxFindOffsetMs(subtitleText);
-    final subtitleMap = <int, String>{};
+    final subtitleMap = <int, List<String>>{};
     for (final raw in subtitleText.split(RegExp(r'\r?\n'))) {
       final line = raw.trim();
       if (line.isEmpty) continue;
@@ -1232,22 +1238,36 @@ class Lrc extends Lyric {
       if (match == null) continue;
       final text = match.group(4)!.trim();
       if (text.isEmpty || text == '//') continue;
-      subtitleMap[max(
-        _lxTimeToMs(match.group(1)!, match.group(2)!, match.group(3)!) -
-            offsetMs,
-        0,
-      )] = text;
+      subtitleMap
+          .putIfAbsent(
+            max(
+              _lxTimeToMs(match.group(1)!, match.group(2)!, match.group(3)!) -
+                  offsetMs,
+              0,
+            ),
+            () => <String>[],
+          )
+          .add(text);
     }
     if (subtitleMap.isEmpty) return;
 
+    // 同一时间戳可能有多条字幕（同时演唱），按出现顺序分配给对应的主歌词行。
+    final assigned = <int, int>{};
     for (final line in lines) {
       if (line is SyncLyricLine && line.words.isEmpty) continue;
-      final text = subtitleMap[line.start.inMilliseconds];
-      if (text == null) continue;
+      final timestamp = line.start.inMilliseconds;
+      final texts = subtitleMap[timestamp];
+      if (texts == null) continue;
+      final index = assigned.update(
+        timestamp,
+        (count) => count + 1,
+        ifAbsent: () => 0,
+      );
+      if (index >= texts.length) continue;
       if (isRomanization) {
-        line.romanLyric = text;
+        line.romanLyric = texts[index];
       } else {
-        line.translation = text;
+        line.translation = texts[index];
       }
     }
   }
