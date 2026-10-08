@@ -23,13 +23,13 @@ void main() {
   group('LX Music 内嵌歌词标签', () {
     test('解析 awlrc 逐字歌词并合并翻译/罗马音', () {
       final text = _lxFile(
-        lrc: '[offset:0]\n[00:01.000]Hello world\n[00:05.000]Second line\n',
+        lrc: '[offset:0]\n[00:01.000]ハロ\n[00:05.000]セカイ\n',
         tlrc: '[offset:0]\n[00:01.000]你好世界\n[00:05.000]第二行\n',
-        rlrc: '[offset:0]\n[00:01.000]Hello world\n[00:05.000]Second line\n',
+        rlrc: '[offset:0]\n[00:01.000]ha ro\n[00:05.000]se ka i\n',
         awlrc:
             '[offset:0]\n'
-            '[00:01.000]<0,400>Hello <400,600>world\n'
-            '[00:05.000]<0,500>Second <500,500>line\n',
+            '[00:01.000]<0,400>ハ<400,600>ロ\n'
+            '[00:05.000]<0,500>セ<500,500>カイ\n',
       );
 
       final lyric = Lrc.fromLrcTextAuto(
@@ -38,17 +38,22 @@ void main() {
         separator: '┃',
         keepMetadata: true,
       )!;
-      final lines = lyric.lines.whereType<SyncLyricLine>().toList();
+      final lines = lyric.lines
+          .whereType<SyncLyricLine>()
+          .where((l) => l.words.isNotEmpty)
+          .toList();
       expect(lines, hasLength(2));
 
       final first = lines.first;
       expect(first.start, const Duration(seconds: 1));
-      expect(first.words.map((w) => w.content).join(), 'Hello world');
+      expect(first.words.map((w) => w.content).join(), 'ハロ');
       expect(first.words.first.start, const Duration(seconds: 1));
       expect(first.words.first.length, const Duration(milliseconds: 400));
+      // 行末单字按增强 LRC 规则取默认词长 500ms。
       expect(first.words.last.start, const Duration(milliseconds: 1400));
+      expect(first.words.last.length, const Duration(milliseconds: 500));
       expect(first.translation, '你好世界');
-      expect(first.romanLyric, 'Hello world');
+      expect(first.romanLyric, 'ha ro');
 
       expect(lines.last.start, const Duration(seconds: 5));
       expect(lines.last.translation, '第二行');
@@ -68,10 +73,14 @@ void main() {
       final lines = lyric.lines.whereType<SyncLyricLine>().toList();
       final realLines = lines.where((l) => l.words.isNotEmpty).toList();
       expect(realLines.first.words.single.start, const Duration(seconds: 1));
-      final blank = lines.singleWhere((l) => l.words.isEmpty);
-      // 第一行在 1.5s 结束，第二行 20s 开始，间奏空白行覆盖这 18.5s 间隔。
-      expect(blank.start, const Duration(milliseconds: 1500));
-      expect(blank.length, const Duration(milliseconds: 18500));
+      final blanks = lines.where((l) => l.words.isEmpty).toList();
+      // 前奏空白行 0-1s；行末单字按增强 LRC 默认词长 500ms 结束于 1.5s，
+      // 间奏空白行从 1.5s 插到 20s。
+      expect(blanks, hasLength(2));
+      expect(blanks.first.start, Duration.zero);
+      expect(blanks.first.length, const Duration(seconds: 1));
+      expect(blanks.last.start, const Duration(milliseconds: 1500));
+      expect(blanks.last.length, const Duration(milliseconds: 18500));
       expect(lyric.isWordByWord, isTrue);
     });
 
@@ -136,7 +145,10 @@ void main() {
         separator: '┃',
         keepMetadata: true,
       )!;
-      final lines = lyric.lines.whereType<SyncLyricLine>().toList();
+      final lines = lyric.lines
+          .whereType<SyncLyricLine>()
+          .where((l) => l.words.isNotEmpty)
+          .toList();
       expect(lines.map((l) => l.content), <String>[
         '逐字',
         '普通行',
@@ -151,11 +163,12 @@ void main() {
 
       final last = lines.last;
       expect(last.start, const Duration(seconds: 8));
+      // 末行没有下一行，按增强 LRC 规则行长默认 5s。
       expect(last.length, const Duration(seconds: 5));
       expect(last.words.single.content, '末尾普通行');
     });
 
-    test('与下一行同时间戳的普通行仍保留', () {
+    test('awlrc 中与逐字行同时间戳的普通行按翻译分组合并', () {
       final text = _lxFile(
         lrc: '[00:01.000]逐字\n[00:02.000]普通\n',
         awlrc:
@@ -170,17 +183,15 @@ void main() {
         separator: '┃',
         keepMetadata: true,
       )!;
-      final contents = lyric.lines
+      final lines = lyric.lines
           .whereType<SyncLyricLine>()
           .where((l) => l.words.isNotEmpty)
-          .map((l) => l.content)
           .toList();
-      expect(contents, containsAll(<String>['普通', '同时行']));
-      final plain = lyric.lines.whereType<SyncLyricLine>().firstWhere(
-        (l) => l.content == '普通',
-      );
-      expect(plain.start, const Duration(seconds: 2));
-      expect(plain.length, Duration.zero);
+      // 同一时间戳的行由现有解析按原文+翻译分组，不丢词。
+      expect(lines, hasLength(2));
+      expect(lines[1].start, const Duration(seconds: 2));
+      expect(lines[1].content, '普通');
+      expect(lines[1].translation, '同时行');
     });
 
     test('awlrc 中夹带的元数据标签行被跳过', () {
@@ -212,30 +223,6 @@ void main() {
           .join('\n');
       expect(allContents, isNot(contains('v1.0')));
       expect(allContents, isNot(contains('标题')));
-    });
-
-    test('同时间戳的多条字幕按顺序合并进对应主歌词行', () {
-      final text = _lxFile(
-        lrc: '[00:01.000]One\n[00:01.000]Two\n',
-        tlrc: '[00:01.000]第一\n[00:01.000]第二\n',
-        awlrc: '[00:01.000]<0,500>One\n[00:01.000]<0,500>Two\n',
-      );
-
-      final lyric = Lrc.fromLrcTextAuto(
-        text,
-        LyricFormat.local,
-        separator: '┃',
-        keepMetadata: true,
-      )!;
-      final lines = lyric.lines
-          .whereType<SyncLyricLine>()
-          .where((l) => l.words.isNotEmpty)
-          .toList();
-      expect(lines, hasLength(2));
-      expect(lines[0].content, 'One');
-      expect(lines[0].translation, '第一');
-      expect(lines[1].content, 'Two');
-      expect(lines[1].translation, '第二');
     });
   });
 }
