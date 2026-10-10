@@ -620,7 +620,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   late final ValueNotifier<double> _sharedLyricPositionMs;
   Ticker? _sharedLyricPositionTicker;
   Duration _sharedLyricLastTick = Duration.zero;
-  Duration _sharedLyricLastNativeSync = Duration.zero;
   bool _resumeSharedLyricFromFrozen = false;
   late StreamSubscription lyricLineStreamSubscription;
   Timer? _positionResyncTimer;
@@ -769,7 +768,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     _sharedLyricPositionTicker ??= createTicker(_onSharedLyricTick);
     if (!_sharedLyricPositionTicker!.isActive) {
       _sharedLyricLastTick = Duration.zero;
-      _sharedLyricLastNativeSync = Duration.zero;
       _sharedLyricPositionTicker!.start();
     }
   }
@@ -779,7 +777,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     if (_resumeSharedLyricFromFrozen) {
       _resumeSharedLyricFromFrozen = false;
       _sharedLyricLastTick = elapsed;
-      _sharedLyricLastNativeSync = elapsed;
       return;
     }
     final delta = _sharedLyricLastTick == Duration.zero
@@ -790,18 +787,10 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     final predictedMs =
         previousMs + delta.inMicroseconds / 1000.0 * playbackService.rate.value;
     final nativeMs = playbackService.position * 1000.0;
-    final allowNativeResync =
-        delta > const Duration(milliseconds: 200) ||
-        _sharedLyricLastNativeSync == Duration.zero ||
-        elapsed - _sharedLyricLastNativeSync >= const Duration(seconds: 1);
-    if (allowNativeResync) {
-      _sharedLyricLastNativeSync = elapsed;
-    }
     final nextMs = lyricMonotonicPlaybackMs(
       previousMs: previousMs,
       predictedMs: predictedMs,
       nativeMs: nativeMs,
-      allowNativeResync: allowNativeResync,
     );
     if (nextMs == previousMs) return;
     if (!_sharedLyricVisualNeedsFrame(nextMs) &&

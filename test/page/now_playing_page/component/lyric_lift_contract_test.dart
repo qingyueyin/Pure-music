@@ -174,7 +174,7 @@ void main() {
     });
   });
 
-  group('cosine formula stays Salt-shaped at 2.0x', () {
+  group('cosine formula at default peak 2.0', () {
     test('sung glyphs are up and later glyphs stay down', () {
       const fontSize = 20.0;
       const peak = 2.0;

@@ -272,7 +272,17 @@ void main() {
           previousMs: 1200,
           predictedMs: 1216,
           nativeMs: 1180,
-          allowNativeResync: true,
+        ),
+        1216,
+      );
+    });
+
+    test('a small native lead does not pull the clock', () {
+      expect(
+        lyricMonotonicPlaybackMs(
+          previousMs: 1200,
+          predictedMs: 1216,
+          nativeMs: 1240,
         ),
         1216,
       );

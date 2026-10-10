@@ -44,18 +44,16 @@ bool lyricScaleReachedLiftGate({
   return (value - start) / travel >= 0.9;
 }
 
-/// 预测时钟只向前走；原生回跳或小幅超前不拿来抽帧。
+/// 播放中按帧时间往前走。原生进度只在倒退或偏差达到跳转阈值时接管。
 double lyricMonotonicPlaybackMs({
   required double previousMs,
   required double predictedMs,
   required double nativeMs,
-  bool allowNativeResync = false,
   double seekThresholdMs = 100,
 }) {
   if ((nativeMs - previousMs).abs() >= seekThresholdMs) return nativeMs;
-  final predicted = predictedMs < previousMs ? previousMs : predictedMs;
-  if (allowNativeResync && nativeMs >= predicted) return nativeMs;
-  return predicted;
+  if (predictedMs < previousMs) return previousMs;
+  return predictedMs;
 }
 
 class LyricsLineWidget extends StatefulWidget {
@@ -124,13 +122,11 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
   final ValueNotifier<double> _currentTimeNotifier = ValueNotifier(0);
   late final VoidCallback _playerStateListener;
   Duration _lastTickElapsed = Duration.zero;
-  Duration _lastNativeSyncElapsed = Duration.zero;
 
   /// seek 后用于过滤旧进度回调的临时目标
   double? _pendingSeekMs;
   DateTime? _pendingSeekAt;
   static const _seekGuardWindowMs = 200;
-  static const _nativePositionSyncInterval = Duration(seconds: 1);
 
   late final AnimationController _scaleController;
   late final AnimationController _floatController;
@@ -645,7 +641,6 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
     if (_needsProgressTicker) {
       _syncToNativePosition();
       _lastTickElapsed = Duration.zero;
-      _lastNativeSyncElapsed = Duration.zero;
       _pendingSeekMs = null;
       _pendingSeekAt = null;
       final isPlaying =
@@ -729,9 +724,6 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
         : elapsed - _lastTickElapsed;
     _lastTickElapsed = elapsed;
 
-    final shouldSyncNative =
-        _lastNativeSyncElapsed == Duration.zero ||
-        elapsed - _lastNativeSyncElapsed >= _nativePositionSyncInterval;
     final rate = widget.usesAuthoredTiming
         ? PlayService.instance.playbackService.rate.value
         : 1.0;
@@ -742,11 +734,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
       previousMs: _currentTimeMs,
       predictedMs: predictedMs,
       nativeMs: nativeMs,
-      allowNativeResync: shouldSyncNative,
     );
-    if (shouldSyncNative) {
-      _lastNativeSyncElapsed = elapsed;
-    }
 
     final delta = rawMs - _currentTimeMs;
     var shouldRepaint = false;
