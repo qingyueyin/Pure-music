@@ -100,7 +100,7 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
       child: Row(
         children: [
           Text(
-            session.isActive ? '今晚节目单' : '播放列表',
+            session.isActive ? '此次的演出单' : '播放列表',
             style: TextStyle(
               color: scheme.onSecondaryContainer,
               fontSize: AppType.hero,
@@ -109,7 +109,7 @@ class _CurrentPlaylistViewState extends State<CurrentPlaylistView> {
           ),
           if (session.isActive && act != null) ...[
             const SizedBox(width: 8),
-            Flexible(
+            Expanded(
               child: Text(
                 '$act · ${playbackService.playlistIndex + 1}/${session.length}',
                 maxLines: 1,

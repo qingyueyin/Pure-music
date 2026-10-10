@@ -32,6 +32,7 @@ import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/component/responsive_builder.dart';
 import 'package:pure_music/page/now_playing_page/component/concert_act_cue.dart';
 import 'package:pure_music/page/now_playing_page/component/concert_act_label.dart';
+import 'package:pure_music/services/concert_session.dart';
 import 'package:pure_music/page/now_playing_page/component/current_playlist_view.dart';
 import 'package:pure_music/page/now_playing_page/component/equalizer_dialog.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_source_view.dart';
@@ -967,14 +968,21 @@ class _NowPlayingPlaybackModeSwitchState
       listenable: Listenable.merge([
         playbackService.shuffle,
         playbackService.playMode,
+        ConcertSession.instance,
       ]),
       builder: (context, _) {
         final shuffle = playbackService.shuffle.value;
         final playMode = playbackService.playMode.value;
         final visuals = _modeVisuals(shuffle, playMode);
+        // 演出模式靠固定队列推进，期间不接受切换播放顺序
+        final concertLocked = ConcertSession.instance.isActive;
         return IconButton(
-          tooltip: _isSaving ? '保存中' : visuals.text,
-          onPressed: _isSaving
+          tooltip: concertLocked
+              ? '有处于演出模式，不要切换啦'
+              : _isSaving
+              ? '保存中'
+              : visuals.text,
+          onPressed: concertLocked || _isSaving
               ? null
               : () => _changeMode(shuffle: shuffle, playMode: playMode),
           icon: _modeIcon(visuals.icon, color),

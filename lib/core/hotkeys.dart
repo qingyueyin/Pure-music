@@ -6,6 +6,7 @@ import 'package:pure_music/core/hotkey_focus_state.dart';
 import 'package:pure_music/core/immersive.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/play_service/play_service.dart';
+import 'package:pure_music/services/concert_session.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/page/now_playing_page/component/sleep_timer_dialog.dart';
@@ -197,6 +198,11 @@ class HotkeysHelper {
     if (playbackService == null) return;
     if (playbackService.nowPlaying == null) {
       showHotkeyToast(text: '没有正在播放的歌曲', icon: Icons.shuffle);
+      return;
+    }
+    // 演出模式靠固定队列推进，期间不接受切换随机
+    if (ConcertSession.instance.isActive) {
+      showHotkeyToast(text: '有处于演出模式，不要切换啦', icon: Icons.shuffle);
       return;
     }
     final enabled = !playbackService.shuffle.value;

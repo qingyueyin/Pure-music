@@ -1,4 +1,10 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
+import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/play_service/play_service.dart';
 
 /// 演出节目单的一幕：半开区间 [start, end)。
@@ -120,7 +126,11 @@ class ConcertSession extends ChangeNotifier {
   String _name = '';
   List<String> _paths = const [];
   List<ConcertSection> _sections = const [];
+  double _climaxPosition = 0.82;
   String? _lastAnnouncedAct;
+
+  /// 演出会话的本地存档：appData/concert_session.json，退出重进后接着开演。
+  static const String _sessionFileName = 'concert_session.json';
 
   bool get isActive => _active;
   String get name => _name;
@@ -152,9 +162,11 @@ class ConcertSession extends ChangeNotifier {
       count: paths.length,
       climaxPosition: climaxPosition,
     );
+    _climaxPosition = climaxPosition;
     _lastAnnouncedAct = null;
     _active = true;
     _ensureAttached();
+    unawaited(_persistSession());
     notifyListeners();
   }
 
@@ -165,7 +177,102 @@ class ConcertSession extends ChangeNotifier {
     _paths = const [];
     _sections = const [];
     _lastAnnouncedAct = null;
+    unawaited(_clearSessionFile());
     notifyListeners();
+  }
+
+  /// 启动时在播放队列恢复完成后调用：存档跟当前队列对得上就接着开演，对不上就丢弃。
+  Future<void> restoreAfterStartup() async {
+    if (_active) return;
+    String name;
+    double climaxPosition;
+    List<String> paths;
+    try {
+      final file = await _sessionFile();
+      if (!await file.exists()) return;
+      final decoded = jsonDecode(await file.readAsString());
+      if (decoded is! Map<String, dynamic>) return;
+      name = decoded['name']?.toString() ?? '';
+      climaxPosition =
+          (decoded['climaxPosition'] as num?)?.toDouble() ?? 0.82;
+      paths = [
+        for (final path in decoded['paths'] ?? const [])
+          if (path is String) path,
+      ];
+    } catch (error, trace) {
+      log.app.warn(
+        'legacy',
+        '[concert] session restore failed',
+        error: error,
+        stackTrace: trace,
+      );
+      return;
+    }
+    final playback = PlayService.instance.playbackService;
+    final playlist = playback.playlistNotifier.value;
+    final matches =
+        name.isNotEmpty &&
+        paths.length >= 2 &&
+        !playback.shuffle.value &&
+        concertPlaylistMatches(paths, [
+          for (final audio in playlist) audio.path,
+        ]);
+    if (!matches) {
+      await _clearSessionFile();
+      return;
+    }
+    _name = name;
+    _paths = List<String>.of(paths);
+    _sections = concertSectionsFor(
+      count: paths.length,
+      climaxPosition: climaxPosition,
+    );
+    _climaxPosition = climaxPosition;
+    _lastAnnouncedAct = null;
+    _active = true;
+    _ensureAttached();
+    notifyListeners();
+  }
+
+  Future<File> _sessionFile() async {
+    final dir = await getAppDataDir();
+    return File('${dir.path}${Platform.pathSeparator}$_sessionFileName');
+  }
+
+  Future<void> _persistSession() async {
+    try {
+      final file = await _sessionFile();
+      await file.writeAsString(
+        jsonEncode({
+          'name': _name,
+          'climaxPosition': _climaxPosition,
+          'paths': _paths,
+        }),
+        flush: true,
+      );
+    } catch (error, trace) {
+      log.app.warn(
+        'legacy',
+        '[concert] session save failed',
+        error: error,
+        stackTrace: trace,
+      );
+    }
+  }
+
+  Future<void> _clearSessionFile() async {
+    try {
+      final file = await _sessionFile();
+      if (!await file.exists()) return;
+      await file.delete();
+    } catch (error, trace) {
+      log.app.warn(
+        'legacy',
+        '[concert] session clear failed',
+        error: error,
+        stackTrace: trace,
+      );
+    }
   }
 
   void _ensureAttached() {

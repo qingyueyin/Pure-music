@@ -14,6 +14,7 @@ import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/lyric/lyric_source.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/play_service/play_service.dart';
+import 'package:pure_music/services/concert_session.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:go_router/go_router.dart';
@@ -79,6 +80,7 @@ class WindowLifecycleService with WindowListener, TrayListener {
     playback.playerStateNotifier.addListener(_refreshTrayContent);
     playback.shuffle.addListener(_refreshTrayContent);
     playback.playMode.addListener(_refreshTrayContent);
+    ConcertSession.instance.addListener(_refreshTrayContent);
   }
 
   void _scheduleBindRetry() {
@@ -134,6 +136,7 @@ class WindowLifecycleService with WindowListener, TrayListener {
     required bool desktopLyricRunning,
     required bool desktopLyricLocked,
     required String modeText,
+    required bool concertLocked,
   }) {
     return Menu(
       items: [
@@ -149,7 +152,8 @@ class WindowLifecycleService with WindowListener, TrayListener {
       MenuItem(
         key: 'cycle_play_mode',
         label: '播放模式：$modeText',
-        disabled: !hasSession,
+        // 演出模式靠固定队列推进，期间不接受切换播放顺序
+        disabled: !hasSession || concertLocked,
       ),
       MenuItem(key: 'prev', label: '上一曲', disabled: !hasSession),
       MenuItem(
@@ -187,6 +191,7 @@ class WindowLifecycleService with WindowListener, TrayListener {
       desktopLyricRunning: desktopLyricRunning,
       desktopLyricLocked: desktopLyricLocked,
       modeText: modeText,
+      concertLocked: ConcertSession.instance.isActive,
     );
     _trayOperation = _trayOperation.catchError((_) {}).then((_) async {
       try {
@@ -461,6 +466,8 @@ class WindowLifecycleService with WindowListener, TrayListener {
         PlayService.instance.desktopLyricService.sendUnlockMessage();
         return;
       case 'cycle_play_mode':
+        // 菜单可能还是切换前的旧内容，点击时再校验一次
+        if (ConcertSession.instance.isActive) return;
         _cyclePlayMode();
         return;
       case 'prev':

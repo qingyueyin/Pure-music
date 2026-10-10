@@ -25,6 +25,7 @@ import 'package:pure_music/core/log/playback_log.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/services/concert_session.dart';
 import 'package:pure_music/services/lastfm/lastfm_models.dart';
 import 'package:pure_music/services/lastfm/lastfm_service.dart';
 import 'package:pure_music/play_service/sleep_timer.dart';
@@ -353,6 +354,7 @@ class PlaybackService extends ChangeNotifier {
       try {
         await _restoreLastSession();
         _supportPath = (await getAppDataDir()).path;
+        await ConcertSession.instance.restoreAfterStartup();
       } catch (err, trace) {
         log.playback.error('legacy', '[restoreLastSession] $err\n$trace');
       }

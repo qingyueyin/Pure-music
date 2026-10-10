@@ -80,6 +80,7 @@ class _ConcertPageState extends State<ConcertPage> {
   void initState() {
     super.initState();
     MouseBackExit.registerRoute(app_paths.CONCERT_PAGE, _handleNavigationReset);
+    ConcertSession.instance.addListener(_onSessionChanged);
     ConcertProgramStore.instance.load().then((_) {
       if (!mounted) return;
       setState(() {
@@ -88,12 +89,17 @@ class _ConcertPageState extends State<ConcertPage> {
     });
   }
 
+  void _onSessionChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
     MouseBackExit.unregisterRoute(
       app_paths.CONCERT_PAGE,
       _handleNavigationReset,
     );
+    ConcertSession.instance.removeListener(_onSessionChanged);
     _stopRequested = true;
     _generation++;
     _highlightTimer?.cancel();
@@ -651,7 +657,7 @@ class _ConcertPageState extends State<ConcertPage> {
   }
 
   List<Widget> _phaseActions() {
-    return switch (_phase) {
+    final actions = switch (_phase) {
       _ConcertPhase.select => [
         OutlinedButton.icon(
           onPressed: _showSettingsDialog,
@@ -694,6 +700,21 @@ class _ConcertPageState extends State<ConcertPage> {
         ),
       ],
     };
+    // 演出进行中给出显式出口：结束只退出演出状态，队列与播放保持不变
+    if (!ConcertSession.instance.isActive) return actions;
+    return [
+      OutlinedButton.icon(
+        onPressed: _endShow,
+        icon: const Icon(Symbols.stop),
+        label: const Text('结束演出'),
+      ),
+      ...actions,
+    ];
+  }
+
+  void _endShow() {
+    ConcertSession.instance.end();
+    showTextOnSnackBar('演出已结束');
   }
 
   Widget _buildSelectBody(BuildContext context) {
