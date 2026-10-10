@@ -232,6 +232,45 @@ void main() {
     expect(maxChannelSpread, lessThanOrEqualTo(2));
   });
 
+  testWidgets('dark sunset cover keeps purple sky and orange sun', (
+    tester,
+  ) async {
+    final boundaryKey = GlobalKey();
+
+    await tester.pumpWidget(
+      _animatedMeshFixture(boundaryKey, const <Color>[
+        Color(0xFF0B0737),
+        Color(0xFF13131A),
+        Color(0xFF0B0C22),
+        Color(0xFFE92F3C),
+      ]),
+    );
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    await tester.pump();
+
+    final pixels = await _capturePixels(tester, boundaryKey);
+    var hasCoolRegion = false;
+    var hasWarmRegion = false;
+    var maxChannelSpread = 0;
+    for (var offset = 0; offset < pixels.length; offset += 4) {
+      final red = pixels[offset];
+      final green = pixels[offset + 1];
+      final blue = pixels[offset + 2];
+      final spread =
+          [red, green, blue].reduce((a, b) => a > b ? a : b) -
+          [red, green, blue].reduce((a, b) => a < b ? a : b);
+      if (spread > maxChannelSpread) maxChannelSpread = spread;
+      hasCoolRegion |= blue > red + 12 && blue > green;
+      hasWarmRegion |= red > blue + 28 && red > green + 20;
+    }
+
+    expect(maxChannelSpread, greaterThan(20));
+    expect(hasCoolRegion, isTrue);
+    expect(hasWarmRegion, isTrue);
+  });
+
   testWidgets('small cover accents remain visible across the dark mesh', (
     tester,
   ) async {

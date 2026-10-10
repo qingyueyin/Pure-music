@@ -399,20 +399,19 @@ class _ImmersiveCoverThumbnailState extends State<_ImmersiveCoverThumbnail> {
       color: scheme.onSecondaryContainer,
     );
 
-    if (_cover == null) {
-      return Center(child: placeholder);
-    }
-
-    return ClipRRect(
-      borderRadius: AppRadius.mdCircular,
-      child: Image(
-        image: _cover!,
-        fit: BoxFit.cover,
-        gaplessPlayback: true,
-        filterQuality: FilterQuality.high,
-        errorBuilder: (_, _, _) => Center(child: placeholder),
-      ),
-    );
+    final cover = _cover == null
+        ? Center(child: placeholder)
+        : ClipRRect(
+            borderRadius: AppRadius.mdCircular,
+            child: Image(
+              image: _cover!,
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+              filterQuality: FilterQuality.high,
+              errorBuilder: (_, _, _) => Center(child: placeholder),
+            ),
+          );
+    return _PlaybackCoverScale(child: cover);
   }
 }
 

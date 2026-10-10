@@ -945,4 +945,39 @@ mod tests {
             assert!(spread <= 8, "#{color:08X}");
         }
     }
+
+    #[test]
+    fn dark_sunset_cover_keeps_the_orange_sun() {
+        let mut image = RgbImage::from_pixel(120, 120, Rgb([11, 7, 55]));
+        for (x, y, pixel) in image.enumerate_pixels_mut() {
+            let dx = x as i32 - 60;
+            let dy = y as i32 - 62;
+            let radius = dx * dx + dy * dy;
+            if radius <= 26 * 26 {
+                *pixel = Rgb([233, 47, 60]);
+            } else if radius <= 38 * 38 {
+                *pixel = Rgb([180, 40, 50]);
+            } else if x < 22 || (38..46).contains(&x) || (88..94).contains(&x) {
+                *pixel = Rgb([2, 2, 6]);
+            }
+        }
+
+        let colors =
+            super::extract_mesh_colors_from_decoded_image(&DynamicImage::ImageRgb8(image), 4)
+                .unwrap();
+        assert!(
+            colors.iter().any(|color| {
+                let (red, green, blue) = channels(*color);
+                red > blue + 40 && red > green + 15
+            }),
+            "palette={colors:?}"
+        );
+        assert!(
+            colors.iter().any(|color| {
+                let (red, green, blue) = channels(*color);
+                blue > red + 8 && blue > green
+            }),
+            "palette={colors:?}"
+        );
+    }
 }

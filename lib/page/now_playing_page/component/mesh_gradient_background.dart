@@ -36,10 +36,22 @@ class _MeshAnimationController {
   void dispose() => isAnimating.dispose();
 }
 
+bool _isMeshChromatic(Color color) {
+  final hsl = HSLColor.fromColor(color);
+  if (hsl.saturation <= 0.18) return false;
+  final hsv = HSVColor.fromColor(color);
+  return hsv.saturation * hsv.value >= 0.06;
+}
+
 List<Color> _adjustMeshColors(List<Color> colors, Brightness brightness) {
   if (colors.isEmpty) return colors;
   final isDark = brightness == Brightness.dark;
-  if (isDark && colors.every((color) => color.computeLuminance() <= 0.008)) {
+  // 纯黑/灰封面才收成灰阶。暗的紫、橙要保住色相，不能整块洗灰。
+  if (isDark &&
+      colors.every(
+        (color) =>
+            !_isMeshChromatic(color) && color.computeLuminance() <= 0.008,
+      )) {
     const levels = <double>[0.10, 0.19, 0.14, 0.07];
     return List<Color>.generate(
       levels.length,
@@ -56,6 +68,9 @@ List<Color> _adjustMeshColors(List<Color> colors, Brightness brightness) {
   final darkLuminanceLimit = stats.hasBrightPalette
       ? const <double>[0.26, 0.34, 0.30, 0.32]
       : const <double>[0.13, 0.22, 0.17, 0.20];
+  final darkLuminanceFloor = stats.hasBrightPalette
+      ? const <double>[0.10, 0.16, 0.12, 0.14]
+      : const <double>[0.06, 0.10, 0.08, 0.09];
   return [
     for (final entry in colors.indexed)
       _mapMeshColor(
@@ -63,6 +78,7 @@ List<Color> _adjustMeshColors(List<Color> colors, Brightness brightness) {
         isDark: isDark,
         stats: stats,
         darkLimit: darkLuminanceLimit,
+        darkFloor: darkLuminanceFloor,
       ),
   ].toList(growable: false);
 }
@@ -95,6 +111,7 @@ Color _mapMeshColor(
   required ({double average, double min, double max, bool hasBrightPalette})
   stats,
   required List<double> darkLimit,
+  required List<double> darkFloor,
 }) {
   final (index, color) = entry;
   final hsl = HSLColor.fromColor(color);
@@ -102,10 +119,17 @@ Color _mapMeshColor(
       ? (hsl.saturation * 1.18 + 0.04).clamp(0.0, 0.68)
       : hsl.saturation.clamp(0.0, 0.78);
   final adjusted = hsl.withSaturation(saturation).toColor();
-  if (isDark) return _capMeshLuminance(adjusted, darkLimit[index]);
-  return HSLColor.fromColor(
-    adjusted,
-  ).withLightness((hsl.lightness * 0.82 + 0.12).clamp(0.34, 0.82)).toColor();
+  if (!isDark) {
+    return HSLColor.fromColor(
+      adjusted,
+    ).withLightness((hsl.lightness * 0.82 + 0.12).clamp(0.34, 0.82)).toColor();
+  }
+  final capped = _capMeshLuminance(adjusted, darkLimit[index]);
+  if (_isMeshChromatic(capped) &&
+      capped.computeLuminance() < darkFloor[index]) {
+    return _liftMeshLuminance(capped, darkFloor[index]);
+  }
+  return capped;
 }
 
 Color _capMeshLuminance(Color color, double limit) {
@@ -130,6 +154,26 @@ Color _capMeshLuminance(Color color, double limit) {
     green: color.g * lower,
     blue: color.b * lower,
   );
+}
+
+Color _liftMeshLuminance(Color color, double floor) {
+  if (color.computeLuminance() >= floor) return color;
+  final hsl = HSLColor.fromColor(color);
+  var lower = hsl.lightness;
+  var upper = 1.0;
+  if (hsl.withLightness(upper).toColor().computeLuminance() < floor) {
+    return hsl.withLightness(upper).toColor();
+  }
+  for (var attempt = 0; attempt < 9; attempt++) {
+    final mid = (lower + upper) * 0.5;
+    final candidate = hsl.withLightness(mid).toColor();
+    if (candidate.computeLuminance() < floor) {
+      lower = mid;
+    } else {
+      upper = mid;
+    }
+  }
+  return hsl.withLightness(upper).toColor();
 }
 
 List<Color> _meshShaderColors(List<Color> colors) {
@@ -398,6 +442,24 @@ class _MeshGradientBackgroundInternalState
     while (padded.length < _kMeshColorCount) {
       padded.add(colors[padded.length % colors.length]);
     }
+    if (colors.length <= _kMeshColorCount) return padded;
+    // 8 色盘只取前 4 时，别把日落这种高彩点丢掉。
+    var accent = colors.first;
+    var accentScore = -1.0;
+    for (final color in colors) {
+      if (!_isMeshChromatic(color)) continue;
+      final hsv = HSVColor.fromColor(color);
+      final score = hsv.saturation * hsv.value;
+      if (score > accentScore) {
+        accent = color;
+        accentScore = score;
+      }
+    }
+    if (accentScore < 0) return padded;
+    if (padded.any((color) => color.toARGB32() == accent.toARGB32())) {
+      return padded;
+    }
+    padded[_kMeshColorCount - 1] = accent;
     return padded;
   }
 

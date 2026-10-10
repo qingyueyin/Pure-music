@@ -2448,6 +2448,35 @@ class _ProgressSliderPainter extends CustomPainter {
   }
 }
 
+// 播放中封面为 1，暂停、停止、播完缩到 0.88。缓冲不算暂停。
+class _PlaybackCoverScale extends StatelessWidget {
+  const _PlaybackCoverScale({required this.child});
+
+  final Widget child;
+
+  static const _pausedCoverScale = 0.88;
+
+  @override
+  Widget build(BuildContext context) {
+    final playback = PlayService.instance.playbackService;
+    return ValueListenableBuilder<PlayerState>(
+      valueListenable: playback.playerStateNotifier,
+      builder: (context, state, child) {
+        final playing =
+            state == PlayerState.playing || state == PlayerState.stalled;
+        return SpringProgress(
+          target: playing ? 1.0 : _pausedCoverScale,
+          spring: MotionSpring.layout,
+          child: child,
+          builder: (context, scale, child) =>
+              Transform.scale(scale: scale, child: child),
+        );
+      },
+      child: child,
+    );
+  }
+}
+
 /// title, artist, album, cover
 class _NowPlayingInfo extends StatefulWidget {
   const _NowPlayingInfo({
@@ -2686,9 +2715,11 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
     return SizedBox(
       width: coverSize,
       height: coverSize,
-      child: heroEnabled && nowPlayingPath != null
-          ? Hero(tag: nowPlayingPath, child: image)
-          : RepaintBoundary(child: image),
+      child: _PlaybackCoverScale(
+        child: heroEnabled && nowPlayingPath != null
+            ? Hero(tag: nowPlayingPath, child: image)
+            : RepaintBoundary(child: image),
+      ),
     );
   }
 
