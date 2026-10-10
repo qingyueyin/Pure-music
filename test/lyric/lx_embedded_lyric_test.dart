@@ -20,7 +20,7 @@ String _lxFile({
 }
 
 void main() {
-  group('LX Music 内嵌歌词标签', () {
+  group('内嵌 awlrc 歌词标签', () {
     test('解析 awlrc 逐字歌词并合并翻译/罗马音', () {
       final text = _lxFile(
         lrc: '[offset:0]\n[00:01.000]ハロ\n[00:05.000]セカイ\n',
@@ -49,9 +49,9 @@ void main() {
       expect(first.words.map((w) => w.content).join(), 'ハロ');
       expect(first.words.first.start, const Duration(seconds: 1));
       expect(first.words.first.length, const Duration(milliseconds: 400));
-      // 行末单字按增强 LRC 规则取默认词长 500ms。
+      // 行末单字时长取洛雪标签里的 600ms。
       expect(first.words.last.start, const Duration(milliseconds: 1400));
-      expect(first.words.last.length, const Duration(milliseconds: 500));
+      expect(first.words.last.length, const Duration(milliseconds: 600));
       expect(first.translation, '你好世界');
       expect(first.romanLyric, 'ha ro');
 
@@ -74,7 +74,7 @@ void main() {
       final realLines = lines.where((l) => l.words.isNotEmpty).toList();
       expect(realLines.first.words.single.start, const Duration(seconds: 1));
       final blanks = lines.where((l) => l.words.isEmpty).toList();
-      // 前奏空白行 0-1s；行末单字按增强 LRC 默认词长 500ms 结束于 1.5s，
+      // 前奏空白行 0-1s；行末单字按时长 500ms 结束于 1.5s，
       // 间奏空白行从 1.5s 插到 20s。
       expect(blanks, hasLength(2));
       expect(blanks.first.start, Duration.zero);

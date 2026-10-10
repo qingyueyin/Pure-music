@@ -801,7 +801,7 @@ class Lrc extends Lyric {
   }) {
     final shouldKeepMetadata =
         keepMetadata ?? AppSettings.instance.keepLyricMetadata;
-    // LX Music 内嵌标签（[awlrc:...]）携带独立的翻译/罗马音/逐字数据，优先使用。
+    // 内嵌标签 [awlrc:] 自带翻译、罗马音和逐字时间，优先使用。
     if (_hasLxEmbeddedLyric(lrc)) {
       final lx = _parseLxEmbedded(
         lrc,
@@ -940,7 +940,7 @@ class Lrc extends Lyric {
           }
           combined.add(pri);
         }
-        // 插入开头前奏和中间间奏空白行（与 enhanced/Lyricify 对齐）
+        // 为逐字行补开头前奏和中间间奏空白行
         final withInterludes = _insertInterludesForWordByWord(combined);
         final result = Lyric(withInterludes, source);
         log.lyric.debug(
@@ -968,9 +968,9 @@ class Lrc extends Lyric {
       '[lrc] fromLrcTextAuto: hasWordTags=$hasWordTags',
     );
     if (!hasWordTags) {
-      if (_isLyricifyFormat(lrc)) {
-        log.lyric.debug('lyric.line', '[lrc] fromLrcTextAuto: Lyricify format');
-        final parsed = _parseLyricify(
+      if (_isWordTimedParenFormat(lrc)) {
+        log.lyric.debug('lyric.line', '[lrc] fromLrcTextAuto: word-timed paren format');
+        final parsed = _parseWordTimedParenLrc(
           lrc,
           source,
           separator: separator,
@@ -1040,7 +1040,7 @@ class Lrc extends Lyric {
     return result;
   }
 
-  // ── LX Music 内嵌歌词标签 ──
+  // ── 内嵌 awlrc 歌词标签 ──
   // 标签格式：[awlrc:lrc:<base64>,tlrc:<base64>,rlrc:<base64>,awlrc:<base64>]
   // lrc 普通歌词、tlrc 翻译、rlrc 罗马音、awlrc 逐字歌词，内容均为 base64 编码。
   // awlrc 逐字格式：[mm:ss.mmm]<行内偏移,时长>文字（偏移相对该行起始时间）。
@@ -1126,12 +1126,18 @@ class Lrc extends Lyric {
       final body = match.group(4)!.replaceAll(_lxTimeTagRe, '').trim();
       if (body.isEmpty) continue;
       if (hasWordText && _lxWordRe.hasMatch(body)) {
+        var lastEndMs = startMs;
         final converted = body.replaceAllMapped(_lxWordRe, (m) {
           final relativeMs = int.tryParse(m.group(1)!) ?? 0;
-          return '<${_lxFormatTime(max(startMs + relativeMs, 0))}>'
-              '${m.group(3) ?? ''}';
+          final durationMs = int.tryParse(m.group(2)!) ?? 0;
+          final absStart = max(startMs + relativeMs, 0);
+          lastEndMs = max(absStart + durationMs, lastEndMs);
+          return '<${_lxFormatTime(absStart)}>${m.group(3) ?? ''}';
         });
-        buffer.writeln('[${_lxFormatTime(startMs)}]$converted');
+        // 空时间标签作为行结束点，让现有增强 LRC 解析保留最后一个字的时长。
+        buffer.writeln(
+          '[${_lxFormatTime(startMs)}]$converted<${_lxFormatTime(lastEndMs)}>',
+        );
       } else {
         buffer.writeln('[${_lxFormatTime(startMs)}]$body');
       }
@@ -1164,7 +1170,7 @@ class Lrc extends Lyric {
   }
 
   /// 为 wordByWord 格式插入开头前奏和中间间奏空白行
-  /// 逻辑与 _parseLyricify / _parseEnhancedLrcText 的间奏插入对齐
+  /// 间奏空白行的插入规则与另外两种逐字解析相同
   static List<SyncLyricLine> _insertInterludesForWordByWord(
     List<SyncLyricLine> lines,
   ) {
@@ -1199,14 +1205,14 @@ class Lrc extends Lyric {
     return result;
   }
 
-  static bool _isLyricifyFormat(String text) {
+  static bool _isWordTimedParenFormat(String text) {
     return RegExp(r'\S.*?\(\d+,\d+\)').hasMatch(text);
   }
 
-  /// Parse Lyricify format lyrics
+  /// 解析带属性行的增强 LRC
   /// Format: word(startMs,durationMs)word2(start,duration) ...
   /// Attribute lines remain regular lyric rows; background vocals belong to TTML.
-  static Lyric? _parseLyricify(
+  static Lyric? _parseWordTimedParenLrc(
     String lrc,
     LyricFormat source, {
     String? separator,
@@ -1536,7 +1542,7 @@ class Lrc extends Lyric {
 
       log.lyric.debug(
         'lyric.line',
-        '[lrc] _parseLyricify: maxMetadataTimeMs=$maxMetadataTimeMs, firstLineStart=${firstLineStart.inMilliseconds}ms, introStart=${introStart.inMilliseconds}ms',
+        '[lrc] _parseWordTimedParenLrc: maxMetadataTimeMs=$maxMetadataTimeMs, firstLineStart=${firstLineStart.inMilliseconds}ms, introStart=${introStart.inMilliseconds}ms',
       );
 
       // 如果第一句歌词不在 0 时刻，且第一行不是已经从 0 开始的空白行，插入前奏空白行
@@ -1548,7 +1554,7 @@ class Lrc extends Lyric {
       if (firstLineStart > introStart && !firstLineIsIntroBlank) {
         log.lyric.debug(
           'lyric.line',
-          '[lrc] _parseLyricify: inserting intro blank line from ${introStart.inMilliseconds}ms to ${firstLineStart.inMilliseconds}ms',
+          '[lrc] _parseWordTimedParenLrc: inserting intro blank line from ${introStart.inMilliseconds}ms to ${firstLineStart.inMilliseconds}ms',
         );
         finalLines.insert(
           0,

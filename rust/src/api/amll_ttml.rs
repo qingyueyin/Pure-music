@@ -18,7 +18,7 @@ const INDEX_CACHE_MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 const INDEX_CACHE_FILE: &str = "amll/raw-lyrics-index.jsonl";
 
 // ──────────────────────────────────────────────
-// 索引解析（与 Unilyric 一致的结构化解析）
+// 索引解析：按标题、艺术家、专辑拆开保存
 // ──────────────────────────────────────────────
 
 #[derive(Debug, Clone)]

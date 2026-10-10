@@ -53,7 +53,7 @@ void main() {
     expect(line.bgText, isNull);
   });
 
-  test('does not expose Lyricify attribute rows as background vocals', () {
+  test('does not expose attribute rows as background vocals', () {
     const source = '''
 [00:10.000][0]hello(100,400)
 [00:10.000][6]echo(100,400)

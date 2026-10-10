@@ -407,7 +407,9 @@ Future<({Lyric lyric, bool isExternal})?> loadLyricFromAudio(
       final embeddedStripped = embedded == null
           ? null
           : _stripMetadata(embedded);
-      if (embeddedStripped != null && embeddedStripped.lines.isNotEmpty) {
+      if (embeddedStripped != null &&
+          embeddedStripped.lines.isNotEmpty &&
+          embeddedStripped.isWordByWord) {
         log.lyric.debug(
           'lyric.candidate',
           'lyric_loader: loaded embedded lyric, lines=${embeddedStripped.lines.length}',
