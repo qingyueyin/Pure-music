@@ -93,6 +93,49 @@ void main() {
       expect(defaultInAppBinding(HotkeyAction.fullscreen).label, 'F11');
       expect(defaultInAppBinding(HotkeyAction.escape).label, 'Esc');
     });
+
+    test('matches left and right control as the same modifier', () {
+      final binding = defaultInAppBinding(HotkeyAction.previous);
+      expect(
+        binding.matchesPressed(
+          key: PhysicalKeyboardKey.arrowLeft,
+          pressedModifiers: {HotKeyModifier.control},
+        ),
+        isTrue,
+      );
+      expect(
+        binding.matchesPressed(
+          key: PhysicalKeyboardKey.arrowLeft,
+          pressedModifiers: const <HotKeyModifier>{},
+        ),
+        isFalse,
+      );
+      expect(
+        binding.matchesPressed(
+          key: PhysicalKeyboardKey.space,
+          pressedModifiers: {HotKeyModifier.control},
+        ),
+        isFalse,
+      );
+    });
+
+    test('space matches only without extra modifiers', () {
+      final binding = defaultInAppBinding(HotkeyAction.playPause);
+      expect(
+        binding.matchesPressed(
+          key: PhysicalKeyboardKey.space,
+          pressedModifiers: const <HotKeyModifier>{},
+        ),
+        isTrue,
+      );
+      expect(
+        binding.matchesPressed(
+          key: PhysicalKeyboardKey.space,
+          pressedModifiers: {HotKeyModifier.control},
+        ),
+        isFalse,
+      );
+    });
   });
 
   group('findHotkeyConflict', () {

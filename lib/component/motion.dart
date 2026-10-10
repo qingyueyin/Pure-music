@@ -462,6 +462,7 @@ class _DirectionalTabViewState extends State<DirectionalTabView>
     super.didUpdateWidget(oldWidget);
     _syncChannelCount();
     if (oldWidget.index == widget.index) return;
+    _unfocusIfInside();
     final direction = widget.index > oldWidget.index ? 1.0 : -1.0;
     final requestId = ++_transitionRequestId;
     final incoming = _channels[widget.index];
@@ -521,6 +522,18 @@ class _DirectionalTabViewState extends State<DirectionalTabView>
     while (_channels.length > widget.children.length) {
       _channels.removeLast().dispose();
     }
+  }
+
+  void _unfocusIfInside() {
+    final focused = FocusManager.instance.primaryFocus;
+    if (focused == null || !focused.hasFocus) return;
+    final focusedContext = focused.context;
+    if (focusedContext == null) return;
+    if (focusedContext.findAncestorStateOfType<_DirectionalTabViewState>() !=
+        this) {
+      return;
+    }
+    focused.unfocus();
   }
 
   @override

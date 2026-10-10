@@ -11,15 +11,15 @@ import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/page/now_playing_page/component/sleep_timer_dialog.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:go_router/go_router.dart';
 import 'package:window_manager/window_manager.dart';
 
 class HotkeysHelper {
-  static final List<HotKey> _inAppKeys = [];
   static final List<HotKey> _systemKeys = [];
   static bool _windowToggleInProgress = false;
-  static bool _inAppPaused = false;
+  static bool _inAppHandlerAttached = false;
 
   static bool _canHandlePlaybackHotkey() => canHandleInAppPlaybackHotkey(
     textInputFocused: isTextInputFocusedForHotkeys(),
@@ -44,14 +44,8 @@ class HotkeysHelper {
     await _unregisterSystem();
   }
 
-  static Future<void> onFocusChanges(bool focus) async {
-    _inAppPaused = focus;
-    if (focus) {
-      await _unregisterInApp();
-    } else {
-      await _registerInApp();
-    }
-  }
+  /// 输入框焦点改由按键处理时判断，这里不再卸载快捷键。
+  static Future<void> onFocusChanges(bool _) async {}
 
   static Future<void> pauseForRecording() async {
     await _unregisterInApp();
@@ -59,28 +53,45 @@ class HotkeysHelper {
   }
 
   static Future<void> resumeAfterRecording() async {
-    if (!_inAppPaused) {
-      await _registerInApp();
-    }
+    await _registerInApp();
     await _registerSystem();
   }
 
   static Future<void> _registerInApp() async {
-    if (_inAppPaused || _inAppKeys.isNotEmpty) return;
+    if (_inAppHandlerAttached) return;
+    HardwareKeyboard.instance.addHandler(_onInAppKey);
+    _inAppHandlerAttached = true;
+  }
+
+  static Future<void> _unregisterInApp() async {
+    if (!_inAppHandlerAttached) return;
+    HardwareKeyboard.instance.removeHandler(_onInAppKey);
+    _inAppHandlerAttached = false;
+  }
+
+  static bool _onInAppKey(KeyEvent event) {
+    if (event is! KeyDownEvent) return false;
+    if (isTextInputFocusedForHotkeys()) return false;
+
+    final pressed = HardwareKeyboard.instance.physicalKeysPressed;
+    final pressedModifiers = {
+      for (final modifier in HotKeyModifier.values)
+        if (modifier.physicalKeys.any(pressed.contains)) modifier,
+    };
+
     final bindings = AppSettings.instance.inAppHotkeys;
     for (final action in inAppHotkeyActions) {
       final binding = bindings[action] ?? defaultInAppBinding(action);
-      final hotKey = binding.toHotKey(
-        scope: HotKeyScope.inapp,
-        identifier: 'inapp.${action.name}',
-      );
-      if (hotKey == null) continue;
-      await hotKeyManager.register(
-        hotKey,
-        keyDownHandler: (_) => _handle(action, isGlobal: false),
-      );
-      _inAppKeys.add(hotKey);
+      if (!binding.matchesPressed(
+        key: event.physicalKey,
+        pressedModifiers: pressedModifiers,
+      )) {
+        continue;
+      }
+      _handle(action, isGlobal: false);
+      return true;
     }
+    return false;
   }
 
   static Future<void> _registerSystem() async {
@@ -100,13 +111,6 @@ class HotkeysHelper {
       );
       _systemKeys.add(hotKey);
     }
-  }
-
-  static Future<void> _unregisterInApp() async {
-    for (final key in _inAppKeys) {
-      await hotKeyManager.unregister(key);
-    }
-    _inAppKeys.clear();
   }
 
   static Future<void> _unregisterSystem() async {

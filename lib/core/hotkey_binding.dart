@@ -120,6 +120,21 @@ class HotkeyBinding {
     return signature == other.signature;
   }
 
+  /// 左右 Ctrl/Alt 等视为同一修饰键，与 hotkey_manager 的匹配方式一致。
+  bool matchesPressed({
+    required PhysicalKeyboardKey key,
+    required Set<HotKeyModifier> pressedModifiers,
+  }) {
+    if (isUnbound || key.usbHidUsage != keyHid) return false;
+    final needed = <HotKeyModifier>{};
+    for (final hid in modifierHids) {
+      final modifier = _modifierFromHid(hid);
+      if (modifier != null) needed.add(modifier);
+    }
+    return needed.length == pressedModifiers.length &&
+        needed.containsAll(pressedModifiers);
+  }
+
   HotKey? toHotKey({required HotKeyScope scope, required String identifier}) {
     if (keyHid == null) return null;
     final modifiers = <HotKeyModifier>[];
