@@ -1,16 +1,23 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, TransactionBehavior};
 
+use super::DayCount;
 use super::PlayCountEntry;
+use super::PlayHistoryEntry;
+use super::PlayHistoryStats;
 use super::{init_schema, normalize_identity_part, open_connection, path_lookup_key};
 
 pub fn increment_play_count(index_path: String, path: String) -> Result<(), String> {
     let index_dir = PathBuf::from(index_path);
-    let conn = open_connection(&index_dir).map_err(|e| e.to_string())?;
+    let mut conn = open_connection(&index_dir).map_err(|e| e.to_string())?;
     init_schema(&conn).map_err(|e| e.to_string())?;
-    let affected = conn
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|e| e.to_string())?;
+    let affected = tx
         .execute(
             "UPDATE audios SET play_count = play_count + 1 WHERE path = ?1",
             params![path],
@@ -19,6 +26,35 @@ pub fn increment_play_count(index_path: String, path: String) -> Result<(), Stri
     if affected == 0 {
         return Err("audio not found in library".to_string());
     }
+    record_history_row(&tx, &path)?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 写入一条播放流水；路径字典只存一份路径，流水只存整数 ID。
+/// 同一秒的重复记录按主键去重。
+fn record_history_row(conn: &rusqlite::Connection, path: &str) -> Result<(), String> {
+    conn.execute(
+        "INSERT OR IGNORE INTO listen_paths(path) VALUES(?1)",
+        params![path],
+    )
+    .map_err(|e| e.to_string())?;
+    let path_id: i64 = conn
+        .query_row(
+            "SELECT id FROM listen_paths WHERE path = ?1",
+            params![path],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_secs() as i64;
+    conn.execute(
+        "INSERT OR IGNORE INTO play_history(path_id, played_at) VALUES(?1, ?2)",
+        params![path_id, now],
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -172,6 +208,158 @@ pub fn import_play_counts(
             .map_err(|e| e.to_string())?;
         if affected > 0 {
             imported += 1;
+        }
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(imported)
+}
+
+/// 导出全部播放流水，按路径分组；包含已不在曲库的路径，便于删歌后恢复。
+pub fn export_play_history(index_path: String) -> Result<Vec<PlayHistoryEntry>, String> {
+    let index_dir = PathBuf::from(index_path);
+    let conn = open_connection(&index_dir).map_err(|e| e.to_string())?;
+    init_schema(&conn).map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT p.path, h.played_at FROM play_history h \
+             JOIN listen_paths p ON p.id = h.path_id \
+             ORDER BY p.path ASC, h.played_at ASC",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
+        .map_err(|e| e.to_string())?;
+    let mut result: Vec<PlayHistoryEntry> = Vec::new();
+    for row in rows {
+        let (path, played_at) = row.map_err(|e| e.to_string())?;
+        match result.last_mut() {
+            Some(last) if last.path == path => last.played_at.push(played_at),
+            _ => result.push(PlayHistoryEntry {
+                path,
+                played_at: vec![played_at],
+            }),
+        }
+    }
+    Ok(result)
+}
+
+/// 播放流水聚合：趋势按日、收听节律按小时、报告按星期×小时。
+/// 日期/小时按本机时区（SQLite localtime）分桶。
+pub fn get_play_history_stats(index_path: String) -> Result<PlayHistoryStats, String> {
+    let index_dir = PathBuf::from(index_path);
+    let conn = open_connection(&index_dir).map_err(|e| e.to_string())?;
+    init_schema(&conn).map_err(|e| e.to_string())?;
+
+    let (total, first_at, last_at): (i64, i64, i64) = conn
+        .query_row(
+            "SELECT COUNT(*), COALESCE(MIN(played_at), 0), COALESCE(MAX(played_at), 0) FROM play_history",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .map_err(|e| e.to_string())?;
+
+    let mut daily = Vec::new();
+    if total > 0 {
+        let mut stmt = conn
+            .prepare(
+                "SELECT date(played_at, 'unixepoch', 'localtime') AS d, COUNT(*) AS c \
+                 FROM play_history GROUP BY d ORDER BY d ASC",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(DayCount {
+                    day: row.get(0)?,
+                    count: row.get(1)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        for row in rows {
+            daily.push(row.map_err(|e| e.to_string())?);
+        }
+    }
+
+    let mut hourly = vec![0i64; 24];
+    let mut weekday_hourly = vec![0i64; 7 * 24];
+    {
+        let mut stmt = conn
+            .prepare(
+                "SELECT CAST(strftime('%w', played_at, 'unixepoch', 'localtime') AS INTEGER) AS w, \
+                        CAST(strftime('%H', played_at, 'unixepoch', 'localtime') AS INTEGER) AS h, \
+                        COUNT(*) AS c \
+                 FROM play_history GROUP BY w, h",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?))
+            })
+            .map_err(|e| e.to_string())?;
+        for row in rows {
+            let (w, h, c) = row.map_err(|e| e.to_string())?;
+            if (0..7).contains(&w) && (0..24).contains(&h) {
+                hourly[h as usize] += c;
+                weekday_hourly[(w * 24 + h) as usize] += c;
+            }
+        }
+    }
+
+    Ok(PlayHistoryStats {
+        total,
+        first_at,
+        last_at,
+        daily,
+        hourly,
+        weekday_hourly,
+    })
+}
+
+/// 导入播放流水。`overwrite` 为 true 时先清空本机流水；
+/// merge 模式按 (路径, 时间戳) 去重追加。不校验路径是否在曲库中。
+pub fn import_play_history(
+    index_path: String,
+    entries: Vec<PlayHistoryEntry>,
+    overwrite: bool,
+) -> Result<u32, String> {
+    let index_dir = PathBuf::from(index_path);
+    let mut conn = open_connection(&index_dir).map_err(|e| e.to_string())?;
+    init_schema(&conn).map_err(|e| e.to_string())?;
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|e| e.to_string())?;
+    if overwrite {
+        tx.execute("DELETE FROM play_history", [])
+            .map_err(|e| e.to_string())?;
+    }
+    let mut imported = 0u32;
+    for entry in entries {
+        if entry.path.is_empty() {
+            continue;
+        }
+        tx.execute(
+            "INSERT OR IGNORE INTO listen_paths(path) VALUES(?1)",
+            params![entry.path],
+        )
+        .map_err(|e| e.to_string())?;
+        let path_id: i64 = tx
+            .query_row(
+                "SELECT id FROM listen_paths WHERE path = ?1",
+                params![entry.path],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        for played_at in entry.played_at {
+            if played_at <= 0 {
+                continue;
+            }
+            imported += tx
+                .execute(
+                    "INSERT OR IGNORE INTO play_history(path_id, played_at) VALUES(?1, ?2)",
+                    params![path_id, played_at],
+                )
+                .map_err(|e| e.to_string())? as u32;
         }
     }
     tx.commit().map_err(|e| e.to_string())?;

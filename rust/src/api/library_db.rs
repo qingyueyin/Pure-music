@@ -15,7 +15,8 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBe
 
 pub mod play_counts;
 pub use play_counts::{
-    export_play_counts, get_play_count, get_top_played, import_play_counts, increment_play_count,
+    export_play_counts, export_play_history, get_play_count, get_play_history_stats,
+    get_top_played, import_play_counts, import_play_history, increment_play_count,
 };
 
 const SMALL_COVER_MAX_DIMENSION: u32 = 128;
@@ -55,6 +56,36 @@ pub struct PlayCountEntry {
     pub artist: String,
     pub album: String,
     pub play_count: i64,
+}
+
+/// 播放流水导出/导入单元：一首歌一条，时间戳秒列表。
+#[derive(Clone)]
+pub struct PlayHistoryEntry {
+    pub path: String,
+    pub played_at: Vec<i64>,
+}
+
+/// 单日播放次数，day 为本地日期 YYYY-MM-DD。
+#[derive(Clone)]
+pub struct DayCount {
+    pub day: String,
+    pub count: i64,
+}
+
+/// 播放流水聚合统计：趋势、收听节律、报告页的数据源。
+#[derive(Clone)]
+pub struct PlayHistoryStats {
+    /// 流水总条数。
+    pub total: i64,
+    /// 最早/最晚播放时间戳（秒），无流水时为 0。
+    pub first_at: i64,
+    pub last_at: i64,
+    /// 按本地日期聚合的每日播放次数，升序，只含有播放的日期。
+    pub daily: Vec<DayCount>,
+    /// 24 小时分布，索引 0-23。
+    pub hourly: Vec<i64>,
+    /// 星期 × 小时分布，168 格，索引 = 星期(0=周日..6=周六) * 24 + 小时。
+    pub weekday_hourly: Vec<i64>,
 }
 
 #[derive(Clone)]
@@ -647,6 +678,19 @@ fn init_schema(conn: &Connection) -> Result<()> {
           png BLOB NOT NULL,
           PRIMARY KEY (path, width, height)
         );
+
+        CREATE TABLE IF NOT EXISTS listen_paths (
+          id INTEGER PRIMARY KEY,
+          path TEXT NOT NULL UNIQUE
+        );
+
+        CREATE TABLE IF NOT EXISTS play_history (
+          path_id INTEGER NOT NULL,
+          played_at INTEGER NOT NULL,
+          UNIQUE(path_id, played_at)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_play_history_played_at ON play_history(played_at);
         "#,
     )?;
     let play_count_col = conn
@@ -2066,6 +2110,106 @@ mod tests {
             .unwrap(),
             0
         );
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn listen_records_play_history() {
+        let base = test_dir("play_history_record");
+        let path = base.join("track.flac");
+        std::fs::write(&path, [1, 2, 3, 4]).unwrap();
+        sync_test_index(&base, &test_index(&base, vec![test_audio(&path)]));
+        let index = base.to_string_lossy().to_string();
+
+        increment_play_count(index.clone(), path.to_string_lossy().to_string()).unwrap();
+
+        let history = export_play_history(index.clone()).unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].path, path.to_string_lossy().to_string());
+        assert!(!history[0].played_at.is_empty());
+        assert!(history[0].played_at[0] > 0);
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn play_history_import_merges_without_duplicates() {
+        let base = test_dir("play_history_merge");
+        let path = base.join("track.flac");
+        std::fs::write(&path, [1, 2, 3, 4]).unwrap();
+        sync_test_index(&base, &test_index(&base, vec![test_audio(&path)]));
+        let index = base.to_string_lossy().to_string();
+        increment_play_count(index.clone(), path.to_string_lossy().to_string()).unwrap();
+        let exported = export_play_history(index.clone()).unwrap();
+
+        let imported = import_play_history(index.clone(), exported.clone(), true).unwrap();
+        assert_eq!(imported, 1);
+        let imported_again = import_play_history(index.clone(), exported, false).unwrap();
+        assert_eq!(imported_again, 0);
+        let history = export_play_history(index.clone()).unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].played_at.len(), 1);
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn play_history_keeps_paths_outside_library() {
+        let source = test_dir("play_history_src");
+        let target = test_dir("play_history_dst");
+        let path = source.join("track.flac");
+        std::fs::write(&path, [1, 2, 3, 4]).unwrap();
+        sync_test_index(&source, &test_index(&source, vec![test_audio(&path)]));
+        let source_index = source.to_string_lossy().to_string();
+        increment_play_count(source_index.clone(), path.to_string_lossy().to_string()).unwrap();
+        let exported = export_play_history(source_index).unwrap();
+
+        // 目标索引曲库里没有这首歌，流水仍应保留，等待同路径重新入库时复活
+        let target_index = target.to_string_lossy().to_string();
+        import_play_history(target_index.clone(), exported, false).unwrap();
+        let history = export_play_history(target_index).unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].path, path.to_string_lossy().to_string());
+
+        std::fs::remove_dir_all(source).unwrap();
+        std::fs::remove_dir_all(target).unwrap();
+    }
+
+    #[test]
+    fn play_history_stats_buckets_sum_to_total() {
+        let base = test_dir("play_history_stats");
+        let path = base.join("track.flac");
+        std::fs::write(&path, [1, 2, 3, 4]).unwrap();
+        sync_test_index(&base, &test_index(&base, vec![test_audio(&path)]));
+        let index = base.to_string_lossy().to_string();
+
+        // 三个固定时间戳：本地日期/小时落在哪里不影响求和断言
+        let entries = vec![PlayHistoryEntry {
+            path: path.to_string_lossy().to_string(),
+            played_at: vec![1_700_000_000, 1_700_003_600, 1_700_086_400],
+        }];
+        import_play_history(index.clone(), entries, false).unwrap();
+
+        let stats = get_play_history_stats(index.clone()).unwrap();
+        assert_eq!(stats.total, 3);
+        assert_eq!(stats.first_at, 1_700_000_000);
+        assert_eq!(stats.last_at, 1_700_086_400);
+        assert_eq!(stats.hourly.len(), 24);
+        assert_eq!(stats.weekday_hourly.len(), 168);
+        assert_eq!(stats.hourly.iter().sum::<i64>(), 3);
+        assert_eq!(stats.weekday_hourly.iter().sum::<i64>(), 3);
+        assert_eq!(stats.daily.iter().map(|d| d.count).sum::<i64>(), 3);
+        // daily 按日期升序
+        assert!(stats.daily.windows(2).all(|w| w[0].day < w[1].day));
+
+        // 清空流水后全为 0 / 空
+        let target = get_play_history_stats(index.clone()).unwrap();
+        assert_eq!(target.total, stats.total);
+        let _ = import_play_history(index.clone(), vec![], true);
+        let empty = get_play_history_stats(index).unwrap();
+        assert_eq!(empty.total, 0);
+        assert_eq!(empty.first_at, 0);
+        assert_eq!(empty.last_at, 0);
+        assert!(empty.daily.is_empty());
+        assert_eq!(empty.hourly.iter().sum::<i64>(), 0);
         std::fs::remove_dir_all(base).unwrap();
     }
 

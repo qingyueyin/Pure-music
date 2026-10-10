@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -343823912;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -2103948872;
 
 // Section: executor
 
@@ -1193,6 +1193,40 @@ fn wire__crate__api__library_db__play_counts__export_play_counts_impl(
         },
     )
 }
+fn wire__crate__api__library_db__play_counts__export_play_history_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "export_play_history",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_index_path = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok =
+                        crate::api::library_db::play_counts::export_play_history(api_index_path)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__color_extraction__extract_colors_from_image_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -1457,6 +1491,41 @@ fn wire__crate__api__library_db__play_counts__get_play_count_impl(
         },
     )
 }
+fn wire__crate__api__library_db__play_counts__get_play_history_stats_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "get_play_history_stats",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_index_path = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::library_db::play_counts::get_play_history_stats(
+                        api_index_path,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__library_db__play_counts__get_top_played_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -1524,6 +1593,46 @@ fn wire__crate__api__library_db__play_counts__import_play_counts_impl(
             move |context| {
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::api::library_db::play_counts::import_play_counts(
+                        api_index_path,
+                        api_entries,
+                        api_overwrite,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__library_db__play_counts__import_play_history_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "import_play_history",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_index_path = <String>::sse_decode(&mut deserializer);
+            let api_entries =
+                <Vec<crate::api::library_db::PlayHistoryEntry>>::sse_decode(&mut deserializer);
+            let api_overwrite = <bool>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::library_db::play_counts::import_play_history(
                         api_index_path,
                         api_entries,
                         api_overwrite,
@@ -2717,6 +2826,18 @@ impl SseDecode for bool {
     }
 }
 
+impl SseDecode for crate::api::library_db::DayCount {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_day = <String>::sse_decode(deserializer);
+        let mut var_count = <i64>::sse_decode(deserializer);
+        return crate::api::library_db::DayCount {
+            day: var_day,
+            count: var_count,
+        };
+    }
+}
+
 impl SseDecode for f64 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2868,6 +2989,18 @@ impl SseDecode for Vec<crate::api::tag_reader::extra_metadata::AudioExtraItem> {
     }
 }
 
+impl SseDecode for Vec<crate::api::library_db::DayCount> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::library_db::DayCount>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::api::library_db::IndexAudio> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2919,6 +3052,32 @@ impl SseDecode for Vec<crate::api::library_db::PlayCountEntry> {
             ans_.push(<crate::api::library_db::PlayCountEntry>::sse_decode(
                 deserializer,
             ));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::library_db::PlayHistoryEntry> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::library_db::PlayHistoryEntry>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<i64> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<i64>::sse_decode(deserializer));
         }
         return ans_;
     }
@@ -3097,6 +3256,38 @@ impl SseDecode for crate::api::library_db::PlayCountEntry {
             artist: var_artist,
             album: var_album,
             play_count: var_playCount,
+        };
+    }
+}
+
+impl SseDecode for crate::api::library_db::PlayHistoryEntry {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_path = <String>::sse_decode(deserializer);
+        let mut var_playedAt = <Vec<i64>>::sse_decode(deserializer);
+        return crate::api::library_db::PlayHistoryEntry {
+            path: var_path,
+            played_at: var_playedAt,
+        };
+    }
+}
+
+impl SseDecode for crate::api::library_db::PlayHistoryStats {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_total = <i64>::sse_decode(deserializer);
+        let mut var_firstAt = <i64>::sse_decode(deserializer);
+        let mut var_lastAt = <i64>::sse_decode(deserializer);
+        let mut var_daily = <Vec<crate::api::library_db::DayCount>>::sse_decode(deserializer);
+        let mut var_hourly = <Vec<i64>>::sse_decode(deserializer);
+        let mut var_weekdayHourly = <Vec<i64>>::sse_decode(deserializer);
+        return crate::api::library_db::PlayHistoryStats {
+            total: var_total,
+            first_at: var_firstAt,
+            last_at: var_lastAt,
+            daily: var_daily,
+            hourly: var_hourly,
+            weekday_hourly: var_weekdayHourly,
         };
     }
 }
@@ -3394,125 +3585,143 @@ fn pde_ffi_dispatcher_primary_impl(
             rust_vec_len,
             data_len,
         ),
-        28 => wire__crate__api__color_extraction__extract_colors_from_image_impl(
+        28 => wire__crate__api__library_db__play_counts__export_play_history_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        29 => {
+        29 => wire__crate__api__color_extraction__extract_colors_from_image_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        30 => {
             wire__crate__api__library_db__get_cached_cover_impl(port, ptr, rust_vec_len, data_len)
         }
-        30 => wire__crate__api__installed_font__get_installed_fonts_impl(
+        31 => wire__crate__api__installed_font__get_installed_fonts_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        31 => wire__crate__api__tag_reader__get_lyric_from_path_impl(
+        32 => wire__crate__api__tag_reader__get_lyric_from_path_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        32 => wire__crate__api__tag_reader__get_picture_and_colors_impl(
+        33 => wire__crate__api__tag_reader__get_picture_and_colors_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        33 => wire__crate__api__tag_reader__get_picture_from_path_impl(
+        34 => wire__crate__api__tag_reader__get_picture_from_path_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        34 => wire__crate__api__library_db__play_counts__get_play_count_impl(
+        35 => wire__crate__api__library_db__play_counts__get_play_count_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        35 => wire__crate__api__library_db__play_counts__get_top_played_impl(
+        36 => wire__crate__api__library_db__play_counts__get_play_history_stats_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        36 => wire__crate__api__library_db__play_counts__import_play_counts_impl(
+        37 => wire__crate__api__library_db__play_counts__get_top_played_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        37 => wire__crate__api__library_db__play_counts__increment_play_count_impl(
+        38 => wire__crate__api__library_db__play_counts__import_play_counts_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        38 => wire__crate__api__logger__init_rust_logger_impl(port, ptr, rust_vec_len, data_len),
-        39 => wire__crate__api__smart_transition__init_smart_transition_events_impl(
+        39 => wire__crate__api__library_db__play_counts__import_play_history_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        40 => wire__crate__api__utils__launch_in_browser_impl(port, ptr, rust_vec_len, data_len),
-        41 => wire__crate__api__library_db__migrate_index_json_to_sqlite_impl(
+        40 => wire__crate__api__library_db__play_counts__increment_play_count_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        43 => wire__crate__api__ne__ne_lyric_impl(port, ptr, rust_vec_len, data_len),
-        44 => wire__crate__api__ne__ne_search_impl(port, ptr, rust_vec_len, data_len),
-        45 => wire__crate__api__utils__pick_single_folder_impl(port, ptr, rust_vec_len, data_len),
-        46 => wire__crate__api__smart_sort__plan_smart_sort_json_impl(
+        41 => wire__crate__api__logger__init_rust_logger_impl(port, ptr, rust_vec_len, data_len),
+        42 => wire__crate__api__smart_transition__init_smart_transition_events_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        47 => wire__crate__api__smart_transition__plan_smart_transition_json_impl(
+        43 => wire__crate__api__utils__launch_in_browser_impl(port, ptr, rust_vec_len, data_len),
+        44 => wire__crate__api__library_db__migrate_index_json_to_sqlite_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        48 => wire__crate__api__tag_reader__read_audio_extra_metadata_impl(
+        46 => wire__crate__api__ne__ne_lyric_impl(port, ptr, rust_vec_len, data_len),
+        47 => wire__crate__api__ne__ne_search_impl(port, ptr, rust_vec_len, data_len),
+        48 => wire__crate__api__utils__pick_single_folder_impl(port, ptr, rust_vec_len, data_len),
+        49 => wire__crate__api__smart_sort__plan_smart_sort_json_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        49 => wire__crate__api__library_db__read_index_from_sqlite_impl(
+        50 => wire__crate__api__smart_transition__plan_smart_transition_json_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        50 => wire__crate__api__utils__show_in_explorer_impl(port, ptr, rust_vec_len, data_len),
-        54 => wire__crate__api__tag_reader__symphonia__symphonia_tag_collection_default_impl(
+        51 => wire__crate__api__tag_reader__read_audio_extra_metadata_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        55 => wire__crate__api__system_theme__system_theme_default_impl(
+        52 => wire__crate__api__library_db__read_index_from_sqlite_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        61 => wire__crate__api__tag_reader__update_index_impl(port, ptr, rust_vec_len, data_len),
-        62 => {
+        53 => wire__crate__api__utils__show_in_explorer_impl(port, ptr, rust_vec_len, data_len),
+        57 => wire__crate__api__tag_reader__symphonia__symphonia_tag_collection_default_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        58 => wire__crate__api__system_theme__system_theme_default_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        64 => wire__crate__api__tag_reader__update_index_impl(port, ptr, rust_vec_len, data_len),
+        65 => {
             wire__crate__api__tag_reader__write_audio_cover_impl(port, ptr, rust_vec_len, data_len)
         }
-        63 => {
+        66 => {
             wire__crate__api__tag_reader__write_audio_tags_impl(port, ptr, rust_vec_len, data_len)
         }
-        64 => wire__crate__api__tag_reader__write_lyric_to_path_impl(
+        67 => wire__crate__api__tag_reader__write_lyric_to_path_impl(
             port,
             ptr,
             rust_vec_len,
@@ -3561,37 +3770,37 @@ fn pde_ffi_dispatcher_sync_impl(
             rust_vec_len,
             data_len,
         ),
-        42 => wire__crate__api__smart_transition__native_smart_transition_snapshot_json_impl(
+        45 => wire__crate__api__smart_transition__native_smart_transition_snapshot_json_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        51 => wire__crate__api__smart_transition__smart_transition_analysis_config_json_impl(
+        54 => wire__crate__api__smart_transition__smart_transition_analysis_config_json_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        52 => wire__crate__api__smart_transition__smart_transition_capabilities_json_impl(
+        55 => wire__crate__api__smart_transition__smart_transition_capabilities_json_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        53 => wire__crate__api__smart_transition__smart_transition_diagnostics_json_impl(
+        56 => wire__crate__api__smart_transition__smart_transition_diagnostics_json_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        56 => wire__crate__api__system_theme__system_theme_get_system_theme_impl(
+        59 => wire__crate__api__system_theme__system_theme_get_system_theme_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        57 => {
+        60 => {
             wire__crate__api__system_volume__system_volume_dispose_impl(ptr, rust_vec_len, data_len)
         }
-        58 => wire__crate__api__system_volume__system_volume_get_impl(ptr, rust_vec_len, data_len),
-        59 => wire__crate__api__system_volume__system_volume_init_impl(ptr, rust_vec_len, data_len),
-        60 => wire__crate__api__system_volume__system_volume_set_impl(ptr, rust_vec_len, data_len),
+        61 => wire__crate__api__system_volume__system_volume_get_impl(ptr, rust_vec_len, data_len),
+        62 => wire__crate__api__system_volume__system_volume_init_impl(ptr, rust_vec_len, data_len),
+        63 => wire__crate__api__system_volume__system_volume_set_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -3698,6 +3907,27 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::tag_reader::extra_metadata::A
     for crate::api::tag_reader::extra_metadata::AudioExtraMetadata
 {
     fn into_into_dart(self) -> crate::api::tag_reader::extra_metadata::AudioExtraMetadata {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::library_db::DayCount {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.day.into_into_dart().into_dart(),
+            self.count.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::library_db::DayCount
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::library_db::DayCount>
+    for crate::api::library_db::DayCount
+{
+    fn into_into_dart(self) -> crate::api::library_db::DayCount {
         self
     }
 }
@@ -3873,6 +4103,52 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::library_db::PlayCountEntry>
     for crate::api::library_db::PlayCountEntry
 {
     fn into_into_dart(self) -> crate::api::library_db::PlayCountEntry {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::library_db::PlayHistoryEntry {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.path.into_into_dart().into_dart(),
+            self.played_at.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::library_db::PlayHistoryEntry
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::library_db::PlayHistoryEntry>
+    for crate::api::library_db::PlayHistoryEntry
+{
+    fn into_into_dart(self) -> crate::api::library_db::PlayHistoryEntry {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::library_db::PlayHistoryStats {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.total.into_into_dart().into_dart(),
+            self.first_at.into_into_dart().into_dart(),
+            self.last_at.into_into_dart().into_dart(),
+            self.daily.into_into_dart().into_dart(),
+            self.hourly.into_into_dart().into_dart(),
+            self.weekday_hourly.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::library_db::PlayHistoryStats
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::library_db::PlayHistoryStats>
+    for crate::api::library_db::PlayHistoryStats
+{
+    fn into_into_dart(self) -> crate::api::library_db::PlayHistoryStats {
         self
     }
 }
@@ -4184,6 +4460,14 @@ impl SseEncode for bool {
     }
 }
 
+impl SseEncode for crate::api::library_db::DayCount {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.day, serializer);
+        <i64>::sse_encode(self.count, serializer);
+    }
+}
+
 impl SseEncode for f64 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -4291,6 +4575,16 @@ impl SseEncode for Vec<crate::api::tag_reader::extra_metadata::AudioExtraItem> {
     }
 }
 
+impl SseEncode for Vec<crate::api::library_db::DayCount> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::library_db::DayCount>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::api::library_db::IndexAudio> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -4327,6 +4621,26 @@ impl SseEncode for Vec<crate::api::library_db::PlayCountEntry> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::library_db::PlayCountEntry>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::library_db::PlayHistoryEntry> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::library_db::PlayHistoryEntry>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<i64> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <i64>::sse_encode(item, serializer);
         }
     }
 }
@@ -4467,6 +4781,26 @@ impl SseEncode for crate::api::library_db::PlayCountEntry {
         <String>::sse_encode(self.artist, serializer);
         <String>::sse_encode(self.album, serializer);
         <i64>::sse_encode(self.play_count, serializer);
+    }
+}
+
+impl SseEncode for crate::api::library_db::PlayHistoryEntry {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.path, serializer);
+        <Vec<i64>>::sse_encode(self.played_at, serializer);
+    }
+}
+
+impl SseEncode for crate::api::library_db::PlayHistoryStats {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i64>::sse_encode(self.total, serializer);
+        <i64>::sse_encode(self.first_at, serializer);
+        <i64>::sse_encode(self.last_at, serializer);
+        <Vec<crate::api::library_db::DayCount>>::sse_encode(self.daily, serializer);
+        <Vec<i64>>::sse_encode(self.hourly, serializer);
+        <Vec<i64>>::sse_encode(self.weekday_hourly, serializer);
     }
 }
 

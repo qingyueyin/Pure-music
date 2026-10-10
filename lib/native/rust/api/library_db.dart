@@ -9,7 +9,7 @@ export 'library_db/play_counts.dart';
 
 // These functions are ignored because they are not marked as `pub`: `atomic_write_with_replace`, `audio_identity`, `backfill_audio_identities`, `cover_access_timestamp`, `cover_source_signature`, `cover_tier_exceeds_limit`, `cover_tier`, `ensure_database_layout`, `ensure_index_source_current`, `file_source_signature`, `has_database_layout_marker`, `index_source_signature`, `index_temp_file`, `init_schema`, `legacy_sqlite_path`, `load_stored_audio_stats`, `metadata_match_key`, `migrating_sqlite_path`, `normalize_identity_part`, `open_connection`, `open_raw_connection`, `parse_index_folders`, `path_lookup_key`, `prune_cover_thumbnail_tier`, `read_cover_thumbnail`, `read_current_index_snapshot`, `rebuild_database_from_legacy`, `remove_database_file`, `remove_database_files`, `replace_file_atomically`, `should_rebuild_database`, `sqlite_path`, `sqlite_sidecar_path`, `stable_file_id_for_path`, `stable_file_id`, `stored_index_source_signature`, `unique_play_count`, `with_cover_connection`, `with_index_write_lock`, `write_cover_thumbnail`, `write_index_json`, `write_index_snapshot_with`, `write_index_snapshot`, `write_index_value_to_sqlite`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `AudioIdentity`, `CoverTier`, `IndexFolderSnapshot`, `IndexSnapshot`, `ParsedAudioEntry`, `ParsedFolder`, `StoredAudioStats`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`
 // These functions are ignored (category: IgnoreBecauseOwnerTyShouldIgnore): `default`
 
 Future<Uint8List?> getCachedCover({
@@ -33,6 +33,25 @@ Future<List<IndexFolder>> readIndexFromSqlite({required String indexPath}) =>
     RustLib.instance.api.crateApiLibraryDbReadIndexFromSqlite(
       indexPath: indexPath,
     );
+
+/// 单日播放次数，day 为本地日期 YYYY-MM-DD。
+class DayCount {
+  final String day;
+  final PlatformInt64 count;
+
+  const DayCount({required this.day, required this.count});
+
+  @override
+  int get hashCode => day.hashCode ^ count.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is DayCount &&
+          runtimeType == other.runtimeType &&
+          day == other.day &&
+          count == other.count;
+}
 
 class IndexAudio {
   final String title;
@@ -166,4 +185,72 @@ class PlayCountEntry {
           artist == other.artist &&
           album == other.album &&
           playCount == other.playCount;
+}
+
+/// 播放流水导出/导入单元：一首歌一条，时间戳秒列表。
+class PlayHistoryEntry {
+  final String path;
+  final Int64List playedAt;
+
+  const PlayHistoryEntry({required this.path, required this.playedAt});
+
+  @override
+  int get hashCode => path.hashCode ^ playedAt.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PlayHistoryEntry &&
+          runtimeType == other.runtimeType &&
+          path == other.path &&
+          playedAt == other.playedAt;
+}
+
+/// 播放流水聚合统计：趋势、收听节律、报告页的数据源。
+class PlayHistoryStats {
+  /// 流水总条数。
+  final PlatformInt64 total;
+
+  /// 最早/最晚播放时间戳（秒），无流水时为 0。
+  final PlatformInt64 firstAt;
+  final PlatformInt64 lastAt;
+
+  /// 按本地日期聚合的每日播放次数，升序，只含有播放的日期。
+  final List<DayCount> daily;
+
+  /// 24 小时分布，索引 0-23。
+  final Int64List hourly;
+
+  /// 星期 × 小时分布，168 格，索引 = 星期(0=周日..6=周六) * 24 + 小时。
+  final Int64List weekdayHourly;
+
+  const PlayHistoryStats({
+    required this.total,
+    required this.firstAt,
+    required this.lastAt,
+    required this.daily,
+    required this.hourly,
+    required this.weekdayHourly,
+  });
+
+  @override
+  int get hashCode =>
+      total.hashCode ^
+      firstAt.hashCode ^
+      lastAt.hashCode ^
+      daily.hashCode ^
+      hourly.hashCode ^
+      weekdayHourly.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PlayHistoryStats &&
+          runtimeType == other.runtimeType &&
+          total == other.total &&
+          firstAt == other.firstAt &&
+          lastAt == other.lastAt &&
+          daily == other.daily &&
+          hourly == other.hourly &&
+          weekdayHourly == other.weekdayHourly;
 }

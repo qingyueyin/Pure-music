@@ -134,6 +134,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   WriteTagPayload dco_decode_box_autoadd_write_tag_payload(dynamic raw);
 
   @protected
+  DayCount dco_decode_day_count(dynamic raw);
+
+  @protected
   double dco_decode_f_64(dynamic raw);
 
   @protected
@@ -167,6 +170,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<AudioExtraItem> dco_decode_list_audio_extra_item(dynamic raw);
 
   @protected
+  List<DayCount> dco_decode_list_day_count(dynamic raw);
+
+  @protected
   List<IndexAudio> dco_decode_list_index_audio(dynamic raw);
 
   @protected
@@ -177,6 +183,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<PlayCountEntry> dco_decode_list_play_count_entry(dynamic raw);
+
+  @protected
+  List<PlayHistoryEntry> dco_decode_list_play_history_entry(dynamic raw);
+
+  @protected
+  Int64List dco_decode_list_prim_i_64_strict(dynamic raw);
 
   @protected
   Uint32List dco_decode_list_prim_u_32_strict(dynamic raw);
@@ -222,6 +234,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlayCountEntry dco_decode_play_count_entry(dynamic raw);
+
+  @protected
+  PlayHistoryEntry dco_decode_play_history_entry(dynamic raw);
+
+  @protected
+  PlayHistoryStats dco_decode_play_history_stats(dynamic raw);
 
   @protected
   (Uint8List?, Uint32List)
@@ -372,6 +390,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  DayCount sse_decode_day_count(SseDeserializer deserializer);
+
+  @protected
   double sse_decode_f_64(SseDeserializer deserializer);
 
   @protected
@@ -411,6 +432,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<DayCount> sse_decode_list_day_count(SseDeserializer deserializer);
+
+  @protected
   List<IndexAudio> sse_decode_list_index_audio(SseDeserializer deserializer);
 
   @protected
@@ -425,6 +449,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<PlayCountEntry> sse_decode_list_play_count_entry(
     SseDeserializer deserializer,
   );
+
+  @protected
+  List<PlayHistoryEntry> sse_decode_list_play_history_entry(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  Int64List sse_decode_list_prim_i_64_strict(SseDeserializer deserializer);
 
   @protected
   Uint32List sse_decode_list_prim_u_32_strict(SseDeserializer deserializer);
@@ -478,6 +510,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlayCountEntry sse_decode_play_count_entry(SseDeserializer deserializer);
+
+  @protected
+  PlayHistoryEntry sse_decode_play_history_entry(SseDeserializer deserializer);
+
+  @protected
+  PlayHistoryStats sse_decode_play_history_stats(SseDeserializer deserializer);
 
   @protected
   (Uint8List?, Uint32List)
@@ -665,6 +703,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_day_count(DayCount self, SseSerializer serializer);
+
+  @protected
   void sse_encode_f_64(double self, SseSerializer serializer);
 
   @protected
@@ -710,6 +751,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_day_count(List<DayCount> self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_index_audio(
     List<IndexAudio> self,
     SseSerializer serializer,
@@ -730,6 +774,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_play_count_entry(
     List<PlayCountEntry> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_play_history_entry(
+    List<PlayHistoryEntry> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_prim_i_64_strict(
+    Int64List self,
     SseSerializer serializer,
   );
 
@@ -799,6 +855,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_play_count_entry(
     PlayCountEntry self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_play_history_entry(
+    PlayHistoryEntry self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_play_history_stats(
+    PlayHistoryStats self,
     SseSerializer serializer,
   );
 

@@ -7,7 +7,7 @@ import '../../frb_generated.dart';
 import '../library_db.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `play_count_metadata_key`
+// These functions are ignored because they are not marked as `pub`: `play_count_metadata_key`, `record_history_row`
 
 Future<void> incrementPlayCount({
   required String indexPath,
@@ -45,6 +45,31 @@ Future<int> importPlayCounts({
   required List<PlayCountEntry> entries,
   required bool overwrite,
 }) => RustLib.instance.api.crateApiLibraryDbPlayCountsImportPlayCounts(
+  indexPath: indexPath,
+  entries: entries,
+  overwrite: overwrite,
+);
+
+/// 导出全部播放流水，按路径分组；包含已不在曲库的路径，便于删歌后恢复。
+Future<List<PlayHistoryEntry>> exportPlayHistory({required String indexPath}) =>
+    RustLib.instance.api.crateApiLibraryDbPlayCountsExportPlayHistory(
+      indexPath: indexPath,
+    );
+
+/// 播放流水聚合：趋势按日、收听节律按小时、报告按星期×小时。
+/// 日期/小时按本机时区（SQLite localtime）分桶。
+Future<PlayHistoryStats> getPlayHistoryStats({required String indexPath}) =>
+    RustLib.instance.api.crateApiLibraryDbPlayCountsGetPlayHistoryStats(
+      indexPath: indexPath,
+    );
+
+/// 导入播放流水。`overwrite` 为 true 时先清空本机流水；
+/// merge 模式按 (路径, 时间戳) 去重追加。不校验路径是否在曲库中。
+Future<int> importPlayHistory({
+  required String indexPath,
+  required List<PlayHistoryEntry> entries,
+  required bool overwrite,
+}) => RustLib.instance.api.crateApiLibraryDbPlayCountsImportPlayHistory(
   indexPath: indexPath,
   entries: entries,
   overwrite: overwrite,
