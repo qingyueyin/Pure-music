@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge.dart' as frb;
 import 'package:path/path.dart' as p;
 import 'package:pure_music/core/database.dart';
 import 'package:pure_music/core/settings.dart';
@@ -17,6 +18,7 @@ enum BackupCategory {
   settings('设置', '界面、播放、歌词等偏好'),
   playlists('歌单与歌词来源', '歌单、歌词匹配来源'),
   playCounts('播放统计', '每首曲目的播放次数'),
+  playHistory('播放历史', '带时间戳的播放流水'),
   lastfm('Last.fm 账号', '登录凭证');
 
   const BackupCategory(this.label, this.description);
@@ -40,6 +42,7 @@ const String _externalDir = 'external';
 const String _playlistsEntryName = 'playlists.json';
 const String _lyricSourcesEntryName = 'lyric_sources.json';
 const String _playCountsEntryName = 'play_counts.json';
+const String _playHistoryEntryName = 'play_history.json';
 const String _lastfmEntryName = 'lastfm.json';
 const int _backupFormatVersion = 2;
 const int _maxBackupArchiveBytes = 128 * 1024 * 1024;
@@ -50,8 +53,9 @@ const int _maxBackupExpandedBytes = 256 * 1024 * 1024;
 Future<String?> exportBackup({
   required String targetPath,
   required Set<BackupCategory> categories,
+  Directory? dataRoot,
 }) async {
-  final root = await getAppDataDir();
+  final root = dataRoot ?? await getAppDataDir();
   final archive = Archive();
   final externalFiles = <String, String>{};
   if (categories.contains(BackupCategory.settings)) {
@@ -62,6 +66,9 @@ Future<String?> exportBackup({
   }
   if (categories.contains(BackupCategory.playCounts)) {
     await _exportPlayCountsCategory(root, archive);
+  }
+  if (categories.contains(BackupCategory.playHistory)) {
+    await _exportPlayHistoryCategory(root, archive);
   }
   if (categories.contains(BackupCategory.lastfm)) {
     await _exportLastfmCategory(archive);
@@ -108,6 +115,19 @@ Future<void> _exportPlayCountsCategory(Directory root, Archive archive) async {
       )
       .toList();
   _addJsonEntry(archive, _playCountsEntryName, list);
+}
+
+Future<void> _exportPlayHistoryCategory(Directory root, Archive archive) async {
+  final entries = await library_db.exportPlayHistory(indexPath: root.path);
+  final list = entries
+      .map(
+        (e) => {
+          'path': e.path,
+          'playedAt': e.playedAt.map((t) => t.toInt()).toList(),
+        },
+      )
+      .toList();
+  _addJsonEntry(archive, _playHistoryEntryName, list);
 }
 
 Future<void> _exportLastfmCategory(Archive archive) async {
@@ -315,6 +335,10 @@ Future<Set<BackupCategory>> importBackup({
     await _importPlayCountsCategory(root, archive, mode);
     imported.add(BackupCategory.playCounts);
   }
+  if (categories.contains(BackupCategory.playHistory)) {
+    await _importPlayHistoryCategory(root, archive, mode);
+    imported.add(BackupCategory.playHistory);
+  }
   if (categories.contains(BackupCategory.lastfm)) {
     await _importLastFmCategory(archive, mode);
     imported.add(BackupCategory.lastfm);
@@ -376,6 +400,9 @@ Set<BackupCategory> _inferBackupCategories(Archive archive) {
   }
   if (archive.findFile(_playCountsEntryName) != null) {
     categories.add(BackupCategory.playCounts);
+  }
+  if (archive.findFile(_playHistoryEntryName) != null) {
+    categories.add(BackupCategory.playHistory);
   }
   if (archive.findFile(_lastfmEntryName) != null) {
     categories.add(BackupCategory.lastfm);
@@ -444,6 +471,43 @@ Future<void> _importPlayCountsCategory(
   await library_db.importPlayCounts(
     indexPath: root.path,
     entries: playCountEntries,
+    overwrite: mode == BackupImportMode.overwrite,
+  );
+}
+
+Future<void> _importPlayHistoryCategory(
+  Directory root,
+  Archive archive,
+  BackupImportMode mode,
+) async {
+  final entry = archive.findFile(_playHistoryEntryName);
+  if (entry == null || !entry.isFile) return;
+  final list = jsonDecode(utf8.decode(entry.content));
+  if (list is! List) return;
+  final historyEntries = <library_db.PlayHistoryEntry>[];
+  for (final item in list) {
+    if (item is! Map) continue;
+    final path = _readString(item['path']);
+    if (path == null || path.isEmpty) continue;
+    final rawTimes = item['playedAt'];
+    if (rawTimes is! List) continue;
+    final times = <int>[];
+    for (final raw in rawTimes) {
+      final time = _readInt(raw);
+      if (time > 0) times.add(time);
+    }
+    if (times.isEmpty) continue;
+    historyEntries.add(
+      library_db.PlayHistoryEntry(
+        path: path,
+        playedAt: frb.Int64List.fromList(times),
+      ),
+    );
+  }
+  if (historyEntries.isEmpty) return;
+  await library_db.importPlayHistory(
+    indexPath: root.path,
+    entries: historyEntries,
     overwrite: mode == BackupImportMode.overwrite,
   );
 }

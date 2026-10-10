@@ -19,6 +19,7 @@ class _BackupSettingsPanelState extends State<BackupSettingsPanel> {
     BackupCategory.settings,
     BackupCategory.playlists,
     BackupCategory.playCounts,
+    BackupCategory.playHistory,
   };
   bool _busy = false;
 
@@ -144,7 +145,6 @@ class _BackupSettingsPanelState extends State<BackupSettingsPanel> {
     );
   }
 
-
   void _toggleCategory(BackupCategory category, bool? checked) {
     setState(() {
       if (checked == true) {
@@ -163,7 +163,9 @@ class _BackupSettingsPanelState extends State<BackupSettingsPanel> {
           subtitle: category.description,
           action: Checkbox(
             value: _selected.contains(category),
-            onChanged: _busy ? null : (checked) => _toggleCategory(category, checked),
+            onChanged: _busy
+                ? null
+                : (checked) => _toggleCategory(category, checked),
           ),
         ),
         const SizedBox(height: 16.0),
