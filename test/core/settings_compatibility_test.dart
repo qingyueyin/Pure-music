@@ -121,22 +121,69 @@ void main() {
     }
   });
 
+  test('reads artist split extras from settings map', () async {
+    final settings = AppSettings.instance;
+    final previousSeparator = List<String>.from(settings.artistSeparator);
+    final previousNoSplit = List<String>.from(settings.artistNoSplitNames);
+    final previousFeat = settings.enableFeatArtistSplit;
+    final previousAliases = Map<String, String>.from(settings.artistAliases);
+    try {
+      await AppSettings.readFromSettingsMapForTest({
+        'Version': 'test',
+        'ArtistSeparator': ['/', '、'],
+        'ArtistNoSplitNames': ['AC/DC'],
+        'EnableFeatArtistSplit': true,
+        'ArtistAliases': {'夜遊': 'YOASOBI'},
+      });
+      expect(settings.artistNoSplitNames, ['AC/DC']);
+      expect(settings.enableFeatArtistSplit, isTrue);
+      expect(settings.artistAliases, {'夜遊': 'YOASOBI'});
+      expect(settings.splitArtistNames('AC/DC/张三'), ['AC/DC', '张三']);
+      expect(settings.splitArtistNames('周杰伦 feat. 蔡依林'), ['周杰伦', '蔡依林']);
+      expect(settings.splitArtistNames('周杰伦feat.蔡依林'), ['周杰伦feat.蔡依林']);
+      expect(settings.splitArtistNames('夜遊'), ['YOASOBI']);
+
+      await AppSettings.readFromSettingsMapForTest({
+        'Version': 'test',
+        'ArtistSeparator': <String>[],
+        'ArtistNoSplitNames': <String>[],
+        'EnableFeatArtistSplit': false,
+        'ArtistAliases': <String, String>{},
+      });
+      expect(settings.artistSeparator, isEmpty);
+      expect(settings.splitArtistNames('张三/李四'), ['张三/李四']);
+    } finally {
+      settings.artistSeparator = previousSeparator;
+      settings.artistNoSplitNames = previousNoSplit;
+      settings.enableFeatArtistSplit = previousFeat;
+      settings.artistAliases = previousAliases;
+      settings.syncArtistSplitPattern();
+    }
+  });
+
   test('artist split regex follows pattern changes', () {
     final settings = AppSettings.instance;
     final previousSeparator = List<String>.from(settings.artistSeparator);
-    final previousPattern = settings.artistSplitPattern;
+    final previousFeat = settings.enableFeatArtistSplit;
     try {
+      settings.enableFeatArtistSplit = false;
       settings.artistSeparator = ['/'];
-      settings.artistSplitPattern = '/';
+      settings.syncArtistSplitPattern();
       expect('A/B'.split(settings.artistSplitRegex), ['A', 'B']);
 
       settings.artistSeparator = ['、'];
-      settings.artistSplitPattern = '、';
+      settings.syncArtistSplitPattern();
       expect('A、B'.split(settings.artistSplitRegex), ['A', 'B']);
       expect('A/B'.split(settings.artistSplitRegex), ['A/B']);
+
+      settings.artistSeparator = ['.'];
+      settings.syncArtistSplitPattern();
+      expect('A.B'.split(settings.artistSplitRegex), ['A', 'B']);
+      expect('ABCD'.split(settings.artistSplitRegex), ['ABCD']);
     } finally {
       settings.artistSeparator = previousSeparator;
-      settings.artistSplitPattern = previousPattern;
+      settings.enableFeatArtistSplit = previousFeat;
+      settings.syncArtistSplitPattern();
     }
   });
 }

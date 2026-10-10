@@ -27,6 +27,7 @@ void main() {
     expect(uniqueTextListItems(['  /  ', '/', '', ' | ']), ['/', '|']);
     expect(normalizedArtistSeparators(null), defaultArtistSeparators);
     expect(normalizedArtistSeparators(['/', '/', ' | ']), ['/', '|']);
+    expect(normalizedArtistSeparators(<String>[]), isEmpty);
   });
 
   test('invalid enum indexes fall back instead of escaping the range', () {

@@ -67,8 +67,7 @@ List<String> normalizedArtistSeparators(Object? value) {
         : List.of(defaultArtistSeparators);
   }
   if (value is! Iterable) return List.of(defaultArtistSeparators);
-  final separators = uniqueTextListItems(value.whereType<String>());
-  return separators.isEmpty ? List.of(defaultArtistSeparators) : separators;
+  return uniqueTextListItems(value.whereType<String>());
 }
 
 int normalizedEnumIndex(

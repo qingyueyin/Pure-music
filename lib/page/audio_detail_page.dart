@@ -112,7 +112,7 @@ class _FieldControllers {
 
   void initFrom(Audio audio, List<rust_tag_reader.AudioExtraItem> items) {
     title.text = audio.title;
-    artist.text = audio.splitedArtists.join('/');
+    artist.text = audio.artist;
     album.text = audio.album;
     genre.text = _findItem(items, 'genre') ?? '';
     year.text = _findItem(items, 'year') ?? '';

@@ -27,7 +27,7 @@ class AdvancedTabContent extends StatelessWidget {
         _AdvancedGroupEntry(
           icon: Symbols.interests,
           title: '媒体解析',
-          subtitle: '艺术家名称分隔',
+          subtitle: '分隔符、不拆分名单与别名',
           groupId: 'advanced-custom',
         ),
         SizedBox(height: 8.0),

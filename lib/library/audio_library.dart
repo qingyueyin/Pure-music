@@ -53,11 +53,10 @@ typedef _AudioSlotMerge = ({
 });
 
 class _AudioLoadPool {
-  _AudioLoadPool(this._artistSplitRegex);
+  _AudioLoadPool();
 
   static const int _maxTexts = 65536;
   static const int _maxArtistLists = 32768;
-  final RegExp _artistSplitRegex;
   final Map<String, String> _texts = <String, String>{};
   final Map<String, List<String>> _artistLists = <String, List<String>>{};
 
@@ -80,7 +79,7 @@ class _AudioLoadPool {
     final canonicalValue = text(value);
     final existing = _artistLists[canonicalValue];
     if (existing != null) return existing;
-    final parts = Audio._splitAndDedup(canonicalValue, _artistSplitRegex);
+    final parts = Audio._splitArtistNames(canonicalValue);
     for (var index = 0; index < parts.length; index++) {
       parts[index] = text(parts[index]);
     }
@@ -337,7 +336,7 @@ Future<_FolderConversionResult> _convertSqliteFolders(
 }) async {
   final conversionStopwatch = Stopwatch()..start();
   final folders = <AudioFolder>[];
-  final loadPool = _AudioLoadPool(AppSettings.instance.artistSplitRegex);
+  final loadPool = _AudioLoadPool();
   var convertedAudioCount = 0;
   for (final folder in dbFolders) {
     final converted = await _fillConvertedAudios(
@@ -377,7 +376,7 @@ Future<_FolderConversionResult> _convertJsonFolders(
 }) async {
   final conversionStopwatch = Stopwatch()..start();
   final folders = <AudioFolder>[];
-  final loadPool = _AudioLoadPool(AppSettings.instance.artistSplitRegex);
+  final loadPool = _AudioLoadPool();
   var convertedAudioCount = 0;
   for (final folderMap in foldersJson) {
     final map = folderMap as Map;
@@ -942,6 +941,7 @@ class AudioLibrary {
     return json.encode({
       'appVersion': AppSettings.version,
       'artistSplitPattern': AppSettings.instance.artistSplitPattern,
+      'artistSplitRules': AppSettings.instance.artistSplitSignature,
       'excludedFolders': excluded,
     });
   }
@@ -1732,14 +1732,8 @@ class AudioLibrary {
     audio.album = album.trim();
     audio.track = track;
     audio.disc = disc;
-    audio.splitedArtists = Audio._splitAndDedup(
-      audio.artist,
-      AppSettings.instance.artistSplitRegex,
-    );
-    audio.splitedAlbumArtists = Audio._splitAndDedup(
-      audio.albumArtist ?? '',
-      AppSettings.instance.artistSplitRegex,
-    );
+    audio.splitedArtists = Audio._splitArtistNames(audio.artist);
+    audio.splitedAlbumArtists = Audio._splitArtistNames(audio.albumArtist ?? '');
     audio._invalidateSearchCache();
     _buildCollections();
     libraryVersion.value++;
@@ -2582,23 +2576,9 @@ class Audio {
     _coverLastAccessMs = DateTime.now().millisecondsSinceEpoch;
   }
 
-  /// split + trim + 去空 + 去重（保持首次出现顺序）
-  static List<String> _splitAndDedup(String raw, RegExp regex) {
-    if (raw.isEmpty) return const [];
-    if (regex.firstMatch(raw) == null) {
-      final trimmed = raw.trim();
-      return trimmed.isEmpty ? const [] : [trimmed];
-    }
-    final seen = <String>{};
-    final result = <String>[];
-    for (final part in raw.split(regex)) {
-      final trimmed = part.trim();
-      if (trimmed.isEmpty) continue;
-      if (seen.add(trimmed)) {
-        result.add(trimmed);
-      }
-    }
-    return result;
+  /// 按当前设置拆分艺术家，白名单与别名一并生效
+  static List<String> _splitArtistNames(String raw) {
+    return AppSettings.instance.splitArtistNames(raw);
   }
 
   Audio(
@@ -2616,14 +2596,8 @@ class Audio {
     this.by, {
     this.disc,
     this.playCount = 0,
-  }) : splitedArtists = _splitAndDedup(
-         artist,
-         AppSettings.instance.artistSplitRegex,
-       ),
-       splitedAlbumArtists = _splitAndDedup(
-         albumArtist ?? '',
-         AppSettings.instance.artistSplitRegex,
-       );
+  }) : splitedArtists = _splitArtistNames(artist),
+       splitedAlbumArtists = _splitArtistNames(albumArtist ?? '');
 
   factory Audio._fromLoaded(
     String title,

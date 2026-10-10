@@ -25,6 +25,8 @@ import 'package:pure_music/play_service/taskbar_thumbnail_service.dart';
 import 'package:pure_music/play_service/desktop_lyric_service.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.dart';
 import 'package:pure_music/page/page_scaffold.dart';
+import 'package:pure_music/page/settings_page/artist_alias_editor.dart';
+import 'package:pure_music/page/settings_page/artist_no_split_editor.dart';
 import 'package:pure_music/page/settings_page/artist_separator_editor.dart';
 import 'package:pure_music/page/settings_page/settings_group_entry.dart';
 import 'package:pure_music/page/settings_page/tabs/advanced_tab.dart';
@@ -4881,6 +4883,12 @@ class _AdvancedLibraryGroup extends StatelessWidget {
         SettingsSectionHeader('媒体解析'),
         SizedBox(height: 4.0),
         ArtistSeparatorEditor(),
+        SizedBox(height: 16.0),
+        FeatArtistSplitSwitch(),
+        SizedBox(height: 16.0),
+        ArtistNoSplitEditor(),
+        SizedBox(height: 16.0),
+        ArtistAliasEditor(),
       ],
     );
   }

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:pure_music/core/hotkey_binding.dart';
+import 'package:pure_music/core/artist_name_splitter.dart';
 import 'package:pure_music/core/setting_action_state.dart';
 import 'package:pure_music/core/settings/settings_decoder.dart';
 import 'package:pure_music/core/settings/settings_types.dart';
@@ -220,6 +221,9 @@ class AppSettings {
   ThemeColorMode themeColorMode = ThemeColorMode.material3;
 
   List<String> artistSeparator = ['/', '、'];
+  List<String> artistNoSplitNames = [];
+  bool enableFeatArtistSplit = false;
+  Map<String, String> artistAliases = {};
 
   bool localLyricFirst = true;
   LyricSourceType preferredOnlineSource = LyricSourceType.qq;
@@ -307,19 +311,57 @@ class AppSettings {
   String? lyricFontFamily;
   String? lyricFontPath;
 
-  late String artistSplitPattern = artistSeparator.join('|');
+  late String artistSplitPattern = _patternFromSeparators(artistSeparator);
   String? _cachedArtistSplitPattern;
   RegExp? _cachedArtistSplitRegex;
+
+  static final RegExp _neverMatchingSplitRegex = RegExp('(?!x)x');
+
+  List<String> get effectiveArtistSeparators {
+    if (!enableFeatArtistSplit) return artistSeparator;
+    return [...artistSeparator, ...ArtistNameSplitter.featSeparators];
+  }
+
+  String get artistSplitSignature {
+    final aliases = artistAliases.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    return json.encode({
+      'separators': artistSeparator,
+      'noSplit': artistNoSplitNames,
+      'feat': enableFeatArtistSplit,
+      'aliases': {for (final entry in aliases) entry.key: entry.value},
+    });
+  }
+
+  void syncArtistSplitPattern() {
+    artistSplitPattern = _patternFromSeparators(effectiveArtistSeparators);
+    _cachedArtistSplitPattern = null;
+    _cachedArtistSplitRegex = null;
+  }
+
+  static String _patternFromSeparators(List<String> separators) {
+    return separators.map(RegExp.escape).join('|');
+  }
+
+  List<String> splitArtistNames(String raw) {
+    return ArtistNameSplitter.split(
+      raw,
+      separators: effectiveArtistSeparators,
+      noSplitNames: artistNoSplitNames,
+      aliases: artistAliases,
+    );
+  }
 
   /// 缓存的正则，避免每个 Audio 构造时重新编译；分隔符改了要跟着换
   RegExp get artistSplitRegex {
     final pattern = artistSplitPattern;
+    if (pattern.isEmpty) return _neverMatchingSplitRegex;
     final cached = _cachedArtistSplitRegex;
     if (cached != null && _cachedArtistSplitPattern == pattern) {
       return cached;
     }
     _cachedArtistSplitPattern = pattern;
-    return _cachedArtistSplitRegex = RegExp(pattern);
+    return _cachedArtistSplitRegex = RegExp(pattern, caseSensitive: false);
   }
 
   static final AppSettings _instance = AppSettings._();
@@ -362,7 +404,7 @@ class AppSettings {
     if (oldSep != null) {
       _instance.artistSeparator = normalizedArtistSeparators(oldSep);
     }
-    _instance.artistSplitPattern = _instance.artistSeparator.join('|');
+    _instance.syncArtistSplitPattern();
   }
 
   @visibleForTesting
@@ -438,8 +480,25 @@ class AppSettings {
     final sep = settingsMap['ArtistSeparator'];
     if (sep != null) {
       _instance.artistSeparator = normalizedArtistSeparators(sep);
-      _instance.artistSplitPattern = _instance.artistSeparator.join('|');
     }
+    final noSplit = settingsMap['ArtistNoSplitNames'];
+    if (noSplit != null) {
+      _instance.artistNoSplitNames = uniqueTextListItems(
+        noSplit is Iterable ? noSplit.whereType<String>() : const <String>[],
+      );
+    }
+    if (settingsMap['EnableFeatArtistSplit'] != null) {
+      _instance.enableFeatArtistSplit = normalizedBoolSetting(
+        settingsMap['EnableFeatArtistSplit'],
+        defaultValue: false,
+      );
+    }
+    if (settingsMap['ArtistAliases'] != null) {
+      _instance.artistAliases = normalizedArtistAliases(
+        settingsMap['ArtistAliases'],
+      );
+    }
+    _instance.syncArtistSplitPattern();
 
     final llf = settingsMap['LocalLyricFirst'];
     if (llf != null) {
@@ -1027,6 +1086,9 @@ class AppSettings {
 
   Map<String, Object?> _lyricSettingsMap() => {
     'ArtistSeparator': artistSeparator,
+    'ArtistNoSplitNames': artistNoSplitNames,
+    'EnableFeatArtistSplit': enableFeatArtistSplit,
+    'ArtistAliases': artistAliases,
     'LocalLyricFirst': localLyricFirst,
     'PreferredOnlineSource': preferredOnlineSource.name,
     'ShowTranslation': showTranslation,

@@ -29,6 +29,52 @@ class ArtistSeparatorEditor extends StatelessWidget {
   }
 }
 
+class FeatArtistSplitSwitch extends StatefulWidget {
+  const FeatArtistSplitSwitch({super.key});
+
+  @override
+  State<FeatArtistSplitSwitch> createState() => _FeatArtistSplitSwitchState();
+}
+
+class _FeatArtistSplitSwitchState extends State<FeatArtistSplitSwitch> {
+  bool _saving = false;
+
+  Future<void> _setEnabled(bool value) async {
+    if (_saving) return;
+    final settings = AppSettings.instance;
+    final previous = settings.enableFeatArtistSplit;
+    setState(() {
+      _saving = true;
+      settings.enableFeatArtistSplit = value;
+      settings.syncArtistSplitPattern();
+    });
+    final saved = await settings.saveSettings();
+    if (!saved) {
+      settings.enableFeatArtistSplit = previous;
+      settings.syncArtistSplitPattern();
+      if (mounted) {
+        setState(() => _saving = false);
+        showTextOnSnackBar('保存合作艺人拆分失败');
+      }
+      return;
+    }
+    await AudioLibrary.initFromIndex();
+    if (mounted) setState(() => _saving = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SettingsTile(
+      description: '合作艺人拆分',
+      subtitle: '把 feat. / ft. / featuring 当成分隔，两边需要空格',
+      action: Switch(
+        value: AppSettings.instance.enableFeatArtistSplit,
+        onChanged: _saving ? null : _setEnabled,
+      ),
+    );
+  }
+}
+
 class _ArtistSeparatorEditDialog extends StatefulWidget {
   const _ArtistSeparatorEditDialog();
 
@@ -243,13 +289,12 @@ class __ArtistSeparatorEditDialogState
 
   Future<void> _saveSeparators(BuildContext context) async {
     final oldSeparators = List<String>.from(appSettings.artistSeparator);
-    final oldPattern = appSettings.artistSplitPattern;
     appSettings.artistSeparator = List.from(separators);
-    appSettings.artistSplitPattern = appSettings.artistSeparator.join('|');
+    appSettings.syncArtistSplitPattern();
     final saved = await appSettings.saveSettings();
     if (!saved) {
       appSettings.artistSeparator = oldSeparators;
-      appSettings.artistSplitPattern = oldPattern;
+      appSettings.syncArtistSplitPattern();
       if (context.mounted) {
         showTextOnSnackBar('保存艺术家分隔符失败');
       }
@@ -293,7 +338,7 @@ class _EmptySeparatorState extends StatelessWidget {
             ),
             const SizedBox(height: 4.0),
             Text(
-              '新增后会用于拆分多艺术家名称',
+              '没有分隔符时，艺术家名称不会被拆开',
               textAlign: TextAlign.center,
               style: TextStyle(color: scheme.onSurfaceVariant),
             ),

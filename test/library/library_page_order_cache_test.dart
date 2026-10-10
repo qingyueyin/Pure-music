@@ -127,11 +127,13 @@ void main() {
         final currentContext = json.encode({
           'appVersion': AppSettings.version,
           'artistSplitPattern': AppSettings.instance.artistSplitPattern,
+          'artistSplitRules': AppSettings.instance.artistSplitSignature,
           'excludedFolders': <String>[],
         });
         final previousVersionContext = json.encode({
           'appVersion': '${AppSettings.version}-previous',
           'artistSplitPattern': AppSettings.instance.artistSplitPattern,
+          'artistSplitRules': AppSettings.instance.artistSplitSignature,
           'excludedFolders': <String>[],
         });
         expect(
