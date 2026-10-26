@@ -10,7 +10,7 @@ import 'package:pure_music/page/now_playing_page/component/now_playing_backgroun
 
 const _kDarkMeshScrim = Color(0x38171717);
 const _kLightMeshScrim = Color(0x2AF0F0F0);
-const _kMeshRenderExtent = 540.0;
+const _kMeshRenderExtent = 360.0;
 const _kMeshColorCount = 4;
 const _kShaderColorCount = 4;
 const _kMeshClockPeriodMilliseconds = 1 << 26;
@@ -712,13 +712,11 @@ class _MeshGradientBackgroundInternalState
       fit: StackFit.expand,
       children: [
         Container(color: widget.fallbackColor),
-        RepaintBoundary(
-          child: _buildMesh(
-            meshColors,
-            transitionFromColors: transitionFromColors,
-            transitionToColors: transitionToColors,
-            scrimColor: scrimColor,
-          ),
+        _buildMesh(
+          meshColors,
+          transitionFromColors: transitionFromColors,
+          transitionToColors: transitionToColors,
+          scrimColor: scrimColor,
         ),
       ],
     );
@@ -740,15 +738,18 @@ class _MeshGradientBackgroundInternalState
           fit: BoxFit.fill,
           child: SizedBox.fromSize(
             size: renderSize,
-            child: _SoftMeshGradient(
-              colors: colors,
-              transitionFromColors: transitionFromColors,
-              transitionToColors: transitionToColors,
-              colorTransition: _isTransitioning
-                  ? _transitionValueNotifier
-                  : null,
-              controller: _meshController,
-              scrimColor: scrimColor,
+            // 边界必须包在这一层里面。包在外面时，着色器仍按整窗像素画。
+            child: RepaintBoundary(
+              child: _SoftMeshGradient(
+                colors: colors,
+                transitionFromColors: transitionFromColors,
+                transitionToColors: transitionToColors,
+                colorTransition: _isTransitioning
+                    ? _transitionValueNotifier
+                    : null,
+                controller: _meshController,
+                scrimColor: scrimColor,
+              ),
             ),
           ),
         );
@@ -932,7 +933,7 @@ class _SoftMeshGradientState extends State<_SoftMeshGradient>
         scrimColor: widget.scrimColor,
       );
       return CustomPaint(painter: _painter, child: child);
-    }, child: Container());
+    }, child: const SizedBox.expand());
   }
 }
 
@@ -954,6 +955,7 @@ class _SoftMeshGradientPainter extends CustomPainter {
   ValueListenable<double>? colorTransition;
   Color scrimColor;
   final Paint _paint;
+  Color? _filterColor;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -962,7 +964,10 @@ class _SoftMeshGradientPainter extends CustomPainter {
     shader.setFloat(0, size.width);
     shader.setFloat(1, size.height);
     shader.setFloat(2, time.value);
-    _paint.colorFilter = ColorFilter.mode(scrimColor, BlendMode.srcOver);
+    if (_filterColor != scrimColor) {
+      _filterColor = scrimColor;
+      _paint.colorFilter = ColorFilter.mode(scrimColor, BlendMode.srcOver);
+    }
 
     var i = 3;
     final from = transitionFromColors;

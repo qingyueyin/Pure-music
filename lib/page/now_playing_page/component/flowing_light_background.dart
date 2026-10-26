@@ -809,16 +809,19 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
             _blurFilterFor(overscanSize);
             return FittedBox(
               fit: BoxFit.fill,
-              child: SizedBox.fromSize(
-                size: cropSize,
-                child: ClipRect(
-                  child: OverflowBox(
-                    alignment: Alignment.center,
-                    minWidth: overscanSize.width,
-                    maxWidth: overscanSize.width,
-                    minHeight: overscanSize.height,
-                    maxHeight: overscanSize.height,
-                    child: CustomPaint(painter: _painter, size: overscanSize),
+              child: RepaintBoundary(
+                // 先把小尺寸流光层光栅化，再由 FittedBox 放大，避免模糊按整窗分辨率执行。
+                child: SizedBox.fromSize(
+                  size: cropSize,
+                  child: ClipRect(
+                    child: OverflowBox(
+                      alignment: Alignment.center,
+                      minWidth: overscanSize.width,
+                      maxWidth: overscanSize.width,
+                      minHeight: overscanSize.height,
+                      maxHeight: overscanSize.height,
+                      child: CustomPaint(painter: _painter, size: overscanSize),
+                    ),
                   ),
                 ),
               ),
@@ -984,6 +987,33 @@ class _FlowingLightPainter extends CustomPainter {
   ui.Paint? _scrimPaint;
   Size? _scrimPaintSize;
   List<Color>? _scrimPaintColors;
+  ui.ColorFilter? _cachedColorFilter;
+  double? _cachedSaturation;
+  double? _cachedBlackScrim;
+  double? _cachedContrast;
+
+  // 参数没变就复用上一帧的矩阵，颜色和上一帧相同。
+  ui.ColorFilter _colorFilterFor(
+    double saturation,
+    double blackScrim,
+    double contrast,
+  ) {
+    final cached = _cachedColorFilter;
+    if (cached != null &&
+        _cachedSaturation == saturation &&
+        _cachedBlackScrim == blackScrim &&
+        _cachedContrast == contrast) {
+      return cached;
+    }
+    _cachedSaturation = saturation;
+    _cachedBlackScrim = blackScrim;
+    _cachedContrast = contrast;
+    return _cachedColorFilter = _flowingLightColorFilter(
+      saturation,
+      blackScrim,
+      contrast,
+    );
+  }
 
   double get _motionTime => motion.time;
 
@@ -1000,7 +1030,7 @@ class _FlowingLightPainter extends CustomPainter {
     _compositePaint.imageFilter = blurHandle.filter;
     final low = audioReactiveFlow ? audio.low : 0.0;
     final high = audioReactiveFlow ? audio.high : 0.0;
-    _coverPaint.colorFilter = _flowingLightColorFilter(
+    _coverPaint.colorFilter = _colorFilterFor(
       style.artworkSaturation +
           (audioReactiveFlow ? audioReactiveFlowSaturationBoost(high) : 0.0),
       style.blackScrim,
