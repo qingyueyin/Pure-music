@@ -28,6 +28,7 @@ import 'package:flutter/foundation.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/system_volume_service.dart';
 import 'package:pure_music/core/utils.dart';
+import 'package:pure_music/core/window_render_gate.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/library/playlist.dart';
 import 'package:pure_music/component/responsive_builder.dart';
@@ -435,6 +436,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     _routeReadyNotifier.dispose();
     _routeAnimation?.removeStatusListener(_onRouteAnimationStatus);
     CoverImageCache.instance.trimMemory(keepPath: _nowPlayingCoverPath);
+    MemoryMonitorService.instance.trimLeftNowPlayingPage();
     super.dispose();
   }
 
@@ -1945,6 +1947,12 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
     };
     _playbackService.nowPlayingNotifier.addListener(_nowPlayingListener);
     _playbackService.positionSyncNotifier.addListener(_positionSyncListener);
+    WindowRenderGate.instance.framesEnabled.addListener(_onWindowFramesChanged);
+  }
+
+  void _onWindowFramesChanged() {
+    _syncWavyAnimation(_playbackService.playerState);
+    _syncProgressDriver(_playbackService.playerState);
   }
 
   @override
@@ -1978,6 +1986,13 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
   }
 
   void _syncProgressDriver(PlayerState state) {
+    if (!WindowRenderGate.instance.framesEnabled.value) {
+      _positionSyncTimer?.cancel();
+      _positionSyncTimer = null;
+      _progressTicker?.stop();
+      _wavyController.stop();
+      return;
+    }
     _syncFromNative(force: true);
     _isPlaying = state == PlayerState.playing;
     if (!_isPlaying) {
@@ -2048,6 +2063,7 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
     _playbackService.playerStateNotifier.removeListener(_playerStateListener);
     _playbackService.nowPlayingNotifier.removeListener(_nowPlayingListener);
     _playbackService.positionSyncNotifier.removeListener(_positionSyncListener);
+    WindowRenderGate.instance.framesEnabled.removeListener(_onWindowFramesChanged);
     dragPosition.dispose();
     livePosition.dispose();
     livePositionSeconds.dispose();

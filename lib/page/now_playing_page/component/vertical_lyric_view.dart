@@ -52,6 +52,14 @@ bool shouldForceLyricScrollForPositionSync(
   return needsInitialScroll;
 }
 
+@visibleForTesting
+bool shouldRunLyricPositionResyncTimer({
+  required bool windowFramesEnabled,
+  required bool disposed,
+}) {
+  return windowFramesEnabled && !disposed;
+}
+
 bool shouldIgnoreLyricFollowWhileUserScrolling({
   required bool isUserDragging,
 }) => isUserDragging;
@@ -991,6 +999,11 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   }
 
   void _onWindowFramesEnabled() {
+    if (!WindowRenderGate.instance.framesEnabled.value) {
+      _stopPositionResyncWindow();
+      _discardPendingLyricLineUpdates();
+      return;
+    }
     if (!shouldAcceptLyricUiUpdate(
       windowFramesEnabled: WindowRenderGate.instance.shouldRender,
     )) {
@@ -998,6 +1011,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       return;
     }
     if (_disposed || !mounted) return;
+    _startPositionResyncWindow();
     lyricService.forceEmitCurrentLine();
     _syncToPlaybackPosition(duration: Duration.zero, forceScroll: true);
   }
@@ -2551,7 +2565,12 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   }
 
   void _startPositionResyncWindow() {
-    if (_disposed) return;
+    if (!shouldRunLyricPositionResyncTimer(
+      windowFramesEnabled: WindowRenderGate.instance.framesEnabled.value,
+      disposed: _disposed,
+    )) {
+      return;
+    }
     _positionResyncTimer ??= Timer.periodic(
       const Duration(milliseconds: 250),
       (_) => _resyncFromPositionTick(playbackService.position),
@@ -2569,6 +2588,13 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
         _startPositionResyncWindow();
       }
     });
+  }
+
+  void _stopPositionResyncWindow() {
+    _positionResyncTimer?.cancel();
+    _positionResyncTimer = null;
+    _positionResyncStopTimer?.cancel();
+    _positionResyncStopTimer = null;
   }
 
   void _resyncFromPositionTick(double position) {
@@ -3131,8 +3157,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     lyricLineStreamSubscription.cancel();
     _sharedLyricPositionTicker?.dispose();
     _sharedLyricPositionMs.dispose();
-    _positionResyncTimer?.cancel();
-    _positionResyncStopTimer?.cancel();
+    _stopPositionResyncWindow();
     scrollController.dispose();
 
     // 清空 TextPainter 对象池，释放内存

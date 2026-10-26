@@ -232,8 +232,8 @@ Future<void> main() async {
 }
 
 Future<void> _runApplication() async {
-  PaintingBinding.instance.imageCache.maximumSize = 96;
-  PaintingBinding.instance.imageCache.maximumSizeBytes = 32 << 20;
+  PaintingBinding.instance.imageCache.maximumSize = 64;
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 16 << 20;
   final singleInstance = FlutterSingleInstance();
   if (!await singleInstance.isFirstInstance()) {
     await singleInstance.focus();

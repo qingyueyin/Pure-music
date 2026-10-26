@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/preference.dart';
+import 'package:pure_music/core/window_render_gate.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/core/utils.dart';
@@ -28,6 +29,8 @@ class AudioEchoLogRecorder {
   Timer? _snapshotTimer;
   Object? _lastFlushedRecord;
   bool _fullRecording = false;
+  bool _watchingTrayHidden = false;
+  late final void Function() _onTrayHidden = _syncPeriodicSnapshot;
 
   String? get currentLogPath => _file?.path;
   String? get latestLogPath => _file?.path ?? _latestLogPath;
@@ -79,11 +82,8 @@ class AudioEchoLogRecorder {
       } catch (_) {}
     });
 
-    _snapshotTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      try {
-        snapshot(tag: 'periodic');
-      } catch (_) {}
-    });
+    _watchTrayHidden();
+    _syncPeriodicSnapshot();
 
     try {
       snapshot(tag: 'start');
@@ -97,6 +97,7 @@ class AudioEchoLogRecorder {
     _snapshotTimer?.cancel();
     _logFlushTimer = null;
     _snapshotTimer = null;
+    _unwatchTrayHidden();
 
     try {
       snapshot(tag: 'stop');
@@ -166,6 +167,34 @@ class AudioEchoLogRecorder {
     if (name == 'seek' || name.startsWith('smart_transition_')) {
       unawaited(flush().catchError((_) {}));
     }
+  }
+
+  // 主窗口藏进托盘后停掉周期快照，避免每 5 秒去读播放状态；完整录音写盘不在这里停。
+  void _watchTrayHidden() {
+    if (_watchingTrayHidden) return;
+    WindowRenderGate.instance.trayHidden.addListener(_onTrayHidden);
+    _watchingTrayHidden = true;
+  }
+
+  void _unwatchTrayHidden() {
+    if (!_watchingTrayHidden) return;
+    WindowRenderGate.instance.trayHidden.removeListener(_onTrayHidden);
+    _watchingTrayHidden = false;
+  }
+
+  void _syncPeriodicSnapshot() {
+    if (_sink == null ||
+        _stopped ||
+        WindowRenderGate.instance.trayHidden.value) {
+      _snapshotTimer?.cancel();
+      _snapshotTimer = null;
+      return;
+    }
+    _snapshotTimer ??= Timer.periodic(const Duration(seconds: 5), (_) {
+      try {
+        snapshot(tag: 'periodic');
+      } catch (_) {}
+    });
   }
 
   void snapshot({required String tag}) {

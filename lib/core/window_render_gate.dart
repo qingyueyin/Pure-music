@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 
-/// 只有主窗口可见且未最小化时才持续绘制。
+/// 只有主窗口还看得见时才持续绘制。失去焦点但窗口仍在屏幕上时不冻结。
 bool windowRenderShouldEnableFrames({
   required bool trayHidden,
   bool windowMinimized = false,
@@ -12,11 +12,15 @@ bool shouldAcceptLyricUiUpdate({required bool windowFramesEnabled}) =>
     windowFramesEnabled;
 
 void applyWindowSchedulerFrames(bool enabled) {
+  // 不要在最小化时把生命周期改成 hidden。改了之后点击和帧时钟会停，回到窗口就卡死。
+  if (!enabled) return;
   final binding = WidgetsBinding.instance;
-  final next = enabled ? AppLifecycleState.resumed : AppLifecycleState.hidden;
-  if (binding.lifecycleState == next) return;
-  // ignore: invalid_use_of_protected_member
-  binding.handleAppLifecycleStateChanged(next);
+  final state = binding.lifecycleState;
+  if (state == AppLifecycleState.hidden || state == AppLifecycleState.paused) {
+    // ignore: invalid_use_of_protected_member
+    binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+  }
+  binding.scheduleFrame();
 }
 
 class WindowRenderGate with WidgetsBindingObserver {
@@ -27,6 +31,9 @@ class WindowRenderGate with WidgetsBindingObserver {
 
   final void Function(bool enabled) _applyFramesEnabled;
   final ValueNotifier<bool> framesEnabled = ValueNotifier(true);
+
+  /// 只有真正藏进托盘才为 true。最小化不算，界面还留着。
+  final ValueNotifier<bool> trayHidden = ValueNotifier(false);
 
   bool _trayHidden = false;
   bool _windowMinimized = false;
@@ -55,6 +62,7 @@ class WindowRenderGate with WidgetsBindingObserver {
   void setTrayHidden(bool hidden) {
     if (_trayHidden == hidden) return;
     _trayHidden = hidden;
+    if (trayHidden.value != hidden) trayHidden.value = hidden;
     _sync();
   }
 
@@ -70,6 +78,7 @@ class WindowRenderGate with WidgetsBindingObserver {
     if (!changed) return;
     _trayHidden = false;
     _windowMinimized = false;
+    if (trayHidden.value) trayHidden.value = false;
     _sync();
   }
 
@@ -78,8 +87,8 @@ class WindowRenderGate with WidgetsBindingObserver {
     switch (state) {
       case AppLifecycleState.resumed:
       case AppLifecycleState.inactive:
-        // 藏进托盘后不能把系统焦点当成「窗口回来了」
-        if (_trayHidden) return;
+        // 最小化或托盘时，系统焦点变化不能把窗口当成已经回到桌面。
+        if (_trayHidden || _windowMinimized) return;
         enterForeground();
       case AppLifecycleState.hidden:
       case AppLifecycleState.paused:
@@ -105,9 +114,8 @@ class WindowRenderGate with WidgetsBindingObserver {
     if (framesEnabled.value) {
       framesEnabled.value = false;
     }
-    // 任务栏最小化只停视觉 ticker，不改变 Flutter 生命周期；音频、媒体会话和
-    // 其他依赖生命周期的后台工作仍保持运行。隐藏到托盘才暂停 scheduler。
-    if (!_trayHidden || !_schedulerFramesEnabled || _pauseScheduled) return;
+    // 只关掉动画开关。不把应用标成隐藏，否则回来点不了。声音在原生播放线程。
+    if (_schedulerFramesEnabled == false || _pauseScheduled) return;
     _pauseScheduled = true;
     final binding = WidgetsBinding.instance;
     binding.addPostFrameCallback((_) {

@@ -10,6 +10,7 @@ import 'package:pure_music/core/enums.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/audio_dsp_settings.dart';
 import 'package:pure_music/core/equalizer_action_state.dart';
+import 'package:pure_music/core/window_render_gate.dart';
 import 'package:pure_music/native/bass/bass.dart' as bass;
 import 'package:pure_music/native/bass/bass_fx.dart';
 import 'package:pure_music/native/bass/bass_mix.dart';
@@ -611,6 +612,17 @@ class BassPlayer {
   Timer? _positionUpdater;
   Duration? _positionUpdaterPeriod;
   int _positionUpdaterVersion = 0;
+  bool _windowGateListening = false;
+
+  // 窗口可见性变化时立即切换定时器间隔。
+  void _listenWindowGateOnce() {
+    if (_windowGateListening) return;
+    _windowGateListening = true;
+    WindowRenderGate.instance.framesEnabled.addListener(
+      _syncPositionUpdaterPeriod,
+    );
+  }
+
   late final StreamController<double> _positionStreamController;
   late final StreamController<Float32List> _spectrumStreamController;
   late final StreamController<Float32List> _spectrumDisplayStreamController;
@@ -944,6 +956,9 @@ class BassPlayer {
   }
 
   Duration _computeActiveTickPeriod() {
+    if (!WindowRenderGate.instance.framesEnabled.value) {
+      return _computeHiddenTickPeriod();
+    }
     if (_positionStreamController.hasListener) {
       return _computePlayingTickPeriod();
     }
@@ -953,8 +968,13 @@ class BassPlayer {
     return _computeIdleTickPeriod();
   }
 
+  Duration _computeHiddenTickPeriod() {
+    return const Duration(seconds: 1);
+  }
+
   void _startPositionUpdater() {
     if (_fstream == null) return;
+    _listenWindowGateOnce();
     final period = _computeActiveTickPeriod();
     if (_positionUpdater != null && _positionUpdaterPeriod == period) return;
     _positionUpdaterVersion++;
@@ -1036,6 +1056,8 @@ class BassPlayer {
 
   void _maybeUpdateSpectrum({PlayerState? knownState}) {
     if (_fstream == null) return;
+    // 窗口不可见时不取频谱数据，避免 FFT 和无谓的缓冲分配。
+    if (!WindowRenderGate.instance.framesEnabled.value) return;
     if (!_hasAnySpectrumListener) return;
     final state = knownState ?? playerState;
     if (state != PlayerState.playing) return;

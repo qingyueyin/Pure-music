@@ -87,7 +87,7 @@ Thumbs.db
 # Build artifacts
 output/
 /output/
-desktop_lyric/
+/desktop_lyric/
 
 # Project notes / scratch
 todo/
@@ -115,4 +115,7 @@ skills-lock.json
 
 # Local diagnostics, not shipped
 tool/local/
+
+# 测试留在本地，不进仓库
+/test/
 

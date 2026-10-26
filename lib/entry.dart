@@ -35,11 +35,8 @@ import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/taskbar_thumbnail_service.dart';
 import 'package:pure_music/component/app_scroll_behavior.dart';
 import 'package:pure_music/core/app_fonts.dart';
-import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/core/immersive.dart';
-import 'package:pure_music/core/memory_monitor.dart';
 import 'package:pure_music/core/mouse_back_exit.dart';
-import 'package:pure_music/core/matcher.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/route_visibility.dart';
 import 'package:pure_music/core/settings.dart';
@@ -50,6 +47,7 @@ import 'package:pure_music/core/update_download_monitor.dart';
 import 'package:pure_music/core/update_installer.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/core/window_render_gate.dart';
+import 'package:pure_music/core/memory_monitor.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:go_router/go_router.dart';
@@ -520,15 +518,8 @@ class _EntryState extends State<Entry>
   }
 
   void _onLowMemory() {
-    CoverImageCache.instance.clear();
-    AudioLibrary.instance.evictAllCoversExcept(
-      PlayService.existingPlaybackService?.nowPlaying?.path,
-      includeCollectionCovers: true,
-    );
-    PaintingBinding.instance.imageCache.clear();
-    PaintingBinding.instance.imageCache.clearLiveImages();
-    clearLyricCaches();
-    log.app.warn('legacy', '[mem] low memory - cleared all caches');
+    // 只丢久未访问的封面字节，不清曲库、歌词和图片缓存。
+    AudioLibrary.instance.evictStaleCoverBytes();
   }
 
   ThemeData fromSchemeAndFontFamily({
@@ -741,16 +732,25 @@ class _EntryState extends State<Entry>
 
   Widget _windowTickerGate(Widget? child) {
     return ValueListenableBuilder<bool>(
-      valueListenable: _windowResizing,
+      valueListenable: WindowRenderGate.instance.trayHidden,
       child: child,
-      builder: (context, resizing, child) => ValueListenableBuilder<bool>(
-        valueListenable: WindowRenderGate.instance.framesEnabled,
-        child: child,
-        builder: (context, windowFramesEnabled, child) => TickerMode(
-          enabled: !resizing && windowFramesEnabled,
-          child: child ?? const SizedBox.shrink(),
-        ),
-      ),
+      builder: (context, trayHidden, child) {
+        return ValueListenableBuilder<bool>(
+          valueListenable: _windowResizing,
+          child: child,
+          builder: (context, resizing, child) => ValueListenableBuilder<bool>(
+            valueListenable: WindowRenderGate.instance.framesEnabled,
+            child: child,
+            builder: (context, windowFramesEnabled, child) {
+              // 托盘隐藏时只停动画，界面树继续挂着。
+              return TickerMode(
+                enabled: !trayHidden && !resizing && windowFramesEnabled,
+                child: child ?? const SizedBox.shrink(),
+              );
+            },
+          ),
+        );
+      },
     );
   }
 

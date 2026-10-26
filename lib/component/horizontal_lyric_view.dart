@@ -332,7 +332,18 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
     _applyLyricLineUpdate(update, preferForward: preferUpcoming);
   }
 
+  void _stopPositionResyncWindow() {
+    _positionResyncTimer?.cancel();
+    _positionResyncTimer = null;
+    _positionResyncStopTimer?.cancel();
+    _positionResyncStopTimer = null;
+  }
+
   void _startPositionResyncWindow() {
+    if (!WindowRenderGate.instance.framesEnabled.value) {
+      _stopPositionResyncWindow();
+      return;
+    }
     _positionResyncTimer ??= Timer.periodic(
       const Duration(milliseconds: 250),
       (_) => _resyncFromPositionTick(playbackService.position),
@@ -369,6 +380,10 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
   }
 
   void _onWindowFramesEnabled() {
+    if (!WindowRenderGate.instance.framesEnabled.value) {
+      _stopPositionResyncWindow();
+      return;
+    }
     if (!shouldAcceptLyricUiUpdate(
       windowFramesEnabled: WindowRenderGate.instance.shouldRender,
     )) {
@@ -377,6 +392,7 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
     if (!mounted) return;
     lyricService.forceEmitCurrentLine();
     _syncToPlaybackPosition(preferUpcoming: true);
+    _startPositionResyncWindow();
   }
 
   void _applyLyricLineUpdate(

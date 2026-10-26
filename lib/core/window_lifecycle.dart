@@ -33,7 +33,6 @@ class WindowLifecycleService with WindowListener, TrayListener {
   bool _playbackListenersBound = false;
   bool _desktopLyricListenersBound = false;
   Timer? _bindRetryTimer;
-  Timer? _trayTrimTimer;
   Future<void> _trayOperation = Future<void>.value();
   Future<void> Function()? _disposeRuntimeResources;
 
@@ -340,24 +339,6 @@ class WindowLifecycleService with WindowListener, TrayListener {
     }
   }
 
-  void _scheduleTrayTrim() {
-    _trayTrimTimer?.cancel();
-    _trayTrimTimer = Timer(const Duration(minutes: 2), () async {
-      _trayTrimTimer = null;
-      if (_isExiting) return;
-      // 清理前再确认窗口仍处于隐藏状态，避免用户已恢复窗口导致清理闪烁
-      if (await windowManager.isVisible()) return;
-      if (_isExiting) return;
-      MemoryMonitorService.instance.trimTrayHidden();
-      log.window.info('legacy', '[mem] tray-hidden - trimmed invisible caches');
-    });
-  }
-
-  void _cancelTrayTrim() {
-    _trayTrimTimer?.cancel();
-    _trayTrimTimer = null;
-  }
-
   Future<bool> _hideToTray() async {
     await AppSettings.instance.saveSettings();
     if (_isExiting ||
@@ -372,6 +353,7 @@ class WindowLifecycleService with WindowListener, TrayListener {
             WindowCloseBehavior.minimizeToTray) {
       return false;
     }
+    // 只隐藏并停绘制，播放和系统媒体心跳继续。
     await windowManager.hide();
     if (_isExiting ||
         AppSettings.instance.windowCloseBehavior !=
@@ -382,16 +364,18 @@ class WindowLifecycleService with WindowListener, TrayListener {
     SleepBlocker.instance.setMainWindowVisible(false);
     PlayService.existingPlaybackService?.startSmtcKeepAlive();
     MemoryMonitorService.instance.trimTrayHidden();
-    _scheduleTrayTrim();
     return true;
   }
 
   Future<void> showWindow() async {
     if (_isExiting) return;
-    _cancelTrayTrim();
+    // 先恢复绘制再显示，不改子窗口大小。
     WindowRenderGate.instance.enterForeground();
+    MemoryMonitorService.instance.restoreForegroundImageCache();
     SleepBlocker.instance.setMainWindowVisible(true);
-    await WindowRenderGate.instance.waitForWarmup();
+    await WindowRenderGate.instance.waitForWarmup(
+      timeout: const Duration(milliseconds: 500),
+    );
     if (_isExiting) return;
     await windowManager.show();
     if (_isExiting) return;
@@ -446,7 +430,6 @@ class WindowLifecycleService with WindowListener, TrayListener {
     WindowRenderGate.instance.detach();
     _bindRetryTimer?.cancel();
     _bindRetryTimer = null;
-    _cancelTrayTrim();
     await _run(
       'trayManager.destroy',
       _trayOperation.then((_) => trayManager.destroy()),
@@ -474,14 +457,17 @@ class WindowLifecycleService with WindowListener, TrayListener {
 
   @override
   void onWindowFocus() {
-    if (!WindowRenderGate.instance.shouldRender) return;
-    WindowRenderGate.instance.enterForeground();
+    if (WindowRenderGate.instance.trayHidden.value) return;
+    WindowRenderGate.instance.setWindowMinimized(false);
   }
 
   @override
   void onWindowRestore() {
-    if (!WindowRenderGate.instance.shouldRender) return;
-    WindowRenderGate.instance.enterForeground();
+    // 系统已经把窗口还原了。这里必须清掉最小化标记，不能因为当前没在绘制就直接返回。
+    WindowRenderGate.instance.setWindowMinimized(false);
+    if (WindowRenderGate.instance.trayHidden.value) {
+      WindowRenderGate.instance.enterForeground();
+    }
   }
 
   @override

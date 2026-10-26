@@ -437,6 +437,9 @@ class _LruMap<K, V> {
 
   int get length => _map.length;
 
+  /// 最久没被用到的键。空表时为空。
+  K? get oldestKey => _map.isEmpty ? null : _map.keys.first;
+
   void removeWhere(bool Function(K key) test) {
     final keys = _map.keys.where(test).toList(growable: false);
     for (final key in keys) {
@@ -444,9 +447,17 @@ class _LruMap<K, V> {
     }
   }
 
-  void trimToSize(int size) {
+  /// 超过上限时从最久未用的键开始删，[keep] 为真的键不动。
+  void trimToSize(int size, {bool Function(K key)? keep}) {
     while (_map.length > size) {
-      final oldestKey = _map.keys.first;
+      K? oldestKey;
+      for (final key in _map.keys) {
+        if (keep == null || !keep(key)) {
+          oldestKey = key;
+          break;
+        }
+      }
+      if (oldestKey == null) return;
       final removed = _map.remove(oldestKey);
       if (removed != null) _discard(oldestKey, removed, evict: true);
     }
@@ -582,13 +593,21 @@ class CoverImageCache {
   static final instance = CoverImageCache._();
   CoverImageCache._();
 
+  static const int _smallByteBudget = 12 * 1024 * 1024;
+  static const int _mediumByteBudget = 8 * 1024 * 1024;
+  static const int _largeByteBudget = 12 * 1024 * 1024;
+
+  /// 测试里把小图预算改小，用来验证超限会赶走旧图。
+  @visibleForTesting
+  int? debugSmallByteBudget;
+
   late final _small = _LruMap<String, ImageProvider>(
-    2048,
+    256,
     onRemove: (key, _) => _smallBytes.remove(key),
     onEvict: (_, provider) => unawaited(provider.evict()),
   );
   late final _medium = _LruMap<String, ImageProvider>(
-    256,
+    64,
     onRemove: (key, _) => _mediumBytes.remove(key),
     onEvict: (_, provider) => unawaited(provider.evict()),
   );
@@ -730,6 +749,53 @@ class CoverImageCache {
     final bytesMap = _bytesMapFor(tier);
     bytesMap.remove(key);
     bytesMap[key] = bytes;
+    _trimTierToByteBudget(tier, bytesMap);
+  }
+
+  int _byteBudgetFor(_LruMap<String, ImageProvider> tier) {
+    if (identical(tier, _small)) {
+      return debugSmallByteBudget ?? _smallByteBudget;
+    }
+    if (identical(tier, _medium)) return _mediumByteBudget;
+    return _largeByteBudget;
+  }
+
+  /// 超过字节预算就从最久未用的图开始释放，刚放进去的那张留着。
+  void _trimTierToByteBudget(
+    _LruMap<String, ImageProvider> tier,
+    Map<String, int> bytesMap,
+  ) {
+    final budget = _byteBudgetFor(tier);
+    var total = 0;
+    for (final value in bytesMap.values) {
+      total += value;
+    }
+    while (total > budget && tier.length > 1) {
+      final oldest = tier.oldestKey;
+      if (oldest == null) return;
+      final size = bytesMap[oldest] ?? 0;
+      tier.remove(oldest);
+      total -= size;
+    }
+  }
+
+  @visibleForTesting
+  void rememberCoverForTesting({
+    required String path,
+    required int width,
+    required int height,
+    required Uint8List bytes,
+  }) {
+    final key = _coverKey(path, width, height);
+    final tier = _tierFor(width, height);
+    final provider = _stableImage(
+      path: path,
+      width: width,
+      height: height,
+      initialBytes: bytes,
+    );
+    tier.set(key, provider);
+    _trackBytes(key, tier, provider);
   }
 
   Map<String, int> _bytesMapFor(_LruMap<String, ImageProvider> tier) {
@@ -1068,8 +1134,14 @@ class CoverImageCache {
     }
   }
 
+  /// 按上限缩小图缓存，当前播放曲目的图始终保留。
   void trimSmall({required int keepEntries}) {
-    _small.trimToSize(keepEntries.clamp(0, 96));
+    final keepPath = AudioLibrary.instance.currentPlayingPath;
+    final keepPrefix = keepPath == null || keepPath.isEmpty
+        ? null
+        : '$keepPath|';
+    bool keep(String key) => keepPrefix != null && key.startsWith(keepPrefix);
+    _small.trimToSize(keepEntries.clamp(0, 96), keep: keep);
   }
 
   void evictPath(String path) {

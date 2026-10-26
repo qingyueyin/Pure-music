@@ -2209,6 +2209,10 @@ class AudioLibrary {
     }
   }
 
+  /// 当前正在播放的曲目路径，没有播放时为空。
+  String? get currentPlayingPath =>
+      PlayService.existingPlaybackService?.nowPlaying?.path;
+
   /// 只清理一段时间内未被访问过的"冷"封面，保护当前播放歌曲
   void evictStaleCoverBytes() {
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -2249,20 +2253,26 @@ class AudioLibrary {
     for (final path in activePaths) {
       if (path == playingPath) continue;
       final audio = audioByPath(path);
-      if (audio == null) {
-        _coverCachePaths.remove(path);
-        continue;
+      if (audio != null) {
+        if (audio.evictCoverCache()) evicted++;
+      } else {
+        CoverImageCache.instance.evictPath(path);
       }
-      if (audio.evictCoverCacheIfPresent()) evicted++;
+      _smallCoverOrder.remove(path);
+      _coverCachePaths.remove(path);
     }
     if (includeCollectionCovers) {
       for (final artist in artistCollection.values) {
-        if (artist.primaryPath == playingPath) continue;
+        final path = artist.primaryPath;
+        if (playingPath != null && path == playingPath) continue;
         if (artist.evictPictureCache()) evicted++;
+        if (path != null) CoverImageCache.instance.evictPath(path);
       }
       for (final album in albumCollection.values) {
-        if (album.primaryPath == playingPath) continue;
+        final path = album.primaryPath;
+        if (playingPath != null && path == playingPath) continue;
         if (album.evictCoverCache()) evicted++;
+        if (path != null) CoverImageCache.instance.evictPath(path);
       }
     }
     if (evicted > 0) {
@@ -2991,29 +3001,17 @@ class Audio {
   ImageProvider? get cachedLargeCover => _largeCoverImage?.target;
 
   /// Evict cover cache only when this Audio actually retains one.
-  bool evictCoverCacheIfPresent() {
-    if (_coverImage?.target == null &&
-        _mediumCoverImage?.target == null &&
-        _largeCoverImage?.target == null &&
-        _smallCoverBytes == null) {
-      return false;
-    }
-    evictCoverCache();
-    return true;
-  }
+  bool evictCoverCacheIfPresent() => evictCoverCache();
 
-  bool _releaseRetainedCoverCache() {
-    if (_coverImage?.target == null &&
-        _mediumCoverImage?.target == null &&
-        _largeCoverImage?.target == null &&
-        _smallCoverBytes == null) {
-      return false;
-    }
-    evictCoverCache();
-    return true;
-  }
+  bool _releaseRetainedCoverCache() => evictCoverCache();
 
-  void evictCoverCache() {
+  /// 清掉这首曲目保留的封面并返回之前是否真的持有。
+  bool evictCoverCache() {
+    final retained =
+        _coverImage?.target != null ||
+        _mediumCoverImage?.target != null ||
+        _largeCoverImage?.target != null ||
+        _smallCoverBytes != null;
     _coverCacheGeneration++;
     final coverImage = _coverImage?.target;
     final mediumCoverImage = _mediumCoverImage?.target;
@@ -3030,6 +3028,7 @@ class Audio {
     if (coverImage != null) unawaited(coverImage.evict());
     if (mediumCoverImage != null) unawaited(mediumCoverImage.evict());
     if (largeCoverImage != null) unawaited(largeCoverImage.evict());
+    return retained;
   }
 
   void _unregisterCoverCacheIfEmpty() {
