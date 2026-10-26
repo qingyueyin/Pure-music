@@ -1242,6 +1242,22 @@ pub(crate) fn get_embedded_picture_from_path(
     width: u32,
     height: u32,
 ) -> Option<Vec<u8>> {
+    let cache_key = _picture_cache_key(path, width, height);
+    // 同一首歌同一尺寸命中就交缓存副本，避免托盘反复解码封面。
+    if let Ok(cache_lock) = PICTURE_CACHE
+        .get_or_init(|| Mutex::new(VecDeque::new()))
+        .lock()
+    {
+        if let Some(pos) = cache_lock.iter().position(|(k, _)| k == &cache_key) {
+            let mut cache = cache_lock;
+            if let Some((k, v)) = cache.remove(pos) {
+                let val = v.clone();
+                cache.push_front((k, v));
+                return Some(val);
+            }
+        }
+    }
+
     let picture = _get_picture_by_lofty(path)?;
     let loaded = image::load_from_memory(&picture).ok()?;
     let ratio = loaded.width() as f32 / loaded.height() as f32;
@@ -1260,7 +1276,20 @@ pub(crate) fn get_embedded_picture_from_path(
     resized
         .write_to(&mut output, image::ImageFormat::Png)
         .ok()?;
-    Some(output.into_inner())
+    let out = output.into_inner();
+    if let Ok(mut cache) = PICTURE_CACHE
+        .get_or_init(|| Mutex::new(VecDeque::new()))
+        .lock()
+    {
+        if let Some(pos) = cache.iter().position(|(k, _)| k == &cache_key) {
+            cache.remove(pos);
+        }
+        cache.push_front((cache_key, out.clone()));
+        while cache.len() > PICTURE_CACHE_CAPACITY {
+            cache.pop_back();
+        }
+    }
+    Some(out)
 }
 
 const PICTURE_CACHE_CAPACITY: usize = 96;

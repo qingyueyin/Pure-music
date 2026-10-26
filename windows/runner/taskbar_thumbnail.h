@@ -51,6 +51,9 @@ class TaskbarThumbnail {
   bool RebuildLivePreview();
   void ProvideLivePreview();
   void ClearLivePreview();
+  void ReleasePreviewBitmap();
+  void ParkRenderSurface();
+  void RestoreRenderSurface();
   void SendControlEvent(const char* event);
   void UpdateTitleScrolling(int available_width);
   void StopTitleScrolling();
@@ -75,6 +78,9 @@ class TaskbarThumbnail {
   int live_preview_height_ = 0;
   int last_client_width_ = 0;
   int last_client_height_ = 0;
+  bool surface_parked_ = false;
+  int parked_child_width_ = 0;
+  int parked_child_height_ = 0;
   HBITMAP live_preview_bitmap_ = nullptr;
   std::vector<uint8_t> cover_bgra_;
   std::wstring original_title_;
