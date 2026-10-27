@@ -5,6 +5,15 @@ import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:flutter/material.dart';
 
+@visibleForTesting
+bool shouldRunProgressTimer({
+  required bool windowFramesEnabled,
+  required bool isPlaying,
+  required bool disposed,
+}) {
+  return windowFramesEnabled && isPlaying && !disposed;
+}
+
 /// 进度条拖拽的激活手势类型。
 enum _DragGestureType { longPress, drag }
 
@@ -115,6 +124,7 @@ class _RectangleProgressIndicatorState
   _DragGestureType? _activeDragGesture;
 
   final ProgressDragController _dragController = ProgressDragController();
+  bool _disposed = false;
 
   static const _longPressDuration = Duration(milliseconds: 250);
   static const _mouseDragThreshold = 12.0;
@@ -155,19 +165,18 @@ class _RectangleProgressIndicatorState
   }
 
   void _syncTimer() {
-    if (!WindowRenderGate.instance.framesEnabled.value) {
+    final isPlaying =
+        playbackService.playerStateNotifier.value == PlayerState.playing;
+    if (!shouldRunProgressTimer(
+      windowFramesEnabled: WindowRenderGate.instance.framesEnabled.value,
+      isPlaying: isPlaying,
+      disposed: _disposed,
+    )) {
       _progressTimer?.cancel();
       _progressTimer = null;
       return;
     }
     _syncNativeProgress();
-    final isPlaying =
-        playbackService.playerStateNotifier.value == PlayerState.playing;
-    if (!isPlaying) {
-      _progressTimer?.cancel();
-      _progressTimer = null;
-      return;
-    }
     _progressTimer ??= Timer.periodic(const Duration(milliseconds: 200), (_) {
       final elapsedSinceNative = _clock.elapsedMilliseconds - _lastNativeSyncMs;
       if (elapsedSinceNative >= _nativeSyncInterval.inMilliseconds) {
@@ -332,6 +341,7 @@ class _RectangleProgressIndicatorState
 
   @override
   void dispose() {
+    _disposed = true;
     playbackService.playerStateNotifier.removeListener(_syncTimer);
     playbackService.nowPlayingNotifier.removeListener(_onNowPlayingChanged);
     playbackService.positionSyncNotifier.removeListener(_onPositionSync);
