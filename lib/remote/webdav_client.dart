@@ -7,6 +7,16 @@ import 'package:pure_music/remote/remote_client.dart';
 import 'package:pure_music/remote/remote_source.dart';
 import 'package:xml/xml.dart';
 
+/// pathSegments 已经解码过，再 decode 会让文件名里的 % 直接中断同步。
+({String fileName, String album}) webDavNames(Uri uri) {
+  final segments = uri.pathSegments
+      .where((segment) => segment.isNotEmpty)
+      .toList(growable: false);
+  final fileName = segments.isEmpty ? uri.path : segments.last;
+  final album = segments.length >= 2 ? segments[segments.length - 2] : '未知专辑';
+  return (fileName: fileName, album: album);
+}
+
 class WebDavClient implements RemoteClient {
   static const _maxDirectories = 10000;
   static const _maxTracks = 200000;
@@ -191,15 +201,9 @@ class WebDavClient implements RemoteClient {
     int? modified,
     String? coverId,
   }) {
-    final segments = uri.pathSegments
-        .where((segment) => segment.isNotEmpty)
-        .toList(growable: false);
-    final fileName = segments.isEmpty
-        ? uri.path
-        : Uri.decodeComponent(segments.last);
-    final album = segments.length >= 2
-        ? Uri.decodeComponent(segments[segments.length - 2])
-        : '未知专辑';
+    final names = webDavNames(uri);
+    final fileName = names.fileName;
+    final album = names.album;
     var title = fileName;
     final dot = title.lastIndexOf('.');
     if (dot > 0) title = title.substring(0, dot);

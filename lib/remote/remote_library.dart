@@ -80,7 +80,13 @@ class RemoteLibrary {
     if (client is! SmbClient) return;
     for (final source in _sources) {
       if (source.kind != RemoteSourceKind.smb) continue;
-      unawaited(client.warmUp(source, passwordFor(source)));
+      final String password;
+      try {
+        password = passwordFor(source);
+      } catch (_) {
+        continue;
+      }
+      unawaited(client.warmUp(source, password));
     }
   }
 
@@ -141,12 +147,16 @@ class RemoteLibrary {
   String passwordFor(RemoteSource source) {
     final cached = _passwordCache[source.id];
     if (cached != null) return cached;
+    if (source.secret.isEmpty) {
+      _passwordCache[source.id] = '';
+      return '';
+    }
     try {
       final password = unprotectSecret(source.secret);
       _passwordCache[source.id] = password;
       return password;
     } catch (_) {
-      return '';
+      throw StateError('远程源密码无法解密，请重新填写密码');
     }
   }
 
@@ -267,7 +277,12 @@ class RemoteLibrary {
         password,
         onProgress: onProgress,
       );
-      await _store.replaceTracks(source.id, tracks, _pathOf);
+      await _store.replaceTracks(
+        source.id,
+        tracks,
+        _pathOf,
+        onProgress: onProgress,
+      );
       final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
       await _store.upsertSource(source.copyWith(lastSyncAt: now));
       await reload();

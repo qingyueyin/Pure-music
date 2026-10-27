@@ -7,8 +7,17 @@ import 'package:dio/dio.dart';
 import 'package:pure_music/remote/remote_client.dart';
 import 'package:pure_music/remote/remote_source.dart';
 
+List<Map<String, dynamic>> subsonicEntries(Object? value) {
+  if (value is Map) return [Map<String, dynamic>.from(value)];
+  if (value is! List) return const [];
+  return [
+    for (final item in value)
+      if (item is Map) Map<String, dynamic>.from(item),
+  ];
+}
+
 class NavidromeClient implements RemoteClient {
-  static const _songCount = 500;
+  static const _albumPageSize = 500;
   static const _maxSongs = 200000;
 
   String _restBase(RemoteSource source) {
@@ -63,40 +72,52 @@ class NavidromeClient implements RemoteClient {
     );
     final tracks = <RemoteTrack>[];
     final seenIds = <String>{};
+    final seenAlbums = <String>{};
     var offset = 0;
-    while (offset < _maxSongs) {
+    // search3 的偏移经常被忽略，只能拿到第一页。改为按专辑分页再取曲目。
+    while (tracks.length < _maxSongs) {
       final response = await dio.get<dynamic>(
-        '${_restBase(source)}/search3.view',
+        '${_restBase(source)}/getAlbumList2.view',
         queryParameters: {
           ..._authParams(source, password),
-          'query': '',
-          'songCount': _songCount,
-          'songOffset': offset,
-          'artistCount': 0,
-          'albumCount': 0,
+          'type': 'alphabeticalByName',
+          'size': _albumPageSize,
+          'offset': offset,
         },
       );
       final body = _decode(response);
-      final result = body['searchResult3'];
-      final songs = result is Map ? result['song'] : null;
-      final list = songs is List ? songs : const <Object?>[];
-      var added = 0;
-      for (final raw in list) {
-        if (raw is! Map) continue;
-        final song = Map<String, dynamic>.from(raw);
-        final track = _trackFromSong(source, song);
-        if (!seenIds.add(track.trackId)) continue;
-        tracks.add(track);
-        added++;
-      }
-      onProgress?.call(
-        (tracks.length / _maxSongs).clamp(0.0, 0.99),
-        '已获取 ${tracks.length} 首',
+      final listRoot = body['albumList2'];
+      final albums = subsonicEntries(
+        listRoot is Map ? listRoot['album'] : null,
       );
-      if (list.length < _songCount) break;
-      // 服务器忽略 songOffset 时本页不会带来新歌曲，避免重复拉取。
-      if (added == 0) break;
-      offset += list.length;
+      if (albums.isEmpty) break;
+      var addedAlbums = 0;
+      for (final album in albums) {
+        final albumId = album['id']?.toString() ?? '';
+        if (albumId.isEmpty || !seenAlbums.add(albumId)) continue;
+        addedAlbums++;
+        final detailResponse = await dio.get<dynamic>(
+          '${_restBase(source)}/getAlbum.view',
+          queryParameters: {..._authParams(source, password), 'id': albumId},
+        );
+        final detail = _decode(detailResponse);
+        final albumBody = detail['album'];
+        final songs = subsonicEntries(
+          albumBody is Map ? albumBody['song'] : null,
+        );
+        for (final song in songs) {
+          if (tracks.length >= _maxSongs) break;
+          final track = _trackFromSong(source, song);
+          if (!seenIds.add(track.trackId)) continue;
+          tracks.add(track);
+        }
+        onProgress?.call(
+          (tracks.length / _maxSongs).clamp(0.0, 0.99),
+          '已获取 ${tracks.length} 首',
+        );
+      }
+      if (albums.length < _albumPageSize || addedAlbums == 0) break;
+      offset += albums.length;
     }
     onProgress?.call(1, '已获取 ${tracks.length} 首');
     return tracks;
