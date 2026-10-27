@@ -369,19 +369,24 @@ class WindowLifecycleService with WindowListener, TrayListener {
 
   Future<void> showWindow() async {
     if (_isExiting) return;
-    // 先恢复绘制再显示，不改子窗口大小。
-    WindowRenderGate.instance.enterForeground();
-    MemoryMonitorService.instance.restoreForegroundImageCache();
-    SleepBlocker.instance.setMainWindowVisible(true);
-    await WindowRenderGate.instance.waitForWarmup(
-      timeout: const Duration(milliseconds: 500),
-    );
-    if (_isExiting) return;
+    // 先让窗口回到屏幕上，再恢复绘制。藏太久后画面表面已经失效，提前画会得到白屏。
     await windowManager.show();
     if (_isExiting) return;
     await windowManager.setSkipTaskbar(false);
     if (await windowManager.isMinimized()) {
       await windowManager.restore();
+    }
+    if (_isExiting) return;
+    WindowRenderGate.instance.enterForeground();
+    MemoryMonitorService.instance.restoreForegroundImageCache();
+    SleepBlocker.instance.setMainWindowVisible(true);
+    WidgetsBinding.instance.scheduleFrame();
+    await WindowRenderGate.instance.waitForWarmup(
+      timeout: const Duration(milliseconds: 500),
+    );
+    if (_isExiting) return;
+    if (WindowRenderGate.instance.shouldRender) {
+      WidgetsBinding.instance.scheduleFrame();
     }
     await windowManager.focus();
     PlayService.existingPlaybackService?.stopSmtcKeepAlive();
@@ -457,17 +462,29 @@ class WindowLifecycleService with WindowListener, TrayListener {
 
   @override
   void onWindowFocus() {
+    unawaited(_resumeIfWindowActuallyVisible());
+  }
+
+  /// 最小化时系统也会送焦点。先看窗口是不是真的在，避免绘制被立刻打开。
+  Future<void> _resumeIfWindowActuallyVisible() async {
     if (WindowRenderGate.instance.trayHidden.value) return;
+    final minimized = await windowManager.isMinimized();
+    if (WindowRenderGate.instance.trayHidden.value) return;
+    final visible = await windowManager.isVisible();
+    if (WindowRenderGate.instance.trayHidden.value) return;
+    if (minimized || !visible) return;
     WindowRenderGate.instance.setWindowMinimized(false);
   }
 
   @override
   void onWindowRestore() {
-    // 系统已经把窗口还原了。这里必须清掉最小化标记，不能因为当前没在绘制就直接返回。
-    WindowRenderGate.instance.setWindowMinimized(false);
-    if (WindowRenderGate.instance.trayHidden.value) {
-      WindowRenderGate.instance.enterForeground();
-    }
+    // 等系统回调结束再恢复。在回调里立刻打开绘制会卡死。
+    Timer.run(() {
+      WindowRenderGate.instance.setWindowMinimized(false);
+      if (WindowRenderGate.instance.trayHidden.value) {
+        WindowRenderGate.instance.enterForeground();
+      }
+    });
   }
 
   @override

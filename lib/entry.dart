@@ -358,8 +358,11 @@ class _EntryState extends State<Entry>
 
   @override
   void onWindowRestore() {
-    WindowRenderGate.instance.setWindowMinimized(false);
-    PlayService.existingPlaybackService?.stopSmtcKeepAlive();
+    // 等这次系统回调返回后再生效。回调里立刻画，会和还没恢复的窗口表面死锁。
+    Timer.run(() {
+      WindowRenderGate.instance.setWindowMinimized(false);
+      PlayService.existingPlaybackService?.stopSmtcKeepAlive();
+    });
   }
 
   @override

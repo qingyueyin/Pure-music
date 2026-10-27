@@ -12,11 +12,12 @@ bool shouldAcceptLyricUiUpdate({required bool windowFramesEnabled}) =>
     windowFramesEnabled;
 
 void applyWindowSchedulerFrames(bool enabled) {
-  // 不要在最小化时把生命周期改成 hidden。改了之后点击和帧时钟会停，回到窗口就卡死。
+  // 不把生命周期改成 hidden，那会让回来的窗口点不动。
+  // 停绘制靠卸掉背景和停掉不计 TickerMode 的动画。
   if (!enabled) return;
   final binding = WidgetsBinding.instance;
-  final state = binding.lifecycleState;
-  if (state == AppLifecycleState.hidden || state == AppLifecycleState.paused) {
+  if (binding.lifecycleState == AppLifecycleState.hidden ||
+      binding.lifecycleState == AppLifecycleState.paused) {
     // ignore: invalid_use_of_protected_member
     binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
   }
@@ -114,7 +115,7 @@ class WindowRenderGate with WidgetsBindingObserver {
     if (framesEnabled.value) {
       framesEnabled.value = false;
     }
-    // 只关掉动画开关。不把应用标成隐藏，否则回来点不了。声音在原生播放线程。
+    // 这一帧画完再停调度。声音在原生播放线程，不靠这些帧。
     if (_schedulerFramesEnabled == false || _pauseScheduled) return;
     _pauseScheduled = true;
     final binding = WidgetsBinding.instance;

@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:pure_music/core/enums.dart';
+import 'package:pure_music/core/window_render_gate.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/lyric/lyric_manual_offset.dart';
 import 'package:pure_music/lyric/lrc.dart';
@@ -602,6 +603,7 @@ class _TransitionControllerManager {
         _positionSyncListener,
       );
       LyricManualOffset.instance.addListener(_onManualOffset);
+      WindowRenderGate.instance.framesEnabled.addListener(_onWindowFramesChanged);
     }
     _controllers.add(controller);
     controller._isPlaying = _isPlaying;
@@ -621,6 +623,9 @@ class _TransitionControllerManager {
         _positionSyncListener,
       );
       LyricManualOffset.instance.removeListener(_onManualOffset);
+      WindowRenderGate.instance.framesEnabled.removeListener(
+        _onWindowFramesChanged,
+      );
     } else {
       _syncProgressTicker();
     }
@@ -658,8 +663,15 @@ class _TransitionControllerManager {
     }
   }
 
+  void _onWindowFramesChanged() {
+    _syncProgressTicker();
+  }
+
   void _syncProgressTicker() {
-    if (_controllers.isEmpty || !_isPlaying) {
+    // 这个 Ticker 不吃 TickerMode，窗口隐藏时要自己停，否则托盘里还在按刷新率画。
+    if (!WindowRenderGate.instance.framesEnabled.value ||
+        _controllers.isEmpty ||
+        !_isPlaying) {
       _stopProgressTicker();
       return;
     }
