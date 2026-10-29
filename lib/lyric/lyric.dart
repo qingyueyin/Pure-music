@@ -36,6 +36,7 @@ class LyricLine {
   Duration length;
   String? translation;
   String? romanLyric;
+  bool isMetadata = false;
 
   LyricLine(this.start, this.length, [this.translation]) : romanLyric = null;
 }

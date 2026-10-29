@@ -1061,7 +1061,9 @@ class LyricsLinePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (line is SyncLyricLine &&
+    if (line.isMetadata) {
+      _paintMetadataLine(canvas, size);
+    } else if (line is SyncLyricLine &&
         config.displayMode == LyricDisplayMode.wordByWord) {
       _paintSyncLine(canvas, size);
     } else if (line is SyncLyricLine) {
@@ -1069,6 +1071,63 @@ class LyricsLinePainter extends CustomPainter {
     } else if (line is LrcLine) {
       _paintLrcLine(canvas, size);
     }
+  }
+
+  /// 元数据行统一走纯文本样式，不参与逐字缩放/辉光
+  void _paintMetadataLine(Canvas canvas, Size size) {
+    final isSyncLineByLine =
+        line is SyncLyricLine &&
+        config.displayMode == LyricDisplayMode.lineByLine;
+    final fontSize = config.primaryFontSize(isMainLine: isMainLine);
+    final verticalPad = (line is SyncLyricLine && !isSyncLineByLine)
+        ? config.syncVerticalPadding(isMainLine: true)
+        : config.lrcVerticalPadding();
+    final padding = EdgeInsets.only(
+      left: 12.0,
+      right: 12.0,
+      top: verticalPad,
+      bottom: verticalPad,
+    );
+
+    final isDarkMode = scheme.brightness == Brightness.dark;
+    final neutralBase = isDarkMode ? Colors.white : Colors.black;
+    final metadataColor = _applyOpacity(
+      useMaterialYouColor
+          ? scheme.onSurface.withValues(alpha: 0.70)
+          : neutralBase.withValues(alpha: 0.70),
+    );
+    final blockTextAlign = switch (_effectiveTextAlign) {
+      LyricTextAlign.left => TextAlign.left,
+      LyricTextAlign.center => TextAlign.center,
+      LyricTextAlign.right => TextAlign.right,
+    };
+
+    final metaTp = _buildTextPainter(
+      ZhConverter.convert(
+        _linePlainText(),
+        LyricViewController.instance.zhConversionMode,
+      ),
+      metadataColor,
+      fontSize * 0.85,
+      config.discreteFontWeight((config.fontWeight - 100).clamp(100, 900)),
+      config.letterSpacing(fontSize: fontSize),
+      textAlign: blockTextAlign,
+    );
+    final maxWidth = _wrapContentWidth(size.width, padding);
+    metaTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
+    metaTp.paint(canvas, Offset(padding.left, padding.top));
+    recycleTextPainter(metaTp);
+  }
+
+  String _linePlainText() {
+    final current = line;
+    if (current is SyncLyricLine) {
+      return current.words.map((w) => w.content).join();
+    }
+    if (current is UnsyncLyricLine) {
+      return current.content;
+    }
+    return '';
   }
 
   void _paintSyncLine(Canvas canvas, Size size) {
@@ -2259,11 +2318,6 @@ class LyricsLinePainter extends CustomPainter {
     );
     final dimColor = unplayedColor;
     final mainColor = isMainLine ? playedColor : dimColor;
-    final metadataColor = _applyOpacity(
-      useMaterialYouColor
-          ? scheme.onSurface.withValues(alpha: 0.70)
-          : neutralBase.withValues(alpha: 0.70),
-    );
     final secondaryColor = _applyOpacity(
       useMaterialYouColor
           ? scheme.onSurface.withValues(alpha: 0.35)
@@ -2281,28 +2335,6 @@ class LyricsLinePainter extends CustomPainter {
       LyricTextAlign.center => TextAlign.center,
       LyricTextAlign.right => TextAlign.right,
     };
-
-    // ── 元数据行：特殊样式（匹配 Widget isMetadata 分支）──────────────────
-    if (lrcLine.isMetadata) {
-      final metaFontSize = fontSize * 0.85;
-      final metaWeight = config.discreteFontWeight(
-        (config.fontWeight - 100).clamp(100, 900),
-      );
-      final metaText = ZhConverter.convert(lrcLine.content, zhMode);
-      final metaTp = _buildTextPainter(
-        metaText,
-        metadataColor,
-        metaFontSize,
-        metaWeight,
-        letterSpace,
-        textAlign: blockTextAlign,
-      );
-      metaTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
-      metaTp.paint(canvas, Offset(padding.left, padding.top));
-      recycleTextPainter(metaTp);
-      canvas.restore();
-      return;
-    }
 
     // ── 多翻译 ┃ 分离（匹配 Widget）──────────────────────────────────────
     final splited = lrcLine.content.split('┃');
@@ -2788,6 +2820,11 @@ class LyricsLinePainter extends CustomPainter {
     );
     final lineWidth = _wrapContentWidth(maxWidth, padding);
 
+    if (line.isMetadata) {
+      final fontSize = config.primaryFontSize(isMainLine: isMainLine);
+      return padding.vertical + fontSize * 0.85 * config.primaryLineHeight();
+    }
+
     if (line is SyncLyricLine && !isSyncLineByLine) {
       final syncLine = line as SyncLyricLine;
       if (syncLine.words.isEmpty) return 0;
@@ -2991,10 +3028,6 @@ class LyricsLinePainter extends CustomPainter {
     } else if (line is LrcLine) {
       final lrcLine = line as LrcLine;
       final fontSize = config.primaryFontSize(isMainLine: isMainLine);
-      // 元数据行
-      if (lrcLine.isMetadata) {
-        return padding.vertical + fontSize * 0.85 * config.primaryLineHeight();
-      }
 
       final fontWeight = config.discreteFontWeight(config.fontWeight);
       final letterSpace = config.letterSpacing(fontSize: fontSize);

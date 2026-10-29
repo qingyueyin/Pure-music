@@ -77,16 +77,17 @@ class EnhancedLrcWord extends SyncLyricWord {
 
 class LrcLine extends UnsyncLyricLine {
   bool isBlank;
-  bool isMetadata;
 
   LrcLine(
     super.start,
     super.content, {
     required bool requiredIsBlank,
-    this.isMetadata = false,
+    bool isMetadata = false,
     super.translation,
     super.length,
-  }) : isBlank = requiredIsBlank;
+  }) : isBlank = requiredIsBlank {
+    this.isMetadata = isMetadata;
+  }
 
   static LrcLine defaultLine = LrcLine(
     Duration.zero,

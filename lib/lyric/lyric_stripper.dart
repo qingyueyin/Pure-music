@@ -800,10 +800,23 @@ void blankAmllTtmlCreatorLines(List<LyricLine> lines) {
   }
 }
 
-void blankMetadataLines(List<LyricLine> lines, [StripOptions? options]) {
-  if (lines.isEmpty) return;
-  options ??= const StripOptions();
+/// 扫描出的元数据区：头部 [0, headerCutoff) 与尾部 [firstAnyInFooter, end)
+class _MetadataRegion {
+  final int headerCutoff;
+  final int firstAnyInFooter;
+  final List<bool> isPreservedArtist;
 
+  const _MetadataRegion({
+    required this.headerCutoff,
+    required this.firstAnyInFooter,
+    required this.isPreservedArtist,
+  });
+}
+
+_MetadataRegion _scanMetadataRegion(
+  List<LyricLine> lines,
+  StripOptions options,
+) {
   final keywords = options.keywords.isNotEmpty
       ? options.keywords
       : defaultExcludeKeywords;
@@ -817,18 +830,6 @@ void blankMetadataLines(List<LyricLine> lines, [StripOptions? options]) {
   final totalLines = lines.length;
   final headerLimit = _scanLimit(totalLines, 0.2, 20, 70);
   final footerLimit = _scanLimit(totalLines, 0.2, 20, 50);
-
-  void blankLine(LyricLine line) {
-    if (_isLineBlanked(line)) return; // 已清空过，不重复操作
-    if (line is SyncLyricLine) {
-      line.words.clear();
-    } else if (line is UnsyncLyricLine) {
-      line.content = '';
-      if (line is LrcLine) {
-        line.isBlank = true;
-      }
-    }
-  }
 
   // ── 预计算每行的匹配状态 ──
   // 增强 LRC 会把同时戳的版权行合并为 translation，必须连同 translation 一起检查
@@ -919,15 +920,39 @@ void blankMetadataLines(List<LyricLine> lines, [StripOptions? options]) {
   }
   if (!footerHasAnchor) firstAnyInFooter = totalLines;
 
+  return _MetadataRegion(
+    headerCutoff: headerCutoff,
+    firstAnyInFooter: firstAnyInFooter,
+    isPreservedArtist: isPreservedArtist,
+  );
+}
+
+void blankMetadataLines(List<LyricLine> lines, [StripOptions? options]) {
+  if (lines.isEmpty) return;
+  final region = _scanMetadataRegion(lines, options ?? const StripOptions());
+  final totalLines = lines.length;
+
+  void blankLine(LyricLine line) {
+    if (_isLineBlanked(line)) return; // 已清空过，不重复操作
+    if (line is SyncLyricLine) {
+      line.words.clear();
+    } else if (line is UnsyncLyricLine) {
+      line.content = '';
+      if (line is LrcLine) {
+        line.isBlank = true;
+      }
+    }
+  }
+
   // ── 清空头部元数据（全清，含弱匹配） ──
-  for (int i = 0; i < headerCutoff; i++) {
-    if (isPreservedArtist[i]) continue;
+  for (int i = 0; i < region.headerCutoff; i++) {
+    if (region.isPreservedArtist[i]) continue;
     blankLine(lines[i]);
   }
 
   // ── 清空尾部明确元数据 ──
-  if (firstAnyInFooter < totalLines) {
-    for (int i = firstAnyInFooter; i < totalLines; i++) {
+  if (region.firstAnyInFooter < totalLines) {
+    for (int i = region.firstAnyInFooter; i < totalLines; i++) {
       blankLine(lines[i]);
     }
   }
@@ -953,6 +978,21 @@ void blankMetadataLines(List<LyricLine> lines, [StripOptions? options]) {
       prelude = _createPrelude(firstElement, firstRealStart);
       lines.insert(0, prelude);
     }
+  }
+}
+
+/// 标记元数据行（保留歌词原文，只给行打标记）。
+/// 与 [blankMetadataLines] 使用同一套首尾区域判定。
+void markMetadataLines(List<LyricLine> lines, [StripOptions? options]) {
+  if (lines.isEmpty) return;
+  final region = _scanMetadataRegion(lines, options ?? const StripOptions());
+  for (int i = 0; i < region.headerCutoff; i++) {
+    if (region.isPreservedArtist[i] || _isLineBlanked(lines[i])) continue;
+    lines[i].isMetadata = true;
+  }
+  for (int i = region.firstAnyInFooter; i < lines.length; i++) {
+    if (_isLineBlanked(lines[i])) continue;
+    lines[i].isMetadata = true;
   }
 }
 

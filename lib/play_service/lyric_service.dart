@@ -992,19 +992,25 @@ class LyricService extends ChangeNotifier {
   void _setCurrLyric(Lyric lyric) {
     // 先还原歌词中被 * 屏蔽的脏话词，避免星号/连字符干扰元数据检测
     applyProfanityUncensor(lyric);
+    final keepMetadata = AppSettings.instance.keepLyricMetadata;
     if (lyric is Ttml && _activeLyricSourceType == LyricSourceType.amll) {
       blankAmllTtmlCreatorLines(lyric.lines);
-    } else if (!AppSettings.instance.keepLyricMetadata) {
+    } else {
       final nowPlaying = _getNowPlaying();
       final artists = nowPlaying == null
           ? const <String>[]
           : <String>{...nowPlaying.splitedArtists, nowPlaying.artist}
                 .where((artist) => artist.trim().isNotEmpty)
                 .toList(growable: false);
-      blankMetadataLines(
-        lyric.lines,
-        StripOptions(matchTitle: nowPlaying?.title, matchArtists: artists),
+      final options = StripOptions(
+        matchTitle: nowPlaying?.title,
+        matchArtists: artists,
       );
+      if (keepMetadata) {
+        markMetadataLines(lyric.lines, options);
+      } else {
+        blankMetadataLines(lyric.lines, options);
+      }
     }
 
     _currLyric = lyric;
