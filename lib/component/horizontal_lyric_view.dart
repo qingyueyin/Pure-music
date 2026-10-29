@@ -432,22 +432,27 @@ class _LyricHorizontalScrollAreaState extends State<_LyricHorizontalScrollArea>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (!scrollController.hasClients) return;
+      // 内容尺寸还没算好时读 maxScrollExtent 会抛空指针
+      final position = scrollController.position;
+      if (!position.hasContentDimensions) return;
 
       scrollController.animateTo(
         0,
         duration: const Duration(milliseconds: 140),
         curve: Curves.easeOutCubic,
       );
-      if (scrollController.position.maxScrollExtent > 0) {
+      if (position.maxScrollExtent > 0) {
         if (lastTime.isNegative) return;
 
         Future.delayed(waitFor, () {
           if (!mounted) return;
           if (!scrollController.hasClients) return;
           if (token != _scrollToken) return;
+          final target = scrollController.position;
+          if (!target.hasContentDimensions) return;
 
           scrollController.animateTo(
-            scrollController.position.maxScrollExtent,
+            target.maxScrollExtent,
             duration: lastTime,
             curve: Curves.easeOutQuart,
           );
