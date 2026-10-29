@@ -409,7 +409,10 @@ class _ImmersiveCoverThumbnailState extends State<_ImmersiveCoverThumbnail> {
     return _PlaybackCoverMotion(
       rotate: AppSettings.instance.circlePlaybackCover,
       identity: playbackService.nowPlaying?.path,
-      child: _PlaybackCoverFrame(scheme: scheme, child: cover),
+      // 封面内容单独成层，旋转/缩放时只做合成，不重画图片和阴影
+      child: RepaintBoundary(
+        child: _PlaybackCoverFrame(scheme: scheme, child: cover),
+      ),
     );
   }
 }

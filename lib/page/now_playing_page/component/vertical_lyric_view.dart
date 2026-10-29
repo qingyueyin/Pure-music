@@ -632,6 +632,9 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   late final ValueNotifier<double> _sharedLyricPositionMs;
   Ticker? _sharedLyricPositionTicker;
   Duration _sharedLyricLastTick = Duration.zero;
+  Duration? _sharedLyricLastPaint;
+  // 逐字高亮 60fps 足够，144Hz 屏上不必每帧都去取播放位置
+  static const _sharedLyricPaintInterval = Duration(milliseconds: 16);
   bool _resumeSharedLyricFromFrozen = false;
   late StreamSubscription<LyricLineUpdate> lyricLineStreamSubscription;
   Timer? _positionResyncTimer;
@@ -777,17 +780,24 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       }
       _sharedLyricPositionTicker?.stop();
       _sharedLyricLastTick = Duration.zero;
+      _sharedLyricLastPaint = null;
       return;
     }
     _sharedLyricPositionTicker ??= createTicker(_onSharedLyricTick);
     if (!_sharedLyricPositionTicker!.isActive) {
       _sharedLyricLastTick = Duration.zero;
+      _sharedLyricLastPaint = null;
       _sharedLyricPositionTicker!.start();
     }
   }
 
   void _onSharedLyricTick(Duration elapsed) {
     if (_disposed || !mounted) return;
+    final lastPaint = _sharedLyricLastPaint;
+    if (lastPaint != null && elapsed - lastPaint < _sharedLyricPaintInterval) {
+      return;
+    }
+    _sharedLyricLastPaint = elapsed;
     if (_resumeSharedLyricFromFrozen) {
       _resumeSharedLyricFromFrozen = false;
       _sharedLyricLastTick = elapsed;
