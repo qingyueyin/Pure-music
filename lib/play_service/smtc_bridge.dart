@@ -14,7 +14,6 @@ abstract interface class SmtcBackend {
     required int duration,
     required String path,
   });
-  Future<void> queueThumbnailBytes({required String path, required List<int> bytes});
   Future<void> updateState(SMTCState state);
   Future<void> updateTimeProperties(int progress);
   Future<void> refreshDisplay();
@@ -51,14 +50,6 @@ class NativeSmtcBackend implements SmtcBackend {
       duration: duration,
       path: path,
     );
-  }
-
-  @override
-  Future<void> queueThumbnailBytes({
-    required String path,
-    required List<int> bytes,
-  }) {
-    return _native.queueThumbnailBytes(path: path, bytes: bytes);
   }
 
   @override
@@ -143,17 +134,6 @@ class SmtcBridge {
         _displayDrainQueued = false;
       }
     }, 'update display');
-  }
-
-  Future<void> queueThumbnailBytes({
-    required String path,
-    required List<int> bytes,
-  }) {
-    if (_closed || _backend == null) return Future<void>.value();
-    return _enqueue(
-      (backend) => backend.queueThumbnailBytes(path: path, bytes: bytes),
-      'queue thumbnail',
-    );
   }
 
   Future<void> updateState(SMTCState state) {

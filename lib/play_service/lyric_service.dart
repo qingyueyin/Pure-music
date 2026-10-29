@@ -20,7 +20,6 @@ import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/play_service/audio_tag_write_scheduler.dart';
 import 'package:pure_music/play_service/play_service.dart';
-import 'package:pure_music/remote/remote_library.dart';
 import 'package:pure_music/play_service/lyric_write_prompt_history.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart';
 import 'package:pure_music/services/online_lyric/api/lyric_request_scheduler.dart';
@@ -1103,15 +1102,6 @@ class LyricService extends ChangeNotifier {
     String audioPath, {
     required bool notifyFailure,
   }) async {
-    if (RemoteLibrary.isRemotePath(audioPath)) {
-      // 远程曲目没有本地文件：外挂 lrc 和 Rust 内嵌标签都读不到，
-      // 直接读文件里的 USLT；没有就返回 null，让上层退到在线歌词源。
-      final raw = await RemoteLibrary.instance.lyricText(audioPath);
-      if (raw == null) return null;
-      final lyric = parseEmbeddedLyricText(raw);
-      if (lyric == null) return null;
-      return (lyric: lyric, isExternal: false);
-    }
     final selectedPath = lyricSources[audioPath]?.localLyricPath;
     if (selectedPath == null) {
       final result = await loadLyricFromAudio(audioPath);

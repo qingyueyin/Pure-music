@@ -988,10 +988,11 @@ void markMetadataLines(List<LyricLine> lines, [StripOptions? options]) {
   final region = _scanMetadataRegion(lines, options ?? const StripOptions());
   for (int i = 0; i < region.headerCutoff; i++) {
     if (region.isPreservedArtist[i] || _isLineBlanked(lines[i])) continue;
+    if (lines[i] is! SyncLyricLine) continue;
     lines[i].isMetadata = true;
   }
   for (int i = region.firstAnyInFooter; i < lines.length; i++) {
-    if (_isLineBlanked(lines[i])) continue;
+    if (_isLineBlanked(lines[i]) || lines[i] is! SyncLyricLine) continue;
     lines[i].isMetadata = true;
   }
 }

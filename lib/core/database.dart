@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:pure_music/core/settings.dart';
-import 'package:pure_music/core/sqlite_runtime.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqlite3/sqlite3.dart';
 
@@ -31,7 +30,6 @@ class AppDb {
       final dbFile = File(path.join(dir.path, 'app.sqlite'));
       dbFile.parent.createSync(recursive: true);
 
-      ensureSqliteRuntime();
       opened = sqlite3.open(dbFile.path);
       _initSchema(opened);
       _db = opened;
@@ -50,8 +48,6 @@ PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
 PRAGMA temp_store = MEMORY;
 PRAGMA busy_timeout = 3000;
-PRAGMA cache_size = -16000;
-PRAGMA journal_size_limit = 67108864;
 
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,

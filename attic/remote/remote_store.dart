@@ -1,28 +1,53 @@
 import 'package:pure_music/core/database.dart';
+import 'package:pure_music/remote/remote_client.dart';
 import 'package:pure_music/remote/remote_source.dart';
 import 'package:sqlite3/sqlite3.dart';
+
+const _remoteTrackBatch = 400;
+
+/// 整库写入会堵住界面。每批插完让出一次事件循环，事务仍然一次提交。
+Future<void> replaceRemoteTracks(
+  Database db,
+  String sourceId,
+  List<List<Object?>> rows, {
+  RemoteSyncProgress? onProgress,
+}) async {
+  db.execute('BEGIN');
+  try {
+    db.execute('DELETE FROM remote_tracks WHERE source_id = ?', [sourceId]);
+    final statement = db.prepare('''
+INSERT OR REPLACE INTO remote_tracks
+  (path, source_id, track_id, title, artist, album, album_artist, track, disc,
+   duration, bitrate, sample_rate, modified, created, by, cover_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+''');
+    try {
+      var pending = 0;
+      for (var index = 0; index < rows.length; index++) {
+        statement.execute(rows[index]);
+        pending++;
+        if (pending < _remoteTrackBatch && index != rows.length - 1) continue;
+        pending = 0;
+        onProgress?.call(
+          ((index + 1) / (rows.isEmpty ? 1 : rows.length)).clamp(0.0, 0.99),
+          '正在写入 ${index + 1} / ${rows.length} 首',
+        );
+        await Future<void>.delayed(Duration.zero);
+      }
+    } finally {
+      statement.dispose();
+    }
+    db.execute('COMMIT');
+  } catch (_) {
+    db.execute('ROLLBACK');
+    rethrow;
+  }
+}
 
 class RemoteStore {
   const RemoteStore();
 
-  /// 分批让出事件循环的粒度（不提交事务）：大库写入时界面还能呼吸。
-  static const _chunkSize = 400;
-
-  static bool _schemaReady = false;
-
-  /// 写操作串行化。replaceTracks 的事务会跨越多个 await，共享连接上
-  /// 如果混进别的写入，它会并入事务或把回滚搅乱；并发替换还会互相
-  /// BEGIN 导致双方都不完整。所有写都排在这条队上执行。
-  static Future<void> _writeLock = Future<void>.value();
-
-  static Future<T> _write<T>(Future<T> Function() action) {
-    final result = _writeLock.then((_) => action());
-    _writeLock = result.then<void>((_) {}, onError: (_) {});
-    return result;
-  }
-
   Future<void> _ensureSchema() async {
-    if (_schemaReady) return;
     final db = await AppDb.instance.db();
     db.execute('''
 CREATE TABLE IF NOT EXISTS remote_sources (
@@ -70,7 +95,6 @@ CREATE TABLE IF NOT EXISTS remote_play_history (
 CREATE INDEX IF NOT EXISTS idx_remote_play_history_path
   ON remote_play_history(path);
 ''');
-    _schemaReady = true;
   }
 
   Future<List<RemoteSource>> readSources() async {
@@ -82,12 +106,11 @@ CREATE INDEX IF NOT EXISTS idx_remote_play_history_path
     return rows.map(_sourceFromRow).toList(growable: false);
   }
 
-  Future<void> upsertSource(RemoteSource source) {
-    return _write(() async {
-      await _ensureSchema();
-      final db = await AppDb.instance.db();
-      db.execute(
-        '''
+  Future<void> upsertSource(RemoteSource source) async {
+    await _ensureSchema();
+    final db = await AppDb.instance.db();
+    db.execute(
+      '''
 INSERT INTO remote_sources
   (id, kind, name, base_url, username, secret, root, created_at, last_sync_at, sort_order)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -101,55 +124,48 @@ ON CONFLICT(id) DO UPDATE SET
   last_sync_at = excluded.last_sync_at,
   sort_order = excluded.sort_order
 ''',
-        [
-          source.id,
-          source.kind.name,
-          source.name,
-          source.baseUrl,
-          source.username,
-          source.secret,
-          source.root,
-          source.createdAt,
-          source.lastSyncAt,
-          source.sortOrder,
-        ],
-      );
-    });
+      [
+        source.id,
+        source.kind.name,
+        source.name,
+        source.baseUrl,
+        source.username,
+        source.secret,
+        source.root,
+        source.createdAt,
+        source.lastSyncAt,
+        source.sortOrder,
+      ],
+    );
   }
 
-  Future<void> deleteSource(String id) {
-    return _write(() async {
-      await _ensureSchema();
-      final db = await AppDb.instance.db();
-      db.execute('DELETE FROM remote_tracks WHERE source_id = ?', [id]);
-      db.execute('DELETE FROM remote_sources WHERE id = ?', [id]);
-      db.execute('DELETE FROM remote_play_history WHERE path LIKE ?', [
-        '$remotePathPrefix$id/%',
-      ]);
-    });
+  Future<void> deleteSource(String id) async {
+    await _ensureSchema();
+    final db = await AppDb.instance.db();
+    db.execute('DELETE FROM remote_tracks WHERE source_id = ?', [id]);
+    db.execute('DELETE FROM remote_sources WHERE id = ?', [id]);
+    db.execute('DELETE FROM remote_play_history WHERE path LIKE ?', [
+      '$remotePathPrefix$id/%',
+    ]);
   }
 
-  Future<void> recordPlay(String path, int playedAt) {
-    return _write(() async {
-      await _ensureSchema();
-      final db = await AppDb.instance.db();
-      db.execute(
-        'INSERT OR IGNORE INTO remote_play_history (path, played_at) '
-        'VALUES (?, ?)',
-        [path, playedAt],
-      );
-    });
+  Future<void> recordPlay(String path, int playedAt) async {
+    await _ensureSchema();
+    final db = await AppDb.instance.db();
+    db.execute(
+      'INSERT OR IGNORE INTO remote_play_history (path, played_at) '
+      'VALUES (?, ?)',
+      [path, playedAt],
+    );
   }
 
-  Future<void> updateTrackDuration(String path, int duration) {
-    return _write(() async {
-      await _ensureSchema();
-      final db = await AppDb.instance.db();
-      db.execute(
-        'UPDATE remote_tracks SET duration = ? WHERE path = ? AND duration <= 0',
-        [duration, path],
-      );
-    });
+  Future<void> updateTrackDuration(String path, int duration) async {
+    await _ensureSchema();
+    final db = await AppDb.instance.db();
+    db.execute(
+      'UPDATE remote_tracks SET duration = ? WHERE path = ? AND duration <= 0',
+      [duration, path],
+    );
   }
 
   Future<Map<String, int>> readPlayCounts() async {
@@ -159,9 +175,7 @@ ON CONFLICT(id) DO UPDATE SET
       'SELECT path, COUNT(*) AS count FROM remote_play_history '
       'GROUP BY path',
     );
-    return {
-      for (final row in rows) row['path'] as String: row['count'] as int,
-    };
+    return {for (final row in rows) row['path'] as String: row['count'] as int};
   }
 
   Future<Map<String, List<int>>> readPlayHistory() async {
@@ -199,73 +213,36 @@ ON CONFLICT(id) DO UPDATE SET
     return rows.map(_trackFromRow).toList(growable: false);
   }
 
-  /// 整体替换一个源的曲目。整个替换在**单个事务**里完成：中途任何错误
-  /// （写入、进度回调抛取消、进程被杀）都由事务回滚兜底，旧曲目集合
-  /// 原样保留，不会留下缺歌的半成品库。
-  ///
-  /// 每 [_chunkSize] 行让出一次事件循环，界面不会假死；让出期间事务保持
-  /// 打开，由 [_write] 的写锁挡住其他写入，避免它们并入本事务。
   Future<void> replaceTracks(
     String sourceId,
     List<RemoteTrack> tracks,
     String Function(RemoteTrack track) pathOf, {
-    void Function(int done, int total)? onProgress,
-  }) {
-    return _write(() async {
-      await _ensureSchema();
-      final db = await AppDb.instance.db();
-      final statement = db.prepare('''
-INSERT OR REPLACE INTO remote_tracks
-  (path, source_id, track_id, title, artist, album, album_artist, track, disc,
-   duration, bitrate, sample_rate, modified, created, by, cover_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-''');
-      final total = tracks.length;
-      var done = 0;
-      try {
-        db.execute('BEGIN');
-        try {
-          db.execute('DELETE FROM remote_tracks WHERE source_id = ?', [
-            sourceId,
-          ]);
-          for (final track in tracks) {
-            statement.execute([
-              pathOf(track),
-              track.sourceId,
-              track.trackId,
-              track.title,
-              track.artist,
-              track.album,
-              track.albumArtist,
-              track.track,
-              track.disc,
-              track.duration,
-              track.bitrate,
-              track.sampleRate,
-              track.modified,
-              track.created,
-              track.by,
-              track.coverId,
-            ]);
-            done++;
-            if (done % _chunkSize == 0) {
-              onProgress?.call(done, total);
-              // 让出事件循环，避免大库同步时界面完全卡死。
-              await Future<void>.delayed(Duration.zero);
-            }
-          }
-          db.execute('COMMIT');
-        } catch (_) {
-          try {
-            db.execute('ROLLBACK');
-          } catch (_) {}
-          rethrow;
-        }
-        onProgress?.call(total, total);
-      } finally {
-        statement.dispose();
-      }
-    });
+    RemoteSyncProgress? onProgress,
+  }) async {
+    await _ensureSchema();
+    final db = await AppDb.instance.db();
+    final rows = [
+      for (final track in tracks)
+        <Object?>[
+          pathOf(track),
+          track.sourceId,
+          track.trackId,
+          track.title,
+          track.artist,
+          track.album,
+          track.albumArtist,
+          track.track,
+          track.disc,
+          track.duration,
+          track.bitrate,
+          track.sampleRate,
+          track.modified,
+          track.created,
+          track.by,
+          track.coverId,
+        ],
+    ];
+    await replaceRemoteTracks(db, sourceId, rows, onProgress: onProgress);
   }
 
   RemoteSource _sourceFromRow(Row row) {

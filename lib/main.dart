@@ -16,14 +16,11 @@ import 'package:pure_music/core/now_playing_perf_auto.dart';
 import 'package:pure_music/core/sidebar_perf_auto.dart';
 import 'package:pure_music/native/rust/api/logger.dart';
 import 'package:pure_music/native/rust/frb_generated.dart';
-import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
-    show ExternalLibrary;
 import 'package:pure_music/core/app_fonts.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/log/rust_log_line.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/core/window_lifecycle.dart';
-import 'package:pure_music/remote/remote_library.dart';
 import 'package:pure_music/core/window_placement.dart';
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
@@ -233,29 +230,6 @@ Future<void> main() async {
   }
 }
 
-/// 安装包把 rust 库放在 exe 的 dll\ 子目录，这里按完整路径点名加载。
-/// 否则裸文件名会走系统搜索顺序，exe 目录下残留的同名旧 DLL（旧布局
-/// 升级、手工拷贝）会抢先加载，绑定哈希对不上直接起不来。
-/// 没有 dll\ 布局时（开发构建）返回 null，走默认解析。
-ExternalLibrary? _bundledRustLibrary() {
-  try {
-    final candidate = File(
-      path.join(
-        File(Platform.resolvedExecutable).parent.path,
-        'dll',
-        'rust_lib_pure_music.dll',
-      ),
-    );
-    if (!candidate.existsSync()) return null;
-    return ExternalLibrary.open(
-      candidate.path,
-      debugInfo: 'bundled dll\\rust_lib_pure_music.dll',
-    );
-  } catch (_) {
-    return null;
-  }
-}
-
 Future<void> _runApplication() async {
   PaintingBinding.instance.imageCache.maximumSize = 64;
   PaintingBinding.instance.imageCache.maximumSizeBytes = 16 << 20;
@@ -265,7 +239,7 @@ Future<void> _runApplication() async {
     exit(0);
   }
   try {
-    await RustLib.init(externalLibrary: _bundledRustLibrary());
+    await RustLib.init();
   } catch (e, s) {
     log.app.error('legacy', 'RustLib.init failed: $e\n$s');
     rethrow;
@@ -304,18 +278,7 @@ Future<bool> _loadSettingsAndCaches() async {
   }
   await HotkeysHelper.registerHotKeys();
   await AlbumColorCache.instance.init();
-  try {
-    await RemoteLibrary.instance.init();
-  } catch (e, s) {
-    log.app.error('legacy', 'RemoteLibrary.init failed: $e\n$s');
-  }
-  // 只看 index.json 会把「已经在用远程源」或「只有 library.sqlite」的老用户
-  // 也当成首次启动，于是每次开都要再问一遍文件夹。
-  final hasLocalIndex =
-      File(path.join(supportPath, 'index.json')).existsSync() ||
-      File(path.join(supportPath, 'library.sqlite')).existsSync();
-  final hasRemoteSource = RemoteLibrary.instance.sources.isNotEmpty;
-  return !hasLocalIndex && !hasRemoteSource;
+  return !File(path.join(supportPath, 'index.json')).existsSync();
 }
 
 Future<bool> _initWindowShell() async {

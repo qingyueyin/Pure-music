@@ -599,19 +599,6 @@ class AudioLibrary {
       );
       if (loadedFromSqlite) return;
 
-      if (!File(indexPath).existsSync()) {
-        // 既没有 SQLite 索引也没有 JSON 索引：全新配置，或只用远程源的用户。
-        // 当成空库继续启动，否则会卡在「音乐库读取失败」。
-        log.library.info('legacy', '本地索引不存在，按空库启动');
-        await _installLoadedFolders(
-          const <AudioFolder>[],
-          pageCacheSourcePath: indexPath,
-          pageCachePath: pageCachePath,
-          objectBatchSize: objectBatchSize,
-        );
-        return;
-      }
-
       await _initFromJsonIndex(
         indexPath: indexPath,
         pageCachePath: pageCachePath,
@@ -667,18 +654,6 @@ class AudioLibrary {
       );
       if (!File(p.join(supportPath, 'library.sqlite')).existsSync()) {
         return false;
-      }
-      if (!File(indexPath).existsSync()) {
-        // 没有 JSON 索引可回退（库文件是空壳：只有表结构没有签名）。
-        // 按空库启动，远程曲目仍会在集合构建时并进来。
-        log.library.info('legacy', 'SQLite 索引为空且无 JSON 索引，按空库启动');
-        await _installLoadedFolders(
-          const <AudioFolder>[],
-          pageCacheSourcePath: indexPath,
-          pageCachePath: pageCachePath,
-          objectBatchSize: objectBatchSize,
-        );
-        return true;
       }
       try {
         final hidden = await library_db.readHiddenAudios(
@@ -951,24 +926,7 @@ class AudioLibrary {
         _addAudioToCollections(audio, state);
       }
     }
-    _appendRemoteAudios(state);
     _finishCollectionBuild(state);
-  }
-
-  void _appendRemoteAudios(_CollectionBuildState state) {
-    final provider = remoteAudiosProvider;
-    if (provider == null) return;
-    var appended = 0;
-    for (final audio in provider()) {
-      if (_audioByPath[audio._pathLookupKey] != null) continue;
-      _addAudioToCollections(audio, state);
-      appended++;
-    }
-    log.library.info(
-      'legacy',
-      '[remote] appended=$appended audios=${audioCollection.length} '
-          'artists=${artistCollection.length} albums=${albumCollection.length}',
-    );
   }
 
   Future<void> _buildCollectionsForInitialLoad(int objectBatchSize) async {
@@ -983,7 +941,6 @@ class AudioLibrary {
         }
       }
     }
-    _appendRemoteAudios(state);
     _finishCollectionBuild(state);
   }
 
@@ -2173,40 +2130,7 @@ class AudioLibrary {
     );
   }
 
-  static Audio? Function(String path)? remoteAudioResolver;
-
-  /// 远程曲目 / 虚拟文件夹由 RemoteLibrary 注入，避免两个库互相 import。
-  /// 不并进 [audioCollection] 的话，艺术家、专辑、演出模式、搜索都永远看不到远程的歌。
-  static List<Audio> Function()? remoteAudiosProvider;
-  static List<AudioFolder> Function()? remoteFoldersProvider;
-
-  /// 每个远程源对应的虚拟目录（由 RemoteLibrary 提供）。
-  List<AudioFolder> get remoteVirtualFolders =>
-      remoteFoldersProvider?.call() ?? const <AudioFolder>[];
-
-  /// 文件夹视图：本地扫描目录 + 每个远程源一个虚拟目录。
-  /// 注意 [folders] 本身必须保持纯本地 —— 库扫描和文件夹管理都会对它写回，
-  /// 混进 remote:// 路径会被当成待扫描的真目录。
-  List<AudioFolder> get allFolders {
-    final remote = remoteVirtualFolders;
-    if (remote.isEmpty) return folders;
-    return [...folders, ...remote];
-  }
-
-  /// 远程曲目同步完成后调用，把主集合重建一次。
-  void rebuildForRemoteChange() {
-    _buildCollections();
-    libraryVersion.value++;
-    log.library.info(
-      'legacy',
-      '[remote] rebuild audios=${audioCollection.length} '
-          'artists=${artistCollection.length} albums=${albumCollection.length}',
-    );
-  }
-
   Audio? audioByPath(String path) {
-    final remote = remoteAudioResolver?.call(path);
-    if (remote != null) return remote;
     final key = _audioPathLookupKey(path);
     if (key.isEmpty) return null;
     return _audioByPath[key];
@@ -2623,17 +2547,12 @@ class AudioFolder {
   /// 用户设置的别名（来自 AppPreference.folderAliases，不写入索引）
   String? alias;
 
-  /// 副标题覆盖。远程源的虚拟目录用它显示协议名（Navidrome / WebDAV / SMB），
-  /// 否则会被当成真实路径取 dirname，显示成没意义的「remote:」。
-  String? subtitle;
-
   AudioFolder(
     this.audios,
     String path,
     this.modified,
     this.latest, [
     this.alias,
-    this.subtitle,
   ]) : _path = path;
 
   /// 展示名：别名优先，否则目录名
