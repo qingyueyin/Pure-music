@@ -642,9 +642,7 @@ const MAX_TAG_READER_WORKERS: usize = 4;
 const RESERVED_LOGICAL_CORES: usize = 2;
 const INDEX_PROGRESS_MIN_BATCH: usize = 16;
 const INDEX_PROGRESS_TARGET_UPDATES: usize = 200;
-const MAX_REMOTE_DIRECTORIES: usize = 10_000;
-const NETWORK_FOLDER_ERROR: &str = "网络共享文件夹不能作为本地曲库文件夹，请通过远程音乐添加";
-const REMOTE_FOLDER_ERROR: &str = "SMB 远程来源必须使用 Windows 网络共享路径";
+const NETWORK_FOLDER_ERROR: &str = "网络共享文件夹不能作为本地曲库文件夹";
 
 fn is_network_path(path: &Path) -> bool {
     let raw = path.to_string_lossy();
@@ -678,21 +676,11 @@ fn reject_network_folder(path: &Path) -> io::Result<()> {
     }
 }
 
-fn validate_scan_roots(folders: &[String], remote: bool) -> io::Result<()> {
-    for folder in folders {
-        let path = Path::new(folder);
-        if remote {
-            if !is_network_path(path) {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    REMOTE_FOLDER_ERROR,
-                ));
-            }
-        } else {
-            reject_network_folder(path)?;
-        }
-    }
-    Ok(())
+fn validate_scan_roots(folders: &[String]) -> io::Result<()> {
+  for folder in folders {
+    reject_network_folder(Path::new(folder))?;
+  }
+  Ok(())
 }
 
 #[derive(Debug)]
@@ -1797,19 +1785,10 @@ fn collect_audio_files_by_folder(
     count: &mut u64,
     by_folder: &mut HashMap<String, Vec<PathBuf>>,
     seen: &mut HashSet<String>,
-    directory_count: &mut usize,
-    max_directories: Option<usize>,
 ) -> io::Result<()> {
     let folder_str = folder.as_ref().to_string_lossy().to_string();
     if !seen.insert(folder_str.clone()) {
         return Ok(());
-    }
-    *directory_count += 1;
-    if max_directories.is_some_and(|limit| *directory_count > limit) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "SMB 远程曲库目录数量超过限制",
-        ));
     }
     for entry in fs::read_dir(folder.as_ref())? {
         let entry = entry?;
@@ -1820,8 +1799,6 @@ fn collect_audio_files_by_folder(
                 count,
                 by_folder,
                 seen,
-                directory_count,
-                max_directories,
             )?;
         } else if file_type.is_file() && is_supported_audio_path(&entry.path()) {
             *count += 1;
@@ -1841,32 +1818,20 @@ pub fn build_index_from_folders_recursively(
     index_path: String,
     sink: StreamSink<IndexActionState>,
 ) -> Result<(), io::Error> {
-    build_index_from_folders(folders, index_path, sink, false)
-}
-
-/// for Flutter
-/// SMB 远程来源专用入口：只接受 Windows 网络路径，并限制目录数量。
-pub fn build_remote_index_from_folders_recursively(
-    folders: Vec<String>,
-    index_path: String,
-    sink: StreamSink<IndexActionState>,
-) -> Result<(), io::Error> {
-    build_index_from_folders(folders, index_path, sink, true)
+    build_index_from_folders(folders, index_path, sink)
 }
 
 fn build_index_from_folders(
     folders: Vec<String>,
     index_path: String,
     sink: StreamSink<IndexActionState>,
-    remote: bool,
 ) -> Result<(), io::Error> {
-    validate_scan_roots(&folders, remote)?;
+    validate_scan_roots(&folders)?;
     let index_dir = PathBuf::from(&index_path);
     let mut audio_folders: Vec<AudioFolder> = vec![];
     let mut scanned: u64 = 0;
     let mut unreadable_total: u64 = 0;
     let mut seen: HashSet<String> = HashSet::new();
-    let mut directory_count = 0_usize;
     let mut total: u64 = 0;
     let mut by_folder: HashMap<String, Vec<PathBuf>> = HashMap::new();
     for item in &folders {
@@ -1875,8 +1840,6 @@ fn build_index_from_folders(
             &mut total,
             &mut by_folder,
             &mut seen,
-            &mut directory_count,
-            remote.then_some(MAX_REMOTE_DIRECTORIES),
         )?;
     }
 

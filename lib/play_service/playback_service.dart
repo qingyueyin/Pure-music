@@ -27,7 +27,6 @@ import 'package:pure_music/core/log/playback_log.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/settings.dart';
-import 'package:pure_music/remote/remote_library.dart';
 import 'package:pure_music/services/concert_session.dart';
 import 'package:pure_music/services/lastfm/lastfm_models.dart';
 import 'package:pure_music/services/lastfm/lastfm_service.dart';
@@ -519,11 +518,9 @@ class PlaybackService extends ChangeNotifier {
 
   void reapplyOutputGain() => _eq.reapplyOutputGain();
 
-  String _playbackPathFor(Audio audio) =>
-      RemoteLibrary.instance.resolvePlaybackPath(audio.path);
+  String _playbackPathFor(Audio audio) => audio.path;
 
   Future<double?> _readReplayGain(String path) async {
-    if (RemoteLibrary.isRemotePath(path)) return null;
     if (!_pref.replayGainEnabled) return null;
     try {
       final meta = await rust_tag_reader.readAudioExtraMetadata(path: path);
@@ -563,7 +560,6 @@ class PlaybackService extends ChangeNotifier {
   }
 
   Future<void> _skipLeadingSilenceIfNeeded(Audio audio, int token) async {
-    if (RemoteLibrary.isRemotePath(audio.path)) return;
     try {
       final libraryRoot = _supportPath ??= (await getAppDataDir()).path;
       if (_closed || token != _skipLeadingSilenceToken || nowPlaying != audio) {
@@ -846,7 +842,6 @@ class PlaybackService extends ChangeNotifier {
       if (currentPosition.isFinite &&
           sampledLength.isFinite &&
           sampledLength > 1) {
-        _learnRemoteDuration(sampledLength);
         _diagAt = nextDiagnosticAt(
           previous: _diagAt,
           sample: currentPosition,
@@ -860,18 +855,6 @@ class PlaybackService extends ChangeNotifier {
     _smartTransitions.onPositionTick(currentPosition, length);
     final progress = (currentPosition * 1000).round();
     unawaited(_smtc.updateTimeProperties(progress));
-  }
-
-  void _learnRemoteDuration(double sampledLength) {
-    final audio = nowPlaying;
-    if (audio == null || audio.duration > 0) return;
-    if (!RemoteLibrary.isRemotePath(audio.path)) return;
-    final seconds = sampledLength.round();
-    if (seconds <= 0) return;
-    audio.duration = seconds;
-    unawaited(
-      RemoteLibrary.instance.updateTrackDuration(audio.path, seconds),
-    );
   }
 
   void _syncSmtcPositionTimer() {
@@ -1490,15 +1473,11 @@ class PlaybackService extends ChangeNotifier {
     _listenRecordingToken = sessionToken;
 
     try {
-      if (RemoteLibrary.isRemotePath(audioPath)) {
-        await RemoteLibrary.instance.recordPlay(audioPath);
-      } else {
-        final supportPath = _supportPath ??= (await getAppDataDir()).path;
-        await rust_library_db.incrementPlayCount(
-          indexPath: supportPath,
-          path: audioPath,
-        );
-      }
+      final supportPath = _supportPath ??= (await getAppDataDir()).path;
+      await rust_library_db.incrementPlayCount(
+        indexPath: supportPath,
+        path: audioPath,
+      );
       audio.playCount++;
       if (sessionToken == _listenTracker.sessionToken) {
         _listenTracker.markListenRecorded();
@@ -2037,9 +2016,6 @@ class PlaybackService extends ChangeNotifier {
       for (final audio in AudioLibrary.instance.audioCollection)
         audio.path: audio,
     };
-    for (final audio in RemoteLibrary.instance.audios) {
-      pathToAudio.putIfAbsent(audio.path, () => audio);
-    }
     final restoredPlaylist = _playlistFromSessionPaths(
       session.lastPlaylistPaths,
       pathToAudio,
@@ -2052,14 +2028,12 @@ class PlaybackService extends ChangeNotifier {
 
   Future<bool> _waitForLibraryAudios() async {
     for (int i = 0; i < 10; i++) {
-      if (AudioLibrary.instance.audioCollection.isNotEmpty ||
-          RemoteLibrary.instance.audios.isNotEmpty) {
+      if (AudioLibrary.instance.audioCollection.isNotEmpty) {
         return true;
       }
       await Future<void>.delayed(const Duration(milliseconds: 200));
     }
-    return AudioLibrary.instance.audioCollection.isNotEmpty ||
-        RemoteLibrary.instance.audios.isNotEmpty;
+    return AudioLibrary.instance.audioCollection.isNotEmpty;
   }
 
   List<Audio> _playlistFromSessionPaths(

@@ -19,7 +19,6 @@ import 'package:pure_music/page/now_playing_page/now_playing_open_transition.dar
 import 'package:pure_music/page/now_playing_page/page.dart';
 import 'package:pure_music/page/playlist_detail_page.dart';
 import 'package:pure_music/page/playlists_page.dart';
-import 'package:pure_music/page/remote_page.dart';
 import 'package:pure_music/page/settings_page/check_update.dart';
 import 'package:pure_music/page/settings_page/create_issue.dart';
 import 'package:pure_music/page/stats_page/page.dart';
@@ -817,9 +816,6 @@ class _EntryState extends State<Entry>
               ),
             ],
           ),
-          _maintainedBranch(
-            path: app_paths.REMOTE_PAGE,
-            child: const RemotePage(),
           ),
           _maintainedBranch(
             path: app_paths.PLAYLISTS_PAGE,

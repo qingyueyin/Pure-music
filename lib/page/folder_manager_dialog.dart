@@ -35,7 +35,7 @@ bool _isNetworkFolderPath(String value) {
   }
 }
 
-const _networkFolderMessage = '网络共享文件夹请到「远程音乐」添加';
+const _networkFolderMessage = '网络共享文件夹不能加入本地曲库';
 
 Future<void> showFolderManagerDialog(BuildContext context) async {
   await showDialog<void>(

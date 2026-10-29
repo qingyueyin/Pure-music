@@ -92,17 +92,6 @@ Stream<IndexActionState> buildIndexFromFoldersRecursively({
   indexPath: indexPath,
 );
 
-/// for Flutter
-/// SMB 远程来源专用入口：只接受 Windows 网络路径，并限制目录数量。
-Stream<IndexActionState> buildRemoteIndexFromFoldersRecursively({
-  required List<String> folders,
-  required String indexPath,
-}) => RustLib.instance.api
-    .crateApiTagReaderBuildRemoteIndexFromFoldersRecursively(
-      folders: folders,
-      indexPath: indexPath,
-    );
-
 Stream<IndexActionState> updateIndex({
   required String indexPath,
   required bool forceMetadataCheck,
