@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:pure_music/core/window_render_gate.dart';
 
 /// Shared frosted-glass chrome used by the title bar and sidebar.
 ///
@@ -53,8 +54,16 @@ class FrostedChrome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: WindowRenderGate.instance.framesEnabled,
+      builder: (context, windowVisible, _) =>
+          _buildChrome(context, frosted: enabled && windowVisible),
+    );
+  }
+
+  Widget _buildChrome(BuildContext context, {required bool frosted}) {
     final scheme = Theme.of(context).colorScheme;
-    final color = enabled
+    final color = frosted
         ? scheme.surface.withAlpha(fillAlpha)
         : scheme.surface;
 
@@ -63,7 +72,7 @@ class FrostedChrome extends StatelessWidget {
       content = SizedBox(height: height, child: content);
     }
 
-    if (!enabled) {
+    if (!frosted) {
       final painted = ColoredBox(color: color, child: content);
       if (borderRadius != null) {
         return ClipRRect(borderRadius: borderRadius!, child: painted);

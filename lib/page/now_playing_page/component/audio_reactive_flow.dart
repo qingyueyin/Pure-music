@@ -93,6 +93,26 @@ bool audioReactiveFlowShouldHoldEnvelope({
   return awaitingPlaybackSpectrum && incoming.isNearlySilent;
 }
 
+/// 页面稳定停留时才把频谱写进包络；离开或过渡中直接丢弃，包络保持原值。
+/// 返回值是下一次仍需「等待非静音帧」的标记。
+bool audioReactiveFlowWriteSpectrum({
+  required bool pageSettled,
+  required bool awaitingPlaybackSpectrum,
+  required AudioReactiveFlowResponse incoming,
+  required AudioReactiveFlowNormalizer normalizer,
+  required AudioReactiveFlowEnvelope envelope,
+}) {
+  if (!pageSettled) return awaitingPlaybackSpectrum;
+  if (audioReactiveFlowShouldHoldEnvelope(
+    awaitingPlaybackSpectrum: awaitingPlaybackSpectrum,
+    incoming: incoming,
+  )) {
+    return true;
+  }
+  envelope.update(normalizer.update(incoming));
+  return false;
+}
+
 double _unit(double value) {
   return value.isFinite ? value.clamp(0.0, 1.0).toDouble() : 0.0;
 }

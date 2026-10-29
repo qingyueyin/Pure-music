@@ -2,6 +2,29 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 
+/// 窗口状态：前台、后台（失去焦点但窗口仍在）、最小化、托盘。
+enum WindowRenderState {
+  foreground,
+  background,
+  minimized,
+  tray;
+
+  /// 前台和后台都继续绘制；最小化和托盘停画。
+  bool get keepsFrames => this == foreground || this == background;
+}
+
+WindowRenderState windowRenderStateFor({
+  required bool trayHidden,
+  required bool windowMinimized,
+  required bool windowFocused,
+}) {
+  if (trayHidden) return WindowRenderState.tray;
+  if (windowMinimized) return WindowRenderState.minimized;
+  return windowFocused
+      ? WindowRenderState.foreground
+      : WindowRenderState.background;
+}
+
 /// 只有主窗口还看得见时才持续绘制。失去焦点但窗口仍在屏幕上时不冻结。
 bool windowRenderShouldEnableFrames({
   required bool trayHidden,
@@ -38,14 +61,18 @@ class WindowRenderGate with WidgetsBindingObserver {
 
   bool _trayHidden = false;
   bool _windowMinimized = false;
+  bool _windowFocused = true;
   bool _schedulerFramesEnabled = true;
   bool _pauseScheduled = false;
   bool _attached = false;
 
-  bool get shouldRender => windowRenderShouldEnableFrames(
+  WindowRenderState get state => windowRenderStateFor(
     trayHidden: _trayHidden,
     windowMinimized: _windowMinimized,
+    windowFocused: _windowFocused,
   );
+
+  bool get shouldRender => state.keepsFrames;
 
   void attach() {
     if (_attached) return;
@@ -85,6 +112,8 @@ class WindowRenderGate with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 只记录焦点：后台照常绘制，不停帧。
+    _windowFocused = state == AppLifecycleState.resumed;
     switch (state) {
       case AppLifecycleState.resumed:
       case AppLifecycleState.inactive:

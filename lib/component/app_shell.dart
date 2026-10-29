@@ -5,6 +5,7 @@ import 'dart:ui';
 
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/core/window_render_gate.dart';
 import 'package:pure_music/component/mini_now_playing.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/responsive_builder.dart';
@@ -90,6 +91,29 @@ Future<double> _resolveBackgroundLuminance(String path) async {
   }
 }
 
+final Map<double, ImageFilter> _downsampledBlurCache = {};
+
+/// 整窗高斯先缩到 1/4 再模糊，观感半径不变，采样量降到 1/16。
+ImageFilter _downsampledBlurFilter(double sigma) {
+  final cached = _downsampledBlurCache[sigma];
+  if (cached != null) return cached;
+  const scale = 0.25;
+  final scaleDown = Matrix4.diagonal3Values(scale, scale, 1).storage;
+  final scaleUp = Matrix4.diagonal3Values(1 / scale, 1 / scale, 1).storage;
+  final filter = ImageFilter.compose(
+    inner: ImageFilter.compose(
+      inner: ImageFilter.matrix(scaleDown, filterQuality: FilterQuality.low),
+      outer: ImageFilter.blur(
+        sigmaX: sigma * scale,
+        sigmaY: sigma * scale,
+        tileMode: TileMode.clamp,
+      ),
+    ),
+    outer: ImageFilter.matrix(scaleUp, filterQuality: FilterQuality.low),
+  );
+  return _downsampledBlurCache[sigma] = filter;
+}
+
 class _AppBackground extends StatefulWidget {
   const _AppBackground({
     required this.fallbackColor,
@@ -141,13 +165,18 @@ class _AppBackgroundState extends State<_AppBackground> {
     final maskAlpha = isDark
         ? 0.25 + 0.2 * _imageLuminance
         : 0.25 + 0.2 * (1 - _imageLuminance);
-    if (settings.appWindowTransparent) {
-      return _transparentShell(settings);
-    }
-    return _imageShell(settings, maskColor, maskAlpha);
+    return ValueListenableBuilder<bool>(
+      valueListenable: WindowRenderGate.instance.framesEnabled,
+      builder: (context, windowVisible, _) {
+        if (settings.appWindowTransparent) {
+          return _transparentShell(settings, windowVisible);
+        }
+        return _imageShell(settings, maskColor, maskAlpha, windowVisible);
+      },
+    );
   }
 
-  Widget _transparentShell(AppSettings settings) {
+  Widget _transparentShell(AppSettings settings, bool windowVisible) {
     final bgColor = widget.fallbackColor.withValues(
       alpha: settings.appWindowOpacity,
     );
@@ -156,13 +185,9 @@ class _AppBackgroundState extends State<_AppBackground> {
       fit: StackFit.expand,
       children: [
         ColoredBox(color: bgColor),
-        if (windowBlur > 0)
+        if (windowBlur > 0 && windowVisible)
           BackdropFilter(
-            filter: ImageFilter.blur(
-              sigmaX: windowBlur,
-              sigmaY: windowBlur,
-              tileMode: TileMode.clamp,
-            ),
+            filter: _downsampledBlurFilter(windowBlur),
             child: widget.child,
           )
         else
@@ -171,7 +196,12 @@ class _AppBackgroundState extends State<_AppBackground> {
     );
   }
 
-  Widget _imageShell(AppSettings settings, Color maskColor, double maskAlpha) {
+  Widget _imageShell(
+    AppSettings settings,
+    Color maskColor,
+    double maskAlpha,
+    bool windowVisible,
+  ) {
     final imagePath = widget.imagePath;
     final blur = settings.appBackgroundImageBlur;
     return Stack(
@@ -181,7 +211,7 @@ class _AppBackgroundState extends State<_AppBackground> {
         if (imagePath != null) ...[
           Opacity(
             opacity: settings.appBackgroundImageOpacity,
-            child: blur > 0
+            child: blur > 0 && windowVisible
                 ? _blurredBackground(context, imagePath, blur)
                 : _backgroundImage(imagePath),
           ),
@@ -209,11 +239,7 @@ class _AppBackgroundState extends State<_AppBackground> {
     final viewportWidth = MediaQuery.sizeOf(context).width;
     final devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
     return ImageFiltered(
-      imageFilter: ImageFilter.blur(
-        sigmaX: blur,
-        sigmaY: blur,
-        tileMode: TileMode.clamp,
-      ),
+      imageFilter: _downsampledBlurFilter(blur),
       child: Image.file(
         File(imagePath),
         fit: BoxFit.cover,

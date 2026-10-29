@@ -188,6 +188,8 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
   int _decodeGeneration = 0;
   bool _disposed = false;
   bool _tickerModeEnabled = true;
+  Animation<double>? _routeAnimation;
+  bool _routeTransitionSettled = true;
 
   static const double _kIdleSpeed = 0.0;
   static const double _kActiveSpeed = 1.0;
@@ -251,6 +253,7 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _bindRouteAnimation();
     final tickerModeEnabled = TickerMode.valuesOf(context).enabled;
     if (_tickerModeEnabled == tickerModeEnabled) return;
     _tickerModeEnabled = tickerModeEnabled;
@@ -306,6 +309,7 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     final stream = widget.inputs.spectrumStream;
     final shouldListen =
         stream != null &&
+        _routeTransitionSettled &&
         _tickerModeEnabled &&
         _coverImage != null &&
         widget.inputs.enableAnimation &&
@@ -323,20 +327,40 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     _spectrumSubscription = null;
   }
 
+  void _bindRouteAnimation() {
+    final animation = ModalRoute.of(context)?.animation;
+    if (identical(animation, _routeAnimation)) return;
+    _routeAnimation?.removeStatusListener(_onRouteAnimationStatus);
+    _routeAnimation = animation;
+    _routeAnimation?.addStatusListener(_onRouteAnimationStatus);
+    final settled =
+        animation == null || animation.status == AnimationStatus.completed;
+    if (settled == _routeTransitionSettled) return;
+    _routeTransitionSettled = settled;
+    _syncAnimationState();
+  }
+
+  void _onRouteAnimationStatus(AnimationStatus status) {
+    if (!mounted) return;
+    final settled = status == AnimationStatus.completed;
+    if (settled == _routeTransitionSettled) return;
+    _routeTransitionSettled = settled;
+    // 离开播放页的同一帧断掉频谱，包络停在当前值；过渡结束才重新接。
+    _syncAnimationState();
+  }
+
   void _handleSpectrum(Float32List bands) {
     if (_disposed) return;
     if (!widget.inputs.audioReactiveFlow) return;
     final response = AudioReactiveFlowResponse.fromBands(bands);
-    // 暂停/进出后先丢掉空频谱，避免把冻住的色场瞬间拉黑。
-    if (audioReactiveFlowShouldHoldEnvelope(
+    // 离开播放页或过渡中不写色场，包络停在离开时的值。
+    _audio.awaitingPlaybackSpectrum = audioReactiveFlowWriteSpectrum(
+      pageSettled: _routeTransitionSettled,
       awaitingPlaybackSpectrum: _audio.awaitingPlaybackSpectrum,
       incoming: response,
-    )) {
-      return;
-    }
-    _audio.awaitingPlaybackSpectrum = false;
-    // 先把三频拉到可用幅度，再交给色场去推缩放/对比/饱和。
-    _envelope.update(_normalizer.update(response));
+      normalizer: _normalizer,
+      envelope: _envelope,
+    );
   }
 
   void _resetAudioVisual() {
@@ -729,6 +753,7 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     _pendingCover?.image.dispose();
     _frameNotifier.dispose();
     _spectrumSubscription?.cancel();
+    _routeAnimation?.removeStatusListener(_onRouteAnimationStatus);
     widget.inputs.playerStateListenable?.removeListener(
       _onPlayerStateListenable,
     );

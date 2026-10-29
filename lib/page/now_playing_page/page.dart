@@ -91,9 +91,6 @@ double _responsiveNowPlayingCoverSize({
 // 沉浸模式封面下方区域高度（24 间距 + 进度条 40）
 const _immersiveCoverBelowHeight = 64.0;
 
-// 切歌封面过渡时长。过渡期间不解码高清封面、不取色，结束后再补。
-const _coverSwitchDuration = Duration(milliseconds: 500);
-
 // 普通横屏模式下信息区底部控制区高度（进度条约40 + 控制行64 + 底部留白12）。
 // 两种横屏模式的封面垂直居中于整个窗口：普通模式从信息区中心下移该值的一半，
 // 沉浸模式从整列中心下移封面下方区域的一半，两者落点一致。
@@ -173,7 +170,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     }
   }
 
-  void _scheduleCoverDetails({Duration delay = MotionDuration.xFast}) {
+  void _scheduleCoverDetails() {
     _coverDebounceTimer?.cancel();
     final path = _nowPlayingCoverPath;
     if (!_routeReady || path == null) return;
@@ -184,7 +181,10 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     }
     final token = _coverRequestToken;
 
-    _coverDebounceTimer = Timer(delay, () => _loadCoverDetails(token, path));
+    _coverDebounceTimer = Timer(
+      MotionDuration.xFast,
+      () => _loadCoverDetails(token, path),
+    );
   }
 
   Future<void> _loadCoverDetails(int token, String path) async {
@@ -312,8 +312,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
       if (!mounted || playbackService.nowPlaying?.path != path) return;
       MemoryMonitorService.instance.trimAfterSongChange();
     });
-    // 取色和解码都要等封面过渡结束，过渡中做会掉帧。
-    _scheduleCoverDetails(delay: _coverSwitchDuration);
+    _scheduleCoverDetails();
   }
 
   void _clearCoverIfNeeded() {
@@ -2911,9 +2910,6 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
   String? _immediateCoverPath;
   MemoryImage? _cachedImmediateCoverImage;
 
-  /// 上一次触发过封面过渡的曲目；切歌时过渡还没走完，不能解码高清封面。
-  String? _coverSwitchPath;
-
   bool get _routeReady {
     final animation = ModalRoute.of(context)?.animation;
     return animation == null || animation.status == AnimationStatus.completed;
@@ -2954,8 +2950,6 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
     }
     final path = nextAudio.path;
     final cachedLargeCover = nextAudio.cachedLargeCover;
-    final switching = _coverSwitchPath != path;
-    _coverSwitchPath = path;
     _applyImmediateCover(nextAudio, path, cachedLargeCover);
     if (_immediateCover == null) {
       _loadSmallCover(nextAudio, token, path);
@@ -2966,7 +2960,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
     }
     _removeRouteAnimationListener();
     if (cachedLargeCover != null) return;
-    _scheduleHiResCover(nextAudio, token, path, switching: switching);
+    _scheduleHiResCover(nextAudio, token, path);
   }
 
   void _clearInfoCovers() {
@@ -3008,30 +3002,22 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
     });
   }
 
-  void _scheduleHiResCover(
-    Audio nextAudio,
-    int token,
-    String path, {
-    required bool switching,
-  }) {
-    _hiResDebounceTimer = Timer(
-      switching ? _coverSwitchDuration : MotionDuration.xFast,
-      () {
+  void _scheduleHiResCover(Audio nextAudio, int token, String path) {
+    _hiResDebounceTimer = Timer(MotionDuration.xFast, () {
+      if (!mounted || token != _coverRequestToken) return;
+      nextAudio.largeCover.then((image) async {
         if (!mounted || token != _coverRequestToken) return;
-        nextAudio.largeCover.then((image) async {
-          if (!mounted || token != _coverRequestToken) return;
-          if (playbackService.nowPlaying?.path != path) return;
-          if (image != null) {
-            await precacheImage(image, context);
-          }
-          if (!mounted || token != _coverRequestToken) return;
-          setState(() {
-            _hiResCover = image;
-            _hiResCoverPath = image == null ? null : path;
-          });
+        if (playbackService.nowPlaying?.path != path) return;
+        if (image != null) {
+          await precacheImage(image, context);
+        }
+        if (!mounted || token != _coverRequestToken) return;
+        setState(() {
+          _hiResCover = image;
+          _hiResCoverPath = image == null ? null : path;
         });
-      },
-    );
+      });
+    });
   }
 
   @override
@@ -3084,7 +3070,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
     final coverSize = _coverSizeFor(constraints);
     final textWidth = _textWidthFor(constraints, coverSize);
     return AnimatedSwitcher(
-      duration: _coverSwitchDuration,
+      duration: const Duration(milliseconds: 500),
       switchInCurve: Curves.easeOutQuart,
       switchOutCurve: Curves.easeInQuart,
       transitionBuilder: _coverTransition,

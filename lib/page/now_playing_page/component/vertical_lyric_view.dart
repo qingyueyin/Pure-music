@@ -42,10 +42,6 @@ const _shaderFadeOutWithBlur = 0.80;
 const _shaderFadeOutWithoutBlur = 0.95;
 const _lyricOffsetCacheCapacity = 6;
 
-/// 行切换、切入、收起按 16ms 一步，不能退到 33ms。
-@visibleForTesting
-const lyricLineFrameInterval = Duration(milliseconds: 16);
-
 bool alwaysShowLyricViewControls = false;
 
 bool shouldForceLyricScrollForPositionSync(
@@ -638,6 +634,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   Duration _sharedLyricLastTick = Duration.zero;
   Duration? _sharedLyricLastPaint;
   // 逐字高亮 60fps 足够，144Hz 屏上不必每帧都去取播放位置
+  static const _sharedLyricPaintInterval = Duration(milliseconds: 16);
   bool _resumeSharedLyricFromFrozen = false;
   late StreamSubscription<LyricLineUpdate> lyricLineStreamSubscription;
   Timer? _positionResyncTimer;
@@ -797,7 +794,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   void _onSharedLyricTick(Duration elapsed) {
     if (_disposed || !mounted) return;
     final lastPaint = _sharedLyricLastPaint;
-    if (lastPaint != null && elapsed - lastPaint < lyricLineFrameInterval) {
+    if (lastPaint != null && elapsed - lastPaint < _sharedLyricPaintInterval) {
       return;
     }
     _sharedLyricLastPaint = elapsed;
