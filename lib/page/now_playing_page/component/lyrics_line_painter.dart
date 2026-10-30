@@ -13,7 +13,6 @@ import 'package:pure_music/core/zh_converter.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_painter_params.dart';
-import 'package:pure_music/page/now_playing_page/component/lyric_view_controls.dart';
 import 'package:pure_music/play_service/lyric_service.dart'
     show lyricHighlightCatchUpDurationMs, lyricHighlightFinishLeadMs;
 
@@ -597,8 +596,9 @@ class _CharInfo {
   final double y;
   final double width;
   double yLift;
-  final double charProgress;
-  final double wordProgress;
+  // 进度每帧重算，字位排版可跨帧复用
+  double charProgress;
+  double wordProgress;
   double effectProgress;
   final int wordIndex;
   final int wordCharIndex;
@@ -628,22 +628,99 @@ class _LineGroup {
 
 class _WordPaintInfo {
   final List<_CharInfo> chars;
-  final String text;
   bool hasLift;
-  final double wordProgress;
   final double wordDurationSec;
 
   _WordPaintInfo({
     required this.chars,
-    required this.text,
     required this.hasLift,
-    required this.wordProgress,
     required this.wordDurationSec,
   });
 
+  double get wordProgress => chars.first.wordProgress;
   int get length => chars.length;
   _CharInfo get first => chars.first;
   _CharInfo get last => chars.last;
+}
+
+class _GlyphEntry {
+  final String char;
+  final TextStyle style;
+  final TextPainter painter;
+
+  _GlyphEntry(this.char, this.style, this.painter);
+}
+
+/// 与播放进度无关的字位排版结果
+class _LineCharLayout {
+  final List<_CharInfo> chars;
+  final List<_LineGroup> groups;
+  final List<List<_WordPaintInfo>> words;
+  final Map<int, int> wordPlacedCounts;
+  final double endY;
+  final List<int> wordTotalChars;
+
+  _LineCharLayout(
+    this.chars,
+    this.groups,
+    this.words,
+    this.wordPlacedCounts,
+    this.endY,
+    this.wordTotalChars,
+  );
+}
+
+class _LineLayoutKey {
+  final LyricLine line;
+  final double width;
+  final LyricRenderConfig config;
+  final String? fontFamily;
+  final String? agent;
+  final ZhConversionMode zhMode;
+  final bool isMainLine;
+  final bool hasTranslation;
+  final bool hasRoman;
+  final int _hash;
+
+  _LineLayoutKey({
+    required this.line,
+    required this.width,
+    required this.config,
+    required this.fontFamily,
+    required this.agent,
+    required this.zhMode,
+    required this.isMainLine,
+    required this.hasTranslation,
+    required this.hasRoman,
+  }) : _hash = Object.hash(
+         line,
+         width,
+         config,
+         fontFamily,
+         agent,
+         zhMode,
+         isMainLine,
+         hasTranslation,
+         hasRoman,
+       );
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is _LineLayoutKey &&
+        identical(other.line, line) &&
+        other.width == width &&
+        other.config == config &&
+        other.fontFamily == fontFamily &&
+        other.agent == agent &&
+        other.zhMode == zhMode &&
+        other.isMainLine == isMainLine &&
+        other.hasTranslation == hasTranslation &&
+        other.hasRoman == hasRoman;
+  }
+
+  @override
+  int get hashCode => _hash;
 }
 
 bool _isZeroWidth(String ch) {
@@ -790,7 +867,9 @@ class LyricsLinePainter extends CustomPainter {
   bool get useMaterialYouColor => params.useMaterialYouColor;
   String? get fontFamily => params.fontFamily;
   String? get agent => params.agent;
-  double get opacity => params.opacity;
+  double get opacity => params.opacityListenable?.value ?? params.opacity;
+  bool get opacityAnimating =>
+      params.opacityAnimatingListenable?.value ?? params.opacityAnimating;
   double? get highlightDeadlineMs => params.highlightDeadlineMs;
   Duration get lineMedianWordDuration => params.lineMedianWordDuration;
   ValueListenable<double>? get liftDecayListenable =>
@@ -817,6 +896,29 @@ class LyricsLinePainter extends CustomPainter {
   static const _maxBlurFilterCacheSize = 24;
   static final _blurPaintCache = <int, Paint>{};
   static const _maxBlurPaintCacheSize = 64;
+  // 逐字字形缓存：段落排版一次，之后每帧只 paint
+  static final _glyphCache = <int, _GlyphEntry>{};
+  static const _maxGlyphCacheSize = 128;
+  static int _glyphLayoutCount = 0;
+  static int _glyphHitCount = 0;
+  // 同一 TextStyle 对象在一帧内被所有字复用，签名只算一次
+  TextStyle? _signatureStyle;
+  int _signatureHash = 0;
+
+  /// 实际执行的逐字 layout 次数（测试用）
+  static int get debugGlyphLayoutCount => _glyphLayoutCount;
+  static int get debugGlyphHitCount => _glyphHitCount;
+  static void resetDebugGlyphCounters() {
+    _glyphLayoutCount = 0;
+    _glyphHitCount = 0;
+  }
+  // 字位排版缓存：与进度无关，切歌/换宽度/换配置时才重建
+  static final _layoutCache = <_LineLayoutKey, _LineCharLayout>{};
+  static const _maxLayoutCacheSize = 16;
+  static int _layoutBuildCount = 0;
+
+  /// 实际重建字位排版的次数（测试用）
+  static int get debugCharLayoutBuildCount => _layoutBuildCount;
 
   LyricsLinePainter({
     required this.params,
@@ -829,6 +931,8 @@ class LyricsLinePainter extends CustomPainter {
            params.liftDecayListenable,
            params.liftGateListenable,
            params.blurSigmaListenable,
+          params.opacityListenable,
+          params.opacityAnimatingListenable,
          ]),
        );
 
@@ -951,7 +1055,7 @@ class LyricsLinePainter extends CustomPainter {
     return style.color ?? style.foreground?.color ?? fallback;
   }
 
-  /// 清空对象池（歌曲切换时调用）
+  /// 清空对象池（歌曲切换、换字体/主题/字号时调用）
   static void clearPool() {
     for (final tp in _textPainterPool) {
       tp.dispose();
@@ -962,6 +1066,12 @@ class LyricsLinePainter extends CustomPainter {
     _measureCache.clear();
     _blurFilterCache.clear();
     _blurPaintCache.clear();
+    for (final entry in _glyphCache.values) {
+      entry.painter.dispose();
+    }
+    _glyphCache.clear();
+    _layoutCache.clear();
+    _layoutBuildCount = 0;
   }
 
   /// 压缩对象池（主动瘦身，保留最少必要对象）
@@ -977,6 +1087,74 @@ class LyricsLinePainter extends CustomPainter {
     while (_blurPaintCache.length > 16) {
       _blurPaintCache.remove(_blurPaintCache.keys.first);
     }
+    while (_glyphCache.length > 32) {
+      _glyphCache.remove(_glyphCache.keys.first)!.painter.dispose();
+    }
+    while (_layoutCache.length > 4) {
+      _layoutCache.remove(_layoutCache.keys.first);
+    }
+  }
+
+  // 只有颜色固定的字形能缓存；渐变扫光和发光用的是会变的 Paint
+  static bool _glyphStyleCacheable(TextStyle style) {
+    final foreground = style.foreground;
+    if (foreground == null) return true;
+    return foreground.shader == null &&
+        foreground.blendMode == BlendMode.srcOver;
+  }
+
+  // 影响字形与颜色的字段都进签名；命中后还要用 TextStyle == 复核，防碰撞
+  int _styleSignature(TextStyle style) {
+    if (identical(style, _signatureStyle)) return _signatureHash;
+    var hash = Object.hash(
+      style.fontFamily,
+      style.fontSize,
+      style.fontWeight,
+      style.letterSpacing,
+      style.wordSpacing,
+      style.height,
+      style.textBaseline,
+      style.color,
+      style.decoration,
+      style.background?.color,
+      style.fontFeatures?.length,
+    );
+    final fallback = style.fontFamilyFallback;
+    if (fallback != null) {
+      for (final family in fallback) {
+        hash = Object.hash(hash, family);
+      }
+    }
+    final variations = style.fontVariations;
+    if (variations != null) {
+      for (final variation in variations) {
+        hash = Object.hash(hash, variation.axis, variation.value);
+      }
+    }
+    final shadows = style.shadows;
+    if (shadows != null) {
+      for (final shadow in shadows) {
+        hash = Object.hash(
+          hash,
+          shadow.color,
+          shadow.offset,
+          shadow.blurRadius,
+        );
+      }
+    }
+    final foreground = style.foreground;
+    if (foreground != null) {
+      // MaskFilter 没有公开的 sigma，用 Paint 身份区分模糊档位
+      hash = Object.hash(
+        hash,
+        identityHashCode(foreground),
+        foreground.color,
+        foreground.blendMode,
+      );
+    }
+    _signatureStyle = style;
+    _signatureHash = hash;
+    return hash;
   }
 
   void _paintStableGlyph({
@@ -986,9 +1164,37 @@ class LyricsLinePainter extends CustomPainter {
     required TextStyle style,
     required Offset offset,
   }) {
-    tp.text = TextSpan(text: char, style: style);
-    tp.layout();
-    tp.paint(canvas, offset);
+    // 淡入淡出时颜色每帧都在变，进缓存只会抖动
+    if (opacityAnimating || !_glyphStyleCacheable(style)) {
+      tp.text = TextSpan(text: char, style: style);
+      tp.layout();
+      _glyphLayoutCount++;
+      tp.paint(canvas, offset);
+      return;
+    }
+    final key = Object.hash(char, _styleSignature(style));
+    final entry = _glyphCache[key];
+    if (entry != null && entry.char == char && entry.style == style) {
+      _glyphCache.remove(key);
+      _glyphCache[key] = entry;
+      _glyphHitCount++;
+      entry.painter.paint(canvas, offset);
+      return;
+    }
+    final painter =
+        entry?.painter ?? TextPainter(textDirection: TextDirection.ltr);
+    painter.text = TextSpan(text: char, style: style);
+    painter.layout();
+    _glyphLayoutCount++;
+    painter.paint(canvas, offset);
+    _glyphCache[key] = _GlyphEntry(char, style, painter);
+    if (_glyphCache.length > _maxGlyphCacheSize) {
+      final oldest = _glyphCache.keys.first;
+      final removed = _glyphCache.remove(oldest);
+      if (removed != null && !identical(removed.painter, painter)) {
+        removed.painter.dispose();
+      }
+    }
   }
 
   static MaskFilter _blurFilter(double sigma) {
@@ -1189,7 +1395,7 @@ class LyricsLinePainter extends CustomPainter {
 
     final maxWidth = _wrapContentWidth(size.width, padding);
 
-    final zhMode = LyricViewController.instance.zhConversionMode;
+    final zhMode = AppSettings.instance.zhConversionMode;
 
     final translationWeight = config.discreteFontWeight(
       (config.fontWeight - 50).clamp(100, 900),
@@ -1199,10 +1405,12 @@ class LyricsLinePainter extends CustomPainter {
     );
 
     // ── Determine active track display order ─────────────────────────────────
+    final hasTranslation = syncLine.translation != null;
+    final hasRoman = syncLine.romanLyric != null;
     final activeTracks = _activeLineTracks(
       config,
-      hasTranslation: syncLine.translation != null,
-      hasRoman: syncLine.romanLyric != null,
+      hasTranslation: hasTranslation,
+      hasRoman: hasRoman,
     );
     final preTracks = _preOriginalTracks(activeTracks);
     final postTracks = _postOriginalTracks(activeTracks);
@@ -1260,257 +1468,37 @@ class LyricsLinePainter extends CustomPainter {
       }
     }
 
-    // ── Shared measurer (avoids creating one TextPainter per character) ──
-    final measureTp = obtainTextPainter();
-    TextStyle measureStyle(double fs, FontWeight fw) {
-      final family = lyricRenderFontFamily(fontFamily);
-      return TextStyle(
-        fontFamily: family,
-        fontFamilyFallback: appFontFamilyFallback(family),
-        fontSize: fs,
-        fontWeight: fw,
-        letterSpacing: 0,
-        height: config.primaryLineHeight(),
-        fontVariations: lyricWeightVariations(family, fw.value),
-      );
-    }
-
-    // ── Collect all character positions ─────────────────────────────────────
-    final charInfos = <_CharInfo>[];
-    final contentRight = padding.left + maxWidth;
-    final layoutCursor = LyricWordLayoutCursor(
-      x: padding.left,
-      y: preTracks.isNotEmpty ? preCursorY : padding.top,
-      firstOnLine: true,
+    // ── 字位排版与播放进度无关，按行缓存；每帧只重算进度 ──────────
+    final charLayout = _obtainCharLayout(
+      syncLine: syncLine,
+      sizeWidth: size.width,
+      padding: padding,
+      maxWidth: maxWidth,
+      lineHeight: lineHeight,
+      fontSize: fontSize,
+      fontWeight: fontWeight,
+      zhMode: zhMode,
+      startY: preTracks.isNotEmpty ? preCursorY : padding.top,
+      hasTranslation: hasTranslation,
+      hasRoman: hasRoman,
     );
-    final currentTimeMs = _highlightTimeMs(
-      syncLine,
-      syncLine.words,
-      _effectiveCurrentTimeMs,
-    );
-    for (int wordIndex = 0; wordIndex < syncLine.words.length; wordIndex++) {
-      final word = syncLine.words[wordIndex];
-      final isObscene = word.obscene;
-      final wordTotalChars = isObscene
-          ? word.content.runes.length
-          : word.content.characters.length;
-      if (wordTotalChars == 0) continue;
-      final wordStartMs = word.start.inMilliseconds.toDouble();
-      final wordEndMs = wordStartMs + word.length.inMilliseconds.toDouble();
-      final wordDurationSec = word.length.inMilliseconds / 1000.0;
-
-      // 单词级别的上抬动画：高亮与上抬同源
-
-      final convertedChars = <String>[];
-      final charWidths = <double>[];
-      double wordWidth = 0.0;
-
-      void measureRawChar(String rawChar) {
-        final char = ZhConverter.convert(rawChar, zhMode);
-        final ck = '$char|$fontSize|${fontWeight.value}|$fontFamily';
-        final cached = _measureCache[ck];
-        if (cached != null) {
-          convertedChars.add(char);
-          charWidths.add(cached);
-          wordWidth += cached;
-        } else {
-          measureTp.text = TextSpan(
-            text: char,
-            style: measureStyle(fontSize, fontWeight),
-          );
-          measureTp.layout();
-          final cw = measureTp.width;
-          convertedChars.add(char);
-          charWidths.add(cw);
-          wordWidth += cw;
-          _measureCache[ck] = cw;
-          if (_measureCache.length > _maxMeasureCacheSize) {
-            _measureCache.remove(_measureCache.keys.first);
-          }
-        }
-      }
-
-      if (isObscene) {
-        for (var i = 0; i < wordTotalChars; i++) {
-          measureRawChar('_');
-        }
-      } else {
-        for (final rawChar in word.content.characters) {
-          measureRawChar(rawChar);
-        }
-      }
-
-      if (!layoutCursor.firstOnLine &&
-          layoutCursor.x + wordWidth > contentRight - 1.0) {
-        layoutCursor.x = padding.left;
-        layoutCursor.y += lineHeight;
-        layoutCursor.firstOnLine = true;
-        layoutCursor.visualLineCount++;
-      }
-
-      // ── 词级波浪窗口进度计算 ───────────────────────────
-      // stepRatio = 0.1：前一个字动画跑到 10% 时，后一个字开始
-      // waveWidth = 1.0 / (stepRatio * (charCount - 1) + 1.0)
-      // windowStart[i] = i * stepRatio * waveWidth
-      // charProgress = (wordProgress - windowStart[i]) / waveWidth
-      final wordProgress = _calcWordProgress(
-        currentTimeMs,
-        wordStartMs,
-        wordEndMs,
-      );
-      final realWordProgress = _calcWordProgress(
-        _effectiveCurrentTimeMs,
-        wordStartMs,
-        wordEndMs,
-      );
-      final wordEffect = effectFor(
-        wordIndex: wordIndex,
-        wordDurationSec: wordDurationSec,
-      );
-
-      double? prevNonPunctProgress;
-      double? prevNonPunctEffect;
-      int animIndex = 0;
-
-      layoutTimedWordChars(
-        chars: convertedChars,
-        widths: charWidths,
-        contentLeft: padding.left,
-        contentRight: contentRight,
-        lineHeight: lineHeight,
-        cursor: layoutCursor,
-        onPlace: (i, x, y) {
-          final char = convertedChars[i];
-          final computedProgress = lyricCharWaveProgress(
-            wordProgress: wordProgress,
-            charIndex: animIndex,
-            charCount: wordTotalChars,
-          );
-
-          final double charProgress;
-          final isPunctuation = _isPunctuation(char);
-          if (isPunctuation && prevNonPunctProgress != null) {
-            charProgress = prevNonPunctProgress!;
-          } else {
-            charProgress = computedProgress;
-            if (!isPunctuation) {
-              prevNonPunctProgress = computedProgress;
-            }
-          }
-
-          // 上抬跟唱标走，不在排版时按词时长算。
-          const yLift = 0.0;
-
-          final double effectProgress;
-          if (isPunctuation && prevNonPunctEffect != null) {
-            effectProgress = prevNonPunctEffect!;
-          } else {
-            final realCharProgress = lyricCharWaveProgress(
-              wordProgress: realWordProgress,
-              charIndex: animIndex,
-              charCount: wordTotalChars,
-            );
-            effectProgress = wordEffect == LyricWordEffect.none
-                ? charProgress
-                : lyricCappedEffectProgress(
-                    warpedProgress: charProgress,
-                    realProgress: realCharProgress,
-                  );
-            if (!isPunctuation) {
-              prevNonPunctEffect = effectProgress;
-            }
-          }
-
-          charInfos.add(
-            _CharInfo(
-              char: char,
-              x: x,
-              y: y,
-              width: charWidths[i],
-              yLift: yLift,
-              charProgress: charProgress,
-              wordProgress: wordProgress,
-              effectProgress: effectProgress,
-              wordIndex: wordIndex,
-              wordCharIndex: animIndex,
-              wordDurationSec: wordDurationSec,
-            ),
-          );
-          animIndex++;
-        },
-      );
-      // 词间间距，匹配 Widget 路径的 SizedBox(width: primarySize * 0.12)
-      layoutCursor.x += fontSize * 0.12;
-    }
-    var cursorY = layoutCursor.y + lineHeight;
-
+    final charInfos = charLayout.chars;
     if (charInfos.isEmpty) {
-      recycleTextPainter(measureTp);
       canvas.restore();
       return;
     }
+    _applyCharProgress(
+      charInfos,
+      charLayout,
+      syncLine,
+      (wordIndex, wordDurationSec) =>
+          effectFor(wordIndex: wordIndex, wordDurationSec: wordDurationSec),
+    );
+    var cursorY = charLayout.endY;
 
-    final wordPlacedCounts = <int, int>{};
-    for (final info in charInfos) {
-      wordPlacedCounts[info.wordIndex] =
-          (wordPlacedCounts[info.wordIndex] ?? 0) + 1;
-    }
+    final wordPlacedCounts = charLayout.wordPlacedCounts;
 
-    // ── Group characters by visual line (Y position) ─────────────────────────
-    final lineGroups = <_LineGroup>[];
-    _LineGroup? currentGroup;
-    for (final info in charInfos) {
-      if (currentGroup == null || info.y != currentGroup.y) {
-        currentGroup = _LineGroup(y: info.y, chars: []);
-        lineGroups.add(currentGroup);
-      }
-      currentGroup.chars.add(info);
-    }
-
-    // ── Apply text alignment (per-line, matching Widget Wrap behavior) ───────
-    // 所有值都在逻辑（缩放）空间中，直接计算即可
-    if (_effectiveTextAlign != LyricTextAlign.left) {
-      for (final group in lineGroups) {
-        if (group.chars.isEmpty) continue;
-        var left = double.infinity;
-        var right = double.negativeInfinity;
-        for (final char in group.chars) {
-          if (char.x < left) left = char.x;
-          final charRight = char.x + char.width;
-          if (charRight > right) right = charRight;
-        }
-        final lineWidth = right - left;
-
-        final lineStartX = switch (_effectiveTextAlign) {
-          LyricTextAlign.center => padding.left + (maxWidth - lineWidth) / 2,
-          LyricTextAlign.right => padding.left + maxWidth - lineWidth,
-          LyricTextAlign.left => padding.left,
-        };
-        final offset = lineStartX - left;
-
-        for (int i = 0; i < group.chars.length; i++) {
-          final original = group.chars[i];
-          group.chars[i] = _CharInfo(
-            char: original.char,
-            x: original.x + offset,
-            y: original.y,
-            width: original.width,
-            yLift: original.yLift,
-            charProgress: original.charProgress,
-            wordProgress: original.wordProgress,
-            effectProgress: original.effectProgress,
-            wordIndex: original.wordIndex,
-            wordCharIndex: original.wordCharIndex,
-            wordDurationSec: original.wordDurationSec,
-          );
-        }
-      }
-      // 重建 charInfos，确保 Pass 1 也使用对齐后的坐标
-      charInfos.clear();
-      for (final group in lineGroups) {
-        charInfos.addAll(group.chars);
-      }
-    }
+    final lineGroups = charLayout.groups;
 
     if (!isMainVocalActive) {
       _applyExitCharLifts(charInfos);
@@ -1547,6 +1535,7 @@ class LyricsLinePainter extends CustomPainter {
       double glowAlpha = 0.0,
       double glowHold = 0.0,
       bool paintText = true,
+      bool Function(_CharInfo info)? charFilter,
     }) {
       final wc = word.chars;
       if (wc.isEmpty) return;
@@ -1569,6 +1558,7 @@ class LyricsLinePainter extends CustomPainter {
         if (paintText) {
           // 按逐字布局坐标画，避免整词 TextSpan 的 kerning 和测量 x 不一致。
           for (final info in wc) {
+            if (charFilter != null && !charFilter(info)) continue;
             _paintStableGlyph(
               canvas: canvas,
               tp: tp,
@@ -1616,6 +1606,7 @@ class LyricsLinePainter extends CustomPainter {
               shadows: null,
             );
       for (final info in wc) {
+        if (charFilter != null && !charFilter(info)) continue;
         final paintOffset = Offset(info.x, info.y + info.yLift);
         final scale = lyricExitScale(
           lyricCharacterScale(
@@ -1651,12 +1642,14 @@ class LyricsLinePainter extends CustomPainter {
             );
             tp.text = TextSpan(text: info.char, style: farGlowStyle);
             tp.layout();
+            _glyphLayoutCount++;
             tp.paint(canvas, paintOffset);
             nearGlowPaint.color = resolvedGlowColor.withValues(
               alpha: adjustedAlpha,
             );
             tp.text = TextSpan(text: info.char, style: nearGlowStyle);
             tp.layout();
+            _glyphLayoutCount++;
             tp.paint(canvas, paintOffset);
           }
         }
@@ -1680,39 +1673,18 @@ class LyricsLinePainter extends CustomPainter {
       final group = lineGroups[groupIndex];
       if (group.chars.isEmpty) continue;
 
-      final words = <_WordPaintInfo>[];
-      List<_CharInfo>? currentChars;
-      StringBuffer? currentText;
-      var currentHasLift = false;
-      int? currentWordIndex;
-      void finishWord() {
-        final chars = currentChars;
-        final text = currentText;
-        if (chars == null || text == null || chars.isEmpty) return;
-        final first = chars.first;
-        final word = _WordPaintInfo(
-          chars: chars,
-          text: text.toString(),
-          hasLift: currentHasLift,
-          wordProgress: first.wordProgress,
-          wordDurationSec: first.wordDurationSec,
-        );
-        words.add(word);
-      }
-
-      for (final info in group.chars) {
-        if (currentChars == null || info.wordIndex != currentWordIndex) {
-          finishWord();
-          currentChars = <_CharInfo>[];
-          currentText = StringBuffer();
-          currentHasLift = false;
-          currentWordIndex = info.wordIndex;
+      final words = charLayout.words[groupIndex];
+      // hasLift 依赖本帧退场上抬，逐词刷新
+      for (final wc in words) {
+        var hasLift = false;
+        for (final info in wc.chars) {
+          if (info.yLift != 0.0) {
+            hasLift = true;
+            break;
+          }
         }
-        currentChars.add(info);
-        currentText!.write(info.char);
-        currentHasLift = currentHasLift || info.yLift != 0.0;
+        wc.hasLift = hasLift;
       }
-      finishWord();
 
       if (!isHighlightActive) {
         final fadeEffects = config.enableGlow && exitMix > 0.01;
@@ -1925,7 +1897,28 @@ class LyricsLinePainter extends CustomPainter {
       } else if (clippedHighlightR > left) {
         canvas.save();
         canvas.clipRect(playedClip);
-        paintPlayedLayer(gradientPlayedStyle);
+        // 扫光不透明段用纯色缓存字形，渐变带里只有几个字需要逐帧排版
+        final solidEnd = left + bw * sweepP;
+        final fadeEnd = left + bw * p1;
+        bool isSolid(_CharInfo info) => info.x + info.width <= solidEnd + 0.01;
+        bool isFade(_CharInfo info) =>
+            info.x < fadeEnd - 0.01 && !isSolid(info);
+        for (final wc in words) {
+          paintWord(
+            wc,
+            playedStyle,
+            wc.hasLift,
+            applyScale: config.enableGlow,
+            charFilter: isSolid,
+          );
+          paintWord(
+            wc,
+            gradientPlayedStyle,
+            wc.hasLift,
+            applyScale: config.enableGlow,
+            charFilter: isFade,
+          );
+        }
         canvas.restore();
       }
     }
@@ -2226,7 +2219,6 @@ class LyricsLinePainter extends CustomPainter {
     }
 
     // 回收 TextPainter
-    recycleTextPainter(measureTp);
     recycleTextPainter(tp);
 
     canvas.restore();
@@ -2237,7 +2229,7 @@ class LyricsLinePainter extends CustomPainter {
 
     canvas.save();
 
-    final zhMode = LyricViewController.instance.zhConversionMode;
+    final zhMode = AppSettings.instance.zhConversionMode;
     final fontSize = config.primaryFontSize(isMainLine: isMainLine);
     final letterSpace = config.letterSpacing(fontSize: fontSize);
     final fontWeight = config.discreteFontWeight(config.fontWeight);
@@ -2462,7 +2454,7 @@ class LyricsLinePainter extends CustomPainter {
 
     canvas.save();
 
-    final zhMode = LyricViewController.instance.zhConversionMode;
+    final zhMode = AppSettings.instance.zhConversionMode;
     final fontSize = config.primaryFontSize(isMainLine: isMainLine);
     final letterSpace = config.letterSpacing(fontSize: fontSize);
     final fontWeight = config.discreteFontWeight(config.fontWeight);
@@ -2625,6 +2617,357 @@ class LyricsLinePainter extends CustomPainter {
 
     recycleTextPainter(mainTp);
     canvas.restore();
+  }
+
+  // 取字位排版：命中缓存时零排版，未命中才重建
+  _LineCharLayout _obtainCharLayout({
+    required SyncLyricLine syncLine,
+    required double sizeWidth,
+    required EdgeInsets padding,
+    required double maxWidth,
+    required double lineHeight,
+    required double fontSize,
+    required FontWeight fontWeight,
+    required ZhConversionMode zhMode,
+    required double startY,
+    required bool hasTranslation,
+    required bool hasRoman,
+  }) {
+    final key = _LineLayoutKey(
+      line: line,
+      width: sizeWidth,
+      config: config,
+      fontFamily: fontFamily,
+      agent: agent,
+      zhMode: zhMode,
+      isMainLine: isMainLine,
+      hasTranslation: hasTranslation,
+      hasRoman: hasRoman,
+    );
+    final cached = _layoutCache[key];
+    if (cached != null) {
+      _layoutCache.remove(key);
+      _layoutCache[key] = cached;
+      return cached;
+    }
+    _layoutBuildCount++;
+    final built = _buildCharLayout(
+      syncLine: syncLine,
+      padding: padding,
+      maxWidth: maxWidth,
+      lineHeight: lineHeight,
+      fontSize: fontSize,
+      fontWeight: fontWeight,
+      zhMode: zhMode,
+      startY: startY,
+    );
+    if (_layoutCache.length >= _maxLayoutCacheSize) {
+      _layoutCache.remove(_layoutCache.keys.first);
+    }
+    _layoutCache[key] = built;
+    return built;
+  }
+
+  _LineCharLayout _buildCharLayout({
+    required SyncLyricLine syncLine,
+    required EdgeInsets padding,
+    required double maxWidth,
+    required double lineHeight,
+    required double fontSize,
+    required FontWeight fontWeight,
+    required ZhConversionMode zhMode,
+    required double startY,
+  }) {
+    // ── Shared measurer (avoids creating one TextPainter per character) ──
+    final measureTp = obtainTextPainter();
+    TextStyle measureStyle(double fs, FontWeight fw) {
+      final family = lyricRenderFontFamily(fontFamily);
+      return TextStyle(
+        fontFamily: family,
+        fontFamilyFallback: appFontFamilyFallback(family),
+        fontSize: fs,
+        fontWeight: fw,
+        letterSpacing: 0,
+        height: config.primaryLineHeight(),
+        fontVariations: lyricWeightVariations(family, fw.value),
+      );
+    }
+
+    final charInfos = <_CharInfo>[];
+    final wordTotalChars = List<int>.filled(syncLine.words.length, 0);
+    final contentRight = padding.left + maxWidth;
+    final layoutCursor = LyricWordLayoutCursor(
+      x: padding.left,
+      y: startY,
+      firstOnLine: true,
+    );
+    for (int wordIndex = 0; wordIndex < syncLine.words.length; wordIndex++) {
+      final word = syncLine.words[wordIndex];
+      final isObscene = word.obscene;
+      final totalChars = isObscene
+          ? word.content.runes.length
+          : word.content.characters.length;
+      wordTotalChars[wordIndex] = totalChars;
+      if (totalChars == 0) continue;
+      final wordDurationSec = word.length.inMilliseconds / 1000.0;
+
+      final convertedChars = <String>[];
+      final charWidths = <double>[];
+      double wordWidth = 0.0;
+
+      void measureRawChar(String rawChar) {
+        final char = ZhConverter.convert(rawChar, zhMode);
+        final ck = '$char|$fontSize|${fontWeight.value}|$fontFamily';
+        final cached = _measureCache[ck];
+        if (cached != null) {
+          convertedChars.add(char);
+          charWidths.add(cached);
+          wordWidth += cached;
+        } else {
+          measureTp.text = TextSpan(
+            text: char,
+            style: measureStyle(fontSize, fontWeight),
+          );
+          measureTp.layout();
+          final cw = measureTp.width;
+          convertedChars.add(char);
+          charWidths.add(cw);
+          wordWidth += cw;
+          _measureCache[ck] = cw;
+          if (_measureCache.length > _maxMeasureCacheSize) {
+            _measureCache.remove(_measureCache.keys.first);
+          }
+        }
+      }
+
+      if (isObscene) {
+        for (var i = 0; i < totalChars; i++) {
+          measureRawChar('_');
+        }
+      } else {
+        for (final rawChar in word.content.characters) {
+          measureRawChar(rawChar);
+        }
+      }
+
+      if (!layoutCursor.firstOnLine &&
+          layoutCursor.x + wordWidth > contentRight - 1.0) {
+        layoutCursor.x = padding.left;
+        layoutCursor.y += lineHeight;
+        layoutCursor.firstOnLine = true;
+        layoutCursor.visualLineCount++;
+      }
+
+      int animIndex = 0;
+      layoutTimedWordChars(
+        chars: convertedChars,
+        widths: charWidths,
+        contentLeft: padding.left,
+        contentRight: contentRight,
+        lineHeight: lineHeight,
+        cursor: layoutCursor,
+        onPlace: (i, x, y) {
+          charInfos.add(
+            _CharInfo(
+              char: convertedChars[i],
+              x: x,
+              y: y,
+              width: charWidths[i],
+              yLift: 0.0,
+              charProgress: 0.0,
+              wordProgress: 0.0,
+              effectProgress: 0.0,
+              wordIndex: wordIndex,
+              wordCharIndex: animIndex,
+              wordDurationSec: wordDurationSec,
+            ),
+          );
+          animIndex++;
+        },
+      );
+      // 词间间距，匹配 Widget 路径的 SizedBox(width: primarySize * 0.12)
+      layoutCursor.x += fontSize * 0.12;
+    }
+    recycleTextPainter(measureTp);
+    final endY = layoutCursor.y + lineHeight;
+
+    // 视觉行分组与对齐只跟排版有关，和进度一起缓存
+    final groups = <_LineGroup>[];
+    _LineGroup? currentGroup;
+    for (final info in charInfos) {
+      if (currentGroup == null || info.y != currentGroup.y) {
+        currentGroup = _LineGroup(y: info.y, chars: []);
+        groups.add(currentGroup);
+      }
+      currentGroup.chars.add(info);
+    }
+
+    // ── Apply text alignment (per-line, matching Widget Wrap behavior) ───────
+    if (_effectiveTextAlign != LyricTextAlign.left) {
+      for (final group in groups) {
+        if (group.chars.isEmpty) continue;
+        var left = double.infinity;
+        var right = double.negativeInfinity;
+        for (final char in group.chars) {
+          if (char.x < left) left = char.x;
+          final charRight = char.x + char.width;
+          if (charRight > right) right = charRight;
+        }
+        final groupWidth = right - left;
+        final lineStartX = switch (_effectiveTextAlign) {
+          LyricTextAlign.center => padding.left + (maxWidth - groupWidth) / 2,
+          LyricTextAlign.right => padding.left + maxWidth - groupWidth,
+          LyricTextAlign.left => padding.left,
+        };
+        final offset = lineStartX - left;
+        for (int i = 0; i < group.chars.length; i++) {
+          final original = group.chars[i];
+          group.chars[i] = _CharInfo(
+            char: original.char,
+            x: original.x + offset,
+            y: original.y,
+            width: original.width,
+            yLift: original.yLift,
+            charProgress: original.charProgress,
+            wordProgress: original.wordProgress,
+            effectProgress: original.effectProgress,
+            wordIndex: original.wordIndex,
+            wordCharIndex: original.wordCharIndex,
+            wordDurationSec: original.wordDurationSec,
+          );
+        }
+      }
+      charInfos.clear();
+      for (final group in groups) {
+        charInfos.addAll(group.chars);
+      }
+    }
+
+    final words = <List<_WordPaintInfo>>[];
+    for (final group in groups) {
+      final groupWords = <_WordPaintInfo>[];
+      List<_CharInfo>? currentChars;
+      int? currentWordIndex;
+      void finishWord() {
+        final chars = currentChars;
+        if (chars == null || chars.isEmpty) return;
+        groupWords.add(
+          _WordPaintInfo(
+            chars: chars,
+            hasLift: false,
+            wordDurationSec: chars.first.wordDurationSec,
+          ),
+        );
+      }
+
+      for (final info in group.chars) {
+        if (currentChars == null || info.wordIndex != currentWordIndex) {
+          finishWord();
+          currentChars = <_CharInfo>[];
+          currentWordIndex = info.wordIndex;
+        }
+        currentChars.add(info);
+      }
+      finishWord();
+      words.add(groupWords);
+    }
+    final wordPlacedCounts = <int, int>{};
+    for (final info in charInfos) {
+      wordPlacedCounts[info.wordIndex] =
+          (wordPlacedCounts[info.wordIndex] ?? 0) + 1;
+    }
+    return _LineCharLayout(
+      charInfos,
+      groups,
+      words,
+      wordPlacedCounts,
+      endY,
+      wordTotalChars,
+    );
+  }
+
+  // 每帧只重算与时间相关的字段，字位坐标直接复用
+  void _applyCharProgress(
+    List<_CharInfo> charInfos,
+    _LineCharLayout layout,
+    SyncLyricLine syncLine,
+    LyricWordEffect Function(int wordIndex, double wordDurationSec) effectFor,
+  ) {
+    final words = syncLine.words;
+    final currentTimeMs = _highlightTimeMs(
+      syncLine,
+      words,
+      _effectiveCurrentTimeMs,
+    );
+    final realTimeMs = _effectiveCurrentTimeMs;
+    var i = 0;
+    while (i < charInfos.length) {
+      final wordIndex = charInfos[i].wordIndex;
+      var end = i + 1;
+      while (end < charInfos.length && charInfos[end].wordIndex == wordIndex) {
+        end++;
+      }
+      final word = words[wordIndex];
+      final wordStartMs = word.start.inMilliseconds.toDouble();
+      final wordEndMs = wordStartMs + word.length.inMilliseconds.toDouble();
+      final wordDurationSec = word.length.inMilliseconds / 1000.0;
+      final wordProgress = _calcWordProgress(
+        currentTimeMs,
+        wordStartMs,
+        wordEndMs,
+      );
+      final realWordProgress = _calcWordProgress(
+        realTimeMs,
+        wordStartMs,
+        wordEndMs,
+      );
+      final wordEffect = effectFor(wordIndex, wordDurationSec);
+      final totalChars = layout.wordTotalChars[wordIndex];
+      double? prevNonPunctProgress;
+      double? prevNonPunctEffect;
+      for (var k = i; k < end; k++) {
+        final info = charInfos[k];
+        final computedProgress = lyricCharWaveProgress(
+          wordProgress: wordProgress,
+          charIndex: info.wordCharIndex,
+          charCount: totalChars,
+        );
+        final double charProgress;
+        final isPunctuation = _isPunctuation(info.char);
+        if (isPunctuation && prevNonPunctProgress != null) {
+          charProgress = prevNonPunctProgress;
+        } else {
+          charProgress = computedProgress;
+          if (!isPunctuation) {
+            prevNonPunctProgress = computedProgress;
+          }
+        }
+        final double effectProgress;
+        if (isPunctuation && prevNonPunctEffect != null) {
+          effectProgress = prevNonPunctEffect;
+        } else {
+          final realCharProgress = lyricCharWaveProgress(
+            wordProgress: realWordProgress,
+            charIndex: info.wordCharIndex,
+            charCount: totalChars,
+          );
+          effectProgress = wordEffect == LyricWordEffect.none
+              ? charProgress
+              : lyricCappedEffectProgress(
+                  warpedProgress: charProgress,
+                  realProgress: realCharProgress,
+                );
+          if (!isPunctuation) {
+            prevNonPunctEffect = effectProgress;
+          }
+        }
+        info.charProgress = charProgress;
+        info.wordProgress = wordProgress;
+        info.effectProgress = effectProgress;
+        info.yLift = 0.0;
+      }
+      i = end;
+    }
   }
 
   double _calcWordProgress(
@@ -2847,7 +3190,7 @@ class LyricsLinePainter extends CustomPainter {
         height: config.primaryLineHeight(),
         fontVariations: lyricWeightVariations(family, fontWeight.value),
       );
-      final zhMode = LyricViewController.instance.zhConversionMode;
+      final zhMode = AppSettings.instance.zhConversionMode;
       final convertedChars = <String>[];
       final charWidths = <double>[];
       for (final word in syncLine.words) {

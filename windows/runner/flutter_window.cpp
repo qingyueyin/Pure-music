@@ -3,12 +3,14 @@
 #include <optional>
 
 #include <atomic>
+#include <flutter/standard_method_codec.h>
 
 // 文件作用域标志：窗口是否正在销毁。使用文件作用域以避免修改缺失的头文件。
 static std::atomic<bool> g_destroying{false};
 
 #include "flutter/generated_plugin_registrant.h"
 #include "taskbar_thumbnail.h"
+#include "utils.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -19,6 +21,10 @@ bool FlutterWindow::OnCreate() {
   if (!Win32Window::OnCreate()) {
     return false;
   }
+
+  // 尽早注册自定义消息，避免第二个实例的消息落到 DefWindowProc 被丢弃。
+  show_request_message_ =
+      ::RegisterWindowMessageW(L"PureMusic.ShowExistingWindow");
 
   // 确保在创建时清除正在销毁标志。
   g_destroying.store(false);
@@ -38,6 +44,13 @@ bool FlutterWindow::OnCreate() {
   taskbar_thumbnail_ = std::make_unique<TaskbarThumbnail>(
       flutter_controller_->engine()->messenger(), GetHandle());
 
+  // 已有实例被第二次启动唤醒时，原生恢复窗口，Dart 侧负责托盘显示。
+  single_instance_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "pure_music/single_instance",
+          &flutter::StandardMethodCodec::GetInstance());
+
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();
   });
@@ -53,6 +66,7 @@ bool FlutterWindow::OnCreate() {
 void FlutterWindow::OnDestroy() {
   // 标记正在销毁，防止后续消息进入 Flutter 回调。
   g_destroying.store(true);
+  single_instance_channel_.reset();
 
   taskbar_thumbnail_.reset();
   if (flutter_controller_) {
@@ -61,6 +75,26 @@ void FlutterWindow::OnDestroy() {
   }
 
   Win32Window::OnDestroy();
+}
+
+void FlutterWindow::HandleShowRequest() {
+  const HWND window = GetHandle();
+  if (window == nullptr) {
+    return;
+  }
+  if (::IsIconic(window)) {
+    ::ShowWindow(window, SW_RESTORE);
+  }
+  if (::IsWindowVisible(window)) {
+    ::SetForegroundWindow(window);
+  } else {
+    // 启动中或藏在托盘时原生不显示，交给 Dart 侧处理。
+    AppendRunnerLog(L"ShowExistingWindow|window not visible");
+  }
+  if (single_instance_channel_) {
+    single_instance_channel_->InvokeMethod(
+        "show", std::make_unique<flutter::EncodableValue>());
+  }
 }
 
 LRESULT
@@ -73,6 +107,10 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     if (result) {
       return *result;
     }
+  }
+  if (show_request_message_ != 0 && message == show_request_message_) {
+    HandleShowRequest();
+    return 0;
   }
 
   // Give Flutter, including plugins, an opportunity to handle window messages.

@@ -198,7 +198,53 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
 
   static Future<void> precache() async {
     if (!ui.ImageFilter.isShaderFilterSupported) return;
-    await _gaussianProgram();
+    final program = await _gaussianProgram();
+    if (program == null) return;
+    await _warmUpGaussianPipeline(program);
+  }
+
+  /// 高斯滤镜也是第一次应用才编译管线，启动时离屏用一次，避免进播放页时掉帧。
+  static Future<void> _warmUpGaussianPipeline(
+    ui.FragmentProgram program,
+  ) async {
+    final horizontal = program.fragmentShader();
+    final vertical = program.fragmentShader();
+    const inv2s2 = 1.0 / (2.0 * _kBlurSigma * _kBlurSigma);
+    horizontal
+      ..setFloat(2, 1.0)
+      ..setFloat(3, 0.0)
+      ..setFloat(4, inv2s2)
+      ..setFloat(5, 1.0);
+    vertical
+      ..setFloat(2, 0.0)
+      ..setFloat(3, 1.0)
+      ..setFloat(4, inv2s2)
+      ..setFloat(5, _kBlurChromaBoost);
+    try {
+      final filter = ui.ImageFilter.compose(
+        inner: ui.ImageFilter.shader(horizontal),
+        outer: ui.ImageFilter.shader(vertical),
+      );
+      final recorder = ui.PictureRecorder();
+      final canvas = ui.Canvas(recorder);
+      canvas.drawRect(
+        const ui.Rect.fromLTWH(0.0, 0.0, 16.0, 16.0),
+        ui.Paint()..imageFilter = filter,
+      );
+      final picture = recorder.endRecording();
+      // Picture.toImage 走 CPU 光栅，编译不到 GPU 管线；Scene.toImage 才会。
+      final builder = ui.SceneBuilder()..addPicture(ui.Offset.zero, picture);
+      final scene = builder.build();
+      final image = await scene.toImage(16, 16);
+      image.dispose();
+      scene.dispose();
+      picture.dispose();
+    } catch (_) {
+      // 预热失败不影响正常绘制，首次进入时再编译
+    } finally {
+      horizontal.dispose();
+      vertical.dispose();
+    }
   }
 
   static Future<ui.FragmentProgram?> _gaussianProgram() {

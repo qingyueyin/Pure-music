@@ -150,8 +150,7 @@ int maxExtentGridCrossAxisCount({
 /// 行在视口中部的正常位置保持原尺寸与不透明度。
 ///
 /// 行高固定（[itemExtent]），变换只作用于绘制，不改变布局。
-/// 每个行用独立的 [AnimatedBuilder] 监听滚动，行内容通过 [child] 缓存，
-/// 滚动时只重建轻量的变换层，行内容本身不参与重建。
+/// 每行按自身进度独立监听滚动：视口内的行不重建，过渡带内的行只重建轻量变换层。
 /// 列表滚动由 [SmoothScrollPhysics] 平滑驱动，变换与位置严格同步。
 class StackedListView extends StatelessWidget {
   const StackedListView({
@@ -194,26 +193,111 @@ class StackedListView extends StatelessWidget {
   Widget _itemAt(BuildContext context, int index, bool reduceMotion) {
     final child = itemBuilder(context, index);
     if (reduceMotion) return child;
-    return AnimatedBuilder(
-      animation: controller,
+    return _StackedRowSlot(
+      controller: controller,
+      itemTopBase: index * itemExtent,
+      itemExtent: itemExtent,
       child: child,
-      builder: (context, child) => _stackedItem(child!, index),
     );
   }
+}
 
-  Widget _stackedItem(Widget child, int index) {
-    final attached = controller.positions;
-    if (attached.length != 1) {
-      if (attached.isEmpty) return child;
+/// 行的堆叠进度：0 表示无视差；负值顶部过渡，正值底部过渡；绝对值 1 表示已离开过渡带。
+double _stackedRowProgress({
+  required double itemTop,
+  required double itemExtent,
+  required double viewportHeight,
+}) {
+  if (viewportHeight < itemExtent * 2) return 0.0;
+  // 过渡区取 2 倍行高，让缩放淡出更从容。
+  final transitionExtent = itemExtent * 2.0;
+  // 顶部滚出进度：行顶滚出越多值越大。
+  final topProgress = (-itemTop / transitionExtent).clamp(0.0, 1.0);
+  // 底部进入进度：行底未进入视口的部分占比。
+  final bottomProgress =
+      ((itemTop - (viewportHeight - itemExtent)) / transitionExtent).clamp(
+        0.0,
+        1.0,
+      );
+  final progress = math.max(topProgress, bottomProgress).toDouble();
+  if (progress <= 0.0) return 0.0;
+  return topProgress > bottomProgress ? -progress : progress;
+}
+
+/// 只在自身堆叠进度变化时重建的行。
+///
+/// 视口内的行进度恒为 0，滚动时不再逐帧重建；行离开过渡带时只重建一次。
+class _StackedRowSlot extends StatefulWidget {
+  const _StackedRowSlot({
+    required this.controller,
+    required this.itemTopBase,
+    required this.itemExtent,
+    required this.child,
+  });
+
+  final ScrollController controller;
+
+  /// 未减滚动偏移的行顶。
+  final double itemTopBase;
+  final double itemExtent;
+  final Widget child;
+
+  @override
+  State<_StackedRowSlot> createState() => _StackedRowSlotState();
+}
+
+class _StackedRowSlotState extends State<_StackedRowSlot> {
+  final ValueNotifier<double> _progress = ValueNotifier<double>(0.0);
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_syncProgress);
+    _syncProgress();
+  }
+
+  @override
+  void didUpdateWidget(covariant _StackedRowSlot oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_syncProgress);
+      widget.controller.addListener(_syncProgress);
     }
-    final position = attached.first;
-    final viewportHeight = position.viewportDimension;
-    if (viewportHeight < itemExtent * 2) return child;
-    return StackedItemTransform(
-      itemTop: index * itemExtent - position.pixels,
-      itemExtent: itemExtent,
-      viewportHeight: viewportHeight,
-      child: child,
+    // 视口尺寸变化不一定会通知滚动控制器，重建时补算一次。
+    _syncProgress();
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_syncProgress);
+    _progress.dispose();
+    super.dispose();
+  }
+
+  void _syncProgress() {
+    final positions = widget.controller.positions;
+    final next = positions.isEmpty
+        ? 0.0
+        : _stackedRowProgress(
+            itemTop: widget.itemTopBase - positions.first.pixels,
+            itemExtent: widget.itemExtent,
+            viewportHeight: positions.first.viewportDimension,
+          );
+    if (_progress.value != next) _progress.value = next;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<double>(
+      valueListenable: _progress,
+      child: widget.child,
+      builder: (context, progress, child) => progress == 0.0
+          ? child!
+          : _StackedVisual(
+              signedProgress: progress,
+              itemExtent: widget.itemExtent,
+              child: child!,
+            ),
     );
   }
 }
@@ -382,26 +466,10 @@ class StackedGridView extends StatelessWidget {
     final child = itemBuilder(context, index);
     if (reduceMotion) return child;
     final row = index ~/ metrics.crossAxisCount;
-    return AnimatedBuilder(
-      animation: controller,
-      child: child,
-      builder: (context, child) =>
-          _stackedItem(child!, row, metrics.mainAxisStep),
-    );
-  }
-
-  Widget _stackedItem(Widget child, int row, double mainAxisStep) {
-    final attached = controller.positions;
-    if (attached.length != 1) {
-      if (attached.isEmpty) return child;
-    }
-    final position = attached.first;
-    final viewportHeight = position.viewportDimension;
-    if (viewportHeight < mainAxisStep * 2) return child;
-    return StackedItemTransform(
-      itemTop: row * mainAxisStep - position.pixels,
-      itemExtent: mainAxisStep,
-      viewportHeight: viewportHeight,
+    return _StackedRowSlot(
+      controller: controller,
+      itemTopBase: row * metrics.mainAxisStep,
+      itemExtent: metrics.mainAxisStep,
       child: child,
     );
   }
@@ -435,26 +503,11 @@ class StackedSliverItem extends StatelessWidget {
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     if (!enabled || reduceMotion) return child;
     return StackedEffectScope(
-      child: AnimatedBuilder(
-        animation: controller,
+      child: _StackedRowSlot(
+        controller: controller,
+        itemTopBase: leadingScrollExtent + rowIndex * itemExtent,
+        itemExtent: itemExtent,
         child: child,
-        builder: (context, child) {
-          final attached = controller.positions;
-          if (attached.length != 1) {
-            if (attached.isEmpty) return child!;
-          }
-          final position = attached.first;
-          final offset = position.pixels;
-          final viewportHeight = position.viewportDimension;
-          if (viewportHeight < itemExtent * 2) return child!;
-          final itemTop = leadingScrollExtent + rowIndex * itemExtent - offset;
-          return StackedItemTransform(
-            itemTop: itemTop,
-            itemExtent: itemExtent,
-            viewportHeight: viewportHeight,
-            child: child!,
-          );
-        },
       ),
     );
   }
@@ -477,32 +530,51 @@ class StackedItemTransform extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 过渡区取 2 倍行高，让缩放淡出更从容。
-    final transitionExtent = itemExtent * 2.0;
+    final signedProgress = _stackedRowProgress(
+      itemTop: itemTop,
+      itemExtent: itemExtent,
+      viewportHeight: viewportHeight,
+    );
+    if (signedProgress == 0.0) return child;
+    return _StackedVisual(
+      signedProgress: signedProgress,
+      itemExtent: itemExtent,
+      child: child,
+    );
+  }
+}
 
-    // 顶部滚出进度：行顶滚出越多值越大。
-    final topProgress = (-itemTop / transitionExtent).clamp(0.0, 1.0);
-    // 底部进入进度：行底未进入视口的部分占比。
-    final bottomProgress =
-        ((itemTop - (viewportHeight - itemExtent)) / transitionExtent).clamp(
-          0.0,
-          1.0,
-        );
+/// 过渡带内的缩放淡出：只在进度非零时存在，进度归零即被换回原始行。
+class _StackedVisual extends StatelessWidget {
+  const _StackedVisual({
+    required this.signedProgress,
+    required this.itemExtent,
+    required this.child,
+  });
 
-    final progress = math.max(topProgress, bottomProgress);
-    if (progress <= 0.0) return child;
+  final double signedProgress;
+  final double itemExtent;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = signedProgress.abs();
     if (progress >= 1.0) {
       // 隐藏滚出视口的内容，但保留行高，避免列表滚动范围被压缩。
       return SizedBox(height: itemExtent, child: const SizedBox.shrink());
     }
-
     final scale = 1.0 - (1.0 - StackedListView.maxShrink) * progress;
-    final alignment = topProgress > bottomProgress
+    final alignment = signedProgress < 0
         ? Alignment.topCenter
         : Alignment.bottomCenter;
     return Opacity(
       opacity: 1.0 - progress,
-      child: Transform.scale(scale: scale, alignment: alignment, child: child),
+      // 仅过渡期成层：saveLayer 只做合成，不再逐帧重录行内容，离开过渡带即移除。
+      child: Transform.scale(
+        scale: scale,
+        alignment: alignment,
+        child: RepaintBoundary(child: child),
+      ),
     );
   }
 }

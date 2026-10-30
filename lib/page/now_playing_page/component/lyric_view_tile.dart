@@ -604,6 +604,8 @@ class _TransitionControllerManager {
   Ticker? _progressTicker;
   final Stopwatch _positionClock = Stopwatch();
   final Set<LyricTransitionTileController> _controllers = {};
+  // 每帧遍历用的快照缓冲，复用避免逐帧分配。
+  final List<LyricTransitionTileController> _tickSnapshot = [];
   double _syncedPosition = 0.0;
   int _lastNativeSyncMs = 0;
   static const int _nativeSyncMs = 1000;
@@ -668,6 +670,8 @@ class _TransitionControllerManager {
 
   void _syncPosition() {
     if (_controllers.isEmpty) return;
+    // 窗口看不见时播放位置同步不改画面，跳掉以免每秒排一次帧。
+    if (!WindowRenderGate.instance.framesEnabled.value) return;
     _syncNativePosition();
     _updateControllers(_syncedPosition);
     _syncProgressTicker();
@@ -692,6 +696,11 @@ class _TransitionControllerManager {
   }
 
   void _onWindowFramesChanged() {
+    // 回到可见时先按真实位置对齐一次，隐藏期间跳过的同步补回来。
+    if (WindowRenderGate.instance.framesEnabled.value &&
+        _controllers.isNotEmpty) {
+      _syncPosition();
+    }
     _syncProgressTicker();
   }
 
@@ -772,7 +781,10 @@ class _TransitionControllerManager {
     bool countdownDue = true,
     double breathingStepScale = 0.0,
   }) {
-    final controllers = List<LyricTransitionTileController>.from(_controllers);
+    // 复用快照：遍历期间的增删不影响本轮，且不再每帧分配列表。
+    final controllers = _tickSnapshot
+      ..clear()
+      ..addAll(_controllers);
     for (final c in controllers) {
       if (c._disposed) {
         _controllers.remove(c);

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show ValueListenable, listEquals;
 import 'package:flutter/material.dart';
@@ -273,8 +274,46 @@ class MeshGradientBackground extends StatelessWidget {
 
   static const shaderAssetPath = 'assets/shaders/soft_mesh_gradient.frag';
 
-  static Future<void> precache() =>
-      ShaderBuilder.precacheShader(shaderAssetPath);
+  static Future<void> precache() async {
+    await ShaderBuilder.precacheShader(shaderAssetPath);
+    await _warmUpShaderPipeline();
+  }
+
+  /// 着色器管线要等第一次真正绘制才编译，1920 宽窗口下那一帧 raster 会到 200ms 以上。
+  /// 启动时先画一次 16x16 的离屏场景：Picture.toImage 走 CPU 光栅，编译不到 GPU 管线，
+  /// 必须经 Scene.toImage 才会落到真实光栅线程。
+  static Future<void> _warmUpShaderPipeline() async {
+    try {
+      final program = await ui.FragmentProgram.fromAsset(shaderAssetPath);
+      for (final scrim in const [_kDarkMeshScrim, _kLightMeshScrim]) {
+        final shader = program.fragmentShader();
+        shader
+          ..setFloat(0, 1.0)
+          ..setFloat(1, 1.0)
+          ..setFloat(2, 0.0);
+        for (var i = 0; i < _kShaderColorCount * 3; i++) {
+          shader.setFloat(3 + i, 0.5);
+        }
+        final recorder = ui.PictureRecorder();
+        ui.Canvas(recorder).drawRect(
+          const ui.Rect.fromLTWH(0.0, 0.0, 16.0, 16.0),
+          ui.Paint()
+            ..shader = shader
+            ..colorFilter = ui.ColorFilter.mode(scrim, ui.BlendMode.srcOver),
+        );
+        final picture = recorder.endRecording();
+        final builder = ui.SceneBuilder()..addPicture(ui.Offset.zero, picture);
+        final scene = builder.build();
+        final image = await scene.toImage(16, 16);
+        image.dispose();
+        scene.dispose();
+        picture.dispose();
+        shader.dispose();
+      }
+    } catch (_) {
+      // 预热失败不影响正常绘制，首次进入时再编译
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

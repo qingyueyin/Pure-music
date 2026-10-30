@@ -12,6 +12,7 @@ import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/zh_converter.dart';
 import 'package:pure_music/lyric/lyric.dart';
+import 'package:pure_music/page/now_playing_page/component/lyrics_line_painter.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:provider/provider.dart';
 
@@ -61,6 +62,8 @@ class LyricViewController extends ChangeNotifier {
     final path = PlayService.instance.playbackService.nowPlaying?.path;
     if (path == _offsetTrackPath) return;
     _offsetTrackPath = path;
+    // 切歌：字形与排版缓存都失效
+    LyricsLinePainter.clearPool();
     if (!offsetAdjusting || _disposed) return;
     offsetAdjusting = false;
     notifyListeners();
@@ -168,8 +171,11 @@ class LyricViewController extends ChangeNotifier {
   late bool enableLyricBlur;
   late bool enableLyricGlow;
 
+  LyricRenderConfig? _renderConfigCache;
+
+  // 每帧、每行都会读：只在通知后重建一次
   LyricRenderConfig get renderConfig =>
-      nowPlayingPagePref.lyricRenderConfig.copyWith(
+      _renderConfigCache ??= nowPlayingPagePref.lyricRenderConfig.copyWith(
         textAlign: lyricTextAlign,
         baseFontSize: lyricFontSize,
         translationBaseFontSize: translationFontSize,
@@ -181,6 +187,12 @@ class LyricViewController extends ChangeNotifier {
         enableGlow: enableLyricGlow,
         hasMultipleAgents: hasMultipleAgents,
       );
+
+  @override
+  void notifyListeners() {
+    _renderConfigCache = null;
+    super.notifyListeners();
+  }
 
   void triggerRebuild() {
     notifyListeners();
@@ -208,6 +220,7 @@ class LyricViewController extends ChangeNotifier {
     nowPlayingPagePref.lyricFontSize = lyricFontSize;
     nowPlayingPagePref.translationFontSize = translationFontSize;
     AppPreference.instance.save();
+    LyricsLinePainter.clearPool();
     notifyListeners();
   }
 
@@ -219,6 +232,7 @@ class LyricViewController extends ChangeNotifier {
     nowPlayingPagePref.lyricFontSize = lyricFontSize;
     nowPlayingPagePref.translationFontSize = translationFontSize;
     AppPreference.instance.save();
+    LyricsLinePainter.clearPool();
     notifyListeners();
   }
 
