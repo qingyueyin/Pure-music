@@ -382,6 +382,8 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   @override
   void initState() {
     super.initState();
+    // 供自动化测试判定播放页是否真的挂载
+    log.app.info('legacy', '[nav] page=nowplaying-enter');
     SleepBlocker.instance.setPageVisible(true);
     SleepBlocker.instance.reevaluate();
     _backgroundListenable = Listenable.merge([
@@ -426,6 +428,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
 
   @override
   void dispose() {
+    log.app.info('legacy', '[nav] page=nowplaying-exit');
     SleepBlocker.instance.setPageVisible(false);
     SleepBlocker.instance.reevaluate();
     playbackService.nowPlayingNotifier.removeListener(updateCover);
