@@ -832,24 +832,23 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
               return const SizedBox.shrink();
             }
             _blurFilterFor(overscanSize);
-            return FittedBox(
-              fit: BoxFit.fill,
-              child: RepaintBoundary(
-                // 先把小尺寸流光层光栅化，再由 FittedBox 放大，避免模糊按整窗分辨率执行。
-                child: SizedBox.fromSize(
-                  size: cropSize,
-                  child: ClipRect(
-                    child: OverflowBox(
-                      alignment: Alignment.center,
-                      minWidth: overscanSize.width,
-                      maxWidth: overscanSize.width,
-                      minHeight: overscanSize.height,
-                      maxHeight: overscanSize.height,
-                      child: CustomPaint(painter: _painter, size: overscanSize),
-                    ),
-                  ),
+            final layer = SizedBox.fromSize(
+              size: cropSize,
+              child: ClipRect(
+                child: OverflowBox(
+                  alignment: Alignment.center,
+                  minWidth: overscanSize.width,
+                  maxWidth: overscanSize.width,
+                  minHeight: overscanSize.height,
+                  maxHeight: overscanSize.height,
+                  child: CustomPaint(painter: _painter, size: overscanSize),
                 ),
               ),
+            );
+            return FittedBox(
+              fit: BoxFit.fill,
+              // 小尺寸绘制后由 FittedBox 放大；不再单独成层（见 MEM_LOOP）
+              child: layer,
             );
           },
         ),

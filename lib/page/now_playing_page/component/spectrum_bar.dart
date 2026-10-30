@@ -215,19 +215,19 @@ class _SpectrumBarState extends State<SpectrumBar>
 
   @override
   Widget build(BuildContext context) {
-    return RepaintBoundary(
-      child: SizedBox(
-        height: widget.height,
-        width: double.infinity,
-        child: CustomPaint(
-          painter: _SpectrumBarsPainter(
-            frame: _frame,
-            color: widget.color,
-            repaint: _repaint,
-          ),
+    final content = SizedBox(
+      height: widget.height,
+      width: double.infinity,
+      child: CustomPaint(
+        painter: _SpectrumBarsPainter(
+          frame: _frame,
+          color: widget.color,
+          repaint: _repaint,
         ),
       ),
     );
+    // 不再单独成层：同帧脏层越多，引擎每帧的临时分配越多（见 MEM_LOOP）
+    return content;
   }
 }
 

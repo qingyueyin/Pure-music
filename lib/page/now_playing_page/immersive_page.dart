@@ -409,10 +409,8 @@ class _ImmersiveCoverThumbnailState extends State<_ImmersiveCoverThumbnail> {
     return _PlaybackCoverMotion(
       rotate: AppSettings.instance.circlePlaybackCover,
       identity: playbackService.nowPlaying?.path,
-      // 封面内容单独成层，旋转/缩放时只做合成，不重画图片和阴影
-      child: RepaintBoundary(
-        child: _PlaybackCoverFrame(scheme: scheme, child: cover),
-      ),
+      // 不再单独成层：同帧脏层越多，引擎每帧的临时分配越多（见 MEM_LOOP）
+      child: _PlaybackCoverFrame(scheme: scheme, child: cover),
     );
   }
 }

@@ -26,6 +26,9 @@ const _alphaBase = 0.05;
 const _activeAlphaBase = 0.22;
 const _staggerStep = 1 / 3;
 const _breathingStep = 1 / 180;
+// 间奏行切入、退场按 16ms 一步；倒计时数字和呼吸仍按 33ms。
+const lyricTransitionFrameInterval = Duration(milliseconds: 16);
+const lyricInterludeCountdownInterval = Duration(milliseconds: 33);
 const _staleInterludeTick = Duration(milliseconds: 200);
 // 进出场按固定时长换算成进度比例，动画节奏不随间奏长短变化。
 const _transitionEnterDurationMs = 500.0;
@@ -40,6 +43,29 @@ double _transitionFraction(double lengthMs, double windowMs) =>
 
 bool shouldIgnoreStaleInterludeTick(Duration delta) =>
     delta > _staleInterludeTick;
+
+/// 切入/退场窗口内要按 16ms 重绘；其余时间只有倒计时和呼吸按 33ms 推进。
+bool lyricTransitionNeedsFrameRepaint({
+  required double progress,
+  required double enterFraction,
+  required double exitFraction,
+  required double exitEnd,
+  required bool skipEnter,
+}) {
+  final clamped = progress.clamp(0.0, 1.0);
+  if (!skipEnter && clamped < enterFraction) return true;
+  return clamped >= exitEnd - exitFraction;
+}
+
+/// 倒计时数字和呼吸按 33ms 一步；进度帧再快也不提前推，避免抬到 60fps。
+@visibleForTesting
+bool lyricCountdownDue({
+  required Duration elapsed,
+  required Duration? lastCountdown,
+}) {
+  if (lastCountdown == null) return true;
+  return elapsed - lastCountdown >= lyricInterludeCountdownInterval;
+}
 
 double lyricTransitionEnterOpacity(double progress, double enterFraction) {
   return Curves.easeOutCubic.transform(
@@ -583,8 +609,7 @@ class _TransitionControllerManager {
   static const int _nativeSyncMs = 1000;
   Duration _lastTickElapsed = Duration.zero;
   Duration? _lastPaintElapsed;
-  // 间奏倒计时和呼吸动画 30fps 足够，不必跟着屏幕刷新率跑
-  static const _paintInterval = Duration(milliseconds: 33);
+  Duration? _lastCountdownElapsed;
   late final VoidCallback _playerStateListener = _syncPlaybackState;
   late final VoidCallback _positionSyncListener = _syncPosition;
 
@@ -682,6 +707,7 @@ class _TransitionControllerManager {
     if (_progressTicker!.isActive) return;
     _lastTickElapsed = Duration.zero;
     _lastPaintElapsed = null;
+    _lastCountdownElapsed = null;
     _progressTicker!.start();
   }
 
@@ -689,6 +715,7 @@ class _TransitionControllerManager {
     _progressTicker?.stop();
     _lastTickElapsed = Duration.zero;
     _lastPaintElapsed = null;
+    _lastCountdownElapsed = null;
     _positionClock.stop();
   }
 
@@ -698,15 +725,34 @@ class _TransitionControllerManager {
       return;
     }
     final lastPaint = _lastPaintElapsed;
-    if (lastPaint != null && elapsed - lastPaint < _paintInterval) return;
+    if (lastPaint != null &&
+        elapsed - lastPaint < lyricTransitionFrameInterval) {
+      return;
+    }
     _lastPaintElapsed = elapsed;
     final tickDelta = _lastTickElapsed == Duration.zero
         ? Duration.zero
         : elapsed - _lastTickElapsed;
     _lastTickElapsed = elapsed;
+    // 倒计时数字和呼吸仍按 30fps 推进，切入退场那 16ms 只推进度。
+    final lastCountdown = _lastCountdownElapsed;
+    final countdownDue = lyricCountdownDue(
+      elapsed: elapsed,
+      lastCountdown: lastCountdown,
+    );
+    var breathingStepScale = 0.0;
+    if (countdownDue) {
+      final breathingDelta = lastCountdown == null
+          ? Duration.zero
+          : elapsed - lastCountdown;
+      _lastCountdownElapsed = elapsed;
+      breathingStepScale =
+          breathingDelta.inMicroseconds /
+          (Duration.microsecondsPerSecond / 60.0);
+    }
     if (shouldIgnoreStaleInterludeTick(tickDelta)) {
       _syncNativePosition();
-      _updateControllers(_estimatedPosition);
+      _updateControllers(_estimatedPosition, countdownDue: countdownDue);
       return;
     }
     final nowMs = DateTime.now().millisecondsSinceEpoch;
@@ -715,14 +761,15 @@ class _TransitionControllerManager {
     }
     _updateControllers(
       _estimatedPosition,
-      breathingStepScale:
-          tickDelta.inMicroseconds / (Duration.microsecondsPerSecond / 60.0),
+      countdownDue: countdownDue,
+      breathingStepScale: breathingStepScale,
     );
   }
 
   void _updateControllers(
     double position, {
     bool? isPlaying,
+    bool countdownDue = true,
     double breathingStepScale = 0.0,
   }) {
     final controllers = List<LyricTransitionTileController>.from(_controllers);
@@ -731,7 +778,7 @@ class _TransitionControllerManager {
         _controllers.remove(c);
         continue;
       }
-      c._updateProgress(position);
+      c._updateProgress(position, countdownDue: countdownDue);
       if (c._disposed) {
         _controllers.remove(c);
         continue;
@@ -852,7 +899,7 @@ class LyricTransitionTileController extends ChangeNotifier {
     }
   }
 
-  void _updateProgress(double position) {
+  void _updateProgress(double position, {bool countdownDue = true}) {
     if (_disposed) return;
 
     late int startInMs;
@@ -892,7 +939,17 @@ class LyricTransitionTileController extends ChangeNotifier {
       }
       if (jumped) onLayoutHeightJumped?.call(previous, nextHeight);
     }
-    notifyListeners();
+    // 切入/退场窗口内按 16ms 重绘；其余时间倒计时和呼吸保持 33ms。
+    if (countdownDue ||
+        lyricTransitionNeedsFrameRepaint(
+          progress: progress,
+          enterFraction: enterFraction,
+          exitFraction: exitFraction,
+          exitEnd: exitEndFraction,
+          skipEnter: skipEnter,
+        )) {
+      notifyListeners();
+    }
 
     if (progress >= 1 && !_holdHeight && heightFactor.value <= 0.001) {
       _unregister();

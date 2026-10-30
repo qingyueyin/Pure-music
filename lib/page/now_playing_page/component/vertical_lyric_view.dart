@@ -42,6 +42,10 @@ const _shaderFadeOutWithBlur = 0.80;
 const _shaderFadeOutWithoutBlur = 0.95;
 const _lyricOffsetCacheCapacity = 6;
 
+/// 行切换、切入、收起按 16ms 一步，不能退到 33ms。
+@visibleForTesting
+const lyricLineFrameInterval = Duration(milliseconds: 16);
+
 bool alwaysShowLyricViewControls = false;
 
 bool shouldForceLyricScrollForPositionSync(
@@ -634,7 +638,6 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   Duration _sharedLyricLastTick = Duration.zero;
   Duration? _sharedLyricLastPaint;
   // 逐字高亮 60fps 足够，144Hz 屏上不必每帧都去取播放位置
-  static const _sharedLyricPaintInterval = Duration(milliseconds: 16);
   bool _resumeSharedLyricFromFrozen = false;
   late StreamSubscription<LyricLineUpdate> lyricLineStreamSubscription;
   Timer? _positionResyncTimer;
@@ -794,7 +797,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   void _onSharedLyricTick(Duration elapsed) {
     if (_disposed || !mounted) return;
     final lastPaint = _sharedLyricLastPaint;
-    if (lastPaint != null && elapsed - lastPaint < _sharedLyricPaintInterval) {
+    if (lastPaint != null && elapsed - lastPaint < lyricLineFrameInterval) {
       return;
     }
     _sharedLyricLastPaint = elapsed;
@@ -1112,6 +1115,43 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   double _snappedScrollOffset(double offset) {
     final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0;
     return lyricSnapScrollOffset(offset, dpr);
+  }
+
+  // 上下渐隐遮罩的 shader 每帧都会重建：尺寸和模糊开关不变就复用同一个。
+  Shader? _maskShaderCache;
+  Rect? _maskShaderBounds;
+  bool? _maskShaderEnableBlur;
+
+  Shader _lyricMaskShader(Rect bounds, {required bool enableBlur}) {
+    final cached = _maskShaderCache;
+    if (cached != null &&
+        _maskShaderBounds == bounds &&
+        _maskShaderEnableBlur == enableBlur) {
+      return cached;
+    }
+    // 开启了歌词模糊 → 加大边缘渐隐（和模糊效果协同）
+    // 关闭 → 仅保留很小的边缘淡出以免生硬裁切
+    final fadeIn = enableBlur
+        ? _shaderFadeInWithBlur
+        : _shaderFadeInWithoutBlur;
+    final fadeOut = enableBlur
+        ? _shaderFadeOutWithBlur
+        : _shaderFadeOutWithoutBlur;
+    final shader = LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: const [
+        Colors.transparent,
+        Colors.black,
+        Colors.black,
+        Colors.transparent,
+      ],
+      stops: [0.0, fadeIn, fadeOut, 1.0],
+    ).createShader(bounds);
+    _maskShaderCache = shader;
+    _maskShaderBounds = bounds;
+    _maskShaderEnableBlur = enableBlur;
+    return shader;
   }
 
   /// 启动 ValueTransition 驱动的滚动 Ticker
@@ -2952,7 +2992,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
         return Stack(
           clipBehavior: Clip.none,
           children: [
-            RepaintBoundary(
+            KeyedSubtree(
               key: const ValueKey('lyric_list_view'),
               child: Container(
                 color: Colors.transparent,
@@ -2978,33 +3018,17 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                     return false;
                   },
                   child: ShaderMask(
-                    shaderCallback: (Rect bounds) {
-                      // 开启了歌词模糊 → 加大边缘渐隐（和模糊效果协同）
-                      // 关闭 → 仅保留很小的边缘淡出以免生硬裁切
-                      final fadeIn = renderConfig.enableBlur
-                          ? _shaderFadeInWithBlur
-                          : _shaderFadeInWithoutBlur;
-                      final fadeOut = renderConfig.enableBlur
-                          ? _shaderFadeOutWithBlur
-                          : _shaderFadeOutWithoutBlur;
-                      return LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: const [
-                          Colors.transparent,
-                          Colors.black,
-                          Colors.black,
-                          Colors.transparent,
-                        ],
-                        stops: [0.0, fadeIn, fadeOut, 1.0],
-                      ).createShader(bounds);
-                    },
+                    shaderCallback: (Rect bounds) => _lyricMaskShader(
+                      bounds,
+                      enableBlur: renderConfig.enableBlur,
+                    ),
                     blendMode: BlendMode.dstIn,
                     child: ListView.builder(
                       key: const ValueKey('lyric_list_view_inner'),
                       controller: scrollController,
                       addAutomaticKeepAlives: true, // 改为 true，保持 Widget 状态
-                      addRepaintBoundaries: true, // 改为 true，每行独立重绘
+                      // 每行不再单独成层：同帧脏层越多，引擎每帧的临时分配越多
+                      addRepaintBoundaries: false,
                       scrollCacheExtent: ScrollCacheExtent.pixels(
                         viewportStrategy.cacheExtent(constraints.maxHeight),
                       ),

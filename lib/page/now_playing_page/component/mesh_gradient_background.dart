@@ -734,23 +734,20 @@ class _MeshGradientBackgroundInternalState
     return LayoutBuilder(
       builder: (context, constraints) {
         final renderSize = _meshRenderSize(constraints.biggest);
+        final gradient = _SoftMeshGradient(
+          colors: colors,
+          transitionFromColors: transitionFromColors,
+          transitionToColors: transitionToColors,
+          colorTransition: _isTransitioning ? _transitionValueNotifier : null,
+          controller: _meshController,
+          scrimColor: scrimColor,
+        );
         return FittedBox(
           fit: BoxFit.fill,
           child: SizedBox.fromSize(
             size: renderSize,
-            // 边界必须包在这一层里面。包在外面时，着色器仍按整窗像素画。
-            child: RepaintBoundary(
-              child: _SoftMeshGradient(
-                colors: colors,
-                transitionFromColors: transitionFromColors,
-                transitionToColors: transitionToColors,
-                colorTransition: _isTransitioning
-                    ? _transitionValueNotifier
-                    : null,
-                controller: _meshController,
-                scrimColor: scrimColor,
-              ),
-            ),
+            // 不再单独成层：同帧脏层越多，引擎每帧的临时分配越多（见 MEM_LOOP）
+            child: gradient,
           ),
         );
       },

@@ -1089,21 +1089,19 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
               valueListenable: _heightNotifier,
               builder: (context, h, _) {
                 final paintHeight = max(h, _departingPaintHeight ?? h);
-                // 文字先画进一块固定矩形。后面的位移动画只搬这块矩形，不再逐帧重画。
-                return RepaintBoundary(
-                  child: SizedBox(
-                    height: h,
-                    child: OverflowBox(
-                      alignment: Alignment.topCenter,
-                      minHeight: paintHeight,
-                      maxHeight: paintHeight,
-                      child: SizedBox(
-                        width: lineWidth,
-                        height: paintHeight,
-                        child: CustomPaint(
-                          painter: _cachedPainter,
-                          size: Size(lineWidth, paintHeight),
-                        ),
+                // 每行不再单独成层：同帧脏层越多，引擎每帧的临时分配越多
+                return SizedBox(
+                  height: h,
+                  child: OverflowBox(
+                    alignment: Alignment.topCenter,
+                    minHeight: paintHeight,
+                    maxHeight: paintHeight,
+                    child: SizedBox(
+                      width: lineWidth,
+                      height: paintHeight,
+                      child: CustomPaint(
+                        painter: _cachedPainter,
+                        size: Size(lineWidth, paintHeight),
                       ),
                     ),
                   ),
