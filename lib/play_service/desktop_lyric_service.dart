@@ -332,25 +332,20 @@ class DesktopLyricService extends ChangeNotifier {
     final currScheme = ThemeProvider.instance.darkScheme;
     const isDarkMode = true;
     try {
-      final process = await Process.start(
-        desktopLyricPath,
-        [
-          json.encode(
-            msg.InitArgsMessage(
-              _playbackService.playerState == PlayerState.playing,
-              nowPlaying?.title ?? '无',
-              nowPlaying?.artist ?? '无',
-              nowPlaying?.album ?? '无',
-              isDarkMode,
-              currScheme.primary.toARGB32(),
-              currScheme.surfaceContainer.toARGB32(),
-              currScheme.onSurface.toARGB32(),
-            ).toJson(),
-          ),
-        ],
-        // 固定工作目录，便于子进程按 Windows 搜索顺序复用主程序目录的引擎 DLL
-        workingDirectory: path.dirname(Platform.resolvedExecutable),
-      );
+      final process = await Process.start(desktopLyricPath, [
+        json.encode(
+          msg.InitArgsMessage(
+            _playbackService.playerState == PlayerState.playing,
+            nowPlaying?.title ?? '无',
+            nowPlaying?.artist ?? '无',
+            nowPlaying?.album ?? '无',
+            isDarkMode,
+            currScheme.primary.toARGB32(),
+            currScheme.surfaceContainer.toARGB32(),
+            currScheme.onSurface.toARGB32(),
+          ).toJson(),
+        ),
+      ]);
       return process;
     } catch (e) {
       log.desktopLyric.error(

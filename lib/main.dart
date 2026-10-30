@@ -23,8 +23,11 @@ import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/core/window_lifecycle.dart';
 import 'package:pure_music/core/window_placement.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
-import 'package:flutter_single_instance/flutter_single_instance.dart';
+
+// 第二次启动由原生窗口转发到已有实例，这里只负责把窗口显示出来
+const _singleInstanceChannel = MethodChannel('pure_music/single_instance');
 
 const _browserUserAgent =
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
@@ -233,11 +236,6 @@ Future<void> main() async {
 Future<void> _runApplication() async {
   PaintingBinding.instance.imageCache.maximumSize = 64;
   PaintingBinding.instance.imageCache.maximumSizeBytes = 16 << 20;
-  final singleInstance = FlutterSingleInstance();
-  if (!await singleInstance.isFirstInstance()) {
-    await singleInstance.focus();
-    exit(0);
-  }
   try {
     await RustLib.init();
   } catch (e, s) {
@@ -287,8 +285,11 @@ Future<bool> _initWindowShell() async {
     disposeRuntimeResources: disposeRuntimeResources,
   );
   if (WindowLifecycleService.instance.isExiting) return false;
-  FlutterSingleInstance.onFocus = (_) =>
-      WindowLifecycleService.instance.showWindow();
+  _singleInstanceChannel.setMethodCallHandler((call) async {
+    if (call.method == 'show') {
+      await WindowLifecycleService.instance.showWindow();
+    }
+  });
   await ImmersiveModeController.instance.init();
   if (WindowLifecycleService.instance.isExiting) return false;
   if (AppSettings.instance.appWindowTransparent) {
