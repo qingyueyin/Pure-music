@@ -10,6 +10,7 @@ static std::atomic<bool> g_destroying{false};
 
 #include "flutter/generated_plugin_registrant.h"
 #include "taskbar_thumbnail.h"
+#include "utils.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -20,6 +21,10 @@ bool FlutterWindow::OnCreate() {
   if (!Win32Window::OnCreate()) {
     return false;
   }
+
+  // 尽早注册自定义消息，避免第二个实例的消息落到 DefWindowProc 被丢弃。
+  show_request_message_ =
+      ::RegisterWindowMessageW(L"PureMusic.ShowExistingWindow");
 
   // 确保在创建时清除正在销毁标志。
   g_destroying.store(false);
@@ -40,8 +45,6 @@ bool FlutterWindow::OnCreate() {
       flutter_controller_->engine()->messenger(), GetHandle());
 
   // 已有实例被第二次启动唤醒时，原生恢复窗口，Dart 侧负责托盘显示。
-  show_request_message_ =
-      ::RegisterWindowMessageW(L"PureMusic.ShowExistingWindow");
   single_instance_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           flutter_controller_->engine()->messenger(),
@@ -84,6 +87,9 @@ void FlutterWindow::HandleShowRequest() {
   }
   if (::IsWindowVisible(window)) {
     ::SetForegroundWindow(window);
+  } else {
+    // 启动中或藏在托盘时原生不显示，交给 Dart 侧处理。
+    AppendRunnerLog(L"ShowExistingWindow|window not visible");
   }
   if (single_instance_channel_) {
     single_instance_channel_->InvokeMethod(
