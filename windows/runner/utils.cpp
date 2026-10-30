@@ -7,6 +7,69 @@
 
 #include <iostream>
 
+namespace {
+
+// 递归创建目录；已存在视为成功。
+bool EnsureDirectoryExists(const std::wstring& directory) {
+  const DWORD attributes = ::GetFileAttributesW(directory.c_str());
+  if (attributes != INVALID_FILE_ATTRIBUTES) {
+    return (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+  }
+  const size_t separator = directory.find_last_of(L"\\/");
+  if (separator != std::wstring::npos && separator > 2 &&
+      !EnsureDirectoryExists(directory.substr(0, separator))) {
+    return false;
+  }
+  return ::CreateDirectoryW(directory.c_str(), nullptr) != FALSE ||
+         ::GetLastError() == ERROR_ALREADY_EXISTS;
+}
+
+std::vector<std::wstring> GetLogDirectoryCandidates() {
+  std::vector<std::wstring> candidates;
+  candidates.push_back(GetExecutableDirectory() + L"\\logs");
+  const DWORD required = ::GetEnvironmentVariableW(L"LOCALAPPDATA", nullptr, 0);
+  if (required > 1) {
+    std::wstring local_app_data(required, L'\0');
+    const DWORD written = ::GetEnvironmentVariableW(
+        L"LOCALAPPDATA", local_app_data.data(), required);
+    if (written > 0 && written < required) {
+      local_app_data.resize(written);
+      candidates.push_back(local_app_data + L"\\pure_music\\logs");
+    }
+  }
+  return candidates;
+}
+
+}  // namespace
+
+std::wstring GetExecutableDirectory() {
+  wchar_t module_path[MAX_PATH];
+  DWORD length = ::GetModuleFileNameW(nullptr, module_path, MAX_PATH);
+  std::wstring path(module_path, length);
+  size_t pos = path.find_last_of(L"\\/");
+  if (pos != std::wstring::npos) {
+    path.resize(pos);
+  }
+  return path;
+}
+
+HANDLE OpenAppLogFile(const wchar_t* file_name) {
+  for (const auto& directory : GetLogDirectoryCandidates()) {
+    if (!EnsureDirectoryExists(directory)) {
+      continue;
+    }
+    const std::wstring file_path = directory + L"\\" + file_name;
+    HANDLE file = ::CreateFileW(
+        file_path.c_str(), FILE_APPEND_DATA,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+        OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file != INVALID_HANDLE_VALUE) {
+      return file;
+    }
+  }
+  return INVALID_HANDLE_VALUE;
+}
+
 void CreateAndAttachConsole() {
   if (::AllocConsole()) {
     FILE *unused;
