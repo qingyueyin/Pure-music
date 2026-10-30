@@ -143,6 +143,89 @@ function Set-CompileParallelism() {
     Write-Host ("Compile parallelism: jobs={0} (logical={1})" -f $jobCount, $logical) -ForegroundColor Gray
 }
 
+function Get-FlutterIconTools {
+    $flutterCommand = Get-Command "flutter" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $flutterCommand -or [string]::IsNullOrWhiteSpace($flutterCommand.Source)) { return $null }
+    $flutterRoot = Split-Path (Split-Path $flutterCommand.Source -Parent) -Parent
+    $engineDir = Join-Path $flutterRoot "bin\cache\artifacts\engine\windows-x64"
+    $tools = @{
+        Dart        = Join-Path $flutterRoot "bin\cache\dart-sdk\bin\dart.exe"
+        ConstFinder = Join-Path $engineDir "const_finder.dart.snapshot"
+        FontSubset  = Join-Path $engineDir "font-subset.exe"
+    }
+    foreach ($path in $tools.Values) {
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
+    }
+    return $tools
+}
+
+function Get-UsedIconCodePoints($tools) {
+    $buildRoot = Join-Path $PSScriptRoot ".dart_tool\flutter_build"
+    if (-not (Test-Path -LiteralPath $buildRoot -PathType Container)) { return $null }
+    $appDill = Get-ChildItem -LiteralPath $buildRoot -Recurse -File -Filter "app.dill" -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+    if (-not $appDill) { return $null }
+    $dart = $tools.Dart
+    $constFinder = $tools.ConstFinder
+    # 码点提取/解析失败只跳过裁剪并保留全量字体，不能中断打包
+    try {
+        $json = & $dart $constFinder `
+            --kernel-file $appDill.FullName `
+            --class-library-uri "package:flutter/src/widgets/icon_data.dart" `
+            --class-name "IconData" `
+            --annotation-class-name "_StaticIconProvider" `
+            --annotation-class-library-uri "package:flutter/src/widgets/icon_data.dart" 2>$null
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($json)) { return $null }
+        $parsed = $json | ConvertFrom-Json
+        # 有动态 IconData 时无法静态枚举，保持全量字体
+        if (@($parsed.nonConstantLocations).Count -gt 0) { return $null }
+        $result = @{}
+        foreach ($icon in @($parsed.constantInstances)) {
+            $family = [string]$icon.fontFamily
+            if ([string]::IsNullOrWhiteSpace($family)) { continue }
+            $package = [string]$icon.fontPackage
+            $key = if ([string]::IsNullOrWhiteSpace($package)) { $family } else { "packages/$package/$family" }
+            if (-not $result.ContainsKey($key)) { $result[$key] = @() }
+            $result[$key] += [int]$icon.codePoint
+        }
+        return $result
+    }
+    catch {
+        Write-Warning ("Icon code point extraction failed ({0}); skipping icon font subsetting." -f $_.Exception.Message)
+        return $null
+    }
+}
+
+function Invoke-FontSubset($fontPath, $codePoints, $fontSubset) {
+    if (-not (Test-Path -LiteralPath $fontPath -PathType Leaf)) { return }
+    $unique = @($codePoints | Sort-Object -Unique)
+    if ($unique.Count -eq 0) { return }
+    $before = (Get-Item -LiteralPath $fontPath).Length
+    $tempPath = "$fontPath.subset"
+    if (Test-Path -LiteralPath $tempPath) { Remove-Item -LiteralPath $tempPath -Force }
+    $payloadText = (($unique -join " ") -replace "[^0-9 ]", "").Trim()
+    if ([string]::IsNullOrWhiteSpace($payloadText)) { return }
+    $codeFile = "$tempPath.codes"
+    [System.IO.File]::WriteAllText($codeFile, $payloadText, [System.Text.UTF8Encoding]::new($false))
+    $cmdLine = 'type "{0}" | "{1}" "{2}" "{3}"' -f $codeFile, $fontSubset, $tempPath, $fontPath
+    & $env:ComSpec /c $cmdLine | Out-Null
+    $exitCode = $LASTEXITCODE
+    Remove-Item -LiteralPath $codeFile -Force -ErrorAction SilentlyContinue
+    if ($exitCode -ne 0 -or -not (Test-Path -LiteralPath $tempPath -PathType Leaf)) {
+        if (Test-Path -LiteralPath $tempPath) { Remove-Item -LiteralPath $tempPath -Force }
+        Write-Warning ("Font subsetting failed ({0}), keeping original: {1}" -f $exitCode, $fontPath)
+        return
+    }
+    $after = (Get-Item -LiteralPath $tempPath).Length
+    if ($after -le 0 -or $after -ge $before) {
+        Remove-Item -LiteralPath $tempPath -Force
+        return
+    }
+    Move-Item -LiteralPath $tempPath -Destination $fontPath -Force
+    Write-Host ("Subset {0}: {1:N1} MB -> {2:N0} KB" -f (Split-Path -Leaf $fontPath), ($before / 1MB), ($after / 1KB)) -ForegroundColor Gray
+}
+
 function Optimize-FlutterIconFonts([string]$appDir) {
     $assetsDir = Join-Path $appDir "data\flutter_assets"
     $manifestPath = Join-Path $assetsDir "FontManifest.json"
@@ -180,6 +263,24 @@ function Optimize-FlutterIconFonts([string]$appDir) {
     Write-Utf8NoBom $manifestPath ("[{0}]" -f ($parts -join ","))
     if ($removedBytes -gt 0) {
         Write-Host ("Removed unused icon fonts: {0:N1} MB" -f ($removedBytes / 1MB)) -ForegroundColor Gray
+    }
+
+    $tools = Get-FlutterIconTools
+    if (-not $tools) {
+        Write-Warning "Flutter icon tools not found; skipping icon font subsetting."
+        return
+    }
+    $codePoints = Get-UsedIconCodePoints $tools
+    if (-not $codePoints) {
+        Write-Warning "Icon code points unavailable; skipping icon font subsetting."
+        return
+    }
+    $outlinedKey = "packages/material_symbols_icons/MaterialSymbolsOutlined"
+    if ($codePoints.ContainsKey($outlinedKey)) {
+        Invoke-FontSubset (Join-Path $assetsDir "packages\material_symbols_icons\lib\fonts\MaterialSymbolsOutlined.ttf") $codePoints[$outlinedKey] $tools.FontSubset
+    }
+    if ($codePoints.ContainsKey("MaterialIcons")) {
+        Invoke-FontSubset (Join-Path $assetsDir "fonts\MaterialIcons-Regular.otf") $codePoints["MaterialIcons"] $tools.FontSubset
     }
 }
 
@@ -399,6 +500,24 @@ function New-AppPackage([string]$artifactRoot, [string]$version) {
             throw "desktop_lyric directory not found in project root: $desktopLyricSrc"
         }
         Invoke-RoboCopy $desktopLyricSrc $desktopLyricDest
+    }
+
+    Invoke-Step "deduplicate desktop lyric engine" {
+        $mainEngine = Join-Path $finalAppDir "flutter_windows.dll"
+        $lyricEngine = Join-Path $finalAppDir "desktop_lyric\flutter_windows.dll"
+        if ((Test-Path -LiteralPath $mainEngine -PathType Leaf) -and
+            (Test-Path -LiteralPath $lyricEngine -PathType Leaf)) {
+            $mainHash = (Get-FileHash -LiteralPath $mainEngine -Algorithm SHA256).Hash
+            $lyricHash = (Get-FileHash -LiteralPath $lyricEngine -Algorithm SHA256).Hash
+            if ($mainHash -eq $lyricHash) {
+                $bytes = (Get-Item -LiteralPath $lyricEngine).Length
+                Remove-Item -LiteralPath $lyricEngine -Force
+                Write-Host ("Removed duplicate Flutter engine DLL: {0:N1} MB" -f ($bytes / 1MB)) -ForegroundColor Gray
+            }
+            else {
+                Write-Warning "desktop_lyric engine differs from the main engine; keeping both."
+            }
+        }
     }
 
     Invoke-Step "strip unused icon fonts" {

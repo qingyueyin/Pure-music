@@ -4,7 +4,6 @@ class PlaybackSongChangeTasks {
   int _token = 0;
   Timer? _metadataTimer;
   Timer? _prefetchTimer;
-  Timer? _coverBytesTimer;
   Timer? _persistTimer;
   Timer? _cleanupTimer;
 
@@ -16,7 +15,6 @@ class PlaybackSongChangeTasks {
     required int token,
     required void Function() onMetadata,
     required void Function() onPrefetch,
-    required void Function() onCoverBytes,
     required void Function() onPersist,
     required void Function() onCleanup,
   }) {
@@ -28,11 +26,6 @@ class PlaybackSongChangeTasks {
     _prefetchTimer = Timer(
       const Duration(milliseconds: 220),
       () => _run(token, _prefetchTimer, onPrefetch),
-    );
-    // 封面过渡 500ms 结束后再取下一曲字节，避开过渡中段。
-    _coverBytesTimer = Timer(
-      const Duration(milliseconds: 560),
-      () => _run(token, _coverBytesTimer, onCoverBytes),
     );
     _persistTimer = Timer(
       const Duration(milliseconds: 650),
@@ -49,8 +42,6 @@ class PlaybackSongChangeTasks {
     _metadataTimer = null;
     _prefetchTimer?.cancel();
     _prefetchTimer = null;
-    _coverBytesTimer?.cancel();
-    _coverBytesTimer = null;
     _persistTimer?.cancel();
     _persistTimer = null;
     _cleanupTimer?.cancel();
@@ -60,7 +51,6 @@ class PlaybackSongChangeTasks {
   void _run(int token, Timer? timer, void Function() callback) {
     if (identical(timer, _metadataTimer)) _metadataTimer = null;
     if (identical(timer, _prefetchTimer)) _prefetchTimer = null;
-    if (identical(timer, _coverBytesTimer)) _coverBytesTimer = null;
     if (identical(timer, _persistTimer)) _persistTimer = null;
     if (identical(timer, _cleanupTimer)) _cleanupTimer = null;
     if (!isCurrent(token)) return;

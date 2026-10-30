@@ -36,7 +36,6 @@ class TaskbarThumbnailService {
   int _lifecycleGeneration = 0;
   int _coverGeneration = 0;
   bool _lastFramesEnabled = true;
-  Timer? _songChangeCoverTimer;
   ValueNotifier<Audio?>? _nowPlayingNotifier;
   ValueNotifier<PlayerState>? _playerStateNotifier;
   ValueNotifier<List<Audio>>? _playlistNotifier;
@@ -153,30 +152,15 @@ class TaskbarThumbnailService {
 
   void refreshNowPlaying() {
     if (!_initialized) return;
-    _songChangeCoverTimer?.cancel();
-    _songChangeCoverTimer = null;
-    _refreshHeader();
+    unawaited(_setTitle());
+    unawaited(_setControls());
     if (!_coverPreviewEnabled) return;
     final generation = ++_coverGeneration;
     unawaited(_updateCoverFor(_nowPlayingNotifier?.value, generation));
   }
 
-  /// 切歌时标题/按钮立刻更新，封面重绘延后到封面过渡结束后，避免和过渡帧抢主线程。
   void _onNowPlayingChanged() {
-    if (!_initialized) return;
-    _refreshHeader();
-    if (!_coverPreviewEnabled) return;
-    final generation = ++_coverGeneration;
-    _songChangeCoverTimer?.cancel();
-    _songChangeCoverTimer = Timer(const Duration(milliseconds: 600), () {
-      _songChangeCoverTimer = null;
-      unawaited(_updateCoverFor(_nowPlayingNotifier?.value, generation));
-    });
-  }
-
-  void _refreshHeader() {
-    unawaited(_setTitle());
-    unawaited(_setControls());
+    refreshNowPlaying();
   }
 
   // 切歌后马上最小化时，预览也要换成当前这首，不能把刚画好的封面清掉。
@@ -325,8 +309,6 @@ class TaskbarThumbnailService {
     final shouldDisable = _enabled || _pendingEnable;
     _lifecycleGeneration++;
     _coverGeneration++;
-    _songChangeCoverTimer?.cancel();
-    _songChangeCoverTimer = null;
     _enabled = false;
     _pendingEnable = false;
     if (shouldDisable) unawaited(_invokeDisable());

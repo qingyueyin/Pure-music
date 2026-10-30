@@ -2909,7 +2909,6 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
   Uint8List? _immediateCover;
   String? _immediateCoverPath;
   MemoryImage? _cachedImmediateCoverImage;
-  String? _cachedImmediateCoverAlbum;
 
   /// 上一次触发过封面过渡的曲目；切歌时过渡还没走完，不能解码高清封面。
   String? _coverSwitchPath;
@@ -2978,7 +2977,6 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
       _immediateCover = null;
       _immediateCoverPath = null;
       _cachedImmediateCoverImage = null;
-      _cachedImmediateCoverAlbum = null;
     });
   }
 
@@ -2987,27 +2985,15 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
     String path,
     ImageProvider? cachedLargeCover,
   ) {
-    final bytes = nextAudio.smallCoverBytes;
     setState(() {
-      _immediateCover = bytes;
+      _immediateCover = nextAudio.smallCoverBytes;
       _immediateCoverPath = path;
       _hiResCover = cachedLargeCover;
       _hiResCoverPath = cachedLargeCover == null ? null : path;
-      // 只有同专辑才沿用上一张；跨专辑宁可占位，也不让上一张顶着新歌。
-      if (bytes != null) {
-        _cachedImmediateCoverImage = MemoryImage(bytes);
-        _cachedImmediateCoverAlbum = nextAudio.album;
-      } else if (!_isSameAlbum(_cachedImmediateCoverAlbum, nextAudio.album)) {
-        _cachedImmediateCoverImage = null;
-        _cachedImmediateCoverAlbum = null;
-      }
+      _cachedImmediateCoverImage = _immediateCover != null
+          ? MemoryImage(_immediateCover!)
+          : null;
     });
-  }
-
-  bool _isSameAlbum(String? left, String? right) {
-    final a = left?.trim().toLowerCase() ?? '';
-    final b = right?.trim().toLowerCase() ?? '';
-    return a.isNotEmpty && a == b;
   }
 
   void _loadSmallCover(Audio nextAudio, int token, String path) {
@@ -3017,7 +3003,6 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
       setState(() {
         _immediateCover = bytes;
         _cachedImmediateCoverImage = bytes != null ? MemoryImage(bytes) : null;
-        _cachedImmediateCoverAlbum = bytes != null ? nextAudio.album : null;
       });
     });
   }
@@ -3062,9 +3047,6 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
       _cachedImmediateCoverImage = _immediateCover != null
           ? MemoryImage(_immediateCover!)
           : null;
-      _cachedImmediateCoverAlbum = _cachedImmediateCoverImage == null
-          ? null
-          : audio.album;
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
