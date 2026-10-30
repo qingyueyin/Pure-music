@@ -790,7 +790,7 @@ class LyricsLinePainter extends CustomPainter {
   bool get useMaterialYouColor => params.useMaterialYouColor;
   String? get fontFamily => params.fontFamily;
   String? get agent => params.agent;
-  double get opacity => params.opacityListenable?.value ?? params.opacity;
+  double get opacity => params.opacity;
   double? get highlightDeadlineMs => params.highlightDeadlineMs;
   Duration get lineMedianWordDuration => params.lineMedianWordDuration;
   ValueListenable<double>? get liftDecayListenable =>
@@ -829,7 +829,6 @@ class LyricsLinePainter extends CustomPainter {
            params.liftDecayListenable,
            params.liftGateListenable,
            params.blurSigmaListenable,
-           params.opacityListenable,
          ]),
        );
 

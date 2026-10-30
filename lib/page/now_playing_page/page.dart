@@ -2985,14 +2985,14 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
     String path,
     ImageProvider? cachedLargeCover,
   ) {
+    final bytes = nextAudio.smallCoverBytes;
     setState(() {
-      _immediateCover = nextAudio.smallCoverBytes;
+      _immediateCover = bytes;
       _immediateCoverPath = path;
       _hiResCover = cachedLargeCover;
       _hiResCoverPath = cachedLargeCover == null ? null : path;
-      _cachedImmediateCoverImage = _immediateCover != null
-          ? MemoryImage(_immediateCover!)
-          : null;
+      // 新曲字节没命中时先留住上一张，等异步加载回来再换，避免过渡里闪占位块。
+      if (bytes != null) _cachedImmediateCoverImage = MemoryImage(bytes);
     });
   }
 

@@ -168,11 +168,8 @@ class LyricViewController extends ChangeNotifier {
   late bool enableLyricBlur;
   late bool enableLyricGlow;
 
-  LyricRenderConfig? _cachedRenderConfig;
-
-  /// 缓存同一份配置：每帧、每行都会读它，配置只在通知前失效。
   LyricRenderConfig get renderConfig =>
-      _cachedRenderConfig ??= nowPlayingPagePref.lyricRenderConfig.copyWith(
+      nowPlayingPagePref.lyricRenderConfig.copyWith(
         textAlign: lyricTextAlign,
         baseFontSize: lyricFontSize,
         translationBaseFontSize: translationFontSize,
@@ -184,12 +181,6 @@ class LyricViewController extends ChangeNotifier {
         enableGlow: enableLyricGlow,
         hasMultipleAgents: hasMultipleAgents,
       );
-
-  @override
-  void notifyListeners() {
-    _cachedRenderConfig = null;
-    super.notifyListeners();
-  }
 
   void triggerRebuild() {
     notifyListeners();

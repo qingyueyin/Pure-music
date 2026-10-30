@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -56,6 +57,13 @@ class NowPlayingPerfProbe {
     };
   }
 
+  /// 切歌帧探针开关：PURE_MUSIC_SWITCH_FRAME_LOG=1 时 release 也记录。
+  static final bool _switchFrameLog =
+      Platform.environment['PURE_MUSIC_SWITCH_FRAME_LOG'] == '1';
+  static const _switchFrameWindow = Duration(milliseconds: 320);
+  List<FrameTiming>? _switchFrames;
+  Timer? _switchFrameTimer;
+
   void onSongChanged() {
     if (!_enabled) return;
     _songChanges++;
@@ -76,6 +84,48 @@ class NowPlayingPerfProbe {
     if (_songChanges == _switchTarget) {
       Future<void>.delayed(const Duration(seconds: 2), _finishLast10);
     }
+  }
+
+  void noteSongSwitch() {
+    if (!_switchFrameLog) return;
+    _switchFrameTimer?.cancel();
+    final frames = _switchFrames;
+    if (frames == null) {
+      _switchFrames = [];
+      SchedulerBinding.instance.addTimingsCallback(_onSwitchTimings);
+    } else {
+      frames.clear();
+    }
+    _switchFrameTimer = Timer(_switchFrameWindow, _finishSwitchFrames);
+  }
+
+  void _onSwitchTimings(List<FrameTiming> timings) {
+    _switchFrames?.addAll(timings);
+  }
+
+  void _finishSwitchFrames() {
+    _switchFrameTimer = null;
+    final frames = _switchFrames;
+    if (frames == null) return;
+    _switchFrames = null;
+    SchedulerBinding.instance.removeTimingsCallback(_onSwitchTimings);
+    if (frames.isEmpty) return;
+    var maxMicros = 0;
+    var totalMicros = 0;
+    var over33 = 0;
+    for (final timing in frames) {
+      final micros =
+          timing.buildDuration.inMicroseconds + timing.rasterDuration.inMicroseconds;
+      totalMicros += micros;
+      if (micros > maxMicros) maxMicros = micros;
+      if (micros > 33000) over33++;
+    }
+    log.app.info(
+      'legacy',
+      '[perf] switchFrames n=${frames.length} '
+          'avgMs=${(totalMicros / frames.length / 1000).toStringAsFixed(1)} '
+          'maxMs=${(maxMicros / 1000).toStringAsFixed(1)} over33=$over33',
+    );
   }
 
   void onCoverVisible({required bool fromCache}) {

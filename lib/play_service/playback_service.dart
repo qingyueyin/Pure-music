@@ -24,6 +24,7 @@ import 'package:pure_music/native/rust/api/library_db.dart' as rust_library_db;
 import 'package:pure_music/native/rust/api/smart_transition.dart' as rust_smart;
 import 'package:pure_music/core/sleep_blocker.dart';
 import 'package:pure_music/core/log/playback_log.dart';
+import 'package:pure_music/core/now_playing_perf_probe.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/settings.dart';
@@ -66,6 +67,8 @@ class PlaybackService extends ChangeNotifier {
   int _lastNowPlayingChangedMs = 0;
   Timer? _smtcPositionTimer;
   Timer? _smtcKeepAliveTimer;
+  Timer? _gaplessPrepTimer;
+  int _gaplessPrepToken = 0;
   final Set<Timer> _positionSyncBurstTimers = {};
   final PlaybackSongChangeTasks _songChangeTasks = PlaybackSongChangeTasks();
   int? _listenRecordingToken;
@@ -1122,7 +1125,20 @@ class PlaybackService extends ChangeNotifier {
     }
   }
 
+  /// 切歌当帧只切流；下一首的预建推迟到过渡中段，别和切歌帧抢主线程。
+  void _scheduleGaplessPreparation() {
+    _gaplessPrepTimer?.cancel();
+    final token = ++_gaplessPrepToken;
+    _gaplessPrepTimer = Timer(const Duration(milliseconds: 200), () {
+      _gaplessPrepTimer = null;
+      if (_closed || token != _gaplessPrepToken) return;
+      _rebuildGaplessPreparation();
+    });
+  }
+
   void _rebuildGaplessPreparation() {
+    _gaplessPrepTimer?.cancel();
+    _gaplessPrepTimer = null;
     if (SleepTimerService.instance.isExtending) {
       _pendingGaplessTransition = null;
       return;
@@ -1275,11 +1291,12 @@ class PlaybackService extends ChangeNotifier {
       playlist: playlist,
     );
     if (rebuildTransitionPreparation) {
-      _rebuildGaplessPreparation();
+      _scheduleGaplessPreparation();
     }
   }
 
   void _publishSongChange(Audio audio, PlayerState state) {
+    NowPlayingPerfProbe.instance.noteSongSwitch();
     _nowPlaying.value = audio;
     SleepTimerService.instance.onSongChanged(audio.path);
     _lastNowPlayingChangedMs = DateTime.now().millisecondsSinceEpoch;
@@ -1532,6 +1549,8 @@ class PlaybackService extends ChangeNotifier {
       final next = playlist[audioIndex + 1];
       CoverImageCache.instance.preload(next.path, modified: next.modified);
       CoverImageCache.instance.preloadNowPlayingCover(next);
+      // 预热字节本体：下一次切歌时封面可以同步命中，不留占位空档。
+      unawaited(next.loadSmallCoverBytes());
       playService.lyricService.prefetchLyric(next);
       if (audioIndex + 2 < playlist.length) {
         playService.lyricService.prefetchLyric(playlist[audioIndex + 2]);
@@ -2310,6 +2329,8 @@ class PlaybackService extends ChangeNotifier {
     _songChangeTasks.begin();
     _cancelSongChangeTasks();
     _cancelPositionSyncBurst();
+    _gaplessPrepTimer?.cancel();
+    _gaplessPrepTimer = null;
     try {
       await _smartTransitions.close();
     } catch (_) {}

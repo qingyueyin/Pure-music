@@ -58,7 +58,6 @@ class LyricsLineWidget extends StatefulWidget {
     required this.opacity,
     this.distance,
     this.positionMs,
-    required this.lineWidth,
     this.positionListenable,
     this.isHighlightActive = false,
     this.isMainVocalActive,
@@ -82,9 +81,6 @@ class LyricsLineWidget extends StatefulWidget {
 
   final LyricLine line;
   final double opacity;
-
-  /// 行内容宽度，由父层给定，避免每行再套一层 LayoutBuilder。
-  final double lineWidth;
   final int? distance;
   final double? positionMs;
   final ValueListenable<double>? positionListenable;
@@ -139,13 +135,6 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
   double _pendingBlurTarget = 0.0;
   double _activeBlurTarget = 0.0;
   bool _pendingBlurImmediate = false;
-
-  // 淡入淡出只推绘制层透明度，不参与 painter 参数，避免每帧重建 painter。
-  late final AnimationController _opacityController;
-  final ValueNotifier<double> _opacityNotifier = ValueNotifier<double>(1.0);
-  double _opacityFrom = 1.0;
-  double _opacityTarget = 1.0;
-  Curve _opacityCurve = Curves.easeOutCubic;
 
   // 缓存 Painter，避免每帧重建
   LyricsLinePainter? _cachedPainter;
@@ -301,10 +290,6 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
     _liftCache.restoreCursorFromPlayback = widget.distance == 0;
     _liftGateController = AnimationController.unbounded(vsync: this);
     _liftGateController.value = 1.0;
-    _opacityTarget = _targetOpacity();
-    _opacityNotifier.value = _opacityTarget;
-    _opacityController = AnimationController(vsync: this)
-      ..addListener(_onOpacityTick);
     _bindBackgroundVocalListeners();
     _playerStateListener = _syncProgressTicker;
     if (widget.positionListenable == null) {
@@ -662,26 +647,6 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
     return (widget.opacity).clamp(0.0, 1.0);
   }
 
-  /// 目标透明度变了才重启动画；动画只推 notifier，不重建 widget。
-  void _syncOpacity(
-    double target, {
-    required Duration duration,
-    required Curve curve,
-  }) {
-    if (target == _opacityTarget) return;
-    _opacityFrom = _opacityNotifier.value;
-    _opacityTarget = target;
-    _opacityCurve = curve;
-    _opacityController
-      ..duration = duration
-      ..forward(from: 0.0);
-  }
-
-  void _onOpacityTick() {
-    final t = _opacityCurve.transform(_opacityController.value);
-    _opacityNotifier.value = _opacityFrom + (_opacityTarget - _opacityFrom) * t;
-  }
-
   void _onTick(Duration elapsed) {
     final lastPaint = _lastPaintElapsed;
     if (lastPaint != null && elapsed - lastPaint < _paintInterval) return;
@@ -924,8 +889,6 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
     _floatController.dispose();
     _blurController.dispose();
     _liftGateController.dispose();
-    _opacityController.dispose();
-    _opacityNotifier.dispose();
     _currentTimeNotifier.dispose();
     _heightNotifier.dispose();
     _cachedPainter = null;
@@ -1020,114 +983,132 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
     final effectiveOpacity = _isHovered ? 1.0 : _targetOpacity();
     final isSmoothTransition =
         renderConfig.staggerStyle == LyricStaggerStyle.smooth;
-    _syncOpacity(
-      effectiveOpacity,
-      duration: isSmoothTransition
-          ? lyricSmoothTransitionDuration
-          : const Duration(milliseconds: 600),
-      curve: isSmoothTransition
-          ? lyricSmoothTransitionCurve
-          : Curves.easeOutCubic,
-    );
+    final visualTransitionDuration = isSmoothTransition
+        ? lyricSmoothTransitionDuration
+        : const Duration(milliseconds: 600);
+    final visualTransitionCurve = isSmoothTransition
+        ? lyricSmoothTransitionCurve
+        : Curves.easeOutCubic;
 
-    final fontFamily = context.watch<ThemeProvider>().resolvedLyricFontFamily;
-    final lineWidth = widget.lineWidth;
-    final agent = widget.line is SyncLyricLine
-        ? (widget.line as SyncLyricLine).agent
-        : null;
-    final useMaterialYouColor = AppSettings.instance.useMaterialYouForLyrics;
-    final currentTimeListenable =
-        widget.positionListenable ??
-        (_needsProgressTicker ? _currentTimeNotifier : null);
+    Widget inner = TweenAnimationBuilder<double>(
+      tween: Tween<double>(end: effectiveOpacity),
+      duration: visualTransitionDuration,
+      curve: visualTransitionCurve,
+      builder: (context, animatedOpacity, _) {
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final fontFamily = context
+                .watch<ThemeProvider>()
+                .resolvedLyricFontFamily;
 
-    final newParams = LyricPainterParams(
-      line: widget.line,
-      currentTimeMs: _currentTimeMs,
-      currentTimeListenable: currentTimeListenable,
-      backgroundVocalVisibilityListenable:
-          widget.backgroundVocalVisibilityListenable,
-      blurSigma: blurSigma,
-      blurSigmaListenable: _blurController,
-      config: renderConfig,
-      isMainLine: isCurrentLine,
-      isHighlightActive: isHighlightActive,
-      isMainVocalActive: widget.usesAuthoredTiming ? isMainVocalActive : null,
-      isBackgroundActive: widget.isBackgroundActive,
-      isBackgroundVisible: widget.isBackgroundVisible,
-      usesAuthoredTiming: widget.usesAuthoredTiming,
-      accelerateTailHighlight: widget.accelerateTailHighlight,
-      useMaterialYouColor: useMaterialYouColor,
-      opacity: effectiveOpacity,
-      opacityListenable: _opacityNotifier,
-      fontFamily: fontFamily,
-      agent: agent,
-      highlightDeadlineMs: widget.highlightDeadlineMs,
-      lineMedianWordDuration: _lineMedianWordDuration(widget.line),
-      liftDecayListenable: isMainVocalActive ? null : _floatController,
-      liftGateListenable: _liftGateController,
-    );
+            final lineWidth = constraints.maxWidth;
+            final agent = widget.line is SyncLyricLine
+                ? (widget.line as SyncLyricLine).agent
+                : null;
+            final useMaterialYouColor =
+                AppSettings.instance.useMaterialYouForLyrics;
+            final currentTimeListenable =
+                widget.positionListenable ??
+                (_needsProgressTicker ? _currentTimeNotifier : null);
+            final backgroundVocalVisibilityListenable =
+                widget.backgroundVocalVisibilityListenable;
+            final lineMedianWordDuration = _lineMedianWordDuration(widget.line);
 
-    if (_cachedPainter == null || _cachedPainter!.params != newParams) {
-      _cachedPainter = LyricsLinePainter(
-        params: newParams,
-        scheme: scheme,
-        liftCache: _liftCache,
-      );
-    }
+            final newParams = LyricPainterParams(
+              line: widget.line,
+              currentTimeMs: _currentTimeMs,
+              currentTimeListenable: currentTimeListenable,
+              backgroundVocalVisibilityListenable:
+                  backgroundVocalVisibilityListenable,
+              blurSigma: blurSigma,
+              blurSigmaListenable: _blurController,
+              config: renderConfig,
+              isMainLine: isCurrentLine,
+              isHighlightActive: isHighlightActive,
+              isMainVocalActive: widget.usesAuthoredTiming
+                  ? isMainVocalActive
+                  : null,
+              isBackgroundActive: widget.isBackgroundActive,
+              isBackgroundVisible: widget.isBackgroundVisible,
+              usesAuthoredTiming: widget.usesAuthoredTiming,
+              accelerateTailHighlight: widget.accelerateTailHighlight,
+              useMaterialYouColor: useMaterialYouColor,
+              opacity: animatedOpacity,
+              fontFamily: fontFamily,
+              agent: agent,
+              highlightDeadlineMs: widget.highlightDeadlineMs,
+              lineMedianWordDuration: lineMedianWordDuration,
+              liftDecayListenable: isMainVocalActive ? null : _floatController,
+              liftGateListenable: _liftGateController,
+            );
 
-    final heightCacheKey = LyricHeightCacheKey(
-      line: widget.line,
-      lineWidth: lineWidth,
-      config: renderConfig,
-      isMainLine: isCurrentLine,
-      useMaterialYouColor: useMaterialYouColor,
-      reserveBackgroundVocalHeight: widget.reserveBackgroundVocalHeight,
-      fontFamily: fontFamily,
-      agent: agent,
-    );
-    final heightCacheValid =
-        _cachedLineHeight != null && _heightCacheKey == heightCacheKey;
-    final lineHeight = heightCacheValid
-        ? _cachedLineHeight!
-        : _cachedPainter!.measureHeight(
-            lineWidth,
-            reserveBackgroundVocalHeight: widget.reserveBackgroundVocalHeight,
-          );
-    if (!heightCacheValid) {
-      _cachedLineHeight = lineHeight;
-      _heightCacheKey = heightCacheKey;
-    }
-    // 已冻住的高度不要在跳进度时改写成新测量值。
-    // 离开当前行时也不要把占位变矮，否则后面的歌词会整列往上跳。
-    final resolvedHeight = widget.freezeHeight && _frozenHeight != null
-        ? _frozenHeight!
-        : lineHeight;
-    final heldHeight = _heightNotifier.value;
-    final shownHeight = !isCurrentLine && heldHeight > resolvedHeight + 0.5
-        ? heldHeight
-        : resolvedHeight;
-    _heightNotifier.value = shownHeight;
+            if (_cachedPainter == null || _cachedPainter!.params != newParams) {
+              _cachedPainter = LyricsLinePainter(
+                params: newParams,
+                scheme: scheme,
+                liftCache: _liftCache,
+              );
+            }
 
-    Widget inner = ValueListenableBuilder<double>(
-      valueListenable: _heightNotifier,
-      builder: (context, h, _) {
-        final paintHeight = max(h, _departingPaintHeight ?? h);
-        // 每行不再单独成层：同帧脏层越多，引擎每帧的临时分配越多
-        return SizedBox(
-          height: h,
-          child: OverflowBox(
-            alignment: Alignment.topCenter,
-            minHeight: paintHeight,
-            maxHeight: paintHeight,
-            child: SizedBox(
-              width: lineWidth,
-              height: paintHeight,
-              child: CustomPaint(
-                painter: _cachedPainter,
-                size: Size(lineWidth, paintHeight),
-              ),
-            ),
-          ),
+            final heightCacheKey = LyricHeightCacheKey(
+              line: widget.line,
+              lineWidth: lineWidth,
+              config: renderConfig,
+              isMainLine: isCurrentLine,
+              useMaterialYouColor: useMaterialYouColor,
+              reserveBackgroundVocalHeight: widget.reserveBackgroundVocalHeight,
+              fontFamily: fontFamily,
+              agent: agent,
+            );
+            final heightCacheValid =
+                _cachedLineHeight != null && _heightCacheKey == heightCacheKey;
+            final lineHeight = heightCacheValid
+                ? _cachedLineHeight!
+                : _cachedPainter!.measureHeight(
+                    lineWidth,
+                    reserveBackgroundVocalHeight:
+                        widget.reserveBackgroundVocalHeight,
+                  );
+            if (!heightCacheValid) {
+              _cachedLineHeight = lineHeight;
+              _heightCacheKey = heightCacheKey;
+            }
+            // 已冻住的高度不要在跳进度时改写成新测量值。
+            // 离开当前行时也不要把占位变矮，否则后面的歌词会整列往上跳。
+            final resolvedHeight = widget.freezeHeight && _frozenHeight != null
+                ? _frozenHeight!
+                : lineHeight;
+            final heldHeight = _heightNotifier.value;
+            final shownHeight =
+                !isCurrentLine && heldHeight > resolvedHeight + 0.5
+                ? heldHeight
+                : resolvedHeight;
+            _heightNotifier.value = shownHeight;
+
+            return ValueListenableBuilder<double>(
+              valueListenable: _heightNotifier,
+              builder: (context, h, _) {
+                final paintHeight = max(h, _departingPaintHeight ?? h);
+                // 每行不再单独成层：同帧脏层越多，引擎每帧的临时分配越多
+                return SizedBox(
+                  height: h,
+                  child: OverflowBox(
+                    alignment: Alignment.topCenter,
+                    minHeight: paintHeight,
+                    maxHeight: paintHeight,
+                    child: SizedBox(
+                      width: lineWidth,
+                      height: paintHeight,
+                      child: CustomPaint(
+                        painter: _cachedPainter,
+                        size: Size(lineWidth, paintHeight),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            );
+          },
         );
       },
     );
