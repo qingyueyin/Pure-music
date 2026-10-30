@@ -11,6 +11,7 @@ import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/page/now_playing_page/component/lyrics_line_painter.dart';
 import 'package:pure_music/page/now_playing_page/component/lyrics_line_widget.dart';
 import 'package:pure_music/play_service/play_service.dart';
+import 'package:window_manager/window_manager.dart';
 
 /// 托盘整段时间都保持工作集上限。窗口打开后才放开。
 bool traySessionKeepsWorkingSetCap({required bool trayResident}) =>
@@ -34,6 +35,10 @@ class MemoryMonitorService {
   Timer? _settleTrimTimer;
   Timer? _settleTrimFollowUpTimer;
   Timer? _hiddenTrimTimer;
+  Timer? _hiddenWatchdogTimer;
+  bool _hiddenWatchdogBusy = false;
+  int _hiddenTrimTicks = 0;
+  DateTime? _lastTrimLogAt;
   Listenable? _hiddenNowPlaying;
   String? _hiddenSongPath;
   DateTime? _lastTier1CleanupAt;
@@ -53,31 +58,101 @@ class MemoryMonitorService {
             _SetProcessWorkingSetSizeNative,
             _SetProcessWorkingSetSizeDart
           >('SetProcessWorkingSetSize');
+      final before = ProcessInfo.currentRss;
       // 传 -1/-1 等于 EmptyWorkingSet。
-      _setProcessWorkingSetSize!(-1, -1, -1);
+      final ok = _setProcessWorkingSetSize!(-1, -1, -1);
+      _logTrim(ok, before, ProcessInfo.currentRss);
     } catch (_) {
       _setProcessWorkingSetSize = null;
     }
   }
 
-  /// 隐藏期间定时换出工作集：先等界面落定，再按间隔补。
-  void _holdWorkingSetWhileHidden(Duration interval) {
+  /// 换出后立刻回读 RSS。窗口隐藏期间 30 秒最多一条，方便核对有没有真的掉。
+  void _logTrim(int ok, int before, int after) {
+    final now = DateTime.now();
+    final last = _lastTrimLogAt;
+    if (last != null && now.difference(last) < const Duration(seconds: 30)) {
+      return;
+    }
+    _lastTrimLogAt = now;
+    const mb = 1024 * 1024;
+    log.memory.info(
+      'legacy',
+      '[mem] trim ok=$ok rss ${before ~/ mb}→${after ~/ mb}MB',
+    );
+  }
+
+  /// 隐藏期间换出工作集。只换一次会被帧循环重新拉回，头一分钟每 3 秒补一次。
+  void _holdWorkingSetWhileHidden() {
     _armSettleTrim();
+    _scheduleHiddenTrim();
+    _watchHiddenSongChange();
+    _startHiddenWatchdog();
+  }
+
+  void _scheduleHiddenTrim() {
     _hiddenTrimTimer?.cancel();
-    _hiddenTrimTimer = Timer.periodic(interval, (_) {
+    _hiddenTrimTicks = 0;
+    _hiddenTrimTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
       if (WindowRenderGate.instance.framesEnabled.value) return;
       _trimWorkingSet();
+      _hiddenTrimTicks++;
+      if (_hiddenTrimTicks < 20) return;
+      // 落定后回到长间隔，别一直每 3 秒打扰系统。
+      timer.cancel();
+      _hiddenTrimTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+        if (WindowRenderGate.instance.framesEnabled.value) return;
+        _trimWorkingSet();
+      });
     });
-    _watchHiddenSongChange();
   }
 
   void _armSettleTrim() {
     _settleTrimTimer?.cancel();
-    _settleTrimTimer = Timer(const Duration(seconds: 3), () {
+    _settleTrimTimer = Timer(const Duration(milliseconds: 1200), () {
       _settleTrimTimer = null;
       if (WindowRenderGate.instance.framesEnabled.value) return;
       _trimWorkingSet();
     });
+  }
+
+  /// 最小化事件可能被焦点/恢复回调抢先，门闩会卡在可见而一次都不换出。
+  /// 隐藏期间每 5 秒核对真实窗口状态，该藏就藏、该回就回。
+  void _startHiddenWatchdog() {
+    _hiddenWatchdogTimer?.cancel();
+    _hiddenWatchdogTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      unawaited(_reconcileHiddenWindow());
+    });
+  }
+
+  Future<void> _reconcileHiddenWindow() async {
+    if (_hiddenWatchdogBusy) return;
+    _hiddenWatchdogBusy = true;
+    try {
+      final gate = WindowRenderGate.instance;
+      if (gate.trayHidden.value) return;
+      final minimized = await windowManager.isMinimized();
+      // 等结果期间已经恢复：别把门闩按回去，否则窗口回来不画。
+      if (gate.trayHidden.value || _hiddenWatchdogTimer == null) return;
+      if (minimized) {
+        gate.setWindowMinimized(true);
+        if (_hiddenTrimTimer == null) {
+          // 最小化事件漏了：补上换出节奏。
+          _scheduleHiddenTrim();
+          _watchHiddenSongChange();
+          _trimWorkingSet();
+        }
+        return;
+      }
+      gate.setWindowMinimized(false);
+      stopHiddenTrim();
+    } catch (_) {
+      // 没有窗口插件（测试环境）时不再尝试。
+      _hiddenWatchdogTimer?.cancel();
+      _hiddenWatchdogTimer = null;
+    } finally {
+      _hiddenWatchdogBusy = false;
+    }
   }
 
   /// 隐藏时切歌会重新分配歌词、封面和缩略图，等 3 秒再补一次换出，把刚涨上来的页推回备用列表。
@@ -113,6 +188,8 @@ class MemoryMonitorService {
     _settleTrimFollowUpTimer = null;
     _hiddenTrimTimer?.cancel();
     _hiddenTrimTimer = null;
+    _hiddenWatchdogTimer?.cancel();
+    _hiddenWatchdogTimer = null;
     _hiddenNowPlaying?.removeListener(_onHiddenSongChanged);
     _hiddenNowPlaying = null;
     _hiddenSongPath = null;
@@ -268,16 +345,19 @@ class MemoryMonitorService {
     PaintingBinding.instance.imageCache.clear();
     LyricsLinePainter.trimPool();
     LyricsLineWidget.clearBlurFilterCache();
-    _holdWorkingSetWhileHidden(const Duration(seconds: 15));
+    _holdWorkingSetWhileHidden();
   }
 
-  /// 最小化：界面留着以便秒回，只换出工作集页，缓存不清。
+  /// 最小化：界面留着以便秒回，只换出工作集页，图片缓存不清。
+  /// 歌词排版池和模糊滤镜隐藏时用不到，先收掉，少一块要换出的页。
   void trimWindowMinimized() {
     final playingPath = PlayService.existingPlaybackService?.nowPlaying?.path;
     AudioLibrary.instance.evictStaleCoverBytes();
     CoverImageCache.instance.trimMemory(keepPath: playingPath);
     AudioLibrary.instance.trimCollectionThumbnailRetention(32);
-    _holdWorkingSetWhileHidden(const Duration(seconds: 30));
+    LyricsLinePainter.trimPool();
+    LyricsLineWidget.clearBlurFilterCache();
+    _holdWorkingSetWhileHidden();
   }
 
   /// 只回收冷封面和多余缩略图，不清图片缓存，也不动曲库。

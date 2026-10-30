@@ -668,6 +668,8 @@ class _TransitionControllerManager {
 
   void _syncPosition() {
     if (_controllers.isEmpty) return;
+    // 窗口看不见时播放位置同步不改画面，跳掉以免每秒排一次帧。
+    if (!WindowRenderGate.instance.framesEnabled.value) return;
     _syncNativePosition();
     _updateControllers(_syncedPosition);
     _syncProgressTicker();
@@ -692,6 +694,11 @@ class _TransitionControllerManager {
   }
 
   void _onWindowFramesChanged() {
+    // 回到可见时先按真实位置对齐一次，隐藏期间跳过的同步补回来。
+    if (WindowRenderGate.instance.framesEnabled.value &&
+        _controllers.isNotEmpty) {
+      _syncPosition();
+    }
     _syncProgressTicker();
   }
 

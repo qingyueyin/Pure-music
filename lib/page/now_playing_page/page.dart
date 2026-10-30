@@ -1941,6 +1941,8 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
       if (mounted) setState(() {});
     };
     _positionSyncListener = () {
+      // 窗口看不见时播放位置同步不改画面，跳掉以免每秒排一次帧。
+      if (!WindowRenderGate.instance.framesEnabled.value) return;
       _lastProgressTickElapsed = Duration.zero;
       _lastProcessedElapsed = Duration.zero;
       _lastWavyTick = null;

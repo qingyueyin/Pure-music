@@ -557,8 +557,6 @@ class BassPlayer {
   Timer? _fadeOutTimer;
   int? _fadeOutHandle;
   bool _fadeOutRemoveFromMixer = false;
-  /// 非无缝模式的混音器不接管源，淡出结束后要自己释放。
-  final List<int> _fadeOutSources = <int>[];
 
   /// 自动切歌过渡（淡入淡出/交叉淡化）状态
   Timer? _transitionTimer;
@@ -1903,7 +1901,6 @@ class BassPlayer {
     _fadeOutTimer = null;
     _fadeOutHandle = null;
     _fadeOutRemoveFromMixer = false;
-    _fadeOutSources.clear();
     _transitionGeneration++;
     _transitionTimer?.cancel();
     _transitionTimer = null;
@@ -2669,16 +2666,6 @@ class BassPlayer {
       return null;
     }
     _cancelTransition();
-    // 重新预备前先还掉上一份源，否则每次预备都漏一条解码流。
-    final previousPreparation = _smartPreparation;
-    if (previousPreparation != null &&
-        previousPreparation.transitionId != transitionId) {
-      if (!_smartIncomingNativeOwned) {
-        _bass.BASS_StreamFree(previousPreparation.incomingHandle);
-      }
-      _smartPreparation = null;
-      _smartIncomingNativeOwned = false;
-    }
     final incoming = _createSharedSource(audioPath);
     if (incoming == 0) return null;
     final incomingLength = _bass.BASS_ChannelBytes2Seconds(
@@ -2761,20 +2748,10 @@ class BassPlayer {
     _publishAudioFiles();
   }
 
-  ({int mixer, List<int> sources})? _detachGaplessMixer() {
+  int? _detachGaplessMixer() {
     final mixer = _mixerStream;
     if (mixer == null) return null;
     final detachedQueuedStream = _queuedStreamAttached ? null : _queuedStream;
-    // 混音器只释放自己；源统一交还调用方，淡出结束后一起兜底释放。
-    final ownedSources = <int>[];
-    final current = _fstream;
-    if (current != null && current != mixer) ownedSources.add(current);
-    final attachedQueued = _queuedStreamAttached ? _queuedStream : null;
-    if (attachedQueued != null &&
-        attachedQueued != mixer &&
-        !ownedSources.contains(attachedQueued)) {
-      ownedSources.add(attachedQueued);
-    }
     _mixerGeneration++;
     _unreportedGaplessTransition = null;
     _handledCompletionClearTimer?.cancel();
@@ -2790,6 +2767,7 @@ class BassPlayer {
     _queuedReplayGainDb = null;
     _queuedTransitionId = null;
     _queuedTransitionMode = null;
+    _queuedTransitionMode = null;
     _activeGaplessTransitionId = null;
     _fstream = null;
     _eqChannel = null;
@@ -2800,30 +2778,16 @@ class BassPlayer {
     if (detachedQueuedStream != null) {
       _bass.BASS_StreamFree(detachedQueuedStream);
     }
-    return (mixer: mixer, sources: ownedSources);
+    return mixer;
   }
 
   void _dropGaplessMixer() {
     _removeAudioEffects();
     _removeEQ();
-    final detached = _detachGaplessMixer();
-    if (detached == null) return;
-    _bass.BASS_ChannelStop(detached.mixer);
-    _bass.BASS_StreamFree(detached.mixer);
-    _freeOwnedSources(detached.sources);
-  }
-
-  /// 释放已经脱离混音器、又没带 AUTOFREE 的源。
-  void _freeOwnedSources(List<int> sources) {
-    for (final source in sources) {
-      if (source == _fstream ||
-          source == _mixerStream ||
-          source == _queuedStream) {
-        continue;
-      }
-      _bass.BASS_ChannelStop(source);
-      _bass.BASS_StreamFree(source);
-    }
+    final mixer = _detachGaplessMixer();
+    if (mixer == null) return;
+    _bass.BASS_ChannelStop(mixer);
+    _bass.BASS_StreamFree(mixer);
   }
 
   GaplessTransition? clearGaplessSource() {
@@ -3565,7 +3529,6 @@ class BassPlayer {
     bool delayCleanup = false,
     bool removeFromMixer = false,
     int? transitionGeneration,
-    List<int> alsoFree = const <int>[],
   }) {
     final sliding = _bass.BASS_ChannelSlideAttribute(
       handle,
@@ -3584,33 +3547,24 @@ class BassPlayer {
     if (_fadeOutHandle != null && _fadeOutHandle != handle) {
       final previous = _fadeOutHandle!;
       final previousRemove = _fadeOutRemoveFromMixer;
-      final previousSources = List<int>.of(_fadeOutSources);
       _fadeOutHandle = null;
       _fadeOutRemoveFromMixer = false;
-      _fadeOutSources.clear();
       _discardFadedSource(previous, removeFromMixer: previousRemove);
-      _freeOwnedSources(previousSources);
     }
     _fadeOutHandle = handle;
     _fadeOutRemoveFromMixer = removeFromMixer;
-    _fadeOutSources
-      ..clear()
-      ..addAll(alsoFree);
 
     _fadeOutTimer = Timer(Duration(milliseconds: durationMs + 20), () {
       if (_fadeOutHandle != handle) return;
       _fadeOutHandle = null;
       _fadeOutRemoveFromMixer = false;
       _fadeOutTimer = null;
-      final sources = List<int>.of(_fadeOutSources);
-      _fadeOutSources.clear();
       _discardFadedSource(
         handle,
         removeFromMixer: removeFromMixer,
         completeTransition: true,
         transitionGeneration: transitionGeneration,
       );
-      _freeOwnedSources(sources);
     });
   }
 
@@ -3694,17 +3648,13 @@ class BassPlayer {
         _bass.BASS_ChannelStop(oldHandle);
         _bass.BASS_StreamFree(oldHandle);
       } else {
-        final detached = _mixerStream == null ? null : _detachGaplessMixer();
-        final output = detached?.mixer ?? oldHandle;
+        final output = _mixerStream == null
+            ? oldHandle
+            : _detachGaplessMixer()!;
         // 手动切歌防爆音：固定短淡出（300ms），新歌立即淡入。
         // 旧文件还要等淡出结束才松开。
         _lingeringPath = _fPath;
-        _fadeOutOldStream(
-          output,
-          durationMs: 300,
-          delayCleanup: true,
-          alsoFree: detached?.sources ?? const <int>[],
-        );
+        _fadeOutOldStream(output, durationMs: 300, delayCleanup: true);
       }
       _fstream = null;
       _cachedLengthSeconds = null;
@@ -4336,8 +4286,6 @@ class BassPlayer {
       _fadeOutHandle = null;
       _fadeOutRemoveFromMixer = false;
     }
-    _freeOwnedSources(_fadeOutSources);
-    _fadeOutSources.clear();
     _cancelTransition();
     final smartPreparation = _smartPreparation;
     if (smartPreparation != null && !_smartIncomingNativeOwned) {
@@ -4415,8 +4363,6 @@ class BassPlayer {
       _fadeOutHandle = null;
       _fadeOutRemoveFromMixer = false;
     }
-    _freeOwnedSources(_fadeOutSources);
-    _fadeOutSources.clear();
     _positionUpdaterVersion++;
     _positionUpdater?.cancel();
     _positionUpdater = null;
