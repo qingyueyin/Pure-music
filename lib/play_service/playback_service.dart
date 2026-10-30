@@ -71,6 +71,7 @@ class PlaybackService extends ChangeNotifier {
   int _gaplessPrepToken = 0;
   final Set<Timer> _positionSyncBurstTimers = {};
   final PlaybackSongChangeTasks _songChangeTasks = PlaybackSongChangeTasks();
+  int _coverPrefetchWarnAtMs = 0;
   int? _listenRecordingToken;
   String? _supportPath;
   bool _closed = false;
@@ -1125,15 +1126,37 @@ class PlaybackService extends ChangeNotifier {
     }
   }
 
-  /// 切歌当帧只切流；下一首的预建推迟到过渡中段，别和切歌帧抢主线程。
+  /// 切歌当帧只切流；下一首的预建等封面过渡结束后再做，别和过渡帧抢主线程。
   void _scheduleGaplessPreparation() {
     _gaplessPrepTimer?.cancel();
     final token = ++_gaplessPrepToken;
-    _gaplessPrepTimer = Timer(const Duration(milliseconds: 200), () {
+    _gaplessPrepTimer = Timer(_gaplessPrepDelay(), () {
       _gaplessPrepTimer = null;
       if (_closed || token != _gaplessPrepToken) return;
       _rebuildGaplessPreparation();
     });
+  }
+
+  /// 预建排到封面过渡（500ms）之后；短曲或提前量大时按触发位置倒推。
+  static const _gaplessPrepDelayMax = Duration(milliseconds: 520);
+  static const _gaplessPrepTriggerMargin = Duration(milliseconds: 64);
+
+  Duration _gaplessPrepDelay() {
+    final length = _player.length;
+    if (length <= 0) return _gaplessPrepDelayMax;
+    final leadMs = BassPlayer.transitionTriggerLeadMs(
+      crossfade: _pref.transitionMode == TransitionMode.crossfade,
+      fadeOutMs: _pref.transitionFadeOutMs,
+      fadeInMs: _pref.transitionFadeInMs,
+    );
+    final usableMs =
+        (length * 1000).round() -
+        leadMs -
+        _gaplessPrepTriggerMargin.inMilliseconds;
+    if (usableMs <= 0) return Duration.zero;
+    return usableMs < _gaplessPrepDelayMax.inMilliseconds
+        ? Duration(milliseconds: usableMs)
+        : _gaplessPrepDelayMax;
   }
 
   void _rebuildGaplessPreparation() {
@@ -1273,7 +1296,7 @@ class PlaybackService extends ChangeNotifier {
     _cancelSongChangeTasks();
     ThemeProvider.instance.cancelPendingAudioTheme();
     _playlistIndex = audioIndex;
-    _publishSongChange(audio, state);
+    _publishSongChange(audio, state, reason);
     _schedulePositionSyncBurst(token: token, path: audio.path);
     notifyListeners();
     if (alreadyPlaying) {
@@ -1295,8 +1318,12 @@ class PlaybackService extends ChangeNotifier {
     }
   }
 
-  void _publishSongChange(Audio audio, PlayerState state) {
-    NowPlayingPerfProbe.instance.noteSongSwitch();
+  void _publishSongChange(Audio audio, PlayerState state, String reason) {
+    NowPlayingPerfProbe.instance.noteSongSwitch(
+      reason: reason,
+      title: audio.title,
+      durationSec: audio.duration,
+    );
     _nowPlaying.value = audio;
     SleepTimerService.instance.onSongChanged(audio.path);
     _lastNowPlayingChangedMs = DateTime.now().millisecondsSinceEpoch;
@@ -1520,6 +1547,7 @@ class PlaybackService extends ChangeNotifier {
       onMetadata: () => _onSongChangeMetadata(token, audio),
       onPrefetch: () =>
           _onSongChangePrefetch(token, audio, audioIndex, playlist),
+      onCoverBytes: () => _onSongChangeCoverBytes(token, audioIndex, playlist),
       onPersist: () => _onSongChangePersist(token, audio),
       onCleanup: () => _onSongChangeCleanup(token, audio),
     );
@@ -1547,15 +1575,30 @@ class PlaybackService extends ChangeNotifier {
     ThemeProvider.instance.applyThemeFromAudio(audio);
     if (audioIndex + 1 < playlist.length) {
       final next = playlist[audioIndex + 1];
+      // 48×48 解码结果与 loadSmallCoverBytes 共用同一物理尺寸 key。
       CoverImageCache.instance.preload(next.path, modified: next.modified);
       CoverImageCache.instance.preloadNowPlayingCover(next);
-      // 预热字节本体：下一次切歌时封面可以同步命中，不留占位空档。
-      unawaited(next.loadSmallCoverBytes());
       playService.lyricService.prefetchLyric(next);
       if (audioIndex + 2 < playlist.length) {
         playService.lyricService.prefetchLyric(playlist[audioIndex + 2]);
       }
     }
+  }
+
+  /// 预热下一曲的封面字节本体，排到封面过渡结束后，避免和过渡帧抢主线程。
+  void _onSongChangeCoverBytes(int token, int audioIndex, List<Audio> playlist) {
+    if (!_songChangeTasks.isCurrent(token)) return;
+    if (audioIndex + 1 >= playlist.length) return;
+    final next = playlist[audioIndex + 1];
+    unawaited(
+      next.loadSmallCoverBytes().then((bytes) {
+        if (bytes != null || !_songChangeTasks.isCurrent(token)) return;
+        final nowMs = DateTime.now().millisecondsSinceEpoch;
+        if (nowMs - _coverPrefetchWarnAtMs < 30000) return;
+        _coverPrefetchWarnAtMs = nowMs;
+        log.playback.warn('legacy', '下一曲封面字节预取失败: ${next.path}');
+      }),
+    );
   }
 
   void _onSongChangePersist(int token, Audio audio) {
@@ -2314,7 +2357,10 @@ class PlaybackService extends ChangeNotifier {
     }
     final effectivePosition = transitioned ? _player.position : position;
     final remaining = _player.length - effectivePosition;
-    if (transitioned || remaining > 1.0) {
+    // 队列里还没有下一曲时立即补建，避免曲尾 200ms 内播完掉到非无缝兜底。
+    if (transitioned ||
+        remaining > 1.0 ||
+        _pendingGaplessTransition == null) {
       _rebuildGaplessPreparation();
     }
     _updateSmtcPosition();

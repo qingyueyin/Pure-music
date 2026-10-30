@@ -63,6 +63,9 @@ class NowPlayingPerfProbe {
   static const _switchFrameWindow = Duration(milliseconds: 320);
   List<FrameTiming>? _switchFrames;
   Timer? _switchFrameTimer;
+  String _switchReason = '';
+  String _switchTitle = '';
+  int _switchDurationSec = 0;
 
   void onSongChanged() {
     if (!_enabled) return;
@@ -86,16 +89,19 @@ class NowPlayingPerfProbe {
     }
   }
 
-  void noteSongSwitch() {
+  void noteSongSwitch({
+    required String reason,
+    required String title,
+    required int durationSec,
+  }) {
     if (!_switchFrameLog) return;
-    _switchFrameTimer?.cancel();
-    final frames = _switchFrames;
-    if (frames == null) {
-      _switchFrames = [];
-      SchedulerBinding.instance.addTimingsCallback(_onSwitchTimings);
-    } else {
-      frames.clear();
-    }
+    // 320ms 内连切时先落上一窗口，别把它的帧数据丢掉。
+    _finishSwitchFrames();
+    _switchReason = reason;
+    _switchTitle = title;
+    _switchDurationSec = durationSec;
+    _switchFrames = [];
+    SchedulerBinding.instance.addTimingsCallback(_onSwitchTimings);
     _switchFrameTimer = Timer(_switchFrameWindow, _finishSwitchFrames);
   }
 
@@ -104,6 +110,7 @@ class NowPlayingPerfProbe {
   }
 
   void _finishSwitchFrames() {
+    _switchFrameTimer?.cancel();
     _switchFrameTimer = null;
     final frames = _switchFrames;
     if (frames == null) return;
@@ -122,7 +129,8 @@ class NowPlayingPerfProbe {
     }
     log.app.info(
       'legacy',
-      '[perf] switchFrames n=${frames.length} '
+      '[perf] switchFrames reason=$_switchReason title=$_switchTitle '
+          'dur=${_switchDurationSec}s n=${frames.length} '
           'avgMs=${(totalMicros / frames.length / 1000).toStringAsFixed(1)} '
           'maxMs=${(maxMicros / 1000).toStringAsFixed(1)} over33=$over33',
     );
