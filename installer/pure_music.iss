@@ -7,6 +7,7 @@
 
 #define AppName "Pure Music"
 #define AppExeName "pure_music.exe"
+#define AppUserModelId "PureMusic.Player.Desktop"
 
 [Setup]
 AppId={{42C4470A-72BE-49A0-B32F-DF7A941DD48C}
@@ -79,8 +80,10 @@ Name: "desktopicon"; Description: "{cm:DesktopIcon}"; GroupDescription: "{cm:Add
 Type: filesandordirs; Name: "{autoprograms}\{#AppName}"
 
 [Icons]
-Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
+; AppUserModelID 与进程设置的 AUMID 一致，任务栏固定项与媒体控件才不会身份分裂。
+; 该参数自 Inno Setup 5.5 起支持（本脚本已要求 6.3+，无需版本判断）。
+Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"; AppUserModelID={#AppUserModelId}
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; AppUserModelID={#AppUserModelId}; Tasks: desktopicon
 
 [Registry]
 Root: HKCU; Subkey: "Software\Pure Music"; ValueType: string; ValueName: "InstallLocation"; ValueData: "{app}"; Flags: uninsdeletekey

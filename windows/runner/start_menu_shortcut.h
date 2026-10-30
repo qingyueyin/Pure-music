@@ -8,4 +8,7 @@ extern const wchar_t kAppUserModelId[];
 // 便携版补一条开始菜单快捷方式：后台线程执行，不阻塞启动，失败只写日志。
 void EnsureStartMenuShortcutInBackground();
 
+// 等后台线程结束（写快捷方式中途退出会留下半截文件），消息循环之后调用。
+void WaitForStartMenuShortcut();
+
 #endif  // RUNNER_START_MENU_SHORTCUT_H_
