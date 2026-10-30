@@ -122,6 +122,8 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
   Duration? _lastPaintElapsed;
   // 逐字高亮 60fps 足够
   static const _paintInterval = Duration(milliseconds: 16);
+  // 字体/明暗变化时清空字形与排版缓存
+  static String? _cacheSignature;
 
   /// seek 后用于过滤旧进度回调的临时目标
   double? _pendingSeekMs;
@@ -1000,6 +1002,12 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
             final fontFamily = context
                 .watch<ThemeProvider>()
                 .resolvedLyricFontFamily;
+            final signature =
+                '${fontFamily ?? ''}|${scheme.brightness.name}';
+            if (_cacheSignature != signature) {
+              _cacheSignature = signature;
+              LyricsLinePainter.clearPool();
+            }
 
             final lineWidth = constraints.maxWidth;
             final agent = widget.line is SyncLyricLine
@@ -1034,6 +1042,8 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
               accelerateTailHighlight: widget.accelerateTailHighlight,
               useMaterialYouColor: useMaterialYouColor,
               opacity: animatedOpacity,
+              opacityAnimating:
+                  (animatedOpacity - effectiveOpacity).abs() > 0.001,
               fontFamily: fontFamily,
               agent: agent,
               highlightDeadlineMs: widget.highlightDeadlineMs,

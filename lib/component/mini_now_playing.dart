@@ -768,8 +768,6 @@ class _MiniTimeTextState extends State<_MiniTimeText> {
   }
 
   void _onPositionSync() {
-    // 窗口看不见时不排帧，回到可见由 _syncTimer 补一次。
-    if (!WindowRenderGate.instance.framesEnabled.value) return;
     _syncNativePosition();
   }
 

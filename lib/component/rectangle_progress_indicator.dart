@@ -161,8 +161,6 @@ class _RectangleProgressIndicatorState
   }
 
   void _onPositionSync() {
-    // 窗口看不见时不排帧，回到可见由 _onWindowFramesChanged 补一次。
-    if (!WindowRenderGate.instance.framesEnabled.value) return;
     _syncNativeProgress();
   }
 
