@@ -29,7 +29,12 @@ typedef _SetProcessWorkingSetSizeDart = int Function(int, int, int);
 /// 最小化只换出工作集页，托盘隐藏额外卸界面并清图片/排版缓存。
 class MemoryMonitorService {
   static final instance = MemoryMonitorService._();
-  MemoryMonitorService._();
+  MemoryMonitorService._() {
+    // 门闩回到可见也算一次恢复，用来丢弃看门狗里过期的 await 结果。
+    WindowRenderGate.instance.framesEnabled.addListener(
+      _onFramesEnabledChanged,
+    );
+  }
 
   Timer? _timer;
   Timer? _settleTrimTimer;
@@ -38,7 +43,13 @@ class MemoryMonitorService {
   Timer? _hiddenWatchdogTimer;
   bool _hiddenWatchdogBusy = false;
   int _hiddenTrimTicks = 0;
+  int _hiddenEpoch = 0;
   DateTime? _lastTrimLogAt;
+  DateTime? _lastTrimWarnAt;
+
+  /// 头段快速换出的次数，以及掉幅低于多少就认为页立刻被拉回。
+  static const _hiddenFastTrimTicks = 8;
+  static const _minTrimDropBytes = 10 * 1024 * 1024;
   Listenable? _hiddenNowPlaying;
   String? _hiddenSongPath;
   DateTime? _lastTier1CleanupAt;
@@ -50,7 +61,9 @@ class MemoryMonitorService {
   static _SetProcessWorkingSetSizeDart? _setProcessWorkingSetSize;
 
   /// 把工作集页换出到备用列表。只动内存页，不碰音频缓冲，也不丢缓存数据。
-  void _trimWorkingSet() {
+  /// 返回本次 RSS 掉幅（字节）；换出失败返回 -1。
+  int _trimWorkingSet() {
+    final watch = Stopwatch()..start();
     try {
       _kernel32 ??= ffi.DynamicLibrary.open('kernel32.dll');
       _setProcessWorkingSetSize ??= _kernel32!
@@ -61,33 +74,52 @@ class MemoryMonitorService {
       final before = ProcessInfo.currentRss;
       // 传 -1/-1 等于 EmptyWorkingSet。
       final ok = _setProcessWorkingSetSize!(-1, -1, -1);
-      _logTrim(ok, before, ProcessInfo.currentRss);
-    } catch (_) {
+      final after = ProcessInfo.currentRss;
+      watch.stop();
+      _logTrim(ok, before, after, watch.elapsedMilliseconds);
+      return ok == 0 ? -1 : before - after;
+    } catch (e) {
+      watch.stop();
       _setProcessWorkingSetSize = null;
+      _logTrimWarn('trim failed: $e');
+      return -1;
     }
   }
 
-  /// 换出后立刻回读 RSS。窗口隐藏期间 30 秒最多一条，方便核对有没有真的掉。
-  void _logTrim(int ok, int before, int after) {
+  /// 换出后立刻回读 RSS。成功路径 30 秒最多一条；失败必须留痕。
+  void _logTrim(int ok, int before, int after, int elapsedMs) {
     final now = DateTime.now();
     final last = _lastTrimLogAt;
-    if (last != null && now.difference(last) < const Duration(seconds: 30)) {
+    if (ok != 0 &&
+        last != null &&
+        now.difference(last) < const Duration(seconds: 30)) {
       return;
     }
     _lastTrimLogAt = now;
     const mb = 1024 * 1024;
     log.memory.info(
       'legacy',
-      '[mem] trim ok=$ok rss ${before ~/ mb}→${after ~/ mb}MB',
+      '[mem] trim ok=$ok rss ${before ~/ mb}→${after ~/ mb}MB ${elapsedMs}ms',
     );
   }
 
-  /// 隐藏期间换出工作集。只换一次会被帧循环重新拉回，头一分钟每 3 秒补一次。
+  /// 换出失败、看门狗异常各留一条，30 秒节流。
+  void _logTrimWarn(String message) {
+    final now = DateTime.now();
+    final last = _lastTrimWarnAt;
+    if (last != null && now.difference(last) < const Duration(seconds: 30)) {
+      return;
+    }
+    _lastTrimWarnAt = now;
+    log.memory.warn('legacy', '[mem] $message');
+  }
+
+  /// 隐藏期间换出工作集。只换一次会被帧循环重新拉回，先每 3 秒补几次，
+  /// 掉幅变小或补够次数就退到 15 秒。
   void _holdWorkingSetWhileHidden() {
     _armSettleTrim();
     _scheduleHiddenTrim();
     _watchHiddenSongChange();
-    _startHiddenWatchdog();
   }
 
   void _scheduleHiddenTrim() {
@@ -95,15 +127,24 @@ class MemoryMonitorService {
     _hiddenTrimTicks = 0;
     _hiddenTrimTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
       if (WindowRenderGate.instance.framesEnabled.value) return;
-      _trimWorkingSet();
+      final drop = _trimWorkingSet();
       _hiddenTrimTicks++;
-      if (_hiddenTrimTicks < 20) return;
+      // 掉幅 <10MB 说明页立刻被拉回，再快也没用，直接退到长间隔。
+      if (drop >= 0 && drop < _minTrimDropBytes) {
+        _startSlowHiddenTrim();
+        return;
+      }
+      if (_hiddenTrimTicks < _hiddenFastTrimTicks) return;
       // 落定后回到长间隔，别一直每 3 秒打扰系统。
-      timer.cancel();
-      _hiddenTrimTimer = Timer.periodic(const Duration(seconds: 15), (_) {
-        if (WindowRenderGate.instance.framesEnabled.value) return;
-        _trimWorkingSet();
-      });
+      _startSlowHiddenTrim();
+    });
+  }
+
+  void _startSlowHiddenTrim() {
+    _hiddenTrimTimer?.cancel();
+    _hiddenTrimTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (WindowRenderGate.instance.framesEnabled.value) return;
+      _trimWorkingSet();
     });
   }
 
@@ -117,7 +158,7 @@ class MemoryMonitorService {
   }
 
   /// 最小化事件可能被焦点/恢复回调抢先，门闩会卡在可见而一次都不换出。
-  /// 隐藏期间每 5 秒核对真实窗口状态，该藏就藏、该回就回。
+  /// 最小化期间每 5 秒核对真实窗口状态。
   void _startHiddenWatchdog() {
     _hiddenWatchdogTimer?.cancel();
     _hiddenWatchdogTimer = Timer.periodic(const Duration(seconds: 5), (_) {
@@ -125,29 +166,34 @@ class MemoryMonitorService {
     });
   }
 
+  void _onFramesEnabledChanged() {
+    if (WindowRenderGate.instance.framesEnabled.value) _hiddenEpoch++;
+  }
+
   Future<void> _reconcileHiddenWindow() async {
     if (_hiddenWatchdogBusy) return;
     _hiddenWatchdogBusy = true;
+    final epoch = _hiddenEpoch;
     try {
       final gate = WindowRenderGate.instance;
-      if (gate.trayHidden.value) return;
+      if (gate.trayHidden.value) {
+        // 转托盘后由托盘节奏负责，看门狗自停。
+        _hiddenWatchdogTimer?.cancel();
+        _hiddenWatchdogTimer = null;
+        return;
+      }
       final minimized = await windowManager.isMinimized();
-      // 等结果期间已经恢复：别把门闩按回去，否则窗口回来不画。
-      if (gate.trayHidden.value || _hiddenWatchdogTimer == null) return;
+      // 等结果期间已经恢复：epoch 变了就丢掉过期结果，别把门闩按回去。
+      if (epoch != _hiddenEpoch || gate.trayHidden.value) return;
       if (minimized) {
         gate.setWindowMinimized(true);
-        if (_hiddenTrimTimer == null) {
-          // 最小化事件漏了：补上换出节奏。
-          _scheduleHiddenTrim();
-          _watchHiddenSongChange();
-          _trimWorkingSet();
-        }
         return;
       }
       gate.setWindowMinimized(false);
       stopHiddenTrim();
-    } catch (_) {
+    } catch (e) {
       // 没有窗口插件（测试环境）时不再尝试。
+      _logTrimWarn('watchdog failed: $e');
       _hiddenWatchdogTimer?.cancel();
       _hiddenWatchdogTimer = null;
     } finally {
@@ -182,6 +228,7 @@ class MemoryMonitorService {
 
   /// 回到前台：停掉隐藏期间的换出，缓存和页面都不动。
   void stopHiddenTrim() {
+    _hiddenEpoch++;
     _settleTrimTimer?.cancel();
     _settleTrimTimer = null;
     _settleTrimFollowUpTimer?.cancel();
@@ -349,15 +396,15 @@ class MemoryMonitorService {
   }
 
   /// 最小化：界面留着以便秒回，只换出工作集页，图片缓存不清。
-  /// 歌词排版池和模糊滤镜隐藏时用不到，先收掉，少一块要换出的页。
+  /// 歌词排版池隐藏时用不到，先收掉，少一块要换出的页。
   void trimWindowMinimized() {
     final playingPath = PlayService.existingPlaybackService?.nowPlaying?.path;
     AudioLibrary.instance.evictStaleCoverBytes();
     CoverImageCache.instance.trimMemory(keepPath: playingPath);
     AudioLibrary.instance.trimCollectionThumbnailRetention(32);
     LyricsLinePainter.trimPool();
-    LyricsLineWidget.clearBlurFilterCache();
     _holdWorkingSetWhileHidden();
+    _startHiddenWatchdog();
   }
 
   /// 只回收冷封面和多余缩略图，不清图片缓存，也不动曲库。

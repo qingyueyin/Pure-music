@@ -968,16 +968,17 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
   void _queuePlaybackResync({required bool forceScroll}) {
     if (_disposed || !mounted) return;
-    _sharedLyricPositionMs.value = lyricTimelineMsDouble(
-      playbackService.position,
-    );
-    _syncSharedLyricTicker();
+    // 隐藏期写 _sharedLyricPositionMs 会触发整页重绘，和换出节奏对打。
     if (!shouldAcceptLyricUiUpdate(
       windowFramesEnabled: WindowRenderGate.instance.shouldRender,
     )) {
       _discardPendingLyricLineUpdates();
       return;
     }
+    _sharedLyricPositionMs.value = lyricTimelineMsDouble(
+      playbackService.position,
+    );
+    _syncSharedLyricTicker();
     if (forceScroll) {
       _discardPendingLyricLineUpdates();
       _needsInitialScroll = true;
