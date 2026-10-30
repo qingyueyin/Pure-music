@@ -45,6 +45,7 @@ import 'package:pure_music/core/update_checker.dart';
 import 'package:pure_music/core/update_download_monitor.dart';
 import 'package:pure_music/core/update_installer.dart';
 import 'package:pure_music/core/utils.dart';
+import 'package:pure_music/core/window_frame_probe.dart';
 import 'package:pure_music/core/window_render_gate.dart';
 import 'package:pure_music/core/memory_monitor.dart';
 import 'package:flutter/material.dart';
@@ -371,6 +372,7 @@ class _EntryState extends State<Entry>
 
   @override
   void onWindowMinimize() {
+    WindowFrameProbe.event('minimize');
     WindowRenderGate.instance.setWindowMinimized(true);
     MemoryMonitorService.instance.trimWindowMinimized();
     PlayService.existingPlaybackService?.startSmtcKeepAlive();
@@ -380,6 +382,7 @@ class _EntryState extends State<Entry>
   void onWindowRestore() {
     // 等这次系统回调返回后再生效。回调里立刻画，会和还没恢复的窗口表面死锁。
     Timer.run(() {
+      WindowFrameProbe.event('restore(entry)');
       WindowRenderGate.instance.setWindowMinimized(false);
       MemoryMonitorService.instance.stopHiddenTrim();
       PlayService.existingPlaybackService?.stopSmtcKeepAlive();

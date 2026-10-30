@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/core/utils.dart';
+import 'package:pure_music/core/window_frame_probe.dart';
 import 'package:pure_music/core/window_render_gate.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
@@ -167,7 +168,8 @@ class MemoryMonitorService {
   }
 
   void _onFramesEnabledChanged() {
-    if (WindowRenderGate.instance.framesEnabled.value) _hiddenEpoch++;
+    // 门闩任何一次变化都作废看门狗里在途的判定，避免把刚恢复的窗口按回隐藏。
+    _hiddenEpoch++;
   }
 
   Future<void> _reconcileHiddenWindow() async {
@@ -184,7 +186,14 @@ class MemoryMonitorService {
       }
       final minimized = await windowManager.isMinimized();
       // 等结果期间已经恢复：epoch 变了就丢掉过期结果，别把门闩按回去。
-      if (epoch != _hiddenEpoch || gate.trayHidden.value) return;
+      final stale = epoch != _hiddenEpoch || gate.trayHidden.value;
+      WindowFrameProbe.watchdog(
+        epoch: epoch,
+        currentEpoch: _hiddenEpoch,
+        minimized: minimized,
+        stale: stale,
+      );
+      if (stale) return;
       if (minimized) {
         gate.setWindowMinimized(true);
         return;

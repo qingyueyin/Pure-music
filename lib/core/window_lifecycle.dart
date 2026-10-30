@@ -9,6 +9,7 @@ import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/sleep_blocker.dart';
 import 'package:pure_music/core/utils.dart';
+import 'package:pure_music/core/window_frame_probe.dart';
 import 'package:pure_music/core/window_render_gate.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/library/playlist.dart';
@@ -361,6 +362,7 @@ class WindowLifecycleService with WindowListener, TrayListener {
       return false;
     }
     WindowRenderGate.instance.setTrayHidden(true);
+    WindowFrameProbe.event('hideToTray');
     SleepBlocker.instance.setMainWindowVisible(false);
     PlayService.existingPlaybackService?.startSmtcKeepAlive();
     MemoryMonitorService.instance.trimTrayHidden();
@@ -377,7 +379,8 @@ class WindowLifecycleService with WindowListener, TrayListener {
       await windowManager.restore();
     }
     if (_isExiting) return;
-    WindowRenderGate.instance.enterForeground();
+    // 不只看标记：窗口此刻可能还没真的回到桌面上，show/restore 事件会再核对一次。
+    WindowRenderGate.instance.resumeVisible();
     MemoryMonitorService.instance.restoreForegroundImageCache();
     SleepBlocker.instance.setMainWindowVisible(true);
     WidgetsBinding.instance.scheduleFrame();
@@ -390,6 +393,7 @@ class WindowLifecycleService with WindowListener, TrayListener {
     }
     await windowManager.focus();
     PlayService.existingPlaybackService?.stopSmtcKeepAlive();
+    WindowFrameProbe.event('showWindow done');
   }
 
   /// [skipSave] 用于备份导入后重启：内存中仍是旧状态，写回会覆盖刚导入的文件。
@@ -465,6 +469,14 @@ class WindowLifecycleService with WindowListener, TrayListener {
     unawaited(_resumeIfWindowActuallyVisible());
   }
 
+  /// window_manager 没有 show 回调，只把事件名原样抛给 onWindowEvent。
+  @override
+  void onWindowEvent(String eventName) {
+    if (eventName == 'show') {
+      unawaited(_reconcileWindowVisibility('show'));
+    }
+  }
+
   /// 最小化时系统也会送焦点。先看窗口是不是真的在，避免绘制被立刻打开。
   Future<void> _resumeIfWindowActuallyVisible() async {
     if (WindowRenderGate.instance.trayHidden.value) return;
@@ -473,18 +485,35 @@ class WindowLifecycleService with WindowListener, TrayListener {
     final visible = await windowManager.isVisible();
     if (WindowRenderGate.instance.trayHidden.value) return;
     if (minimized || !visible) return;
-    WindowRenderGate.instance.setWindowMinimized(false);
+    WindowRenderGate.instance.resumeVisible();
+  }
+
+  /// 系统恢复/显示事件之后按真实窗口状态复位门闩。
+  /// 事件可能早于窗口真正可见，所以以 isVisible/isMinimized 为准。
+  Future<void> _reconcileWindowVisibility(String source) async {
+    if (_isExiting) return;
+    try {
+      if (await windowManager.isMinimized()) return;
+      if (!await windowManager.isVisible()) return;
+      if (_isExiting) return;
+      WindowFrameProbe.event('visible:$source');
+      WindowRenderGate.instance.resumeVisible();
+      MemoryMonitorService.instance.stopHiddenTrim();
+      SleepBlocker.instance.setMainWindowVisible(true);
+      PlayService.existingPlaybackService?.stopSmtcKeepAlive();
+    } catch (error, trace) {
+      log.window.warn(
+        'legacy',
+        'Reconciling window visibility failed: $error',
+        stackTrace: trace,
+      );
+    }
   }
 
   @override
   void onWindowRestore() {
-    // 等系统回调结束再恢复。在回调里立刻打开绘制会卡死。
-    Timer.run(() {
-      WindowRenderGate.instance.setWindowMinimized(false);
-      if (WindowRenderGate.instance.trayHidden.value) {
-        WindowRenderGate.instance.enterForeground();
-      }
-    });
+    // 等系统回调结束再核对。在回调里立刻画，会和还没恢复的窗口表面死锁。
+    Timer.run(() => unawaited(_reconcileWindowVisibility('restore')));
   }
 
   @override

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
+import 'package:pure_music/core/window_frame_probe.dart';
 
 /// 窗口状态：前台、后台（失去焦点但窗口仍在）、最小化、托盘。
 enum WindowRenderState {
@@ -34,7 +35,9 @@ bool windowRenderShouldEnableFrames({
 bool shouldAcceptLyricUiUpdate({required bool windowFramesEnabled}) =>
     windowFramesEnabled;
 
-void applyWindowSchedulerFrames(bool enabled) {
+typedef WindowFramesApplier = void Function(bool enabled, {bool force});
+
+void applyWindowSchedulerFrames(bool enabled, {bool force = false}) {
   // 不把生命周期改成 hidden，那会让回来的窗口点不动。
   // 停绘制靠卸掉背景和停掉不计 TickerMode 的动画。
   if (!enabled) return;
@@ -44,16 +47,22 @@ void applyWindowSchedulerFrames(bool enabled) {
     // ignore: invalid_use_of_protected_member
     binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
   }
+  if (force && binding.hasScheduledFrame) {
+    // 上一次请求可能已经在窗口还不可见时被平台丢掉，_hasScheduledFrame 却还挂着。
+    // 自驱帧会复位这个标记，否则窗口可见后也不会再排帧。
+    binding.scheduleWarmUpFrame();
+    return;
+  }
   binding.scheduleFrame();
 }
 
 class WindowRenderGate with WidgetsBindingObserver {
-  WindowRenderGate({void Function(bool enabled)? applyFramesEnabled})
+  WindowRenderGate({WindowFramesApplier? applyFramesEnabled})
     : _applyFramesEnabled = applyFramesEnabled ?? applyWindowSchedulerFrames;
 
   static final instance = WindowRenderGate();
 
-  final void Function(bool enabled) _applyFramesEnabled;
+  final WindowFramesApplier _applyFramesEnabled;
   final ValueNotifier<bool> framesEnabled = ValueNotifier(true);
 
   /// 只有真正藏进托盘才为 true。最小化不算，界面还留着。
@@ -91,23 +100,36 @@ class WindowRenderGate with WidgetsBindingObserver {
     if (_trayHidden == hidden) return;
     _trayHidden = hidden;
     if (trayHidden.value != hidden) trayHidden.value = hidden;
-    _sync();
+    if (!hidden) WindowFrameProbe.countFrames('trayHidden:false');
+    _sync(forceFrame: !hidden);
   }
 
   void setWindowMinimized(bool minimized) {
     if (_windowMinimized == minimized) return;
     _windowMinimized = minimized;
-    _sync();
+    if (!minimized) WindowFrameProbe.countFrames('minimized:false');
+    _sync(forceFrame: !minimized);
   }
 
   /// 主窗口只要还在桌面上，就必须回到前台。
   void enterForeground() {
-    final changed = _trayHidden || _windowMinimized;
-    if (!changed) return;
+    final wasHidden = _trayHidden || _windowMinimized || trayHidden.value;
     _trayHidden = false;
     _windowMinimized = false;
     if (trayHidden.value) trayHidden.value = false;
-    _sync();
+    if (wasHidden) WindowFrameProbe.countFrames('enterForeground');
+    _sync(forceFrame: wasHidden);
+  }
+
+  /// 窗口真正可见后调用：清掉所有隐藏标记，并强制复位排帧门闩。
+  /// 系统事件可能漏发，恢复路径必须以真实窗口状态为准。
+  void resumeVisible() {
+    final wasHidden = _trayHidden || _windowMinimized || trayHidden.value;
+    _trayHidden = false;
+    _windowMinimized = false;
+    if (trayHidden.value) trayHidden.value = false;
+    if (wasHidden) WindowFrameProbe.countFrames('resumeVisible');
+    _sync(forceFrame: true);
   }
 
   @override
@@ -127,23 +149,37 @@ class WindowRenderGate with WidgetsBindingObserver {
     }
   }
 
-  void _sync() {
+  void _sync({bool forceFrame = false}) {
     final enabled = shouldRender;
     if (enabled) {
       _pauseScheduled = false;
-      if (!_schedulerFramesEnabled) {
-        _applyFramesEnabled(true);
-        _schedulerFramesEnabled = true;
-      }
+      _schedulerFramesEnabled = true;
       if (!framesEnabled.value) {
         framesEnabled.value = true;
       }
+      _applyFramesEnabled(true, force: forceFrame);
+      WindowFrameProbe.gate(
+        'enable',
+        framesEnabled: framesEnabled.value,
+        schedulerFramesEnabled: _schedulerFramesEnabled,
+        trayHidden: _trayHidden,
+        minimized: _windowMinimized,
+        hasScheduledFrame: WidgetsBinding.instance.hasScheduledFrame,
+      );
       return;
     }
 
     if (framesEnabled.value) {
       framesEnabled.value = false;
     }
+    WindowFrameProbe.gate(
+      'disable',
+      framesEnabled: framesEnabled.value,
+      schedulerFramesEnabled: _schedulerFramesEnabled,
+      trayHidden: _trayHidden,
+      minimized: _windowMinimized,
+      hasScheduledFrame: WidgetsBinding.instance.hasScheduledFrame,
+    );
     // 这一帧画完再停调度。声音在原生播放线程，不靠这些帧。
     if (_schedulerFramesEnabled == false || _pauseScheduled) return;
     _pauseScheduled = true;
