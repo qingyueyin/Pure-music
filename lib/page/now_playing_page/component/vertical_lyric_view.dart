@@ -42,6 +42,34 @@ const _shaderFadeOutWithBlur = 0.80;
 const _shaderFadeOutWithoutBlur = 0.95;
 const _lyricOffsetCacheCapacity = 6;
 
+// 行距→透明度/错峰延迟只与行距有关，预生成查表，行切换时不再逐行 pow。
+const _distanceTableSize = 64;
+
+final List<double> _distanceOpacityTable = List<double>.generate(
+  _distanceTableSize,
+  (d) => d == 0
+      ? 1.0
+      : pow(_opacityBase, d).toDouble().clamp(
+          _opacityMinClamp,
+          _opacityMaxClamp,
+        ).toDouble(),
+);
+
+final List<Duration> _smoothStaggerDelayTable = List<Duration>.generate(
+  _distanceTableSize,
+  (d) => Duration(
+    milliseconds: (30 * (d + 1) * (5 + d) ~/ 5).clamp(0, _staggerMaxMs),
+  ),
+);
+
+int _distanceIndex(int dist) =>
+    dist < _distanceTableSize ? dist : _distanceTableSize - 1;
+
+double _distanceOpacity(int dist) => _distanceOpacityTable[_distanceIndex(dist)];
+
+Duration _smoothStaggerDelay(int dist) =>
+    _smoothStaggerDelayTable[_distanceIndex(dist)];
+
 /// 行切换、切入、收起按 16ms 一步，不能退到 33ms。
 @visibleForTesting
 const lyricLineFrameInterval = Duration(milliseconds: 16);
@@ -703,6 +731,9 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
   final Map<int, GlobalKey> _lineKeys = {};
   static const int _lineKeyRetainRadius = 80;
+
+  Lyric? _highlightDeadlineLyric;
+  final Map<int, double?> _highlightDeadlineCache = {};
 
   GlobalKey _keyForLine(int index) {
     // 切句时不能把已建行的 key 拿掉，否则上面的行会拆掉重建，整列先往下跳。
@@ -2398,7 +2429,18 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   }
 
   double? _highlightDeadlineForLine(int lineIndex) {
-    return lyricHighlightDeadlineMsForLine(widget.lyric, lineIndex)?.toDouble();
+    // 只和歌词内容有关，换歌词时整体作废；行切换不再逐行往后扫。
+    if (!identical(_highlightDeadlineLyric, widget.lyric)) {
+      _highlightDeadlineLyric = widget.lyric;
+      _highlightDeadlineCache.clear();
+    }
+    return _highlightDeadlineCache.putIfAbsent(
+      lineIndex,
+      () => lyricHighlightDeadlineMsForLine(
+        widget.lyric,
+        lineIndex,
+      )?.toDouble(),
+    );
   }
 
   Set<int> _renderableLineIndices(List<int> indices) {
@@ -2945,6 +2987,9 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     final lyricFontFamily = context
         .watch<ThemeProvider>()
         .resolvedLyricFontFamily;
+    // 错峰配置每帧都要用，提到 build 顶部，行内不再重复读 provider。
+    final staggerEnabled = renderConfig.enableStaggeredAnimation;
+    final staggerStyle = renderConfig.staggerStyle;
     return LayoutBuilder(
       builder: (context, constraints) {
         final needsOffsets =
@@ -2989,6 +3034,8 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
           alignment: widget.currentLineAlignment,
         );
         final userIsDragging = _scrollState == LyricScrollState.userDragging;
+        // 行内容宽度：视口宽减去行左右内边距，直接传给行，行内不再套 LayoutBuilder。
+        final lineWidth = constraints.maxWidth - transitionTileMargin * 2;
         return Stack(
           clipBehavior: Clip.none,
           children: [
@@ -3065,28 +3112,15 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                         );
                         final opacity = dist == 0 || isGroupLine || isActiveLine
                             ? 1.0
-                            : pow(_opacityBase, dist).toDouble().clamp(
-                                _opacityMinClamp,
-                                _opacityMaxClamp,
-                              );
-                        final staggerDelay =
-                            _lyricViewController
-                                    ?.renderConfig
-                                    .enableStaggeredAnimation ==
-                                true
-                            ? _lyricViewController?.renderConfig.staggerStyle ==
-                                      LyricStaggerStyle.spring
-                                  ? lyricSpringItemDelay(
-                                      itemIndex: i,
-                                      visibleStartIndex:
-                                          _staggerVisibleStartIndex,
-                                    )
-                                  : Duration(
-                                      milliseconds:
-                                          ((30 * (dist + 1) * (5 + dist) ~/ 5)
-                                              .clamp(0, _staggerMaxMs)),
-                                    )
-                            : Duration.zero;
+                            : _distanceOpacity(dist);
+                        final staggerDelay = !staggerEnabled
+                            ? Duration.zero
+                            : staggerStyle == LyricStaggerStyle.spring
+                            ? lyricSpringItemDelay(
+                                itemIndex: i,
+                                visibleStartIndex: _staggerVisibleStartIndex,
+                              )
+                            : _smoothStaggerDelay(dist);
                         Widget lineWidget = SizedBox(
                           key: _keyForLine(i),
                           child: LyricsLineWidget(
@@ -3095,6 +3129,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
                             ),
                             line: line,
                             opacity: opacity,
+                            lineWidth: lineWidth,
                             distance: lyricLineVisualDistance(
                               index: i,
                               mainLine: _mainLine,

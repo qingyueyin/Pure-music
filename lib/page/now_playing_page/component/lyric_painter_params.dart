@@ -25,9 +25,10 @@ class LyricPainterParams {
   final bool useMaterialYouColor;
   final String? fontFamily;
   final String? agent;
+
+  /// 非空时透明度按帧从它读取，不再进 params 比较，淡入淡出不重建 painter。
+  final ValueListenable<double>? opacityListenable;
   final double opacity;
-  /// 淡入淡出中：颜色每帧变化，字形缓存不适用
-  final bool opacityAnimating;
   final double? highlightDeadlineMs;
   final Duration lineMedianWordDuration;
   final ValueListenable<double>? liftDecayListenable;
@@ -52,7 +53,7 @@ class LyricPainterParams {
     this.fontFamily,
     this.agent,
     required this.opacity,
-    this.opacityAnimating = false,
+    this.opacityListenable,
     this.highlightDeadlineMs,
     required this.lineMedianWordDuration,
     this.liftDecayListenable,
@@ -82,8 +83,8 @@ class LyricPainterParams {
         other.useMaterialYouColor == useMaterialYouColor &&
         other.fontFamily == fontFamily &&
         other.agent == agent &&
-        other.opacity == opacity &&
-        other.opacityAnimating == opacityAnimating &&
+        other.opacityListenable == opacityListenable &&
+        (opacityListenable != null || other.opacity == opacity) &&
         other.highlightDeadlineMs == highlightDeadlineMs &&
         other.lineMedianWordDuration == lineMedianWordDuration &&
         other.liftDecayListenable == liftDecayListenable &&
@@ -112,8 +113,7 @@ class LyricPainterParams {
       agent,
     ),
     Object.hash(
-      opacity,
-      opacityAnimating,
+      opacityListenable == null ? opacity : null,
       highlightDeadlineMs,
       lineMedianWordDuration,
       liftDecayListenable,

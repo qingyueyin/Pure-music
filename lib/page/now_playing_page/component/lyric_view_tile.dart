@@ -604,6 +604,8 @@ class _TransitionControllerManager {
   Ticker? _progressTicker;
   final Stopwatch _positionClock = Stopwatch();
   final Set<LyricTransitionTileController> _controllers = {};
+  // 每帧遍历用的快照缓冲，复用避免逐帧分配。
+  final List<LyricTransitionTileController> _tickSnapshot = [];
   double _syncedPosition = 0.0;
   int _lastNativeSyncMs = 0;
   static const int _nativeSyncMs = 1000;
@@ -772,7 +774,10 @@ class _TransitionControllerManager {
     bool countdownDue = true,
     double breathingStepScale = 0.0,
   }) {
-    final controllers = List<LyricTransitionTileController>.from(_controllers);
+    // 复用快照：遍历期间的增删不影响本轮，且不再每帧分配列表。
+    final controllers = _tickSnapshot
+      ..clear()
+      ..addAll(_controllers);
     for (final c in controllers) {
       if (c._disposed) {
         _controllers.remove(c);
