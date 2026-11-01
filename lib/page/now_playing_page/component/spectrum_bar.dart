@@ -52,15 +52,32 @@ class _SpectrumBarState extends State<SpectrumBar>
   double _t = 1.0;
   bool _reduceMotion = false;
   bool _windowFramesEnabled = true;
+  bool _backgroundIdle = false;
 
   @override
   void initState() {
     super.initState();
     _playback = context.read<PlaybackService>();
     _windowFramesEnabled = WindowRenderGate.instance.framesEnabled.value;
+    _backgroundIdle = WindowRenderGate.instance.backgroundIdle.value;
     WindowRenderGate.instance.framesEnabled.addListener(_onWindowFramesChanged);
+    WindowRenderGate.instance.backgroundIdle.addListener(
+      _onBackgroundIdleChanged,
+    );
     _syncSpectrumSubscription();
     _playback.playerStateNotifier.addListener(_onPlayerStateChanged);
+  }
+
+  void _onBackgroundIdleChanged() {
+    if (!mounted) return;
+    _backgroundIdle = WindowRenderGate.instance.backgroundIdle.value;
+    _syncSpectrumSubscription();
+    if (_backgroundIdle) {
+      _ticker?.stop();
+      _lastTick = Duration.zero;
+      _lastPaint = null;
+      _clearFrameToBaseline();
+    }
   }
 
   void _onWindowFramesChanged() {
@@ -79,7 +96,10 @@ class _SpectrumBarState extends State<SpectrumBar>
   }
 
   void _syncSpectrumSubscription() {
-    final shouldListen = _windowFramesEnabled && !_reduceMotion;
+    final shouldListen =
+        _windowFramesEnabled &&
+        !_backgroundIdle &&
+        !_reduceMotion;
     if (shouldListen) {
       _subscription ??= _playback.spectrumDisplayStream.listen(_onData);
       return;
@@ -108,6 +128,9 @@ class _SpectrumBarState extends State<SpectrumBar>
   void dispose() {
     WindowRenderGate.instance.framesEnabled.removeListener(
       _onWindowFramesChanged,
+    );
+    WindowRenderGate.instance.backgroundIdle.removeListener(
+      _onBackgroundIdleChanged,
     );
     _playback.playerStateNotifier.removeListener(_onPlayerStateChanged);
     _subscription?.cancel();

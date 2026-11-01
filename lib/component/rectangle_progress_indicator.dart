@@ -8,10 +8,11 @@ import 'package:flutter/material.dart';
 @visibleForTesting
 bool shouldRunProgressTimer({
   required bool windowFramesEnabled,
+  required bool backgroundIdle,
   required bool isPlaying,
   required bool disposed,
 }) {
-  return windowFramesEnabled && isPlaying && !disposed;
+  return windowFramesEnabled && !backgroundIdle && isPlaying && !disposed;
 }
 
 /// 进度条拖拽的激活手势类型。
@@ -136,6 +137,7 @@ class _RectangleProgressIndicatorState
     playbackService.nowPlayingNotifier.addListener(_onNowPlayingChanged);
     playbackService.positionSyncNotifier.addListener(_onPositionSync);
     WindowRenderGate.instance.framesEnabled.addListener(_onWindowFramesChanged);
+    WindowRenderGate.instance.backgroundIdle.addListener(_syncTimer);
     _syncNativeProgress();
     _syncTimer();
   }
@@ -171,6 +173,7 @@ class _RectangleProgressIndicatorState
         playbackService.playerStateNotifier.value == PlayerState.playing;
     if (!shouldRunProgressTimer(
       windowFramesEnabled: WindowRenderGate.instance.framesEnabled.value,
+      backgroundIdle: WindowRenderGate.instance.backgroundIdle.value,
       isPlaying: isPlaying,
       disposed: _disposed,
     )) {
@@ -350,6 +353,7 @@ class _RectangleProgressIndicatorState
     WindowRenderGate.instance.framesEnabled.removeListener(
       _onWindowFramesChanged,
     );
+    WindowRenderGate.instance.backgroundIdle.removeListener(_syncTimer);
     _progressTimer?.cancel();
     progress.dispose();
     super.dispose();

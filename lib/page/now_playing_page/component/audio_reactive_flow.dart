@@ -244,4 +244,10 @@ final class AudioReactiveFlowNormalizer {
     _smoothedPeak = 0;
     _hasPeak = false;
   }
+
+  /// 短时间断订阅（失焦闲时等）后恢复用：保留峰值基线，只清过期标记。
+  /// 基线还在的话恢复第一帧就按旧峰值归一化，包络不归零重爬。
+  void resumeFromPause() {
+    _hasPeak = _smoothedPeak > 0;
+  }
 }
