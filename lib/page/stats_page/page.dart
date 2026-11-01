@@ -291,24 +291,7 @@ class _StatsPageState extends State<StatsPage> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: List.generate(_tabs.length, (i) {
-              final selected = _currentIndex == i;
-              final canSwitch = canSwitchTab(
-                currentIndex: _currentIndex,
-                targetIndex: i,
-              );
-              return _tabButton(scheme, i, selected, canSwitch);
-            }),
-          ),
-          const SizedBox(height: Spacing.md),
-          _sourceSelector(scheme),
-          if (_currentIndex == 0 || _currentIndex == 3) ...[
-            const SizedBox(height: Spacing.md),
-            _periodBar(scheme),
-          ],
+          _filterHeader(scheme),
           const SizedBox(height: Spacing.lg),
           Expanded(
             child: DirectionalTabView(
@@ -389,28 +372,76 @@ class _StatsPageState extends State<StatsPage> {
     ];
   }
 
-  Widget _sourceSelector(ColorScheme scheme) {
-    return Align(
-      alignment: Alignment.centerRight,
-      child: SegmentedButton<_StatsSource>(
-        segments: [
-          for (final source in _StatsSource.values)
-            ButtonSegment(
-              value: source,
-              label: Text(source.label),
-              icon: Icon(
-                switch (source) {
-                  _StatsSource.all => Symbols.library_music,
-                  _StatsSource.local => Symbols.folder,
-                  _StatsSource.remote => Symbols.cloud,
-                },
-                size: 18,
+  /// 标签、曲库范围、时段三块按可用宽度排布：够宽时标签和曲库范围同一行，
+  /// 窄窗口下曲库范围换到标签下一行并靠右，时段条始终单独一行。
+  Widget _filterHeader(ColorScheme scheme) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wide = constraints.maxWidth >= 760;
+        final showPeriod = _currentIndex == 0 || _currentIndex == 3;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (wide)
+              Row(
+                children: [
+                  Expanded(child: _tabBar(scheme)),
+                  const SizedBox(width: Spacing.md),
+                  _sourceSelector(scheme),
+                ],
+              )
+            else ...[
+              _tabBar(scheme),
+              const SizedBox(height: Spacing.sm),
+              Align(
+                alignment: Alignment.centerRight,
+                child: _sourceSelector(scheme),
               ),
+            ],
+            if (showPeriod) ...[
+              const SizedBox(height: Spacing.md),
+              _periodBar(scheme),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _tabBar(ColorScheme scheme) {
+    return Wrap(
+      spacing: Spacing.sm,
+      runSpacing: Spacing.sm,
+      children: List.generate(_tabs.length, (i) {
+        final selected = _currentIndex == i;
+        final canSwitch = canSwitchTab(
+          currentIndex: _currentIndex,
+          targetIndex: i,
+        );
+        return _tabButton(scheme, i, selected, canSwitch);
+      }),
+    );
+  }
+
+  Widget _sourceSelector(ColorScheme scheme) {
+    return SegmentedButton<_StatsSource>(
+      segments: [
+        for (final source in _StatsSource.values)
+          ButtonSegment(
+            value: source,
+            label: Text(source.label),
+            icon: Icon(
+              switch (source) {
+                _StatsSource.all => Symbols.library_music,
+                _StatsSource.local => Symbols.folder,
+                _StatsSource.remote => Symbols.cloud,
+              },
+              size: 18,
             ),
-        ],
-        selected: {_source},
-        onSelectionChanged: (selection) => _setSource(selection.first),
-      ),
+          ),
+      ],
+      selected: {_source},
+      onSelectionChanged: (selection) => _setSource(selection.first),
     );
   }
 
