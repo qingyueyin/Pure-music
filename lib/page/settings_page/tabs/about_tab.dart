@@ -79,16 +79,21 @@ class _AboutContributorsSectionState extends State<_AboutContributorsSection> {
   static List<_AboutContributor>? _cachedContributors;
   static Future<List<_AboutContributor>>? _pendingRequest;
 
-  late List<_AboutContributor> _contributors;
+  List<_AboutContributor>? _contributors;
+  Object? _error;
 
   @override
   void initState() {
     super.initState();
-    _contributors = _cachedContributors ?? const [];
-    if (_cachedContributors == null) _loadContributors();
+    _contributors = _cachedContributors;
+    if (_contributors == null) _loadContributors();
   }
 
   Future<void> _loadContributors() async {
+    setState(() {
+      _error = null;
+      _contributors = null;
+    });
     try {
       final contributors = await _getContributors();
       if (!mounted) return;
@@ -99,6 +104,8 @@ class _AboutContributorsSectionState extends State<_AboutContributorsSection> {
         '[About] contributors request failed: ${error.runtimeType}',
       );
       log.settings.debug('legacy', trace.toString());
+      if (!mounted) return;
+      setState(() => _error = error);
     }
   }
 
@@ -149,7 +156,21 @@ class _AboutContributorsSectionState extends State<_AboutContributorsSection> {
 
   @override
   Widget build(BuildContext context) {
-    if (_contributors.isEmpty) return const SizedBox.shrink();
+    final contributors = _contributors;
+    if (_error != null) return _errorView;
+    if (contributors == null) {
+      return const Padding(
+        padding: EdgeInsets.only(top: 24.0),
+        child: Center(
+          child: SizedBox(
+            width: 28,
+            height: 28,
+            child: CircularProgressIndicator(strokeWidth: 2.5),
+          ),
+        ),
+      );
+    }
+    if (contributors.isEmpty) return const SizedBox.shrink();
 
     return Padding(
       padding: const EdgeInsets.only(top: 24.0),
@@ -166,22 +187,59 @@ class _AboutContributorsSectionState extends State<_AboutContributorsSection> {
     );
   }
 
+  Widget get _errorView {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 24.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SettingsSectionHeader('贡献者'),
+          const SizedBox(height: 8.0),
+          Center(
+            child: Column(
+              children: [
+                Icon(Symbols.wifi_off, size: 28, color: scheme.outline),
+                const SizedBox(height: 8.0),
+                Text('加载失败', style: TextStyle(color: scheme.onSurfaceVariant)),
+                const SizedBox(height: 8.0),
+                TextButton.icon(
+                  onPressed: _loadContributors,
+                  icon: const Icon(Symbols.refresh, size: 16),
+                  label: const Text('重试'),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _contributorWrap(BoxConstraints constraints) {
-    final columns = constraints.maxWidth >= 720
-        ? 3
-        : constraints.maxWidth >= 460
-        ? 2
-        : 1;
-    final tileWidth =
-        (constraints.maxWidth - (columns - 1) * Spacing.sm) / columns;
+    final textScale = MediaQuery.textScalerOf(
+      context,
+    ).scale(1.0).clamp(1.0, 2.0);
+    final minCellWidth = 104.0 * textScale;
+    final columns = ((constraints.maxWidth + Spacing.sm) /
+            (minCellWidth + Spacing.sm))
+        .floor()
+        .clamp(1, 6);
     return Wrap(
       spacing: Spacing.sm,
       runSpacing: Spacing.sm,
       children: [
-        for (final contributor in _contributors)
-          _ContributorTile(contributor: contributor, width: tileWidth),
+        for (final contributor in _contributors!)
+          _ContributorTile(
+            contributor: contributor,
+            width: tileWidth(columns, constraints),
+          ),
       ],
     );
+  }
+
+  double tileWidth(int columns, BoxConstraints constraints) {
+    return (constraints.maxWidth - (columns - 1) * Spacing.sm) / columns;
   }
 }
 
@@ -222,21 +280,29 @@ class _ContributorTile extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return SizedBox(
       width: width,
-      height: 60.0,
       child: Material(
         color: scheme.surfaceContainer,
-        borderRadius: AppRadius.smCircular,
+        borderRadius: AppRadius.mdCircular,
         child: InkWell(
-          borderRadius: AppRadius.smCircular,
+          borderRadius: AppRadius.mdCircular,
           onTap: () => _openProfile(context),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12.0),
-            child: Row(
+            padding: const EdgeInsets.fromLTRB(8.0, 16.0, 8.0, 10.0),
+            child: Column(
               children: [
                 _ContributorAvatar(contributor: contributor),
-                const SizedBox(width: 10.0),
-                Expanded(child: _info(scheme)),
-                Icon(Symbols.open_in_new, size: 16, color: scheme.outline),
+                const SizedBox(height: 10.0),
+                Text(
+                  contributor.login,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: scheme.onSurface,
+                    fontSize: AppType.body,
+                    fontWeight: AppType.weightMedium,
+                  ),
+                ),
               ],
             ),
           ),
@@ -253,34 +319,6 @@ class _ContributorTile extends StatelessWidget {
       showTextOnSnackBar('打开链接失败');
     }
   }
-
-  Widget _info(ColorScheme scheme) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          contributor.login,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: scheme.onSurface,
-            fontSize: AppType.body,
-            fontWeight: AppType.weightSemibold,
-          ),
-        ),
-        Text(
-          '${contributor.contributions} 次贡献',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: scheme.onSurfaceVariant,
-            fontSize: AppType.caption,
-          ),
-        ),
-      ],
-    );
-  }
 }
 
 class _ContributorAvatar extends StatelessWidget {
@@ -295,18 +333,18 @@ class _ContributorAvatar extends StatelessWidget {
     final avatarUrl = contributor.avatarUrl;
     final scheme = Theme.of(context).colorScheme;
     return CircleAvatar(
-      radius: 18,
+      radius: 24,
       backgroundColor: scheme.secondaryContainer,
       foregroundColor: scheme.onSecondaryContainer,
       child: avatarUrl?.isNotEmpty == true
           ? ClipOval(
               child: Image.network(
                 avatarUrl!,
-                width: 36,
-                height: 36,
+                width: 48,
+                height: 48,
                 fit: BoxFit.cover,
-                cacheWidth: 72,
-                cacheHeight: 72,
+                cacheWidth: 96,
+                cacheHeight: 96,
                 gaplessPlayback: true,
                 errorBuilder: (_, _, _) => Text(initials.toUpperCase()),
               ),
