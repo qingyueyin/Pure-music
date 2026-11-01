@@ -364,6 +364,11 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
         widget.inputs.isPlaybackActive;
     if (shouldListen) {
       if (_spectrumSubscription == null) {
+        // 断订阅期间平滑历史和峰值基线都过期了，不重置的话恢复后第一帧
+        // 会用旧峰值归一化新频谱，包络跳变，背景看起来在额外抖动。
+        // 顺序注意：reset 会清 awaitingPlaybackSpectrum，必须先 reset 再 markListenStarted。
+        _normalizer.reset();
+        _resetAudioVisual();
         _audio.markListenStarted();
         _spectrumSubscription = stream.listen(_handleSpectrum);
       }

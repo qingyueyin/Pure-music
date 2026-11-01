@@ -256,6 +256,10 @@ class _SpectrumBarsPainter extends CustomPainter {
   static const _minBar = 3.5;
   static const _visualGain = 1.25;
   static const _visualCurve = 0.9;
+  static final List<double> _curveTable = List<double>.generate(
+    1001,
+    (i) => math.pow(i / 1000, _visualCurve).toDouble(),
+  );
   static const _minAlpha = 0.3;
   static const _maxAlpha = 0.68;
 
@@ -274,11 +278,13 @@ class _SpectrumBarsPainter extends CustomPainter {
     if (maxHeight <= _minBar) return;
     final radius = Radius.circular(barWidth > 4.0 ? 2.0 : barWidth / 2);
     final inset = (slot - barWidth) / 2;
+    // rawValue^0.9 查表：0.001 精度内曲线无肉眼差，30fps 下省每柱一次 pow
     for (var i = 0; i < count; i++) {
       final rawValue = values[i].clamp(0.0, 1.0).toDouble();
-      final value = (math.pow(rawValue, _visualCurve).toDouble() * _visualGain)
-          .clamp(0.0, 1.0)
-          .toDouble();
+      final value =
+          (_curveTable[(rawValue * 1000).round()] * _visualGain)
+              .clamp(0.0, 1.0)
+              .toDouble();
       final barHeight = _minBar + (maxHeight - _minBar) * value;
       _barPaint.color = color.withValues(
         alpha: _minAlpha + (_maxAlpha - _minAlpha) * value,

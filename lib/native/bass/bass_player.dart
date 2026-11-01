@@ -835,11 +835,18 @@ class BassPlayer {
   /// update every 33ms
   Stream<double> get positionStream => _positionStreamController.stream;
 
-  Stream<Float32List> get spectrumStream => _spectrumStreamController.stream;
+  /// 广播流的 stream getter 每次访问都返回新对象；这里缓存同一实例，
+  /// 播放页重建时 identical 判断才成立，不会反复断开重订阅导致律动重置抖动。
+  late final Stream<Float32List> _spectrumStream =
+      _spectrumStreamController.stream;
+
+  Stream<Float32List> get spectrumStream => _spectrumStream;
 
   /// 播放页频谱条用的细分段频谱（与 [spectrumStream] 同源同节奏，互不影响）。
-  Stream<Float32List> get spectrumDisplayStream =>
+  late final Stream<Float32List> _spectrumDisplayStream =
       _spectrumDisplayStreamController.stream;
+
+  Stream<Float32List> get spectrumDisplayStream => _spectrumDisplayStream;
 
   Stream<PlayerState> get playerStateStream =>
       _playerStateStreamController.stream;
