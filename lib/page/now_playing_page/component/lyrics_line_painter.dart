@@ -1267,10 +1267,7 @@ class LyricsLinePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (line is SyncLyricLine && line.isMetadata) {
-      // 元数据是整行信息，不走逐字排版，避免宽度算错挤成断行
-      _paintSyncLineAsPlain(canvas, size);
-    } else if (line is SyncLyricLine &&
+    if (line is SyncLyricLine &&
         config.displayMode == LyricDisplayMode.wordByWord) {
       _paintSyncLine(canvas, size);
     } else if (line is SyncLyricLine) {
@@ -1288,6 +1285,7 @@ class LyricsLinePainter extends CustomPainter {
       required int wordIndex,
       required double wordDurationSec,
     }) {
+      if (syncLine.isMetadata) return LyricWordEffect.none;
       return lyricWordEffect(
         duration: Duration(
           microseconds: (wordDurationSec * Duration.microsecondsPerSecond)
@@ -3134,32 +3132,6 @@ class LyricsLinePainter extends CustomPainter {
       bottom: verticalPad,
     );
     final lineWidth = _wrapContentWidth(maxWidth, padding);
-
-    // 元数据行按整行文本测量，和 _paintSyncLineAsPlain 对齐
-    if (line is SyncLyricLine && line.isMetadata && !isSyncLineByLine) {
-      final syncLine = line as SyncLyricLine;
-      if (syncLine.words.isEmpty) return 0;
-      final fontSize = config.primaryFontSize(isMainLine: isMainLine);
-      final fontWeight = config.discreteFontWeight(config.fontWeight);
-      final letterSpace = config.letterSpacing(fontSize: fontSize);
-      final blockTextAlign = switch (_effectiveTextAlign) {
-        LyricTextAlign.left => TextAlign.left,
-        LyricTextAlign.center => TextAlign.center,
-        LyricTextAlign.right => TextAlign.right,
-      };
-      final mainTp = _buildTextPainter(
-        syncLine.content,
-        scheme.onSurface,
-        fontSize,
-        fontWeight,
-        letterSpace,
-        textAlign: blockTextAlign,
-      );
-      mainTp.layout(minWidth: lineWidth, maxWidth: lineWidth);
-      final height = padding.vertical + mainTp.height;
-      recycleTextPainter(mainTp);
-      return height;
-    }
 
     if (line is SyncLyricLine && !isSyncLineByLine) {
       final syncLine = line as SyncLyricLine;
