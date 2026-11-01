@@ -387,8 +387,8 @@ class MemoryMonitorService {
   void restoreForegroundImageCache() {
     stopHiddenTrim();
     final cache = PaintingBinding.instance.imageCache;
-    cache.maximumSize = 256;
-    cache.maximumSizeBytes = 96 << 20;
+    cache.maximumSize = 128;
+    cache.maximumSizeBytes = 48 << 20;
   }
 
   /// 托盘隐藏：界面树已整棵卸掉，图片和排版缓存一并清，再按间隔换出工作集。
