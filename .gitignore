@@ -115,6 +115,7 @@ skills-lock.json
 
 # Local diagnostics, not shipped
 tool/local/
+tool/occupancy-report/
 
 # Flutter 生成文件，不进仓库（每次构建都会重写）
 /windows/flutter/generated_plugins.cmake
