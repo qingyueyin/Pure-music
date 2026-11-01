@@ -38,6 +38,9 @@ dependencies:
   rust_lib_pure_music:
     path: rust_builder
   sqlite3: ^2.1.0
+  # 把官方 sqlite3.dll 打进 Windows 产物，避免回退到系统 winsqlite3.dll。
+  # 注意：0.6.0+eol 起本包为空包，必须锁在 0.5.x。
+  sqlite3_flutter_libs: ^0.5.42
   tray_manager: ^0.5.3
   window_manager: ^0.5.1
   xml: ^6.5.0

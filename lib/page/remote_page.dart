@@ -23,7 +23,7 @@ class RemotePage extends StatefulWidget {
 class _RemotePageState extends State<RemotePage> {
   String? _selectedSourceId;
   final Set<String> _syncing = <String>{};
-  final Map<String, String> _progress = <String, String>{};
+  final Map<String, ({double value, String message})> _progress = {};
 
   RemoteLibrary get _library => RemoteLibrary.instance;
 
@@ -104,11 +104,13 @@ class _RemotePageState extends State<RemotePage> {
           );
         }
         final source = sources[index - 1];
+        final progress = _progress[source.id];
         return _sourceCard(
           title: source.name,
-          subtitle:
-              _progress[source.id] ??
-              '${_library.audiosForSource(source.id).length} 首',
+          subtitle: progress == null
+              ? '${_library.audiosForSource(source.id).length} 首'
+              : (progress.message.isEmpty ? '正在扫描…' : progress.message),
+          progress: progress?.value,
           icon: _iconFor(source.kind),
           selected: _selectedSourceId == source.id,
           syncing: _syncing.contains(source.id),
@@ -126,6 +128,7 @@ class _RemotePageState extends State<RemotePage> {
     required bool selected,
     required VoidCallback onTap,
     bool syncing = false,
+    double? progress,
     Widget? trailing,
   }) {
     final scheme = Theme.of(context).colorScheme;
@@ -197,6 +200,33 @@ class _RemotePageState extends State<RemotePage> {
                           ),
                         ],
                       ),
+                      if (progress != null) ...[
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: LinearProgressIndicator(
+                                value: progress <= 0
+                                    ? null
+                                    : progress.clamp(0.0, 1.0),
+                                minHeight: 4,
+                                borderRadius: AppRadius.xsCircular,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              '${(progress.clamp(0.0, 1.0) * 100).round()}%',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: scheme.onSurfaceVariant,
+                                    fontFeatures: const [
+                                      FontFeature.tabularFigures(),
+                                    ],
+                                  ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -237,10 +267,10 @@ class _RemotePageState extends State<RemotePage> {
           enabled: !syncing,
           child: const Text('编辑'),
         ),
+        // 删除始终可用：加错源的场景恰恰最常发生在扫描刚开始的时候。
         PopupMenuItem(
           value: 'delete',
-          enabled: !syncing,
-          child: const Text('删除'),
+          child: Text(syncing ? '删除（中止同步）' : '删除'),
         ),
       ],
     );
@@ -309,12 +339,16 @@ class _RemotePageState extends State<RemotePage> {
   }
 
   Future<void> _deleteSource(RemoteSource source) async {
-    if (_syncing.contains(source.id)) return;
+    final syncing = _syncing.contains(source.id);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('删除远程源'),
-        content: Text('确定删除「${source.name}」以及它的全部远程歌曲记录吗？'),
+        content: Text(
+          syncing
+              ? '「${source.name}」正在同步。删除会立即中止同步，并移除已写入的曲目记录。确定删除吗？'
+              : '确定删除「${source.name}」以及它的全部远程歌曲记录吗？',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -347,14 +381,16 @@ class _RemotePageState extends State<RemotePage> {
     if (_syncing.contains(source.id)) return;
     setState(() {
       _syncing.add(source.id);
-      _progress[source.id] = '正在连接…';
+      _progress[source.id] = (value: 0, message: '正在连接…');
     });
     try {
       final count = await _library.syncSource(
         source,
         onProgress: (progress, message) {
           if (!mounted) return;
-          setState(() => _progress[source.id] = message);
+          setState(
+            () => _progress[source.id] = (value: progress, message: message),
+          );
         },
       );
       if (!mounted) return;
@@ -362,6 +398,10 @@ class _RemotePageState extends State<RemotePage> {
         '「${source.name}」已同步 $count 首',
         variant: ToastVariant.success,
       );
+    } on RemoteSyncCancelled {
+      if (mounted) {
+        showTextOnSnackBar('已中止「${source.name}」的同步');
+      }
     } catch (error, trace) {
       log.app.error(
         'legacy',
@@ -387,6 +427,7 @@ class _RemotePageState extends State<RemotePage> {
       RemoteSourceKind.navidrome => Symbols.dns,
       RemoteSourceKind.webdav => Symbols.cloud,
       RemoteSourceKind.smb => Symbols.folder_shared,
+      RemoteSourceKind.jellyfin => Symbols.smart_display,
     };
   }
 }

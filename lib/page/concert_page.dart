@@ -134,7 +134,7 @@ class _ConcertPageState extends State<ConcertPage> {
       }
     }
 
-    for (final folder in AudioLibrary.instance.folders) {
+    for (final folder in AudioLibrary.instance.allFolders) {
       if (selectedFolders.contains(folder.path)) absorb(folder.audios);
     }
     for (final artist in AudioLibrary.instance.artistCollection.values) {
@@ -176,7 +176,7 @@ class _ConcertPageState extends State<ConcertPage> {
   String _selectionName() {
     if (_entireLibrary) return '整个曲库';
     final names = <String>[
-      for (final folder in AudioLibrary.instance.folders)
+      for (final folder in AudioLibrary.instance.allFolders)
         if (selectedFolders.contains(folder.path)) folder.displayName,
       for (final artist in AudioLibrary.instance.artistCollection.values)
         if (selectedArtists.contains(artist.name)) artist.name,
@@ -1005,7 +1005,7 @@ class _ConcertPageState extends State<ConcertPage> {
 
   List<_SourceEntry> _folderSourceEntries() {
     return [
-      for (final folder in AudioLibrary.instance.folders)
+      for (final folder in AudioLibrary.instance.allFolders)
         _SourceEntry(
           key: folder.path,
           title: folder.displayName,

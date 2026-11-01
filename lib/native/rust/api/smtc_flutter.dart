@@ -6,8 +6,8 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `_apply_thumbnail`, `_clear_display`, `_create_hidden_smtc_window`, `_debug_snapshot`, `_get_smtc_window`, `_init_controls`, `_new`, `_queue_thumbnail_update`, `_ras_ref_from_pic_data`, `_refresh_display`, `_start_thumbnail_worker`, `_try_get_thumbnail`, `_update_display`, `_update_state`, `_update_time_properties`, `_wait_for_job`, `destroy_hidden_window`, `hidden_window_proc`, `should_queue_smtc_thumbnail`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `WinRtThreadGuard`
+// These functions are ignored because they are not marked as `pub`: `_apply_thumbnail`, `_clear_display`, `_create_hidden_smtc_window`, `_debug_snapshot`, `_get_smtc_window`, `_init_controls`, `_new`, `_queue_thumbnail_job`, `_queue_thumbnail_update`, `_ras_ref_from_pic_data`, `_refresh_display`, `_resolve_thumbnail`, `_start_thumbnail_worker`, `_update_display`, `_update_state`, `_update_time_properties`, `_wait_for_job`, `destroy_hidden_window`, `hidden_window_proc`, `should_queue_smtc_thumbnail`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ThumbnailJob`, `WinRtThreadGuard`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `drop`, `drop`, `fmt`
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SMTCFlutter>>
@@ -24,6 +24,14 @@ abstract class SmtcFlutter implements RustOpaqueInterface {
   /// Apis for Flutter
   factory SmtcFlutter() =>
       RustLib.instance.api.crateApiSmtcFlutterSmtcFlutterNew();
+
+  /// 直接以图片字节更新缩略图。远程曲目没有本地文件可抠内嵌封面，
+  /// 由 Dart 侧取到封面字节后调用这里；晚到的字节按曲目路径判废。
+  /// Apis for Flutter
+  Future<void> queueThumbnailBytes({
+    required String path,
+    required List<int> bytes,
+  });
 
   /// 系统在会话挂起（最小化/后台）时会静默丢弃 DisplayUpdater 更新。
   /// 通过往返切换 PlaybackStatus 强制系统端重新评估会话并重绘显示。
