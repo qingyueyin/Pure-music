@@ -34,6 +34,10 @@ class WindowLifecycleService with WindowListener, TrayListener {
   bool _playbackListenersBound = false;
   bool _desktopLyricListenersBound = false;
   Timer? _bindRetryTimer;
+  Timer? _focusWatchdogTimer;
+  bool _focusWatchdogWarned = false;
+  bool? _lastWatchdogFocused;
+  bool? _lastWatchdogMinimized;
   Future<void> _trayOperation = Future<void>.value();
   Future<void> Function()? _disposeRuntimeResources;
 
@@ -49,7 +53,45 @@ class WindowLifecycleService with WindowListener, TrayListener {
     windowManager.addListener(this);
     trayManager.addListener(this);
     WindowRenderGate.instance.attach();
+    _startFocusWatchdog();
     await syncTrayIcon();
+  }
+
+  /// 原生 blur/focus 偶尔会漏（最大化后尤其明显），用真实前台窗口兜底。
+  /// 2 秒核对一次，焦点变化仍由 setWindowFocused 驱动 30 秒闲时计时。
+  void _startFocusWatchdog() {
+    _focusWatchdogTimer?.cancel();
+    log.window.info('legacy', '[focus] watchdog start');
+    _focusWatchdogTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      unawaited(_syncFocusFromSystem());
+    });
+  }
+
+  Future<void> _syncFocusFromSystem() async {
+    if (_isExiting) return;
+    final gate = WindowRenderGate.instance;
+    if (gate.trayHidden.value) return;
+    try {
+      final minimized = await windowManager.isMinimized();
+      if (minimized != _lastWatchdogMinimized) {
+        _lastWatchdogMinimized = minimized;
+        log.window.info('legacy', '[focus] watchdog minimized=$minimized');
+      }
+      if (minimized) return;
+      final focused = await windowManager.isFocused();
+      if (focused != _lastWatchdogFocused) {
+        _lastWatchdogFocused = focused;
+        log.window.info('legacy', '[focus] watchdog focused=$focused');
+      }
+      if (_isExiting || gate.trayHidden.value) return;
+      gate.setWindowFocused(focused);
+    } catch (error) {
+      // 插件还没就绪或窗口正在销毁，下一轮再核对；只记第一次，避免刷屏。
+      if (!_focusWatchdogWarned) {
+        _focusWatchdogWarned = true;
+        log.window.warn('legacy', '[focus] watchdog failed: $error');
+      }
+    }
   }
 
   void markLibraryReady() {
@@ -380,6 +422,7 @@ class WindowLifecycleService with WindowListener, TrayListener {
     }
     if (_isExiting) return;
     // 不只看标记：窗口此刻可能还没真的回到桌面上，show/restore 事件会再核对一次。
+    WindowRenderGate.instance.setWindowFocused(true);
     WindowRenderGate.instance.resumeVisible();
     MemoryMonitorService.instance.restoreForegroundImageCache();
     SleepBlocker.instance.setMainWindowVisible(true);
@@ -439,6 +482,8 @@ class WindowLifecycleService with WindowListener, TrayListener {
     WindowRenderGate.instance.detach();
     _bindRetryTimer?.cancel();
     _bindRetryTimer = null;
+    _focusWatchdogTimer?.cancel();
+    _focusWatchdogTimer = null;
     await _run(
       'trayManager.destroy',
       _trayOperation.then((_) => trayManager.destroy()),
@@ -485,6 +530,7 @@ class WindowLifecycleService with WindowListener, TrayListener {
     final visible = await windowManager.isVisible();
     if (WindowRenderGate.instance.trayHidden.value) return;
     if (minimized || !visible) return;
+    WindowRenderGate.instance.setWindowFocused(true);
     WindowRenderGate.instance.resumeVisible();
   }
 

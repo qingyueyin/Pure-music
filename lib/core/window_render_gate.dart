@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
+import 'package:pure_music/core/log/app_log.dart';
 import 'package:pure_music/core/window_frame_probe.dart';
 
 /// 窗口状态：前台、后台（失去焦点但窗口仍在）、最小化、托盘。
@@ -132,6 +133,22 @@ class WindowRenderGate with WidgetsBindingObserver {
     _sync(forceFrame: wasHidden);
   }
 
+  /// 原生 blur/focus 事件：window_manager 的 WM_NCACTIVATE 比框架
+  /// AppLifecycle 更准更快，用它驱动 backgroundIdle 计时。
+  void setWindowFocused(bool focused) {
+    final changed = _windowFocused != focused;
+    _windowFocused = focused;
+    if (changed) {
+      log.window.info(
+        'legacy',
+        '[focus] ${focused ? 'foreground' : 'background'}',
+      );
+    }
+    // 值没变也要重新核对：托盘/最小化恢复后可能停在 false，
+    // 只靠变化回调会永远起不来闲时计时。
+    if (changed || !focused) _syncBackgroundIdle();
+  }
+
   /// 窗口真正可见后调用：清掉所有隐藏标记，并强制复位排帧门闩。
   /// 系统事件可能漏发，恢复路径必须以真实窗口状态为准。
   void resumeVisible() {
@@ -145,9 +162,9 @@ class WindowRenderGate with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // 只记录焦点：后台照常绘制，不停帧。
-    _windowFocused = state == AppLifecycleState.resumed;
-    _syncBackgroundIdle();
+    log.window.info('legacy', '[focus] lifecycle=${state.name}');
+    // 焦点只由原生 blur/focus 和 watchdog 驱动；AppLifecycle 在 Windows 上
+    // 对失焦判定含糊，resumed 会把被挡住时的 idle 计时取消。
     switch (state) {
       case AppLifecycleState.resumed:
       case AppLifecycleState.inactive:
@@ -162,20 +179,44 @@ class WindowRenderGate with WidgetsBindingObserver {
   }
 
   /// 失焦且窗口仍在桌面时启动 30 秒计时；焦点回来或窗口隐藏立即取消。
+  /// 从闲时恢复时必须主动排一帧：闲时装饰动画全停，引擎可能没有任何
+  /// 在途帧，只改状态不排帧画面就停在旧帧上，看起来像卡死。
   void _syncBackgroundIdle() {
     final shouldCount =
         !_windowFocused && !_trayHidden && !_windowMinimized;
     if (!shouldCount) {
+      final hadTimer = _backgroundIdleTimer != null;
       _backgroundIdleTimer?.cancel();
       _backgroundIdleTimer = null;
-      if (backgroundIdle.value) backgroundIdle.value = false;
+      if (hadTimer) {
+        log.window.info(
+          'legacy',
+          '[focus] idle-timer cancel focused=$_windowFocused '
+          'tray=$_trayHidden min=$_windowMinimized',
+        );
+      }
+      if (backgroundIdle.value) {
+        backgroundIdle.value = false;
+        if (shouldRender && !WidgetsBinding.instance.hasScheduledFrame) {
+          WidgetsBinding.instance.scheduleFrame();
+        }
+      }
       return;
     }
     if (_backgroundIdleTimer != null) return;
+    log.window.info('legacy', '[focus] idle-timer start');
     _backgroundIdleTimer = Timer(_backgroundIdleDelay, () {
       _backgroundIdleTimer = null;
-      if (!_windowFocused || _trayHidden || _windowMinimized) return;
-      if (!backgroundIdle.value) backgroundIdle.value = true;
+      log.window.info(
+        'legacy',
+        '[focus] idle-timer fire focused=$_windowFocused '
+        'tray=$_trayHidden min=$_windowMinimized',
+      );
+      if (_windowFocused || _trayHidden || _windowMinimized) return;
+      if (!backgroundIdle.value) {
+        backgroundIdle.value = true;
+        log.window.info('legacy', '[focus] idle');
+      }
     });
   }
 

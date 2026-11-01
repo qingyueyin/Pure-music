@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "flutter_window.h"
+#include "start_menu_shortcut.h"
 #include "utils.h"
 
 // 不强制占用独立显卡。播放器留在系统默认显卡上，避免显存一直堆在高性能卡里。
@@ -290,17 +291,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   }
 
   ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-
-  // 进程 AUMID 与开始菜单快捷方式保持一致，系统媒体控件才能归到同一应用身份。
-  const HRESULT app_id_result =
-      ::SetCurrentProcessExplicitAppUserModelID(kAppUserModelId);
-  if (FAILED(app_id_result)) {
-    std::wstringstream app_id_message;
-    app_id_message << L"|AUMID_FAILED|hr=0x" << std::hex
-                   << std::uppercase << static_cast<unsigned>(app_id_result)
-                   << L"\r\n";
-    AppendCrashLog(app_id_message.str());
-  }
 
   const std::wstring exe_dir = GetExecutableDirectory();
   ::SetCurrentDirectoryW(exe_dir.c_str());

@@ -385,6 +385,7 @@ class _EntryState extends State<Entry>
     Timer.run(() {
       WindowFrameProbe.event('restore(entry)');
       WindowRenderGate.instance.setWindowMinimized(false);
+      WindowRenderGate.instance.setWindowFocused(true);
       MemoryMonitorService.instance.stopHiddenTrim();
       PlayService.existingPlaybackService?.stopSmtcKeepAlive();
     });
@@ -432,6 +433,12 @@ class _EntryState extends State<Entry>
   @override
   void onWindowFocus() {
     ThemeProvider.instance.refreshConfiguredSeedIfNeeded();
+    WindowRenderGate.instance.setWindowFocused(true);
+  }
+
+  @override
+  void onWindowBlur() {
+    WindowRenderGate.instance.setWindowFocused(false);
   }
 
   void _onPointerDown(PointerDownEvent event) {
