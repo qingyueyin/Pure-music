@@ -26,6 +26,10 @@ constexpr DWORD kMaxPathLength = 32768;
 constexpr wchar_t kShortcutName[] = L"Pure Music";
 constexpr wchar_t kFallbackShortcutName[] = L"Pure Music (Portable)";
 constexpr wchar_t kShortcutSuffix[] = L".lnk";
+// Inno Setup 卸载项：安装版用它判断身份，快捷方式主名只归安装版用。
+constexpr wchar_t kUninstallKeyPath[] =
+    L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\"
+    L"{42C4470A-72BE-49A0-B32F-DF7A941DD48C}_is1";
 
 // 后台线程句柄：退出前 join，避免写到一半被进程退出切断。
 HANDLE g_shortcut_thread = nullptr;
@@ -323,37 +327,40 @@ bool CreateShortcut(const std::wstring& path, const std::wstring& exe,
   return SaveShortcutAtomically(file.Get(), path);
 }
 
-unsigned PathHash(const std::wstring& path) {
-  unsigned hash = 2166136261u;
-  for (const wchar_t character : path) {
-    hash ^= static_cast<unsigned>(character);
-    hash *= 16777619u;
+// exe 在安装版注册表卸载项的 InstallLocation 里就算安装版；
+// 查不到注册表或目录对不上都按便携版处理，主名留给自己。
+bool IsInstalledBuild(const std::wstring& exe) {
+  wchar_t location[kMaxPathLength] = {};
+  DWORD size = sizeof(location);
+  const LSTATUS status = ::RegGetValueW(
+      HKEY_CURRENT_USER, kUninstallKeyPath, L"InstallLocation",
+      RRF_RT_REG_SZ, nullptr, location, &size);
+  if (status != ERROR_SUCCESS || location[0] == L'\0') {
+    return false;
   }
-  return hash;
+  const std::wstring exe_long = LongPath(exe);
+  std::wstring install_dir(location);
+  while (!install_dir.empty() &&
+         (install_dir.back() == L'\\' || install_dir.back() == L'/')) {
+    install_dir.pop_back();
+  }
+  if (install_dir.empty()) {
+    return false;
+  }
+  const std::wstring prefix = install_dir + L'\\';
+  return ::CompareStringOrdinal(
+             exe_long.substr(0, prefix.size()).c_str(),
+             static_cast<int>(prefix.size()), prefix.c_str(),
+             static_cast<int>(prefix.size()), TRUE) == CSTR_EQUAL;
 }
 
-// 主名 → 便携名 → 带目录名的第三候选 → 再带路径哈希，别静默放弃。
+// 便携版固定用「Pure Music (Portable)」，名字被占就覆盖；
+// 安装版用主名。不再落到带目录名/哈希的长尾巴名字。
 std::wstring ChooseShortcutPath(const std::wstring& programs_dir,
                                 const std::wstring& exe) {
-  std::vector<std::wstring> names;
-  names.push_back(kShortcutName);
-  names.push_back(kFallbackShortcutName);
-  const std::wstring directory = FileName(ParentDirectory(exe));
-  if (!directory.empty()) {
-    const std::wstring with_directory =
-        std::wstring(kShortcutName) + L" (" + directory + L")";
-    names.push_back(with_directory);
-    wchar_t hash[16] = {};
-    ::swprintf_s(hash, L"%08X", PathHash(exe));
-    names.push_back(with_directory + L" " + hash);
-  }
-  for (const auto& name : names) {
-    const std::wstring path = programs_dir + L"\\" + name + kShortcutSuffix;
-    if (::GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES) {
-      return path;
-    }
-  }
-  return std::wstring();
+  const wchar_t* name = IsInstalledBuild(exe) ? kShortcutName
+                                              : kFallbackShortcutName;
+  return std::wstring(programs_dir) + L"\\" + name + kShortcutSuffix;
 }
 
 void EnsureShortcutInApartment() {
