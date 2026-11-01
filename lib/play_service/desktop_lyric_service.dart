@@ -828,10 +828,11 @@ class DesktopLyricService extends ChangeNotifier {
 
   void _startProgressSync() {
     _progressSyncTimer?.cancel();
-    _progressSyncTimer = Timer.periodic(
-      const Duration(seconds: 1),
-      (_) => _sendLyricProgressSnapshot(),
-    );
+    // 暂停时歌词进程自己停了 ticker，快照不需要每秒校准，seek 时另有 positionSync 推送
+    _progressSyncTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_playbackService.playerState != PlayerState.playing) return;
+      _sendLyricProgressSnapshot();
+    });
   }
 
   void _sendLyricProgressSnapshot() {
