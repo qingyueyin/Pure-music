@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:pure_music/core/enums.dart';
+import 'package:pure_music/core/window_render_gate.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/lyric/lyric_manual_offset.dart';
 import 'package:pure_music/lyric/lrc.dart';
@@ -581,6 +582,9 @@ class _TransitionControllerManager {
   int _lastNativeSyncMs = 0;
   static const int _nativeSyncMs = 1000;
   Duration _lastTickElapsed = Duration.zero;
+  Duration? _lastPaintElapsed;
+  // 间奏倒计时和呼吸动画 30fps 足够，不必跟着屏幕刷新率跑
+  static const _paintInterval = Duration(milliseconds: 33);
   late final VoidCallback _playerStateListener = _syncPlaybackState;
   late final VoidCallback _positionSyncListener = _syncPosition;
 
@@ -602,6 +606,7 @@ class _TransitionControllerManager {
         _positionSyncListener,
       );
       LyricManualOffset.instance.addListener(_onManualOffset);
+      WindowRenderGate.instance.framesEnabled.addListener(_onWindowFramesChanged);
     }
     _controllers.add(controller);
     controller._isPlaying = _isPlaying;
@@ -621,6 +626,9 @@ class _TransitionControllerManager {
         _positionSyncListener,
       );
       LyricManualOffset.instance.removeListener(_onManualOffset);
+      WindowRenderGate.instance.framesEnabled.removeListener(
+        _onWindowFramesChanged,
+      );
     } else {
       _syncProgressTicker();
     }
@@ -658,20 +666,29 @@ class _TransitionControllerManager {
     }
   }
 
+  void _onWindowFramesChanged() {
+    _syncProgressTicker();
+  }
+
   void _syncProgressTicker() {
-    if (_controllers.isEmpty || !_isPlaying) {
+    // 这个 Ticker 不吃 TickerMode，窗口隐藏时要自己停，否则托盘里还在按刷新率画。
+    if (!WindowRenderGate.instance.framesEnabled.value ||
+        _controllers.isEmpty ||
+        !_isPlaying) {
       _stopProgressTicker();
       return;
     }
     _progressTicker ??= Ticker(_tickProgress);
     if (_progressTicker!.isActive) return;
     _lastTickElapsed = Duration.zero;
+    _lastPaintElapsed = null;
     _progressTicker!.start();
   }
 
   void _stopProgressTicker() {
     _progressTicker?.stop();
     _lastTickElapsed = Duration.zero;
+    _lastPaintElapsed = null;
     _positionClock.stop();
   }
 
@@ -680,6 +697,9 @@ class _TransitionControllerManager {
       _syncProgressTicker();
       return;
     }
+    final lastPaint = _lastPaintElapsed;
+    if (lastPaint != null && elapsed - lastPaint < _paintInterval) return;
+    _lastPaintElapsed = elapsed;
     final tickDelta = _lastTickElapsed == Duration.zero
         ? Duration.zero
         : elapsed - _lastTickElapsed;

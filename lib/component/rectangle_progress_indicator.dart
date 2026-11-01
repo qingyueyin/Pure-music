@@ -1,8 +1,18 @@
 import 'dart:async';
 import 'package:flutter/gestures.dart';
+import 'package:pure_music/core/window_render_gate.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:flutter/material.dart';
+
+@visibleForTesting
+bool shouldRunProgressTimer({
+  required bool windowFramesEnabled,
+  required bool isPlaying,
+  required bool disposed,
+}) {
+  return windowFramesEnabled && isPlaying && !disposed;
+}
 
 /// 进度条拖拽的激活手势类型。
 enum _DragGestureType { longPress, drag }
@@ -114,6 +124,7 @@ class _RectangleProgressIndicatorState
   _DragGestureType? _activeDragGesture;
 
   final ProgressDragController _dragController = ProgressDragController();
+  bool _disposed = false;
 
   static const _longPressDuration = Duration(milliseconds: 250);
   static const _mouseDragThreshold = 12.0;
@@ -124,6 +135,7 @@ class _RectangleProgressIndicatorState
     playbackService.playerStateNotifier.addListener(_syncTimer);
     playbackService.nowPlayingNotifier.addListener(_onNowPlayingChanged);
     playbackService.positionSyncNotifier.addListener(_onPositionSync);
+    WindowRenderGate.instance.framesEnabled.addListener(_onWindowFramesChanged);
     _syncNativeProgress();
     _syncTimer();
   }
@@ -153,14 +165,18 @@ class _RectangleProgressIndicatorState
   }
 
   void _syncTimer() {
-    _syncNativeProgress();
     final isPlaying =
         playbackService.playerStateNotifier.value == PlayerState.playing;
-    if (!isPlaying) {
+    if (!shouldRunProgressTimer(
+      windowFramesEnabled: WindowRenderGate.instance.framesEnabled.value,
+      isPlaying: isPlaying,
+      disposed: _disposed,
+    )) {
       _progressTimer?.cancel();
       _progressTimer = null;
       return;
     }
+    _syncNativeProgress();
     _progressTimer ??= Timer.periodic(const Duration(milliseconds: 200), (_) {
       final elapsedSinceNative = _clock.elapsedMilliseconds - _lastNativeSyncMs;
       if (elapsedSinceNative >= _nativeSyncInterval.inMilliseconds) {
@@ -169,6 +185,10 @@ class _RectangleProgressIndicatorState
         _emitProgressFromLocal();
       }
     });
+  }
+
+  void _onWindowFramesChanged() {
+    _syncTimer();
   }
 
   /// 歌曲变化：拖拽中切歌则取消拖拽，随后同步新歌的真实进度。
@@ -321,9 +341,13 @@ class _RectangleProgressIndicatorState
 
   @override
   void dispose() {
+    _disposed = true;
     playbackService.playerStateNotifier.removeListener(_syncTimer);
     playbackService.nowPlayingNotifier.removeListener(_onNowPlayingChanged);
     playbackService.positionSyncNotifier.removeListener(_onPositionSync);
+    WindowRenderGate.instance.framesEnabled.removeListener(
+      _onWindowFramesChanged,
+    );
     _progressTimer?.cancel();
     progress.dispose();
     super.dispose();

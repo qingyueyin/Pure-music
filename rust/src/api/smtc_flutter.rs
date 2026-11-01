@@ -77,6 +77,12 @@ pub struct SMTCFlutter {
     thumbnail_pending: Arc<Mutex<Option<(ThumbnailJob, u64)>>>,
     thumbnail_wake: Arc<Condvar>,
     thumbnail_closed: Arc<AtomicBool>,
+    thumbnail_applied_path: Arc<Mutex<Option<String>>>,
+}
+
+/// 同一首歌的封面已经交过就不要再解码。
+pub(crate) fn should_queue_smtc_thumbnail(applied_path: Option<&str>, path: &str) -> bool {
+    applied_path != Some(path)
 }
 
 #[derive(Debug)]
@@ -378,12 +384,14 @@ impl SMTCFlutter {
         // 已解析的缩略图字节（路径 → 图片）只活在工人线程里：
         // 刷新显示时按路径命中复用，远程曲目不必等 Dart 再喂一次。
         let thumbnail_picture = Arc::new(Mutex::new(None));
+        let thumbnail_applied_path = Arc::new(Mutex::new(None));
         let (thumbnail_pending, thumbnail_wake, thumbnail_closed) = Self::_start_thumbnail_worker(
             _smtc.clone(),
             Arc::clone(&display_revision),
             Arc::clone(&display_lock),
             Arc::clone(&last_path),
             Arc::clone(&thumbnail_picture),
+            Arc::clone(&thumbnail_applied_path),
         );
 
         Ok(Self {
@@ -402,6 +410,7 @@ impl SMTCFlutter {
             thumbnail_pending,
             thumbnail_wake,
             thumbnail_closed,
+            thumbnail_applied_path,
         })
     }
 
@@ -605,13 +614,23 @@ impl SMTCFlutter {
             Err(poisoned) => *poisoned.into_inner() = 0,
         }
         self.progress_ms.store(0, Ordering::Release);
+        if let Ok(mut applied) = self.thumbnail_applied_path.lock() {
+            *applied = None;
+        }
         self._smtc.SetPlaybackStatus(MediaPlaybackStatus::Stopped)?;
         self._smtc.SetIsEnabled(false)?;
         Ok(())
     }
 
     fn _queue_thumbnail_update(&self, path: HSTRING, revision: u64) {
-        self._queue_thumbnail_job(ThumbnailJob::Path(path.to_string()), revision);
+        let path_string = path.to_string();
+        // 同一首歌的封面已经提交过就不再解码（main 的防重复提交）。
+        if let Ok(applied) = self.thumbnail_applied_path.lock() {
+            if !should_queue_smtc_thumbnail(applied.as_deref(), &path_string) {
+                return;
+            }
+        }
+        self._queue_thumbnail_job(ThumbnailJob::Path(path_string), revision);
     }
 
     fn _queue_thumbnail_job(&self, job: ThumbnailJob, revision: u64) {
@@ -692,6 +711,7 @@ impl SMTCFlutter {
         display_lock: Arc<Mutex<()>>,
         last_path: Arc<Mutex<Option<String>>>,
         picture_cache: Arc<Mutex<Option<(String, Vec<u8>)>>>,
+        thumbnail_applied_path: Arc<Mutex<Option<String>>>,
     ) -> (
         Arc<Mutex<Option<(ThumbnailJob, u64)>>>,
         Arc<Condvar>,
@@ -703,6 +723,7 @@ impl SMTCFlutter {
         let worker_pending = Arc::clone(&pending);
         let worker_wake = Arc::clone(&wake);
         let worker_closed = Arc::clone(&closed);
+        let worker_applied_path = Arc::clone(&thumbnail_applied_path);
         let spawn_result = std::thread::Builder::new()
             .name("smtc-thumbnail".to_string())
             .spawn(move || {
@@ -728,8 +749,6 @@ impl SMTCFlutter {
                         }
                         ThumbnailJob::Bytes { path, .. } => {
                             (path.clone(), Self::_resolve_thumbnail(&job.0, &picture_cache))
-                        }
-                    };
                     let _display_guard = match display_lock.lock() {
                         Ok(guard) => guard,
                         Err(poisoned) => poisoned.into_inner(),
@@ -766,6 +785,10 @@ impl SMTCFlutter {
                     };
                     if let Err(error) = Self::_apply_thumbnail(&smtc, thumbnail) {
                         log::warn!(target: "smtc", "SMTC: thumbnail update err: {}", error);
+                        continue;
+                    }
+                    if let Ok(mut applied) = worker_applied_path.lock() {
+                        *applied = Some(job_path);
                     }
                 }
             });
@@ -822,5 +845,17 @@ impl SMTCFlutter {
             duration_ms,
             progress_ms: self.progress_ms.load(Ordering::Acquire),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_queue_smtc_thumbnail;
+
+    #[test]
+    fn same_track_does_not_decode_artwork_again() {
+        assert!(!should_queue_smtc_thumbnail(Some("a.flac"), "a.flac"));
+        assert!(should_queue_smtc_thumbnail(None, "a.flac"));
+        assert!(should_queue_smtc_thumbnail(Some("a.flac"), "b.flac"));
     }
 }

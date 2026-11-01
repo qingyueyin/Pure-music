@@ -36,6 +36,8 @@ class _SpectrumBarState extends State<SpectrumBar>
   static const _lerpDurationMs = 110.0;
   static const _maxStepSeconds = 0.1;
   static const _settleEpsilon = 0.004;
+  // 插值按 30fps 刷新即可，避免 144Hz 屏上白跑 4 倍绘制
+  static const _paintInterval = Duration(milliseconds: 33);
 
   late final PlaybackService _playback;
   StreamSubscription<Float32List>? _subscription;
@@ -43,6 +45,7 @@ class _SpectrumBarState extends State<SpectrumBar>
   final _frame = _SpectrumFrame();
   Ticker? _ticker;
   Duration _lastTick = Duration.zero;
+  Duration? _lastPaint;
 
   Float32List _from = Float32List(0);
   Float32List _to = Float32List(0);
@@ -68,6 +71,7 @@ class _SpectrumBarState extends State<SpectrumBar>
       _subscription = null;
       _ticker?.stop();
       _lastTick = Duration.zero;
+      _lastPaint = null;
       _clearFrameToBaseline();
       return;
     }
@@ -93,6 +97,7 @@ class _SpectrumBarState extends State<SpectrumBar>
       if (reduce) {
         _ticker?.stop();
         _lastTick = Duration.zero;
+        _lastPaint = null;
         _clearFrameToBaseline();
       }
       _syncSpectrumSubscription();
@@ -171,11 +176,15 @@ class _SpectrumBarState extends State<SpectrumBar>
     final ticker = _ticker ??= createTicker(_onTick);
     if (!ticker.isActive) {
       _lastTick = Duration.zero;
+      _lastPaint = null;
       ticker.start();
     }
   }
 
   void _onTick(Duration elapsed) {
+    final lastPaint = _lastPaint;
+    if (lastPaint != null && elapsed - lastPaint < _paintInterval) return;
+    _lastPaint = elapsed;
     var dtSeconds = _lastTick == Duration.zero
         ? 0.016
         : (elapsed - _lastTick).inMicroseconds / 1e6;

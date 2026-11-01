@@ -12,7 +12,6 @@ import 'package:pure_music/core/workload_policy.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/native/rust/api/library_db.dart' as library_db;
 import 'package:pure_music/native/rust/api/tag_reader.dart';
-import 'package:pure_music/remote/remote_library.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:sqlite3/sqlite3.dart';
@@ -31,6 +30,7 @@ class AlbumColorCache {
   static const _cacheVersion = 1;
 
   bool _initialized = false;
+  int _generation = 0;
   static const int _maxEntries = 200;
   final Map<String, Map<String, Object?>> _entries = {};
   final Map<String, Future<AlbumColor?>> _inFlight = {};
@@ -70,7 +70,13 @@ class AlbumColorCache {
     final existing = _inFlight[key];
     if (existing != null) return existing;
 
-    final fut = _computeAndStore(album, key: key, signature: signature);
+    final generation = _generation;
+    final fut = _computeAndStore(
+      album,
+      key: key,
+      signature: signature,
+      generation: generation,
+    );
     _inFlight[key] = fut;
     unawaited(
       fut.whenComplete(() {
@@ -152,12 +158,13 @@ class AlbumColorCache {
     Album album, {
     required String key,
     required String signature,
+    required int generation,
   }) async {
     try {
       final bytes = await _getAlbumCoverBytes(album);
       if (bytes == null) return null;
       final rgb = await _computeAverageRgb(bytes);
-      if (rgb == null) return null;
+      if (rgb == null || generation != _generation) return null;
 
       final primary = Color(0xff000000 | rgb);
       final onPrimary = primary.computeLuminance() < 0.42
@@ -195,7 +202,10 @@ class AlbumColorCache {
   }
 
   void dispose() {
+    _generation++;
     _flushTimer?.cancel();
+    _flushTimer = null;
+    _initialized = false;
     _entries.clear();
     _inFlight.clear();
   }
@@ -314,11 +324,16 @@ class AlbumColorCache {
       targetWidth: 40,
       targetHeight: 40,
     );
-    final frame = await codec.getNextFrame();
-    final img = frame.image;
-    codec.dispose();
-    final data = await img.toByteData(format: ui.ImageByteFormat.rawRgba);
-    img.dispose();
+    ui.Image? img;
+    ByteData? data;
+    try {
+      final frame = await codec.getNextFrame();
+      img = frame.image;
+      data = await img.toByteData(format: ui.ImageByteFormat.rawRgba);
+    } finally {
+      img?.dispose();
+      codec.dispose();
+    }
     if (data == null) return null;
 
     final rgba = data.buffer.asUint8List();
@@ -437,6 +452,9 @@ class _LruMap<K, V> {
 
   int get length => _map.length;
 
+  /// 最久没被用到的键。空表时为空。
+  K? get oldestKey => _map.isEmpty ? null : _map.keys.first;
+
   void removeWhere(bool Function(K key) test) {
     final keys = _map.keys.where(test).toList(growable: false);
     for (final key in keys) {
@@ -444,9 +462,17 @@ class _LruMap<K, V> {
     }
   }
 
-  void trimToSize(int size) {
+  /// 超过上限时从最久未用的键开始删，[keep] 为真的键不动。
+  void trimToSize(int size, {bool Function(K key)? keep}) {
     while (_map.length > size) {
-      final oldestKey = _map.keys.first;
+      K? oldestKey;
+      for (final key in _map.keys) {
+        if (keep == null || !keep(key)) {
+          oldestKey = key;
+          break;
+        }
+      }
+      if (oldestKey == null) return;
       final removed = _map.remove(oldestKey);
       if (removed != null) _discard(oldestKey, removed, evict: true);
     }
@@ -582,13 +608,21 @@ class CoverImageCache {
   static final instance = CoverImageCache._();
   CoverImageCache._();
 
+  static const int _smallByteBudget = 12 * 1024 * 1024;
+  static const int _mediumByteBudget = 8 * 1024 * 1024;
+  static const int _largeByteBudget = 12 * 1024 * 1024;
+
+  /// 测试里把小图预算改小，用来验证超限会赶走旧图。
+  @visibleForTesting
+  int? debugSmallByteBudget;
+
   late final _small = _LruMap<String, ImageProvider>(
-    2048,
+    256,
     onRemove: (key, _) => _smallBytes.remove(key),
     onEvict: (_, provider) => unawaited(provider.evict()),
   );
   late final _medium = _LruMap<String, ImageProvider>(
-    256,
+    64,
     onRemove: (key, _) => _mediumBytes.remove(key),
     onEvict: (_, provider) => unawaited(provider.evict()),
   );
@@ -747,6 +781,53 @@ class CoverImageCache {
     final bytesMap = _bytesMapFor(tier);
     bytesMap.remove(key);
     bytesMap[key] = bytes;
+    _trimTierToByteBudget(tier, bytesMap);
+  }
+
+  int _byteBudgetFor(_LruMap<String, ImageProvider> tier) {
+    if (identical(tier, _small)) {
+      return debugSmallByteBudget ?? _smallByteBudget;
+    }
+    if (identical(tier, _medium)) return _mediumByteBudget;
+    return _largeByteBudget;
+  }
+
+  /// 超过字节预算就从最久未用的图开始释放，刚放进去的那张留着。
+  void _trimTierToByteBudget(
+    _LruMap<String, ImageProvider> tier,
+    Map<String, int> bytesMap,
+  ) {
+    final budget = _byteBudgetFor(tier);
+    var total = 0;
+    for (final value in bytesMap.values) {
+      total += value;
+    }
+    while (total > budget && tier.length > 1) {
+      final oldest = tier.oldestKey;
+      if (oldest == null) return;
+      final size = bytesMap[oldest] ?? 0;
+      tier.remove(oldest);
+      total -= size;
+    }
+  }
+
+  @visibleForTesting
+  void rememberCoverForTesting({
+    required String path,
+    required int width,
+    required int height,
+    required Uint8List bytes,
+  }) {
+    final key = _coverKey(path, width, height);
+    final tier = _tierFor(width, height);
+    final provider = _stableImage(
+      path: path,
+      width: width,
+      height: height,
+      initialBytes: bytes,
+    );
+    tier.set(key, provider);
+    _trackBytes(key, tier, provider);
   }
 
   Map<String, int> _bytesMapFor(_LruMap<String, ImageProvider> tier) {
@@ -868,6 +949,7 @@ class CoverImageCache {
       return null;
     }
 
+    final generation = _generation;
     final future = _coverLoadSemaphore.run(
       () => _loadBytesUncached(
         path: path,
@@ -879,15 +961,17 @@ class CoverImageCache {
     _pendingBytes[key] = future;
     try {
       final result = await future;
-      if (result == null) {
-        if (RemoteLibrary.isRemotePath(path)) {
-          _rememberRemoteMiss(key);
+      if (generation == _generation) {
+        if (result == null) {
+          if (RemoteLibrary.isRemotePath(path)) {
+            _rememberRemoteMiss(key);
+          } else {
+            _missing.set(key, true);
+          }
         } else {
-          _missing.set(key, true);
+          _decodedBytes.set(key, result);
+          _remoteMissAt.remove(key);
         }
-      } else {
-        _decodedBytes.set(key, result);
-        _remoteMissAt.remove(key);
       }
       return result;
     } finally {
@@ -910,9 +994,6 @@ class CoverImageCache {
     try {
       final indexPath = _indexPath;
       final maxPhysical = max(physicalWidth, physicalHeight);
-      if (RemoteLibrary.isRemotePath(path)) {
-        return RemoteLibrary.instance.coverBytes(path, maxPhysical);
-      }
       if (indexPath != null && maxPhysical > 96) {
         try {
           return await library_db.getCachedCover(
@@ -954,8 +1035,10 @@ class CoverImageCache {
   }
 
   Future<void> _warmPersistent(Map<String, int> targets) async {
+    final generation = _generation;
     var processed = 0;
     for (final entry in targets.entries) {
+      if (generation != _generation) break;
       const size = 200;
       final key = '${entry.key}|${entry.value}|${size}x$size';
       if (_persistentWarmCompleted.contains(key) ||
@@ -970,7 +1053,9 @@ class CoverImageCache {
           modified: entry.value,
           lowPriority: true,
         );
-        _persistentWarmCompleted.add(key);
+        if (generation == _generation) {
+          _persistentWarmCompleted.add(key);
+        }
       } catch (error, trace) {
         log.app.debug(
           'legacy',
@@ -1014,6 +1099,7 @@ class CoverImageCache {
   }
 
   Future<void> _preloadNowPlayingCover(Audio audio) async {
+    final generation = _generation;
     final path = audio.path;
     final modified = audio.modified;
     final colors = ColorExtractionService();
@@ -1035,7 +1121,7 @@ class CoverImageCache {
         numColors: 8,
       );
       final bytes = result.$1;
-      if (bytes != null) {
+      if (bytes != null && generation == _generation) {
         putDecodedBytes(
           path: path,
           width: 160,
@@ -1044,7 +1130,7 @@ class CoverImageCache {
           modified: modified,
         );
       }
-      if (result.$2.isNotEmpty) {
+      if (generation == _generation && result.$2.isNotEmpty) {
         colors.cachePaletteForPath(path, [
           for (final argb in result.$2) Color(argb),
         ], modified: modified);
@@ -1095,8 +1181,14 @@ class CoverImageCache {
     }
   }
 
+  /// 按上限缩小图缓存，当前播放曲目的图始终保留。
   void trimSmall({required int keepEntries}) {
-    _small.trimToSize(keepEntries.clamp(0, 96));
+    final keepPath = AudioLibrary.instance.currentPlayingPath;
+    final keepPrefix = keepPath == null || keepPath.isEmpty
+        ? null
+        : '$keepPath|';
+    bool keep(String key) => keepPrefix != null && key.startsWith(keepPrefix);
+    _small.trimToSize(keepEntries.clamp(0, 96), keep: keep);
   }
 
   void evictPath(String path) {

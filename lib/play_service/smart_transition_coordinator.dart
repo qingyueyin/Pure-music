@@ -184,11 +184,6 @@ final class SmartTransitionCoordinator {
       return;
     }
     final pending = _beginPendingTransition(target);
-    if (target.outgoing.path.startsWith('remote://') ||
-        target.incoming.path.startsWith('remote://')) {
-      _fallback(pending, 'remote_source');
-      return;
-    }
     if (!_player.canUseSmartTransition) {
       _fallback(pending, 'mixer_unavailable');
       return;

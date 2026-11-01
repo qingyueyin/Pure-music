@@ -2,6 +2,9 @@ include: package:flutter_lints/flutter.yaml
 
 analyzer:
   exclude:
+    - attic/**
+    # 远程曲库已归档，对应用例在 test/ 本地留着但不参与分析
+    - test/remote/**
     - bin/build_tool_runner.dart
     - rust_builder/cargokit/build_tool/**
     # FRB 生成代码，下次 generate 会覆盖，不手改也不拿来报警

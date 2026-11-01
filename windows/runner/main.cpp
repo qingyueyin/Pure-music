@@ -11,10 +11,7 @@
 #include "flutter_window.h"
 #include "utils.h"
 
-extern "C" {
-__declspec(dllexport) unsigned long NvOptimusEnablement = 0x00000001;
-__declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 0x00000001;
-}
+// 不强制占用独立显卡。播放器留在系统默认显卡上，避免显存一直堆在高性能卡里。
 
 static std::wstring GetExecutableDirectory() {
   wchar_t module_path[MAX_PATH];

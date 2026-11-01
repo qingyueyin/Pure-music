@@ -2660,26 +2660,6 @@ class _TaskbarThumbnailControlState extends State<_TaskbarThumbnailControl> {
             }),
           ),
         ),
-        const SizedBox(height: 16.0),
-        SettingsTile(
-          description: '封面预览大小',
-          subtitle: '${(pref.taskbarCoverScale * 100).round()}%（放大可能降低清晰度）',
-          action: SizedBox(
-            width: 220.0,
-            child: Slider(
-              value: pref.taskbarCoverScale,
-              min: 0.5,
-              max: 2.0,
-              divisions: 6,
-              label: '${(pref.taskbarCoverScale * 100).round()}%',
-              onChanged: (value) {
-                setState(() {
-                  TaskbarThumbnailService.instance.setCoverScale(value);
-                });
-              },
-            ),
-          ),
-        ),
       ],
     );
   }

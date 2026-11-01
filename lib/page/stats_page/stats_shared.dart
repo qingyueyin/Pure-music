@@ -7,7 +7,6 @@ import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/play_service/play_service.dart';
-import 'package:pure_music/remote/remote_library.dart';
 import 'package:pure_music/services/native/playback_stats_service.dart';
 
 String formatCount(int value) {
@@ -42,20 +41,11 @@ List<int> toIntList(Iterable<int> values) => List<int>.from(values);
 
 void playAudio(AudioLibrary library, Audio audio) {
   final audioIndex = library.audioCollection.indexOf(audio);
-  if (audioIndex >= 0) {
-    PlayService.instance.playbackService.play(
-      audioIndex,
-      library.audioCollection,
-    );
-    return;
-  }
-  if (!RemoteLibrary.isRemotePath(audio.path)) return;
-  final remoteAudios = RemoteLibrary.instance.audios;
-  final remoteIndex = remoteAudios.indexWhere(
-    (item) => item.path == audio.path,
+  if (audioIndex < 0) return;
+  PlayService.instance.playbackService.play(
+    audioIndex,
+    library.audioCollection,
   );
-  if (remoteIndex < 0) return;
-  PlayService.instance.playbackService.play(remoteIndex, remoteAudios);
 }
 
 class NamedPlayStat {

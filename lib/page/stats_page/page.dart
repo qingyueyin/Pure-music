@@ -14,7 +14,6 @@ import 'package:pure_music/page/stats_page/ranked_tab.dart';
 import 'package:pure_music/page/stats_page/report_tab.dart';
 import 'package:pure_music/page/stats_page/stats_shared.dart';
 import 'package:pure_music/play_service/play_service.dart';
-import 'package:pure_music/remote/remote_library.dart';
 import 'package:pure_music/services/native/playback_stats_service.dart';
 
 class StatsPage extends StatefulWidget {
@@ -31,24 +30,6 @@ class _StatsTab {
   final IconData icon;
 }
 
-enum _StatsSource {
-  all('全部'),
-  local('本地'),
-  remote('远程');
-
-  const _StatsSource(this.label);
-
-  final String label;
-
-  bool matches(String path) {
-    return switch (this) {
-      _StatsSource.all => true,
-      _StatsSource.local => !path.startsWith('remote://'),
-      _StatsSource.remote => path.startsWith('remote://'),
-    };
-  }
-}
-
 class _StatsPageState extends State<StatsPage> {
   static const _rankedLimit = 100;
 
@@ -60,14 +41,12 @@ class _StatsPageState extends State<StatsPage> {
   ];
 
   int _currentIndex = 0;
-  _StatsSource _source = _StatsSource.all;
   StatsPeriod _period = StatsPeriod.current(StatsPeriodMode.week);
   int? _earliestAt;
   List<PlayCountRecord>? _topPlayed;
   List<PlayHistoryRecord> _historyEntries = const [];
   PlayHistoryStats? _history;
   StatsPeriod? _historyPeriod;
-  _StatsSource? _historySource;
   bool _loading = true;
   bool _loadFailed = false;
   bool _historyLoading = true;
@@ -82,7 +61,6 @@ class _StatsPageState extends State<StatsPage> {
     _playCountRevision = PlayService.instance.playbackService.playCountRevision;
     _playCountRevision.addListener(_onStatsSourceChanged);
     AudioLibrary.libraryVersion.addListener(_onStatsSourceChanged);
-    RemoteLibrary.instance.version.addListener(_onStatsSourceChanged);
     _loadStats();
   }
 
@@ -109,12 +87,6 @@ class _StatsPageState extends State<StatsPage> {
     if (delta > 0 && !_canGoForward) return;
     if (delta < 0 && !_canGoBack) return;
     setState(() => _period = _period.shift(delta));
-    _applyHistory();
-  }
-
-  void _setSource(_StatsSource source) {
-    if (_source == source) return;
-    setState(() => _source = source);
     _applyHistory();
   }
 
@@ -159,12 +131,7 @@ class _StatsPageState extends State<StatsPage> {
     });
     try {
       final entries = await PlaybackStatsService.instance.exportPlayHistory();
-      final remoteHistory = await RemoteLibrary.instance.playHistory();
-      final merged = <PlayHistoryRecord>[
-        ...entries,
-        for (final entry in remoteHistory.entries)
-          PlayHistoryRecord(path: entry.key, playedAt: entry.value),
-      ];
+      final merged = <PlayHistoryRecord>[...entries];
       if (!mounted || requestToken != _historyRequestToken) return;
       var earliest = 0;
       for (final entry in merged) {
@@ -190,13 +157,11 @@ class _StatsPageState extends State<StatsPage> {
 
   void _applyHistory() {
     final period = _period;
-    final source = _source;
-    final stats = _buildHistoryStats(_historyEntries, period, source);
+    final stats = _buildHistoryStats(_historyEntries, period);
     if (!mounted) return;
     setState(() {
       _history = stats;
       _historyPeriod = period;
-      _historySource = source;
       _earliestAt = stats.earliestAt.toInt();
     });
   }
@@ -204,7 +169,6 @@ class _StatsPageState extends State<StatsPage> {
   PlayHistoryStats _buildHistoryStats(
     List<PlayHistoryRecord> entries,
     StatsPeriod period,
-    _StatsSource source,
   ) {
     final daily = <String, int>{};
     final hourly = List<int>.filled(24, 0);
@@ -214,7 +178,6 @@ class _StatsPageState extends State<StatsPage> {
     var lastAt = 0;
     var earliestAt = 0;
     for (final entry in entries) {
-      if (!source.matches(entry.path)) continue;
       for (final playedAtValue in entry.playedAt) {
         final playedAt = playedAtValue.toInt();
         if (earliestAt == 0 || playedAt < earliestAt) earliestAt = playedAt;
@@ -252,7 +215,6 @@ class _StatsPageState extends State<StatsPage> {
   void dispose() {
     _playCountRevision.removeListener(_onStatsSourceChanged);
     AudioLibrary.libraryVersion.removeListener(_onStatsSourceChanged);
-    RemoteLibrary.instance.version.removeListener(_onStatsSourceChanged);
     super.dispose();
   }
 
@@ -260,16 +222,9 @@ class _StatsPageState extends State<StatsPage> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final library = AudioLibrary.instance;
-    final remoteAudios = RemoteLibrary.instance.audios;
-    final audios = switch (_source) {
-      _StatsSource.all => [...library.audioCollection, ...remoteAudios],
-      _StatsSource.local => library.audioCollection,
-      _StatsSource.remote => remoteAudios,
-    };
-    final data = _rankingsFor(_source);
-    final history = _historyPeriod == _period && _historySource == _source
-        ? _history
-        : null;
+    final audios = library.audioCollection;
+    final data = _rankings();
+    final history = _historyPeriod == _period ? _history : null;
     final hasAnyHistory = (_earliestAt ?? 0) > 0;
     final rankedTracks = (data ?? const <PlayCountRecord>[])
         .take(_rankedLimit)
@@ -303,7 +258,6 @@ class _StatsPageState extends State<StatsPage> {
             }),
           ),
           const SizedBox(height: Spacing.md),
-          _sourceSelector(scheme),
           if (_currentIndex == 0 || _currentIndex == 3) ...[
             const SizedBox(height: Spacing.md),
             _periodBar(scheme),
@@ -353,86 +307,11 @@ class _StatsPageState extends State<StatsPage> {
     );
   }
 
-  List<PlayCountRecord>? _rankingsFor(_StatsSource source) {
+  List<PlayCountRecord>? _rankings() {
     final library = AudioLibrary.instance;
-    final local = _topPlayed
-        ?.where(
-          (entry) =>
-              !entry.path.startsWith('remote://') &&
-              library.audioByPath(entry.path) != null,
-        )
+    return _topPlayed
+        ?.where((entry) => library.audioByPath(entry.path) != null)
         .toList(growable: false);
-    if (source == _StatsSource.local) return local;
-    final remote = _remoteRankings();
-    if (source == _StatsSource.remote) return remote;
-    final combined = [...?local, ...remote]
-      ..sort((a, b) {
-        final byCount = b.playCount.compareTo(a.playCount);
-        return byCount != 0 ? byCount : a.path.compareTo(b.path);
-      });
-    return combined;
-  }
-
-  List<PlayCountRecord> _remoteRankings() {
-    final counts = <String, int>{};
-    for (final entry in _historyEntries) {
-      if (!entry.path.startsWith('remote://')) continue;
-      counts[entry.path] = (counts[entry.path] ?? 0) + entry.playedAt.length;
-    }
-    final result = <PlayCountRecord>[];
-    counts.forEach((path, count) {
-      final audio = AudioLibrary.instance.audioByPath(path);
-      if (audio == null) return;
-      result.add(
-        PlayCountRecord(
-          path: path,
-          title: audio.title,
-          artist: audio.artist,
-          album: audio.album,
-          playCount: count,
-        ),
-      );
-    });
-    result.sort((a, b) {
-      final byCount = b.playCount.compareTo(a.playCount);
-      return byCount != 0 ? byCount : a.path.compareTo(b.path);
-    });
-    return result;
-  }
-
-  Widget _sourceSelector(ColorScheme scheme) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: SegmentedButton<_StatsSource>(
-        segments: [
-          for (final source in _StatsSource.values)
-            ButtonSegment(
-              value: source,
-              label: Text(source.label),
-              icon: Icon(switch (source) {
-                _StatsSource.all => Symbols.library_music,
-                _StatsSource.local => Symbols.folder,
-                _StatsSource.remote => Symbols.cloud,
-              }, size: 18),
-            ),
-        ],
-        selected: {_source},
-        showSelectedIcon: false,
-        onSelectionChanged: (selection) {
-          if (selection.isEmpty) return;
-          _setSource(selection.first);
-        },
-        style: const ButtonStyle(
-          visualDensity: VisualDensity.compact,
-          textStyle: WidgetStatePropertyAll(
-            TextStyle(
-              fontSize: AppType.caption,
-              fontWeight: AppType.weightSemibold,
-            ),
-          ),
-        ),
-      ),
-    );
   }
 
   int _distinctArtistCount(List<Audio> audios) {

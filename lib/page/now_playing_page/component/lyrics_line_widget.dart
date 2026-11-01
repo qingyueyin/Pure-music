@@ -119,6 +119,9 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
   final ValueNotifier<double> _currentTimeNotifier = ValueNotifier(0);
   late final VoidCallback _playerStateListener;
   Duration _lastTickElapsed = Duration.zero;
+  Duration? _lastPaintElapsed;
+  // 逐字高亮 60fps 足够
+  static const _paintInterval = Duration(milliseconds: 16);
 
   /// seek 后用于过滤旧进度回调的临时目标
   double? _pendingSeekMs;
@@ -560,6 +563,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
     if (_needsProgressTicker) {
       _syncToNativePosition();
       _lastTickElapsed = Duration.zero;
+      _lastPaintElapsed = null;
       _pendingSeekMs = null;
       _pendingSeekAt = null;
       final isPlaying =
@@ -644,6 +648,9 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
   }
 
   void _onTick(Duration elapsed) {
+    final lastPaint = _lastPaintElapsed;
+    if (lastPaint != null && elapsed - lastPaint < _paintInterval) return;
+    _lastPaintElapsed = elapsed;
     final previousTimeMs = _currentTimeMs;
     final elapsedDelta = _lastTickElapsed == Duration.zero
         ? Duration.zero

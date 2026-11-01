@@ -443,6 +443,12 @@ class Playlist {
         })
         .whereType<Audio>()
         .toList();
+    // 曲库暂时对不上时不要把空列表缓存住，否则歌单会一直显示 0 首。
+    if (paths.isNotEmpty && resolved.isEmpty) {
+      _audiosCache = null;
+      _audiosCacheLibrary = null;
+      return const [];
+    }
     _audiosCache = resolved;
     _audiosCacheLibrary = library;
     return List<Audio>.from(resolved);
@@ -451,9 +457,12 @@ class Playlist {
   Audio? get firstAudio {
     final library = AudioLibrary.instance;
     final cached = _audiosCache;
-    if (cached != null && identical(_audiosCacheLibrary, library)) {
-      return cached.isEmpty ? null : cached.first;
+    if (cached != null &&
+        cached.isNotEmpty &&
+        identical(_audiosCacheLibrary, library)) {
+      return cached.first;
     }
+    // 空缓存不能当成最终结果，否则曲库稍后对上了仍会一直拿不到第一首。
     for (final path in paths) {
       final key = _playlistPathKey(path);
       if (key.isEmpty) continue;

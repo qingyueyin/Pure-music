@@ -320,20 +320,21 @@ HBITMAP CreatePreviewBitmap(const std::vector<uint8_t>& cover, int cover_width,
     FillRect(target_dc, &target_rect, background);
     DeleteObject(background);
   }
-  double scale = std::min(static_cast<double>(width) / cover_width,
-                          static_cast<double>(height) / cover_height);
-  scale = std::min(scale, cover_scale);
+  // 按封面自己的宽高比放进预览。100% 时放到不裁切的最大尺寸，不拉变形。
+  const double fit = std::min(static_cast<double>(width) / cover_width,
+                              static_cast<double>(height) / cover_height);
+  double scale = fit * std::min(cover_scale, 1.0);
   if (!allow_upscale) {
-    scale = std::min(1.0, scale);
+    scale = std::min(scale, 1.0);
   }
-  const int draw_width = std::max(
-      1, std::min(width, static_cast<int>(std::round(cover_width * scale))));
-  const int draw_height = std::max(
-      1, std::min(height, static_cast<int>(std::round(cover_height * scale))));
+  const int draw_width =
+      std::max(1, static_cast<int>(std::round(cover_width * scale)));
+  const int draw_height =
+      std::max(1, static_cast<int>(std::round(cover_height * scale)));
   const int draw_left = (width - draw_width) / 2;
   const int draw_top = (height - draw_height) / 2;
-  StretchBlt(target_dc, draw_left, draw_top, draw_width, draw_height,
-             source_dc, 0, 0, cover_width, cover_height, SRCCOPY);
+  StretchBlt(target_dc, draw_left, draw_top, draw_width, draw_height, source_dc,
+             0, 0, cover_width, cover_height, SRCCOPY);
   GdiFlush();
   const size_t pixel_count = static_cast<size_t>(width) * height;
   auto* pixels = static_cast<uint8_t*>(target_bits);
@@ -419,6 +420,15 @@ void TaskbarThumbnail::HandleMethodCall(
     } else {
       result->Error("invalid_controls", "Invalid control state");
     }
+  } else if (method_call.method_name() == "releasePreviewBitmap") {
+    ReleasePreviewBitmap();
+    result->Success();
+  } else if (method_call.method_name() == "parkRenderSurface") {
+    ParkRenderSurface();
+    result->Success();
+  } else if (method_call.method_name() == "restoreRenderSurface") {
+    RestoreRenderSurface();
+    result->Success();
   } else if (method_call.method_name() == "setTitle") {
     if (SetTitle(method_call.arguments())) {
       result->Success();
@@ -756,9 +766,17 @@ void TaskbarThumbnail::ProvideThumbnail(int max_width, int max_height) {
       use_fallback ? FallbackCover() : cover_bgra_;
   const int cover_width = use_fallback ? kFallbackCoverSize : cover_width_;
   const int cover_height = use_fallback ? kFallbackCoverSize : cover_height_;
+  // 缩略图位图跟封面同比例，Windows 会按这张图的尺寸显示预览框。
+  int out_width = max_width;
+  int out_height = max_height;
+  if (cover_width > 0 && cover_height > 0) {
+    const double fit = std::min(static_cast<double>(max_width) / cover_width,
+                                static_cast<double>(max_height) / cover_height);
+    out_width = std::max(1, static_cast<int>(std::lround(cover_width * fit)));
+    out_height = std::max(1, static_cast<int>(std::lround(cover_height * fit)));
+  }
   HBITMAP bitmap = CreatePreviewBitmap(cover, cover_width, cover_height,
-                                       max_width, max_height, true,
-                                       cover_scale_);
+                                       out_width, out_height, true, 1.0);
   if (bitmap == nullptr) {
     return;
   }
@@ -882,6 +900,19 @@ void TaskbarThumbnail::ClearLivePreview() {
   }
   live_preview_width_ = 0;
   live_preview_height_ = 0;
+}
+
+void TaskbarThumbnail::ReleasePreviewBitmap() {
+  // 只放整窗大小的预览位图，保留封面源图，窗口回来后再按当前尺寸重画。
+  ClearLivePreview();
+}
+
+void TaskbarThumbnail::ParkRenderSurface() {
+  // 不要动预览位图，也不要缩小子窗口。最小化后任务栏预览还要显示当前封面。
+}
+
+void TaskbarThumbnail::RestoreRenderSurface() {
+  surface_parked_ = false;
 }
 
 void TaskbarThumbnail::SendControlEvent(const char* event) {

@@ -2,6 +2,7 @@ import 'dart:io' as io;
 import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -21,7 +22,6 @@ import 'package:pure_music/page/audio_detail_metadata_cache.dart';
 import 'package:pure_music/play_service/audio_tag_write_scheduler.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/taskbar_thumbnail_service.dart';
-import 'package:pure_music/remote/remote_library.dart';
 import 'package:pure_music/services/native/media_metadata_service.dart';
 import 'package:pure_music/services/native/platform_service.dart';
 import 'package:pure_music/services/network/https_bytes_service.dart';
@@ -58,9 +58,6 @@ AudioExtraMetadata _emptyAudioExtraMetadata() => const AudioExtraMetadata(
 );
 
 Future<AudioExtraMetadata> _getAudioExtra(Audio audio) {
-  if (RemoteLibrary.isRemotePath(audio.path)) {
-    return Future.value(_emptyAudioExtraMetadata());
-  }
   return _audioExtraCache
       .get(audio)
       .catchError((_) => _emptyAudioExtraMetadata());
@@ -277,10 +274,6 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
   }
 
   Future<void> _enterEditMode() async {
-    if (RemoteLibrary.isRemotePath(audio.path)) {
-      showTextOnSnackBar('远程曲目暂不支持编辑标签');
-      return;
-    }
     final requestToken = ++_editRequestToken;
     await applyAudioDetailMetadataIfMounted(
       future: _getAudioExtra(audio),
@@ -553,20 +546,6 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
   }
 
   Widget _buildLyricTab(ColorScheme scheme) {
-    if (RemoteLibrary.isRemotePath(audio.path)) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Text(
-            '远程曲目暂不支持内嵌歌词',
-            style: TextStyle(
-              color: scheme.onSurfaceVariant,
-              fontSize: AppType.body,
-            ),
-          ),
-        ),
-      );
-    }
     _lyricFuture ??= MediaMetadataService.instance.readEmbeddedLyric(
       audio.path,
     );
@@ -1115,9 +1094,6 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
   }
 
   Widget _buildFileSize(AudioExtraMetadata? data) {
-    if (RemoteLibrary.isRemotePath(audio.path)) {
-      return const Text('远程');
-    }
     final fileSize = data?.fileSize;
     if (fileSize != null && fileSize > 0) {
       return Text(_formatBytes(fileSize));
@@ -2450,27 +2426,36 @@ class _CoverSearchDialogState extends State<_CoverSearchDialog> {
 
   Future<void> _loadImageSize(String url) async {
     if (_coverImageSizeCache.containsKey(url)) return;
-    ui.Codec? codec;
     try {
       final bytes = await HttpsBytesService.instance.get(
         url: url,
         timeout: const Duration(seconds: 8),
         isCancelled: () => !mounted,
       );
-      if (bytes == null) return;
-      codec = await ui.instantiateImageCodec(bytes);
-      final frame = await codec.getNextFrame();
-      try {
-        if (!mounted) return;
-        setState(() {
-          _coverImageSizeCache[url] = (frame.image.width, frame.image.height);
-        });
-      } finally {
-        frame.image.dispose();
-      }
+      if (bytes == null || !mounted) return;
+      final size = await readEncodedImageSize(bytes);
+      if (!mounted) return;
+      setState(() {
+        _coverImageSizeCache[url] = size;
+      });
     } catch (_) {
-    } finally {
-      codec?.dispose();
+      return;
     }
+  }
+}
+
+@visibleForTesting
+Future<(int, int)> readEncodedImageSize(Uint8List bytes) async {
+  final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+  try {
+    final descriptor = await ui.ImageDescriptor.encoded(buffer);
+    try {
+      // 只读图片头里的宽高，避免把整张封面解码成像素。
+      return (descriptor.width, descriptor.height);
+    } finally {
+      descriptor.dispose();
+    }
+  } finally {
+    buffer.dispose();
   }
 }

@@ -12,6 +12,7 @@ import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/utils.dart';
+import 'package:pure_music/core/window_render_gate.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -691,10 +692,16 @@ class _MiniTimeTextState extends State<_MiniTimeText> {
     playbackService.playerStateNotifier.addListener(_syncTimer);
     playbackService.nowPlayingNotifier.addListener(_onNowPlayingChanged);
     playbackService.positionSyncNotifier.addListener(_onPositionSync);
+    WindowRenderGate.instance.framesEnabled.addListener(_syncTimer);
     _syncTimer();
   }
 
   void _syncTimer() {
+    if (!WindowRenderGate.instance.framesEnabled.value) {
+      _positionTimer?.cancel();
+      _positionTimer = null;
+      return;
+    }
     _syncNativePosition();
     final isPlaying =
         playbackService.playerStateNotifier.value == PlayerState.playing;
@@ -777,6 +784,7 @@ class _MiniTimeTextState extends State<_MiniTimeText> {
     playbackService.playerStateNotifier.removeListener(_syncTimer);
     playbackService.nowPlayingNotifier.removeListener(_onNowPlayingChanged);
     playbackService.positionSyncNotifier.removeListener(_onPositionSync);
+    WindowRenderGate.instance.framesEnabled.removeListener(_syncTimer);
     _positionTimer?.cancel();
     super.dispose();
   }

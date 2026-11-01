@@ -4,11 +4,11 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart';
 import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/utils.dart';
+import 'package:pure_music/core/window_render_gate.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
 import 'package:pure_music/play_service/play_service.dart';
@@ -21,6 +21,7 @@ class TaskbarThumbnailService {
 
   static final TaskbarThumbnailService instance = TaskbarThumbnailService._();
 
+  // 和改动前一样用 512。预览里按封面自己的比例放大到放得下，不再另解一张 1280 的图。
   static const _coverSize = 512;
   static const _quickCoverSize = 96;
   static const _fallbackCoverSize = 64;
@@ -34,6 +35,7 @@ class TaskbarThumbnailService {
   double _coverScale = 1.0;
   int _lifecycleGeneration = 0;
   int _coverGeneration = 0;
+  bool _lastFramesEnabled = true;
   ValueNotifier<Audio?>? _nowPlayingNotifier;
   ValueNotifier<PlayerState>? _playerStateNotifier;
   ValueNotifier<List<Audio>>? _playlistNotifier;
@@ -52,6 +54,8 @@ class TaskbarThumbnailService {
     _playerStateNotifier?.addListener(_onPlayerStateChanged);
     _playlistNotifier = playback.playlistNotifier;
     _playlistNotifier?.addListener(_onPlaylistChanged);
+    _lastFramesEnabled = WindowRenderGate.instance.framesEnabled.value;
+    WindowRenderGate.instance.framesEnabled.addListener(_onFramesEnabledChanged);
     final pref = AppPreference.instance;
     _playbackControlsEnabled = pref.taskbarPlaybackControls;
     _coverPreviewEnabled = pref.taskbarCoverPreview;
@@ -106,6 +110,46 @@ class TaskbarThumbnailService {
     unawaited(AppPreference.instance.save());
   }
 
+  /// 窗口已经藏起后，把 Flutter 绘制表面缩成 1 像素，丢掉整窗大小的显存缓冲。
+  Future<void> parkRenderSurface() async {
+    if (!Platform.isWindows || !_initialized) return;
+    try {
+      await _channel.invokeMethod<void>('parkRenderSurface');
+    } catch (error, stackTrace) {
+      log.app.warn(
+        'legacy',
+        '[taskbar-thumbnail] park render surface error: $error\n$stackTrace',
+      );
+    }
+  }
+
+  /// 窗口重新显示前，把绘制表面恢复成客户区大小。
+  Future<void> restoreRenderSurface() async {
+    if (!Platform.isWindows || !_initialized) return;
+    try {
+      await _channel.invokeMethod<void>('restoreRenderSurface');
+    } catch (error, stackTrace) {
+      log.app.warn(
+        'legacy',
+        '[taskbar-thumbnail] restore render surface error: $error\n$stackTrace',
+      );
+    }
+  }
+
+  /// 释放整窗大小的任务栏预览位图，保留 512 封面源图，窗口回来后按当前比例重画。
+  void releasePreviewBitmap() {
+    if (!_initialized || !_enabled) return;
+    unawaited(_releasePreviewBitmap());
+  }
+
+  Future<void> _releasePreviewBitmap() async {
+    try {
+      await _channel.invokeMethod<void>('releasePreviewBitmap');
+    } catch (error, stackTrace) {
+      log.app.warn('legacy', '[taskbar-thumbnail] release preview bitmap error: $error\n$stackTrace');
+    }
+  }
+
   void refreshNowPlaying() {
     if (!_initialized) return;
     unawaited(_setTitle());
@@ -116,6 +160,14 @@ class TaskbarThumbnailService {
   }
 
   void _onNowPlayingChanged() {
+    refreshNowPlaying();
+  }
+
+  // 切歌后马上最小化时，预览也要换成当前这首，不能把刚画好的封面清掉。
+  void _onFramesEnabledChanged() {
+    final framesEnabled = WindowRenderGate.instance.framesEnabled.value;
+    if (framesEnabled == _lastFramesEnabled) return;
+    _lastFramesEnabled = framesEnabled;
     refreshNowPlaying();
   }
 
@@ -322,33 +374,33 @@ class TaskbarThumbnailService {
     int targetSize,
   ) async {
     try {
-      final codec = await ui.instantiateImageCodec(bytes);
-      late final ui.FrameInfo frame;
+      final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
       try {
-        frame = await codec.getNextFrame();
-      } finally {
-        codec.dispose();
-      }
-      final source = frame.image;
-      try {
-        final resized = source.width > targetSize || source.height > targetSize
-            ? await _resizeToFit(source, targetSize)
-            : null;
+        final descriptor = await ui.ImageDescriptor.encoded(buffer);
         try {
-          final output = resized ?? source;
-          final bgra = await _imageToBgra(output);
-          if (!_isCurrentCover(generation)) return false;
-          await _channel.invokeMethod<void>('setCover', {
-            'bgra': bgra,
-            'width': output.width,
-            'height': output.height,
-          });
-          return true;
+          final codec = await _openCoverCodec(descriptor, targetSize);
+          try {
+            final source = (await codec.getNextFrame()).image;
+            try {
+              final bgra = await _imageToBgra(source);
+              if (!_isCurrentCover(generation)) return false;
+              await _channel.invokeMethod<void>('setCover', {
+                'bgra': bgra,
+                'width': source.width,
+                'height': source.height,
+              });
+              return true;
+            } finally {
+              source.dispose();
+            }
+          } finally {
+            codec.dispose();
+          }
         } finally {
-          resized?.dispose();
+          descriptor.dispose();
         }
       } finally {
-        source.dispose();
+        buffer.dispose();
       }
     } catch (error, stackTrace) {
       log.app.warn('legacy', '[taskbar-thumbnail] cover decode error: $error\n$stackTrace');
@@ -356,25 +408,21 @@ class TaskbarThumbnailService {
     }
   }
 
-  Future<ui.Image> _resizeToFit(ui.Image source, int targetSize) async {
-    final sw = source.width;
-    final sh = source.height;
-    final scale = targetSize / (sw > sh ? sw : sh);
-    final targetW = (sw * scale).round().clamp(1, targetSize);
-    final targetH = (sh * scale).round().clamp(1, targetSize);
-
-    final recorder = ui.PictureRecorder();
-    final canvas = ui.Canvas(recorder);
-    canvas.drawImageRect(
-      source,
-      Rect.fromLTWH(0, 0, sw.toDouble(), sh.toDouble()),
-      Rect.fromLTWH(0, 0, targetW.toDouble(), targetH.toDouble()),
-      Paint()..filterQuality = FilterQuality.medium,
+  // 只有原图比目标大时才按长边缩小解码，小图保持原尺寸，也不把封面拉成正方形。
+  Future<ui.Codec> _openCoverCodec(
+    ui.ImageDescriptor descriptor,
+    int targetSize,
+  ) {
+    final width = descriptor.width;
+    final height = descriptor.height;
+    if (width <= targetSize && height <= targetSize) {
+      return descriptor.instantiateCodec();
+    }
+    final scale = targetSize / (width > height ? width : height);
+    return descriptor.instantiateCodec(
+      targetWidth: (width * scale).round().clamp(1, targetSize).toInt(),
+      targetHeight: (height * scale).round().clamp(1, targetSize).toInt(),
     );
-    final picture = recorder.endRecording();
-    final resized = await picture.toImage(targetW, targetH);
-    picture.dispose();
-    return resized;
   }
 
   /// 无歌曲或无封面时推送主题色占位位图，避免任务栏空白
@@ -443,5 +491,8 @@ class TaskbarThumbnailService {
     _playerStateNotifier = null;
     _playlistNotifier?.removeListener(_onPlaylistChanged);
     _playlistNotifier = null;
+    WindowRenderGate.instance.framesEnabled.removeListener(
+      _onFramesEnabledChanged,
+    );
   }
 }

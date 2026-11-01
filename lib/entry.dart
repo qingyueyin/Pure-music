@@ -19,7 +19,6 @@ import 'package:pure_music/page/now_playing_page/now_playing_open_transition.dar
 import 'package:pure_music/page/now_playing_page/page.dart';
 import 'package:pure_music/page/playlist_detail_page.dart';
 import 'package:pure_music/page/playlists_page.dart';
-import 'package:pure_music/page/remote_page.dart';
 import 'package:pure_music/page/settings_page/check_update.dart';
 import 'package:pure_music/page/settings_page/create_issue.dart';
 import 'package:pure_music/page/stats_page/page.dart';
@@ -35,11 +34,8 @@ import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/taskbar_thumbnail_service.dart';
 import 'package:pure_music/component/app_scroll_behavior.dart';
 import 'package:pure_music/core/app_fonts.dart';
-import 'package:pure_music/core/cache.dart';
 import 'package:pure_music/core/immersive.dart';
-import 'package:pure_music/core/memory_monitor.dart';
 import 'package:pure_music/core/mouse_back_exit.dart';
-import 'package:pure_music/core/matcher.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/route_visibility.dart';
 import 'package:pure_music/core/settings.dart';
@@ -50,6 +46,7 @@ import 'package:pure_music/core/update_download_monitor.dart';
 import 'package:pure_music/core/update_installer.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/core/window_render_gate.dart';
+import 'package:pure_music/core/memory_monitor.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:go_router/go_router.dart';
@@ -294,6 +291,8 @@ class _EntryState extends State<Entry>
   final ValueNotifier<bool> _windowResizing = ValueNotifier(false);
   Timer? _resizeIdleTimer;
   Timer? _geometrySaveTimer;
+  VoidCallback? _routeLogListener;
+  String? _routeLogPath;
 
   @override
   void initState() {
@@ -303,6 +302,7 @@ class _EntryState extends State<Entry>
     AppSettings.backgroundNotifier.addListener(_applyWindowTransparent);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _attachRouteLog();
       AudioEchoLogRecorder.instance.start(
         full: Platform.environment['CP_ECHO_RECORD'] == '1',
       );
@@ -321,10 +321,28 @@ class _EntryState extends State<Entry>
     _resizeIdleTimer?.cancel();
     _geometrySaveTimer?.cancel();
     _windowResizing.dispose();
+    if (_routeLogListener != null) {
+      config.routerDelegate.removeListener(_routeLogListener!);
+    }
     AppSettings.backgroundNotifier.removeListener(_applyWindowTransparent);
     WidgetsBinding.instance.removeObserver(this);
     windowManager.removeListener(this);
     super.dispose();
+  }
+
+  /// 路由变化写一行日志，自动化测试靠它确认当前页面。
+  void _attachRouteLog() {
+    final delegate = config.routerDelegate;
+    void listener() {
+      final path = delegate.currentConfiguration.uri.path;
+      if (path == _routeLogPath) return;
+      _routeLogPath = path;
+      log.app.info('legacy', '[nav] path=$path');
+    }
+
+    _routeLogListener = listener;
+    delegate.addListener(listener);
+    listener();
   }
 
   void _applyWindowTransparent() {
@@ -360,8 +378,12 @@ class _EntryState extends State<Entry>
 
   @override
   void onWindowRestore() {
-    WindowRenderGate.instance.setWindowMinimized(false);
-    PlayService.existingPlaybackService?.stopSmtcKeepAlive();
+    // 等这次系统回调返回后再生效。回调里立刻画，会和还没恢复的窗口表面死锁。
+    Timer.run(() {
+      WindowRenderGate.instance.setWindowMinimized(false);
+      MemoryMonitorService.instance.stopHiddenTrim();
+      PlayService.existingPlaybackService?.stopSmtcKeepAlive();
+    });
   }
 
   @override
@@ -520,15 +542,8 @@ class _EntryState extends State<Entry>
   }
 
   void _onLowMemory() {
-    CoverImageCache.instance.clear();
-    AudioLibrary.instance.evictAllCoversExcept(
-      PlayService.existingPlaybackService?.nowPlaying?.path,
-      includeCollectionCovers: true,
-    );
-    PaintingBinding.instance.imageCache.clear();
-    PaintingBinding.instance.imageCache.clearLiveImages();
-    clearLyricCaches();
-    log.app.warn('legacy', '[mem] low memory - cleared all caches');
+    // 只丢久未访问的封面字节，不清曲库、歌词和图片缓存。
+    AudioLibrary.instance.evictStaleCoverBytes();
   }
 
   ThemeData fromSchemeAndFontFamily({
@@ -741,16 +756,26 @@ class _EntryState extends State<Entry>
 
   Widget _windowTickerGate(Widget? child) {
     return ValueListenableBuilder<bool>(
-      valueListenable: _windowResizing,
+      valueListenable: WindowRenderGate.instance.trayHidden,
       child: child,
-      builder: (context, resizing, child) => ValueListenableBuilder<bool>(
-        valueListenable: WindowRenderGate.instance.framesEnabled,
-        child: child,
-        builder: (context, windowFramesEnabled, child) => TickerMode(
-          enabled: !resizing && windowFramesEnabled,
-          child: child ?? const SizedBox.shrink(),
-        ),
-      ),
+      builder: (context, trayHidden, child) {
+        // 托盘隐藏时整棵界面卸掉，回前台再重建；播放和托盘都在原生侧。
+        if (trayHidden) return const SizedBox.shrink();
+        return ValueListenableBuilder<bool>(
+          valueListenable: _windowResizing,
+          child: child,
+          builder: (context, resizing, child) => ValueListenableBuilder<bool>(
+            valueListenable: WindowRenderGate.instance.framesEnabled,
+            child: child,
+            builder: (context, windowFramesEnabled, child) {
+              return TickerMode(
+                enabled: !resizing && windowFramesEnabled,
+                child: child ?? const SizedBox.shrink(),
+              );
+            },
+          ),
+        );
+      },
     );
   }
 
@@ -813,10 +838,6 @@ class _EntryState extends State<Entry>
                 pageBuilder: (context, state) => _folderDetailPage(state),
               ),
             ],
-          ),
-          _maintainedBranch(
-            path: app_paths.REMOTE_PAGE,
-            child: const RemotePage(),
           ),
           _maintainedBranch(
             path: app_paths.PLAYLISTS_PAGE,
