@@ -162,9 +162,23 @@ class RemoteLibrary {
     AudioLibrary.remoteAudiosProvider = () => audios;
     AudioLibrary.remoteFoldersProvider = _virtualFolders;
     version.addListener(_syncIntoMainLibrary);
-    await reload();
+    // 启动只读源列表就够主流程判断是否首次启动；曲目全量加载
+    // 放到首帧后，不挡首屏。
+    final sources = await _store.readSources();
+    _sources
+      ..clear()
+      ..addAll(sources);
+    _sourceById
+      ..clear()
+      ..addEntries(sources.map((source) => MapEntry(source.id, source)));
+    _deferredReload ??= Future<void>.microtask(() {
+      _deferredReload = null;
+      reload();
+    });
     _warmUpSmbSources();
   }
+
+  Future<void>? _deferredReload;
 
   /// 每个远程源在「文件夹」视图里充当一个虚拟目录。
   List<AudioFolder> _virtualFolders() {
