@@ -1,8 +1,6 @@
 #include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
-
 #include <windows.h>
-#include <shobjidl.h>
 
 #include <cstdint>
 #include <cstdio>
@@ -13,7 +11,6 @@
 #include <vector>
 
 #include "flutter_window.h"
-#include "start_menu_shortcut.h"
 #include "utils.h"
 
 // 不强制占用独立显卡。播放器留在系统默认显卡上，避免显存一直堆在高性能卡里。
@@ -32,6 +29,7 @@ static std::wstring GetOwnImagePath() {
   return buffer;
 }
 #endif
+
 
 static void AppendCrashLog(const std::wstring& message) {
   HANDLE file = OpenAppLogFile(L"crash.log");
@@ -329,9 +327,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);
-
-  // 便携版首次运行补一条开始菜单快捷方式，后台执行不阻塞首屏。
-  EnsureStartMenuShortcutInBackground();
 
   ::SetUnhandledExceptionFilter(UnhandledExceptionLogger);
   int exit_code = RunMessageLoop();

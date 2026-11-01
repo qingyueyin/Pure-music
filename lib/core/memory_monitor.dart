@@ -28,6 +28,7 @@ typedef _SetProcessWorkingSetSizeDart = int Function(int, int, int);
 
 /// 定时看 RSS，只回收冷封面；窗口不可见时不按 RSS 瘦身。
 /// 最小化只换出工作集页，托盘隐藏额外卸界面并清图片/排版缓存。
+/// 失焦 30 秒（被完全挡住）做一次温和裁剪并换出工作集，不清图片缓存。
 class MemoryMonitorService {
   static final instance = MemoryMonitorService._();
   MemoryMonitorService._() {
@@ -42,6 +43,7 @@ class MemoryMonitorService {
   Timer? _settleTrimFollowUpTimer;
   Timer? _hiddenTrimTimer;
   Timer? _hiddenWatchdogTimer;
+  Timer? _backgroundIdleRestoreTimer;
   bool _hiddenWatchdogBusy = false;
   int _hiddenTrimTicks = 0;
   int _hiddenEpoch = 0;
@@ -273,6 +275,34 @@ class MemoryMonitorService {
         log.memory.error('legacy', '[mem] monitor error: $e\n$trace');
       }
     });
+    WindowRenderGate.instance.backgroundIdle.addListener(
+      _onBackgroundIdleChanged,
+    );
+  }
+
+  /// 失焦闲时做一次温和裁剪 + 换出；回前台后停掉跟进换出。
+  void _onBackgroundIdleChanged() {
+    final idle = WindowRenderGate.instance.backgroundIdle.value;
+    if (idle) {
+      final playingPath = PlayService.existingPlaybackService?.nowPlaying?.path;
+      AudioLibrary.instance.evictStaleCoverBytes();
+      AudioLibrary.instance.trimCollectionThumbnailRetention(96);
+      CoverImageCache.instance.trimMemory(keepPath: playingPath);
+      LyricsLineWidget.clearBlurFilterCache();
+      _trimWorkingSet();
+      // 画面停了之后排帧还会拉起一些页，30 秒后补一次。
+      _backgroundIdleRestoreTimer?.cancel();
+      _backgroundIdleRestoreTimer = Timer(const Duration(seconds: 30), () {
+        _backgroundIdleRestoreTimer = null;
+        if (WindowRenderGate.instance.backgroundIdle.value) {
+          _trimWorkingSet();
+        }
+      });
+      log.memory.info('legacy', '[mem] background idle trim');
+      return;
+    }
+    _backgroundIdleRestoreTimer?.cancel();
+    _backgroundIdleRestoreTimer = null;
   }
 
   void _checkMemoryPressure() {
@@ -366,6 +396,11 @@ class MemoryMonitorService {
   void stop() {
     _timer?.cancel();
     _timer = null;
+    WindowRenderGate.instance.backgroundIdle.removeListener(
+      _onBackgroundIdleChanged,
+    );
+    _backgroundIdleRestoreTimer?.cancel();
+    _backgroundIdleRestoreTimer = null;
     stopHiddenTrim();
   }
 

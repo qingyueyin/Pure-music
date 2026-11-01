@@ -68,12 +68,19 @@ class WindowRenderGate with WidgetsBindingObserver {
   /// 只有真正藏进托盘才为 true。最小化不算，界面还留着。
   final ValueNotifier<bool> trayHidden = ValueNotifier(false);
 
+  /// 失焦持续 30 秒后为 true：窗口还在桌面但被完全挡住，
+  /// 装饰动画停掉、缓存做一次温和裁剪；回前台立刻复位。
+  final ValueNotifier<bool> backgroundIdle = ValueNotifier(false);
+
   bool _trayHidden = false;
   bool _windowMinimized = false;
   bool _windowFocused = true;
   bool _schedulerFramesEnabled = true;
   bool _pauseScheduled = false;
   bool _attached = false;
+  Timer? _backgroundIdleTimer;
+
+  static const _backgroundIdleDelay = Duration(seconds: 30);
 
   WindowRenderState get state => windowRenderStateFor(
     trayHidden: _trayHidden,
@@ -93,6 +100,8 @@ class WindowRenderGate with WidgetsBindingObserver {
     if (!_attached) return;
     _attached = false;
     WidgetsBinding.instance.removeObserver(this);
+    _backgroundIdleTimer?.cancel();
+    _backgroundIdleTimer = null;
   }
 
   /// 仅由隐藏到托盘 / 重新显示主窗口调用。
@@ -101,6 +110,7 @@ class WindowRenderGate with WidgetsBindingObserver {
     _trayHidden = hidden;
     if (trayHidden.value != hidden) trayHidden.value = hidden;
     if (!hidden) WindowFrameProbe.countFrames('trayHidden:false');
+    _syncBackgroundIdle();
     _sync(forceFrame: !hidden);
   }
 
@@ -108,6 +118,7 @@ class WindowRenderGate with WidgetsBindingObserver {
     if (_windowMinimized == minimized) return;
     _windowMinimized = minimized;
     if (!minimized) WindowFrameProbe.countFrames('minimized:false');
+    _syncBackgroundIdle();
     _sync(forceFrame: !minimized);
   }
 
@@ -136,6 +147,7 @@ class WindowRenderGate with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // 只记录焦点：后台照常绘制，不停帧。
     _windowFocused = state == AppLifecycleState.resumed;
+    _syncBackgroundIdle();
     switch (state) {
       case AppLifecycleState.resumed:
       case AppLifecycleState.inactive:
@@ -147,6 +159,24 @@ class WindowRenderGate with WidgetsBindingObserver {
       case AppLifecycleState.detached:
         break;
     }
+  }
+
+  /// 失焦且窗口仍在桌面时启动 30 秒计时；焦点回来或窗口隐藏立即取消。
+  void _syncBackgroundIdle() {
+    final shouldCount =
+        !_windowFocused && !_trayHidden && !_windowMinimized;
+    if (!shouldCount) {
+      _backgroundIdleTimer?.cancel();
+      _backgroundIdleTimer = null;
+      if (backgroundIdle.value) backgroundIdle.value = false;
+      return;
+    }
+    if (_backgroundIdleTimer != null) return;
+    _backgroundIdleTimer = Timer(_backgroundIdleDelay, () {
+      _backgroundIdleTimer = null;
+      if (!_windowFocused || _trayHidden || _windowMinimized) return;
+      if (!backgroundIdle.value) backgroundIdle.value = true;
+    });
   }
 
   void _sync({bool forceFrame = false}) {

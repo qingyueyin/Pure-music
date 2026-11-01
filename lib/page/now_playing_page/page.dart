@@ -134,6 +134,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   bool _lastImmersive = false;
   bool _routeReady = false;
   bool _sessionShown = true;
+  bool _backgroundIdle = false;
   bool _backgroundUsesCachedLargeCover = false;
   late final Listenable _backgroundListenable;
   Color? _dominantColor;
@@ -497,8 +498,15 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
       children: [
         ColoredBox(color: _neutralBackgroundColor(brightness)),
         ListenableBuilder(
-          listenable: _backgroundListenable,
-          builder: (context, _) => _flowBackground(brightness),
+          listenable: Listenable.merge([
+            _backgroundListenable,
+            WindowRenderGate.instance.backgroundIdle,
+          ]),
+          builder: (context, _) {
+            _backgroundIdle =
+                WindowRenderGate.instance.backgroundIdle.value;
+            return _flowBackground(brightness);
+          },
         ),
       ],
     );
@@ -512,7 +520,9 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
         dominantColor: _dominantColor,
         spectrumStream: playbackService.spectrumStream,
         enableAnimation: nowPlayingDynamicFlowingLightNotifier.value,
-        isVisible: _sessionShown,
+        // 失焦 30 秒后窗口多半被完全挡住，装饰动画照跑只是白烧 GPU；
+        // 按不可见处理卸掉动画，回前台立即恢复。
+        isVisible: _sessionShown && !_backgroundIdle,
         playerState: playbackService.playerStateNotifier.value,
         playerStateListenable: playbackService.playerStateNotifier,
         flowSpeed: 1.0,
