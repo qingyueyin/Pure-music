@@ -49,6 +49,10 @@ class NavidromeClient implements RemoteClient {
     return body;
   }
 
+  // 按 (服务器, 密码) 缓存 Dio：每个 Dio 自带连接池，复用后封面墙
+  // 场景不用每个请求都重做 TCP/TLS 握手。
+  final Map<(String, String), Dio> _dioCache = {};
+
   Dio _dio() {
     return Dio(
       BaseOptions(
@@ -57,6 +61,10 @@ class NavidromeClient implements RemoteClient {
         responseType: ResponseType.plain,
       ),
     );
+  }
+
+  Dio _dioFor(RemoteSource source, String password) {
+    return _dioCache.putIfAbsent((source.id, password), _dio);
   }
 
   /// OpenSubsonic getLyricsBySongId：Navidrome 扫描时已经把内嵌歌词抽进库，
@@ -109,7 +117,7 @@ class NavidromeClient implements RemoteClient {
     required bool enhanced,
   }) async {
     try {
-      final response = await _dio().get<dynamic>(
+      final response = await _dioFor(source, password).get<dynamic>(
         '${_restBase(source)}/getLyricsBySongId.view',
         queryParameters: {
           ..._authParams(source, password),
@@ -132,7 +140,7 @@ class NavidromeClient implements RemoteClient {
     Map<String, RemoteTrack> existingTracks = const {},
     void Function()? checkCancelled,
   }) async {
-    final dio = _dio();
+    final dio = _dioFor(source, password);
 
     // search3 分页在 0.64.x 上是可靠的（500 首/页，全库几次请求就够），
     // 比逐张专辑取（几千次请求）快两个数量级。

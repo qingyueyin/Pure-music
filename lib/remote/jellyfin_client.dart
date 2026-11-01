@@ -22,13 +22,22 @@ class JellyfinClient implements RemoteClient {
   String _base(RemoteSource source) =>
       source.baseUrl.trim().replaceFirst(RegExp(r'/+$'), '');
 
+  // 按 token 缓存 Dio：每个 Dio 自带连接池，复用后封面墙场景
+  // 不用每个请求都重做 TCP/TLS 握手。
+  final Map<String, Dio> _dioCache = {};
+
   Dio _dio(String token) {
-    return Dio(
-      BaseOptions(
-        connectTimeout: const Duration(seconds: 12),
-        receiveTimeout: const Duration(seconds: 30),
-        responseType: ResponseType.plain,
-        headers: {if (token.isNotEmpty) 'Authorization': 'MediaBrowser Token="$token"'},
+    return _dioCache.putIfAbsent(
+      token,
+      () => Dio(
+        BaseOptions(
+          connectTimeout: const Duration(seconds: 12),
+          receiveTimeout: const Duration(seconds: 30),
+          responseType: ResponseType.plain,
+          headers: {
+            if (token.isNotEmpty) 'Authorization': 'MediaBrowser Token="$token"',
+          },
+        ),
       ),
     );
   }

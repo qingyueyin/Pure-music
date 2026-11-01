@@ -40,29 +40,34 @@ class WebDavClient implements RemoteClient {
       '<d:resourcetype/><d:getcontentlength/><d:getlastmodified/>'
       '</d:prop></d:propfind>';
 
+  // 按 (源, 密码) 缓存 Dio：连接池复用，封面墙场景不必每张封面重做握手。
+  final Map<(String, String), Dio> _dioCache = {};
+
   Dio _dio(RemoteSource source, String password) {
-    final headers = <String, String>{
-      'Depth': '1',
-      'Content-Type': 'application/xml; charset=utf-8',
-      'Accept': '*/*',
-    };
-    if (source.username.isNotEmpty || password.isNotEmpty) {
-      final token = base64Encode(utf8.encode('${source.username}:$password'));
-      headers['Authorization'] = 'Basic $token';
-    }
-    return Dio(
-      BaseOptions(
-        connectTimeout: const Duration(seconds: 12),
-        receiveTimeout: const Duration(seconds: 30),
-        headers: headers,
-        responseType: ResponseType.plain,
-        // 跟随重定向时 Dio 会把 PROPFIND 降级成 GET，拿到的是网页而不是目录列表，
-        // 所以这里自己处理 3xx，保证方法不变。
-        followRedirects: false,
-        validateStatus: (status) =>
-            status != null && status >= 200 && status < 400,
-      ),
-    );
+    return _dioCache.putIfAbsent((source.id, password), () {
+      final headers = <String, String>{
+        'Depth': '1',
+        'Content-Type': 'application/xml; charset=utf-8',
+        'Accept': '*/*',
+      };
+      if (source.username.isNotEmpty || password.isNotEmpty) {
+        final token = base64Encode(utf8.encode('${source.username}:$password'));
+        headers['Authorization'] = 'Basic $token';
+      }
+      return Dio(
+        BaseOptions(
+          connectTimeout: const Duration(seconds: 12),
+          receiveTimeout: const Duration(seconds: 30),
+          headers: headers,
+          responseType: ResponseType.plain,
+          // 跟随重定向时 Dio 会把 PROPFIND 降级成 GET，拿到的是网页而不是目录列表，
+          // 所以这里自己处理 3xx，保证方法不变。
+          followRedirects: false,
+          validateStatus: (status) =>
+              status != null && status >= 200 && status < 400,
+        ),
+      );
+    });
   }
 
   /// 同主机才算同源：协议/端口变化（http→https 升级）可以接受，
