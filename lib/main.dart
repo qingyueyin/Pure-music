@@ -6,6 +6,7 @@ import 'package:pure_music/core/application_log.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/setting_action_state.dart';
 import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/core/upgrade_maintenance.dart';
 import 'package:pure_music/core/cache.dart';
 import 'package:path/path.dart' as path;
 import 'package:pure_music/entry.dart';
@@ -241,8 +242,9 @@ Future<void> main() async {
 }
 
 Future<void> _runApplication() async {
-  PaintingBinding.instance.imageCache.maximumSize = 64;
-  PaintingBinding.instance.imageCache.maximumSizeBytes = 16 << 20;
+  // 曲库封面快速滚动要靠这个缓存复用，太小会整屏「失忆」重解码。
+  PaintingBinding.instance.imageCache.maximumSize = 256;
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 96 << 20;
   try {
     await RustLib.init();
   } catch (e, s) {
@@ -287,6 +289,8 @@ Future<bool> _loadSettingsAndCaches() async {
   }
   if (File(path.join(settingsDir.path, 'app_preference.json')).existsSync()) {
     await AppPreference.read();
+    // 升级后的一次性轻量维护（日志过期清理 + WAL checkpoint）
+    await UpgradeMaintenance.runIfNeeded();
   }
   await HotkeysHelper.registerHotKeys();
   await AlbumColorCache.instance.init();

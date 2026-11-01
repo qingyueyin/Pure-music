@@ -372,7 +372,6 @@ class MemoryMonitorService {
   void trimAfterSongChange() {
     final playingPath = PlayService.existingPlaybackService?.nowPlaying?.path;
     AudioLibrary.instance.evictStaleCoverBytes();
-    AudioLibrary.instance.trimCollectionThumbnailRetention(96);
     CoverImageCache.instance.trimMemory(keepPath: playingPath);
     CoverImageCache.instance.trimSmall(keepEntries: 64);
   }
@@ -388,8 +387,8 @@ class MemoryMonitorService {
   void restoreForegroundImageCache() {
     stopHiddenTrim();
     final cache = PaintingBinding.instance.imageCache;
-    cache.maximumSize = 64;
-    cache.maximumSizeBytes = 16 << 20;
+    cache.maximumSize = 256;
+    cache.maximumSizeBytes = 96 << 20;
   }
 
   /// 托盘隐藏：界面树已整棵卸掉，图片和排版缓存一并清，再按间隔换出工作集。

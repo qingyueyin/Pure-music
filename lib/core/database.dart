@@ -119,4 +119,12 @@ CREATE TABLE IF NOT EXISTS album_colors (
     _db?.dispose();
     _db = null;
   }
+
+  /// 把 WAL 日志合并回主文件。库结构迁移完成后调用一次即可，
+  /// 期间正常读写仍可用（PASSIVE 模式不阻塞）。
+  void checkpointWal() {
+    final db = _db;
+    if (db == null) return;
+    db.execute('PRAGMA wal_checkpoint(PASSIVE)');
+  }
 }

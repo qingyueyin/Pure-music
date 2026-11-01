@@ -114,6 +114,10 @@ class AppPreference {
   /// 上次读取的原始 JSON，保存时保留未知字段
   Map<String, dynamic>? _rawPrefMap;
 
+  /// 文件里记录的上次运行版本号，升级维护用来判断是否刚升级
+  String? get rawVersion =>
+      _rawPrefMap == null ? null : _rawPrefMap!['version'] as String?;
+
   void applyStoredMap(Map<String, dynamic> prefMap) {
     _rawPrefMap = prefMap;
     _applyPagePrefs(prefMap);
