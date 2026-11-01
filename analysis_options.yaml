@@ -3,7 +3,7 @@ include: package:flutter_lints/flutter.yaml
 analyzer:
   exclude:
     - attic/**
-    # 远程曲库已归档，对应用例在 test/ 本地留着但不参与分析
+    # 远程曲库已取消归档，对应用例在 test/ 本地留着但不进仓库
     - test/remote/**
     - bin/build_tool_runner.dart
     - rust_builder/cargokit/build_tool/**

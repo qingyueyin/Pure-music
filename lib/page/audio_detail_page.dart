@@ -22,6 +22,7 @@ import 'package:pure_music/page/audio_detail_metadata_cache.dart';
 import 'package:pure_music/play_service/audio_tag_write_scheduler.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/taskbar_thumbnail_service.dart';
+import 'package:pure_music/remote/remote_library.dart';
 import 'package:pure_music/services/native/media_metadata_service.dart';
 import 'package:pure_music/services/native/platform_service.dart';
 import 'package:pure_music/services/network/https_bytes_service.dart';
@@ -58,6 +59,9 @@ AudioExtraMetadata _emptyAudioExtraMetadata() => const AudioExtraMetadata(
 );
 
 Future<AudioExtraMetadata> _getAudioExtra(Audio audio) {
+  if (RemoteLibrary.isRemotePath(audio.path)) {
+    return Future.value(_emptyAudioExtraMetadata());
+  }
   return _audioExtraCache
       .get(audio)
       .catchError((_) => _emptyAudioExtraMetadata());
@@ -274,6 +278,10 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
   }
 
   Future<void> _enterEditMode() async {
+    if (RemoteLibrary.isRemotePath(audio.path)) {
+      showTextOnSnackBar('远程曲目暂不支持编辑标签');
+      return;
+    }
     final requestToken = ++_editRequestToken;
     await applyAudioDetailMetadataIfMounted(
       future: _getAudioExtra(audio),
@@ -564,6 +572,20 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
   }
 
   Widget _lyricTabBody(ColorScheme scheme, AsyncSnapshot<String?> snapshot) {
+    if (RemoteLibrary.isRemotePath(audio.path)) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Text(
+            '远程曲目暂不支持内嵌歌词',
+            style: TextStyle(
+              color: scheme.onSurfaceVariant,
+              fontSize: AppType.body,
+            ),
+          ),
+        ),
+      );
+    }
     if (snapshot.connectionState == ConnectionState.waiting) {
       return const Center(
         child: Padding(

@@ -729,8 +729,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta
   get kCrateApiSmtcFlutterSmtcFlutterQueueThumbnailBytesConstMeta =>
       const TaskConstMeta(
-        debugName: 'SmtcFlutter_queue_thumbnail_bytes',
-        argNames: ['that', 'path', 'bytes'],
+        debugName: "SmtcFlutter_queue_thumbnail_bytes",
+        argNames: ["that", "path", "bytes"],
       );
 
   @override

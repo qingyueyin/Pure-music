@@ -749,6 +749,8 @@ impl SMTCFlutter {
                         }
                         ThumbnailJob::Bytes { path, .. } => {
                             (path.clone(), Self::_resolve_thumbnail(&job.0, &picture_cache))
+                        }
+                    };
                     let _display_guard = match display_lock.lock() {
                         Ok(guard) => guard,
                         Err(poisoned) => poisoned.into_inner(),

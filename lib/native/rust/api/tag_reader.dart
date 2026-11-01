@@ -7,6 +7,8 @@ import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'tag_reader/extra_metadata.dart';
 import 'tag_reader/index_state.dart';
+
+// 生成器把标签类型拆到子文件却没再导出，手工补上。
 export 'tag_reader/extra_metadata.dart';
 export 'tag_reader/index_state.dart';
 
@@ -91,6 +93,17 @@ Stream<IndexActionState> buildIndexFromFoldersRecursively({
   folders: folders,
   indexPath: indexPath,
 );
+
+/// for Flutter
+/// SMB 远程来源专用入口：只接受 Windows 网络路径，并限制目录数量。
+Stream<IndexActionState> buildRemoteIndexFromFoldersRecursively({
+  required List<String> folders,
+  required String indexPath,
+}) => RustLib.instance.api
+    .crateApiTagReaderBuildRemoteIndexFromFoldersRecursively(
+      folders: folders,
+      indexPath: indexPath,
+    );
 
 Stream<IndexActionState> updateIndex({
   required String indexPath,
