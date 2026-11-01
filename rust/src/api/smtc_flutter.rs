@@ -54,12 +54,19 @@ unsafe extern "system" fn hidden_window_proc(
     DefWindowProcW(hwnd, msg, wparam, lparam)
 }
 
+/// 缩略图任务：本地曲目从文件路径抠内嵌封面；远程曲目没有真实文件，
+/// 由 Dart 侧取到封面字节后直接喂进来。
+enum ThumbnailJob {
+    Path(String),
+    Bytes { path: String, data: Vec<u8> },
+}
+
 pub struct SMTCFlutter {
     _smtc: SystemMediaTransportControls,
     hidden_window: Option<HWND>,
     duration_ms: Mutex<u32>,
     progress_ms: AtomicU64,
-    last_path: Mutex<Option<String>>,
+    last_path: Arc<Mutex<Option<String>>>,
     last_title: Mutex<Option<String>>,
     last_artist: Mutex<Option<String>>,
     last_album: Mutex<Option<String>>,
@@ -67,7 +74,7 @@ pub struct SMTCFlutter {
     position_change_token: Mutex<Option<EventRegistrationToken>>,
     display_revision: Arc<AtomicU64>,
     display_lock: Arc<Mutex<()>>,
-    thumbnail_pending: Arc<Mutex<Option<(String, u64)>>>,
+    thumbnail_pending: Arc<Mutex<Option<(ThumbnailJob, u64)>>>,
     thumbnail_wake: Arc<Condvar>,
     thumbnail_closed: Arc<AtomicBool>,
     thumbnail_applied_path: Arc<Mutex<Option<String>>>,
@@ -236,6 +243,13 @@ impl SMTCFlutter {
         self._clear_display().map_err(|error| error.to_string())
     }
 
+    /// 直接以图片字节更新缩略图。远程曲目没有本地文件可抠内嵌封面，
+    /// 由 Dart 侧取到封面字节后调用这里；晚到的字节按曲目路径判废。
+    pub fn queue_thumbnail_bytes(&self, path: String, bytes: Vec<u8>) {
+        let revision = self.display_revision.load(Ordering::SeqCst);
+        self._queue_thumbnail_job(ThumbnailJob::Bytes { path, data: bytes }, revision);
+    }
+
     /// 系统在会话挂起（最小化/后台）时会静默丢弃 DisplayUpdater 更新。
     /// 通过往返切换 PlaybackStatus 强制系统端重新评估会话并重绘显示。
     pub fn refresh_display(&self) -> Result<(), String> {
@@ -366,11 +380,17 @@ impl SMTCFlutter {
 
         let display_revision = Arc::new(AtomicU64::new(0));
         let display_lock = Arc::new(Mutex::new(()));
+        let last_path = Arc::new(Mutex::new(None));
+        // 已解析的缩略图字节（路径 → 图片）只活在工人线程里：
+        // 刷新显示时按路径命中复用，远程曲目不必等 Dart 再喂一次。
+        let thumbnail_picture = Arc::new(Mutex::new(None));
         let thumbnail_applied_path = Arc::new(Mutex::new(None));
         let (thumbnail_pending, thumbnail_wake, thumbnail_closed) = Self::_start_thumbnail_worker(
             _smtc.clone(),
             Arc::clone(&display_revision),
             Arc::clone(&display_lock),
+            Arc::clone(&last_path),
+            Arc::clone(&thumbnail_picture),
             Arc::clone(&thumbnail_applied_path),
         );
 
@@ -379,7 +399,7 @@ impl SMTCFlutter {
             hidden_window: created_hidden.then_some(hwnd),
             duration_ms: Mutex::new(0),
             progress_ms: AtomicU64::new(0),
-            last_path: Mutex::new(None),
+            last_path,
             last_title: Mutex::new(None),
             last_artist: Mutex::new(None),
             last_album: Mutex::new(None),
@@ -604,26 +624,31 @@ impl SMTCFlutter {
 
     fn _queue_thumbnail_update(&self, path: HSTRING, revision: u64) {
         let path_string = path.to_string();
+        // 同一首歌的封面已经提交过就不再解码（main 的防重复提交）。
         if let Ok(applied) = self.thumbnail_applied_path.lock() {
             if !should_queue_smtc_thumbnail(applied.as_deref(), &path_string) {
                 return;
             }
         }
+        self._queue_thumbnail_job(ThumbnailJob::Path(path_string), revision);
+    }
+
+    fn _queue_thumbnail_job(&self, job: ThumbnailJob, revision: u64) {
         if let Ok(mut pending) = self.thumbnail_pending.lock() {
             if self.thumbnail_closed.load(Ordering::Acquire) {
                 return;
             }
-            *pending = Some((path_string, revision));
+            *pending = Some((job, revision));
             self.thumbnail_wake.notify_one();
         }
     }
 
     /// 等待并取出下一个待处理的缩略图任务，worker 已关闭时返回 None
     fn _wait_for_job(
-        pending: &Mutex<Option<(String, u64)>>,
+        pending: &Mutex<Option<(ThumbnailJob, u64)>>,
         wake: &Condvar,
         closed: &AtomicBool,
-    ) -> Option<(String, u64)> {
+    ) -> Option<(ThumbnailJob, u64)> {
         loop {
             let mut guard = match pending.lock() {
                 Ok(guard) => guard,
@@ -658,17 +683,41 @@ impl SMTCFlutter {
         Ok(())
     }
 
+    /// 解析缩略图图片字节：字节任务直接用；路径任务先查缓存，
+    /// 未命中再从文件抠内嵌封面（远程假路径会抠空，返回 None）。
+    fn _resolve_thumbnail(
+        job: &ThumbnailJob,
+        picture_cache: &Mutex<Option<(String, Vec<u8>)>>,
+    ) -> Option<Vec<u8>> {
+        match job {
+            ThumbnailJob::Bytes { data, .. } => Some(data.clone()),
+            ThumbnailJob::Path(path) => {
+                let cached = match picture_cache.lock() {
+                    Ok(guard) => guard.as_ref().and_then(|(cached_path, data)| {
+                        (cached_path == path).then(|| data.clone())
+                    }),
+                    Err(_) => None,
+                };
+                cached.or_else(|| {
+                    tag_reader::get_embedded_picture_from_path(path, 256, 256)
+                })
+            }
+        }
+    }
+
     fn _start_thumbnail_worker(
         smtc: SystemMediaTransportControls,
         display_revision: Arc<AtomicU64>,
         display_lock: Arc<Mutex<()>>,
+        last_path: Arc<Mutex<Option<String>>>,
+        picture_cache: Arc<Mutex<Option<(String, Vec<u8>)>>>,
         thumbnail_applied_path: Arc<Mutex<Option<String>>>,
     ) -> (
-        Arc<Mutex<Option<(String, u64)>>>,
+        Arc<Mutex<Option<(ThumbnailJob, u64)>>>,
         Arc<Condvar>,
         Arc<AtomicBool>,
     ) {
-        let pending = Arc::new(Mutex::new(None::<(String, u64)>));
+        let pending = Arc::new(Mutex::new(None::<(ThumbnailJob, u64)>));
         let wake = Arc::new(Condvar::new());
         let closed = Arc::new(AtomicBool::new(false));
         let worker_pending = Arc::clone(&pending);
@@ -694,12 +743,12 @@ impl SMTCFlutter {
                             Some(job) => job,
                             None => return,
                         };
-                    let path = job.0;
-                    let thumbnail = match Self::_try_get_thumbnail(&HSTRING::from(path.clone())) {
-                        Ok(thumbnail) => thumbnail,
-                        Err(error) => {
-                            log::warn!(target: "smtc", "SMTC: thumbnail err: {}", error);
-                            None
+                    let (job_path, picture) = match &job.0 {
+                        ThumbnailJob::Path(path) => {
+                            (path.clone(), Self::_resolve_thumbnail(&job.0, &picture_cache))
+                        }
+                        ThumbnailJob::Bytes { path, .. } => {
+                            (path.clone(), Self::_resolve_thumbnail(&job.0, &picture_cache))
                         }
                     };
                     let _display_guard = match display_lock.lock() {
@@ -709,12 +758,39 @@ impl SMTCFlutter {
                     if display_revision.load(Ordering::Acquire) != job.1 {
                         continue;
                     }
+                    // 封面抓取是异步的：曲目已经切走的字节直接丢弃。
+                    let current = match last_path.lock() {
+                        Ok(guard) => guard.clone(),
+                        Err(poisoned) => poisoned.into_inner().clone(),
+                    };
+                    if current.as_deref() != Some(job_path.as_str()) {
+                        continue;
+                    }
+                    if let Some(data) = &picture {
+                        if let Ok(mut cache) = picture_cache.lock() {
+                            *cache = Some((job_path.clone(), data.clone()));
+                        }
+                    }
+                    let thumbnail = match &picture {
+                        Some(data) => match Self::_ras_ref_from_pic_data(data) {
+                            Ok(reference) => Some(reference),
+                            Err(error) => {
+                                log::warn!(
+                                    target: "smtc",
+                                    "SMTC: thumbnail decode err: {}",
+                                    error
+                                );
+                                None
+                            }
+                        },
+                        None => None,
+                    };
                     if let Err(error) = Self::_apply_thumbnail(&smtc, thumbnail) {
                         log::warn!(target: "smtc", "SMTC: thumbnail update err: {}", error);
                         continue;
                     }
                     if let Ok(mut applied) = worker_applied_path.lock() {
-                        *applied = Some(path);
+                        *applied = Some(job_path);
                     }
                 }
             });
@@ -771,23 +847,6 @@ impl SMTCFlutter {
             duration_ms,
             progress_ms: self.progress_ms.load(Ordering::Acquire),
         })
-    }
-
-    /// 尝试获取缩略图引用，返回 None 表示无缩略图（非错误）
-    fn _try_get_thumbnail(
-        path: &HSTRING,
-    ) -> Result<Option<RandomAccessStreamReference>, windows::core::Error> {
-        if let Some(pic_data) =
-            tag_reader::get_embedded_picture_from_path(&path.to_string(), 256, 256)
-        {
-            return Ok(Some(Self::_ras_ref_from_pic_data(&pic_data)?));
-        }
-        log::debug!(
-            target: "smtc",
-            "SMTC: no embedded picture for {}",
-            path.to_string()
-        );
-        Ok(None)
     }
 }
 

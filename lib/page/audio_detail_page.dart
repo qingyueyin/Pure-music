@@ -22,6 +22,7 @@ import 'package:pure_music/page/audio_detail_metadata_cache.dart';
 import 'package:pure_music/play_service/audio_tag_write_scheduler.dart';
 import 'package:pure_music/play_service/play_service.dart';
 import 'package:pure_music/play_service/taskbar_thumbnail_service.dart';
+import 'package:pure_music/remote/remote_library.dart';
 import 'package:pure_music/services/native/media_metadata_service.dart';
 import 'package:pure_music/services/native/platform_service.dart';
 import 'package:pure_music/services/network/https_bytes_service.dart';
@@ -58,6 +59,9 @@ AudioExtraMetadata _emptyAudioExtraMetadata() => const AudioExtraMetadata(
 );
 
 Future<AudioExtraMetadata> _getAudioExtra(Audio audio) {
+  if (RemoteLibrary.isRemotePath(audio.path)) {
+    return Future.value(_emptyAudioExtraMetadata());
+  }
   return _audioExtraCache
       .get(audio)
       .catchError((_) => _emptyAudioExtraMetadata());
@@ -218,10 +222,17 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
   }
 
   Future<void> _showCurrentAudioInExplorer() async {
+    // 已挂载盘符 / UNC 的远程曲目其实有真实路径，可以直接打开；
+    // WebDAV 的 URL 和 Navidrome 的曲目 ID 不行。
+    final target = RemoteLibrary.instance.explorerPathFor(audio.path);
+    if (target == null) {
+      showTextOnSnackBar('这个远程源没有可打开的文件路径');
+      return;
+    }
     if (_isOpeningInExplorer) return;
     setState(() => _isOpeningInExplorer = true);
     try {
-      final result = await PlatformService.instance.showInExplorer(audio.path);
+      final result = await PlatformService.instance.showInExplorer(target);
       if (!result && mounted) {
         showTextOnSnackBar('打开失败');
       }
@@ -236,7 +247,11 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
     if (_isCopyingPath) return;
     setState(() => _isCopyingPath = true);
     try {
-      await Clipboard.setData(ClipboardData(text: audio.path));
+      final remote = RemoteLibrary.instance.describePath(audio.path);
+      final text = remote != null && remote.location.isNotEmpty
+          ? remote.location
+          : audio.path;
+      await Clipboard.setData(ClipboardData(text: text));
       if (mounted) {
         showTextOnSnackBar('已复制路径');
       }
@@ -263,6 +278,10 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
   }
 
   Future<void> _enterEditMode() async {
+    if (RemoteLibrary.isRemotePath(audio.path)) {
+      showTextOnSnackBar('远程曲目暂不支持编辑标签');
+      return;
+    }
     final requestToken = ++_editRequestToken;
     await applyAudioDetailMetadataIfMounted(
       future: _getAudioExtra(audio),
@@ -553,6 +572,20 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
   }
 
   Widget _lyricTabBody(ColorScheme scheme, AsyncSnapshot<String?> snapshot) {
+    if (RemoteLibrary.isRemotePath(audio.path)) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Text(
+            '远程曲目暂不支持内嵌歌词',
+            style: TextStyle(
+              color: scheme.onSurfaceVariant,
+              fontSize: AppType.body,
+            ),
+          ),
+        ),
+      );
+    }
     if (snapshot.connectionState == ConnectionState.waiting) {
       return const Center(
         child: Padding(
@@ -714,30 +747,35 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
   }
 
   Widget _viewHeaderActions() {
+    final isRemote = RemoteLibrary.isRemotePath(audio.path);
+    final canOpenFolder =
+        RemoteLibrary.instance.explorerPathFor(audio.path) != null;
     return Wrap(
       spacing: 8,
       runSpacing: 8,
       children: [
-        IconButton.filledTonal(
-          tooltip: '编辑标签',
-          onPressed: _enterEditMode,
-          style: _headerActionStyle(),
-          icon: const Icon(Symbols.edit),
-        ),
-        IconButton.filledTonal(
-          tooltip: '在文件管理器中显示',
-          onPressed: _isOpeningInExplorer
-              ? null
-              : _showCurrentAudioInExplorer,
-          style: _headerActionStyle(),
-          icon: _isOpeningInExplorer
-              ? const SizedBox(
-                  width: 20.0,
-                  height: 20.0,
-                  child: CircularProgressIndicator(strokeWidth: 2.0),
-                )
-              : const Icon(Symbols.folder_open),
-        ),
+        if (!isRemote)
+          IconButton.filledTonal(
+            tooltip: '编辑标签',
+            onPressed: _enterEditMode,
+            style: _headerActionStyle(),
+            icon: const Icon(Symbols.edit),
+          ),
+        if (canOpenFolder)
+          IconButton.filledTonal(
+            tooltip: '在文件管理器中显示',
+            onPressed: _isOpeningInExplorer
+                ? null
+                : _showCurrentAudioInExplorer,
+            style: _headerActionStyle(),
+            icon: _isOpeningInExplorer
+                ? const SizedBox(
+                    width: 20.0,
+                    height: 20.0,
+                    child: CircularProgressIndicator(strokeWidth: 2.0),
+                  )
+                : const Icon(Symbols.folder_open),
+          ),
         IconButton.filledTonal(
           tooltip: '复制路径',
           onPressed: _isCopyingPath ? null : _copyCurrentAudioPath,
@@ -1014,6 +1052,30 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
   }
 
   List<Widget> _viewFileFields(AudioExtraMetadata? data) {
+    final remote = RemoteLibrary.instance.describePath(audio.path);
+    if (remote != null) {
+      final trackId = RemoteLibrary.instance.trackForPath(audio.path)?.trackId;
+      return [
+        _DetailField(
+          label: '来源',
+          value: '${remote.kindLabel} · ${remote.sourceName}',
+        ),
+        _DetailField(
+          label: '格式',
+          value: _fileExtension(remote.location.isEmpty ? trackId : remote.location),
+        ),
+        _DetailField(label: '文件大小', child: _buildFileSize(data)),
+        _DetailField(
+          label: '路径',
+          value: remote.location.isEmpty
+              ? '服务器只提供曲目 ID：${trackId ?? '-'}'
+              : remote.location,
+          allowWrap: true,
+        ),
+        _DetailField(label: '修改时间', value: _formatTimestamp(audio.modified)),
+        _DetailField(label: '创建时间', value: _formatTimestamp(audio.created)),
+      ];
+    }
     return [
       _DetailField(
         label: '格式',
@@ -1024,6 +1086,16 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
       _DetailField(label: '修改时间', value: _formatTimestamp(audio.modified)),
       _DetailField(label: '创建时间', value: _formatTimestamp(audio.created)),
     ];
+  }
+
+  /// 从可读路径里取扩展名；取不到就是 '-'。
+  String _fileExtension(String? path) {
+    final text = path?.trim() ?? '';
+    if (text.isEmpty) return '-';
+    final dot = text.lastIndexOf('.');
+    if (dot <= 0 || dot == text.length - 1) return '-';
+    final ext = text.substring(dot + 1).split(RegExp(r'[?#]')).first;
+    return ext.isEmpty ? '-' : ext.toUpperCase();
   }
 
   Widget _buildViewSectionLayout(double maxWidth, List<Widget> sections) {

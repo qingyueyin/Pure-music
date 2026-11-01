@@ -4,7 +4,8 @@ import 'dart:math';
 enum RemoteSourceKind {
   navidrome('Navidrome'),
   webdav('WebDAV'),
-  smb('SMB / 共享文件夹');
+  smb('SMB / 共享文件夹'),
+  jellyfin('Jellyfin');
 
   const RemoteSourceKind(this.label);
 
@@ -103,6 +104,38 @@ class RemoteTrack {
   final int created;
   final String? by;
   final String? coverId;
+
+  /// 同步结束后会用 ID3 里的真实标签覆盖按文件名猜出来的值。
+  RemoteTrack copyWith({
+    String? title,
+    String? artist,
+    String? album,
+    String? albumArtist,
+    int? track,
+    int? duration,
+    int? bitrate,
+    int? sampleRate,
+    String? by,
+    String? coverId,
+  }) {
+    return RemoteTrack(
+      sourceId: sourceId,
+      trackId: trackId,
+      title: title ?? this.title,
+      artist: artist ?? this.artist,
+      album: album ?? this.album,
+      albumArtist: albumArtist ?? this.albumArtist,
+      track: track ?? this.track,
+      disc: disc,
+      duration: duration ?? this.duration,
+      bitrate: bitrate ?? this.bitrate,
+      sampleRate: sampleRate ?? this.sampleRate,
+      modified: modified,
+      created: created,
+      by: by ?? this.by,
+      coverId: coverId ?? this.coverId,
+    );
+  }
 }
 
 const remotePathPrefix = 'remote://';
@@ -139,4 +172,32 @@ String newRemoteId() {
   final suffix = List.generate(8, (_) => random.nextInt(16).toRadixString(16))
       .join();
   return '${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}$suffix';
+}
+
+/// 名称为空时给一个人类可读的默认名，例如「家中的 Navidrome」。
+///
+/// 不再拿主机名或末级文件夹名当名字（`music.stillrain.xyz`、`Music` 这种），
+/// 那些信息在「编辑」和「文件信息」里都看得到，名字只需要说明这是什么。
+String defaultRemoteSourceName(RemoteSourceKind kind, String address) {
+  // 名称留空时统一用协议名，不再拼主机/目录名——那些信息在「编辑」和
+  // 「文件信息」里都看得到，名字只需要说明这是哪一类源。
+  return switch (kind) {
+    RemoteSourceKind.navidrome => 'Navidrome',
+    RemoteSourceKind.webdav => 'WebDAV',
+    RemoteSourceKind.smb => 'SMB/共享路径',
+    RemoteSourceKind.jellyfin => 'Jellyfin',
+  };
+}
+
+String uniqueRemoteSourceName(String base, Iterable<String> existingNames) {
+  final name = base.trim().isEmpty ? '远程音乐' : base.trim();
+  final taken = existingNames
+      .map((value) => value.trim().toLowerCase())
+      .toSet();
+  if (!taken.contains(name.toLowerCase())) return name;
+  for (var index = 2; index < 1000; index++) {
+    final candidate = '$name ($index)';
+    if (!taken.contains(candidate.toLowerCase())) return candidate;
+  }
+  return name;
 }

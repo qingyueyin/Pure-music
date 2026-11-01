@@ -100,7 +100,10 @@ class _FoldersPageState extends State<FoldersPage> {
     final version = AudioLibrary.libraryVersion.value;
     if (_contentVersion == version) return _contentList;
     _contentVersion = version;
-    _contentList = AudioLibrary.aggregatedRootFolders();
+    _contentList = [
+      ...AudioLibrary.aggregatedRootFolders(),
+      ...AudioLibrary.instance.remoteVirtualFolders,
+    ];
     return _contentList;
   }
 
@@ -374,7 +377,7 @@ class AudioFolderTile extends StatelessWidget {
         ),
         const SizedBox(height: 2),
         Text(
-          p.dirname(audioFolder.path),
+          audioFolder.subtitle ?? p.dirname(audioFolder.path),
           softWrap: false,
           maxLines: 1,
           style: TextStyle(

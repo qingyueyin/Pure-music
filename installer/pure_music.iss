@@ -1,4 +1,4 @@
-#ifndef SourceDir
+﻿#ifndef SourceDir
   #error SourceDir is required
 #endif
 #ifndef AppVersion
@@ -77,6 +77,11 @@ Name: "desktopicon"; Description: "{cm:DesktopIcon}"; GroupDescription: "{cm:Add
 
 [InstallDelete]
 Type: filesandordirs; Name: "{autoprograms}\{#AppName}"
+; 旧布局把运行库平铺在 exe 旁边，升级后会遮住 dll\ 子目录里的新版本
+; （exe 目录的 DLL 搜索优先级更高），启动时绑定哈希对不上直接起不来。
+Type: files; Name: "{app}\rust_lib_pure_music.dll"
+Type: files; Name: "{app}\sqlite3.dll"
+Type: files; Name: "{app}\dartjni.dll"
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"
