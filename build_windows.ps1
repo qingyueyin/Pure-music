@@ -446,6 +446,29 @@ function New-AppPackage([string]$artifactRoot, [string]$version) {
         Invoke-RoboCopy $buildDir $finalAppDir
     }
 
+    # 之前从 Release 目录直接运行过便携模式，运行时把用户数据写进了
+    # build 输出的 data\ 和 logs\；这些不是编译产物，混进安装包会带出
+    # 本机听歌记录和设置。首跑会自己重建，这里从临时副本里删掉。
+    Invoke-Step "strip runtime data from staging" {
+        foreach ($relative in @(
+            "logs",
+            "data\audio_echo_logs",
+            "data\cache",
+            "data\db",
+            "data\settings",
+            "data\library.sqlite",
+            "data\library.sqlite-shm",
+            "data\library.sqlite-wal",
+            "data\index.json"
+        )) {
+            $target = Join-Path $finalAppDir $relative
+            if (Test-Path -LiteralPath $target) {
+                Assert-PathWithin $target $finalAppDir
+                Remove-Item -LiteralPath $target -Recurse -Force
+            }
+        }
+    }
+
     Write-Host "Normalizing plugin DLL locations..." -ForegroundColor Cyan
     Get-ChildItem -Path $finalAppDir -Recurse -File -Filter "*_plugin.dll" -ErrorAction SilentlyContinue | ForEach-Object {
         if ($_.Directory.FullName -eq (Get-Item $finalAppDir).FullName) { return }

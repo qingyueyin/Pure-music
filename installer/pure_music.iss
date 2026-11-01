@@ -97,6 +97,51 @@ var
   PortableDataPathPage: TInputDirWizardPage;
   PortableSourceData: String;
 
+// CloseApplications 的 Restart Manager 只会发 WM_CLOSE，本应用托盘常驻时
+// 收到它只会藏进托盘不会退出，安装器的「关闭应用程序」形同虚设。
+// 这里自行检测并终止：先普通 taskkill（设置成关闭即退出的用户能体面退出），
+// 等 3 秒还在就强制结束进程树；队列与进度已持久化，强杀无数据损失。
+function IsProcessRunning(const ImageName: String): Boolean;
+var
+  ResultCode: Integer;
+begin
+  Result := False;
+  if not Exec(
+      ExpandConstant('{sys}\cmd.exe'),
+      Format('/C tasklist /FI "IMAGENAME eq %s" 2>nul | find /I "%s" >nul', [ImageName, ImageName]),
+      '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+    Exit;
+  Result := (ResultCode = 0);
+end;
+
+procedure KillAppProcesses;
+var
+  ResultCode: Integer;
+  Images: TArrayOfString;
+  I: Integer;
+begin
+  SetArrayLength(Images, 2);
+  Images[0] := '{#AppExeName}';
+  Images[1] := 'desktop_lyric.exe';
+  for I := 0 to GetArrayLength(Images) - 1 do
+  begin
+    if not IsProcessRunning(Images[I]) then
+      Continue;
+    Exec(ExpandConstant('{sys}\taskkill.exe'), Format('/IM "%s"', [Images[I]]),
+      '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Sleep(3000);
+    if IsProcessRunning(Images[I]) then
+      Exec(ExpandConstant('{sys}\taskkill.exe'), Format('/F /T /IM "%s"', [Images[I]]),
+        '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  end;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  Result := '';
+  KillAppProcesses;
+end;
+
 function DirectoryHasEntries(const Path: String): Boolean;
 var
   FindRec: TFindRec;
@@ -237,6 +282,9 @@ procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   UserDataPath: String;
 begin
+  if CurUninstallStep = usUninstall then
+    KillAppProcesses;
+
   if CurUninstallStep <> usPostUninstall then
     Exit;
 
