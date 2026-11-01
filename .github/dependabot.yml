@@ -1,0 +1,17 @@
+version: 2
+updates:
+  # Rust 依赖（rust/Cargo.toml）
+  - package-ecosystem: "cargo"
+    directory: "/rust"
+    schedule:
+      interval: "weekly"
+  # 文档站 npm 依赖（page/package.json）
+  - package-ecosystem: "npm"
+    directory: "/page"
+    schedule:
+      interval: "weekly"
+  # GitHub Actions 工作流
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
