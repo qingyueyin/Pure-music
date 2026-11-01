@@ -12,6 +12,8 @@ const String ALBUM_DETAIL_PAGE = '/albums/detail';
 const String FOLDERS_PAGE = '/folders';
 const String FOLDER_DETAIL_PAGE = '/folders/detail';
 
+const String REMOTE_PAGE = '/remote';
+
 const String PLAYLISTS_PAGE = '/playlists';
 const String PLAYLIST_DETAIL_PAGE = '/playlists/detail';
 

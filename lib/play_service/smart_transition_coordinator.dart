@@ -184,6 +184,12 @@ final class SmartTransitionCoordinator {
       return;
     }
     final pending = _beginPendingTransition(target);
+    // 智能过渡要对音频做本地分析，远程曲目没有本地文件，直接退回普通切歌。
+    if (target.outgoing.path.startsWith('remote://') ||
+        target.incoming.path.startsWith('remote://')) {
+      _fallback(pending, 'remote_source');
+      return;
+    }
     if (!_player.canUseSmartTransition) {
       _fallback(pending, 'mixer_unavailable');
       return;

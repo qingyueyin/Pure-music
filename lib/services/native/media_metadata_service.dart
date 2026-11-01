@@ -1,6 +1,10 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:pure_music/core/cover_palette.dart';
 import 'package:pure_music/native/rust/api/tag_reader.dart' as rust_tag_reader;
+import 'package:pure_music/remote/remote_library.dart';
+import 'package:pure_music/remote/remote_source.dart';
 
 class AudioExtraItem {
   const AudioExtraItem({required this.key, required this.value});
@@ -131,6 +135,16 @@ class MediaMetadataService {
     required int height,
     required int numColors,
   }) async {
+    // remote:// 不是真实文件路径，送进 Rust 会报「路径过长」并刷屏。
+    // 远程曲目改为：先拿到封面字节，再在 Dart 侧量化主色，
+    // 否则播放页的背景渐变会整块消失（取不到色就没有渐变）。
+    if (remoteSourceIdOf(path) != null) {
+      final target = math.max(math.max(width, height), 160);
+      final bytes = await RemoteLibrary.instance.coverBytes(path, target);
+      if (bytes == null) return (bytes: null, colors: const <int>[]);
+      final colors = await extractCoverPalette(bytes, numColors: numColors);
+      return (bytes: bytes, colors: colors);
+    }
     final value = await rust_tag_reader.getPictureAndColors(
       path: path,
       width: width,
@@ -140,8 +154,10 @@ class MediaMetadataService {
     return (bytes: value.$1, colors: List<int>.from(value.$2));
   }
 
-  Future<String?> readEmbeddedLyric(String path) =>
-      rust_tag_reader.getLyricFromPath(path: path);
+  Future<String?> readEmbeddedLyric(String path) {
+    if (remoteSourceIdOf(path) != null) return Future<String?>.value();
+    return rust_tag_reader.getLyricFromPath(path: path);
+  }
 
   Future<void> writeEmbeddedLyric({
     required String path,

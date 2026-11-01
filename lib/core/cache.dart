@@ -12,6 +12,7 @@ import 'package:pure_music/core/workload_policy.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/native/rust/api/library_db.dart' as library_db;
 import 'package:pure_music/native/rust/api/tag_reader.dart';
+import 'package:pure_music/remote/remote_library.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:sqlite3/sqlite3.dart';
@@ -640,6 +641,23 @@ class CoverImageCache {
   final _persistentWarmCompleted = <String>{};
   final _persistentWarmPending = <String>{};
   late final _missing = _LruMap<String, bool>(512);
+
+  /// 远程封面取失败时的重试时间点。远程失败多半是瞬时的（同步占满带宽、
+  /// 请求超时），永久标记缺失会让这首曲子整场会话都没有封面。
+  static const _remoteMissRetry = Duration(seconds: 45);
+  final _remoteMissAt = <String, DateTime>{};
+
+  /// 记录失败时间点前先清掉过期项：不再重试的旧记录会让这张表整个
+  /// 会话只增不减。
+  void _rememberRemoteMiss(String key) {
+    if (_remoteMissAt.length > 256) {
+      final now = DateTime.now();
+      _remoteMissAt.removeWhere(
+        (_, at) => now.difference(at) >= _remoteMissRetry,
+      );
+    }
+    _remoteMissAt[key] = DateTime.now();
+  }
   final _coverLoadSemaphore = _AsyncSemaphore(
     backgroundWorkerConcurrencyFor(applicationProcessorBudget),
   );
@@ -926,6 +944,11 @@ class CoverImageCache {
     if (pending != null) return pending;
 
     if (_missing.get(key) == true) return null;
+    final missAt = _remoteMissAt[key];
+    if (missAt != null &&
+        DateTime.now().difference(missAt) < _remoteMissRetry) {
+      return null;
+    }
 
     final generation = _generation;
     final future = _coverLoadSemaphore.run(
@@ -941,9 +964,14 @@ class CoverImageCache {
       final result = await future;
       if (generation == _generation) {
         if (result == null) {
-          _missing.set(key, true);
+          if (RemoteLibrary.isRemotePath(path)) {
+            _rememberRemoteMiss(key);
+          } else {
+            _missing.set(key, true);
+          }
         } else {
           _decodedBytes.set(key, result);
+          _remoteMissAt.remove(key);
         }
       }
       return result;
@@ -967,6 +995,9 @@ class CoverImageCache {
     try {
       final indexPath = _indexPath;
       final maxPhysical = max(physicalWidth, physicalHeight);
+      if (RemoteLibrary.isRemotePath(path)) {
+        return RemoteLibrary.instance.coverBytes(path, maxPhysical);
+      }
       if (indexPath != null && maxPhysical > 96) {
         try {
           return await library_db.getCachedCover(

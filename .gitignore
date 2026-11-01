@@ -127,6 +127,8 @@ tool/occupancy-report/
 /SIZE_REPORT.md
 /FREEZE_PROBE.md
 
+# WorkBuddy 工作区（本地记忆，不入库）
+.workbuddy/
+
 # 测试留在本地，不进仓库
 /test/
-

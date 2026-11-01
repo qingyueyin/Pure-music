@@ -5,3 +5,4 @@
 *.yml text eol=lf
 *.md text eol=lf
 *.ps1 text eol=crlf
+windows/flutter/generated_plugins.cmake text eol=crlf

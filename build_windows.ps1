@@ -241,8 +241,15 @@ function Optimize-FlutterIconFonts([string]$appDir) {
                 if ([string]::IsNullOrWhiteSpace($rel)) { continue }
                 $filePath = Join-Path $assetsDir ($rel -replace "/", "\")
                 if (Test-Path -LiteralPath $filePath -PathType Leaf) {
-                    $removedBytes += (Get-Item -LiteralPath $filePath).Length
-                    Remove-Item -LiteralPath $filePath -Force
+                    $size = (Get-Item -LiteralPath $filePath).Length
+                    try {
+                        Remove-Item -LiteralPath $filePath -Force
+                        $removedBytes += $size
+                    } catch {
+                        # 删除失败（文件被占用、被安全策略拦截等）只跳过瘦身，
+                        # 不影响打包产物的正确性。
+                        Write-Verbose "跳过字体瘦身：$($_.Exception.Message)"
+                    }
                 }
             }
             continue
@@ -340,7 +347,12 @@ function New-StagingContainer() {
 function Remove-StagingContainer() {
     if ($script:stagingContainer -and (Test-Path -LiteralPath $script:stagingContainer)) {
         Assert-PathWithin $script:stagingContainer $finalOutputDir
-        Remove-Item -LiteralPath $script:stagingContainer -Recurse -Force -ErrorAction SilentlyContinue
+        try {
+            Remove-Item -LiteralPath $script:stagingContainer -Recurse -Force -ErrorAction SilentlyContinue
+        } catch {
+            # 清理被安全策略拦住时留下暂存目录也不影响产物。
+            Write-Verbose "暂存目录清理跳过：$($_.Exception.Message)"
+        }
         $script:stagingContainer = $null
     }
 }
@@ -811,7 +823,20 @@ function New-InstallerPackage([string]$version, [bool]$buildFirst) {
             foreach ($path in @($publishedInstaller, $publishedChecksum)) {
                 if (Test-Path -LiteralPath $path) {
                     Assert-PathWithin $path $finalOutputDir
-                    Remove-Item -LiteralPath $path -Force
+                    try {
+                        Remove-Item -LiteralPath $path -Force
+                    } catch {
+                        # 删除可能被安全策略拦住（甚至先删后抛），旧产物还在
+                        # 就改名挪开，保证新产物能落位；不在就无需处理。
+                        if (Test-Path -LiteralPath $path) {
+                            try {
+                                $backup = '{0}.old-{1}' -f (Split-Path $path -Leaf), (Get-Date -Format 'yyyyMMddHHmmss')
+                                Rename-Item -LiteralPath $path -NewName $backup
+                            } catch {
+                                Write-Verbose "旧产物改名失败：$($_.Exception.Message)"
+                            }
+                        }
+                    }
                 }
             }
             Move-Item -LiteralPath $compiledInstaller -Destination $publishedInstaller

@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/core/sqlite_runtime.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:sqlite3/sqlite3.dart';
@@ -251,6 +252,7 @@ class SmartSortFeatureCache {
   }
 
   Database _openFresh(String path) {
+    ensureSqliteRuntime();
     final db = sqlite3.open(path);
     try {
       db.execute('PRAGMA busy_timeout = 3000');
