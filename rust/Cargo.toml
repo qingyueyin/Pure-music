@@ -7,7 +7,7 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-flutter_rust_bridge = "=2.12.0"
+flutter_rust_bridge = "=2.13.0"
 log = "0.4"
 lofty = "0.22.4"
 dsf-meta = "0.2.7"
