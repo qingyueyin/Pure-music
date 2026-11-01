@@ -117,9 +117,6 @@ skills-lock.json
 tool/local/
 tool/occupancy-report/
 
-# Flutter 生成文件，不进仓库（每次构建都会重写）
-/windows/flutter/generated_plugins.cmake
-
 # 本地审计/任务报告，不进仓库
 /AUDIT_REPORT.md
 /TASK_PROGRESS.md
