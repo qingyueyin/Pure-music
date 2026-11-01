@@ -390,8 +390,14 @@ class _NowPlayingForegroundState extends State<_NowPlayingForeground> {
   }
 
   Widget _cover(Audio nowPlaying, bool heroEnabled) {
+    // 播放页开着圆形封面时这里也用圆形裁剪：Hero 飞行两端形状一致，
+    // 否则飞行中是方形内容套圆角，落点瞬间变方，观感突兀。
+    final circle = AppSettings.instance.circlePlaybackCover;
+    final borderRadius = circle
+        ? BorderRadius.circular(Spacing.xl)
+        : AppRadius.smCircular;
     final cover = ClipRRect(
-      borderRadius: AppRadius.smCircular,
+      borderRadius: borderRadius,
       child: SizedBox(
         width: 48.0,
         height: 48.0,
@@ -861,8 +867,13 @@ class _MiniCoverWidgetState extends State<_MiniCoverWidget> {
   @override
   Widget build(BuildContext context) {
     if (_cached != null) {
+      // 圆形封面开着时跟外层 _cover 保持一致，Hero 飞行两端形状才对得上。
+      final circle = AppSettings.instance.circlePlaybackCover;
+      final borderRadius = circle
+          ? BorderRadius.circular(Spacing.xl)
+          : AppRadius.smCircular;
       return ClipRRect(
-        borderRadius: AppRadius.smCircular,
+        borderRadius: borderRadius,
         child: Image.memory(
           _cached!,
           width: 48.0,
@@ -877,6 +888,7 @@ class _MiniCoverWidgetState extends State<_MiniCoverWidget> {
   }
 
   Widget _placeholder(BuildContext context) {
+    final circle = AppSettings.instance.circlePlaybackCover;
     return Container(
       width: 48.0,
       height: 48.0,
@@ -884,7 +896,9 @@ class _MiniCoverWidgetState extends State<_MiniCoverWidget> {
         color: Theme.of(
           context,
         ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: AppRadius.smCircular,
+        borderRadius: circle
+            ? BorderRadius.circular(Spacing.xl)
+            : AppRadius.smCircular,
       ),
     );
   }

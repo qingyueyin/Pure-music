@@ -312,7 +312,52 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
       if (!mounted || playbackService.nowPlaying?.path != path) return;
       MemoryMonitorService.instance.trimAfterSongChange();
     });
-    // 取色和解码都要等封面过渡结束，过渡中做会掉帧。
+    // 高清解码等过渡结束；取色用 160px 低清图，开销小，立即做，
+    // 让背景换色与封面过渡同时展开，不再落后近一秒。
+    _loadCoverPaletteOnly(_coverRequestToken, path);
+  }
+
+  Future<void> _loadCoverPaletteOnly(int token, String path) async {
+    final audio = playbackService.nowPlaying;
+    if (audio == null || _isCoverRequestStale(token, path)) return;
+    final modified = audio.modified;
+    final cachedPalette = _colorService.getCachedPaletteForPath(
+      path,
+      modified: modified,
+    );
+    if (cachedPalette != null && cachedPalette.isNotEmpty) {
+      // 调色板缓存命中时走完整加载补齐 160px 字节即可，不需要单独处理。
+      _scheduleCoverDetails(delay: MotionDuration.xFast);
+      return;
+    }
+    developer.Timeline.startSync('cover.extractColors');
+    late final List<int> rustColors;
+    try {
+      final result = await MediaMetadataService.instance.getPictureAndColors(
+        path: path,
+        width: 160,
+        height: 160,
+        numColors: 8,
+      );
+      rustColors = result.colors;
+    } finally {
+      developer.Timeline.finishSync();
+    }
+    if (_isCoverRequestStale(token, path)) return;
+    if (rustColors.isNotEmpty) {
+      final palette = rustColors.map((argb) => Color(argb)).toList();
+      _dominantColor = palette.first;
+      _preExtractedPalette = palette;
+      _palettePath = path;
+      _colorService.cachePaletteForPath(path, palette, modified: modified);
+      ThemeProvider.instance.applySeedColorDirectly(
+        palette.first,
+        path,
+        modified: modified,
+      );
+      if (mounted) setState(() {});
+    }
+    // 高清封面和 160px 字节仍等过渡结束再补。
     _scheduleCoverDetails(delay: _coverSwitchDuration);
   }
 
@@ -321,7 +366,8 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     _coverDebounceTimer?.cancel();
     _songChangeTrimTimer?.cancel();
     _coverRequestToken++;
-    PaintingBinding.instance.imageCache.clear();
+    // 不再整批清 imageCache：清掉的是全应用已解码图片，曲库列表会整屏失忆。
+    // 这里只需丢弃本页自己的封面引用，引擎 LRU 自会回收不再显示的图。
     setState(() {
       _nowPlayingCoverPath = null;
       _nowPlayingCoverBytes = null;
@@ -2890,6 +2936,51 @@ class _PlaybackCoverFrame extends StatelessWidget {
   }
 }
 
+/// 封面 Hero 飞行体：圆形封面开着时飞行全程画正圆。
+/// 默认飞行体固定用目标端 child——退出播放页时是 mini 条的 48px 方圆角图
+/// 被放大，飞行中途看着是方的，落地才变圆，出现「圆形变方形一下」。
+/// 这里 pop 用播放页端的高清封面，push 用播放页端 child，内容不换图；
+/// 裁剪半径按飞行中的实时尺寸算，两端形状与落点 Hero 完全一致。
+Widget _coverHeroFlight(
+  BuildContext flightContext,
+  Animation<double> animation,
+  HeroFlightDirection direction,
+  BuildContext fromHeroContext,
+  BuildContext toHeroContext,
+) {
+  final fromHero = fromHeroContext.widget as Hero;
+  final toHero = toHeroContext.widget as Hero;
+  // push 时路由动画 0→1 就是飞行进度；pop 时路由动画 1→0，取反向。
+  final progress = direction == HeroFlightDirection.push
+      ? animation
+      : ReverseAnimation(animation);
+  // 内容始终用播放页端的高清封面：pop 用 fromHero（mini 是 48px 小图，
+  // 放大会糊），push 用 toHero（默认行为也是它）。
+  final child = direction == HeroFlightDirection.push
+      ? toHero.child
+      : fromHero.child;
+  return AnimatedBuilder(
+    animation: progress,
+    builder: (context, _) => LayoutBuilder(
+      builder: (context, constraints) {
+        final t = progress.value;
+        final size = constraints.biggest;
+        final circle = AppSettings.instance.circlePlaybackCover;
+        // push 从 mini(8) 长到播放页(12)，pop 反向；圆形模式全程正圆。
+        final radius = circle
+            ? size.shortestSide / 2
+            : direction == HeroFlightDirection.push
+            ? lerpDouble(AppRadius.sm, 12.0, t)!
+            : lerpDouble(12.0, AppRadius.sm, t)!;
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(radius),
+          child: child,
+        );
+      },
+    ),
+  );
+}
+
 /// title, artist, album, cover
 class _NowPlayingInfo extends StatefulWidget {
   const _NowPlayingInfo({
@@ -3174,6 +3265,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
               reverseCurve: AppSettings.instance.enableNowPlayingOpenMotion
                   ? nowPlayingCloseCurve
                   : Curves.fastOutSlowIn.flipped,
+              flightShuttleBuilder: _coverHeroFlight,
               child: motion,
             )
           : motion,
