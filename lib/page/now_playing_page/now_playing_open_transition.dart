@@ -73,36 +73,35 @@ class _NowPlayingOpenTransitionState extends State<NowPlayingOpenTransition> {
         final t = _curved.value;
         final rect = Rect.lerp(begin, full, t)!;
         final radius = 8.0 * (1 - t);
+        // 内容从 18% 进度开始渐显、72% 收尾，全程能看见内容随卡片放大揭开；
+        // 阴影独立于内容透明度，从头就有，卡片始终有浮起感。
         final veil = const Interval(
-          0.0,
-          0.42,
-          curve: Curves.easeOut,
+          0.18,
+          0.72,
+          curve: Curves.easeOutCubic,
         ).transform(t);
         final scheme = Theme.of(context).colorScheme;
-        final shade = (1 - t).clamp(0.0, 1.0) * veil;
+        final shade = (1 - t).clamp(0.0, 1.0);
         return Stack(
           fit: StackFit.expand,
           clipBehavior: Clip.none,
           children: [
             Positioned.fromRect(
               rect: rect,
-              child: Opacity(
-                opacity: veil,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: scheme.surfaceContainer,
-                    borderRadius: BorderRadius.circular(radius),
-                    // 材质 elevation 4 是三层阴影叠加，每帧要做三次全屏高斯模糊，
-                    // 1920 宽窗口下多花 4~6ms 的 raster。三层在边缘处合成约 0.39，
-                    // 这里用单层 0.32 + 同等模糊半径近似，肉眼无差。
-                    boxShadow: [
-                      BoxShadow(
-                        color: scheme.shadow.withValues(alpha: 0.32 * shade),
-                        offset: const Offset(0.0, 2.0),
-                        blurRadius: 10.0,
-                      ),
-                    ],
-                  ),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainer,
+                  borderRadius: BorderRadius.circular(radius),
+                  // 材质 elevation 4 是三层阴影叠加，每帧要做三次全屏高斯模糊，
+                  // 1920 宽窗口下多花 4~6ms 的 raster。三层在边缘处合成约 0.39，
+                  // 这里用单层 0.32 + 同等模糊半径近似，肉眼无差。
+                  boxShadow: [
+                    BoxShadow(
+                      color: scheme.shadow.withValues(alpha: 0.32 * shade),
+                      offset: const Offset(0.0, 2.0),
+                      blurRadius: 10.0,
+                    ),
+                  ],
                 ),
               ),
             ),
