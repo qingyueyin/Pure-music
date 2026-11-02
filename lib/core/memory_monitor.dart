@@ -290,14 +290,12 @@ class MemoryMonitorService {
       CoverImageCache.instance.trimMemory(keepPath: playingPath);
       LyricsLineWidget.clearBlurFilterCache();
       _trimWorkingSet();
-      // 画面停了之后排帧还会拉起一些页，30 秒后补一次。
+      // 被挡住期间还会切歌解码新封面，一次清理压不住；闲时每分钟复查一次。
       _backgroundIdleRestoreTimer?.cancel();
-      _backgroundIdleRestoreTimer = Timer(const Duration(seconds: 30), () {
-        _backgroundIdleRestoreTimer = null;
-        if (WindowRenderGate.instance.backgroundIdle.value) {
-          _trimWorkingSet();
-        }
-      });
+      _backgroundIdleRestoreTimer = Timer.periodic(
+        const Duration(seconds: 60),
+        (_) => _trimBackgroundIdle(),
+      );
       log.memory.info('legacy', '[mem] background idle trim');
       return;
     }
@@ -305,13 +303,29 @@ class MemoryMonitorService {
     _backgroundIdleRestoreTimer = null;
   }
 
+  void _trimBackgroundIdle() {
+    if (!WindowRenderGate.instance.backgroundIdle.value) {
+      _backgroundIdleRestoreTimer?.cancel();
+      _backgroundIdleRestoreTimer = null;
+      return;
+    }
+    final playingPath = PlayService.existingPlaybackService?.nowPlaying?.path;
+    AudioLibrary.instance.evictStaleCoverBytes();
+    AudioLibrary.instance.trimCollectionThumbnailRetention(64);
+    CoverImageCache.instance.trimMemory(keepPath: playingPath);
+    _trimWorkingSet();
+  }
+
   void _checkMemoryPressure() {
     // 窗口看不见时只是不画，这里不做瘦身，也不卡工作集。
     if (!WindowRenderGate.instance.framesEnabled.value) return;
     final now = DateTime.now();
     final playingPath = PlayService.existingPlaybackService?.nowPlaying?.path;
+    const tier1Threshold = 220;
+    const tier2Threshold = 260;
+    const tier3Threshold = 320;
     if (_isPlaying()) {
-      // 播放中只回收过期封面，前台可见时不清图片缓存。
+      // 播放中的常规轻清理：只回收过期封面。
       if (_cleanupDue(
         now,
         _lastPlayingLightCleanupAt,
@@ -321,15 +335,34 @@ class MemoryMonitorService {
         AudioLibrary.instance.evictStaleCoverBytes();
         AudioLibrary.instance.trimCollectionThumbnailRetention(96);
       }
+      // 播放中同样要按阈值兜底，否则一场长播下来只涨不落。
+      // 播放本身就要占 300MB 左右，阈值必须高于正常占用，
+      // 否则每分钟都会误触发；不清 imageCache，歌词对象池只做限额裁剪。
+      const playingTier1Threshold = 180;
+      const playingTier2Threshold = 240;
+      const playingTier3Threshold = 280;
+      final playingRssMB = (ProcessInfo.currentRss / (1024 * 1024)).round();
+      if (playingRssMB > playingTier3Threshold &&
+          _cleanupDue(now, _lastTier3CleanupAt, const Duration(minutes: 5))) {
+        _runTier3Cleanup(now, playingPath, playingRssMB, playingTier3Threshold);
+        // 最后一道兜底：把工作集页换出到备用列表，不动音频缓冲。
+        _trimWorkingSet();
+      } else if (playingRssMB > playingTier2Threshold &&
+          _cleanupDue(now, _lastTier2CleanupAt, const Duration(minutes: 10))) {
+        _runTier2Cleanup(now, playingPath, playingRssMB, playingTier2Threshold);
+      } else if (playingRssMB > playingTier1Threshold &&
+          _cleanupDue(now, _lastTier1CleanupAt, const Duration(minutes: 2))) {
+        _runTier1Cleanup(now);
+        // 播放中一直渲染，工作集会一路涨到 tier-3 的 280MB 才回落；
+        // 一级就把页换出，峰值压在 180MB 附近，省下的都是看得见的那一段。
+        _trimWorkingSet();
+      }
       if (Platform.environment['CP_MEMORY_LOG'] == '1') {
         CoverImageCache.instance.logStats();
       }
       return;
     }
     final rssMB = (ProcessInfo.currentRss / (1024 * 1024)).round();
-    const tier1Threshold = 220;
-    const tier2Threshold = 260;
-    const tier3Threshold = 320;
     if (rssMB > tier3Threshold &&
         _cleanupDue(now, _lastTier3CleanupAt, const Duration(minutes: 1))) {
       _runTier3Cleanup(now, playingPath, rssMB, tier3Threshold);
