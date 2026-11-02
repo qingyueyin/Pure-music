@@ -305,9 +305,12 @@ class _EntryState extends State<Entry>
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _attachRouteLog();
-      AudioEchoLogRecorder.instance.start(
-        full: Platform.environment['CP_ECHO_RECORD'] == '1',
-      );
+      // 后台回声日志每 5 秒快照会触发 NVIDIA 驱动 GPU 读回并泄漏
+      // Timer/Semaphore 句柄；默认不启动，排查时用 CP_ECHO_RECORD=1
+      // 或设置页手动开启。
+      if (Platform.environment['CP_ECHO_RECORD'] == '1') {
+        AudioEchoLogRecorder.instance.start(full: true);
+      }
       // 任务栏缩略图自定义封面（主窗口已创建完成）
       TaskbarThumbnailService.instance.init();
       // 预编译播放页背景 shader，避免首次进入时卡顿。
