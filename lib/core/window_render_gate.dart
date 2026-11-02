@@ -33,6 +33,14 @@ bool windowRenderShouldEnableFrames({
   bool windowMinimized = false,
 }) => !trayHidden && !windowMinimized;
 
+/// 被挡住太久（backgroundIdle）时连歌词、封面、进度这些 ticker 一起停；
+/// 最小化/托盘由 framesEnabled 负责，调整窗口大小由 resizing 负责。
+bool windowTickersEnabled({
+  required bool resizing,
+  required bool framesEnabled,
+  required bool backgroundIdle,
+}) => !resizing && framesEnabled && !backgroundIdle;
+
 bool shouldAcceptLyricUiUpdate({required bool windowFramesEnabled}) =>
     windowFramesEnabled;
 
@@ -182,8 +190,7 @@ class WindowRenderGate with WidgetsBindingObserver {
   /// 从闲时恢复时必须主动排一帧：闲时装饰动画全停，引擎可能没有任何
   /// 在途帧，只改状态不排帧画面就停在旧帧上，看起来像卡死。
   void _syncBackgroundIdle() {
-    final shouldCount =
-        !_windowFocused && !_trayHidden && !_windowMinimized;
+    final shouldCount = !_windowFocused && !_trayHidden && !_windowMinimized;
     if (!shouldCount) {
       final hadTimer = _backgroundIdleTimer != null;
       _backgroundIdleTimer?.cancel();

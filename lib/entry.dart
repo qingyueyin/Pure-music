@@ -779,9 +779,22 @@ class _EntryState extends State<Entry>
             valueListenable: WindowRenderGate.instance.framesEnabled,
             child: child,
             builder: (context, windowFramesEnabled, child) {
-              return TickerMode(
-                enabled: !resizing && windowFramesEnabled,
-                child: child ?? const SizedBox.shrink(),
+              return ValueListenableBuilder<bool>(
+                valueListenable: WindowRenderGate.instance.backgroundIdle,
+                child: child,
+                builder: (context, backgroundIdle, child) {
+                  // 被挡住 30 秒后不只是卸背景：歌词逐字、封面旋转、
+                  // 进度条这些 ticker 一起停，回前台由 backgroundIdle
+                  // 复位重新拉起，避免看不见时还按 60fps 整页重画。
+                  return TickerMode(
+                    enabled: windowTickersEnabled(
+                      resizing: resizing,
+                      framesEnabled: windowFramesEnabled,
+                      backgroundIdle: backgroundIdle,
+                    ),
+                    child: child ?? const SizedBox.shrink(),
+                  );
+                },
               );
             },
           ),
