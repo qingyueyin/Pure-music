@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:pure_music/component/motion.dart';
 import 'package:pure_music/component/transition_snapshot.dart';
 import 'package:pure_music/core/paths.dart' as app_paths;
+import 'package:pure_music/core/now_playing_overlay_state.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/page/now_playing_page/now_playing_visibility.dart';
 
@@ -99,6 +100,7 @@ class _NowPlayingSessionHostState extends State<NowPlayingSessionHost>
   late final Animation<double> _libraryFade;
   bool _opened = false;
   bool _dormant = true;
+  bool _libraryDormant = false;
 
   @override
   void initState() {
@@ -118,12 +120,18 @@ class _NowPlayingSessionHostState extends State<NowPlayingSessionHost>
     if (widget.visible) {
       _opened = true;
       _dormant = false;
+      _libraryDormant = true;
+      nowPlayingOverlayShown.value = true;
       _controller.value = 1;
     }
   }
 
   void _onMotionStatus(AnimationStatus _) {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    final libraryDormant =
+        widget.visible && _controller.status == AnimationStatus.completed;
+    nowPlayingOverlayShown.value = libraryDormant;
+    setState(() => _libraryDormant = libraryDormant);
   }
 
   @override
@@ -142,11 +150,13 @@ class _NowPlayingSessionHostState extends State<NowPlayingSessionHost>
   void _syncVisibility() {
     if (widget.visible) {
       _opened = true;
-      if (_dormant) {
-        setState(() => _dormant = false);
-      }
+      if (_dormant) setState(() => _dormant = false);
+      if (_libraryDormant) setState(() => _libraryDormant = false);
+      nowPlayingOverlayShown.value = false;
       if (!_motionEnabled) {
         _controller.value = 1;
+        setState(() => _libraryDormant = true);
+        nowPlayingOverlayShown.value = true;
         return;
       }
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -156,6 +166,8 @@ class _NowPlayingSessionHostState extends State<NowPlayingSessionHost>
       return;
     }
     if (!_opened) return;
+    if (_libraryDormant) setState(() => _libraryDormant = false);
+    nowPlayingOverlayShown.value = false;
     void coverThenSleep() {
       if (!mounted || widget.visible) return;
       setState(() => _dormant = true);
@@ -171,6 +183,7 @@ class _NowPlayingSessionHostState extends State<NowPlayingSessionHost>
 
   @override
   void dispose() {
+    nowPlayingOverlayShown.value = false;
     _controller.removeStatusListener(_onMotionStatus);
     _curved.dispose();
     _controller.dispose();
@@ -197,13 +210,16 @@ class _NowPlayingSessionHostState extends State<NowPlayingSessionHost>
               ),
             ),
           ),
-        IgnorePointer(
-          ignoring: widget.visible,
-          child: FadeTransition(
-            opacity: _libraryFade,
-            child: TransitionSnapshot(
-              freezing: libraryFreezing,
-              child: widget.child,
+        Offstage(
+          offstage: _libraryDormant,
+          child: IgnorePointer(
+            ignoring: widget.visible,
+            child: FadeTransition(
+              opacity: _libraryFade,
+              child: TransitionSnapshot(
+                freezing: libraryFreezing,
+                child: widget.child,
+              ),
             ),
           ),
         ),
