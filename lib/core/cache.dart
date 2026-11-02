@@ -32,7 +32,7 @@ class AlbumColorCache {
 
   bool _initialized = false;
   int _generation = 0;
-  static const int _maxEntries = 200;
+  static const int _maxEntries = 96;
   final Map<String, Map<String, Object?>> _entries = {};
   final Map<String, Future<AlbumColor?>> _inFlight = {};
   Timer? _flushTimer;
@@ -609,9 +609,9 @@ class CoverImageCache {
   static final instance = CoverImageCache._();
   CoverImageCache._();
 
-  static const int _smallByteBudget = 12 * 1024 * 1024;
-  static const int _mediumByteBudget = 8 * 1024 * 1024;
-  static const int _largeByteBudget = 12 * 1024 * 1024;
+  static const int _smallByteBudget = 8 * 1024 * 1024;
+  static const int _mediumByteBudget = 6 * 1024 * 1024;
+  static const int _largeByteBudget = 8 * 1024 * 1024;
 
   /// 测试里把小图预算改小，用来验证超限会赶走旧图。
   @visibleForTesting

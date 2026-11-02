@@ -286,7 +286,7 @@ class MemoryMonitorService {
     if (idle) {
       final playingPath = PlayService.existingPlaybackService?.nowPlaying?.path;
       AudioLibrary.instance.evictStaleCoverBytes();
-      AudioLibrary.instance.trimCollectionThumbnailRetention(96);
+      AudioLibrary.instance.trimCollectionThumbnailRetention(64);
       CoverImageCache.instance.trimMemory(keepPath: playingPath);
       LyricsLineWidget.clearBlurFilterCache();
       _trimWorkingSet();
@@ -333,7 +333,7 @@ class MemoryMonitorService {
       )) {
         _lastPlayingLightCleanupAt = now;
         AudioLibrary.instance.evictStaleCoverBytes();
-        AudioLibrary.instance.trimCollectionThumbnailRetention(96);
+        AudioLibrary.instance.trimCollectionThumbnailRetention(64);
       }
       // 播放中同样要按阈值兜底，否则一场长播下来只涨不落。
       // 播放本身就要占 300MB 左右，阈值必须高于正常占用，
@@ -401,7 +401,7 @@ class MemoryMonitorService {
       '[mem] RSS ${rssMB}MB > $tier3Threshold, tier-3 emergency cleanup',
     );
     // 三档和二档一样，只回收用不到的封面，不清歌词缓存。
-    _reclaimColdCovers(playingPath, 80);
+    _reclaimColdCovers(playingPath, 64);
   }
 
   void _runTier2Cleanup(
@@ -416,12 +416,12 @@ class MemoryMonitorService {
       'legacy',
       '[mem] RSS ${rssMB}MB > $tier2Threshold, tier-2 cleanup',
     );
-    _reclaimColdCovers(playingPath, 80);
+    _reclaimColdCovers(playingPath, 64);
   }
 
   void _runTier1Cleanup(DateTime now) {
     _lastTier1CleanupAt = now;
-    AudioLibrary.instance.trimCollectionThumbnailRetention(128);
+    AudioLibrary.instance.trimCollectionThumbnailRetention(96);
     LyricsLinePainter.trimPool();
     AudioLibrary.instance.evictStaleCoverBytes();
   }
@@ -440,8 +440,10 @@ class MemoryMonitorService {
   void trimAfterSongChange() {
     final playingPath = PlayService.existingPlaybackService?.nowPlaying?.path;
     AudioLibrary.instance.evictStaleCoverBytes();
+    AudioLibrary.instance.trimCollectionThumbnailRetention(64);
     CoverImageCache.instance.trimMemory(keepPath: playingPath);
     CoverImageCache.instance.trimSmall(keepEntries: 64);
+    LyricsLinePainter.trimPool();
   }
 
   /// 离开播放页时只收当前用不到的大封面，歌词和曲库留着。

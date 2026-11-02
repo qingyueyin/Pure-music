@@ -269,8 +269,8 @@ ExternalLibrary? _bundledRustLibrary() {
 
 Future<void> _runApplication() async {
   // 曲库封面快速滚动要靠这个缓存复用，太小会整屏「失忆」重解码。
-  PaintingBinding.instance.imageCache.maximumSize = 128;
-  PaintingBinding.instance.imageCache.maximumSizeBytes = 48 << 20;
+  PaintingBinding.instance.imageCache.maximumSize = 64;
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 24 << 20;
   try {
     await RustLib.init(externalLibrary: _bundledRustLibrary());
   } catch (e, s) {
