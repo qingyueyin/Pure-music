@@ -63,6 +63,8 @@ enum ThumbnailJob {
 
 pub struct SMTCFlutter {
     _smtc: SystemMediaTransportControls,
+    /// 时间轴属性每秒更新一次，复用同一个对象，避免每秒新建 WinRT 实例。
+    timeline_properties: SystemMediaTransportControlsTimelineProperties,
     hidden_window: Option<HWND>,
     duration_ms: Mutex<u32>,
     progress_ms: AtomicU64,
@@ -396,6 +398,7 @@ impl SMTCFlutter {
 
         Ok(Self {
             _smtc,
+            timeline_properties: SystemMediaTransportControlsTimelineProperties::new()?,
             hidden_window: created_hidden.then_some(hwnd),
             duration_ms: Mutex::new(0),
             progress_ms: AtomicU64::new(0),
@@ -431,12 +434,12 @@ impl SMTCFlutter {
             Err(poisoned) => *poisoned.into_inner(),
         };
         let progress = progress.min(dur);
-        let time_properties = SystemMediaTransportControlsTimelineProperties::new()?;
+        let time_properties = &self.timeline_properties;
         time_properties.SetPosition(TimeSpan::from(Duration::from_millis(progress.into())))?;
         time_properties.SetEndTime(TimeSpan::from(Duration::from_millis(dur.into())))?;
         time_properties.SetMinSeekTime(TimeSpan { Duration: 0 })?;
         time_properties.SetMaxSeekTime(TimeSpan::from(Duration::from_millis(dur.into())))?;
-        self._smtc.UpdateTimelineProperties(&time_properties)?;
+        self._smtc.UpdateTimelineProperties(time_properties)?;
         self.progress_ms.store(progress.into(), Ordering::Release);
 
         Ok(())
