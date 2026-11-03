@@ -464,6 +464,7 @@ function New-AppPackage([string]$artifactRoot, [string]$version) {
     Invoke-Step "strip runtime data from staging" {
         foreach ($relative in @(
             "logs",
+            "build",
             "data\audio_echo_logs",
             "data\cache",
             "data\db",

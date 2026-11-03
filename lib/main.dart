@@ -291,6 +291,7 @@ Future<void> _runApplication() async {
     });
   }
   NowPlayingPerfAuto.schedule();
+  NowPlayingPerfAuto.scheduleNavigation();
   SidebarPerfAuto.schedule();
 }
 

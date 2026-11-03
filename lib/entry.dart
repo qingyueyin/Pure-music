@@ -40,6 +40,7 @@ import 'package:pure_music/core/mouse_back_exit.dart';
 import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/core/route_visibility.dart';
 import 'package:pure_music/core/settings.dart';
+import 'package:pure_music/core/perf_probe.dart';
 import 'package:pure_music/core/design_tokens.dart';
 import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/update_checker.dart';
@@ -299,6 +300,13 @@ class _EntryState extends State<Entry>
   @override
   void initState() {
     super.initState();
+    if (PerfProbe.enabled) {
+      PerfProbe.startFrameCapture('session');
+      PerfProbe.event('session_start', {
+        'layersOff': PerfLayers.disabled.toList(),
+        'pid': pid,
+      });
+    }
     windowManager.addListener(this);
     WidgetsBinding.instance.addObserver(this);
     AppSettings.backgroundNotifier.addListener(_applyWindowTransparent);
@@ -323,6 +331,11 @@ class _EntryState extends State<Entry>
 
   @override
   void dispose() {
+    if (PerfProbe.enabled) {
+      PerfProbe.stopFrameCapture();
+      PerfProbe.writeReportIfRequested(full: true);
+      unawaited(PerfProbe.flush());
+    }
     _resizeIdleTimer?.cancel();
     _geometrySaveTimer?.cancel();
     _windowResizing.dispose();
@@ -747,7 +760,9 @@ class _EntryState extends State<Entry>
             scaffoldMessengerKey: scaffoldMessengerKey,
             debugShowCheckedModeBanner: false,
             scrollBehavior: const AppScrollBehavior(),
-            builder: (context, child) => _windowTickerGate(child),
+            builder: (context, child) => PerfOverlay(
+              child: _windowTickerGate(child),
+            ),
             theme: fromSchemeAndFontFamily(
               fontFamily: theme.fontFamily,
               colorScheme: theme.lightScheme,
