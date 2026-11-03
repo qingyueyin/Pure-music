@@ -504,17 +504,18 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
       fit: StackFit.expand,
       children: [
         ColoredBox(color: _neutralBackgroundColor(brightness)),
-        ListenableBuilder(
-          listenable: Listenable.merge([
-            _backgroundListenable,
-            WindowRenderGate.instance.backgroundIdle,
-          ]),
-          builder: (context, _) {
-            _backgroundIdle =
-                WindowRenderGate.instance.backgroundIdle.value;
-            return _flowBackground(brightness);
-          },
-        ),
+        if (PerfLayers.background)
+          ListenableBuilder(
+            listenable: Listenable.merge([
+              _backgroundListenable,
+              WindowRenderGate.instance.backgroundIdle,
+            ]),
+            builder: (context, _) {
+              _backgroundIdle =
+                  WindowRenderGate.instance.backgroundIdle.value;
+              return _flowBackground(brightness);
+            },
+          ),
       ],
     );
   }
