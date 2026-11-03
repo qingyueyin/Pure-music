@@ -2,7 +2,7 @@ use aes::cipher::{BlockDecrypt, BlockEncrypt, KeyInit};
 use aes::Aes128;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use md5::{Digest, Md5};
-use rand::seq::SliceRandom;
+use rand::prelude::IndexedRandom;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -123,18 +123,18 @@ fn get_anonymous_username(device_id: &str) -> String {
 }
 
 fn generate_device_id() -> String {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let mac: String = (0..6)
-        .map(|_| format!("{:02X}", rng.gen::<u8>()))
+        .map(|_| format!("{:02X}", rng.random::<u8>()))
         .collect::<Vec<_>>()
         .join(":");
     let random_str: String = (0..8)
         .map(|_| {
-            let idx = rng.gen_range(0..26);
+            let idx = rng.random_range(0..26);
             (b'A' + idx) as char
         })
         .collect();
-    let hash_part = hex::encode(rng.gen::<[u8; 32]>());
+    let hash_part = hex::encode(rng.random::<[u8; 32]>());
     format!("{}@@@{}@@@@@@{}", mac, random_str, hash_part)
 }
 
@@ -298,7 +298,7 @@ impl NetEaseCloud {
         let username = get_anonymous_username(&device_id);
         let osver = format!(
             "Microsoft-Windows-10--build-{}00-64bit",
-            rand::thread_rng().gen_range(200..300)
+            rand::rng().random_range(200..300)
         );
 
         let modes = [
@@ -308,7 +308,7 @@ impl NetEaseCloud {
             "ASRock X670E Taichi",
         ];
         let mode = modes
-            .choose(&mut rand::thread_rng())
+            .choose(&mut rand::rng())
             .unwrap_or(&"MS-iCraft B760M WIFI");
 
         let client_sign = generate_device_id();

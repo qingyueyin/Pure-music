@@ -429,13 +429,13 @@ fn anneal(
     let temperature_ratio = (SA_T_END / SA_T_START).powf(1.0 / iterations as f64);
     let mut temperature = SA_T_START;
     for _ in 0..iterations {
-        let swap_left = rng.gen_range(0..n);
-        let mut swap_right = rng.gen_range(0..n);
+        let swap_left = rng.random_range(0..n);
+        let mut swap_right = rng.random_range(0..n);
         while swap_right == swap_left {
-            swap_right = rng.gen_range(0..n);
+            swap_right = rng.random_range(0..n);
         }
         let delta = swap_delta(&current, swap_left, swap_right, vibes, curve, weights);
-        if delta <= 0.0 || rng.gen::<f64>() < (-delta / temperature).exp() {
+        if delta <= 0.0 || rng.random::<f64>() < (-delta / temperature).exp() {
             current.swap(swap_left, swap_right);
             current_cost += delta;
             if current_cost < best_cost {
