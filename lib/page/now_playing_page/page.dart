@@ -505,16 +505,20 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
       children: [
         ColoredBox(color: _neutralBackgroundColor(brightness)),
         if (PerfLayers.background)
-          ListenableBuilder(
-            listenable: Listenable.merge([
-              _backgroundListenable,
-              WindowRenderGate.instance.backgroundIdle,
-            ]),
-            builder: (context, _) {
-              _backgroundIdle =
-                  WindowRenderGate.instance.backgroundIdle.value;
-              return _flowBackground(brightness);
-            },
+          // 背景自己按 24fps 更新；不加这层隔离，页面里任何 ticker 触发重绘
+          // 都会把全屏 shader 一起重画，实际变成按刷新率满帧绘制。
+          RepaintBoundary(
+            child: ListenableBuilder(
+              listenable: Listenable.merge([
+                _backgroundListenable,
+                WindowRenderGate.instance.backgroundIdle,
+              ]),
+              builder: (context, _) {
+                _backgroundIdle =
+                    WindowRenderGate.instance.backgroundIdle.value;
+                return _flowBackground(brightness);
+              },
+            ),
           ),
       ],
     );
