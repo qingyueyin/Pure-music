@@ -45,12 +45,14 @@ class _ImmersivePortraitLayout extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               const Expanded(
-                child: VerticalLyricView(
-                  showControls: false,
-                  enableSeekOnTap: true,
-                  centerVertically: false,
-                  enableEdgeSpacer: true,
-                  currentLineAlignment: _currentLineAlignment,
+                child: RepaintBoundary(
+                  child: VerticalLyricView(
+                    showControls: false,
+                    enableSeekOnTap: true,
+                    centerVertically: false,
+                    enableEdgeSpacer: true,
+                    currentLineAlignment: _currentLineAlignment,
+                  ),
                 ),
               ),
             ],

@@ -108,18 +108,20 @@ class _NowPlayingSmallPageState extends State<_NowPlayingSmallPage> {
       switchInCurve: MotionCurve.standard,
       switchOutCurve: MotionCurve.standard,
       child: switch (views[1]) {
-        NowPlayingViewMode.onlyMain => const Center(
-          child: _NowPlayingInfo(usePortraitCoverSize: true),
+        NowPlayingViewMode.onlyMain => const RepaintBoundary(
+          child: Center(child: _NowPlayingInfo(usePortraitCoverSize: true)),
         ),
-        NowPlayingViewMode.withLyric => Padding(
-          padding: const EdgeInsets.symmetric(horizontal: -12.0),
-          child: ClipRRect(
-            borderRadius: AppRadius.mdCircular,
-            child: const VerticalLyricView(
-              showControls: true,
-              centerVertically: false,
-              enableEdgeSpacer: true,
-              currentLineAlignment: 0.3,
+        NowPlayingViewMode.withLyric => RepaintBoundary(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: -12.0),
+            child: ClipRRect(
+              borderRadius: AppRadius.mdCircular,
+              child: const VerticalLyricView(
+                showControls: true,
+                centerVertically: false,
+                enableEdgeSpacer: true,
+                currentLineAlignment: 0.3,
+              ),
             ),
           ),
         ),
@@ -192,10 +194,13 @@ class _NowPlayingSmallControlZoneState
         children: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: _NowPlayingSlider(
-              mode: MediaQuery.of(context).orientation == Orientation.portrait
-                  ? NowPlayingMode.portrait
-                  : NowPlayingMode.landscape,
+            child: RepaintBoundary(
+              child: _NowPlayingSlider(
+                mode:
+                    MediaQuery.of(context).orientation == Orientation.portrait
+                    ? NowPlayingMode.portrait
+                    : NowPlayingMode.landscape,
+              ),
             ),
           ),
           const SizedBox(height: 4.0),
