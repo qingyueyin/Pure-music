@@ -2,7 +2,7 @@ rust_input: rust/src/api/**/*.rs
 dart_output: lib/native/rust
 # 只做 Windows，不生成网页绑定
 web: false
-# 生成时不许改依赖版本，锁定 2.12.0
+# 生成时不许改依赖版本，锁定 2.13.0
 auto_upgrade_dependency: false
 # 某个函数生成失败就停下，避免绑定被悄悄丢掉
 stop_on_error: true
