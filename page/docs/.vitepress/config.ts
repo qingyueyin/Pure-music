@@ -108,6 +108,7 @@ export default defineConfig({
         items: [
           { text: '快速上手', link: '/guide/quickstart' },
           { text: '音乐库', link: '/guide/library' },
+          { text: '远程音乐', link: '/guide/remote' },
           { text: '播放与音频', link: '/guide/playback' },
           { text: '歌词', link: '/guide/lyrics' },
           { text: '桌面歌词', link: '/guide/desktop-lyric' },
@@ -132,6 +133,7 @@ export default defineConfig({
           text: '功能',
           items: [
             { text: '音乐库', link: '/guide/library' },
+            { text: '远程音乐', link: '/guide/remote' },
             { text: '播放与音频', link: '/guide/playback' },
             { text: '歌词', link: '/guide/lyrics' },
             { text: '桌面歌词', link: '/guide/desktop-lyric' },
