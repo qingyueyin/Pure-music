@@ -15,6 +15,7 @@ import 'package:pure_music/lyric/lyric_source.dart';
 import 'package:pure_music/lyric/lyric_stripper.dart';
 import 'package:pure_music/lyric/lyric_loader.dart';
 import 'package:pure_music/core/matcher.dart';
+import 'package:pure_music/core/perf_probe.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/native/bass/bass_player.dart';
@@ -340,6 +341,8 @@ class _LyricCache {
 }
 
 final _LyricCache _lyricCache = _LyricCache();
+final Expando<bool> _profanityProcessedLyrics = Expando();
+final Expando<int> _metadataSignatureByLyric = Expando();
 
 /// 只通知 lyric 变更
 class OffsetTagSaveResult {
@@ -991,28 +994,55 @@ class LyricService extends ChangeNotifier {
   }
 
   void _setCurrLyric(Lyric lyric) {
+    final watch = Stopwatch()..start();
+    final stageWatch = Stopwatch()..start();
     // 先还原歌词中被 * 屏蔽的脏话词，避免星号/连字符干扰元数据检测
-    applyProfanityUncensor(lyric);
-    final keepMetadata = AppSettings.instance.keepLyricMetadata;
-    if (lyric is Ttml && _activeLyricSourceType == LyricSourceType.amll) {
-      blankAmllTtmlCreatorLines(lyric.lines);
-    } else {
-      final nowPlaying = _getNowPlaying();
-      final artists = nowPlaying == null
-          ? const <String>[]
-          : <String>{...nowPlaying.splitedArtists, nowPlaying.artist}
-                .where((artist) => artist.trim().isNotEmpty)
-                .toList(growable: false);
-      final options = StripOptions(
-        matchTitle: nowPlaying?.title,
-        matchArtists: artists,
-      );
-      if (keepMetadata) {
-        markMetadataLines(lyric.lines, options);
-      } else {
-        blankMetadataLines(lyric.lines, options);
-      }
+    final profanityCached = _profanityProcessedLyrics[lyric] == true;
+    if (!profanityCached) {
+      applyProfanityUncensor(lyric);
+      _profanityProcessedLyrics[lyric] = true;
     }
+    final profanityMicros = stageWatch.elapsedMicroseconds;
+    stageWatch
+      ..reset()
+      ..start();
+    final keepMetadata = AppSettings.instance.keepLyricMetadata;
+    final nowPlaying = _getNowPlaying();
+    final artists = nowPlaying == null
+        ? const <String>[]
+        : <String>{
+            ...nowPlaying.splitedArtists,
+            nowPlaying.artist,
+          }.where((artist) => artist.trim().isNotEmpty).toList(growable: false);
+    final metadataSignature = Object.hashAll([
+      _activeLyricPath,
+      _activeLyricSourceType,
+      keepMetadata,
+      nowPlaying?.title,
+      ...artists,
+    ]);
+    final metadataCached =
+        _metadataSignatureByLyric[lyric] == metadataSignature;
+    if (!metadataCached) {
+      if (lyric is Ttml && _activeLyricSourceType == LyricSourceType.amll) {
+        blankAmllTtmlCreatorLines(lyric.lines);
+      } else {
+        final options = StripOptions(
+          matchTitle: nowPlaying?.title,
+          matchArtists: artists,
+        );
+        if (keepMetadata) {
+          markMetadataLines(lyric.lines, options);
+        } else {
+          blankMetadataLines(lyric.lines, options);
+        }
+      }
+      _metadataSignatureByLyric[lyric] = metadataSignature;
+    }
+    final metadataMicros = stageWatch.elapsedMicroseconds;
+    stageWatch
+      ..reset()
+      ..start();
 
     _currLyric = lyric;
     _ttmlGeneration++;
@@ -1024,13 +1054,39 @@ class LyricService extends ChangeNotifier {
       _lineRenderStartMs,
       _lineEndMs,
     );
+    final timelineMicros = stageWatch.elapsedMicroseconds;
+    stageWatch
+      ..reset()
+      ..start();
     playService.desktopLyricService.sendFullLyricMessage(lyric);
+    final desktopMicros = stageWatch.elapsedMicroseconds;
+    stageWatch
+      ..reset()
+      ..start();
     _lastEmittedLineIndex = -1;
     _lastEmittedLineIndexForHint = -1;
     _lastEmittedActiveIndices = const [];
     _lastEmittedBackgroundActiveIndices = const [];
     _lastEmittedLayoutIndices = const [];
     _syncLineAdvanceTimer();
+    final timerMicros = stageWatch.elapsedMicroseconds;
+    watch.stop();
+    final path = _activeLyricPath;
+    PerfProbe.event('lyric.install', {
+      'audioId': path?.hashCode.toUnsigned(32).toRadixString(16),
+      'requestToken': _lyricRequestToken,
+      'type': lyric.runtimeType.toString(),
+      'lines': lyric.lines.length,
+      'wordByWord': lyric.isWordByWord,
+      'profanityCached': profanityCached,
+      'metadataCached': metadataCached,
+      'profanityMs': profanityMicros / 1000,
+      'metadataMs': metadataMicros / 1000,
+      'timelineMs': timelineMicros / 1000,
+      'desktopMs': desktopMicros / 1000,
+      'timerMs': timerMicros / 1000,
+      'elapsedMs': watch.elapsedMicroseconds / 1000,
+    });
   }
 
   int _beginLyricRequest(String path) {

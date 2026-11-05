@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:pure_music/core/log/log_record.dart';
+import 'package:pure_music/core/perf_probe.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
@@ -76,6 +77,37 @@ class _ExternalLyricResult {
   });
 }
 
+class _LyricLoadPerf {
+  _LyricLoadPerf(this.audioId);
+
+  final String audioId;
+  int readMicros = 0;
+  int decodeMicros = 0;
+  int identifyMicros = 0;
+  int parseMicros = 0;
+  int stripMicros = 0;
+  int bytes = 0;
+  String format = 'none';
+  String source = 'none';
+
+  void report({required bool found, required int totalMicros}) {
+    PerfProbe.event('lyric.load.stages', {
+      'audioId': audioId,
+      'source': source,
+      'format': format,
+      'bytes': bytes,
+      'readMs': readMicros / 1000,
+      'identifyMs': identifyMicros / 1000,
+      'decodeMs': decodeMicros / 1000,
+      'parseMs': parseMicros / 1000,
+      'stripMs': stripMicros / 1000,
+      'totalMs': totalMicros / 1000,
+      'found': found,
+      'isolate': false,
+    });
+  }
+}
+
 // ──────────────────────────────────────────────
 // QRC XML 包裹提取（LyricContent 属性）
 // ──────────────────────────────────────────────
@@ -117,8 +149,9 @@ List<String> _candidatePaths(String filePath, List<String> exts) {
 Future<_ExternalLyricResult?> _findLyricInDirectory(
   Directory dir,
   String songName,
-  List<String> exts,
-) async {
+  List<String> exts, {
+  _LyricLoadPerf? perf,
+}) async {
   if (!await dir.exists()) return null;
 
   try {
@@ -138,7 +171,7 @@ Future<_ExternalLyricResult?> _findLyricInDirectory(
         // 已找到更高优先级的，跳过
         if (priority >= bestPriority) continue;
 
-        final content = await _safeReadFile(entity.path);
+        final content = await _safeReadFile(entity.path, perf: perf);
         if (content != null && content.trim().isNotEmpty) {
           log.lyric.debug(
             'lyric.candidate',
@@ -166,56 +199,74 @@ Future<_ExternalLyricResult?> _findLyricInDirectory(
 // ──────────────────────────────────────────────
 // 安全读文件（编码检测 + 解密）
 // ──────────────────────────────────────────────
-Future<String?> _safeReadFile(String filePath) async {
+Future<String?> _safeReadFile(String filePath, {_LyricLoadPerf? perf}) async {
   try {
     final file = File(filePath);
-    if (!await file.exists()) return null;
+    final identifyWatch = Stopwatch()..start();
+    final exists = await file.exists();
+    identifyWatch.stop();
+    perf?.identifyMicros += identifyWatch.elapsedMicroseconds;
+    if (!exists) return null;
 
+    final readWatch = Stopwatch()..start();
     final bytes = await file.readAsBytes();
+    readWatch.stop();
+    if (perf != null) {
+      perf.readMicros += readWatch.elapsedMicroseconds;
+      perf.bytes += bytes.length;
+    }
     final ext = p.extension(filePath).toLowerCase();
-
-    // ── QRC：可能加密，先尝试解密 ──
-    if (ext == '.qrc') {
-      // 尝试解码为文本判断是否已经是 XML 明文
-      final asText = utf8.decode(bytes, allowMalformed: true);
-      if (!asText.trimLeft().startsWith('<?xml') &&
-          !asText.trimLeft().startsWith('<Qrc')) {
-        final decrypted = await qrcDecrypt(encryptedQrc: bytes, isLocal: true);
-        if (decrypted != null) {
-          return _extractQrcContent(decrypted) ?? decrypted;
-        }
-      }
-      return _extractQrcContent(asText) ?? asText;
-    }
-
-    // ── KRC：可能加密（Base64），需要检测 ──
-    if (ext == '.krc') {
-      final asText = utf8.decode(bytes, allowMalformed: true);
-      if (!asText.trimLeft().startsWith('[ti:') &&
-          !asText.trimLeft().contains(']\u003C0') &&
-          !asText.trimLeft().startsWith('[')) {
-        final decrypted = await krcDecryptSingle(asText);
-        if (decrypted != null) return decrypted;
-      }
-      return asText;
-    }
-
-    // ── LRC / YRC：优先 UTF-8 解码（覆盖 95%+ 文件） ──
+    final decodeWatch = Stopwatch()..start();
     try {
-      return utf8.decode(bytes);
-    } catch (_) {
-      // UTF-8 解码失败，走编码检测 fallback
-    }
+      // ── QRC：可能加密，先尝试解密 ──
+      if (ext == '.qrc') {
+        // 尝试解码为文本判断是否已经是 XML 明文
+        final asText = utf8.decode(bytes, allowMalformed: true);
+        if (!asText.trimLeft().startsWith('<?xml') &&
+            !asText.trimLeft().startsWith('<Qrc')) {
+          final decrypted = await qrcDecrypt(
+            encryptedQrc: bytes,
+            isLocal: true,
+          );
+          if (decrypted != null) {
+            return _extractQrcContent(decrypted) ?? decrypted;
+          }
+        }
+        return _extractQrcContent(asText) ?? asText;
+      }
 
-    final detected = Charset.detect(bytes, orders: _kFallbackEncodings);
-    if (detected != null) {
+      // ── KRC：可能加密（Base64），需要检测 ──
+      if (ext == '.krc') {
+        final asText = utf8.decode(bytes, allowMalformed: true);
+        if (!asText.trimLeft().startsWith('[ti:') &&
+            !asText.trimLeft().contains(']\u003C0') &&
+            !asText.trimLeft().startsWith('[')) {
+          final decrypted = await krcDecryptSingle(asText);
+          if (decrypted != null) return decrypted;
+        }
+        return asText;
+      }
+
+      // ── LRC / YRC：优先 UTF-8 解码（覆盖 95%+ 文件） ──
       try {
-        return detected.decode(bytes);
-      } catch (_) {}
-    }
+        return utf8.decode(bytes);
+      } catch (_) {
+        // UTF-8 解码失败，走编码检测 fallback
+      }
 
-    // 终极 fallback：容忍乱码
-    return utf8.decode(bytes, allowMalformed: true);
+      final detected = Charset.detect(bytes, orders: _kFallbackEncodings);
+      if (detected != null) {
+        try {
+          return detected.decode(bytes);
+        } catch (_) {}
+      }
+
+      // 终极 fallback：容忍乱码
+      return utf8.decode(bytes, allowMalformed: true);
+    } finally {
+      decodeWatch.stop();
+      perf?.decodeMicros += decodeWatch.elapsedMicroseconds;
+    }
   } catch (e) {
     log.lyric.error(
       'legacy',
@@ -228,7 +279,10 @@ Future<String?> _safeReadFile(String filePath) async {
 // ──────────────────────────────────────────────
 // 读取外挂歌词文件（按优先级搜索）
 // ──────────────────────────────────────────────
-Future<_ExternalLyricResult?> _loadExternalLyric(String audioPath) async {
+Future<_ExternalLyricResult?> _loadExternalLyric(
+  String audioPath, {
+  _LyricLoadPerf? perf,
+}) async {
   final paths = _candidatePaths(audioPath, supportedLyricFileExtensions);
   final songName = p.basenameWithoutExtension(audioPath);
 
@@ -237,7 +291,7 @@ Future<_ExternalLyricResult?> _loadExternalLyric(String audioPath) async {
     'lyric_loader: checking ${paths.length} candidate paths',
   );
   for (final path in paths) {
-    final content = await _safeReadFile(path);
+    final content = await _safeReadFile(path, perf: perf);
     log.lyric.debug(
       'lyric.candidate',
       'lyric_loader: candidate ${content != null ? 'found(len=${content.length})' : 'not found'}',
@@ -252,7 +306,7 @@ Future<_ExternalLyricResult?> _loadExternalLyric(String audioPath) async {
     if (ext == '.yrc' || ext == '.qrc' || ext == '.krc' || ext == '.ttml') {
       final vtsPaths = _candidatePaths(audioPath, ['.lrc']);
       for (final vp in vtsPaths) {
-        final tc = await _safeReadFile(vp);
+        final tc = await _safeReadFile(vp, perf: perf);
         if (tc != null && tc.trim().isNotEmpty) {
           transContent = tc;
           break;
@@ -262,6 +316,7 @@ Future<_ExternalLyricResult?> _loadExternalLyric(String audioPath) async {
         Directory(p.dirname(audioPath)),
         songName,
         ['.lrc'],
+        perf: perf,
       ))?.content;
     }
 
@@ -283,6 +338,7 @@ Future<_ExternalLyricResult?> _loadExternalLyric(String audioPath) async {
     dir,
     songName,
     supportedLyricFileExtensions,
+    perf: perf,
   );
   if (fuzzy != null) return fuzzy;
 
@@ -293,6 +349,7 @@ Future<_ExternalLyricResult?> _loadExternalLyric(String audioPath) async {
       parent,
       songName,
       supportedLyricFileExtensions,
+      perf: perf,
     );
     if (parentFuzzy != null) return parentFuzzy;
   }
@@ -385,18 +442,25 @@ Future<({Lyric lyric, bool isExternal})?> loadLyricFromAudio(
   String? separator = '┃',
 }) async {
   final watch = Stopwatch()..start();
+  final perf = _LyricLoadPerf(
+    audioPath.hashCode.toUnsigned(32).toRadixString(16),
+  );
   log.lyric.debug('lyric.candidate', 'lyric_loader: loading');
 
   // ── 第 1 步：外挂歌词文件 ──
-  final external = await _loadExternalLyric(audioPath);
+  final external = await _loadExternalLyric(audioPath, perf: perf);
 
   // 如果有外部歌词，检查内嵌歌词是否有逐字标签（如用户手动写入的场景）
   if (external != null) {
     String? embeddedRaw;
     try {
+      final readWatch = Stopwatch()..start();
       embeddedRaw = await MediaMetadataService.instance.readEmbeddedLyric(
         audioPath,
       );
+      readWatch.stop();
+      perf.readMicros += readWatch.elapsedMicroseconds;
+      perf.bytes += embeddedRaw?.length ?? 0;
     } catch (_) {}
     final embeddedHasWordTags =
         embeddedRaw != null &&
@@ -411,12 +475,18 @@ Future<({Lyric lyric, bool isExternal})?> loadLyricFromAudio(
       // 内嵌标签可能损坏（如 LX 标签负载不可用）：确认解析出可用行后才优先使用，
       // 否则回退到外挂歌词。
       Lyric? embedded;
+      final parseWatch = Stopwatch()..start();
       try {
         embedded = _parseEmbeddedToPureLyric(embeddedRaw, separator: separator);
       } catch (_) {}
+      parseWatch.stop();
+      perf.parseMicros += parseWatch.elapsedMicroseconds;
+      final stripWatch = Stopwatch()..start();
       final embeddedStripped = embedded == null
           ? null
           : _stripMetadata(embedded);
+      stripWatch.stop();
+      perf.stripMicros += stripWatch.elapsedMicroseconds;
       if (embeddedStripped != null &&
           embeddedStripped.lines.isNotEmpty &&
           embeddedStripped.isWordByWord) {
@@ -430,6 +500,10 @@ Future<({Lyric lyric, bool isExternal})?> loadLyricFromAudio(
           lines: embeddedStripped.lines.length,
           elapsedMs: watch.elapsedMilliseconds,
         );
+        perf
+          ..source = 'embedded'
+          ..format = _lyricTextFormat(embeddedRaw);
+        perf.report(found: true, totalMicros: watch.elapsedMicroseconds);
         return (lyric: embeddedStripped, isExternal: false);
       }
       log.lyric.debug(
@@ -443,13 +517,19 @@ Future<({Lyric lyric, bool isExternal})?> loadLyricFromAudio(
       );
     }
 
+    final parseWatch = Stopwatch()..start();
     final lyric = _parseExternalToPureLyric(external, separator: separator);
+    parseWatch.stop();
+    perf.parseMicros += parseWatch.elapsedMicroseconds;
     if (lyric != null && lyric.lines.isNotEmpty) {
       log.lyric.debug(
         'lyric.candidate',
         'lyric_loader: loaded external ${external.ext}',
       );
+      final stripWatch = Stopwatch()..start();
       final stripped = _stripMetadata(lyric);
+      stripWatch.stop();
+      perf.stripMicros += stripWatch.elapsedMicroseconds;
       log.lyric.debug(
         'lyric.candidate',
         'lyric_loader: external return lines=${stripped?.lines.length ?? "null"}',
@@ -461,6 +541,10 @@ Future<({Lyric lyric, bool isExternal})?> loadLyricFromAudio(
           lines: stripped.lines.length,
           elapsedMs: watch.elapsedMilliseconds,
         );
+        perf
+          ..source = 'external'
+          ..format = external.ext.substring(1);
+        perf.report(found: true, totalMicros: watch.elapsedMicroseconds);
         return (lyric: stripped, isExternal: true);
       }
     } else {
@@ -475,21 +559,31 @@ Future<({Lyric lyric, bool isExternal})?> loadLyricFromAudio(
 
   // ── 第 2 步：内嵌歌词 ──
   try {
+    final readWatch = Stopwatch()..start();
     final embedded = await MediaMetadataService.instance.readEmbeddedLyric(
       audioPath,
     );
+    readWatch.stop();
+    perf.readMicros += readWatch.elapsedMicroseconds;
+    perf.bytes += embedded?.length ?? 0;
     if (embedded != null && embedded.isNotEmpty) {
       log.lyric.debug(
         'lyric.candidate',
         'lyric_loader: embedded lyric found, len=${embedded.length}',
       );
+      final parseWatch = Stopwatch()..start();
       final lyric = _parseEmbeddedToPureLyric(embedded, separator: separator);
+      parseWatch.stop();
+      perf.parseMicros += parseWatch.elapsedMicroseconds;
       if (lyric != null && lyric.lines.isNotEmpty) {
         log.lyric.debug(
           'lyric.candidate',
           'lyric_loader: loaded embedded lyric, lines=${lyric.lines.length}',
         );
+        final stripWatch = Stopwatch()..start();
         final stripped = _stripMetadata(lyric);
+        stripWatch.stop();
+        perf.stripMicros += stripWatch.elapsedMicroseconds;
         log.lyric.debug(
           'lyric.candidate',
           'lyric_loader: embedded return lines=${stripped?.lines.length ?? "null"}',
@@ -501,6 +595,10 @@ Future<({Lyric lyric, bool isExternal})?> loadLyricFromAudio(
             lines: stripped.lines.length,
             elapsedMs: watch.elapsedMilliseconds,
           );
+          perf
+            ..source = 'embedded'
+            ..format = _lyricTextFormat(embedded);
+          perf.report(found: true, totalMicros: watch.elapsedMicroseconds);
           return (lyric: stripped, isExternal: false);
         }
       } else {
@@ -529,7 +627,21 @@ Future<({Lyric lyric, bool isExternal})?> loadLyricFromAudio(
     lines: 0,
     elapsedMs: watch.elapsedMilliseconds,
   );
+  perf.report(found: false, totalMicros: watch.elapsedMicroseconds);
   return null;
+}
+
+String _lyricTextFormat(String content) {
+  if (isVttLyricText(content)) return 'vtt';
+  final trimmed = content.trimLeft();
+  if (trimmed.startsWith('<?xml') ||
+      trimmed.startsWith('<tt') ||
+      content.contains('<body>')) {
+    return 'ttml';
+  }
+  if (content.contains('[awlrc:')) return 'enhanced_lrc';
+  if (RegExp(r'<\d+:\d+\.\d+>').hasMatch(content)) return 'enhanced_lrc';
+  return 'lrc';
 }
 
 void _reportLyricLoad({

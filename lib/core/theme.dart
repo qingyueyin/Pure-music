@@ -3,6 +3,7 @@ import 'dart:developer' as developer;
 
 import 'package:pure_music/core/app_fonts.dart' as app_fonts;
 import 'package:pure_music/core/color_extraction.dart';
+import 'package:pure_music/core/perf_probe.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/library/audio_library.dart';
 import 'package:pure_music/play_service/play_service.dart';
@@ -404,17 +405,31 @@ class ThemeProvider extends ChangeNotifier {
       modified: audio.modified,
     );
     if (cachedSeedColor != null) {
+      final watch = Stopwatch()..start();
       _applySeedColor(cachedSeedColor);
+      watch.stop();
+      PerfProbe.event('theme.cover_color', {
+        'audioId': audio.path.hashCode.toUnsigned(32).toRadixString(16),
+        'cached': true,
+        'elapsedMs': watch.elapsedMicroseconds / 1000,
+      });
       return;
     }
 
     _themeDebounceTimer = Timer(const Duration(milliseconds: 60), () async {
       if (token != _themeRequestToken) return;
 
+      final watch = Stopwatch()..start();
       final seedColor = await _extractSeedColor(
         audio.path,
         modified: audio.modified,
       );
+      watch.stop();
+      PerfProbe.event('theme.cover_color', {
+        'audioId': audio.path.hashCode.toUnsigned(32).toRadixString(16),
+        'cached': false,
+        'elapsedMs': watch.elapsedMicroseconds / 1000,
+      });
       if (token != _themeRequestToken ||
           !AppSettings.instance.enableCoverColorExtraction) {
         return;
