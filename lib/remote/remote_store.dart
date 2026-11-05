@@ -152,6 +152,23 @@ ON CONFLICT(id) DO UPDATE SET
     });
   }
 
+  /// 查库里已存的曲目时长；没有该曲目或未记录时返回 null。
+  Future<int?> trackDuration(String path) async {
+    if (!_schemaReady) return null;
+    final db = await AppDb.instance.db();
+    try {
+      final rows = db.select(
+        'SELECT duration FROM remote_tracks WHERE path = ?',
+        [path],
+      );
+      if (rows.isEmpty) return null;
+      final value = rows.first['duration'];
+      return value is int ? value : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<Map<String, int>> readPlayCounts() async {
     await _ensureSchema();
     final db = await AppDb.instance.db();

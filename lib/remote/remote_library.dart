@@ -525,16 +525,18 @@ class RemoteLibrary {
     if (!isRemotePath(path)) return;
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     await _store.recordPlay(path, now);
-    version.value++;
+    // 播放次数由 playback_service 在内存里维护，统计页读数据库流水，
+    // 这里不 bump version，避免每首歌触发一次主曲库全量重建。
   }
 
   Future<void> updateTrackDuration(String path, int duration) async {
     if (!isRemotePath(path) || duration <= 0) return;
-    final audio = _audioByPath[path];
-    if (audio == null || audio.duration > 0) return;
-    audio.duration = duration;
+    // 调用方（playback_service）播放中已把内存 Audio.duration 改掉，
+    // 这里的职责只是把缺失的时长落库，不再用内存值做守卫；
+    // 时长不变不影响列表展示，也不触发重建。
+    final stored = await _store.trackDuration(path);
+    if (stored != null && stored > 0) return;
     await _store.updateTrackDuration(path, duration);
-    version.value++;
   }
 
   Future<Map<String, List<int>>> playHistory() => _store.readPlayHistory();
