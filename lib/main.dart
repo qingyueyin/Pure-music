@@ -24,6 +24,7 @@ import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/log/rust_log_line.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/core/window_lifecycle.dart';
+import 'package:pure_music/core/window_render_gate.dart';
 import 'package:pure_music/remote/remote_library.dart';
 import 'package:pure_music/core/window_placement.dart';
 import 'package:flutter/material.dart';
@@ -34,6 +35,8 @@ import 'package:pure_music/core/perf_probe.dart';
 
 // 第二次启动由原生窗口转发到已有实例，这里只负责把窗口显示出来
 const _singleInstanceChannel = MethodChannel('pure_music/single_instance');
+// 显示器休眠/唤醒、分辨率变化时由原生侧发来，Dart 侧主动补一帧。
+const _displayWakeChannel = MethodChannel('pure_music/display_wake');
 
 bool _windowShellReady = false;
 bool _showRequestPending = false;
@@ -267,6 +270,10 @@ Future<void> main() async {
   // 最早期就挂上，避免原生 show 请求在 RustLib.init 期间被丢掉
   _singleInstanceChannel.setMethodCallHandler((call) async {
     if (call.method == 'show') await _showExistingWindow();
+  });
+  // 息屏唤醒不改变焦点和可见性，Dart 侧收不到事件；原生转告后强制复位排帧。
+  _displayWakeChannel.setMethodCallHandler((call) async {
+    if (call.method == 'wake') WindowRenderGate.instance.resumeVisible();
   });
   await applicationLogOutput.init();
   _installGlobalErrorLogging();

@@ -27,6 +27,8 @@ class FlutterWindow : public Win32Window {
                          LPARAM const lparam) noexcept override;
   // 第二个实例唤醒时：恢复窗口并通知 Dart 侧显示。
   void HandleShowRequest();
+  // 息屏唤醒/显示模式变化后，平台可能丢掉已排队的帧，补一次重绘并通知 Dart。
+  void NotifyDisplayWake();
 
  private:
   // The project to run.
@@ -38,6 +40,9 @@ class FlutterWindow : public Win32Window {
   std::unique_ptr<TaskbarThumbnail> taskbar_thumbnail_;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       single_instance_channel_;
+  // 显示唤醒通道：WM_POWERBROADCAST / WM_DISPLAYCHANGE 后通知 Dart 恢复渲染。
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      display_wake_channel_;
   UINT show_request_message_ = 0;
 };
 

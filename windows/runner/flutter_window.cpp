@@ -51,6 +51,12 @@ bool FlutterWindow::OnCreate() {
           "pure_music/single_instance",
           &flutter::StandardMethodCodec::GetInstance());
 
+  // 息屏唤醒不会改变焦点和可见性，Dart 侧收不到任何事件，需要原生转告。
+  display_wake_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(), "pure_music/display_wake",
+          &flutter::StandardMethodCodec::GetInstance());
+
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();
   });
@@ -67,6 +73,7 @@ void FlutterWindow::OnDestroy() {
   // 标记正在销毁，防止后续消息进入 Flutter 回调。
   g_destroying.store(true);
   single_instance_channel_.reset();
+  display_wake_channel_.reset();
 
   taskbar_thumbnail_.reset();
   if (flutter_controller_) {
@@ -94,6 +101,17 @@ void FlutterWindow::HandleShowRequest() {
   if (single_instance_channel_) {
     single_instance_channel_->InvokeMethod(
         "show", std::make_unique<flutter::EncodableValue>());
+  }
+}
+
+void FlutterWindow::NotifyDisplayWake() {
+  if (g_destroying.load() || !flutter_controller_) {
+    return;
+  }
+  flutter_controller_->ForceRedraw();
+  if (display_wake_channel_) {
+    display_wake_channel_->InvokeMethod(
+        "wake", std::make_unique<flutter::EncodableValue>());
   }
 }
 
@@ -128,6 +146,17 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
       if (!g_destroying.load() && flutter_controller_) {
         flutter_controller_->engine()->ReloadSystemFonts();
       }
+      break;
+    // 显示器休眠/唤醒、分辨率或刷新率变化：引擎的排帧请求可能被平台丢掉，
+    // 表现为窗口还在但画面冻结，这里补一次重绘并让 Dart 复位排帧状态。
+    case WM_POWERBROADCAST:
+      if (wparam == PBT_APMRESUMEAUTOMATIC ||
+          wparam == PBT_APMRESUMESUSPEND) {
+        NotifyDisplayWake();
+      }
+      break;
+    case WM_DISPLAYCHANGE:
+      NotifyDisplayWake();
       break;
   }
 
