@@ -23,6 +23,7 @@ import 'package:pure_music/page/now_playing_page/component/lyric_stagger_motion.
 import 'package:pure_music/page/now_playing_page/component/lyric_height_cache_key.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_painter_params.dart';
 import 'package:pure_music/page/now_playing_page/component/lyrics_line_painter.dart';
+import 'package:pure_music/core/perf_probe.dart';
 import 'package:pure_music/play_service/play_service.dart';
 
 /// 退场逐字上抬衰减：当前行或当前组为 1，组离开后落到 0。
@@ -946,7 +947,8 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
 
   @override
   Widget build(BuildContext context) {
-    super.build(context); // AutomaticKeepAliveClientMixin 必需
+    super.build(context);
+    PerfProbe.countBuild('LyricsLineWidget'); // AutomaticKeepAliveClientMixin 必需
 
     final dist = (widget.distance ?? 0).abs();
     final isCurrentLine = widget.distance == 0;

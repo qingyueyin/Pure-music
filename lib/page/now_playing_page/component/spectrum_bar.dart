@@ -7,6 +7,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 
 import 'package:pure_music/native/bass/bass_player.dart';
+import 'package:pure_music/core/perf_probe.dart';
 import 'package:pure_music/play_service/playback_service.dart';
 import 'package:pure_music/core/window_render_gate.dart';
 
@@ -37,7 +38,7 @@ class _SpectrumBarState extends State<SpectrumBar>
   static const _maxStepSeconds = 0.1;
   static const _settleEpsilon = 0.004;
   // 插值按 30fps 刷新即可，避免 144Hz 屏上白跑 4 倍绘制
-  static const _paintInterval = Duration(milliseconds: 33);
+  static const _paintInterval = Duration(milliseconds: 50);
 
   late final PlaybackService _playback;
   StreamSubscription<Float32List>? _subscription;
@@ -238,6 +239,8 @@ class _SpectrumBarState extends State<SpectrumBar>
 
   @override
   Widget build(BuildContext context) {
+    PerfProbe.countBuild('SpectrumBar');
+    if (!PerfLayers.spectrum) return const SizedBox.shrink();
     final content = SizedBox(
       height: widget.height,
       width: double.infinity,
@@ -277,6 +280,8 @@ class _SpectrumBarsPainter extends CustomPainter {
   static const _maxBarWidth = 8.0;
   static const _widthRatio = 0.58;
   static const _minBar = 3.5;
+  static const _barCount = 64;
+  static const _alphaLevels = 12;
   static const _visualGain = 1.25;
   static const _visualCurve = 0.9;
   static final List<double> _curveTable = List<double>.generate(
@@ -292,7 +297,8 @@ class _SpectrumBarsPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final values = frame.values;
     if (values.isEmpty || size.width <= 0 || size.height <= 0) return;
-    final count = values.length;
+    final sourceCount = values.length;
+    final count = math.min(sourceCount, _barCount);
     final slot = size.width / count;
     final stretched = slot * _widthRatio;
     final barWidth = stretched > _maxBarWidth ? _maxBarWidth : stretched;
@@ -301,18 +307,21 @@ class _SpectrumBarsPainter extends CustomPainter {
     if (maxHeight <= _minBar) return;
     final radius = Radius.circular(barWidth > 4.0 ? 2.0 : barWidth / 2);
     final inset = (slot - barWidth) / 2;
+    final paths = List<Path?>.filled(_alphaLevels, null);
     // rawValue^0.9 查表：0.001 精度内曲线无肉眼差，30fps 下省每柱一次 pow
     for (var i = 0; i < count; i++) {
-      final rawValue = values[i].clamp(0.0, 1.0).toDouble();
+      final sourceIndex = count == sourceCount
+          ? i
+          : (i * sourceCount ~/ count).clamp(0, sourceCount - 1);
+      final rawValue = values[sourceIndex].clamp(0.0, 1.0).toDouble();
       final value =
           (_curveTable[(rawValue * 1000).round()] * _visualGain)
               .clamp(0.0, 1.0)
               .toDouble();
       final barHeight = _minBar + (maxHeight - _minBar) * value;
-      _barPaint.color = color.withValues(
-        alpha: _minAlpha + (_maxAlpha - _minAlpha) * value,
-      );
-      canvas.drawRRect(
+      final level = (value * (_alphaLevels - 1)).round();
+      final path = paths[level] ??= Path();
+      path.addRRect(
         RRect.fromRectAndRadius(
           Rect.fromLTWH(
             i * slot + inset,
@@ -322,8 +331,16 @@ class _SpectrumBarsPainter extends CustomPainter {
           ),
           radius,
         ),
-        _barPaint,
       );
+    }
+    for (var level = 0; level < _alphaLevels; level++) {
+      final path = paths[level];
+      if (path == null) continue;
+      final value = level / (_alphaLevels - 1);
+      _barPaint.color = color.withValues(
+        alpha: _minAlpha + (_maxAlpha - _minAlpha) * value,
+      );
+      canvas.drawPath(path, _barPaint);
     }
   }
 

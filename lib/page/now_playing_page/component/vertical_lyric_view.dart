@@ -31,6 +31,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
+import 'package:pure_music/core/perf_probe.dart';
 
 const _opacityBase = 0.88;
 const _opacityMinClamp = 0.30;
@@ -538,6 +539,7 @@ class _VerticalLyricViewState extends State<VerticalLyricView>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    PerfProbe.countBuild('VerticalLyricView');
     const loadingWidget = Center(
       child: SizedBox(
         width: 24,
@@ -1161,6 +1163,19 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
         _maskShaderEnableBlur == enableBlur) {
       return cached;
     }
+    if (!PerfLayers.mask) {
+      // 排查用：关掉边缘遮罩，整块可见。
+      final shader = const LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [Colors.black, Colors.black],
+      ).createShader(bounds);
+      _maskShaderCache = shader;
+      _maskShaderBounds = bounds;
+      _maskShaderEnableBlur = enableBlur;
+      return shader;
+    }
+    // 开启模糊模式 → 加大边缘渐隐；关闭 → 缩小边缘渐隐、外层硬边。
     // 开启了歌词模糊 → 加大边缘渐隐（和模糊效果协同）
     // 关闭 → 仅保留很小的边缘淡出以免生硬裁切
     final fadeIn = enableBlur
@@ -2975,6 +2990,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
 
   @override
   Widget build(BuildContext context) {
+    PerfProbe.countBuild('LyricScrollView');
     final renderConfig = context.watch<LyricViewController>().renderConfig;
     final viewportStrategy = LyricViewportStrategy(
       leadingLines: renderConfig.viewportLeadingLines,

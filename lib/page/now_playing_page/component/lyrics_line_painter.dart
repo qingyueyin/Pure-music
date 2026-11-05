@@ -12,6 +12,7 @@ import 'package:pure_music/core/theme.dart';
 import 'package:pure_music/core/zh_converter.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
+import 'package:pure_music/core/perf_probe.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_painter_params.dart';
 import 'package:pure_music/play_service/lyric_service.dart'
     show lyricHighlightCatchUpDurationMs, lyricHighlightFinishLeadMs;
@@ -857,7 +858,10 @@ class LyricsLinePainter extends CustomPainter {
       params.currentTimeListenable;
   ValueListenable<double>? get backgroundVocalVisibilityListenable =>
       params.backgroundVocalVisibilityListenable;
-  double get blurSigma => params.blurSigmaListenable?.value ?? params.blurSigma;
+  double get blurSigma =>
+      PerfLayers.blur
+      ? (params.blurSigmaListenable?.value ?? params.blurSigma)
+      : 0;
   LyricRenderConfig get config => params.config;
   bool get isMainLine => params.isMainLine;
   bool get isHighlightActive => params.isHighlightActive;
@@ -1027,7 +1031,7 @@ class LyricsLinePainter extends CustomPainter {
       foreground: foreground,
       fontWeight: fontWeight,
       letterSpacing: letterSpacing,
-      shadows: shadows,
+      shadows: PerfLayers.shadow ? shadows : null,
       height: height,
       fontVariations: lyricWeightVariations(family, fontWeight.value),
     );
@@ -1045,7 +1049,7 @@ class LyricsLinePainter extends CustomPainter {
       foreground: foreground,
       fontWeight: base.fontWeight,
       letterSpacing: base.letterSpacing,
-      shadows: shadows ?? base.shadows,
+      shadows: PerfLayers.shadow ? (shadows ?? base.shadows) : null,
       height: base.height,
       fontVariations: base.fontVariations,
     );
@@ -1314,7 +1318,8 @@ class LyricsLinePainter extends CustomPainter {
     }
 
     (double alpha, double hold) glowFor(_WordPaintInfo word) {
-      if (!config.enableGlow ||
+      if (!PerfLayers.glow ||
+          !config.enableGlow ||
           effectFor(
                 wordIndex: word.first.wordIndex,
                 wordDurationSec: word.wordDurationSec,
@@ -1685,7 +1690,7 @@ class LyricsLinePainter extends CustomPainter {
       }
 
       if (!isHighlightActive) {
-        final fadeEffects = config.enableGlow && exitMix > 0.01;
+        final fadeEffects = PerfLayers.glow && config.enableGlow && exitMix > 0.01;
         for (final wc in words) {
           if (!fadeEffects) {
             paintWord(wc, dimStyle, wc.hasLift);

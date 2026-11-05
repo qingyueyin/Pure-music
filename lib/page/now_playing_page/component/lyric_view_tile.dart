@@ -12,6 +12,7 @@ import 'package:pure_music/play_service/lyric_service.dart'
     show lyricWordPreSwitchMs;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:pure_music/core/perf_probe.dart';
 
 const compactTransitionTileHeight = 24.0;
 const compactTransitionTileWidth = 72.0;
@@ -365,6 +366,7 @@ class _LyricTransitionTileState extends State<LyricTransitionTile>
 
   @override
   Widget build(BuildContext context) {
+    PerfProbe.countBuild('LyricTransitionTile');
     final scheme = Theme.of(context).colorScheme;
 
     final align = widget.alignment ?? LyricTextAlign.left;

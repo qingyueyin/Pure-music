@@ -17,6 +17,7 @@ import 'package:pure_music/core/menu_styles.dart';
 import 'package:pure_music/core/color_extraction.dart';
 import 'package:pure_music/core/list_action_state.dart';
 import 'package:pure_music/core/memory_monitor.dart';
+import 'package:pure_music/core/perf_probe.dart';
 import 'package:pure_music/core/now_playing_perf_probe.dart';
 import 'package:pure_music/core/sleep_blocker.dart';
 import 'package:pure_music/core/theme.dart';
@@ -175,6 +176,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   }
 
   void _scheduleCoverDetails({Duration delay = MotionDuration.xFast}) {
+    if (!PerfLayers.cover) return;
     _coverDebounceTimer?.cancel();
     final path = _nowPlayingCoverPath;
     if (!_routeReady || path == null) return;
@@ -189,6 +191,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   }
 
   Future<void> _loadCoverDetails(int token, String path) async {
+    if (!PerfLayers.cover) return;
     final audio = playbackService.nowPlaying;
     if (audio == null || _isCoverRequestStale(token, path)) return;
     final modified = audio.modified;
@@ -271,11 +274,13 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
       _preExtractedPalette = palette;
       _palettePath = path;
       _colorService.cachePaletteForPath(path, palette, modified: modified);
-      ThemeProvider.instance.applySeedColorDirectly(
-        palette.first,
-        path,
-        modified: modified,
-      );
+      if (PerfLayers.theme) {
+        ThemeProvider.instance.applySeedColorDirectly(
+          palette.first,
+          path,
+          modified: modified,
+        );
+      }
       return;
     }
     if (bytes == null) {
@@ -303,7 +308,6 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     _coverDebounceTimer?.cancel();
     _songChangeTrimTimer?.cancel();
     _coverRequestToken++;
-    NowPlayingPerfProbe.instance.onSongChanged();
     _applyCachedCoverFrame(path);
     if (mounted) setState(() {});
     if (_nowPlayingCoverBytes != null) {
@@ -319,6 +323,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   }
 
   Future<void> _loadCoverPaletteOnly(int token, String path) async {
+    if (!PerfLayers.cover) return;
     final audio = playbackService.nowPlaying;
     if (audio == null || _isCoverRequestStale(token, path)) return;
     final modified = audio.modified;
@@ -351,11 +356,13 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
       _preExtractedPalette = palette;
       _palettePath = path;
       _colorService.cachePaletteForPath(path, palette, modified: modified);
-      ThemeProvider.instance.applySeedColorDirectly(
-        palette.first,
-        path,
-        modified: modified,
-      );
+      if (PerfLayers.theme) {
+        ThemeProvider.instance.applySeedColorDirectly(
+          palette.first,
+          path,
+          modified: modified,
+        );
+      }
       if (mounted) setState(() {});
     }
     // 高清封面和 160px 字节仍等过渡结束再补。
@@ -1969,7 +1976,7 @@ class _NowPlayingSliderState extends State<_NowPlayingSlider>
   Ticker? _progressTicker;
   Duration _lastProgressTickElapsed = Duration.zero;
   Duration _lastProcessedElapsed = Duration.zero;
-  static const _progressTickInterval = Duration(milliseconds: 33); // ~30fps
+  static const _progressTickInterval = Duration(milliseconds: 50); // ~20fps
   int _lastPositionMs = -1;
   bool _tickerModeEnabled = true;
   bool _isPlaying = false;

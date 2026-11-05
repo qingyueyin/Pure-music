@@ -1356,6 +1356,7 @@ class PlaybackService extends ChangeNotifier {
   }
 
   void _publishSongChange(Audio audio, PlayerState state, String reason) {
+    NowPlayingPerfProbe.instance.onSongChanged();
     NowPlayingPerfProbe.instance.noteSongSwitch(
       reason: reason,
       title: audio.title,

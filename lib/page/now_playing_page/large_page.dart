@@ -61,10 +61,12 @@ class _NowPlayingLargePage extends StatelessWidget {
           NowPlayingViewMode.withPlaylist => const CurrentPlaylistView(),
           _ => Padding(
             padding: const EdgeInsets.only(right: 8.0),
-            child: VerticalLyricView(
-              enableEdgeSpacer: true,
-              currentLineAlignment: currentLineAlignment,
-            ),
+            child: PerfLayers.lyrics
+                ? VerticalLyricView(
+                    enableEdgeSpacer: true,
+                    currentLineAlignment: currentLineAlignment,
+                  )
+                : const SizedBox.shrink(),
           ),
         },
       ),
