@@ -92,13 +92,18 @@ class _NowPlayingOpenTransitionState extends State<NowPlayingOpenTransition> {
                 decoration: BoxDecoration(
                   color: scheme.surfaceContainer,
                   borderRadius: BorderRadius.circular(radius),
-                  // 材质 elevation 4 是三层阴影叠加，每帧要做三次全屏高斯模糊，
-                  // 1920 宽窗口下多花 4~6ms 的 raster。三层在边缘处合成约 0.39，
-                  // 这里用单层 0.32 + 同等模糊半径近似，肉眼无差。
+                  // 两层近似材质 elevation 4：贴边小阴影保边缘层次，
+                  // 大软阴影给悬浮感；中层阴影贡献最小，省掉它的模糊。
                   boxShadow: [
                     BoxShadow(
-                      color: scheme.shadow.withValues(alpha: 0.32 * shade),
+                      color: scheme.shadow.withValues(alpha: 0.20 * shade),
                       offset: const Offset(0.0, 2.0),
+                      blurRadius: 4.0,
+                      spreadRadius: -1.0,
+                    ),
+                    BoxShadow(
+                      color: scheme.shadow.withValues(alpha: 0.14 * shade),
+                      offset: const Offset(0.0, 4.0),
                       blurRadius: 10.0,
                     ),
                   ],
