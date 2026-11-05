@@ -38,6 +38,8 @@ jobs:
         run: node .github/generate-changelog.mjs
 
       - name: Commit if changed
+        env:
+          BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -47,4 +49,17 @@ jobs:
             exit 0
           fi
           git commit -m "docs: sync changelog, version.json and latest-release from releases"
-          git push
+          # 发布后紧接着有人推代码时，检出点会落后于远端，push 会被拒；拉最新提交变基后重试
+          for i in 1 2 3; do
+            if git push origin "HEAD:$BRANCH"; then
+              exit 0
+            fi
+            echo "push 被拒，第 $i 次重试"
+            if ! git pull --rebase origin "$BRANCH"; then
+              git rebase --abort || true
+              echo "变基失败，需要人工处理" >&2
+              exit 1
+            fi
+          done
+          echo "重试 3 次仍被拒，需要人工处理" >&2
+          exit 1
