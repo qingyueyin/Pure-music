@@ -7,6 +7,7 @@ import 'dart:ui' as ui;
 
 import 'package:pure_music/core/color_extraction.dart';
 import 'package:pure_music/core/database.dart';
+import 'package:pure_music/core/perf_probe.dart';
 import 'package:pure_music/core/utils.dart';
 import 'package:pure_music/core/workload_policy.dart';
 import 'package:pure_music/library/audio_library.dart';
@@ -590,6 +591,8 @@ class _StableCoverImage extends ImageProvider<_StableCoverKey> {
     _StableCoverKey key,
     ImageDecoderCallback decode,
   ) async {
+    final watch = Stopwatch()..start();
+    final bytesCached = initialBytes != null;
     final bytes =
         initialBytes ??
         await CoverImageCache.instance._loadBytesAt(
@@ -598,6 +601,7 @@ class _StableCoverImage extends ImageProvider<_StableCoverKey> {
           height: key.height,
           pixelRatio: key.pixelRatio,
         );
+    final bytesMicros = watch.elapsedMicroseconds;
     if (bytes == null) {
       throw StateError('Cover image is unavailable: ${key.path}');
     }
@@ -606,29 +610,116 @@ class _StableCoverImage extends ImageProvider<_StableCoverKey> {
     final targetWidth = (key.width * key.pixelRatio).round();
     final targetHeight = (key.height * key.pixelRatio).round();
     if (targetWidth <= 0 || targetHeight <= 0) {
-      return decode(buffer);
+      final fallback = await decode(buffer);
+      if (!PerfProbe.enabled) return fallback;
+      return _ProbedCodec(
+        fallback,
+        path: key.path,
+        targetWidth: targetWidth,
+        targetHeight: targetHeight,
+        intrinsicWidth: 0,
+        intrinsicHeight: 0,
+        bytesMicros: bytesMicros,
+        bytesCached: bytesCached,
+        startMicros: watch.elapsedMicroseconds,
+      );
     }
     // 按请求的物理尺寸解码，避免大封面按原图解码后再整张上传纹理（raster 尖峰）。
-    return ui.instantiateImageCodecWithSize(
+    var intrinsicWidth = 0;
+    var intrinsicHeight = 0;
+    final codec = await ui.instantiateImageCodecWithSize(
       buffer,
-      getTargetSize: (intrinsicWidth, intrinsicHeight) {
-        if (intrinsicWidth <= targetWidth && intrinsicHeight <= targetHeight) {
+      getTargetSize: (intrinsicWidthIn, intrinsicHeightIn) {
+        intrinsicWidth = intrinsicWidthIn;
+        intrinsicHeight = intrinsicHeightIn;
+        if (intrinsicWidthIn <= targetWidth &&
+            intrinsicHeightIn <= targetHeight) {
           return ui.TargetImageSize(
-            width: intrinsicWidth,
-            height: intrinsicHeight,
+            width: intrinsicWidthIn,
+            height: intrinsicHeightIn,
           );
         }
         final scale = min(
-          targetWidth / intrinsicWidth,
-          targetHeight / intrinsicHeight,
+          targetWidth / intrinsicWidthIn,
+          targetHeight / intrinsicHeightIn,
         );
         return ui.TargetImageSize(
-          width: max(1, (intrinsicWidth * scale).round()),
-          height: max(1, (intrinsicHeight * scale).round()),
+          width: max(1, (intrinsicWidthIn * scale).round()),
+          height: max(1, (intrinsicHeightIn * scale).round()),
         );
       },
     );
+    if (!PerfProbe.enabled) return codec;
+    return _ProbedCodec(
+      codec,
+      path: key.path,
+      targetWidth: targetWidth,
+      targetHeight: targetHeight,
+      intrinsicWidth: intrinsicWidth,
+      intrinsicHeight: intrinsicHeight,
+      bytesMicros: bytesMicros,
+      bytesCached: bytesCached,
+      startMicros: watch.elapsedMicroseconds,
+    );
   }
+}
+
+/// 只测量封面首帧解码耗时与输出尺寸，不改解码行为。
+class _ProbedCodec implements ui.Codec {
+  _ProbedCodec(
+    this._inner, {
+    required this.path,
+    required this.targetWidth,
+    required this.targetHeight,
+    required this.intrinsicWidth,
+    required this.intrinsicHeight,
+    required this.bytesMicros,
+    required this.bytesCached,
+    required this.startMicros,
+  });
+
+  final ui.Codec _inner;
+  final String path;
+  final int targetWidth;
+  final int targetHeight;
+  final int intrinsicWidth;
+  final int intrinsicHeight;
+  final int bytesMicros;
+  final bool bytesCached;
+  final int startMicros;
+  bool _reported = false;
+
+  @override
+  int get frameCount => _inner.frameCount;
+
+  @override
+  int get repetitionCount => _inner.repetitionCount;
+
+  @override
+  Future<ui.FrameInfo> getNextFrame() async {
+    if (_reported) return _inner.getNextFrame();
+    final watch = Stopwatch()..start();
+    final frame = await _inner.getNextFrame();
+    watch.stop();
+    _reported = true;
+    PerfProbe.event('cover.decode', {
+      'pathId': path.hashCode.toUnsigned(32).toRadixString(16),
+      'targetW': targetWidth,
+      'targetH': targetHeight,
+      'intrinsicW': intrinsicWidth,
+      'intrinsicH': intrinsicHeight,
+      'outW': frame.image.width,
+      'outH': frame.image.height,
+      'bytesMs': bytesMicros / 1000,
+      'bytesCached': bytesCached,
+      'codecMs': startMicros / 1000,
+      'decodeMs': watch.elapsedMicroseconds / 1000,
+    });
+    return frame;
+  }
+
+  @override
+  void dispose() => _inner.dispose();
 }
 
 class CoverImageCache {
@@ -684,6 +775,7 @@ class CoverImageCache {
     }
     _remoteMissAt[key] = DateTime.now();
   }
+
   final _coverLoadSemaphore = _AsyncSemaphore(
     backgroundWorkerConcurrencyFor(applicationProcessorBudget),
   );
@@ -728,6 +820,18 @@ class CoverImageCache {
       width: width,
       height: height,
     );
+    PerfProbe.event('cover.get', {
+      'pathId': path.hashCode.toUnsigned(32).toRadixString(16),
+      'width': width,
+      'height': height,
+      'tier': identical(tier, _large)
+          ? 'large'
+          : identical(tier, _medium)
+          ? 'medium'
+          : 'small',
+      'hit': cached != null,
+      'pending': _pending.containsKey(key),
+    });
     if (cached != null) {
       return cached;
     }

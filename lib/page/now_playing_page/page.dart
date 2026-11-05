@@ -3021,6 +3021,7 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
   final playbackService = PlayService.instance.playbackService;
   ImageProvider<Object>? _hiResCover;
   String? _hiResCoverPath;
+  double _loggedCoverSize = -1;
   Timer? _hiResDebounceTimer;
   Animation<double>? _routeAnimation;
   int _coverRequestToken = 0;
@@ -3153,8 +3154,20 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
         nextAudio.largeCover.then((image) async {
           if (!mounted || token != _coverRequestToken) return;
           if (playbackService.nowPlaying?.path != path) return;
+          final dpr = MediaQuery.devicePixelRatioOf(context);
+          final watch = Stopwatch()..start();
           if (image != null) {
             await precacheImage(image, context);
+          }
+          watch.stop();
+          if (image != null) {
+            PerfProbe.event('cover.precache', {
+              'pathId': path.hashCode.toUnsigned(32).toRadixString(16),
+              'switching': switching,
+              'dpr': dpr,
+              'provider': image.runtimeType.toString(),
+              'ms': watch.elapsedMicroseconds / 1000,
+            });
           }
           if (!mounted || token != _coverRequestToken) return;
           setState(() {
@@ -3268,6 +3281,13 @@ class __NowPlayingInfoState extends State<_NowPlayingInfo> {
     double coverSize,
     bool heroEnabled,
   ) {
+    if (coverSize != _loggedCoverSize) {
+      _loggedCoverSize = coverSize;
+      PerfProbe.event('cover.box', {
+        'size': coverSize,
+        'dpr': MediaQuery.devicePixelRatioOf(context),
+      });
+    }
     final framed = _coverImage(scheme, nowPlayingPath, coverSize, framed: true);
     final motion = _PlaybackCoverMotion(
       rotate: AppSettings.instance.circlePlaybackCover,

@@ -109,6 +109,10 @@ class PerfProbe {
           'buildMs': build / 1000,
           'rasterMs': raster / 1000,
           'workMs': work / 1000,
+          // 收到该帧的时间戳，用来和封面解码等事件对齐。
+          'tsMs': DateTime.now().millisecondsSinceEpoch,
+          // 该帧在会话中的序号，用来区分首帧引擎开销和后续负载。
+          'frameIndex': _buildMicros.length,
         });
       }
     }
