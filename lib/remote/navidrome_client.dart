@@ -386,11 +386,15 @@ class NavidromeClient implements RemoteClient {
   ) async {
     if (coverId == null || coverId.isEmpty) return null;
     try {
+      // 认证参数在 query string，重定向会原样重发；禁自动跟随防凭据外流。
       final dio = Dio(
         BaseOptions(
           connectTimeout: const Duration(seconds: 10),
           receiveTimeout: const Duration(seconds: 20),
           responseType: ResponseType.bytes,
+          followRedirects: false,
+          validateStatus: (status) =>
+              status != null && status >= 200 && status < 400,
         ),
       );
       final response = await dio.get<List<int>>(

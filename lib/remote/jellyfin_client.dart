@@ -278,10 +278,16 @@ class JellyfinClient implements RemoteClient {
     if (coverId == null || coverId.isEmpty) return null;
     final credentials = _credentials(password);
     try {
+      // token 在 Authorization 头，禁自动跟随防凭据被重定向带出。
       final response = await _dio(credentials.token).get<List<int>>(
         '${_base(source)}/Items/$coverId/Images/Primary',
         queryParameters: {'maxWidth': '$size', 'quality': '90'},
-        options: Options(responseType: ResponseType.bytes),
+        options: Options(
+          responseType: ResponseType.bytes,
+          followRedirects: false,
+          validateStatus: (status) =>
+              status != null && status >= 200 && status < 400,
+        ),
       );
       final data = response.data;
       return data == null ? null : Uint8List.fromList(data);

@@ -503,16 +503,34 @@ class WebDavClient implements RemoteClient {
     if (coverId == null || coverId.isEmpty) return null;
     try {
       final dio = _dio(source, password);
-      final response = await dio.get<List<int>>(
+      final base = Uri.parse(
+        source.baseUrl.endsWith('/') ? source.baseUrl : '${source.baseUrl}/',
+      );
+      // 凭据在 Authorization 头里，重定向到别的主机等于把凭据送出去；
+      // 跟 PROPFIND 路径一样只接受同主机跳转。响应按流读取并封顶，
+      // 防止服务器端超大图片整只进内存。
+      final response = await dio.get<ResponseBody>(
         coverId,
         options: Options(
-          responseType: ResponseType.bytes,
-          followRedirects: true,
+          responseType: ResponseType.stream,
+          followRedirects: false,
+          validateStatus: (status) =>
+              status != null && status >= 200 && status < 400,
         ),
       );
-      final data = response.data;
-      if (data == null || data.isEmpty) return null;
-      return Uint8List.fromList(data);
+      final redirected = response.realUri;
+      if (!_sameHost(base, redirected)) return null;
+      final stream = response.data?.stream;
+      if (stream == null) return null;
+      const maxCoverBytes = 10 * 1024 * 1024;
+      final builder = BytesBuilder(copy: false);
+      await for (final chunk in stream) {
+        builder.add(chunk);
+        if (builder.length >= maxCoverBytes) break;
+      }
+      final bytes = builder.takeBytes();
+      if (bytes.isEmpty) return null;
+      return Uint8List.fromList(bytes);
     } catch (_) {
       return null;
     }
