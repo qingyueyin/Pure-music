@@ -17,7 +17,7 @@ description: 外观、歌词、播放、桌面歌词与高级设置。
 
 ## 播放
 
-切歌过渡、ReplayGain、片头空白、任务栏按钮、应用内快捷键和全局热键。见 [播放与音频](/guide/playback)、[操作指南](/guide/interactions)。
+切歌过渡、ReplayGain、片头空白、输出设备、任务栏按钮、应用内快捷键和全局热键。见 [播放与音频](/guide/playback)、[操作指南](/guide/interactions)。
 
 ## 桌面歌词
 
