@@ -21,7 +21,7 @@ const _kDarkNeutralBackground = Color(0xFF171717);
 const _kLightNeutralBackground = Color(0xFFF0F0F0);
 const _kArtworkTransitionDuration = Duration(milliseconds: 300);
 const _kPlaybackSpeedTransitionDuration = Duration(milliseconds: 650);
-const _kFrameInterval = Duration(milliseconds: 42);
+const _kFrameInterval = Duration(milliseconds: 66);
 
 const _kCoverPeriod1 = 75.0;
 const _kCoverPeriod2 = 55.0;

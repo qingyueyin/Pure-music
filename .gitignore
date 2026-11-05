@@ -103,6 +103,7 @@ release/
 
 # Generated / Local only
 AGENTS.md
+CLAUDE.md
 skills-lock.json
 .agents/*
 .agents/skills/
@@ -116,13 +117,6 @@ skills-lock.json
 # Local diagnostics, not shipped
 tool/local/
 tool/occupancy-report/
-
-# 本地审计/任务报告，不进仓库
-/AUDIT_REPORT.md
-/TASK_PROGRESS.md
-/MERGE_REPORT.md
-/SIZE_REPORT.md
-/FREEZE_PROBE.md
 
 # WorkBuddy 工作区（本地记忆，不入库）
 .workbuddy/
