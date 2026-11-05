@@ -419,7 +419,7 @@ class WebDavClient implements RemoteClient {
       track = int.tryParse(leading.group(1)!) ?? 0;
       name = name.substring(leading.end).trim();
     }
-    // QQ 音乐这类下载器遇到重名会追加「 (2)」去重后缀，它不属于歌曲信息。
+    // 下载器保存的重名文件会带「 (2)」去重后缀，它不属于歌曲信息。
     name = name
         .replaceFirst(RegExp(r'\s*\((?:[1-9]|[1-9]\d)\)\s*$'), '')
         .trim();
