@@ -27,8 +27,10 @@ import 'package:pure_music/core/window_lifecycle.dart';
 import 'package:pure_music/remote/remote_library.dart';
 import 'package:pure_music/core/window_placement.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:pure_music/core/perf_probe.dart';
 
 // 第二次启动由原生窗口转发到已有实例，这里只负责把窗口显示出来
 const _singleInstanceChannel = MethodChannel('pure_music/single_instance');
@@ -82,6 +84,10 @@ Future<void> initWindow() async {
         await windowManager.setPosition(restorePosition);
         if (WindowLifecycleService.instance.isExiting) return;
       }
+      // 冷启动首个内容帧有约 180ms 的一次性开销（纹理/字形/管线初始化）。
+      // 等首屏画稳再显示窗口，避免把这段卡顿暴露成「窗口打开就僵住」。
+      await _waitForUiSettled();
+      if (WindowLifecycleService.instance.isExiting) return;
       await windowManager.show();
       if (WindowLifecycleService.instance.isExiting) return;
       if (AppSettings.instance.isWindowMaximized) {
@@ -95,6 +101,45 @@ Future<void> initWindow() async {
       await windowManager.focus();
     }),
   );
+}
+
+/// 等首屏画稳再放行显示窗口。
+///
+/// 判据：至少 12 帧、且最近连续 4 帧 build+raster 都低于 16ms。首帧那次
+/// 一次性开销会把计数清零，所以不会在卡顿帧之前提前放行。
+/// 曲库特别大时启动可能长时间不平稳，用 1.2 秒兜底，避免窗口一直不出现。
+Future<void> _waitForUiSettled() {
+  final completer = Completer<void>();
+  final watch = Stopwatch()..start();
+  var frames = 0;
+  var calm = 0;
+  late final void Function(List<FrameTiming>) onTimings;
+  late final Timer timeout;
+
+  void finish(String reason) {
+    if (completer.isCompleted) return;
+    timeout.cancel();
+    SchedulerBinding.instance.removeTimingsCallback(onTimings);
+    PerfProbe.event('startup.window_show', {
+      'reason': reason,
+      'frames': frames,
+      'elapsedMs': watch.elapsedMicroseconds / 1000,
+    });
+    completer.complete();
+  }
+
+  onTimings = (timings) {
+    for (final timing in timings) {
+      frames++;
+      final work = timing.buildDuration + timing.rasterDuration;
+      calm = work < const Duration(milliseconds: 16) ? calm + 1 : 0;
+    }
+    if (frames >= 12 && calm >= 4) finish('settled');
+  };
+
+  SchedulerBinding.instance.addTimingsCallback(onTimings);
+  timeout = Timer(const Duration(milliseconds: 1200), () => finish('timeout'));
+  return completer.future;
 }
 
 Size _clampWindowSize(Size target, Size minimumSize, FlutterView view) {
