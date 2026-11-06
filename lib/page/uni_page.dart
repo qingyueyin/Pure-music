@@ -990,13 +990,15 @@ class _UniPageState<T> extends State<UniPage<T>> {
           child: Stack(
             children: [
               _buildContentArea(multiSelectController),
-              _bottomFade(scheme),
-              ListLocateButtons(
-                controller: scrollController,
-                locateTargetAt: _locateTargetAt,
-                onScrollToIndex: _scrollToIndex,
-                onWheel: _forwardWheelToList,
-              ),
+              if (widget.contentList.isNotEmpty) ...[
+                _bottomFade(scheme),
+                ListLocateButtons(
+                  controller: scrollController,
+                  locateTargetAt: _locateTargetAt,
+                  onScrollToIndex: _scrollToIndex,
+                  onWheel: _forwardWheelToList,
+                ),
+              ],
             ],
           ),
         ),
