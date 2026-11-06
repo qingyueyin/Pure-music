@@ -304,6 +304,7 @@ class UniPage<T> extends StatefulWidget {
     this.contentIsPrepared = false,
     this.enableStackedEffect = true,
     this.actionPlacement = PageActionPlacement.besideTitle,
+    this.emptyState,
   });
 
   final PagePreference pref;
@@ -336,6 +337,9 @@ class UniPage<T> extends StatefulWidget {
   /// 是否启用堆叠滚动效果（平滑滚轮始终启用）。
   final bool enableStackedEffect;
   final PageActionPlacement actionPlacement;
+
+  /// 内容为空时显示的自定义空状态，默认使用通用文案。
+  final Widget? emptyState;
 
   @override
   State<UniPage<T>> createState() => _UniPageState<T>();
@@ -829,7 +833,7 @@ class _UniPageState<T> extends State<UniPage<T>> {
     final stopwatch = Stopwatch()..start();
     try {
       if (widget.contentList.isEmpty) {
-        return _UniPageEmptyState(title: widget.title);
+        return widget.emptyState ?? _UniPageEmptyState(title: widget.title);
       }
       final stacked =
           widget.enableStackedEffect &&

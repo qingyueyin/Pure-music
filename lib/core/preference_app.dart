@@ -57,6 +57,8 @@ class AppPreference {
     ContentView.list,
   );
 
+  var remotePagePref = PagePreference(0, SortOrder.ascending, ContentView.list);
+
   int startPage = 0;
 
   bool sidebarExpanded = true;
@@ -145,6 +147,7 @@ class AppPreference {
     playlistDetailPagePref = PagePreference.fromMap(
       prefMap['playlistDetailPagePref'],
     );
+    remotePagePref = PagePreference.fromMap(prefMap['remotePagePref']);
   }
 
   void _applyChromePrefs(Map<String, dynamic> prefMap) {
@@ -243,6 +246,7 @@ class AppPreference {
         'folderDetailPagePref': folderDetailPagePref.toMap(),
         'playlistsPagePref': playlistsPagePref.toMap(),
         'playlistDetailPagePref': playlistDetailPagePref.toMap(),
+        'remotePagePref': remotePagePref.toMap(),
         'startPage': startPage,
         'sidebarExpanded': sidebarExpanded,
         'taskbarPlaybackControls': taskbarPlaybackControls,
