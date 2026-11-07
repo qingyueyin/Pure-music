@@ -253,6 +253,19 @@ enum LyricStaggerStyle {
   }
 }
 
+enum SleepTimerAction {
+  pause,
+  stop,
+  quit;
+
+  static SleepTimerAction? fromString(String name) {
+    for (var value in SleepTimerAction.values) {
+      if (_matchesStoredEnumName(name, value.name)) return value;
+    }
+    return null;
+  }
+}
+
 enum RubyPosition {
   above,
   below,

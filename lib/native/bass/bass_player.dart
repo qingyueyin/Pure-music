@@ -551,6 +551,7 @@ class BassPlayer {
   Timer? _pauseFadeTimer;
   int? _pauseFadeHandle;
   double _pauseFadeGain = 1.0;
+  Timer? _sleepFadeTimer;
   static const int _pauseFadeMs = 150;
 
   /// 淡出旧流时延迟释放资源的定时器
@@ -1905,6 +1906,8 @@ class BassPlayer {
     _cancelOutputGainFade(keepTarget: true);
     _fadeInTimer?.cancel();
     _fadeInTimer = null;
+    _sleepFadeTimer?.cancel();
+    _sleepFadeTimer = null;
     _cancelEqSmoothing();
     _fadeOutTimer?.cancel();
     _fadeOutTimer = null;
@@ -4188,6 +4191,40 @@ class BassPlayer {
     _pauseFadeTimer?.cancel();
     _pauseFadeTimer = null;
     _pauseFadeHandle = null;
+    if (_pauseFadeGain != 1.0) {
+      _pauseFadeGain = 1.0;
+      _applyPlaybackGains();
+    }
+  }
+
+  /// 睡眠定时淡出：把输出增益在 [duration] 内线性降到 0，不改变用户音量。
+  void fadeOutForSleep(Duration duration) {
+    _sleepFadeTimer?.cancel();
+    _sleepFadeTimer = null;
+    final totalMs = duration.inMilliseconds;
+    if (totalMs <= 0) {
+      _pauseFadeGain = 0.0;
+      _applyPlaybackGains();
+      return;
+    }
+    const stepMs = 100;
+    final steps = (totalMs / stepMs).ceil().clamp(1, 1000);
+    var step = 0;
+    _sleepFadeTimer = Timer.periodic(const Duration(milliseconds: stepMs), (
+      timer,
+    ) {
+      step++;
+      _pauseFadeGain = (1.0 - step / steps).clamp(0.0, 1.0);
+      _applyPlaybackGains();
+      if (step < steps) return;
+      timer.cancel();
+      _sleepFadeTimer = null;
+    });
+  }
+
+  void cancelSleepFade() {
+    _sleepFadeTimer?.cancel();
+    _sleepFadeTimer = null;
     if (_pauseFadeGain != 1.0) {
       _pauseFadeGain = 1.0;
       _applyPlaybackGains();

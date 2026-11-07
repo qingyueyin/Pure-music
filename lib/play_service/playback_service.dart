@@ -24,6 +24,7 @@ import 'package:pure_music/native/rust/api/tag_reader.dart' as rust_tag_reader;
 import 'package:pure_music/native/rust/api/library_db.dart' as rust_library_db;
 import 'package:pure_music/native/rust/api/smart_transition.dart' as rust_smart;
 import 'package:pure_music/core/sleep_blocker.dart';
+import 'package:pure_music/core/window_lifecycle.dart';
 import 'package:pure_music/core/log/playback_log.dart';
 import 'package:pure_music/core/now_playing_perf_probe.dart';
 import 'package:pure_music/core/utils.dart';
@@ -81,6 +82,7 @@ class PlaybackService extends ChangeNotifier {
   int _nextGaplessTransitionId = 1;
   _PendingGaplessTransition? _pendingGaplessTransition;
   late final PlaybackWatchdog _playbackWatchdog;
+  Timer? _sleepTimerActionTimer;
   int _replayGainRequestToken = 0;
   int _skipLeadingSilenceToken = 0;
   bool _midiMissingFontWarned = false;
@@ -370,7 +372,10 @@ class PlaybackService extends ChangeNotifier {
   }
 
   void _bindSleepTimer() {
-    SleepTimerService.instance.setOnExpired(_pauseForSleepTimer);
+    SleepTimerService.instance.setOnExpired(_handleSleepTimerExpired);
+    SleepTimerService.instance.stateNotifier.addListener(
+      _onSleepTimerStateChanged,
+    );
     SleepTimerService.instance.setOnEnterExtending(
       _abortQueuedTransitionsForSleepTimer,
     );
@@ -1158,6 +1163,50 @@ class PlaybackService extends ChangeNotifier {
     _smartTransitions.cancel('sleep_timer_extending');
     _player.discardQueuedGaplessSource();
     _pendingGaplessTransition = null;
+  }
+
+  static const _sleepFadeDuration = Duration(seconds: 8);
+
+  void _handleSleepTimerExpired() {
+    _abortQueuedTransitionsForSleepTimer();
+    final action = _pref.sleepTimerAction;
+    final playing =
+        _player.playerState == PlayerState.playing ||
+        _player.playerState == PlayerState.stalled;
+    if (!playing) {
+      _applySleepTimerAction(action);
+      return;
+    }
+    _player.fadeOutForSleep(_sleepFadeDuration);
+    _sleepTimerActionTimer?.cancel();
+    _sleepTimerActionTimer = Timer(_sleepFadeDuration, () {
+      _sleepTimerActionTimer = null;
+      _applySleepTimerAction(action);
+    });
+  }
+
+  void _applySleepTimerAction(SleepTimerAction action) {
+    switch (action) {
+      case SleepTimerAction.pause:
+        _pauseForSleepTimer();
+      case SleepTimerAction.stop:
+        _pauseForSleepTimer();
+        seek(0);
+      case SleepTimerAction.quit:
+        unawaited(WindowLifecycleService.instance.exitApp());
+    }
+  }
+
+  void _cancelSleepTimerAction() {
+    _sleepTimerActionTimer?.cancel();
+    _sleepTimerActionTimer = null;
+    _player.cancelSleepFade();
+  }
+
+  void _onSleepTimerStateChanged() {
+    if (SleepTimerService.instance.state == SleepTimerState.counting) {
+      _cancelSleepTimerAction();
+    }
   }
 
   void _pauseForSleepTimer() {
@@ -2504,6 +2553,11 @@ class PlaybackService extends ChangeNotifier {
 
   void _disposePlaybackNotifiers() {
     _playbackWatchdog.stop();
+    _sleepTimerActionTimer?.cancel();
+    _sleepTimerActionTimer = null;
+    SleepTimerService.instance.stateNotifier.removeListener(
+      _onSleepTimerStateChanged,
+    );
     try {
       _wasapiExclusive.dispose();
     } catch (_) {}

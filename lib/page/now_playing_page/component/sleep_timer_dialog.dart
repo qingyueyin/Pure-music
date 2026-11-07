@@ -1,5 +1,7 @@
 import 'package:pure_music/component/settings_tile.dart';
 import 'package:pure_music/core/design_tokens.dart';
+import 'package:pure_music/core/enums.dart';
+import 'package:pure_music/core/preference.dart';
 import 'package:pure_music/play_service/sleep_timer.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -76,6 +78,36 @@ class _SleepTimerDialogState extends State<SleepTimerDialog> {
         action: Switch(
           value: _timer.autoExtendNotifier.value,
           onChanged: (v) => setState(() => _timer.autoExtendNotifier.value = v),
+        ),
+      ),
+      const SizedBox(height: 8),
+      SettingsTile(
+        description: '到点后',
+        subtitle: '先淡出 8 秒再执行',
+        action: SegmentedButton<SleepTimerAction>(
+          showSelectedIcon: false,
+          segments: const [
+            ButtonSegment(
+              value: SleepTimerAction.pause,
+              label: Text('暂停'),
+            ),
+            ButtonSegment(
+              value: SleepTimerAction.stop,
+              label: Text('停止'),
+            ),
+            ButtonSegment(
+              value: SleepTimerAction.quit,
+              label: Text('退出'),
+            ),
+          ],
+          selected: {AppPreference.instance.playbackPref.sleepTimerAction},
+          onSelectionChanged: (selection) {
+            setState(() {
+              AppPreference.instance.playbackPref.sleepTimerAction =
+                  selection.first;
+            });
+            AppPreference.instance.save();
+          },
         ),
       ),
     ];

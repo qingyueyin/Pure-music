@@ -24,6 +24,7 @@ class PlaybackPreference {
   TransitionMode transitionMode;
   int transitionFadeOutMs;
   int transitionFadeInMs;
+  SleepTimerAction sleepTimerAction;
 
   /// 共享模式选定的输出设备 key；空字符串表示跟随系统默认设备。
   String sharedOutputDevice;
@@ -55,6 +56,7 @@ class PlaybackPreference {
     this.transitionMode = TransitionMode.seamless,
     this.transitionFadeOutMs = 300,
     this.transitionFadeInMs = 200,
+    this.sleepTimerAction = SleepTimerAction.pause,
     this.sharedOutputDevice = '',
     this.wasapiOutputDevice = '',
   });
@@ -83,6 +85,7 @@ class PlaybackPreference {
     'transitionMode': transitionMode.name,
     'transitionFadeOutMs': transitionFadeOutMs,
     'transitionFadeInMs': transitionFadeInMs,
+    'sleepTimerAction': sleepTimerAction.name,
     'sharedOutputDevice': sharedOutputDevice,
     'wasapiOutputDevice': wasapiOutputDevice,
   };
@@ -121,6 +124,11 @@ class PlaybackPreference {
       transitionMode: transition.mode,
       transitionFadeOutMs: transition.fadeOutMs,
       transitionFadeInMs: transition.fadeInMs,
+      sleepTimerAction:
+          SleepTimerAction.fromString(
+            (map['sleepTimerAction'] as String?) ?? '',
+          ) ??
+          SleepTimerAction.pause,
       sharedOutputDevice: _normalizedOutputDeviceName(
         map['sharedOutputDevice'] ?? legacyOutputDevice,
       ),

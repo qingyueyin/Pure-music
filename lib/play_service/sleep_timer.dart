@@ -62,10 +62,10 @@ class SleepTimerService {
           _onEnterExtending?.call();
           showTextOnSnackBar('睡眠定时结束，等待当前歌曲播完');
         } else {
-          log.playback.info('legacy', '[sleep_timer] expired, pausing playback');
+          log.playback.info('legacy', '[sleep_timer] expired, applying sleep action');
           _setState(SleepTimerState.idle);
           _onExpired?.call();
-          showTextOnSnackBar('睡眠定时结束，已暂停播放');
+          showTextOnSnackBar('睡眠定时结束，正在淡出');
         }
       } else {
         _updateRemaining();
@@ -79,7 +79,7 @@ class SleepTimerService {
     log.playback.info('legacy', '[sleep_timer] song completed while extending, pausing');
     _cancel();
     _onExpired?.call();
-    showTextOnSnackBar('睡眠定时结束，已暂停播放');
+    showTextOnSnackBar('睡眠定时结束');
   }
 
   /// 用户手动暂停时调用
