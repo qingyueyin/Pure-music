@@ -943,6 +943,19 @@ class LyricsLinePainter extends CustomPainter {
   double get _effectiveCurrentTimeMs =>
       currentTimeListenable?.value ?? currentTimeMs;
 
+  double get _featherPx {
+    if (!config.durationFeather) return 32.0;
+    final lyricLine = line;
+    if (lyricLine is! SyncLyricLine) return 32.0;
+    var maxDurationMs = 0;
+    for (final word in lyricLine.words) {
+      final durationMs = word.length.inMilliseconds;
+      if (durationMs > maxDurationMs) maxDurationMs = durationMs;
+    }
+    if (maxDurationMs <= 0) return 32.0;
+    return (maxDurationMs / 25.0).clamp(8.0, 42.0);
+  }
+
   // 每一视觉行单独追上自己的唱标。折行后的字横坐标又从左边开始，不能共用上一行的唱标。
   double _followLiftCursor(
     double target,
@@ -1805,7 +1818,7 @@ class LyricsLinePainter extends CustomPainter {
       final bounds = Rect.fromLTRB(left, top, right, bottom);
       final bw = bounds.width <= 0 ? 1.0 : bounds.width;
       final sweepP = ((highlightR - left) / bw).clamp(0.0, 1.0);
-      final feather = (32.0 / bw).clamp(0.04, 0.18);
+      final feather = (_featherPx / bw).clamp(0.04, 0.18);
       final p1 = (sweepP + feather * 0.35).clamp(sweepP, 1.0);
       final featherEnd = left + bw * p1;
       final clippedHighlightR = highlightR.clamp(left, right).toDouble();

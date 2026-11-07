@@ -1311,6 +1311,35 @@ class _StaggerStyleSelectorState extends State<_StaggerStyleSelector> {
   }
 }
 
+class _DurationFeatherSwitch extends StatefulWidget {
+  const _DurationFeatherSwitch();
+
+  @override
+  State<_DurationFeatherSwitch> createState() => _DurationFeatherSwitchState();
+}
+
+class _DurationFeatherSwitchState extends State<_DurationFeatherSwitch> {
+  final nowPlayingPagePref = AppPreference.instance.nowPlayingPagePref;
+
+  Future<void> _setEnabled(bool value) async {
+    setState(() => nowPlayingPagePref.durationFeather = value);
+    LyricViewController.instance.triggerRebuild();
+    await AppPreference.instance.save();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SettingsTile(
+      description: '羽化随字时长',
+      subtitle: '慢字边缘更柔和，快字更锐利',
+      action: Switch(
+        value: nowPlayingPagePref.durationFeather,
+        onChanged: _setEnabled,
+      ),
+    );
+  }
+}
+
 class _ThemeColorSourceControl extends StatefulWidget {
   const _ThemeColorSourceControl();
 
@@ -4304,6 +4333,8 @@ class _LyricEffectGroup extends StatelessWidget {
         _RubyPositionSetting(),
         SizedBox(height: 16.0),
         _StaggerStyleSelector(),
+        SizedBox(height: 16.0),
+        _DurationFeatherSwitch(),
         SizedBox(height: 16.0),
         _LiftStyleSelector(),
       ],

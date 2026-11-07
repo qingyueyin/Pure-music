@@ -15,6 +15,7 @@ class NowPlayingPagePreference {
   double liftPeak;
   int liftDurationMs;
   LyricStaggerStyle staggerStyle;
+  bool durationFeather;
   NowPlayingBackgroundMode backgroundMode;
   bool dynamicFlowingLight;
   bool audioReactiveFlow;
@@ -34,6 +35,7 @@ class NowPlayingPagePreference {
     this.liftPeak = 2.0,
     this.liftDurationMs = lyricVerticalLiftDurationMs,
     this.staggerStyle = LyricStaggerStyle.smooth,
+    this.durationFeather = false,
     this.backgroundMode = NowPlayingBackgroundMode.meshGradient,
     this.dynamicFlowingLight = true,
     this.audioReactiveFlow = false,
@@ -53,6 +55,7 @@ class NowPlayingPagePreference {
     liftPeak: liftPeak,
     liftDurationMs: lyricVerticalLiftDurationMs,
     staggerStyle: staggerStyle,
+    durationFeather: durationFeather,
   );
 
   Map<String, dynamic> toMap() => {
@@ -70,6 +73,7 @@ class NowPlayingPagePreference {
     'liftPeak': liftPeak,
     'liftDurationMs': lyricVerticalLiftDurationMs,
     'staggerStyle': staggerStyle.name,
+    'durationFeather': durationFeather,
     'backgroundMode': backgroundMode.name,
     'dynamicFlowingLight': dynamicFlowingLight,
     'audioReactiveFlow': audioReactiveFlow,
@@ -98,6 +102,10 @@ class NowPlayingPagePreference {
       liftPeak: look.liftPeak,
       liftDurationMs: lyricVerticalLiftDurationMs,
       staggerStyle: look.staggerStyle,
+      durationFeather: _normalizedBool(
+        map['durationFeather'],
+        defaultValue: false,
+      ),
       backgroundMode: backgroundMode,
       dynamicFlowingLight: true,
       audioReactiveFlow: _normalizedBool(

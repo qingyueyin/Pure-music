@@ -26,6 +26,7 @@ class LyricRenderConfig {
   final double liftPeak;
   final int liftDurationMs;
   final LyricStaggerStyle staggerStyle;
+  final bool durationFeather;
   final bool hasMultipleAgents; // 多声部 TTML 时对齐由 agent 决定
   final LyricDisplayMode displayMode;
 
@@ -62,6 +63,7 @@ class LyricRenderConfig {
     this.liftPeak = 2.0,
     this.liftDurationMs = lyricVerticalLiftDurationMs,
     this.staggerStyle = LyricStaggerStyle.smooth,
+    this.durationFeather = false,
     this.hasMultipleAgents = false,
     this.displayMode = LyricDisplayMode.wordByWord,
     this.useCustomPaint = true,
@@ -99,6 +101,7 @@ class LyricRenderConfig {
     double? liftPeak,
     int? liftDurationMs,
     LyricStaggerStyle? staggerStyle,
+    bool? durationFeather,
     bool? hasMultipleAgents,
     LyricDisplayMode? displayMode,
     bool? useCustomPaint,
@@ -135,6 +138,7 @@ class LyricRenderConfig {
       liftPeak: liftPeak ?? this.liftPeak,
       liftDurationMs: liftDurationMs ?? this.liftDurationMs,
       staggerStyle: staggerStyle ?? this.staggerStyle,
+      durationFeather: durationFeather ?? this.durationFeather,
       hasMultipleAgents: hasMultipleAgents ?? this.hasMultipleAgents,
       displayMode: displayMode ?? this.displayMode,
       useCustomPaint: useCustomPaint ?? this.useCustomPaint,
@@ -179,6 +183,7 @@ class LyricRenderConfig {
         other.liftPeak == liftPeak &&
         other.liftDurationMs == liftDurationMs &&
         other.staggerStyle == staggerStyle &&
+        other.durationFeather == durationFeather &&
         other.hasMultipleAgents == hasMultipleAgents &&
         other.displayMode == displayMode &&
         other.useCustomPaint == useCustomPaint &&
@@ -214,6 +219,7 @@ class LyricRenderConfig {
     liftPeak,
     liftDurationMs,
     staggerStyle,
+    durationFeather,
     hasMultipleAgents,
     displayMode,
     useCustomPaint,
