@@ -1146,11 +1146,14 @@ impl AudioFolder {
             }
         }
         let read_results = read_audio_paths_parallel(&paths, |_| {});
-        if let Some(failed_index) = read_results.iter().position(Option::is_none) {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("failed to read audio: {}", paths[failed_index].display()),
-            ));
+        let failed = read_results.iter().filter(|audio| audio.is_none()).count();
+        if failed > 0 {
+            log::warn!(
+                target: "tag",
+                "skipped {} unreadable files while scanning {}",
+                failed,
+                path.display()
+            );
         }
         let audios: Vec<Audio> = read_results.into_iter().flatten().collect();
         let latest = audios.iter().map(|audio| audio.created).max().unwrap_or(0);
@@ -2016,10 +2019,10 @@ fn discover_new_audio_folders(
     existing_paths: &HashSet<String>,
     new_entries: &mut Vec<serde_json::Value>,
     scanned: &mut HashSet<String>,
-) -> io::Result<()> {
+) {
     let dir_str = root.to_string_lossy().to_string();
     if !scanned.insert(dir_str.clone()) {
-        return Ok(());
+        return;
     }
 
     if !existing_paths.contains(&dir_str) {
@@ -2028,22 +2031,39 @@ fn discover_new_audio_folders(
                 new_entries.push(audio_folder.to_json_value());
             }
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error),
+            Err(error) => {
+                log::warn!(target: "library", "skipped folder {}: {}", root.display(), error);
+            }
         }
     }
 
     let entries = match fs::read_dir(root) {
         Ok(entries) => entries,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => return Err(error),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return,
+        Err(error) => {
+            log::warn!(target: "library", "skipped folder {}: {}", root.display(), error);
+            return;
+        }
     };
     for entry in entries {
-        let entry = entry?;
-        if entry.file_type()?.is_dir() {
-            discover_new_audio_folders(&entry.path(), existing_paths, new_entries, scanned)?;
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                log::warn!(target: "library", "{}", error);
+                continue;
+            }
+        };
+        let is_dir = match entry.file_type() {
+            Ok(file_type) => file_type.is_dir(),
+            Err(error) => {
+                log::warn!(target: "library", "{}", error);
+                continue;
+            }
+        };
+        if is_dir {
+            discover_new_audio_folders(&entry.path(), existing_paths, new_entries, scanned);
         }
     }
-    Ok(())
 }
 
 fn add_missing_audio_files(
@@ -2702,16 +2722,23 @@ fn index_folder_snapshots_unchanged(folders: &[library_db::IndexFolderSnapshot])
     })
 }
 
+fn root_modified(folder: &str) -> Option<u64> {
+    fs::metadata(folder)
+        .and_then(|metadata| metadata.modified())
+        .ok()
+        .map(|modified| {
+            modified
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or(Duration::ZERO)
+                .as_secs()
+        })
+}
+
 fn root_folder_snapshots(folders: &[String]) -> Vec<serde_json::Value> {
     folders
         .iter()
         .filter_map(|folder| {
-            let modified = fs::metadata(folder)
-                .and_then(|metadata| metadata.modified())
-                .ok()?
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or(Duration::ZERO)
-                .as_secs();
+            let modified = root_modified(folder)?;
             Some(serde_json::json!({
                 "path": folder,
                 "modified": modified,
@@ -2732,10 +2759,7 @@ fn root_snapshot_map(items: &[serde_json::Value]) -> HashMap<String, u64> {
         .collect()
 }
 
-fn index_roots_unchanged(
-    roots: &[library_db::IndexRootSnapshot],
-    folders: &[String],
-) -> bool {
+fn index_roots_unchanged(roots: &[library_db::IndexRootSnapshot], folders: &[String]) -> bool {
     if roots.len() != folders.len() {
         return false;
     }
@@ -2744,15 +2768,7 @@ fn index_roots_unchanged(
         .map(|root| (root.path.as_str(), root.modified))
         .collect();
     folders.iter().all(|folder| {
-        let modified = fs::metadata(folder)
-            .and_then(|metadata| metadata.modified())
-            .map(|modified| {
-                modified
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or(Duration::ZERO)
-                    .as_secs()
-            });
-        matches!(modified, Ok(modified) if stored.get(folder.as_str()) == Some(&modified))
+        matches!(root_modified(folder), Some(modified) if stored.get(folder.as_str()) == Some(&modified))
     })
 }
 
@@ -2799,12 +2815,9 @@ pub fn update_index(
     let mut index_changed = refresh_all_metadata;
     index["version"] = serde_json::json!(CURRENT_INDEX_VERSION);
     let roots = root_folder_snapshots(&folders);
-    let stored_roots = root_snapshot_map(
-        index["roots"]
-            .as_array()
-            .map(Vec::as_slice)
-            .unwrap_or(&[]),
-    );
+    let stored_roots_known = index["roots"].is_array();
+    let stored_roots =
+        root_snapshot_map(index["roots"].as_array().map(Vec::as_slice).unwrap_or(&[]));
     if stored_roots != root_snapshot_map(&roots) {
         index_changed = true;
     }
@@ -2844,6 +2857,15 @@ pub fn update_index(
     let mut checked = 0_u64;
     let mut discovery_roots: Vec<PathBuf> = folders
         .iter()
+        .filter(|folder| {
+            if force_metadata_check || !stored_roots_known {
+                return true;
+            }
+            match root_modified(folder) {
+                Some(modified) => stored_roots.get(folder.as_str()) != Some(&modified),
+                None => true,
+            }
+        })
         .map(|folder| PathBuf::from(folder.as_str()))
         .collect();
 
@@ -3047,7 +3069,7 @@ pub fn update_index(
                 &existing_paths,
                 &mut new_entries,
                 &mut scanned_dirs,
-            )?;
+            );
         }
         if !new_entries.is_empty() {
             index_changed = true;

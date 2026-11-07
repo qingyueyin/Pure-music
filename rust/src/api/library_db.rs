@@ -1357,8 +1357,7 @@ fn write_index_value_to_sqlite(index_dir: &Path, index: &serde_json::Value) -> R
     meta_changes +=
         meta_stmt.execute(params!["index_source_modified", index_modified.to_string()])?;
     meta_changes += meta_stmt.execute(params!["index_source_size", index_size.to_string()])?;
-    let roots_json =
-        serde_json::to_string(index.get("roots").unwrap_or(&serde_json::Value::Null))?;
+    let roots_json = serde_json::to_string(index.get("roots").unwrap_or(&serde_json::Value::Null))?;
     meta_changes += meta_stmt.execute(params!["roots", roots_json])?;
     drop(meta_stmt);
 
