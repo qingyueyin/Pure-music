@@ -48,11 +48,13 @@ class LibraryIndexService {
   }
 
   Stream<LibraryIndexState> updateIndex({
+    required List<String> folders,
     required String indexPath,
     required bool forceMetadataCheck,
   }) {
     return rust_tag_reader
         .updateIndex(
+          folders: folders,
           indexPath: indexPath,
           forceMetadataCheck: forceMetadataCheck,
         )

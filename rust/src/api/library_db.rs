@@ -103,9 +103,16 @@ pub(crate) struct IndexFolderSnapshot {
     pub modified: u64,
 }
 
+pub(crate) struct IndexRootSnapshot {
+    pub path: String,
+    pub modified: u64,
+}
+
 pub(crate) struct IndexSnapshot {
     pub version: u64,
     pub folders: Vec<IndexFolderSnapshot>,
+    pub roots: Vec<IndexRootSnapshot>,
+    pub roots_known: bool,
 }
 
 fn sqlite_path(index_dir: &Path) -> PathBuf {
@@ -600,7 +607,35 @@ pub(crate) fn read_current_index_snapshot(index_dir: &Path) -> Result<Option<Ind
         })
     })?;
     let folders = rows.collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(Some(IndexSnapshot { version, folders }))
+    let roots_value: Option<String> = conn
+        .query_row("SELECT value FROM meta WHERE key = 'roots'", [], |row| {
+            row.get::<_, String>(0)
+        })
+        .optional()?;
+    let mut roots = Vec::new();
+    let mut roots_known = false;
+    if let Some(value) = roots_value {
+        if let Ok(serde_json::Value::Array(items)) =
+            serde_json::from_str::<serde_json::Value>(&value)
+        {
+            roots_known = true;
+            roots = items
+                .iter()
+                .filter_map(|item| {
+                    Some(IndexRootSnapshot {
+                        path: item.get("path")?.as_str()?.to_string(),
+                        modified: item.get("modified")?.as_u64()?,
+                    })
+                })
+                .collect();
+        }
+    }
+    Ok(Some(IndexSnapshot {
+        version,
+        folders,
+        roots,
+        roots_known,
+    }))
 }
 
 fn backfill_audio_identities(conn: &Connection) -> Result<()> {
@@ -1322,6 +1357,9 @@ fn write_index_value_to_sqlite(index_dir: &Path, index: &serde_json::Value) -> R
     meta_changes +=
         meta_stmt.execute(params!["index_source_modified", index_modified.to_string()])?;
     meta_changes += meta_stmt.execute(params!["index_source_size", index_size.to_string()])?;
+    let roots_json =
+        serde_json::to_string(index.get("roots").unwrap_or(&serde_json::Value::Null))?;
+    meta_changes += meta_stmt.execute(params!["roots", roots_json])?;
     drop(meta_stmt);
 
     let mut folder_changes = 0_usize;

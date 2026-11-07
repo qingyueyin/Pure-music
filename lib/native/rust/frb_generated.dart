@@ -354,6 +354,7 @@ abstract class RustLibApi extends BaseApi {
   SystemTheme crateApiSystemThemeSystemThemeGetSystemTheme();
 
   Stream<IndexActionState> crateApiTagReaderUpdateIndex({
+    required List<String> folders,
     required String indexPath,
     required bool forceMetadataCheck,
   });
@@ -2512,6 +2513,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @override
   Stream<IndexActionState> crateApiTagReaderUpdateIndex({
+    required List<String> folders,
     required String indexPath,
     required bool forceMetadataCheck,
   }) {
@@ -2521,6 +2523,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         NormalTask(
           callFfi: (port_) {
             final serializer = SseSerializer(generalizedFrbRustBinding);
+            sse_encode_list_String(folders, serializer);
             sse_encode_String(indexPath, serializer);
             sse_encode_bool(forceMetadataCheck, serializer);
             sse_encode_StreamSink_index_action_state_Sse(sink, serializer);
@@ -2536,7 +2539,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             decodeErrorData: sse_decode_AnyhowException,
           ),
           constMeta: kCrateApiTagReaderUpdateIndexConstMeta,
-          argValues: [indexPath, forceMetadataCheck, sink],
+          argValues: [folders, indexPath, forceMetadataCheck, sink],
           apiImpl: this,
         ),
       ),
@@ -2547,7 +2550,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiTagReaderUpdateIndexConstMeta =>
       const TaskConstMeta(
         debugName: "update_index",
-        argNames: ["indexPath", "forceMetadataCheck", "sink"],
+        argNames: ["folders", "indexPath", "forceMetadataCheck", "sink"],
       );
 
   @override

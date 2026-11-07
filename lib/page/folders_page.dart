@@ -558,7 +558,13 @@ class _RefreshIndexDialogState extends State<_RefreshIndexDialog> {
     setState(() => _errorMessage = null);
     final dir = await getAppDataDir();
     _subscription = LibraryIndexService.instance
-        .updateIndex(indexPath: dir.path, forceMetadataCheck: true)
+        .updateIndex(
+          folders: AudioLibrary.aggregatedRootFolders()
+              .map((folder) => folder.path)
+              .toList(growable: false),
+          indexPath: dir.path,
+          forceMetadataCheck: true,
+        )
         .listen(
           (action) {
             if (mounted) setState(() => _latest = action);

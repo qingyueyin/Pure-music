@@ -2473,6 +2473,7 @@ fn wire__crate__api__tag_reader__update_index_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_folders = <Vec<String>>::sse_decode(&mut deserializer);
             let api_index_path = <String>::sse_decode(&mut deserializer);
             let api_force_metadata_check = <bool>::sse_decode(&mut deserializer);
             let api_sink = <StreamSink<
@@ -2484,6 +2485,7 @@ fn wire__crate__api__tag_reader__update_index_impl(
                 transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
                     (move || {
                         let output_ok = crate::api::tag_reader::update_index(
+                            api_folders,
                             api_index_path,
                             api_force_metadata_check,
                             api_sink,

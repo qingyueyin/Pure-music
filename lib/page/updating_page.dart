@@ -188,6 +188,9 @@ class _UpdatingStateViewState extends State<UpdatingStateView> {
     setState(() => _errorMessage = null);
     _subscription = LibraryIndexService.instance
         .updateIndex(
+          folders: AudioLibrary.aggregatedRootFolders()
+              .map((folder) => folder.path)
+              .toList(growable: false),
           indexPath: widget.indexPath.path,
           forceMetadataCheck: false,
         )

@@ -1944,6 +1944,7 @@ fn build_index_from_folders(
     let json_value = serde_json::json!({
         "version": CURRENT_INDEX_VERSION,
         "folders": audio_folders_json,
+        "roots": root_folder_snapshots(&folders),
     });
 
     let _ = sink.add(IndexActionState {
@@ -2025,7 +2026,6 @@ fn discover_new_audio_folders(
         match AudioFolder::read_from_folder(root) {
             Ok(audio_folder) => {
                 new_entries.push(audio_folder.to_json_value());
-                return Ok(());
             }
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => return Err(error),
@@ -2702,7 +2702,62 @@ fn index_folder_snapshots_unchanged(folders: &[library_db::IndexFolderSnapshot])
     })
 }
 
+fn root_folder_snapshots(folders: &[String]) -> Vec<serde_json::Value> {
+    folders
+        .iter()
+        .filter_map(|folder| {
+            let modified = fs::metadata(folder)
+                .and_then(|metadata| metadata.modified())
+                .ok()?
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or(Duration::ZERO)
+                .as_secs();
+            Some(serde_json::json!({
+                "path": folder,
+                "modified": modified,
+            }))
+        })
+        .collect()
+}
+
+fn root_snapshot_map(items: &[serde_json::Value]) -> HashMap<String, u64> {
+    items
+        .iter()
+        .filter_map(|item| {
+            Some((
+                item.get("path")?.as_str()?.to_string(),
+                item.get("modified")?.as_u64()?,
+            ))
+        })
+        .collect()
+}
+
+fn index_roots_unchanged(
+    roots: &[library_db::IndexRootSnapshot],
+    folders: &[String],
+) -> bool {
+    if roots.len() != folders.len() {
+        return false;
+    }
+    let stored: HashMap<&str, u64> = roots
+        .iter()
+        .map(|root| (root.path.as_str(), root.modified))
+        .collect();
+    folders.iter().all(|folder| {
+        let modified = fs::metadata(folder)
+            .and_then(|metadata| metadata.modified())
+            .map(|modified| {
+                modified
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or(Duration::ZERO)
+                    .as_secs()
+            });
+        matches!(modified, Ok(modified) if stored.get(folder.as_str()) == Some(&modified))
+    })
+}
+
 pub fn update_index(
+    folders: Vec<String>,
     index_path: String,
     force_metadata_check: bool,
     sink: StreamSink<IndexActionState>,
@@ -2716,7 +2771,9 @@ pub fn update_index(
                 reject_network_folder(Path::new(&folder.path))?;
             }
             if snapshot.version == CURRENT_INDEX_VERSION
+                && snapshot.roots_known
                 && index_folder_snapshots_unchanged(&snapshot.folders)
+                && index_roots_unchanged(&snapshot.roots, &folders)
             {
                 log::debug!(target: "library", "index update fast path: unchanged");
                 let _ = sink.add(IndexActionState {
@@ -2741,12 +2798,23 @@ pub fn update_index(
     let refresh_all_metadata = version.is_some_and(|value| value < CURRENT_INDEX_VERSION);
     let mut index_changed = refresh_all_metadata;
     index["version"] = serde_json::json!(CURRENT_INDEX_VERSION);
+    let roots = root_folder_snapshots(&folders);
+    let stored_roots = root_snapshot_map(
+        index["roots"]
+            .as_array()
+            .map(Vec::as_slice)
+            .unwrap_or(&[]),
+    );
+    if stored_roots != root_snapshot_map(&roots) {
+        index_changed = true;
+    }
+    index["roots"] = serde_json::Value::Array(roots);
 
-    let folders = index["folders"]
+    let index_folders = index["folders"]
         .as_array_mut()
         .ok_or_else(|| anyhow::anyhow!("missing 'folders' field"))?;
     let mut folder_probe_error = None;
-    for item in folders.iter() {
+    for item in index_folders.iter() {
         let Some(path) = item["path"].as_str() else {
             folder_probe_error = Some(io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -2768,15 +2836,18 @@ pub fn update_index(
     let mut invalidated = 0_u64;
     let mut revived = 0_u64;
     let mut unreadable_total = 0_u64;
-    let total = folders
+    let total = index_folders
         .iter()
         .filter_map(|folder| folder["audios"].as_array())
         .map(|audios| audios.len() as u64)
         .sum::<u64>();
     let mut checked = 0_u64;
-    let mut discovery_roots = Vec::new();
+    let mut discovery_roots: Vec<PathBuf> = folders
+        .iter()
+        .map(|folder| PathBuf::from(folder.as_str()))
+        .collect();
 
-    for folder_item in folders.iter_mut() {
+    for folder_item in index_folders.iter_mut() {
         let folder_path = match folder_item["path"].as_str() {
             Some(p) => p.to_string(),
             None => continue,
@@ -2954,7 +3025,7 @@ pub fn update_index(
     }
 
     {
-        let existing_paths: HashSet<String> = folders
+        let existing_paths: HashSet<String> = index_folders
             .iter()
             .filter_map(|f| f.get("path").and_then(|v| v.as_str()).map(String::from))
             .collect();
@@ -2980,11 +3051,11 @@ pub fn update_index(
         }
         if !new_entries.is_empty() {
             index_changed = true;
-            folders.extend(new_entries);
+            index_folders.extend(new_entries);
         }
     }
 
-    let revived_moves = drop_invalid_duplicates_by_media_id(folders);
+    let revived_moves = drop_invalid_duplicates_by_media_id(index_folders);
     if revived_moves > 0 {
         revived += revived_moves as u64;
         index_changed = true;
