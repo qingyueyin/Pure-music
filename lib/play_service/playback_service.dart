@@ -11,6 +11,7 @@ import 'package:pure_music/play_service/audio_echo_log_recorder.dart';
 import 'package:pure_music/play_service/audio_tag_write_scheduler.dart';
 import 'package:pure_music/play_service/equalizer_service.dart';
 import 'package:pure_music/play_service/playback_listen_tracker.dart';
+import 'package:pure_music/play_service/playback_watchdog.dart';
 import 'package:pure_music/play_service/playback_session_store.dart';
 import 'package:pure_music/play_service/playback_song_change_tasks.dart';
 import 'package:pure_music/core/audio_dsp_settings.dart';
@@ -79,6 +80,7 @@ class PlaybackService extends ChangeNotifier {
   int _playlistRevision = 0;
   int _nextGaplessTransitionId = 1;
   _PendingGaplessTransition? _pendingGaplessTransition;
+  late final PlaybackWatchdog _playbackWatchdog;
   int _replayGainRequestToken = 0;
   int _skipLeadingSilenceToken = 0;
   bool _midiMissingFontWarned = false;
@@ -244,6 +246,10 @@ class PlaybackService extends ChangeNotifier {
 
   PlaybackService(this.playService) {
     unawaited(LastFmService.instance.ensureLoaded());
+    _playbackWatchdog = PlaybackWatchdog(
+      readPositionMs: () => _player.position,
+      readState: () => playerState,
+    );
     _player.setMidiSoundfontPath(AppSettings.instance.midiSoundfontPath);
     audioTagWriteScheduler.bindPathCheck(_player.isAudioFileOpen);
     _player.onAudioFilesChanged = audioTagWriteScheduler.onAudioFilesChanged;
@@ -253,6 +259,14 @@ class PlaybackService extends ChangeNotifier {
     _bindEqualizerAndSmartTransitions();
     _bindSleepTimer();
     _scheduleSessionRestore();
+  }
+
+  void _syncPlaybackWatchdog() {
+    if (playerState == PlayerState.playing) {
+      _playbackWatchdog.start();
+    } else {
+      _playbackWatchdog.stop();
+    }
   }
 
   void _bindExclusiveMode() {
@@ -274,6 +288,7 @@ class PlaybackService extends ChangeNotifier {
         );
       }
       _playerState.value = event;
+      _syncPlaybackWatchdog();
       if (event == PlayerState.playing) {
         SleepBlocker.instance.setPlayerPlaying(true);
       } else if (event == PlayerState.completed) {
@@ -2488,6 +2503,7 @@ class PlaybackService extends ChangeNotifier {
   }
 
   void _disposePlaybackNotifiers() {
+    _playbackWatchdog.stop();
     try {
       _wasapiExclusive.dispose();
     } catch (_) {}
