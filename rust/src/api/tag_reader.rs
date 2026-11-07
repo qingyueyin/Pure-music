@@ -1110,6 +1110,28 @@ fn should_emit_index_progress(completed: usize, total: usize) -> bool {
     completed >= total || completed.is_multiple_of(batch)
 }
 
+/// 构造「复用预检」阶段的进度事件。
+/// 只把命中复用的文件计入 completed，剩余文件由 read_audio_paths_parallel 接着推进，
+/// 保证两段进度区间不重叠、进度条不会倒退。
+fn reuse_scan_progress_state(
+    scanned_before: u64,
+    reused_in_folder: usize,
+    total: u64,
+    unreadable_total: u64,
+) -> IndexActionState {
+    let completed = scanned_before + reused_in_folder as u64;
+    IndexActionState {
+        progress: if total == 0 {
+            1.0
+        } else {
+            (completed as f64 / total as f64).min(1.0)
+        },
+        message: String::new(),
+        phase: IndexPhase::Scanning,
+        unreadable_total,
+    }
+}
+
 #[derive(Debug)]
 struct AudioFolder {
     path: String,
@@ -1795,11 +1817,7 @@ fn detect_and_encode(img: &DynamicImage, raw_bytes: &[u8]) -> Result<(Vec<u8>, M
 fn load_reusable_remote_audios(index_dir: &Path) -> Option<HashMap<String, serde_json::Value>> {
     let bytes = fs::read(index_dir.join("index.json")).ok()?;
     let index: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
-    if index
-        .get("version")
-        .and_then(|value| value.as_u64())
-        != Some(CURRENT_INDEX_VERSION)
-    {
+    if index.get("version").and_then(|value| value.as_u64()) != Some(CURRENT_INDEX_VERSION) {
         return None;
     }
     let mut records = HashMap::new();
@@ -1989,7 +2007,8 @@ fn build_index_from_folders(
         let mut results: Vec<Option<Audio>> = Vec::with_capacity(file_paths.len());
         let mut to_read: Vec<PathBuf> = Vec::new();
         let mut to_read_slots: Vec<usize> = Vec::new();
-        for path in file_paths {
+        let mut reused_in_folder = 0_usize;
+        for (index, path) in file_paths.iter().enumerate() {
             let key = path.to_string_lossy().to_string();
             let reused = reusable
                 .as_ref()
@@ -2005,15 +2024,29 @@ fn build_index_from_folders(
                     reusable_audio_from_record(record, modified, metadata.len())
                 });
             match reused {
-                Some(audio) => results.push(Some(audio)),
+                Some(audio) => {
+                    reused_in_folder += 1;
+                    results.push(Some(audio));
+                }
                 None => {
                     results.push(None);
                     to_read_slots.push(results.len() - 1);
                     to_read.push(path.clone());
                 }
             }
+            // 串行预检阶段同样要持续推送状态：Dart 侧的取消检查挂在 stream 的每个事件上
+            // （smb_client.dart 的 await for），只在读标签阶段发事件会让慢速 / 无响应 SMB
+            // 上的取消长期得不到响应。触发按已检查数，保证小文件夹末尾至少也有一次。
+            // 全量建库没有旧索引、这一圈不发网络请求，保持原行为不变。
+            if reusable.is_some() && should_emit_index_progress(index + 1, file_paths.len()) {
+                let _ = sink.add(reuse_scan_progress_state(
+                    scanned_before,
+                    reused_in_folder,
+                    total,
+                    unreadable_total,
+                ));
+            }
         }
-        let reused_in_folder = results.len() - to_read.len();
 
         let read_results = read_audio_paths_parallel(&to_read, |completed| {
             // 复用的文件视为瞬间完成，进度继续按全库总数推进。
@@ -2033,19 +2066,6 @@ fn build_index_from_folders(
         });
         for (slot, audio) in to_read_slots.into_iter().zip(read_results) {
             results[slot] = audio;
-        }
-        if to_read.is_empty() && reused_in_folder > 0 {
-            let completed = scanned_before + reused_in_folder as u64;
-            let _ = sink.add(IndexActionState {
-                progress: if total == 0 {
-                    1.0
-                } else {
-                    completed as f64 / total as f64
-                },
-                message: String::new(),
-                phase: IndexPhase::Scanning,
-                unreadable_total,
-            });
         }
 
         let failed = results.iter().filter(|audio| audio.is_none()).count();
@@ -2406,10 +2426,11 @@ mod tag_reader_tests {
     use super::{
         detect_and_encode, drop_invalid_duplicates_by_media_id, indexed_audio_update_from_parts,
         is_lyric_item_key, join_deduped, load_reusable_remote_audios, parse_midi_metadata,
-        probe_indexed_path, read_audio_extra_metadata, read_by_asf,
-        reusable_audio_from_record, should_emit_index_progress,
-        should_scan_indexed_audio_files, should_show_recording_date, tag_reader_worker_count_for,
-        Audio, IndexedAudioUpdate, CURRENT_INDEX_VERSION, SUPPORTED_FORMATS,
+        probe_indexed_path, read_audio_extra_metadata, read_by_asf, reusable_audio_from_record,
+        reuse_scan_progress_state, should_emit_index_progress, should_scan_indexed_audio_files,
+        should_show_recording_date, tag_reader_worker_count_for, Audio, IndexedAudioUpdate,
+        CURRENT_INDEX_VERSION, INDEX_PROGRESS_MIN_BATCH, INDEX_PROGRESS_TARGET_UPDATES,
+        SUPPORTED_FORMATS,
     };
 
     fn asf_object(guid: [u8; 16], data: Vec<u8>) -> Vec<u8> {
@@ -2902,9 +2923,7 @@ mod tag_reader_tests {
         let record = original.to_json_value();
         let mut invalid = record.clone();
         invalid["valid"] = serde_json::json!(false);
-        assert!(
-            reusable_audio_from_record(&invalid, original.modified, original.size).is_none()
-        );
+        assert!(reusable_audio_from_record(&invalid, original.modified, original.size).is_none());
 
         for key in ["size", "modified", "duration", "created", "title", "path"] {
             let mut incomplete = record.clone();
@@ -2964,6 +2983,50 @@ mod tag_reader_tests {
             }
         }
         assert_eq!(reused, 10_000);
+    }
+
+    #[test]
+    fn reuse_scan_progress_never_overlaps_read_phase() {
+        let scanned_before = 120_u64;
+        let total = 300_u64;
+        let mut last = 0.0_f64;
+        for reused_in_folder in 0..=40_usize {
+            let progress =
+                reuse_scan_progress_state(scanned_before, reused_in_folder, total, 0).progress;
+            assert!(progress >= last, "预检阶段进度不能倒退");
+            last = progress;
+        }
+        // read_audio_paths_parallel 从 scanned_before + reused_in_folder 继续推进，
+        // 两段必须首尾相接，否则进度条会往回跳。
+        let read_phase_start = (scanned_before + 40) as f64 / total as f64;
+        assert!((last - read_phase_start).abs() < 1e-12);
+        assert!(last <= 1.0);
+    }
+
+    #[test]
+    fn reuse_scan_progress_is_capped_at_one() {
+        assert_eq!(reuse_scan_progress_state(0, 0, 0, 0).progress, 1.0);
+        assert_eq!(reuse_scan_progress_state(900, 200, 1000, 0).progress, 1.0);
+    }
+
+    #[test]
+    fn reuse_scan_emits_bounded_progress_and_always_at_folder_end() {
+        // 文件数小于最小批量时，循环末尾仍至少有一次事件，Dart 才有取消检查点。
+        for len in [1_usize, 3, 15, INDEX_PROGRESS_MIN_BATCH] {
+            assert!(
+                should_emit_index_progress(len, len),
+                "文件夹末尾必须推送一次状态: {len}"
+            );
+        }
+        let total = 10_000_usize;
+        let emitted = (1..=total)
+            .filter(|&checked| should_emit_index_progress(checked, total))
+            .count();
+        assert!(emitted > 1, "大文件夹必须分批推送状态");
+        assert!(
+            emitted <= INDEX_PROGRESS_TARGET_UPDATES + 1,
+            "推送次数应有上界，实际 {emitted}"
+        );
     }
 }
 
