@@ -71,9 +71,9 @@ double _distanceOpacity(int dist) => _distanceOpacityTable[_distanceIndex(dist)]
 Duration _smoothStaggerDelay(int dist) =>
     _smoothStaggerDelayTable[_distanceIndex(dist)];
 
-/// 行切换、切入、收起按 16ms 一步，不能退到 33ms。
+/// 行切换、切入、收起上限 6ms：60Hz 屏照旧每帧，144Hz 不退化成 48fps。
 @visibleForTesting
-const lyricLineFrameInterval = Duration(milliseconds: 16);
+const lyricLineFrameInterval = Duration(milliseconds: 6);
 
 bool alwaysShowLyricViewControls = false;
 

@@ -13,6 +13,7 @@ import 'package:pure_music/core/zh_converter.dart';
 import 'package:pure_music/lyric/lrc.dart';
 import 'package:pure_music/lyric/lyric.dart';
 import 'package:pure_music/core/perf_probe.dart';
+import 'package:pure_music/core/lyric_jitter_probe.dart';
 import 'package:pure_music/page/now_playing_page/component/lyric_painter_params.dart';
 import 'package:pure_music/play_service/lyric_service.dart'
     show lyricHighlightCatchUpDurationMs, lyricHighlightFinishLeadMs;
@@ -1284,6 +1285,14 @@ class LyricsLinePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    final syncLine = line;
+    if (isMainLine &&
+        isHighlightActive &&
+        syncLine is SyncLyricLine &&
+        syncLine.words.length > 1 &&
+        config.displayMode == LyricDisplayMode.wordByWord) {
+      LyricJitterProbe.sample(_effectiveCurrentTimeMs);
+    }
     if (line is SyncLyricLine &&
         config.displayMode == LyricDisplayMode.wordByWord) {
       _paintSyncLine(canvas, size);
