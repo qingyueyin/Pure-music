@@ -3190,6 +3190,22 @@ class Artist {
   int _collectionGeneration = 0;
   int _libraryIndex = -1;
 
+  String? _searchName;
+  String? _searchNormalized;
+  String? _searchPinyin;
+
+  /// 搜索用，按当前名字懒缓存，名字变了自动失效。
+  bool matchesSearchQuery(String queryInLowerCase) {
+    final currentName = name;
+    if (_searchName != currentName) {
+      _searchName = currentName;
+      _searchNormalized = normalizedSearchQuery(currentName).toLowerCase();
+      _searchPinyin = currentName.getPinyinInitials().toLowerCase();
+    }
+    return _searchNormalized!.contains(queryInLowerCase) ||
+        _searchPinyin!.contains(queryInLowerCase);
+  }
+
   /// 所有专辑
   Map<String, Album> albumsMap = {};
 
@@ -3315,6 +3331,22 @@ class Album {
   String name;
   int _collectionGeneration = 0;
   int _libraryIndex = -1;
+
+  String? _searchName;
+  String? _searchNormalized;
+  String? _searchPinyin;
+
+  /// 搜索用，按当前名字懒缓存，名字变了自动失效。
+  bool matchesSearchQuery(String queryInLowerCase) {
+    final currentName = name;
+    if (_searchName != currentName) {
+      _searchName = currentName;
+      _searchNormalized = normalizedSearchQuery(currentName).toLowerCase();
+      _searchPinyin = currentName.getPinyinInitials().toLowerCase();
+    }
+    return _searchNormalized!.contains(queryInLowerCase) ||
+        _searchPinyin!.contains(queryInLowerCase);
+  }
 
   /// 参与的艺术家
   Map<String, Artist> artistsMap = {};
