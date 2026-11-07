@@ -847,9 +847,15 @@ class PlaybackService extends ChangeNotifier {
       ? AppPreference.instance.playbackPref.wasapiOutputDevice
       : AppPreference.instance.playbackPref.sharedOutputDevice;
 
-  /// 切换输出设备并保存；播放中会保留位置重建输出。
-  AudioOutputApplyResult setOutputDevice(String deviceKey) {
-    final result = _player.applyOutputDevice(deviceKey);
+  /// 切换输出设备并保存；播放中会保留位置重建输出，切换前淡出 20ms 防爆音。
+  Future<AudioOutputApplyResult> setOutputDevice(String deviceKey) async {
+    final faded = await _player.fadeOutForDeviceSwitch();
+    AudioOutputApplyResult result;
+    try {
+      result = _player.applyOutputDevice(deviceKey);
+    } finally {
+      if (faded) _player.resetDeviceSwitchGain();
+    }
     _wasapiExclusive.value = _player.wasapiExclusive;
     showTextOnSnackBar(
       switch (result.status) {

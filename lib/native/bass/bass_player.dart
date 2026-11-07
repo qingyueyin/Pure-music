@@ -4197,6 +4197,29 @@ class BassPlayer {
     }
   }
 
+  /// 设备切换前 20ms 淡出，避免停流时的爆音。
+  Future<bool> fadeOutForDeviceSwitch() async {
+    if (_fstream == null ||
+        (playerState != PlayerState.playing &&
+            playerState != PlayerState.stalled)) {
+      return false;
+    }
+    const steps = 4;
+    const stepMs = 5;
+    for (var step = 1; step <= steps; step++) {
+      _pauseFadeGain = (1.0 - step / steps).clamp(0.0, 1.0);
+      _applyPlaybackGains();
+      await Future<void>.delayed(const Duration(milliseconds: stepMs));
+    }
+    return true;
+  }
+
+  void resetDeviceSwitchGain() {
+    if (_pauseFadeGain == 1.0) return;
+    _pauseFadeGain = 1.0;
+    _applyPlaybackGains();
+  }
+
   /// 睡眠定时淡出：把输出增益在 [duration] 内线性降到 0，不改变用户音量。
   void fadeOutForSleep(Duration duration) {
     _sleepFadeTimer?.cancel();

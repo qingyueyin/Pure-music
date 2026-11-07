@@ -98,7 +98,7 @@ class _AudioOutputSettingsPanelState extends State<AudioOutputSettingsPanel> {
       ),
     );
     if (pick == null || !mounted) return;
-    final result = _service.setOutputDevice(pick);
+    final result = await _service.setOutputDevice(pick);
     if (!mounted) return;
     setState(() => _selected = result.activeKey);
     if (result.succeeded) await AppPreference.instance.save();
