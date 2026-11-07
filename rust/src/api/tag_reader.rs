@@ -1790,6 +1790,88 @@ fn detect_and_encode(img: &DynamicImage, raw_bytes: &[u8]) -> Result<(Vec<u8>, M
     }
 }
 
+/// SMB 远程曲库增量：读出上次扫描写下的 index.json，按路径索引完整记录。
+/// 版本落后、文件缺失或 JSON 损坏时返回 None，调用方会退回全量扫描。
+fn load_reusable_remote_audios(index_dir: &Path) -> Option<HashMap<String, serde_json::Value>> {
+    let bytes = fs::read(index_dir.join("index.json")).ok()?;
+    let index: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    if index
+        .get("version")
+        .and_then(|value| value.as_u64())
+        != Some(CURRENT_INDEX_VERSION)
+    {
+        return None;
+    }
+    let mut records = HashMap::new();
+    for folder in index.get("folders")?.as_array()? {
+        let Some(audios) = folder.get("audios").and_then(|value| value.as_array()) else {
+            continue;
+        };
+        for audio in audios {
+            let Some(path) = audio.get("path").and_then(|value| value.as_str()) else {
+                continue;
+            };
+            // 上次被标为失效（文件曾不可见），回来后重读一次更稳妥。
+            if audio.get("valid").and_then(|value| value.as_bool()) == Some(false) {
+                continue;
+            }
+            records.insert(path.to_string(), audio.clone());
+        }
+    }
+    Some(records)
+}
+
+/// 只有 mtime 和大小都没变的旧记录才能直接沿用；命中后还原成完整 Audio，
+/// 省掉一次网络上的打开文件 + 解析标签。字段不全则退回重新读取。
+fn reusable_audio_from_record(
+    record: &serde_json::Value,
+    new_modified: u64,
+    new_size: u64,
+) -> Option<Audio> {
+    let old_modified = record.get("modified")?.as_u64()?;
+    let old_size = record.get("size")?.as_u64()?;
+    if old_modified != new_modified || old_size != new_size {
+        return None;
+    }
+    if record.get("valid").and_then(|value| value.as_bool()) == Some(false) {
+        return None;
+    }
+    let text = |key: &str| {
+        record
+            .get(key)
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_string())
+    };
+    let number = |key: &str| {
+        record
+            .get(key)
+            .and_then(|value| value.as_u64())
+            .map(|value| value as u32)
+    };
+    Some(Audio {
+        title: text("title")?,
+        artist: text("artist")?,
+        album: text("album")?,
+        album_artist: text("album_artist"),
+        genre: text("genre"),
+        year: text("year"),
+        composer: text("composer"),
+        bpm: text("bpm"),
+        track: number("track"),
+        disc: number("disc"),
+        duration: record.get("duration")?.as_u64()?,
+        bitrate: number("bitrate"),
+        sample_rate: number("sample_rate"),
+        path: text("path")?,
+        modified: old_modified,
+        created: record.get("created")?.as_u64()?,
+        by: text("by"),
+        size: old_size,
+        valid: true,
+        media_id: text("media_id"),
+    })
+}
+
 /// 递归收集所有子文件夹中的音频文件路径，按父目录分组。
 /// 一次遍历同时完成「统计总数」和「收集路径」，避免二次目录遍历。
 fn collect_audio_files_by_folder(
@@ -1862,6 +1944,15 @@ fn build_index_from_folders(
 ) -> Result<(), io::Error> {
     validate_scan_roots(&folders, remote)?;
     let index_dir = PathBuf::from(&index_path);
+    // 只有 SMB 远程来源复用上次索引：本地曲库有自己的 update_index 增量链路，
+    // 这里保持原来的全量语义，避免两处增量逻辑互相干扰。
+    let reusable = if remote {
+        load_reusable_remote_audios(&index_dir)
+    } else {
+        None
+    };
+    let mut reused_total = 0_u64;
+    let mut reread_total = 0_u64;
     let mut audio_folders: Vec<AudioFolder> = vec![];
     let mut scanned: u64 = 0;
     let mut unreadable_total: u64 = 0;
@@ -1893,8 +1984,40 @@ fn build_index_from_folders(
         });
 
         let scanned_before = scanned;
-        let read_results = read_audio_paths_parallel(file_paths, |completed| {
-            let completed = scanned_before + completed as u64;
+        // 先按 mtime + 大小把未变的文件从旧索引还原出来，剩下的才真正读标签。
+        // SMB 上这一步把「每首歌一次打开文件 + 解析」降到「一次 metadata」。
+        let mut results: Vec<Option<Audio>> = Vec::with_capacity(file_paths.len());
+        let mut to_read: Vec<PathBuf> = Vec::new();
+        let mut to_read_slots: Vec<usize> = Vec::new();
+        for path in file_paths {
+            let key = path.to_string_lossy().to_string();
+            let reused = reusable
+                .as_ref()
+                .and_then(|records| records.get(&key))
+                .and_then(|record| {
+                    let metadata = fs::metadata(path).ok()?;
+                    let modified = metadata
+                        .modified()
+                        .unwrap_or(UNIX_EPOCH)
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or(Duration::ZERO)
+                        .as_secs();
+                    reusable_audio_from_record(record, modified, metadata.len())
+                });
+            match reused {
+                Some(audio) => results.push(Some(audio)),
+                None => {
+                    results.push(None);
+                    to_read_slots.push(results.len() - 1);
+                    to_read.push(path.clone());
+                }
+            }
+        }
+        let reused_in_folder = results.len() - to_read.len();
+
+        let read_results = read_audio_paths_parallel(&to_read, |completed| {
+            // 复用的文件视为瞬间完成，进度继续按全库总数推进。
+            let completed = scanned_before + reused_in_folder as u64 + completed as u64;
             if should_emit_index_progress(completed as usize, total as usize) {
                 let _ = sink.add(IndexActionState {
                     progress: if total == 0 {
@@ -1908,7 +2031,24 @@ fn build_index_from_folders(
                 });
             }
         });
-        let failed = read_results.iter().filter(|audio| audio.is_none()).count();
+        for (slot, audio) in to_read_slots.into_iter().zip(read_results) {
+            results[slot] = audio;
+        }
+        if to_read.is_empty() && reused_in_folder > 0 {
+            let completed = scanned_before + reused_in_folder as u64;
+            let _ = sink.add(IndexActionState {
+                progress: if total == 0 {
+                    1.0
+                } else {
+                    completed as f64 / total as f64
+                },
+                message: String::new(),
+                phase: IndexPhase::Scanning,
+                unreadable_total,
+            });
+        }
+
+        let failed = results.iter().filter(|audio| audio.is_none()).count();
         if failed > 0 {
             unreadable_total += failed as u64;
             log::warn!(
@@ -1918,8 +2058,10 @@ fn build_index_from_folders(
                 dir_path
             );
         }
-        let audios: Vec<Audio> = read_results.into_iter().flatten().collect();
+        let audios: Vec<Audio> = results.into_iter().flatten().collect();
         scanned += file_paths.len() as u64;
+        reused_total += reused_in_folder as u64;
+        reread_total += to_read.len() as u64;
         let latest = audios.iter().map(|audio| audio.created).max().unwrap_or(0);
 
         if !audios.is_empty() {
@@ -1935,6 +2077,15 @@ fn build_index_from_folders(
                 audios,
             });
         }
+    }
+
+    if remote {
+        log::info!(
+            target: "library",
+            "[perf] remote index reused={} reread={}",
+            reused_total,
+            reread_total
+        );
     }
 
     let mut audio_folders_json: Vec<serde_json::Value> = vec![];
@@ -2254,10 +2405,11 @@ mod tag_reader_tests {
 
     use super::{
         detect_and_encode, drop_invalid_duplicates_by_media_id, indexed_audio_update_from_parts,
-        is_lyric_item_key, join_deduped, parse_midi_metadata, probe_indexed_path,
-        read_audio_extra_metadata, read_by_asf, should_emit_index_progress,
+        is_lyric_item_key, join_deduped, load_reusable_remote_audios, parse_midi_metadata,
+        probe_indexed_path, read_audio_extra_metadata, read_by_asf,
+        reusable_audio_from_record, should_emit_index_progress,
         should_scan_indexed_audio_files, should_show_recording_date, tag_reader_worker_count_for,
-        Audio, IndexedAudioUpdate, SUPPORTED_FORMATS,
+        Audio, IndexedAudioUpdate, CURRENT_INDEX_VERSION, SUPPORTED_FORMATS,
     };
 
     fn asf_object(guid: [u8; 16], data: Vec<u8>) -> Vec<u8> {
@@ -2684,6 +2836,134 @@ mod tag_reader_tests {
         assert_eq!(drop_invalid_duplicates_by_media_id(&mut folders), 1);
         assert_eq!(folders[0]["audios"].as_array().unwrap().len(), 1);
         assert_eq!(folders[0]["audios"][0]["path"], "C:/Music/new.mp3");
+    }
+
+    fn sample_remote_audio() -> Audio {
+        Audio {
+            title: "Track".to_string(),
+            artist: "Artist".to_string(),
+            album: "Album".to_string(),
+            album_artist: Some("Album Artist".to_string()),
+            genre: Some("Rock".to_string()),
+            year: Some("2024".to_string()),
+            composer: Some("Composer".to_string()),
+            bpm: Some("128".to_string()),
+            track: Some(3),
+            disc: Some(1),
+            duration: 180,
+            bitrate: Some(320),
+            sample_rate: Some(44_100),
+            path: r"\\nas\music\track.flac".to_string(),
+            modified: 1_700_000_000,
+            created: 1_699_000_000,
+            by: Some("Lofty".to_string()),
+            size: 4096,
+            valid: true,
+            media_id: Some("win:1:2".to_string()),
+        }
+    }
+
+    fn temp_remote_index_dir(suffix: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "pure_music_remote_reuse_{}_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+            suffix
+        ))
+    }
+
+    #[test]
+    fn remote_reuse_restores_every_tag_field() {
+        let original = sample_remote_audio();
+        let record = original.to_json_value();
+        let restored = reusable_audio_from_record(&record, original.modified, original.size)
+            .expect("未变化的远程记录应被复用");
+        assert_eq!(restored.to_json_value(), record);
+    }
+
+    #[test]
+    fn remote_reuse_requires_unchanged_mtime_and_size() {
+        let original = sample_remote_audio();
+        let record = original.to_json_value();
+        assert!(
+            reusable_audio_from_record(&record, original.modified + 1, original.size).is_none()
+        );
+        assert!(
+            reusable_audio_from_record(&record, original.modified, original.size + 1).is_none()
+        );
+    }
+
+    #[test]
+    fn remote_reuse_rejects_invalid_or_incomplete_records() {
+        let original = sample_remote_audio();
+        let record = original.to_json_value();
+        let mut invalid = record.clone();
+        invalid["valid"] = serde_json::json!(false);
+        assert!(
+            reusable_audio_from_record(&invalid, original.modified, original.size).is_none()
+        );
+
+        for key in ["size", "modified", "duration", "created", "title", "path"] {
+            let mut incomplete = record.clone();
+            incomplete.as_object_mut().unwrap().remove(key);
+            assert!(
+                reusable_audio_from_record(&incomplete, original.modified, original.size).is_none(),
+                "缺少 {key} 时必须重新读标签"
+            );
+        }
+    }
+
+    #[test]
+    fn remote_index_loads_only_current_version_and_valid_records() {
+        let dir = temp_remote_index_dir("version");
+        std::fs::create_dir_all(&dir).unwrap();
+        let audio = sample_remote_audio();
+        let valid_record = audio.to_json_value();
+        let mut invalid_record = valid_record.clone();
+        invalid_record["path"] = serde_json::json!(r"\\nas\music\gone.flac");
+        invalid_record["valid"] = serde_json::json!(false);
+        let index = serde_json::json!({
+            "version": CURRENT_INDEX_VERSION,
+            "folders": [{
+                "path": r"\\nas\music",
+                "modified": 1_700_000_000_u64,
+                "latest": 1_699_000_000_u64,
+                "audios": [valid_record, invalid_record]
+            }]
+        });
+        std::fs::write(dir.join("index.json"), index.to_string()).unwrap();
+
+        let records = load_reusable_remote_audios(&dir).expect("当前版本索引应可复用");
+        assert!(records.contains_key(audio.path.as_str()));
+        assert!(!records.contains_key(r"\\nas\music\gone.flac"));
+
+        let stale = serde_json::json!({
+            "version": CURRENT_INDEX_VERSION - 1,
+            "folders": []
+        });
+        std::fs::write(dir.join("index.json"), stale.to_string()).unwrap();
+        assert!(load_reusable_remote_audios(&dir).is_none());
+
+        std::fs::write(dir.join("index.json"), b"not json").unwrap();
+        assert!(load_reusable_remote_audios(&dir).is_none());
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn unchanged_remote_library_reuses_every_record() {
+        let original = sample_remote_audio();
+        let record = original.to_json_value();
+        let mut reused = 0_u32;
+        for _ in 0..10_000 {
+            if reusable_audio_from_record(&record, original.modified, original.size).is_some() {
+                reused += 1;
+            }
+        }
+        assert_eq!(reused, 10_000);
     }
 }
 
