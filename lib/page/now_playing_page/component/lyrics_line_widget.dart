@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:math' show max;
+import 'dart:math' show max, min;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'
@@ -46,9 +46,15 @@ double lyricMonotonicPlaybackMs({
   required double predictedMs,
   required double nativeMs,
   double seekThresholdMs = 100,
+  double catchUpFactor = 0.15,
+  double maxCatchUpMs = 16,
 }) {
   if ((nativeMs - previousMs).abs() >= seekThresholdMs) return nativeMs;
   if (predictedMs < previousMs) return previousMs;
+  final error = nativeMs - predictedMs;
+  if (error > 2) {
+    return predictedMs + min(error * catchUpFactor, maxCatchUpMs);
+  }
   return predictedMs;
 }
 
