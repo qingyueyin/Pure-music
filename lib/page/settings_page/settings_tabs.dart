@@ -1890,7 +1890,7 @@ class _LyricsTabContent extends StatelessWidget {
         _GroupEntry(
           icon: Symbols.translate,
           title: '歌词内容',
-          subtitle: '歌曲信息与文字转换',
+          subtitle: '歌曲信息、文字转换与换行',
           groupId: 'lyric-content',
         ),
         SizedBox(height: 8.0),
@@ -3675,7 +3675,7 @@ const _settingsGroups = <String, _SettingsGroupDesc>{
   'lyric-source': _SettingsGroupDesc('歌词来源', '外置、内嵌与在线来源', _LyricSourceGroup()),
   'lyric-content': _SettingsGroupDesc(
     '歌词内容',
-    '歌曲信息与文字转换',
+    '歌曲信息、文字转换与换行',
     _LyricContentGroup(),
   ),
   'lyric-writing': _SettingsGroupDesc(
@@ -4171,6 +4171,21 @@ class _LyricContentGroupState extends State<_LyricContentGroup> {
               settings.saveSettings();
               PlayService.instance.lyricService
                   .reloadAfterMetadataSettingChange();
+            },
+          ),
+        ),
+        const SizedBox(height: 24.0),
+        const SettingsSectionHeader('长句换行'),
+        const SizedBox(height: 4.0),
+        SettingsTile(
+          description: '平衡换行',
+          subtitle: settings.lyricBalancedWrap ? '长句按宽度均衡断行' : '保持原来的排版',
+          action: Switch(
+            value: settings.lyricBalancedWrap,
+            onChanged: (value) {
+              setState(() => settings.lyricBalancedWrap = value);
+              settings.saveSettings();
+              LyricViewController.instance.triggerRebuild();
             },
           ),
         ),

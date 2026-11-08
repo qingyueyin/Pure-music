@@ -679,6 +679,7 @@ class _LineLayoutKey {
   final String? fontFamily;
   final String? agent;
   final ZhConversionMode zhMode;
+  final bool balancedWrap;
   final bool isMainLine;
   final bool hasTranslation;
   final bool hasRoman;
@@ -691,6 +692,7 @@ class _LineLayoutKey {
     required this.fontFamily,
     required this.agent,
     required this.zhMode,
+    required this.balancedWrap,
     required this.isMainLine,
     required this.hasTranslation,
     required this.hasRoman,
@@ -701,6 +703,7 @@ class _LineLayoutKey {
          fontFamily,
          agent,
          zhMode,
+         balancedWrap,
          isMainLine,
          hasTranslation,
          hasRoman,
@@ -716,6 +719,7 @@ class _LineLayoutKey {
         other.fontFamily == fontFamily &&
         other.agent == agent &&
         other.zhMode == zhMode &&
+        other.balancedWrap == balancedWrap &&
         other.isMainLine == isMainLine &&
         other.hasTranslation == hasTranslation &&
         other.hasRoman == hasRoman;
@@ -845,6 +849,306 @@ void layoutTimedWordChars({
     cursor.x += width;
     cursor.firstOnLine = false;
   }
+}
+
+/// 行首禁则：不能出现在行首的字符
+const _noLineStartChars =
+    '，。、！？；：,.!?;:）)］]｝}」』】》〉…—～·'
+    'ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮーんン'
+    '々〻ゝゞヽヾ的';
+
+/// 行尾禁则：不能出现在行尾的字符
+const _noLineEndChars =
+    '（(［[｛{「『【《〈'
+    'ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮー';
+
+bool _isSpaceChar(String char) => char == ' ' || char == '\u3000';
+
+/// 假名：日文断行时尽量避免把假名留在行首，优先在汉字前断
+bool _isKanaChar(String char) {
+  final code = char.runes.first;
+  return (code >= 0x3041 && code <= 0x309F) ||
+      (code >= 0x30A1 && code <= 0x30FF);
+}
+
+bool _isHiraganaChar(String char) {
+  final code = char.runes.first;
+  return code >= 0x3041 && code <= 0x309F;
+}
+
+bool _isKatakanaChar(String char) {
+  final code = char.runes.first;
+  return code >= 0x30A1 && code <= 0x30FF;
+}
+
+/// 助词：断在助词前后比断在词中间自然
+bool _isParticleChar(String char) => 'のをにがはでともへやかねよなさ'.contains(char);
+
+/// 汉字：两个汉字之间断开会拆散熟语
+bool _isKanjiChar(String char) {
+  final code = char.runes.first;
+  return (code >= 0x4E00 && code <= 0x9FFF) ||
+      (code >= 0x3400 && code <= 0x4DBF);
+}
+
+/// 标点后断行更自然
+bool _isBreakAfterPunct(String char) =>
+    '、。，．！？；：…‥,;:!?'.contains(char);
+
+/// 中文里必须跟后面的词连在一起的虚词，断在其后会拆开词
+const _cjkLeadingChars =
+    '很太更最不没别被把让给在从向对和与跟为就才都也还又再只正刚已将会能要想敢肯是有';
+
+/// 中文里必须跟前面的词连在一起的虚词，断在其前会拆开词
+const _cjkTrailingChars = '的了着过们么吗呢吧啊呀哦';
+
+/// 断点前是 1~2 个假名、更往前是汉字时多半是送假名，拆开会断词
+bool _isOkuriganaBreakBefore(List<String> chars, int index) {
+  if (index <= 0 || index >= chars.length) return false;
+  final prev = chars[index - 1];
+  if (!_isKanaChar(prev)) return false;
+  var i = index - 1;
+  var run = 0;
+  while (i >= 0 && _isKanaChar(chars[i])) {
+    run++;
+    i--;
+  }
+  // 单个助词跟在汉字后是正常断点，如「何が / できる」
+  if (run == 1 && _isParticleChar(prev)) return false;
+  if (run > 2) return false;
+  return i >= 0 && _isKanjiChar(chars[i]);
+}
+
+class _MeasuredWord {
+  final List<String> chars;
+  final List<double> widths;
+  final double width;
+  final double durationSec;
+
+  const _MeasuredWord({
+    required this.chars,
+    required this.widths,
+    required this.width,
+    required this.durationSec,
+  });
+
+  const _MeasuredWord.empty()
+    : chars = const [],
+      widths = const [],
+      width = 0.0,
+      durationSec = 0.0;
+}
+
+/// 按断行单元做动态规划，让多行歌词各行宽度尽量接近
+/// 返回每行起始字符的全局下标；单行或无法平衡时返回 null，保持原有贪心排版
+@visibleForTesting
+Set<int>? balancedLyricBreaks({
+  required List<List<String>> words,
+  required List<List<double>> widths,
+  required double maxWidth,
+  required double wordGap,
+}) {
+  final limit = maxWidth - 1.0;
+  final unitWidths = <double>[];
+  final unitTrail = <double>[];
+  final unitStarts = <int>[];
+  final unitFirst = <String>[];
+  final unitLast = <String>[];
+  final unitWordStart = <bool>[];
+  final unitWordWidth = <double>[];
+  final unitTokenStart = <bool>[];
+
+  var globalIndex = 0;
+  var hasWord = false;
+  final flatChars = <String>[];
+  for (var wi = 0; wi < words.length; wi++) {
+    final chars = words[wi];
+    final charWidths = widths[wi];
+    if (chars.isEmpty) continue;
+    flatChars.addAll(chars);
+    if (hasWord) {
+      // 词间空隙计入前一个词的词尾，断行时不计入行宽
+      final last = unitWidths.length - 1;
+      unitWidths[last] += wordGap;
+      unitTrail[last] += wordGap;
+    }
+    hasWord = true;
+    var wordWidth = 0.0;
+    for (final w in charWidths) {
+      wordWidth += w;
+    }
+    var isWordStart = true;
+    var i = 0;
+    while (i < chars.length) {
+      final start = i;
+      final isToken = _isWrapTokenChar(chars[i]);
+      if (isToken) {
+        while (i < chars.length && _isWrapTokenChar(chars[i])) {
+          i++;
+        }
+        while (i < chars.length && !_isWrapTokenChar(chars[i])) {
+          i++;
+        }
+      } else {
+        while (i < chars.length && !_isWrapTokenChar(chars[i])) {
+          i++;
+        }
+      }
+      var unitWidth = 0.0;
+      for (var k = start; k < i; k++) {
+        unitWidth += charWidths[k];
+      }
+      // 词尾空格不计入行宽
+      var trailWidth = 0.0;
+      if (isToken) {
+        var trailStart = i;
+        while (trailStart > start && !_isWrapTokenChar(chars[trailStart - 1])) {
+          trailStart--;
+        }
+        for (var k = trailStart; k < i; k++) {
+          trailWidth += charWidths[k];
+        }
+      }
+      if (unitWidth - trailWidth > limit && i - start > 1) {
+        for (var k = start; k < i; k++) {
+          unitWidths.add(charWidths[k]);
+          unitTrail.add(0.0);
+          unitStarts.add(globalIndex + k);
+          unitFirst.add(chars[k]);
+          unitLast.add(chars[k]);
+          unitWordStart.add(isWordStart && k == start);
+          unitWordWidth.add(wordWidth);
+          unitTokenStart.add(k == start);
+        }
+      } else {
+        unitWidths.add(unitWidth);
+        unitTrail.add(trailWidth);
+        unitStarts.add(globalIndex + start);
+        unitFirst.add(chars[start]);
+        unitLast.add(chars[i - 1]);
+        unitWordStart.add(isWordStart);
+        unitWordWidth.add(wordWidth);
+        unitTokenStart.add(true);
+      }
+      isWordStart = false;
+    }
+    globalIndex += chars.length;
+  }
+
+  final n = unitWidths.length;
+  if (n < 2) return null;
+
+  final canBreak = List<bool>.filled(n, true);
+  final breakCost = List<double>.filled(n, 0.0);
+  final particlePenalty = maxWidth * maxWidth * 0.08;
+  final kanaPenalty = maxWidth * maxWidth * 0.10;
+  final okuriganaPenalty = maxWidth * maxWidth * 0.18;
+  final kanjiPenalty = maxWidth * maxWidth * 0.08;
+  final cjkWordPenalty = maxWidth * maxWidth * 0.12;
+  final spaceBonus = maxWidth * maxWidth * 0.03;
+  final punctBonus = maxWidth * maxWidth * 0.03;
+  final scriptBonus = maxWidth * maxWidth * 0.05;
+  final inTokenPenalty = maxWidth * maxWidth * 0.06;
+  // 没有假名的行（中文等）用虚词规则，避免拆开「的就」「都写」这类组合
+  final cjkOnly = !flatChars.any(_isKanaChar);
+  for (var u = 1; u < n; u++) {
+    final first = unitFirst[u];
+    final prevLast = unitLast[u - 1];
+    canBreak[u] =
+        !_isSpaceChar(first) &&
+        !_noLineStartChars.contains(first) &&
+        !_noLineEndChars.contains(prevLast);
+    if (!unitTokenStart[u]) {
+      breakCost[u] += inTokenPenalty;
+    }
+    if (_isSpaceChar(prevLast)) {
+      breakCost[u] -= spaceBonus;
+    } else if (_isBreakAfterPunct(prevLast)) {
+      breakCost[u] -= punctBonus;
+    } else if (cjkOnly &&
+        (_cjkTrailingChars.contains(first) ||
+            _cjkLeadingChars.contains(prevLast))) {
+      breakCost[u] += cjkWordPenalty;
+    } else if (_isKanaChar(first) && _isParticleChar(first)) {
+      breakCost[u] += particlePenalty;
+    } else if ((_isHiraganaChar(prevLast) && _isKatakanaChar(first)) ||
+        (_isKatakanaChar(prevLast) && _isHiraganaChar(first))) {
+      // 平假名与片假名交界是自然断点
+      breakCost[u] -= scriptBonus;
+    } else if (_isKanaChar(first)) {
+      if (!unitTokenStart[u] &&
+          _isOkuriganaBreakBefore(flatChars, unitStarts[u])) {
+        breakCost[u] += okuriganaPenalty;
+      } else if (_isKanjiChar(prevLast)) {
+        breakCost[u] += okuriganaPenalty;
+      } else {
+        breakCost[u] += kanaPenalty;
+      }
+    } else if (_isKanjiChar(prevLast) && _isKanjiChar(first)) {
+      breakCost[u] += kanjiPenalty;
+    }
+  }
+
+  var lineCount = 1;
+  var lineWidth = 0.0;
+  for (var u = 0; u < n; u++) {
+    if (lineWidth > 0) {
+      final visual = lineWidth - unitTrail[u - 1];
+      final wordFits =
+          !unitWordStart[u] || visual + unitWordWidth[u] <= limit;
+      final unitFits =
+          visual + unitWidths[u] - (u == n - 1 ? unitTrail[u] : 0.0) <= limit;
+      if (!wordFits || !unitFits) {
+        lineCount++;
+        lineWidth = 0.0;
+      }
+    }
+    lineWidth += unitWidths[u];
+  }
+  if (lineCount <= 1) return null;
+
+  final prefix = List<double>.filled(n + 1, 0.0);
+  for (var u = 0; u < n; u++) {
+    prefix[u + 1] = prefix[u] + unitWidths[u];
+  }
+
+  const inf = double.infinity;
+  final cost = List.generate(
+    lineCount + 1,
+    (_) => List<double>.filled(n + 1, inf),
+  );
+  final from = List.generate(
+    lineCount + 1,
+    (_) => List<int>.filled(n + 1, -1),
+  );
+  cost[0][0] = 0.0;
+  for (var line = 1; line <= lineCount; line++) {
+    for (var end = line; end <= n; end++) {
+      for (var start = line - 1; start < end; start++) {
+        final prev = cost[line - 1][start];
+        if (prev == inf) continue;
+        if (start > 0 && !canBreak[start]) continue;
+        final width = prefix[end] - prefix[start] - unitTrail[end - 1];
+        if (width > limit) continue;
+        final slack = maxWidth - width;
+        final next = prev + slack * slack + breakCost[start];
+        if (next < cost[line][end]) {
+          cost[line][end] = next;
+          from[line][end] = start;
+        }
+      }
+    }
+  }
+  if (from[lineCount][n] < 0) return null;
+
+  final breaks = <int>{};
+  var end = n;
+  for (var line = lineCount; line > 1; line--) {
+    final start = from[line][end];
+    breaks.add(unitStarts[start]);
+    end = start;
+  }
+  return breaks;
 }
 
 class LyricsLinePainter extends CustomPainter {
@@ -2665,6 +2969,7 @@ class LyricsLinePainter extends CustomPainter {
       fontFamily: fontFamily,
       agent: agent,
       zhMode: zhMode,
+      balancedWrap: AppSettings.instance.lyricBalancedWrap,
       isMainLine: isMainLine,
       hasTranslation: hasTranslation,
       hasRoman: hasRoman,
@@ -2721,11 +3026,10 @@ class LyricsLinePainter extends CustomPainter {
     final charInfos = <_CharInfo>[];
     final wordTotalChars = List<int>.filled(syncLine.words.length, 0);
     final contentRight = padding.left + maxWidth;
-    final layoutCursor = LyricWordLayoutCursor(
-      x: padding.left,
-      y: startY,
-      firstOnLine: true,
-    );
+    final wordGap = fontSize * 0.12;
+
+    // 先量出每个词的字符宽度，再统一决定断行位置
+    final measuredWords = <_MeasuredWord>[];
     for (int wordIndex = 0; wordIndex < syncLine.words.length; wordIndex++) {
       final word = syncLine.words[wordIndex];
       final isObscene = word.obscene;
@@ -2733,7 +3037,10 @@ class LyricsLinePainter extends CustomPainter {
           ? word.content.runes.length
           : word.content.characters.length;
       wordTotalChars[wordIndex] = totalChars;
-      if (totalChars == 0) continue;
+      if (totalChars == 0) {
+        measuredWords.add(const _MeasuredWord.empty());
+        continue;
+      }
       final wordDurationSec = word.length.inMilliseconds / 1000.0;
 
       final convertedChars = <String>[];
@@ -2775,29 +3082,94 @@ class LyricsLinePainter extends CustomPainter {
         }
       }
 
-      if (!layoutCursor.firstOnLine &&
-          layoutCursor.x + wordWidth > contentRight - 1.0) {
-        layoutCursor.x = padding.left;
-        layoutCursor.y += lineHeight;
-        layoutCursor.firstOnLine = true;
-        layoutCursor.visualLineCount++;
-      }
+      measuredWords.add(
+        _MeasuredWord(
+          chars: convertedChars,
+          widths: charWidths,
+          width: wordWidth,
+          durationSec: wordDurationSec,
+        ),
+      );
+    }
 
-      int animIndex = 0;
-      layoutTimedWordChars(
-        chars: convertedChars,
-        widths: charWidths,
-        contentLeft: padding.left,
-        contentRight: contentRight,
-        lineHeight: lineHeight,
-        cursor: layoutCursor,
-        onPlace: (i, x, y) {
+    final breakPlan = AppSettings.instance.lyricBalancedWrap
+        ? balancedLyricBreaks(
+            words: [for (final measured in measuredWords) measured.chars],
+            widths: [for (final measured in measuredWords) measured.widths],
+            maxWidth: maxWidth,
+            wordGap: wordGap,
+          )
+        : null;
+
+    final layoutCursor = LyricWordLayoutCursor(
+      x: padding.left,
+      y: startY,
+      firstOnLine: true,
+    );
+    var globalCharIndex = 0;
+    for (int wordIndex = 0; wordIndex < measuredWords.length; wordIndex++) {
+      final measured = measuredWords[wordIndex];
+      if (measured.chars.isEmpty) continue;
+      final wordDurationSec = measured.durationSec;
+
+      if (breakPlan == null) {
+        if (!layoutCursor.firstOnLine &&
+            layoutCursor.x + measured.width > contentRight - 1.0) {
+          layoutCursor.x = padding.left;
+          layoutCursor.y += lineHeight;
+          layoutCursor.firstOnLine = true;
+          layoutCursor.visualLineCount++;
+        }
+
+        int animIndex = 0;
+        layoutTimedWordChars(
+          chars: measured.chars,
+          widths: measured.widths,
+          contentLeft: padding.left,
+          contentRight: contentRight,
+          lineHeight: lineHeight,
+          cursor: layoutCursor,
+          onPlace: (i, x, y) {
+            charInfos.add(
+              _CharInfo(
+                char: measured.chars[i],
+                x: x,
+                y: y,
+                width: measured.widths[i],
+                yLift: 0.0,
+                charProgress: 0.0,
+                wordProgress: 0.0,
+                effectProgress: 0.0,
+                wordIndex: wordIndex,
+                wordCharIndex: animIndex,
+                wordDurationSec: wordDurationSec,
+              ),
+            );
+            animIndex++;
+          },
+        );
+      } else {
+        int animIndex = 0;
+        for (int i = 0; i < measured.chars.length; i++) {
+          if (breakPlan.contains(globalCharIndex + i)) {
+            layoutCursor.x = padding.left;
+            layoutCursor.y += lineHeight;
+            layoutCursor.firstOnLine = true;
+            layoutCursor.visualLineCount++;
+          }
+          final char = measured.chars[i];
+          if (_isZeroWidth(char)) continue;
+          if (char == ' ' && layoutCursor.firstOnLine) continue;
+          if (char == ' ' &&
+              layoutCursor.x + measured.widths[i] > contentRight - 1.0) {
+            continue;
+          }
           charInfos.add(
             _CharInfo(
-              char: convertedChars[i],
-              x: x,
-              y: y,
-              width: charWidths[i],
+              char: char,
+              x: layoutCursor.x,
+              y: layoutCursor.y,
+              width: measured.widths[i],
               yLift: 0.0,
               charProgress: 0.0,
               wordProgress: 0.0,
@@ -2807,11 +3179,14 @@ class LyricsLinePainter extends CustomPainter {
               wordDurationSec: wordDurationSec,
             ),
           );
+          layoutCursor.x += measured.widths[i];
+          layoutCursor.firstOnLine = false;
           animIndex++;
-        },
-      );
+        }
+      }
       // 词间间距，匹配 Widget 路径的 SizedBox(width: primarySize * 0.12)
-      layoutCursor.x += fontSize * 0.12;
+      layoutCursor.x += wordGap;
+      globalCharIndex += measured.chars.length;
     }
     recycleTextPainter(measureTp);
     final endY = layoutCursor.y + lineHeight;

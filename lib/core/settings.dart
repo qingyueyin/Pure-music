@@ -252,6 +252,7 @@ class AppSettings {
   bool showTranslation = true;
   bool showRomanization = true;
   bool keepLyricMetadata = true;
+  bool lyricBalancedWrap = true;
   bool showDesktopLyricRoman = true;
   int desktopLyricRomanPosition = 1;
   bool desktopShowTranslation = true;
@@ -637,6 +638,13 @@ class AppSettings {
     if (klm != null) {
       _instance.keepLyricMetadata = normalizedBoolSetting(
         klm,
+        defaultValue: true,
+      );
+    }
+    final lbw = settingsMap['LyricBalancedWrap'];
+    if (lbw != null) {
+      _instance.lyricBalancedWrap = normalizedBoolSetting(
+        lbw,
         defaultValue: true,
       );
     }
@@ -1259,6 +1267,7 @@ class AppSettings {
     'ShowTranslation': showTranslation,
     'ShowRomanization': showRomanization,
     'KeepLyricMetadata': keepLyricMetadata,
+    'LyricBalancedWrap': lyricBalancedWrap,
     'ZhConversionMode': zhConversionMode.name,
     'PromptWriteLyricToTagDelay': promptWriteLyricToTagDelay,
     'LyricWriteMode': lyricWriteMode.name,
