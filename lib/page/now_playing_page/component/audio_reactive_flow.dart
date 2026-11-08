@@ -99,8 +99,8 @@ bool audioReactiveFlowWriteSpectrum({
   required bool pageSettled,
   required bool awaitingPlaybackSpectrum,
   required AudioReactiveFlowResponse incoming,
-  required AudioReactiveFlowNormalizer normalizer,
-  required AudioReactiveFlowEnvelope envelope,
+  required AudioReactiveFlowEngine engine,
+  double? dtSeconds,
 }) {
   if (!pageSettled) return awaitingPlaybackSpectrum;
   if (audioReactiveFlowShouldHoldEnvelope(
@@ -109,7 +109,7 @@ bool audioReactiveFlowWriteSpectrum({
   )) {
     return true;
   }
-  envelope.update(normalizer.update(incoming));
+  engine.update(incoming, dtSeconds: dtSeconds);
   return false;
 }
 
@@ -249,5 +249,163 @@ final class AudioReactiveFlowNormalizer {
   /// 基线还在的话恢复第一帧就按旧峰值归一化，包络不归零重爬。
   void resumeFromPause() {
     _hasPeak = _smoothedPeak > 0;
+  }
+}
+
+/// 新旧两套律动的统一入口，由设置里的临时对照开关切换。
+/// 旧版保持原样；新版换成滚动底噪 + 相对门限 + 时间常数包络。
+final class AudioReactiveFlowEngine {
+  AudioReactiveFlowEngine({bool legacy = true}) : _legacy = legacy;
+
+  /// 频谱固定 15Hz；首帧或异常间隔时用它兜底。
+  static const double nominalDtSeconds = 1 / 15;
+  static const double _maxDtSeconds = .25;
+
+  final AudioReactiveFlowNormalizer _legacyNormalizer =
+      AudioReactiveFlowNormalizer();
+  final AudioReactiveFlowEnvelope _legacyEnvelope = AudioReactiveFlowEnvelope();
+  final _RollingFloorBands _bands = _RollingFloorBands();
+  AudioReactiveFlowResponse _value = AudioReactiveFlowResponse.zero;
+  bool _legacy;
+
+  AudioReactiveFlowResponse get value => _value;
+
+  bool get legacy => _legacy;
+
+  set legacy(bool value) {
+    if (value == _legacy) return;
+    _legacy = value;
+    reset();
+  }
+
+  void update(AudioReactiveFlowResponse incoming, {double? dtSeconds}) {
+    final dt = dtSeconds == null || !dtSeconds.isFinite || dtSeconds <= 0
+        ? nominalDtSeconds
+        : math.min(dtSeconds, _maxDtSeconds);
+    _value = _legacy
+        ? _legacyEnvelope.update(_legacyNormalizer.update(incoming))
+        : _bands.update(incoming, dt);
+  }
+
+  /// 短暂断流后恢复：旧版沿用峰值记忆，新版从当前值慢慢释放。
+  void resumeFromPause() {
+    _legacyNormalizer.resumeFromPause();
+    _bands.resume();
+  }
+
+  void reset() {
+    _legacyNormalizer.reset();
+    _legacyEnvelope.reset();
+    _bands.reset();
+    _value = AudioReactiveFlowResponse.zero;
+  }
+}
+
+/// 三个频段各自跟一条 0.65s 滚动底噪，只把「高出底噪的部分」当作律动。
+/// 门限带迟滞和死区，1% 级别的抖动不会变成可见形变。
+final class _RollingFloorBands {
+  static const double floorTauSeconds = .65;
+  static const double attackTauSeconds = .03;
+  static const double releaseTauSeconds = .12;
+  static const double holdSeconds = .18;
+  static const double riseOffset = .025;
+  static const double riseSoftness = .06;
+  static const double enterMargin = .03;
+  static const double stayMargin = .015;
+  static const double absoluteGate = .02;
+  static const double deadband = .01;
+
+  final _RollingFloorBand _low = _RollingFloorBand();
+  final _RollingFloorBand _mid = _RollingFloorBand();
+  final _RollingFloorBand _high = _RollingFloorBand();
+
+  AudioReactiveFlowResponse update(
+    AudioReactiveFlowResponse incoming,
+    double dtSeconds,
+  ) {
+    return AudioReactiveFlowResponse(
+      _low.update(incoming.low, dtSeconds),
+      _mid.update(incoming.mid, dtSeconds),
+      _high.update(incoming.high, dtSeconds),
+    );
+  }
+
+  void resume() {
+    _low.resume();
+    _mid.resume();
+    _high.resume();
+  }
+
+  void reset() {
+    _low.reset();
+    _mid.reset();
+    _high.reset();
+  }
+}
+
+final class _RollingFloorBand {
+  double _floor = -1;
+  double _value = 0;
+  double _held = 0;
+  double _heldFor = 0;
+  bool _active = false;
+
+  double update(double level, double dtSeconds) {
+    final incoming = _unit(level);
+    if (_floor < 0) {
+      // 首帧只记录底噪，输出保持 0，避免一有声音就跳满。
+      _floor = incoming;
+      return _value;
+    }
+    final floorStep =
+        1 - math.exp(-dtSeconds / _RollingFloorBands.floorTauSeconds);
+    _floor += (incoming - _floor) * floorStep;
+    final above = incoming - _floor;
+    _active =
+        incoming >= _RollingFloorBands.absoluteGate &&
+        (above >= _RollingFloorBands.enterMargin ||
+            (_active && above >= _RollingFloorBands.stayMargin));
+
+    final target = _active ? _shape(above) : 0.0;
+    if (target > _value) {
+      final step =
+          1 - math.exp(-dtSeconds / _RollingFloorBands.attackTauSeconds);
+      _value += (target - _value) * step;
+      _held = _value;
+      _heldFor = 0;
+      return _value;
+    }
+    if (_heldFor < _RollingFloorBands.holdSeconds) {
+      _heldFor += dtSeconds;
+      _value = _held;
+      return _value;
+    }
+    if (_held - target > _RollingFloorBands.deadband) {
+      final step =
+          1 - math.exp(-dtSeconds / _RollingFloorBands.releaseTauSeconds);
+      _value += (target - _value) * step;
+    } else {
+      // 死区内的回落不动，防止底噪波动被放大成抖动。
+      _value = _held;
+    }
+    return _value;
+  }
+
+  double _shape(double above) {
+    final rise = math.max(0.0, above - _RollingFloorBands.riseOffset);
+    return rise / (_RollingFloorBands.riseSoftness + rise);
+  }
+
+  void resume() {
+    _held = _value;
+    _heldFor = _RollingFloorBands.holdSeconds;
+  }
+
+  void reset() {
+    _floor = -1;
+    _value = 0;
+    _held = 0;
+    _heldFor = 0;
+    _active = false;
   }
 }

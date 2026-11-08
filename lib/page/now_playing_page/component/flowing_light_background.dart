@@ -175,10 +175,10 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
   final _FlowMotionState _motion = _FlowMotionState();
   Duration? _lastTickElapsed;
   Duration? _lastPaintElapsed;
+  Duration? _lastSpectrumElapsed;
 
   final ValueNotifier<int> _frameNotifier = ValueNotifier(0);
-  final AudioReactiveFlowEnvelope _envelope = AudioReactiveFlowEnvelope();
-  final AudioReactiveFlowNormalizer _normalizer = AudioReactiveFlowNormalizer();
+  final AudioReactiveFlowEngine _engine = AudioReactiveFlowEngine();
   final _FlowAudioState _audio = _FlowAudioState();
   ui.FragmentShader? _gaussianHorizontal;
   ui.FragmentShader? _gaussianVertical;
@@ -283,6 +283,7 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
       repaint: _frameNotifier,
     );
     _blurHandle.filter = _fallbackBlurFilter(_kBlurSigma);
+    _engine.legacy = widget.inputs.legacyAudioReactiveFlow;
     _scheduleCoverDecode();
     final cachedProgram = _cachedGaussianProgram;
     if (cachedProgram != null) {
@@ -336,6 +337,15 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
         oldWidget.inputs.audioReactiveFlow) {
       _resetAudioResponse();
     }
+    if (widget.inputs.legacyAudioReactiveFlow !=
+        oldWidget.inputs.legacyAudioReactiveFlow) {
+      _engine.legacy = widget.inputs.legacyAudioReactiveFlow;
+      _lastSpectrumElapsed = null;
+      _resetAudioVisual();
+    }
+    if (widget.inputs.trackId != oldWidget.inputs.trackId) {
+      _resetAudioResponse();
+    }
     final needsSync =
         !identical(
           widget.inputs.albumCoverBytes,
@@ -371,10 +381,10 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
         if (_spectrumPausedAt == null ||
             DateTime.now().difference(_spectrumPausedAt!) >
                 const Duration(seconds: 10)) {
-          _normalizer.reset();
+          _engine.reset();
           _resetAudioVisual();
         } else {
-          _normalizer.resumeFromPause();
+          _engine.resumeFromPause();
         }
         _audio.markListenStarted();
         _spectrumSubscription = stream.listen(_handleSpectrum);
@@ -412,23 +422,30 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     if (_disposed) return;
     if (!widget.inputs.audioReactiveFlow) return;
     final response = AudioReactiveFlowResponse.fromBands(bands);
+    final elapsed = _transitionClock.elapsed;
+    final previous = _lastSpectrumElapsed;
+    _lastSpectrumElapsed = elapsed;
+    final dtSeconds = previous == null
+        ? null
+        : (elapsed - previous).inMicroseconds /
+              Duration.microsecondsPerSecond;
     // 离开播放页或过渡中不写色场，包络停在离开时的值。
     _audio.awaitingPlaybackSpectrum = audioReactiveFlowWriteSpectrum(
       pageSettled: _routeTransitionSettled,
       awaitingPlaybackSpectrum: _audio.awaitingPlaybackSpectrum,
       incoming: response,
-      normalizer: _normalizer,
-      envelope: _envelope,
+      engine: _engine,
+      dtSeconds: dtSeconds,
     );
   }
 
   void _resetAudioVisual() {
-    _envelope.reset();
     _audio.reset();
   }
 
   void _resetAudioResponse() {
-    _normalizer.reset();
+    _engine.reset();
+    _lastSpectrumElapsed = null;
     _resetAudioVisual();
   }
 
@@ -551,7 +568,7 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
       _audio.reset();
       return;
     }
-    final env = _envelope.value;
+    final env = _engine.value;
     _audio.low = audioReactiveFlowCurve(env.low);
     _audio.mid = audioReactiveFlowCurve(env.mid);
     _audio.high = audioReactiveFlowCurve(env.high);

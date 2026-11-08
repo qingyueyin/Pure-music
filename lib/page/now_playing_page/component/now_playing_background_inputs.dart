@@ -15,6 +15,12 @@ class NowPlayingBackgroundInputs {
   final double intensity;
   final bool audioReactiveFlow;
 
+  /// true 用旧版（AGC + 峰值保持），false 用新版（底噪 + 门限）。
+  final bool legacyAudioReactiveFlow;
+
+  /// 当前曲目的稳定标识，用于切歌时重置律动包络。
+  final String? trackId;
+
   /// Pre-extracted palette colors from Rust k-means.
   /// When non-null, backgrounds MUST use these instead of calling
   /// extractColorsFromImage again, avoiding duplicate native image decoding.
@@ -31,6 +37,8 @@ class NowPlayingBackgroundInputs {
     this.flowSpeed = 1.0,
     this.intensity = 1.0,
     this.audioReactiveFlow = false,
+    this.legacyAudioReactiveFlow = true,
+    this.trackId,
     this.preExtractedColors,
   });
 
@@ -55,6 +63,8 @@ class NowPlayingBackgroundInputs {
     double? flowSpeed,
     double? intensity,
     bool? audioReactiveFlow,
+    bool? legacyAudioReactiveFlow,
+    String? trackId,
     List<Color>? preExtractedColors,
   }) {
     return NowPlayingBackgroundInputs(
@@ -69,6 +79,9 @@ class NowPlayingBackgroundInputs {
       flowSpeed: flowSpeed ?? this.flowSpeed,
       intensity: intensity ?? this.intensity,
       audioReactiveFlow: audioReactiveFlow ?? this.audioReactiveFlow,
+      legacyAudioReactiveFlow:
+          legacyAudioReactiveFlow ?? this.legacyAudioReactiveFlow,
+      trackId: trackId ?? this.trackId,
       preExtractedColors: preExtractedColors ?? this.preExtractedColors,
     );
   }
