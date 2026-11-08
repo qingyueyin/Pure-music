@@ -3504,32 +3504,20 @@ class _DefaultLyricSourceControlState extends State<DefaultLyricSourceControl> {
   }
 
   Widget _sourceRow(LyricSourceType source, int index, ColorScheme scheme) {
-    return SizedBox(
+    return ListTile(
       key: ValueKey(source.name),
-      height: 52,
-      child: Row(
-        children: [
-          ReorderableDragStartListener(
-            index: index,
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Icon(
-                Symbols.drag_indicator,
-                color: scheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              _sourceLabels[source] ?? source.name,
-              style: TextStyle(color: scheme.onSurface, fontSize: AppType.body),
-            ),
-          ),
-          Switch(
-            value: settings.enabledOnlineLyricSources.contains(source),
-            onChanged: (value) => _setSourceEnabled(source, value),
-          ),
-        ],
+      contentPadding: const EdgeInsets.only(left: 4, right: 4),
+      leading: ReorderableDragStartListener(
+        index: index,
+        child: Icon(Symbols.drag_indicator, color: scheme.onSurfaceVariant),
+      ),
+      title: Text(
+        _sourceLabels[source] ?? source.name,
+        style: TextStyle(color: scheme.onSurface, fontSize: AppType.body),
+      ),
+      trailing: Switch(
+        value: settings.enabledOnlineLyricSources.contains(source),
+        onChanged: (value) => _setSourceEnabled(source, value),
       ),
     );
   }
