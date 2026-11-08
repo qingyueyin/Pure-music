@@ -306,10 +306,10 @@ final class AudioReactiveFlowEngine {
 final class _RollingFloorBands {
   static const double floorTauSeconds = .65;
   static const double attackTauSeconds = .03;
-  static const double releaseTauSeconds = .12;
-  static const double holdSeconds = .18;
-  static const double riseOffset = .025;
-  static const double riseSoftness = .06;
+  static const double releaseTauSeconds = .09;
+  static const double holdSeconds = .06;
+  static const double riseOffset = .03;
+  static const double riseFullScale = .30;
   static const double enterMargin = .03;
   static const double stayMargin = .015;
   static const double absoluteGate = .02;
@@ -392,8 +392,10 @@ final class _RollingFloorBand {
   }
 
   double _shape(double above) {
-    final rise = math.max(0.0, above - _RollingFloorBands.riseOffset);
-    return rise / (_RollingFloorBands.riseSoftness + rise);
+    final rise = above - _RollingFloorBands.riseOffset;
+    if (rise <= 0) return 0;
+    // 线性映射保留强弱差别；软饱和会把所有鼓点压到同一档，看起来像整体放大。
+    return (rise / _RollingFloorBands.riseFullScale).clamp(0.0, 1.0).toDouble();
   }
 
   void resume() {
