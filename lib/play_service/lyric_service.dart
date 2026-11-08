@@ -1092,24 +1092,28 @@ class LyricService extends ChangeNotifier {
   int _beginLyricRequest(String path) {
     LyricRequestScheduler.instance.beginInteractive();
     currLyricFuture.ignore();
+    // 同一首歌重新取词时保留当前歌词，避免刷新/换源失败后闪空。
+    final keepCurrent = path == _activeLyricPath && _currLyric != null;
     _activeLyricPath = path;
     _lyricRequestToken += 1;
-    _currLyric = null;
-    _ttmlTimeline = null;
-    _ttmlGeneration++;
-    playService.desktopLyricService.sendFullLyricMessage(Lyric.empty);
-    _syncLineAdvanceTimer();
-    _lineRenderStartMs = const [];
-    _lineSwitchStartMs = const [];
-    _lineEndMs = const [];
-    _lastEmittedLineIndex = -1;
-    _lastDesktopLyricLineIndex = -1;
-    _desktopGapShown = false;
-    _desktopPreludeShown = false;
-    _nextLyricLine = 0;
-    _lastEmittedActiveIndices = const [];
-    _lastEmittedBackgroundActiveIndices = const [];
-    _lastEmittedLayoutIndices = const [];
+    if (!keepCurrent) {
+      _currLyric = null;
+      _ttmlTimeline = null;
+      _ttmlGeneration++;
+      playService.desktopLyricService.sendFullLyricMessage(Lyric.empty);
+      _syncLineAdvanceTimer();
+      _lineRenderStartMs = const [];
+      _lineSwitchStartMs = const [];
+      _lineEndMs = const [];
+      _lastEmittedLineIndex = -1;
+      _lastDesktopLyricLineIndex = -1;
+      _desktopGapShown = false;
+      _desktopPreludeShown = false;
+      _nextLyricLine = 0;
+      _lastEmittedActiveIndices = const [];
+      _lastEmittedBackgroundActiveIndices = const [];
+      _lastEmittedLayoutIndices = const [];
+    }
     return _lyricRequestToken;
   }
 
@@ -1416,8 +1420,6 @@ class LyricService extends ChangeNotifier {
         _scheduleLyricWritePrompt(audioPath);
         unawaited(_autoSaveExternalLyric(audioPath, value));
       }
-    } else {
-      _currLyric = null;
     }
     findCurrLyricLineAt(playService.playbackService.position);
     _notifyLyricChangeListeners();
@@ -1801,8 +1803,6 @@ class LyricService extends ChangeNotifier {
       if (value != null) {
         _setCurrLyric(value);
         _scheduleLyricWritePrompt(audioPath);
-      } else {
-        _currLyric = null;
       }
       findCurrLyricLineAt(playService.playbackService.position);
       _notifyLyricChangeListeners();
