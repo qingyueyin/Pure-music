@@ -43,9 +43,10 @@ double audioReactiveFlowCurve(double value) {
 }
 
 /// 低音主导的整体放大，混一点点中频。
+/// 幅度只给到 0.22：再大就会变成每拍一次的整体缩放闪烁。
 double audioReactiveFlowSpectrumScale(double low, double mid) {
   final specMix = _unit(low) * 0.9 + _unit(mid) * 0.1;
-  return specMix * specMix * 0.38 + 1.0;
+  return specMix * specMix * 0.30 + 1.0;
 }
 
 /// 低音把封面对比略微拉开。
@@ -290,7 +291,6 @@ final class AudioReactiveFlowEngine {
   /// 短暂断流后恢复：旧版沿用峰值记忆，新版从当前值慢慢释放。
   void resumeFromPause() {
     _legacyNormalizer.resumeFromPause();
-    _bands.resume();
   }
 
   void reset() {
@@ -305,11 +305,12 @@ final class AudioReactiveFlowEngine {
 /// 门限带迟滞和死区，1% 级别的抖动不会变成可见形变。
 final class _RollingFloorBands {
   static const double floorTauSeconds = .65;
-  static const double attackTauSeconds = .03;
-  static const double releaseTauSeconds = .09;
-  static const double holdSeconds = .06;
+  static const double attackTauSeconds = .09;
+  static const double releaseTauSeconds = .22;
+  static const double targetHoldSeconds = .10;
   static const double riseOffset = .03;
-  static const double riseFullScale = .30;
+  static const double risePeakTauSeconds = 2.5;
+  static const double minRisePeak = .28;
   static const double enterMargin = .03;
   static const double stayMargin = .015;
   static const double absoluteGate = .02;
@@ -330,12 +331,6 @@ final class _RollingFloorBands {
     );
   }
 
-  void resume() {
-    _low.resume();
-    _mid.resume();
-    _high.resume();
-  }
-
   void reset() {
     _low.reset();
     _mid.reset();
@@ -346,8 +341,9 @@ final class _RollingFloorBands {
 final class _RollingFloorBand {
   double _floor = -1;
   double _value = 0;
-  double _held = 0;
-  double _heldFor = 0;
+  double _risePeak = 0;
+  double _targetPeak = 0;
+  double _targetHoldFor = 0;
   bool _active = false;
 
   double update(double level, double dtSeconds) {
@@ -366,48 +362,48 @@ final class _RollingFloorBand {
         (above >= _RollingFloorBands.enterMargin ||
             (_active && above >= _RollingFloorBands.stayMargin));
 
+    _risePeak *= math.exp(
+      -dtSeconds / _RollingFloorBands.risePeakTauSeconds,
+    );
     final target = _active ? _shape(above) : 0.0;
-    if (target > _value) {
+    // 15Hz 下一拍只有一两帧，先顶住 100ms，慢起音才追得上峰值。
+    if (target >= _targetPeak) {
+      _targetPeak = target;
+      _targetHoldFor = 0;
+    } else if (_targetHoldFor < _RollingFloorBands.targetHoldSeconds) {
+      _targetHoldFor += dtSeconds;
+    } else {
+      _targetPeak = target;
+    }
+    if (_targetPeak > _value) {
       final step =
           1 - math.exp(-dtSeconds / _RollingFloorBands.attackTauSeconds);
-      _value += (target - _value) * step;
-      _held = _value;
-      _heldFor = 0;
-      return _value;
-    }
-    if (_heldFor < _RollingFloorBands.holdSeconds) {
-      _heldFor += dtSeconds;
-      _value = _held;
-      return _value;
-    }
-    if (_held - target > _RollingFloorBands.deadband) {
+      _value += (_targetPeak - _value) * step;
+    } else if (_value - _targetPeak > _RollingFloorBands.deadband) {
       final step =
           1 - math.exp(-dtSeconds / _RollingFloorBands.releaseTauSeconds);
-      _value += (target - _value) * step;
-    } else {
-      // 死区内的回落不动，防止底噪波动被放大成抖动。
-      _value = _held;
+      _value += (_targetPeak - _value) * step;
     }
+    // 死区内不动，避免 1% 级别的波动变成可见抖动。
     return _value;
   }
 
   double _shape(double above) {
     final rise = above - _RollingFloorBands.riseOffset;
     if (rise <= 0) return 0;
-    // 线性映射保留强弱差别；软饱和会把所有鼓点压到同一档，看起来像整体放大。
-    return (rise / _RollingFloorBands.riseFullScale).clamp(0.0, 1.0).toDouble();
-  }
-
-  void resume() {
-    _held = _value;
-    _heldFor = _RollingFloorBands.holdSeconds;
+    if (rise > _risePeak) _risePeak = rise;
+    // 按最近的鼓点幅度归一，安静的歌和压缩重的歌都能到同一档；
+    // 线性映射保留强弱差别，软饱和会把所有鼓点压成一样。
+    final scale = math.max(_risePeak, _RollingFloorBands.minRisePeak);
+    return (rise / scale).clamp(0.0, 1.0).toDouble();
   }
 
   void reset() {
     _floor = -1;
     _value = 0;
-    _held = 0;
-    _heldFor = 0;
+    _risePeak = 0;
+    _targetPeak = 0;
+    _targetHoldFor = 0;
     _active = false;
   }
 }

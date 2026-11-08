@@ -284,6 +284,7 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     );
     _blurHandle.filter = _fallbackBlurFilter(_kBlurSigma);
     _engine.legacy = widget.inputs.legacyAudioReactiveFlow;
+    _audio.onsetZoomWeight = _engine.legacy ? 0.08 : 0.02;
     _scheduleCoverDecode();
     final cachedProgram = _cachedGaussianProgram;
     if (cachedProgram != null) {
@@ -340,6 +341,7 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     if (widget.inputs.legacyAudioReactiveFlow !=
         oldWidget.inputs.legacyAudioReactiveFlow) {
       _engine.legacy = widget.inputs.legacyAudioReactiveFlow;
+      _audio.onsetZoomWeight = _engine.legacy ? 0.08 : 0.02;
       _lastSpectrumElapsed = null;
       _resetAudioVisual();
     }
@@ -957,6 +959,8 @@ class _FlowAudioState {
   double mid = 0.0;
   double high = 0.0;
   double motionSpeed = 1.0;
+  /// onset 对整体缩放的权重。新版包络已经自带起落，只留一点锐度。
+  double onsetZoomWeight = 0.08;
   double _onset = 0.0;
   double _previousEnergy = 0.0;
   bool _skipOnset = false;
@@ -1171,7 +1175,8 @@ class _FlowingLightPainter extends CustomPainter {
     final mid = audioReactiveFlow ? audio.mid : 0.0;
     final high = audioReactiveFlow ? audio.high : 0.0;
     final zoom = audioReactiveFlow
-        ? (audioReactiveFlowSpectrumScale(low, mid) + audio.onset * 0.08)
+        ? (audioReactiveFlowSpectrumScale(low, mid) +
+                  audio.onset * audio.onsetZoomWeight)
               .clamp(1.0, 1.48)
               .toDouble()
         : 1.0;
