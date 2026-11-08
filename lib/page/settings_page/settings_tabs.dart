@@ -1883,7 +1883,7 @@ class _LyricsTabContent extends StatelessWidget {
         _GroupEntry(
           icon: Symbols.download,
           title: '歌词来源',
-          subtitle: '外置、内嵌与在线来源',
+          subtitle: '本地与在线歌词的查找顺序',
           groupId: 'lyric-source',
         ),
         SizedBox(height: 8.0),
@@ -3438,24 +3438,13 @@ class _DefaultLyricSourceControlState extends State<DefaultLyricSourceControl> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SettingsTile(
-          description: '首选歌词来源',
-          action: SegmentedButton<bool>(
-            showSelectedIcon: false,
-            segments: const [
-              ButtonSegment<bool>(
-                value: true,
-                icon: Icon(Symbols.cloud_off),
-                label: Text('外置 / 内嵌'),
-              ),
-              ButtonSegment<bool>(
-                value: false,
-                icon: Icon(Symbols.cloud),
-                label: Text('在线'),
-              ),
-            ],
-            selected: {settings.localLyricFirst},
-            onSelectionChanged: (newSelection) =>
-                _setLocalLyricFirst(newSelection.first),
+          description: '优先使用本地歌词',
+          subtitle: settings.localLyricFirst
+              ? '本地文件或内嵌歌词，找不到再在线搜索'
+              : '直接在线搜索，不再查找本地歌词',
+          action: Switch(
+            value: settings.localLyricFirst,
+            onChanged: _setLocalLyricFirst,
           ),
         ),
         const SizedBox(height: 16),
@@ -3465,7 +3454,7 @@ class _DefaultLyricSourceControlState extends State<DefaultLyricSourceControl> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                '在线歌词来源',
+                '在线来源',
                 style: TextStyle(
                   color: scheme.onSurface,
                   fontSize: AppType.sectionTitle,
@@ -3473,7 +3462,7 @@ class _DefaultLyricSourceControlState extends State<DefaultLyricSourceControl> {
               ),
               const SizedBox(height: 4),
               Text(
-                '拖动调整顺序；关闭不用的来源，只留一个即只用它',
+                '拖动调整顺序；关掉的来源不参与自动匹配',
                 style: TextStyle(
                   color: scheme.onSurfaceVariant,
                   fontSize: AppType.body,
@@ -3672,7 +3661,7 @@ const _settingsGroups = <String, _SettingsGroupDesc>{
     '播放页背景与配色',
     _AppearancePlayerGroup(),
   ),
-  'lyric-source': _SettingsGroupDesc('歌词来源', '外置、内嵌与在线来源', _LyricSourceGroup()),
+  'lyric-source': _SettingsGroupDesc('歌词来源', '本地与在线歌词的查找顺序', _LyricSourceGroup()),
   'lyric-content': _SettingsGroupDesc(
     '歌词内容',
     '歌曲信息、文字转换与换行',
