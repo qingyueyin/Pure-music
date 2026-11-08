@@ -573,6 +573,8 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     _audio.low = audioReactiveFlowCurve(env.low);
     _audio.mid = audioReactiveFlowCurve(env.mid);
     _audio.high = audioReactiveFlowCurve(env.high);
+    _audio.slowLow = audioReactiveFlowCurve(_engine.levelLow);
+    _audio.slowMid = audioReactiveFlowCurve(_engine.levelMid);
     _audio.followSpeed(deltaSeconds);
   }
 
@@ -983,8 +985,6 @@ class _FlowAudioState {
       _skipOnset = false;
       _onset = 0;
       _previousEnergy = energy;
-      slowLow = low;
-      slowMid = mid;
     } else {
       _onset = audioReactiveFlowOnsetPulse(
         currentEnergy: energy,
@@ -1001,9 +1001,6 @@ class _FlowAudioState {
     final timeConstant = target > motionSpeed ? 0.07 : 0.22;
     final response = 1 - exp(-deltaSeconds / timeConstant);
     motionSpeed += (target - motionSpeed) * response;
-    final slowResponse = 1 - exp(-deltaSeconds / 2.5);
-    slowLow += (low - slowLow) * slowResponse;
-    slowMid += (mid - slowMid) * slowResponse;
   }
 
   void reset() {
@@ -1015,7 +1012,7 @@ class _FlowAudioState {
     slowMid = 0.0;
     _onset = 0.0;
     _previousEnergy = 0.0;
-    // 重置后的第一帧直接对齐慢通道，避免每次切歌都从 1.0 慢慢张开。
+    // 重置后的第一帧不产生 onset 脉冲，避免切歌时闪一下。
     _skipOnset = true;
     awaitingPlaybackSpectrum = false;
   }

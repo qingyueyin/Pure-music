@@ -271,6 +271,11 @@ final class AudioReactiveFlowEngine {
 
   AudioReactiveFlowResponse get value => _value;
 
+  /// 慢电平：新版取绝对响度，旧版就是 AGC 后的包络。
+  double get levelLow => _legacy ? _value.low : _bands.levelLow;
+  double get levelMid => _legacy ? _value.mid : _bands.levelMid;
+  double get levelHigh => _legacy ? _value.high : _bands.levelHigh;
+
   bool get legacy => _legacy;
 
   set legacy(bool value) {
@@ -305,6 +310,7 @@ final class AudioReactiveFlowEngine {
 /// 门限带迟滞和死区，1% 级别的抖动不会变成可见形变。
 final class _RollingFloorBands {
   static const double floorTauSeconds = .65;
+  static const double levelTauSeconds = 2.5;
   static const double attackTauSeconds = .09;
   static const double releaseTauSeconds = .22;
   static const double targetHoldSeconds = .10;
@@ -319,6 +325,11 @@ final class _RollingFloorBands {
   final _RollingFloorBand _low = _RollingFloorBand();
   final _RollingFloorBand _mid = _RollingFloorBand();
   final _RollingFloorBand _high = _RollingFloorBand();
+
+  /// 慢电平：绝对响度，几秒级跟随，不受底噪扣除影响。
+  double get levelLow => _low.level;
+  double get levelMid => _mid.level;
+  double get levelHigh => _high.level;
 
   AudioReactiveFlowResponse update(
     AudioReactiveFlowResponse incoming,
@@ -341,18 +352,25 @@ final class _RollingFloorBands {
 final class _RollingFloorBand {
   double _floor = -1;
   double _value = 0;
+  double _level = 0;
   double _risePeak = 0;
   double _targetPeak = 0;
   double _targetHoldFor = 0;
   bool _active = false;
+
+  double get level => _level;
 
   double update(double level, double dtSeconds) {
     final incoming = _unit(level);
     if (_floor < 0) {
       // 首帧只记录底噪，输出保持 0，避免一有声音就跳满。
       _floor = incoming;
+      _level = incoming;
       return _value;
     }
+    final levelStep =
+        1 - math.exp(-dtSeconds / _RollingFloorBands.levelTauSeconds);
+    _level += (incoming - _level) * levelStep;
     final floorStep =
         1 - math.exp(-dtSeconds / _RollingFloorBands.floorTauSeconds);
     _floor += (incoming - _floor) * floorStep;
@@ -399,6 +417,7 @@ final class _RollingFloorBand {
   void reset() {
     _floor = -1;
     _value = 0;
+    _level = 0;
     _risePeak = 0;
     _targetPeak = 0;
     _targetHoldFor = 0;
