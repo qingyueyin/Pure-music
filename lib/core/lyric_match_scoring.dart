@@ -86,11 +86,24 @@ double _similarity(String left, String right) {
   if (a.isEmpty || b.isEmpty) return 0.0;
   if (a == b) return 1.0;
 
-  final aChars = a.runes.toSet();
-  final bChars = b.runes.toSet();
-  final union = aChars.union(bChars);
-  if (union.isEmpty) return 0.0;
-  return aChars.intersection(bChars).length / union.length;
+  final aRunes = a.runes.toList(growable: false);
+  final bRunes = b.runes.toList(growable: false);
+  if (aRunes.length < 2 || bRunes.length < 2) return 0.0;
+
+  final remaining = <String, int>{};
+  for (var i = 0; i < aRunes.length - 1; i++) {
+    final gram = String.fromCharCodes(aRunes, i, i + 2);
+    remaining[gram] = (remaining[gram] ?? 0) + 1;
+  }
+  var overlap = 0;
+  for (var i = 0; i < bRunes.length - 1; i++) {
+    final gram = String.fromCharCodes(bRunes, i, i + 2);
+    final count = remaining[gram] ?? 0;
+    if (count == 0) continue;
+    overlap += 1;
+    remaining[gram] = count - 1;
+  }
+  return 2 * overlap / (aRunes.length + bRunes.length - 2);
 }
 
 String normalizeLyricMatchText(String value) {
