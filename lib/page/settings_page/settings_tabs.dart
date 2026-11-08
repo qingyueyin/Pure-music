@@ -3400,6 +3400,13 @@ class _DefaultLyricSourceControlState extends State<DefaultLyricSourceControl> {
     LyricSourceType.amll: 'AMLL',
   };
 
+  static const Map<LyricSourceType, String> _sourceSubtitles = {
+    LyricSourceType.qq: 'QQ 音乐 · 逐字歌词',
+    LyricSourceType.kugou: '酷狗音乐 · 逐字歌词',
+    LyricSourceType.ne: '网易云音乐 · 逐字歌词',
+    LyricSourceType.amll: 'AMLL 社区 · TTML 逐字',
+  };
+
   Future<void> _setLocalLyricFirst(bool value) async {
     if (value == settings.localLyricFirst) return;
     setState(() => settings.localLyricFirst = value);
@@ -3482,7 +3489,16 @@ class _DefaultLyricSourceControlState extends State<DefaultLyricSourceControl> {
                 ),
                 itemBuilder: (context, index) {
                   final source = settings.onlineLyricSourceOrder[index];
-                  return _sourceRow(source, index, scheme);
+                  return _LyricSourceRow(
+                    key: ValueKey(source.name),
+                    index: index,
+                    label: _sourceLabels[source] ?? source.name,
+                    subtitle: _sourceSubtitles[source] ?? '',
+                    enabled: settings.enabledOnlineLyricSources.contains(
+                      source,
+                    ),
+                    onChanged: (value) => _setSourceEnabled(source, value),
+                  );
                 },
               ),
             ],
@@ -3491,23 +3507,65 @@ class _DefaultLyricSourceControlState extends State<DefaultLyricSourceControl> {
       ],
     );
   }
+}
 
-  Widget _sourceRow(LyricSourceType source, int index, ColorScheme scheme) {
+class _LyricSourceRow extends StatefulWidget {
+  const _LyricSourceRow({
+    super.key,
+    required this.index,
+    required this.label,
+    required this.subtitle,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final int index;
+  final String label;
+  final String subtitle;
+  final bool enabled;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  State<_LyricSourceRow> createState() => _LyricSourceRowState();
+}
+
+class _LyricSourceRowState extends State<_LyricSourceRow> {
+  bool _handleHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final enabled = widget.enabled;
+    final titleColor = enabled
+        ? scheme.onSurface
+        : scheme.onSurface.withValues(alpha: 0.45);
+    final subtitleColor = enabled
+        ? scheme.onSurfaceVariant
+        : scheme.onSurfaceVariant.withValues(alpha: 0.45);
+    final handleColor = enabled
+        ? (_handleHovered ? scheme.onSurface : scheme.onSurfaceVariant)
+        : scheme.onSurfaceVariant.withValues(alpha: 0.3);
+
     return ListTile(
-      key: ValueKey(source.name),
       contentPadding: const EdgeInsets.only(left: 4, right: 4),
       leading: ReorderableDragStartListener(
-        index: index,
-        child: Icon(Symbols.drag_indicator, color: scheme.onSurfaceVariant),
+        index: widget.index,
+        child: MouseRegion(
+          cursor: SystemMouseCursors.grab,
+          onEnter: (_) => setState(() => _handleHovered = true),
+          onExit: (_) => setState(() => _handleHovered = false),
+          child: Icon(Symbols.drag_indicator, color: handleColor),
+        ),
       ),
       title: Text(
-        _sourceLabels[source] ?? source.name,
-        style: TextStyle(color: scheme.onSurface, fontSize: AppType.body),
+        widget.label,
+        style: TextStyle(color: titleColor, fontSize: AppType.body),
       ),
-      trailing: Switch(
-        value: settings.enabledOnlineLyricSources.contains(source),
-        onChanged: (value) => _setSourceEnabled(source, value),
+      subtitle: Text(
+        widget.subtitle,
+        style: TextStyle(color: subtitleColor, fontSize: AppType.caption),
       ),
+      trailing: Switch(value: enabled, onChanged: widget.onChanged),
     );
   }
 }
