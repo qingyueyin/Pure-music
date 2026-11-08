@@ -533,6 +533,10 @@ class Ttml extends Lyric {
     if (translation != null && translation.isEmpty) translation = null;
 
     final duration = end != null ? end - begin : Duration.zero;
+    // 纯文本段落没有 span，补一个整行词，否则 content 为空。
+    if (words.isEmpty && text.isNotEmpty && !_isMusicSymbolOnly(text)) {
+      words.add(SyncLyricWord(begin, duration, text));
+    }
     if (text.isEmpty &&
         bgSpan == null &&
         translation == null &&
