@@ -537,7 +537,7 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     _motion.time +=
         deltaSeconds * widget.inputs.flowSpeed * averageSpeed * audioSpeed;
 
-    // 状态每帧都推进，重绘压到 24fps，避免模糊着色器按屏幕刷新率跑。
+    // 状态每帧都推进，重绘压到 15fps，避免模糊着色器按屏幕刷新率跑。
     final lastPaintElapsed = _lastPaintElapsed;
     if (lastPaintElapsed == null) {
       _lastPaintElapsed = elapsed;
