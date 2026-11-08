@@ -3400,13 +3400,6 @@ class _DefaultLyricSourceControlState extends State<DefaultLyricSourceControl> {
     LyricSourceType.amll: 'AMLL',
   };
 
-  static const Map<LyricSourceType, String> _sourceSubtitles = {
-    LyricSourceType.qq: 'QQ 音乐 · 逐字歌词',
-    LyricSourceType.kugou: '酷狗音乐 · 逐字歌词',
-    LyricSourceType.ne: '网易云音乐 · 逐字歌词',
-    LyricSourceType.amll: 'AMLL 社区 · TTML 逐字',
-  };
-
   Future<void> _setLocalLyricFirst(bool value) async {
     if (value == settings.localLyricFirst) return;
     setState(() => settings.localLyricFirst = value);
@@ -3493,7 +3486,6 @@ class _DefaultLyricSourceControlState extends State<DefaultLyricSourceControl> {
                     key: ValueKey(source.name),
                     index: index,
                     label: _sourceLabels[source] ?? source.name,
-                    subtitle: _sourceSubtitles[source] ?? '',
                     enabled: settings.enabledOnlineLyricSources.contains(
                       source,
                     ),
@@ -3514,14 +3506,12 @@ class _LyricSourceRow extends StatefulWidget {
     super.key,
     required this.index,
     required this.label,
-    required this.subtitle,
     required this.enabled,
     required this.onChanged,
   });
 
   final int index;
   final String label;
-  final String subtitle;
   final bool enabled;
   final ValueChanged<bool> onChanged;
 
@@ -3539,9 +3529,6 @@ class _LyricSourceRowState extends State<_LyricSourceRow> {
     final titleColor = enabled
         ? scheme.onSurface
         : scheme.onSurface.withValues(alpha: 0.45);
-    final subtitleColor = enabled
-        ? scheme.onSurfaceVariant
-        : scheme.onSurfaceVariant.withValues(alpha: 0.45);
     final handleColor = enabled
         ? (_handleHovered ? scheme.onSurface : scheme.onSurfaceVariant)
         : scheme.onSurfaceVariant.withValues(alpha: 0.3);
@@ -3560,10 +3547,6 @@ class _LyricSourceRowState extends State<_LyricSourceRow> {
       title: Text(
         widget.label,
         style: TextStyle(color: titleColor, fontSize: AppType.body),
-      ),
-      subtitle: Text(
-        widget.subtitle,
-        style: TextStyle(color: subtitleColor, fontSize: AppType.caption),
       ),
       trailing: Switch(value: enabled, onChanged: widget.onChanged),
     );
