@@ -538,24 +538,6 @@ function New-AppPackage([string]$artifactRoot, [string]$version) {
         Invoke-RoboCopy $desktopLyricSrc $desktopLyricDest
     }
 
-    Invoke-Step "deduplicate desktop lyric engine" {
-        $mainEngine = Join-Path $finalAppDir "flutter_windows.dll"
-        $lyricEngine = Join-Path $finalAppDir "desktop_lyric\flutter_windows.dll"
-        if ((Test-Path -LiteralPath $mainEngine -PathType Leaf) -and
-            (Test-Path -LiteralPath $lyricEngine -PathType Leaf)) {
-            $mainHash = (Get-FileHash -LiteralPath $mainEngine -Algorithm SHA256).Hash
-            $lyricHash = (Get-FileHash -LiteralPath $lyricEngine -Algorithm SHA256).Hash
-            if ($mainHash -eq $lyricHash) {
-                $bytes = (Get-Item -LiteralPath $lyricEngine).Length
-                Remove-Item -LiteralPath $lyricEngine -Force
-                Write-Host ("Removed duplicate Flutter engine DLL: {0:N1} MB" -f ($bytes / 1MB)) -ForegroundColor Gray
-            }
-            else {
-                Write-Warning "desktop_lyric engine differs from the main engine; keeping both."
-            }
-        }
-    }
-
     Invoke-Step "strip unused icon fonts" {
         Optimize-FlutterIconFonts $finalAppDir
     }
@@ -573,7 +555,8 @@ function Test-KeyFiles([string]$appDir) {
         "dll\BASS\basswasapi.dll",
         "dll\BASS\bass_fx.dll",
         "dll\BASS\bassmix.dll",
-        "desktop_lyric\desktop_lyric.exe"
+        "desktop_lyric\desktop_lyric.exe",
+        "desktop_lyric\flutter_windows.dll"
     )
     $missing = @()
     foreach ($rp in $required) {
