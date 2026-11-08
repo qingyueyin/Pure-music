@@ -16,9 +16,9 @@ final class AudioReactiveFlowResponse {
       return value.isFinite && value >= 0 ? value : 0;
     }
 
-    final low = math.max(bandAt(0), bandAt(1) * 0.85);
-    final mid = (bandAt(1) + bandAt(2)) / 2;
-    final high = bandAt(3);
+    final low = bandAt(0);
+    final mid = bandAt(1);
+    final high = bandAt(2);
     return AudioReactiveFlowResponse(
       low.clamp(0.0, 1.0).toDouble(),
       mid.clamp(0.0, 1.0).toDouble(),
@@ -43,10 +43,26 @@ double audioReactiveFlowCurve(double value) {
 }
 
 /// 低音主导的整体放大，混一点点中频。
-/// 幅度只给到 0.22：再大就会变成每拍一次的整体缩放闪烁。
+/// 幅度只给到 0.30：再大就会变成每拍一次的整体缩放闪烁。
 double audioReactiveFlowSpectrumScale(double low, double mid) {
   final specMix = _unit(low) * 0.9 + _unit(mid) * 0.1;
   return specMix * specMix * 0.30 + 1.0;
+}
+
+/// 整屏缩放。
+/// 旧版直接用快包络加 onset；新版用慢电平决定基准，鼓点只加 3.5% 的软脉冲。
+double audioReactiveFlowZoom({
+  required bool legacy,
+  required double low,
+  required double mid,
+  required double slowLow,
+  required double slowMid,
+  required double onset,
+}) {
+  final value = legacy
+      ? audioReactiveFlowSpectrumScale(low, mid) + onset * 0.08
+      : audioReactiveFlowSpectrumScale(slowLow, slowMid) + low * 0.035;
+  return value.clamp(1.0, 1.48).toDouble();
 }
 
 /// 低音把封面对比略微拉开。

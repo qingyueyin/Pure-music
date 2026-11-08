@@ -1184,16 +1184,14 @@ class _FlowingLightPainter extends CustomPainter {
     final mid = audioReactiveFlow ? audio.mid : 0.0;
     final high = audioReactiveFlow ? audio.high : 0.0;
     final zoom = audioReactiveFlow
-        ? (audio.legacy
-                  ? audioReactiveFlowSpectrumScale(low, mid) +
-                        audio.onset * 0.08
-                  : audioReactiveFlowSpectrumScale(
-                          audio.slowLow,
-                          audio.slowMid,
-                        ) +
-                        low * 0.05)
-              .clamp(1.0, 1.48)
-              .toDouble()
+        ? audioReactiveFlowZoom(
+            legacy: audio.legacy,
+            low: low,
+            mid: mid,
+            slowLow: audio.slowLow,
+            slowMid: audio.slowMid,
+            onset: audio.onset,
+          )
         : 1.0;
     final cycle2 = time / _kCoverPeriod2 * 2 * pi;
     final secondaryOffset = Offset(

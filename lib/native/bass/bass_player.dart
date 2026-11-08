@@ -852,7 +852,7 @@ class BassPlayer {
   Stream<PlayerState> get playerStateStream =>
       _playerStateStreamController.stream;
 
-  static const int _bassDataFft512 = 0x80000001;
+  static const int _bassDataFft2048 = 0x80000003;
   int Function(int, ffi.Pointer<ffi.Void>, int)? _bassChannelGetData;
   ffi.Pointer<ffi.Float>? _fftBuffer;
   ffi.Pointer<ffi.Float>? _wasapiFftBuffer;
@@ -863,12 +863,12 @@ class BassPlayer {
   bool get hasAudioSource => _fstream != null && _fPath != null;
   int _lastSpectrumUpdateUs = 0;
   final Stopwatch _spectrumClock = Stopwatch()..start();
-  Duration _spectrumTickPeriod = const Duration(milliseconds: 66);
+  Duration _spectrumTickPeriod = const Duration(milliseconds: 43);
   SpectrumUpdateMode spectrumUpdateMode = SpectrumUpdateMode.auto;
-  static const int _spectrumBandCount = 8;
-  static const int _activeSpectrumBandCount = 4;
+  static const int _spectrumBandCount = 3;
+  static const int _activeSpectrumBandCount = 3;
   static final double _spectrumLogDenominator = math.log(19.0);
-  final Float32List _spectrumSmoothed = Float32List(8);
+  final Float32List _spectrumSmoothed = Float32List(_spectrumBandCount);
   final Float32List _spectrumBands = Float32List(_spectrumBandCount);
   final Float32List _spectrumOutputA = Float32List(_spectrumBandCount);
   final Float32List _spectrumOutputB = Float32List(_spectrumBandCount);
@@ -1001,7 +1001,8 @@ class BassPlayer {
   }
 
   Duration _computeSpectrumTickPeriod() {
-    return const Duration(milliseconds: 66);
+    // 2048 点窗口在 44.1k/48k 下约 43–46ms，再快只是重复同一窗数据。
+    return const Duration(milliseconds: 43);
   }
 
   void _refreshStreamSampleRate() {
@@ -1099,31 +1100,31 @@ class BassPlayer {
     final getData = _bassChannelGetData;
     if (getData == null) return;
 
-    _fftBuffer ??= malloc.allocate<ffi.Float>(256 * ffi.sizeOf<ffi.Float>());
+    _fftBuffer ??= malloc.allocate<ffi.Float>(1024 * ffi.sizeOf<ffi.Float>());
     final bytesRead = getData(
       handle,
       _fftBuffer!.cast<ffi.Void>(),
-      _bassDataFft512,
+      _bassDataFft2048,
     );
     if (bytesRead <= 0) return;
 
-    _emitSpectrumOutputs(_fftBuffer!.asTypedList(256));
+    _emitSpectrumOutputs(_fftBuffer!.asTypedList(1024));
   }
 
   void _emitWasapiSpectrumFrame() {
     if (!_hasAnySpectrumListener) return;
 
     _wasapiFftBuffer ??= malloc.allocate<ffi.Float>(
-      256 * ffi.sizeOf<ffi.Float>(),
+      1024 * ffi.sizeOf<ffi.Float>(),
     );
     final bytesRead = _bassWasapi.BASS_WASAPI_GetData(
       _wasapiFftBuffer!.cast<ffi.Void>(),
-      bass_wasapi.BASS_DATA_FFT512,
+      bass_wasapi.BASS_DATA_FFT2048,
     );
     // BASS_WASAPI_GetData returns the number of bytes written; negative means error
     if (bytesRead <= 0) return;
 
-    _emitSpectrumOutputs(_wasapiFftBuffer!.asTypedList(256));
+    _emitSpectrumOutputs(_wasapiFftBuffer!.asTypedList(1024));
   }
 
   void _emitSmoothedSpectrum() {
@@ -1145,10 +1146,10 @@ class BassPlayer {
     _spectrumStreamController.add(out);
   }
 
-  /// 同一帧 FFT 分别发给流光（8 段）与频谱条（64 段），各自只关心自己的监听者。
+  /// 同一帧 FFT 分别发给流光（3 段）与频谱条（64 段），各自只关心自己的监听者。
   void _emitSpectrumOutputs(Float32List fft) {
     if (_spectrumStreamController.hasListener) {
-      _computeSpectrum8Into(fft, _streamSampleRate, _spectrumBands);
+      _computeReactiveBandsInto(fft, _streamSampleRate, _spectrumBands);
       _emitSmoothedSpectrum();
     }
     if (_spectrumDisplayStreamController.hasListener) {
@@ -1166,17 +1167,16 @@ class BassPlayer {
   }
 
   void _ensureSpectrumBandBins(double sampleRate) {
-    const fftSize = 512.0;
-    const minF = 45.0;
-    const maxF = 16000.0;
+    const fftSize = 2048.0;
+    const edges = [20.0, 300.0, 3500.0];
     if ((_spectrumBandsSampleRate - sampleRate).abs() < 1e-3 &&
         _spectrumBandsSampleRate > 0) {
       return;
     }
 
     final nyquist = sampleRate * 0.5;
-    final clampedMaxF = math.min(maxF, nyquist - 1.0);
-    if (clampedMaxF <= minF || nyquist <= 1.0) {
+    final highEnd = math.min(23000.0, nyquist - 1.0);
+    if (nyquist <= 1.0 || highEnd <= edges.first) {
       for (int i = 0; i < _spectrumBandCount; i++) {
         _spectrumBandStarts[i] = 1;
         _spectrumBandEnds[i] = 2;
@@ -1185,16 +1185,15 @@ class BassPlayer {
       return;
     }
 
-    final ratio = clampedMaxF / minF;
+    final bounds = [edges[0], edges[1], edges[2], highEnd];
     for (int i = 0; i < _spectrumBandCount; i++) {
-      final a = i / _spectrumBandCount;
-      final b = (i + 1) / _spectrumBandCount;
-      final fa = minF * math.pow(ratio, a).toDouble();
-      final fb = minF * math.pow(ratio, b).toDouble();
-      final start = ((fa / sampleRate) * fftSize).floor().clamp(1, 255).toInt();
-      final end = ((fb / sampleRate) * fftSize)
+      final start = ((bounds[i] / sampleRate) * fftSize)
+          .floor()
+          .clamp(1, 1023)
+          .toInt();
+      final end = ((bounds[i + 1] / sampleRate) * fftSize)
           .ceil()
-          .clamp(start + 1, 255)
+          .clamp(start + 1, 1024)
           .toInt();
       _spectrumBandStarts[i] = start;
       _spectrumBandEnds[i] = end;
@@ -1202,7 +1201,7 @@ class BassPlayer {
     _spectrumBandsSampleRate = sampleRate;
   }
 
-  void _computeSpectrum8Into(
+  void _computeReactiveBandsInto(
     Float32List fft,
     double sampleRate,
     Float32List out,
@@ -1212,11 +1211,27 @@ class BassPlayer {
     for (int i = 0; i < _activeSpectrumBandCount; i++) {
       final start = _spectrumBandStarts[i];
       final end = _spectrumBandEnds[i];
-      double m = 0.0;
+      // 取段内最高的 3 个 bin 求平均：比单个最大值稳，又不会像全段平均那样
+      // 被大量空 bin 稀释。段内不足 3 个 bin 时按实际个数平均。
+      var a = 0.0;
+      var b = 0.0;
+      var c = 0.0;
       for (int k = start; k < end; k++) {
         final v = fft[k];
-        if (v.isFinite && v > m) m = v.toDouble();
+        if (!v.isFinite || v <= 0) continue;
+        if (v > a) {
+          c = b;
+          b = a;
+          a = v.toDouble();
+        } else if (v > b) {
+          c = b;
+          b = v.toDouble();
+        } else if (v > c) {
+          c = v.toDouble();
+        }
       }
+      final count = math.min(3, end - start);
+      final m = (a + b + c) / count;
       out[i] = (math.log(1.0 + m * 18.0) / _spectrumLogDenominator)
           .clamp(0.0, 1.0)
           .toDouble();
@@ -1224,7 +1239,7 @@ class BassPlayer {
   }
 
   void _ensureDisplaySpectrumBandBins(double sampleRate) {
-    const fftSize = 512.0;
+    const fftSize = 2048.0;
     const minF = 45.0;
     const maxF = 16000.0;
     if ((_displaySpectrumBandsSampleRate - sampleRate).abs() < 1e-3 &&
@@ -1249,10 +1264,13 @@ class BassPlayer {
       final b = (i + 1) / _displaySpectrumBandCount;
       final fa = minF * math.pow(ratio, a).toDouble();
       final fb = minF * math.pow(ratio, b).toDouble();
-      final start = ((fa / sampleRate) * fftSize).floor().clamp(1, 255).toInt();
+      final start = ((fa / sampleRate) * fftSize)
+          .floor()
+          .clamp(1, 1023)
+          .toInt();
       final end = ((fb / sampleRate) * fftSize)
           .ceil()
-          .clamp(start + 1, 255)
+          .clamp(start + 1, 1024)
           .toInt();
       _displaySpectrumBandStarts[i] = start;
       _displaySpectrumBandEnds[i] = end;
