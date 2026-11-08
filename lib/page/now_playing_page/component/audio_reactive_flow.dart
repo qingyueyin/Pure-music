@@ -362,9 +362,7 @@ final class _RollingFloorBand {
         (above >= _RollingFloorBands.enterMargin ||
             (_active && above >= _RollingFloorBands.stayMargin));
 
-    _risePeak *= math.exp(
-      -dtSeconds / _RollingFloorBands.risePeakTauSeconds,
-    );
+    _risePeak *= math.exp(-dtSeconds / _RollingFloorBands.risePeakTauSeconds);
     final target = _active ? _shape(above) : 0.0;
     // 15Hz 下一拍只有一两帧，先顶住 100ms，慢起音才追得上峰值。
     if (target >= _targetPeak) {

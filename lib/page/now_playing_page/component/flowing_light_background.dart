@@ -284,7 +284,7 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     );
     _blurHandle.filter = _fallbackBlurFilter(_kBlurSigma);
     _engine.legacy = widget.inputs.legacyAudioReactiveFlow;
-    _audio.onsetZoomWeight = _engine.legacy ? 0.08 : 0.02;
+    _audio.legacy = _engine.legacy;
     _scheduleCoverDecode();
     final cachedProgram = _cachedGaussianProgram;
     if (cachedProgram != null) {
@@ -341,7 +341,7 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     if (widget.inputs.legacyAudioReactiveFlow !=
         oldWidget.inputs.legacyAudioReactiveFlow) {
       _engine.legacy = widget.inputs.legacyAudioReactiveFlow;
-      _audio.onsetZoomWeight = _engine.legacy ? 0.08 : 0.02;
+      _audio.legacy = _engine.legacy;
       _lastSpectrumElapsed = null;
       _resetAudioVisual();
     }
@@ -429,8 +429,7 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     _lastSpectrumElapsed = elapsed;
     final dtSeconds = previous == null
         ? null
-        : (elapsed - previous).inMicroseconds /
-              Duration.microsecondsPerSecond;
+        : (elapsed - previous).inMicroseconds / Duration.microsecondsPerSecond;
     // 离开播放页或过渡中不写色场，包络停在离开时的值。
     _audio.awaitingPlaybackSpectrum = audioReactiveFlowWriteSpectrum(
       pageSettled: _routeTransitionSettled,
@@ -959,8 +958,11 @@ class _FlowAudioState {
   double mid = 0.0;
   double high = 0.0;
   double motionSpeed = 1.0;
-  /// onset 对整体缩放的权重。新版包络已经自带起落，只留一点锐度。
-  double onsetZoomWeight = 0.08;
+
+  /// 慢通道：几秒级平均，只用来决定整体缩放，避免每一拍都缩放整屏。
+  double slowLow = 0.0;
+  double slowMid = 0.0;
+  bool legacy = true;
   double _onset = 0.0;
   double _previousEnergy = 0.0;
   bool _skipOnset = false;
@@ -981,6 +983,8 @@ class _FlowAudioState {
       _skipOnset = false;
       _onset = 0;
       _previousEnergy = energy;
+      slowLow = low;
+      slowMid = mid;
     } else {
       _onset = audioReactiveFlowOnsetPulse(
         currentEnergy: energy,
@@ -997,6 +1001,9 @@ class _FlowAudioState {
     final timeConstant = target > motionSpeed ? 0.07 : 0.22;
     final response = 1 - exp(-deltaSeconds / timeConstant);
     motionSpeed += (target - motionSpeed) * response;
+    final slowResponse = 1 - exp(-deltaSeconds / 2.5);
+    slowLow += (low - slowLow) * slowResponse;
+    slowMid += (mid - slowMid) * slowResponse;
   }
 
   void reset() {
@@ -1004,9 +1011,12 @@ class _FlowAudioState {
     mid = 0.0;
     high = 0.0;
     motionSpeed = 1.0;
+    slowLow = 0.0;
+    slowMid = 0.0;
     _onset = 0.0;
     _previousEnergy = 0.0;
-    _skipOnset = false;
+    // 重置后的第一帧直接对齐慢通道，避免每次切歌都从 1.0 慢慢张开。
+    _skipOnset = true;
     awaitingPlaybackSpectrum = false;
   }
 }
@@ -1138,7 +1148,9 @@ class _FlowingLightPainter extends CustomPainter {
       style.artworkSaturation +
           (audioReactiveFlow ? audioReactiveFlowSaturationBoost(high) : 0.0),
       style.blackScrim,
-      audioReactiveFlow ? audioReactiveFlowContrast(low) : 1.0,
+      audioReactiveFlow
+          ? audioReactiveFlowContrast(audio.legacy ? low : audio.slowLow)
+          : 1.0,
     );
     final previous = previousCoverImage;
     if (previous != null) {
@@ -1175,8 +1187,14 @@ class _FlowingLightPainter extends CustomPainter {
     final mid = audioReactiveFlow ? audio.mid : 0.0;
     final high = audioReactiveFlow ? audio.high : 0.0;
     final zoom = audioReactiveFlow
-        ? (audioReactiveFlowSpectrumScale(low, mid) +
-                  audio.onset * audio.onsetZoomWeight)
+        ? (audio.legacy
+                  ? audioReactiveFlowSpectrumScale(low, mid) +
+                        audio.onset * 0.08
+                  : audioReactiveFlowSpectrumScale(
+                          audio.slowLow,
+                          audio.slowMid,
+                        ) +
+                        low * 0.05)
               .clamp(1.0, 1.48)
               .toDouble()
         : 1.0;
