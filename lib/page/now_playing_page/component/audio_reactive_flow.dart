@@ -274,8 +274,8 @@ final class AudioReactiveFlowNormalizer {
 final class AudioReactiveFlowEngine {
   AudioReactiveFlowEngine({bool legacy = true}) : _legacy = legacy;
 
-  /// 频谱固定 15Hz；首帧或异常间隔时用它兜底。
-  static const double nominalDtSeconds = 1 / 15;
+  /// 频谱固定 23Hz（2048 点窗约 43ms）；首帧或异常间隔时用它兜底。
+  static const double nominalDtSeconds = 1 / 23;
   static const double _maxDtSeconds = .25;
 
   final AudioReactiveFlowNormalizer _legacyNormalizer =
@@ -398,7 +398,7 @@ final class _RollingFloorBand {
 
     _risePeak *= math.exp(-dtSeconds / _RollingFloorBands.risePeakTauSeconds);
     final target = _active ? _shape(above) : 0.0;
-    // 15Hz 下一拍只有一两帧，先顶住 100ms，慢起音才追得上峰值。
+    // 23Hz 下一拍只有两三帧，先顶住 100ms，慢起音才追得上峰值。
     if (target >= _targetPeak) {
       _targetPeak = target;
       _targetHoldFor = 0;
