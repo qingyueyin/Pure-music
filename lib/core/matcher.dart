@@ -568,16 +568,11 @@ Duration _sourceFallbackBudget({
 Future<({Lyric lyric, ResultSource source, SongSearchResult? result})?>
 getLyricWithSourceFallback(
   Audio audio,
-  ResultSource preferredSource, {
+  List<ResultSource> sources, {
   OnlineSourceLyricLoader? loadSource,
   Duration timeLimit = _onlineSourceFallbackTimeLimit,
 }) async {
-  if (timeLimit.compareTo(Duration.zero) <= 0) return null;
-  final sources = [
-    preferredSource,
-    for (final source in ResultSource.values)
-      if (source != preferredSource) source,
-  ];
+  if (timeLimit.compareTo(Duration.zero) <= 0 || sources.isEmpty) return null;
   final stopwatch = Stopwatch()..start();
 
   for (var index = 0; index < sources.length; index++) {

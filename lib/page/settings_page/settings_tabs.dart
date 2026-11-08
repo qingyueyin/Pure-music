@@ -3393,20 +3393,47 @@ class DefaultLyricSourceControl extends StatefulWidget {
 class _DefaultLyricSourceControlState extends State<DefaultLyricSourceControl> {
   final settings = AppSettings.instance;
 
+  static const Map<LyricSourceType, String> _sourceLabels = {
+    LyricSourceType.qq: 'QQ',
+    LyricSourceType.kugou: '酷狗',
+    LyricSourceType.ne: '网易',
+    LyricSourceType.amll: 'AMLL',
+  };
+
   Future<void> _setLocalLyricFirst(bool value) async {
     if (value == settings.localLyricFirst) return;
     setState(() => settings.localLyricFirst = value);
     await settings.saveSettings();
   }
 
-  Future<void> _setPreferredOnlineSource(LyricSourceType value) async {
-    if (value == settings.preferredOnlineSource) return;
-    setState(() => settings.preferredOnlineSource = value);
+  Future<void> _reorderOnlineSources(int oldIndex, int newIndex) async {
+    final order = List<LyricSourceType>.of(settings.onlineLyricSourceOrder);
+    final source = order.removeAt(oldIndex);
+    order.insert(newIndex, source);
+    setState(() => settings.onlineLyricSourceOrder = order);
+    await settings.saveSettings();
+  }
+
+  Future<void> _setSourceEnabled(LyricSourceType source, bool enabled) async {
+    final sources = Set<LyricSourceType>.of(
+      settings.enabledOnlineLyricSources,
+    );
+    if (enabled) {
+      sources.add(source);
+    } else {
+      if (sources.length <= 1) {
+        showTextOnSnackBar('至少保留一个在线歌词来源');
+        return;
+      }
+      sources.remove(source);
+    }
+    setState(() => settings.enabledOnlineLyricSources = sources);
     await settings.saveSettings();
   }
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -3431,31 +3458,78 @@ class _DefaultLyricSourceControlState extends State<DefaultLyricSourceControl> {
                 _setLocalLyricFirst(newSelection.first),
           ),
         ),
-        if (!settings.localLyricFirst) ...[
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.only(left: 16),
-            child: _onlineSourceTile(),
+        const SizedBox(height: 16),
+        Padding(
+          padding: const EdgeInsets.only(left: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                '在线歌词来源',
+                style: TextStyle(
+                  color: scheme.onSurface,
+                  fontSize: AppType.sectionTitle,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '拖动调整顺序；关闭不用的来源，只留一个即只用它',
+                style: TextStyle(
+                  color: scheme.onSurfaceVariant,
+                  fontSize: AppType.body,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ReorderableListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                buildDefaultDragHandles: false,
+                itemCount: settings.onlineLyricSourceOrder.length,
+                onReorderItem: _reorderOnlineSources,
+                proxyDecorator: (child, index, animation) => Material(
+                  elevation: 4,
+                  borderRadius: AppRadius.smCircular,
+                  child: child,
+                ),
+                itemBuilder: (context, index) {
+                  final source = settings.onlineLyricSourceOrder[index];
+                  return _sourceRow(source, index, scheme);
+                },
+              ),
+            ],
           ),
-        ],
+        ),
       ],
     );
   }
 
-  Widget _onlineSourceTile() {
-    return SettingsTile(
-      description: '默认在线源',
-      action: SegmentedButton<LyricSourceType>(
-        showSelectedIcon: false,
-        segments: const [
-          ButtonSegment(value: LyricSourceType.qq, label: Text('QQ')),
-          ButtonSegment(value: LyricSourceType.kugou, label: Text('酷狗')),
-          ButtonSegment(value: LyricSourceType.ne, label: Text('网易')),
-          ButtonSegment(value: LyricSourceType.amll, label: Text('AMLL')),
+  Widget _sourceRow(LyricSourceType source, int index, ColorScheme scheme) {
+    return SizedBox(
+      key: ValueKey(source.name),
+      height: 52,
+      child: Row(
+        children: [
+          ReorderableDragStartListener(
+            index: index,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Icon(
+                Symbols.drag_indicator,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              _sourceLabels[source] ?? source.name,
+              style: TextStyle(color: scheme.onSurface, fontSize: AppType.body),
+            ),
+          ),
+          Switch(
+            value: settings.enabledOnlineLyricSources.contains(source),
+            onChanged: (value) => _setSourceEnabled(source, value),
+          ),
         ],
-        selected: {settings.preferredOnlineSource},
-        onSelectionChanged: (newSelection) =>
-            _setPreferredOnlineSource(newSelection.first),
       ),
     );
   }

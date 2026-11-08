@@ -1206,21 +1206,40 @@ class LyricService extends ChangeNotifier {
     };
   }
 
+  static ResultSource _resultSourceFromLyricSourceType(
+    LyricSourceType source,
+  ) {
+    return switch (source) {
+      LyricSourceType.qq => ResultSource.qq,
+      LyricSourceType.kugou => ResultSource.kugou,
+      LyricSourceType.ne => ResultSource.ne,
+      LyricSourceType.amll => ResultSource.amll,
+      LyricSourceType.local => ResultSource.qq,
+    };
+  }
+
+  static List<ResultSource> _enabledOnlineResultSources() => [
+    for (final source in AppSettings.instance.enabledOnlineLyricSourcesInOrder)
+      _resultSourceFromLyricSourceType(source),
+  ];
+
   Future<({Lyric lyric, ResultSource source, SongSearchResult? result})?>
-  _loadOnlineLyricWithFallback(Audio audio, ResultSource preferredSource) =>
-      getLyricWithSourceFallback(audio, preferredSource);
+  _loadOnlineLyricWithFallback(Audio audio, List<ResultSource> sources) =>
+      getLyricWithSourceFallback(audio, sources);
 
   /// 启动带源切换的在线搜索：命中非首选源时固化该单曲来源，
   /// 避免下次播放重复等待首选源超时。返回歌词加载 future。
   Future<Lyric?> _startOnlineLyricWithFallback({
     required Audio audio,
-    required ResultSource preferredSource,
+    required List<ResultSource> sources,
     required int requestToken,
     required String audioPath,
     bool persistFallbackSource = true,
   }) {
+    if (sources.isEmpty) return Future<Lyric?>.value();
+    final preferredSource = sources.first;
     final fallbackFuture = LyricRequestScheduler.instance.runInteractive(
-      (_) => _loadOnlineLyricWithFallback(audio, preferredSource),
+      (_) => _loadOnlineLyricWithFallback(audio, sources),
     );
     final lyricFuture = fallbackFuture.then((result) => result?.lyric);
     fallbackFuture.then((result) {
@@ -1310,19 +1329,13 @@ class LyricService extends ChangeNotifier {
       return null;
     }
     _onlineFallbackForWrite = true;
-    final preferredSource = AppSettings.instance.preferredOnlineSource;
-    final rs = switch (preferredSource) {
-      LyricSourceType.qq => ResultSource.qq,
-      LyricSourceType.kugou => ResultSource.kugou,
-      LyricSourceType.ne => ResultSource.ne,
-      LyricSourceType.amll => ResultSource.amll,
-      LyricSourceType.local => ResultSource.qq,
-    };
-    _activeLyricSourceType = _lyricSourceTypeFromResultSource(rs);
-    _reportLyricUpdate(mode: 'online', source: rs.name);
+    final sources = _enabledOnlineResultSources();
+    if (sources.isEmpty) return null;
+    _activeLyricSourceType = _lyricSourceTypeFromResultSource(sources.first);
+    _reportLyricUpdate(mode: 'online', source: sources.first.name);
     return _startOnlineLyricWithFallback(
       audio: nowPlaying,
-      preferredSource: rs,
+      sources: sources,
       requestToken: requestToken,
       audioPath: audioPath,
       persistFallbackSource: false,
@@ -1335,7 +1348,13 @@ class LyricService extends ChangeNotifier {
     int requestToken,
     LyricSource? lyricSource,
   ) {
-    if (lyricSource == null) {
+    final savedSourceDisabled =
+        lyricSource != null &&
+        lyricSource.source != LyricSourceType.local &&
+        !AppSettings.instance.enabledOnlineLyricSources.contains(
+          lyricSource.source,
+        );
+    if (lyricSource == null || savedSourceDisabled) {
       if (AppSettings.instance.localLyricFirst) {
         _reportLyricUpdate(mode: 'local', source: 'local');
         return _loadLocalLyricThenOnlineFallback(
@@ -1344,19 +1363,13 @@ class LyricService extends ChangeNotifier {
           requestToken,
         );
       }
-      final preferredSource = AppSettings.instance.preferredOnlineSource;
-      final rs = switch (preferredSource) {
-        LyricSourceType.qq => ResultSource.qq,
-        LyricSourceType.kugou => ResultSource.kugou,
-        LyricSourceType.ne => ResultSource.ne,
-        LyricSourceType.amll => ResultSource.amll,
-        LyricSourceType.local => ResultSource.qq,
-      };
-      _activeLyricSourceType = _lyricSourceTypeFromResultSource(rs);
-      _reportLyricUpdate(mode: 'online', source: rs.name);
+      final sources = _enabledOnlineResultSources();
+      if (sources.isEmpty) return Future<Lyric?>.value();
+      _activeLyricSourceType = _lyricSourceTypeFromResultSource(sources.first);
+      _reportLyricUpdate(mode: 'online', source: sources.first.name);
       return _startOnlineLyricWithFallback(
         audio: nowPlaying,
-        preferredSource: rs,
+        sources: sources,
         requestToken: requestToken,
         audioPath: audioPath,
       );
@@ -1803,7 +1816,11 @@ class LyricService extends ChangeNotifier {
     int requestToken,
   ) {
     final savedSource = lyricSources[audioPath];
-    if (savedSource != null && savedSource.source != LyricSourceType.local) {
+    if (savedSource != null &&
+        savedSource.source != LyricSourceType.local &&
+        AppSettings.instance.enabledOnlineLyricSources.contains(
+          savedSource.source,
+        )) {
       _activeLyricSourceType = savedSource.source;
       log.lyric.info(
         'lyric.update',
@@ -1823,22 +1840,17 @@ class LyricService extends ChangeNotifier {
         ),
       );
     }
-    final rs = switch (AppSettings.instance.preferredOnlineSource) {
-      LyricSourceType.qq => ResultSource.qq,
-      LyricSourceType.kugou => ResultSource.kugou,
-      LyricSourceType.ne => ResultSource.ne,
-      LyricSourceType.amll => ResultSource.amll,
-      LyricSourceType.local => ResultSource.qq,
-    };
-    _activeLyricSourceType = _lyricSourceTypeFromResultSource(rs);
+    final sources = _enabledOnlineResultSources();
+    if (sources.isEmpty) return Future<Lyric?>.value();
+    _activeLyricSourceType = _lyricSourceTypeFromResultSource(sources.first);
     log.lyric.info(
       'lyric.update',
       '按首选来源搜索在线歌词',
-      fields: {'mode': 'online', 'source': rs.name},
+      fields: {'mode': 'online', 'source': sources.first.name},
     );
     return _startOnlineLyricWithFallback(
       audio: nowPlaying,
-      preferredSource: rs,
+      sources: sources,
       requestToken: requestToken,
       audioPath: audioPath,
     );

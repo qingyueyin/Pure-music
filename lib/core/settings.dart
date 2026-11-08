@@ -229,7 +229,26 @@ class AppSettings {
   Map<String, String> artistAliases = {};
 
   bool localLyricFirst = true;
-  LyricSourceType preferredOnlineSource = LyricSourceType.qq;
+
+  static const List<LyricSourceType> _onlineLyricSourceTypes = [
+    LyricSourceType.qq,
+    LyricSourceType.kugou,
+    LyricSourceType.ne,
+    LyricSourceType.amll,
+  ];
+
+  List<LyricSourceType> onlineLyricSourceOrder = List.of(
+    _onlineLyricSourceTypes,
+  );
+  Set<LyricSourceType> enabledOnlineLyricSources = {
+    ..._onlineLyricSourceTypes,
+  };
+
+  List<LyricSourceType> get enabledOnlineLyricSourcesInOrder => [
+    for (final source in onlineLyricSourceOrder)
+      if (enabledOnlineLyricSources.contains(source)) source,
+  ];
+
   bool showTranslation = true;
   bool showRomanization = true;
   bool keepLyricMetadata = true;
@@ -506,6 +525,43 @@ class AppSettings {
     _instance.globalHotkeys = decodeGlobalHotkeys(settingsMap['GlobalHotkeys']);
   }
 
+  static List<LyricSourceType> _normalizedOnlineLyricSourceOrder(
+    Object? value,
+  ) {
+    final result = <LyricSourceType>[];
+    if (value is Iterable) {
+      for (final item in value) {
+        final source = normalizedSettingEnumValue(item, LyricSourceType.values);
+        if (source != null &&
+            _onlineLyricSourceTypes.contains(source) &&
+            !result.contains(source)) {
+          result.add(source);
+        }
+      }
+    }
+    for (final source in _onlineLyricSourceTypes) {
+      if (!result.contains(source)) result.add(source);
+    }
+    return result;
+  }
+
+  static Set<LyricSourceType> _normalizedOnlineLyricSourceSet(
+    Object? value,
+    List<LyricSourceType> order,
+  ) {
+    final result = <LyricSourceType>{};
+    if (value is Iterable) {
+      for (final item in value) {
+        final source = normalizedSettingEnumValue(item, LyricSourceType.values);
+        if (source != null && _onlineLyricSourceTypes.contains(source)) {
+          result.add(source);
+        }
+      }
+    }
+    if (result.isEmpty) result.add(order.first);
+    return result;
+  }
+
   static void _readLyricPreferenceSettings(Map<String, dynamic> settingsMap) {
     final sep = settingsMap['ArtistSeparator'];
     if (sep != null) {
@@ -538,13 +594,32 @@ class AppSettings {
       );
     }
 
-    final pos = settingsMap['PreferredOnlineSource'];
-    if (pos != null) {
-      _instance.preferredOnlineSource = normalizedSettingEnumValue(
-        pos,
+    final sourceOrder = settingsMap['OnlineLyricSourceOrder'];
+    final enabledSources = settingsMap['OnlineLyricSourceEnabled'];
+    final legacyPreferred = settingsMap['PreferredOnlineSource'];
+    if (sourceOrder != null) {
+      _instance.onlineLyricSourceOrder = _normalizedOnlineLyricSourceOrder(
+        sourceOrder,
+      );
+    } else if (legacyPreferred != null) {
+      final preferred = normalizedSettingEnumValue(
+        legacyPreferred,
         LyricSourceType.values,
         fallback: LyricSourceType.qq,
       )!;
+      _instance.onlineLyricSourceOrder = [
+        if (_onlineLyricSourceTypes.contains(preferred)) preferred,
+        for (final source in _onlineLyricSourceTypes)
+          if (source != preferred) source,
+      ];
+    }
+    if (enabledSources != null) {
+      _instance.enabledOnlineLyricSources = _normalizedOnlineLyricSourceSet(
+        enabledSources,
+        _instance.onlineLyricSourceOrder,
+      );
+    } else if (legacyPreferred != null) {
+      _instance.enabledOnlineLyricSources = {..._onlineLyricSourceTypes};
     }
 
     final st = settingsMap['ShowTranslation'];
@@ -1174,7 +1249,13 @@ class AppSettings {
     'EnableFeatArtistSplit': enableFeatArtistSplit,
     'ArtistAliases': artistAliases,
     'LocalLyricFirst': localLyricFirst,
-    'PreferredOnlineSource': preferredOnlineSource.name,
+    'OnlineLyricSourceOrder': [
+      for (final source in onlineLyricSourceOrder) source.name,
+    ],
+    'OnlineLyricSourceEnabled': [
+      for (final source in onlineLyricSourceOrder)
+        if (enabledOnlineLyricSources.contains(source)) source.name,
+    ],
     'ShowTranslation': showTranslation,
     'ShowRomanization': showRomanization,
     'KeepLyricMetadata': keepLyricMetadata,
