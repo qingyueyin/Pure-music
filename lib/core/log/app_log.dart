@@ -103,6 +103,14 @@ class LogChannel {
 }
 
 class AppLog {
+  static const _dedupWindow = Duration(seconds: 2);
+  static const _dedupMaxKeys = 256;
+  static const _dedupModules = {
+    LogModule.lyric,
+    LogModule.onlineLyric,
+    LogModule.desktopLyric,
+  };
+
   final app = LogChannel(LogModule.app);
   final playback = LogChannel(LogModule.playback);
   final bass = LogChannel(LogModule.bass);
@@ -119,13 +127,57 @@ class AppLog {
   final lastfm = LogChannel(LogModule.lastfm);
   final rust = LogChannel(LogModule.rust);
 
+  final _dedupEntries = <String, _DedupEntry>{};
+
   void write(LogRecord record) {
-    if (keepInMemory(record.level)) LogMemory.instance.add(record);
-    applicationLogOutput.writeRecord(record);
-    if (kDebugMode && record.level.index >= LogLevel.warn.index) {
-      debugPrint(formatRecord(record));
+    final effective = _dedup(record);
+    if (effective == null) return;
+    if (keepInMemory(effective.level)) LogMemory.instance.add(effective);
+    applicationLogOutput.writeRecord(effective);
+    if (kDebugMode && effective.level.index >= LogLevel.warn.index) {
+      debugPrint(formatRecord(effective));
     }
   }
+
+  LogRecord? _dedup(LogRecord record) {
+    if (!_dedupModules.contains(record.module)) return record;
+    final key =
+        '${record.module.wire}|${record.level.name}|${record.event}|'
+        '${record.message}|${record.fields}|${record.error}';
+    final now = record.time;
+    final entry = _dedupEntries[key];
+    if (entry != null) {
+      final delta = now.difference(entry.time);
+      if (!delta.isNegative && delta < _dedupWindow) {
+        entry.suppressed++;
+        return null;
+      }
+    }
+    if (_dedupEntries.length >= _dedupMaxKeys) {
+      _dedupEntries.removeWhere(
+        (_, value) => now.difference(value.time) >= _dedupWindow,
+      );
+    }
+    _dedupEntries[key] = _DedupEntry(now);
+    if (entry == null || entry.suppressed == 0) return record;
+    return LogRecord(
+      time: record.time,
+      level: record.level,
+      module: record.module,
+      event: record.event,
+      message: record.message,
+      fields: {...record.fields, 'repeat': entry.suppressed},
+      error: record.error,
+      stackTrace: record.stackTrace,
+    );
+  }
+}
+
+class _DedupEntry {
+  _DedupEntry(this.time);
+
+  final DateTime time;
+  int suppressed = 0;
 }
 
 final log = AppLog();
