@@ -20,8 +20,11 @@ vec3 toSrgb(vec3 linearRgb) {
   return pow(max(linearRgb, vec3(0.0)), vec3(1.0 / 2.2));
 }
 
-vec3 sampleLinear(vec2 uv) {
-  return toLinear(texture(u_texture_input, clamp(uv, 0.0, 1.0)).rgb);
+vec3 sampleLinear(vec2 uv, out float alpha) {
+  vec4 srgb = texture(u_texture_input, clamp(uv, 0.0, 1.0));
+  alpha = srgb.a;
+  if (alpha <= 0.0) return vec3(0.0);
+  return toLinear(srgb.rgb / alpha) * alpha;
 }
 
 void main() {
@@ -29,8 +32,10 @@ void main() {
   vec2 uv = FlutterFragCoord().xy / size;
   vec2 texel = u_direction / size;
 
-  vec3 color = sampleLinear(uv);
+  float alpha;
+  vec3 color = sampleLinear(uv, alpha);
   float weightSum = 1.0;
+  float alphaSum = alpha;
 
   // 相邻整数 tap 合成一次双线性采样；16 组覆盖 1–32 px，约 3σ。
   for (int i = 0; i < 16; ++i) {
@@ -41,13 +46,16 @@ void main() {
     float weight = wLeft + wRight;
     float offset = (left * wLeft + right * wRight) / max(weight, 0.000001);
     vec2 delta = texel * offset;
-    color += sampleLinear(uv + delta) * weight;
-    color += sampleLinear(uv - delta) * weight;
+    color += sampleLinear(uv + delta, alpha) * weight;
+    alphaSum += alpha * weight;
+    color += sampleLinear(uv - delta, alpha) * weight;
+    alphaSum += alpha * weight;
     weightSum += weight * 2.0;
   }
 
-  vec3 linearRgb = color / max(weightSum, 0.000001);
+  float outAlpha = alphaSum / max(weightSum, 0.000001);
+  vec3 linearRgb = color / max(alphaSum, 0.000001);
   float luma = dot(linearRgb, vec3(0.2126, 0.7152, 0.0722));
   linearRgb = mix(vec3(luma), linearRgb, max(u_chromaBoost, 1.0));
-  fragColor = vec4(toSrgb(linearRgb), 1.0);
+  fragColor = vec4(toSrgb(linearRgb) * outAlpha, outAlpha);
 }
