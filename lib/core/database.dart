@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+import 'package:pure_music/core/log/app_log.dart';
 import 'package:pure_music/core/settings.dart';
 import 'package:pure_music/core/sqlite_runtime.dart';
 import 'package:path/path.dart' as path;
@@ -32,8 +34,7 @@ class AppDb {
       dbFile.parent.createSync(recursive: true);
 
       ensureSqliteRuntime();
-      opened = sqlite3.open(dbFile.path);
-      _initSchema(opened);
+      opened = openRecovering(dbFile);
       _db = opened;
       return opened;
     } catch (_) {
@@ -44,7 +45,61 @@ class AppDb {
     }
   }
 
-  void _initSchema(Database db) {
+  /// 打开数据库；文件损坏时把旧文件隔离后重建，避免整个应用起不来
+  @visibleForTesting
+  static Database openRecovering(File dbFile) {
+    ensureSqliteRuntime();
+    try {
+      final db = sqlite3.open(dbFile.path);
+      try {
+        _initSchema(db);
+      } catch (_) {
+        db.dispose();
+        rethrow;
+      }
+      return db;
+    } on SqliteException catch (error) {
+      if (!_isCorruption(error)) rethrow;
+      final quarantined = _quarantine(dbFile);
+      if (quarantined == null) rethrow;
+      log.app.warn(
+        'db_corrupt',
+        'database quarantined to $quarantined',
+        fields: {'code': error.resultCode},
+      );
+      final db = sqlite3.open(dbFile.path);
+      _initSchema(db);
+      return db;
+    }
+  }
+
+  static bool _isCorruption(SqliteException error) {
+    // SQLITE_CORRUPT=11、SQLITE_NOTADB=26，扩展码取低 8 位
+    final code = error.resultCode & 0xff;
+    return code == 11 || code == 26;
+  }
+
+  /// 把损坏的数据库连同 WAL/SHM 一起改名保留，返回主文件的新路径
+  static String? _quarantine(File dbFile) {
+    final stamp = DateTime.now()
+        .toIso8601String()
+        .replaceAll(RegExp(r'[:.]'), '-');
+    String? mainPath;
+    for (final suffix in const ['', '-wal', '-shm']) {
+      final file = File('${dbFile.path}$suffix');
+      if (!file.existsSync()) continue;
+      final target = '${dbFile.path}.corrupt-$stamp$suffix';
+      try {
+        file.renameSync(target);
+        if (suffix.isEmpty) mainPath = target;
+      } catch (_) {
+        if (suffix.isEmpty) return null;
+      }
+    }
+    return mainPath;
+  }
+
+  static void _initSchema(Database db) {
     db.execute('''
 PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
@@ -88,7 +143,7 @@ CREATE TABLE IF NOT EXISTS album_colors (
     _migrate(db);
   }
 
-  void _migrate(Database db) {
+  static void _migrate(Database db) {
     db.execute('BEGIN');
     try {
       final version =
