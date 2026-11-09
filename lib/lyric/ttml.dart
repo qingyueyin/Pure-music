@@ -433,7 +433,12 @@ class Ttml extends Lyric {
   }) {
     final begin = _parseTime(_attr(p, 'begin'));
     if (begin == null) return null;
-    final end = _parseTime(_attr(p, 'end'));
+    // 只写 dur 时按 begin + dur 补齐；end 与 dur 同时存在时以 end 为准。
+    final explicitEnd = _parseTime(_attr(p, 'end'));
+    final dur = _parseTime(_attr(p, 'dur'));
+    final end = explicitEnd != null && explicitEnd > begin
+        ? explicitEnd
+        : (dur != null && dur > Duration.zero ? begin + dur : null);
     final key = _attr(p, 'key').ifBlank(() => _attr(p, 'itunes:key'));
     final agent = _attr(p, 'agent').ifBlank(() => _attr(p, 'ttm:agent'));
     final resolvedAgent = agentAlignment[agent] ?? agent;
