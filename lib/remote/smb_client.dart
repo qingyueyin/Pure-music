@@ -204,11 +204,13 @@ class SmbClient implements RemoteClient {
     await authenticate(source, password);
     final root = _sourceRoot(source);
     final appData = await getAppDataDir();
+    // 保留上次扫描的索引：Rust 侧会按 path + mtime + size 复用未变文件的标签，
+    // 删掉目录就退化成每次全量扫盘。首次同步或索引版本落后时会自动全量回退。
+    // existingTracks 用于上层跳过重写曲库，标签级增量不依赖它，避免两份缓存打架。
     final indexDir = Directory(p.join(appData.path, 'remote_index', source.id));
-    if (await indexDir.exists()) {
-      await indexDir.delete(recursive: true);
+    if (!await indexDir.exists()) {
+      await indexDir.create(recursive: true);
     }
-    await indexDir.create(recursive: true);
     try {
       await for (final state
           in rust_tag_reader.buildRemoteIndexFromFoldersRecursively(

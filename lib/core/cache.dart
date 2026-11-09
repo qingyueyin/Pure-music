@@ -1126,7 +1126,8 @@ class CoverImageCache {
       final indexPath = _indexPath;
       final maxPhysical = max(physicalWidth, physicalHeight);
       if (RemoteLibrary.isRemotePath(path)) {
-        return RemoteLibrary.instance.coverBytes(path, maxPhysical);
+        final bytes = await RemoteLibrary.instance.coverBytes(path, maxPhysical);
+        return bytes;
       }
       if (indexPath != null && maxPhysical > 96) {
         try {
@@ -1147,11 +1148,12 @@ class CoverImageCache {
           }
         }
       }
-      return getPictureFromPath(
+      final bytes = await getPictureFromPath(
         path: path,
         width: physicalWidth,
         height: physicalHeight,
       );
+      return bytes;
     } finally {
       developer.Timeline.finishSync();
     }
