@@ -68,7 +68,12 @@ class AppDb {
         fields: {'code': error.resultCode},
       );
       final db = sqlite3.open(dbFile.path);
-      _initSchema(db);
+      try {
+        _initSchema(db);
+      } catch (_) {
+        db.dispose();
+        rethrow;
+      }
       return db;
     }
   }
