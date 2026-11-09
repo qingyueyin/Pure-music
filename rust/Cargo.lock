@@ -406,11 +406,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "dsf-meta"
-version = "0.2.7"
+name = "dsd-source"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa1d4230005238406c7e20c6e966ad2e3e516cd42fb81d3818c9607c8367bb8d"
+checksum = "abefa93db26ebcaae898dedd37f9a3e8378c369b1c251adf54e73e7f1195aa37"
 dependencies = [
+ "id3",
+]
+
+[[package]]
+name = "dsf-meta"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dfc2ace16a9905a870d157d87cbd179d701714fe6315a47e61fa194a3d6f7f1a"
+dependencies = [
+ "dsd-source",
  "id3",
  "sampled_data_duration",
 ]
