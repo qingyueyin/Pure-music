@@ -571,33 +571,99 @@ getLyricWithSourceFallback(
   List<ResultSource> sources, {
   OnlineSourceLyricLoader? loadSource,
   Duration timeLimit = _onlineSourceFallbackTimeLimit,
+  Duration hedgeDelay = const Duration(milliseconds: 1500),
 }) async {
   if (timeLimit.compareTo(Duration.zero) <= 0 || sources.isEmpty) return null;
   final stopwatch = Stopwatch()..start();
+  // 前一个源迟迟没结果时，提前并行启动下一个源，避免一个死源拖住整段等待
+  const maxConcurrent = 2;
 
-  for (var index = 0; index < sources.length; index++) {
-    final remaining = _remainingDuration(timeLimit, stopwatch);
-    if (remaining == Duration.zero) break;
-    final sourcesRemaining = sources.length - index;
-    final source = sources[index];
-    final sourceBudget = _sourceFallbackBudget(
-      source: source,
-      isPreferred: index == 0,
-      sourcesRemaining: sourcesRemaining,
-      remaining: remaining,
-    );
-    if (sourceBudget == Duration.zero) break;
-    final found = await _lyricFromSource(
-      audio,
-      source,
-      sourceBudget,
-      loadSource,
-    );
-    if (found != null) return found;
+  final completer =
+      Completer<({Lyric lyric, ResultSource source, SongSearchResult? result})?>();
+  var nextIndex = 0;
+  var running = 0;
+  Timer? hedgeTimer;
+  Timer? limitTimer;
+
+  void finish(({Lyric lyric, ResultSource source, SongSearchResult? result})? result) {
+    if (completer.isCompleted) return;
+    hedgeTimer?.cancel();
+    limitTimer?.cancel();
+    completer.complete(result);
   }
 
-  log.onlineLyric.info('legacy', '[fallback] no usable online lyric');
-  return null;
+  late void Function() scheduleHedge;
+  late void Function() startNext;
+  late Future<void> Function(int index) runSource;
+
+  startNext = () {
+    if (completer.isCompleted || running >= maxConcurrent) return;
+    if (nextIndex >= sources.length) return;
+    final index = nextIndex++;
+    unawaited(runSource(index));
+  };
+
+  runSource = (index) async {
+    running++;
+    ({Lyric lyric, ResultSource source, SongSearchResult? result})? found;
+    try {
+      final remaining = _remainingDuration(timeLimit, stopwatch);
+      if (remaining > Duration.zero) {
+        final budget = _sourceFallbackBudget(
+          source: sources[index],
+          isPreferred: index == 0,
+          sourcesRemaining: sources.length - index,
+          remaining: remaining,
+        );
+        if (budget > Duration.zero) {
+          found = await _lyricFromSource(
+            audio,
+            sources[index],
+            budget,
+            loadSource,
+          );
+        }
+      }
+    } catch (_) {
+      found = null;
+    } finally {
+      running--;
+      if (!completer.isCompleted) {
+        log.onlineLyric.info(
+          'legacy',
+          '[fallback] ${sources[index]} ${found == null ? 'miss' : 'hit'} '
+          '${stopwatch.elapsedMilliseconds}ms',
+        );
+        if (found != null) {
+          finish(found);
+        } else {
+          startNext();
+          scheduleHedge();
+          if (running == 0 && nextIndex >= sources.length) finish(null);
+        }
+      }
+    }
+  };
+
+  scheduleHedge = () {
+    hedgeTimer?.cancel();
+    if (completer.isCompleted || nextIndex >= sources.length) return;
+    hedgeTimer = Timer(hedgeDelay, () {
+      startNext();
+      scheduleHedge();
+    });
+  };
+
+  limitTimer = Timer(timeLimit, () => finish(null));
+
+  startNext();
+  scheduleHedge();
+
+  final result = await completer.future;
+  if (result == null) {
+    log.onlineLyric.info('legacy', '[fallback] no usable online lyric');
+  }
+  return result;
 }
 
 Future<List<SongSearchResult>> _searchPreferredSource(
