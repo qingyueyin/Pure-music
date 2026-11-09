@@ -26,9 +26,11 @@ const _kCoverPeriod1 = 75.0;
 const _kCoverPeriod2 = 55.0;
 const _kCoverPeriod3 = 62.0;
 const _kPrefilterPadding = 32;
-// 预模糊 sigma 按 1280×720 窗口换算到纹理空间，替代运行时整屏模糊。
-const _kPrimaryPrefilterSigma = 12.6;
-const _kSoftPrefilterSigma = 11.5;
+// 1280×720 参考窗口下的预模糊 sigma；其他尺寸按画布大小换算。
+const _kReferencePrimarySigma = 12.6;
+const _kReferenceSoftSigma = 11.5;
+
+typedef _PrefilterSigmas = ({double primary, double soft});
 
 const _kPrimaryLayerScale = 1.42;
 const _kPrimaryLayerAlpha = 255;
@@ -66,6 +68,22 @@ Size _flowingLightOverscanSize(Size cropSize) {
   return Size(
     max(1.0, (cropSize.width * _kOverscan).roundToDouble()),
     max(1.0, (cropSize.height * _kOverscan).roundToDouble()),
+  );
+}
+
+/// 按画布尺寸换算预模糊 sigma，复现旧版「6px 预模糊 + 运行时整屏模糊」的合成效果。
+@visibleForTesting
+({double primary, double soft}) flowingLightPrefilterSigmas(Size overscanSize) {
+  if (overscanSize.isEmpty) {
+    return (primary: _kReferencePrimarySigma, soft: _kReferenceSoftSigma);
+  }
+  final runtimeCanvas = (overscanSize.shortestSide * 0.10).clamp(8.0, 16.0);
+  final coverScale =
+      max(overscanSize.width, overscanSize.height) * _kOverscan / _kDecodeSize;
+  final runtimeTexture = runtimeCanvas / max(coverScale, 0.0001);
+  return (
+    primary: sqrt(36 + runtimeTexture * runtimeTexture),
+    soft: sqrt(9 + runtimeTexture * runtimeTexture),
   );
 }
 
@@ -134,14 +152,18 @@ class _CoverTextures {
     this.primary,
     this.soft, {
     this.padding = _kPrefilterPadding,
+    this.owned = true,
   });
 
   final ui.Image primary;
   final ui.Image soft;
   // 纹理四周的透明边，缩放时按去掉边距后的内容尺寸算。
   final int padding;
+  // 回退路径直接复用封面原图，所有权仍归 _DecodedCover。
+  final bool owned;
 
   void dispose() {
+    if (!owned) return;
     primary.dispose();
     if (!identical(primary, soft)) soft.dispose();
   }
@@ -160,12 +182,13 @@ class FlowingLightBackground extends StatefulWidget {
 
 class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     with SingleTickerProviderStateMixin {
-  _CoverTextures? _cover;
-  _CoverTextures? _previousCover;
-  Color _coverBaseColor = _kDarkNeutralBackground;
-  Color _previousCoverBaseColor = _kDarkNeutralBackground;
-  double _previousMotionTime = 0;
+  _DecodedCover? _cover;
+  _DecodedCover? _previousCover;
   _DecodedCover? _pendingCover;
+  double _previousMotionTime = 0;
+  Size? _overscanSize;
+  Timer? _prefilterDebounce;
+  int _prefilterGeneration = 0;
 
   late final Stopwatch _transitionClock;
   late final Ticker _ticker;
@@ -551,19 +574,20 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
       // 把模糊烤进封面纹理，运行时不再对整屏做高斯。
       final source = image;
       image = null;
+      final sigmas = flowingLightPrefilterSigmas(_overscanSize ?? Size.zero);
       _CoverTextures textures;
       try {
-        textures = await _prefilterCoverTextures(source);
-        source.dispose();
+        textures = await _prefilterCoverTextures(source, sigmas);
       } catch (_) {
         // 预模糊失败时退回未模糊封面，至少保留背景。
-        textures = _CoverTextures(source, source, padding: 0);
+        textures = _CoverTextures(source, source, padding: 0, owned: false);
       }
+      final decoded = _DecodedCover(source, textures, baseColor, sigmas);
       if (_disposed || !mounted || generation != _decodeGeneration) {
-        textures.dispose();
+        decoded.dispose();
         return;
       }
-      _acceptDecodedCover(_DecodedCover(textures, baseColor));
+      _acceptDecodedCover(decoded);
     } catch (_) {
       image?.dispose();
       if (!_disposed && mounted && generation == _decodeGeneration) {
@@ -574,18 +598,15 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     }
   }
 
-  Future<_CoverTextures> _prefilterCoverTextures(ui.Image source) async {
-    final primary = await _prefilterCoverImage(
-      source,
-      _kPrimaryPrefilterSigma,
-    );
+  Future<_CoverTextures> _prefilterCoverTextures(
+    ui.Image source,
+    _PrefilterSigmas sigmas,
+  ) async {
+    final primary = await _prefilterCoverImage(source, sigmas.primary);
     ui.Image? softSource;
     try {
       softSource = await _downscaleCover(source);
-      final soft = await _prefilterCoverImage(
-        softSource,
-        _kSoftPrefilterSigma,
-      );
+      final soft = await _prefilterCoverImage(softSource, sigmas.soft);
       return _CoverTextures(primary, soft);
     } catch (_) {
       primary.dispose();
@@ -704,19 +725,16 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
 
   void _acceptDecodedCover(_DecodedCover decoded) {
     if (_previousCover != null) {
-      final oldPending = _pendingCover;
-      if (oldPending != null) {
-        oldPending.textures.dispose();
-      }
+      _pendingCover?.dispose();
       _pendingCover = decoded;
       return;
     }
     if (_cover == null) {
       setState(() {
-        _cover = decoded.textures;
-        _coverBaseColor = decoded.baseColor;
+        _cover = decoded;
       });
       _syncAnimationState();
+      _schedulePrefilterCheck();
       return;
     }
     _startArtworkTransition(decoded);
@@ -726,10 +744,8 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     final currentTime = _motion.time;
     setState(() {
       _previousCover = _cover;
-      _previousCoverBaseColor = _coverBaseColor;
       _previousMotionTime = currentTime;
-      _cover = decoded.textures;
-      _coverBaseColor = decoded.baseColor;
+      _cover = decoded;
       _transitionClock
         ..stop()
         ..reset();
@@ -752,16 +768,15 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
       final currentTime = _motion.time;
       setState(() {
         _previousCover = _cover;
-        _previousCoverBaseColor = _coverBaseColor;
         _previousMotionTime = currentTime;
-        _cover = pending.textures;
-        _coverBaseColor = pending.baseColor;
+        _cover = pending;
         _transitionClock
           ..stop()
           ..reset();
       });
+      _schedulePrefilterCheck();
     }
-    _disposeTexturesAfterFrame([completedPrevious]);
+    _disposeCoversAfterFrame([completedPrevious]);
     _syncAnimationState();
   }
 
@@ -772,8 +787,9 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     _cover = null;
     _previousCover = null;
     _pendingCover = null;
-    _coverBaseColor = _kDarkNeutralBackground;
-    _previousCoverBaseColor = _kDarkNeutralBackground;
+    _prefilterGeneration++;
+    _prefilterDebounce?.cancel();
+    _prefilterDebounce = null;
     _transitionClock
       ..stop()
       ..reset();
@@ -783,13 +799,25 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
       ..previousCover = null;
     if (mounted && !_disposed) {
       setState(() {});
-      _disposeTexturesAfterFrame([current, previous, pending?.textures]);
+      _disposeCoversAfterFrame([current, previous, pending]);
     } else {
       current?.dispose();
       previous?.dispose();
-      pending?.textures.dispose();
+      pending?.dispose();
     }
     _syncAnimationState();
+  }
+
+  void _disposeCoversAfterFrame(Iterable<_DecodedCover?> covers) {
+    final disposable = covers.whereType<_DecodedCover>().toList(
+      growable: false,
+    );
+    if (disposable.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      for (final cover in disposable) {
+        cover.dispose();
+      }
+    });
   }
 
   void _disposeTexturesAfterFrame(Iterable<_CoverTextures?> textures) {
@@ -804,15 +832,76 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     });
   }
 
+  void _schedulePrefilterCheck() {
+    if (_disposed) return;
+    _prefilterDebounce?.cancel();
+    _prefilterDebounce = Timer(const Duration(milliseconds: 200), () {
+      _prefilterDebounce = null;
+      _maybeReprefilter();
+    });
+  }
+
+  void _maybeReprefilter() {
+    if (_disposed || !mounted) return;
+    final cover = _cover;
+    final overscanSize = _overscanSize;
+    if (cover == null || overscanSize == null || overscanSize.isEmpty) return;
+    final sigmas = flowingLightPrefilterSigmas(overscanSize);
+    if (_sigmaCloseEnough(sigmas.primary, cover.sigmas.primary)) return;
+    _reprefilter(cover, sigmas);
+  }
+
+  static bool _sigmaCloseEnough(double a, double b) {
+    return (a - b).abs() <= b * 0.08;
+  }
+
+  Future<void> _reprefilter(
+    _DecodedCover cover,
+    _PrefilterSigmas sigmas,
+  ) async {
+    final generation = ++_prefilterGeneration;
+    try {
+      final textures = await _prefilterCoverTextures(cover.source, sigmas);
+      final overscanSize = _overscanSize;
+      if (_disposed ||
+          generation != _prefilterGeneration ||
+          !identical(_cover, cover) ||
+          overscanSize == null ||
+          !_sigmaCloseEnough(
+            flowingLightPrefilterSigmas(overscanSize).primary,
+            sigmas.primary,
+          )) {
+        textures.dispose();
+        return;
+      }
+      final oldTextures = cover.textures;
+      cover
+        ..textures = textures
+        ..sigmas = sigmas;
+      if (identical(_painter.cover, oldTextures)) {
+        _painter.cover = textures;
+      }
+      if (identical(_painter.previousCover, oldTextures)) {
+        _painter.previousCover = textures;
+      }
+      _disposeTexturesAfterFrame([oldTextures]);
+      _frameNotifier.value++;
+    } catch (_) {
+      // 预模糊失败时保留现有纹理。
+    }
+  }
+
   @override
   void dispose() {
     _disposed = true;
     _decodeGeneration++;
+    _prefilterGeneration++;
+    _prefilterDebounce?.cancel();
     _ticker.dispose();
     _transitionClock.stop();
     _cover?.dispose();
     _previousCover?.dispose();
-    _pendingCover?.textures.dispose();
+    _pendingCover?.dispose();
     _frameNotifier.dispose();
     _spectrumSubscription?.cancel();
     _routeAnimation?.removeStatusListener(_onRouteAnimationStatus);
@@ -832,23 +921,26 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
   }
 
   void _syncPainter({
-    required _CoverTextures cover,
+    required _DecodedCover cover,
     required _FlowingLightVisualStyle style,
     required bool audioReactiveFlow,
   }) {
+    final previous = _previousCover;
     final changed =
-        !identical(_painter.cover, cover) ||
-        !identical(_painter.previousCover, _previousCover) ||
-        _painter.coverBaseColor != _coverBaseColor ||
-        _painter.previousCoverBaseColor != _previousCoverBaseColor ||
+        !identical(_painter.cover, cover.textures) ||
+        !identical(_painter.previousCover, previous?.textures) ||
+        _painter.coverBaseColor != cover.baseColor ||
+        _painter.previousCoverBaseColor !=
+            (previous?.baseColor ?? _kDarkNeutralBackground) ||
         _painter.previousMotionTime != _previousMotionTime ||
         _painter.audioReactiveFlow != audioReactiveFlow ||
         _painter.style != style;
     _painter
-      ..cover = cover
-      ..previousCover = _previousCover
-      ..coverBaseColor = _coverBaseColor
-      ..previousCoverBaseColor = _previousCoverBaseColor
+      ..cover = cover.textures
+      ..previousCover = previous?.textures
+      ..coverBaseColor = cover.baseColor
+      ..previousCoverBaseColor =
+          previous?.baseColor ?? _kDarkNeutralBackground
       ..previousMotionTime = _previousMotionTime
       ..audioReactiveFlow = audioReactiveFlow
       ..style = style;
@@ -889,6 +981,10 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
             if (cropSize.isEmpty || overscanSize.isEmpty) {
               return const SizedBox.shrink();
             }
+            if (overscanSize != _overscanSize) {
+              _overscanSize = overscanSize;
+              _schedulePrefilterCheck();
+            }
             // 无效/缺失封面立刻卸掉绘制层，避免还画着上一首的图。
             if (cover == null) {
               return const SizedBox.shrink();
@@ -919,10 +1015,20 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
 }
 
 class _DecodedCover {
-  const _DecodedCover(this.textures, this.baseColor);
+  _DecodedCover(this.source, this.textures, this.baseColor, this.sigmas);
 
-  final _CoverTextures textures;
+  final ui.Image source;
+  _CoverTextures textures;
   final Color baseColor;
+  _PrefilterSigmas sigmas;
+
+  void dispose() {
+    final ownsTextures = textures.owned;
+    textures.dispose();
+    if (!ownsTextures || !identical(source, textures.primary)) {
+      source.dispose();
+    }
+  }
 }
 
 class _FlowMotionState {
