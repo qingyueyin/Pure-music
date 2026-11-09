@@ -10,7 +10,7 @@ crate-type = ["cdylib"]
 flutter_rust_bridge = "=2.13.0"
 log = "0.4"
 lofty = "0.22.4"
-dsf-meta = "0.2.7"
+dsf-meta = "0.3.0"
 id3 = "1.17.1"
 ndsd-read = "0.1.2"
 ratag = "0.1.1"
