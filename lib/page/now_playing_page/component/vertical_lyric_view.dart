@@ -763,6 +763,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
   double _cachedMaxWidth = 0.0;
   double _cachedViewportHeight = 0.0;
   String? _cachedLyricFontFamily;
+  LyricRenderConfig? _cachedRenderConfig;
 
   @override
   void initState() {
@@ -1922,6 +1923,7 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
       _cachedBackgroundVocalHeights = null;
       _cachedViewportHeight = 0.0;
       _cachedLyricFontFamily = null;
+      _cachedRenderConfig = null;
       _needsInitialScroll = true;
       _displayPositionMs = lyricTimelineMsDouble(playbackService.position);
       _pendingScrollRetries = 0;
@@ -3009,12 +3011,19 @@ class _VerticalLyricScrollViewState extends State<_VerticalLyricScrollView>
     final staggerStyle = renderConfig.staggerStyle;
     return LayoutBuilder(
       builder: (context, constraints) {
+        final annotationVisibilityChanged =
+            _cachedRenderConfig?.showTranslation !=
+                renderConfig.showTranslation ||
+            _cachedRenderConfig?.showRoman != renderConfig.showRoman;
         final needsOffsets =
             _cachedOffsets == null ||
             constraints.maxWidth != _cachedMaxWidth ||
-            _cachedLyricFontFamily != lyricFontFamily;
+            _cachedLyricFontFamily != lyricFontFamily ||
+            annotationVisibilityChanged;
         if (needsOffsets) {
           _cachedMaxWidth = constraints.maxWidth;
+          _cachedLyricFontFamily = lyricFontFamily;
+          _cachedRenderConfig = renderConfig;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (_disposed || !mounted) return;
             _computeOffsets(constraints.maxWidth);

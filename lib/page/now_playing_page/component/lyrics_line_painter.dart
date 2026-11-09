@@ -1242,11 +1242,43 @@ class LyricsLinePainter extends CustomPainter {
            params.blurSigmaListenable,
           params.opacityListenable,
           params.opacityAnimatingListenable,
+          params.translationRevealListenable,
+          params.romanRevealListenable,
          ]),
        );
 
   double get _effectiveCurrentTimeMs =>
       currentTimeListenable?.value ?? currentTimeMs;
+
+  double get _translationRevealFactor =>
+      (params.translationRevealListenable?.value ?? params.translationReveal)
+          .clamp(0.0, 1.0);
+
+  double get _romanRevealFactor =>
+      (params.romanRevealListenable?.value ?? params.romanReveal).clamp(
+        0.0,
+        1.0,
+      );
+
+  double _trackRevealFactor(LyricLineTrack track) {
+    return switch (track) {
+      LyricLineTrack.translation => _translationRevealFactor,
+      LyricLineTrack.romanization => _romanRevealFactor,
+      LyricLineTrack.original => 1.0,
+    };
+  }
+
+  Color _trackPaintColor(Color color, LyricLineTrack track) {
+    final reveal = _trackRevealFactor(track);
+    if (reveal >= 0.999) return color;
+    return color.withValues(alpha: color.a * reveal);
+  }
+
+  double _trackSlideOffset(LyricLineTrack track, {required bool preOriginal}) {
+    final reveal = _trackRevealFactor(track);
+    if (reveal >= 0.999) return 0.0;
+    return (1.0 - reveal) * (preOriginal ? 6.0 : -6.0);
+  }
 
   double get _featherPx {
     if (!config.durationFeather) return 32.0;
@@ -1587,6 +1619,25 @@ class LyricsLinePainter extends CustomPainter {
     );
   }
 
+  List<LyricLineTrack> _paintLineTracks(
+    LyricRenderConfig config, {
+    required bool hasTranslation,
+    required bool hasRoman,
+  }) {
+    return config.normalizedLineOrder.where((track) {
+      switch (track) {
+        case LyricLineTrack.original:
+          return true;
+        case LyricLineTrack.translation:
+          return hasTranslation &&
+              (config.showTranslation || _translationRevealFactor > 0.001);
+        case LyricLineTrack.romanization:
+          return hasRoman &&
+              (config.showRoman || _romanRevealFactor > 0.001);
+      }
+    }).toList();
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     final syncLine = line;
@@ -1736,7 +1787,7 @@ class LyricsLinePainter extends CustomPainter {
     // ── Determine active track display order ─────────────────────────────────
     final hasTranslation = syncLine.translation != null;
     final hasRoman = syncLine.romanLyric != null;
-    final activeTracks = _activeLineTracks(
+    final activeTracks = _paintLineTracks(
       config,
       hasTranslation: hasTranslation,
       hasRoman: hasRoman,
@@ -1766,7 +1817,7 @@ class LyricsLinePainter extends CustomPainter {
           final translated = ZhConverter.convert(syncLine.translation!, zhMode);
           final tp = _buildTextPainter(
             translated,
-            translationColor,
+            _trackPaintColor(translationColor, track),
             translationFontSize,
             translationWeight,
             letterSpace,
@@ -1774,7 +1825,13 @@ class LyricsLinePainter extends CustomPainter {
             textAlign: blockTextAlign,
           );
           tp.layout(minWidth: maxWidth, maxWidth: maxWidth);
-          tp.paint(canvas, Offset(padding.left, preCursorY));
+          tp.paint(
+            canvas,
+            Offset(
+              padding.left,
+              preCursorY + _trackSlideOffset(track, preOriginal: true),
+            ),
+          );
           preCursorY += tp.height;
           recycleTextPainter(tp);
         } else if (track == LyricLineTrack.romanization &&
@@ -1782,7 +1839,7 @@ class LyricsLinePainter extends CustomPainter {
           final romanText = ZhConverter.convert(syncLine.romanLyric!, zhMode);
           final tp = _buildTextPainter(
             romanText,
-            secondaryColor,
+            _trackPaintColor(secondaryColor, track),
             romanFontSize,
             romanWeight,
             letterSpace,
@@ -1790,7 +1847,13 @@ class LyricsLinePainter extends CustomPainter {
             textAlign: blockTextAlign,
           );
           tp.layout(minWidth: maxWidth, maxWidth: maxWidth);
-          tp.paint(canvas, Offset(padding.left, preCursorY));
+          tp.paint(
+            canvas,
+            Offset(
+              padding.left,
+              preCursorY + _trackSlideOffset(track, preOriginal: true),
+            ),
+          );
           preCursorY += tp.height;
           recycleTextPainter(tp);
         }
@@ -2280,7 +2343,7 @@ class LyricsLinePainter extends CustomPainter {
           final translated = ZhConverter.convert(syncLine.translation!, zhMode);
           final tp = _buildTextPainter(
             translated,
-            translationColor,
+            _trackPaintColor(translationColor, track),
             translationFontSize,
             translationWeight,
             letterSpace,
@@ -2289,7 +2352,13 @@ class LyricsLinePainter extends CustomPainter {
           );
           tp.layout(minWidth: maxWidth, maxWidth: maxWidth);
           debugLyricTranslationY = cursorY;
-          tp.paint(canvas, Offset(padding.left, cursorY));
+          tp.paint(
+            canvas,
+            Offset(
+              padding.left,
+              cursorY + _trackSlideOffset(track, preOriginal: false),
+            ),
+          );
           cursorY += tp.height;
           recycleTextPainter(tp);
         } else if (track == LyricLineTrack.romanization &&
@@ -2297,7 +2366,7 @@ class LyricsLinePainter extends CustomPainter {
           final romanText = ZhConverter.convert(syncLine.romanLyric!, zhMode);
           final tp = _buildTextPainter(
             romanText,
-            secondaryColor,
+            _trackPaintColor(secondaryColor, track),
             romanFontSize,
             romanWeight,
             letterSpace,
@@ -2305,7 +2374,13 @@ class LyricsLinePainter extends CustomPainter {
             textAlign: blockTextAlign,
           );
           tp.layout(minWidth: maxWidth, maxWidth: maxWidth);
-          tp.paint(canvas, Offset(padding.left, cursorY));
+          tp.paint(
+            canvas,
+            Offset(
+              padding.left,
+              cursorY + _trackSlideOffset(track, preOriginal: false),
+            ),
+          );
           cursorY += tp.height;
           recycleTextPainter(tp);
         }
@@ -2317,11 +2392,15 @@ class LyricsLinePainter extends CustomPainter {
     final bgRomanLyric = syncLine.bg?.romanLyric;
     final bgTranslation = syncLine.bgTranslation;
     final hasBg = bgText != null && bgText.isNotEmpty;
-    final hasBgRoman =
-        config.showRoman && bgRomanLyric != null && bgRomanLyric.isNotEmpty;
+    final hasBgRoman = bgRomanLyric != null && bgRomanLyric.isNotEmpty;
     final hasBgTranslation = bgTranslation != null && bgTranslation.isNotEmpty;
     final hasBgWords = syncLine.bgWords.isNotEmpty;
-    if (hasBg || hasBgRoman || hasBgTranslation || hasBgWords) {
+    final bgTracks = _paintLineTracks(
+      config,
+      hasTranslation: hasBgTranslation,
+      hasRoman: hasBgRoman,
+    );
+    if (hasBg || bgTracks.length > 1 || hasBgWords) {
       final bgOpacity = _bgOpacity(syncLine);
       if (bgOpacity > 0.001) {
         final bgFontSize = fontSize * 0.60;
@@ -2375,11 +2454,6 @@ class LyricsLinePainter extends CustomPainter {
         }
         // 高度由 _bgHeightFactor 在 measureHeight 中控制，画布自然 clip
 
-        final bgTracks = _activeLineTracks(
-          config,
-          hasTranslation: hasBgTranslation,
-          hasRoman: hasBgRoman,
-        );
         final bgPreTracks = _preOriginalTracks(bgTracks);
         final bgPostTracks = _postOriginalTracks(bgTracks);
 
@@ -2389,12 +2463,20 @@ class LyricsLinePainter extends CustomPainter {
               return;
             case LyricLineTrack.translation:
               if (hasBgTranslation) {
-                paintBgLine(bgTranslation, bgFontSize * 0.90, bgUnplayedColor);
+                paintBgLine(
+                  bgTranslation,
+                  bgFontSize * 0.90,
+                  _trackPaintColor(bgUnplayedColor, track),
+                );
               }
               return;
             case LyricLineTrack.romanization:
               if (hasBgRoman) {
-                paintBgLine(bgRomanLyric, bgFontSize * 0.85, bgUnplayedColor);
+                paintBgLine(
+                  bgRomanLyric,
+                  bgFontSize * 0.85,
+                  _trackPaintColor(bgUnplayedColor, track),
+                );
               }
               return;
           }
@@ -2635,8 +2717,7 @@ class LyricsLinePainter extends CustomPainter {
 
     // ── 收集所有翻译文本（含 ┃ 分隔的额外翻译）───────────────────────────
     final transTexts = <String>[];
-    if (config.showTranslation &&
-        lrcLine.translation != null &&
+    if (lrcLine.translation != null &&
         lrcLine.translation!.trim().isNotEmpty) {
       transTexts.add(lrcLine.translation!);
     }
@@ -2647,7 +2728,7 @@ class LyricsLinePainter extends CustomPainter {
       }
     }
 
-    final activeTracks = _activeLineTracks(
+    final activeTracks = _paintLineTracks(
       config,
       hasTranslation: transTexts.isNotEmpty,
       hasRoman: lrcLine.romanLyric != null,
@@ -2676,7 +2757,7 @@ class LyricsLinePainter extends CustomPainter {
           final translated = ZhConverter.convert(trans, zhMode);
           final tTp = _buildTextPainter(
             translated,
-            translationColor,
+            _trackPaintColor(translationColor, track),
             translationFontSize,
             translationWeight,
             letterSpace,
@@ -2684,7 +2765,13 @@ class LyricsLinePainter extends CustomPainter {
             textAlign: blockTextAlign,
           );
           tTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
-          tTp.paint(canvas, Offset(padding.left, lrcPreY));
+          tTp.paint(
+            canvas,
+            Offset(
+              padding.left,
+              lrcPreY + _trackSlideOffset(track, preOriginal: true),
+            ),
+          );
           lrcPreY += tTp.height;
           recycleTextPainter(tTp);
         }
@@ -2693,7 +2780,7 @@ class LyricsLinePainter extends CustomPainter {
         final romanText = ZhConverter.convert(lrcLine.romanLyric!, zhMode);
         final rTp = _buildTextPainter(
           romanText,
-          secondaryColor,
+          _trackPaintColor(secondaryColor, track),
           romanFontSize,
           romanWeight,
           letterSpace,
@@ -2701,7 +2788,13 @@ class LyricsLinePainter extends CustomPainter {
           textAlign: blockTextAlign,
         );
         rTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
-        rTp.paint(canvas, Offset(padding.left, lrcPreY));
+        rTp.paint(
+          canvas,
+          Offset(
+            padding.left,
+            lrcPreY + _trackSlideOffset(track, preOriginal: true),
+          ),
+        );
         lrcPreY += rTp.height;
         recycleTextPainter(rTp);
       }
@@ -2733,7 +2826,7 @@ class LyricsLinePainter extends CustomPainter {
             final translated = ZhConverter.convert(trans, zhMode);
             final tTp = _buildTextPainter(
               translated,
-              translationColor,
+              _trackPaintColor(translationColor, track),
               translationFontSize,
               translationWeight,
               letterSpace,
@@ -2741,7 +2834,13 @@ class LyricsLinePainter extends CustomPainter {
               textAlign: blockTextAlign,
             );
             tTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
-            tTp.paint(canvas, Offset(padding.left, cursorY));
+            tTp.paint(
+              canvas,
+              Offset(
+                padding.left,
+                cursorY + _trackSlideOffset(track, preOriginal: false),
+              ),
+            );
             cursorY += tTp.height;
             recycleTextPainter(tTp);
             if (transTexts.length > 1) {
@@ -2756,7 +2855,7 @@ class LyricsLinePainter extends CustomPainter {
           final romanText = ZhConverter.convert(lrcLine.romanLyric!, zhMode);
           final rTp = _buildTextPainter(
             romanText,
-            secondaryColor,
+            _trackPaintColor(secondaryColor, track),
             romanFontSize,
             romanWeight,
             letterSpace,
@@ -2764,7 +2863,13 @@ class LyricsLinePainter extends CustomPainter {
             textAlign: blockTextAlign,
           );
           rTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
-          rTp.paint(canvas, Offset(padding.left, cursorY));
+          rTp.paint(
+            canvas,
+            Offset(
+              padding.left,
+              cursorY + _trackSlideOffset(track, preOriginal: false),
+            ),
+          );
           cursorY += rTp.height;
           recycleTextPainter(rTp);
         }
@@ -2828,15 +2933,11 @@ class LyricsLinePainter extends CustomPainter {
 
     final mainText = ZhConverter.convert(syncLine.content, zhMode);
     final hasTranslation =
-        config.showTranslation &&
-        syncLine.translation != null &&
-        syncLine.translation!.trim().isNotEmpty;
+        syncLine.translation != null && syncLine.translation!.trim().isNotEmpty;
     final hasRoman =
-        config.showRoman &&
-        syncLine.romanLyric != null &&
-        syncLine.romanLyric!.isNotEmpty;
+        syncLine.romanLyric != null && syncLine.romanLyric!.isNotEmpty;
 
-    final activeTracks = _activeLineTracks(
+    final activeTracks = _paintLineTracks(
       config,
       hasTranslation: hasTranslation,
       hasRoman: hasRoman,
@@ -2863,7 +2964,7 @@ class LyricsLinePainter extends CustomPainter {
         final translated = ZhConverter.convert(syncLine.translation!, zhMode);
         final tTp = _buildTextPainter(
           translated,
-          translationColor,
+          _trackPaintColor(translationColor, track),
           translationFontSize,
           translationWeight,
           letterSpace,
@@ -2871,14 +2972,20 @@ class LyricsLinePainter extends CustomPainter {
           textAlign: blockTextAlign,
         );
         tTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
-        tTp.paint(canvas, Offset(padding.left, preY));
+        tTp.paint(
+          canvas,
+          Offset(
+            padding.left,
+            preY + _trackSlideOffset(track, preOriginal: true),
+          ),
+        );
         preY += tTp.height;
         recycleTextPainter(tTp);
       } else if (track == LyricLineTrack.romanization && hasRoman) {
         final romanText = ZhConverter.convert(syncLine.romanLyric!, zhMode);
         final rTp = _buildTextPainter(
           romanText,
-          secondaryColor,
+          _trackPaintColor(secondaryColor, track),
           romanFontSize,
           romanWeight,
           letterSpace,
@@ -2886,7 +2993,13 @@ class LyricsLinePainter extends CustomPainter {
           textAlign: blockTextAlign,
         );
         rTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
-        rTp.paint(canvas, Offset(padding.left, preY));
+        rTp.paint(
+          canvas,
+          Offset(
+            padding.left,
+            preY + _trackSlideOffset(track, preOriginal: true),
+          ),
+        );
         preY += rTp.height;
         recycleTextPainter(rTp);
       }
@@ -2914,7 +3027,7 @@ class LyricsLinePainter extends CustomPainter {
           final translated = ZhConverter.convert(syncLine.translation!, zhMode);
           final tTp = _buildTextPainter(
             translated,
-            translationColor,
+            _trackPaintColor(translationColor, track),
             translationFontSize,
             translationWeight,
             letterSpace,
@@ -2922,14 +3035,20 @@ class LyricsLinePainter extends CustomPainter {
             textAlign: blockTextAlign,
           );
           tTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
-          tTp.paint(canvas, Offset(padding.left, cursorY));
+          tTp.paint(
+            canvas,
+            Offset(
+              padding.left,
+              cursorY + _trackSlideOffset(track, preOriginal: false),
+            ),
+          );
           cursorY += tTp.height;
           recycleTextPainter(tTp);
         } else if (track == LyricLineTrack.romanization && hasRoman) {
           final romanText = ZhConverter.convert(syncLine.romanLyric!, zhMode);
           final rTp = _buildTextPainter(
             romanText,
-            secondaryColor,
+            _trackPaintColor(secondaryColor, track),
             romanFontSize,
             romanWeight,
             letterSpace,
@@ -2937,7 +3056,13 @@ class LyricsLinePainter extends CustomPainter {
             textAlign: blockTextAlign,
           );
           rTp.layout(minWidth: maxWidth, maxWidth: maxWidth);
-          rTp.paint(canvas, Offset(padding.left, cursorY));
+          rTp.paint(
+            canvas,
+            Offset(
+              padding.left,
+              cursorY + _trackSlideOffset(track, preOriginal: false),
+            ),
+          );
           cursorY += rTp.height;
           recycleTextPainter(rTp);
         }

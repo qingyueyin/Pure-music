@@ -32,6 +32,11 @@ class LyricPainterParams {
   /// 非空时按帧读取：淡入淡出期间颜色每帧变化，字形缓存不适用。
   final ValueListenable<bool>? opacityAnimatingListenable;
   final bool opacityAnimating;
+  /// 翻译/罗马音的展开进度，0 隐藏、1 完全展开；逐帧变化走 listenable 避免重建 painter。
+  final ValueListenable<double>? translationRevealListenable;
+  final ValueListenable<double>? romanRevealListenable;
+  final double translationReveal;
+  final double romanReveal;
   final double? highlightDeadlineMs;
   final Duration lineMedianWordDuration;
   final ValueListenable<double>? liftDecayListenable;
@@ -59,6 +64,10 @@ class LyricPainterParams {
     this.opacityAnimating = false,
     this.opacityAnimatingListenable,
     this.opacityListenable,
+    this.translationRevealListenable,
+    this.romanRevealListenable,
+    this.translationReveal = 1,
+    this.romanReveal = 1,
     this.highlightDeadlineMs,
     required this.lineMedianWordDuration,
     this.liftDecayListenable,
@@ -93,6 +102,11 @@ class LyricPainterParams {
         other.opacityAnimatingListenable == opacityAnimatingListenable &&
         (opacityAnimatingListenable != null ||
             other.opacityAnimating == opacityAnimating) &&
+        other.translationRevealListenable == translationRevealListenable &&
+        (translationRevealListenable != null ||
+            other.translationReveal == translationReveal) &&
+        other.romanRevealListenable == romanRevealListenable &&
+        (romanRevealListenable != null || other.romanReveal == romanReveal) &&
         other.highlightDeadlineMs == highlightDeadlineMs &&
         other.lineMedianWordDuration == lineMedianWordDuration &&
         other.liftDecayListenable == liftDecayListenable &&
@@ -123,6 +137,8 @@ class LyricPainterParams {
     Object.hash(
       opacityListenable == null ? opacity : null,
       opacityAnimatingListenable == null ? opacityAnimating : null,
+      translationRevealListenable == null ? translationReveal : null,
+      romanRevealListenable == null ? romanReveal : null,
       highlightDeadlineMs,
       lineMedianWordDuration,
       liftDecayListenable,
