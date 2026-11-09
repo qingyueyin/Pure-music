@@ -255,8 +255,12 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
   void _onAnnotationHeightStatus(AnimationStatus status) {
     if (status == AnimationStatus.completed ||
         status == AnimationStatus.dismissed) {
-      final delta = _annotationHeightTo - _displayHeightNotifier.value;
-      _displayHeightNotifier.value = _annotationHeightTo;
+      // 动画期间背景人声可能又改了测量高度，以最新测量值为准落位
+      final target = _heightNotifier.value > 0
+          ? _heightNotifier.value
+          : _annotationHeightTo;
+      final delta = target - _displayHeightNotifier.value;
+      _displayHeightNotifier.value = target;
       if (delta.abs() > 0.01) {
         widget.onSeekCollapseHeightDelta?.call(delta);
       }
@@ -1189,9 +1193,11 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
     final syncLine = widget.line is SyncLyricLine
         ? widget.line as SyncLyricLine
         : null;
+    final lrcLine = widget.line is LrcLine ? widget.line as LrcLine : null;
     final hasTranslationContent =
         widget.line.translation?.isNotEmpty == true ||
-        syncLine?.bgTranslation?.isNotEmpty == true;
+        syncLine?.bgTranslation?.isNotEmpty == true ||
+        (lrcLine?.content.contains('┃') ?? false);
     final hasRomanContent =
         widget.line.romanLyric?.isNotEmpty == true ||
         syncLine?.bg?.romanLyric?.isNotEmpty == true;
