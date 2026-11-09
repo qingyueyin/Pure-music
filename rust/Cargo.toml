@@ -16,7 +16,7 @@ ndsd-read = "0.1.2"
 ratag = "0.1.1"
 midly = "0.5.3"
 serde_json = "1.0.117"
-phf = { version = "0.11", features = ["macros"] }
+phf = { version = "0.14", features = ["macros"] }
 windows-core = "0.57.0"
 rusqlite = { version = "0.41.1", features = ["bundled"] }
 windows = { version = "0.57.0", features = [
