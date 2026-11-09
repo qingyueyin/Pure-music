@@ -625,10 +625,13 @@ class Ttml extends Lyric {
     Duration? fallbackEnd,
     Duration parentBegin,
     String trailingSpace,
-    bool Function(XmlElement)? skipElement,
-  ) {
+    bool Function(XmlElement)? skipElement, {
+    StringBuffer? pending,
+  }) {
     if (node is XmlText) {
-      buffer.write(_decodeEntities(node.value));
+      final text = _decodeEntities(node.value);
+      buffer.write(text);
+      pending?.write(text);
       return;
     }
 
@@ -658,17 +661,35 @@ class Ttml extends Lyric {
       final actualBegin = _isOffsetTime(rawBegin)
           ? parentBegin + parsedBegin
           : parsedBegin;
+      final parsedEnd = _parseTime(_attr(element, 'end'));
+      final actualEnd = parsedEnd != null && _isOffsetTime(_attr(element, 'end'))
+          ? parentBegin + parsedEnd
+          : parsedEnd;
+
+      final children = element.children.toList();
+      if (children.any(
+        (child) =>
+            child is XmlElement &&
+            (_parseTime(_attr(child, 'begin')) != null ||
+                _hasTimedDescendant(child)),
+      )) {
+        _collectNestedTimedText(
+          children,
+          words,
+          buffer,
+          actualBegin,
+          actualEnd ?? fallbackEnd,
+          skipElement,
+          pending ?? StringBuffer(),
+        );
+        return;
+      }
 
       final inner = StringBuffer();
       _collectRawText(element, inner);
       final text = _cleanTimedText(inner.toString());
       final wordText = text + trailingSpace;
       if (wordText.isNotEmpty) {
-        final parsedEnd = _parseTime(_attr(element, 'end'));
-        final actualEnd =
-            parsedEnd != null && _isOffsetTime(_attr(element, 'end'))
-            ? parentBegin + parsedEnd
-            : parsedEnd;
         final hasValidExplicitEnd =
             actualEnd != null && actualEnd >= actualBegin;
         words.add(
@@ -696,8 +717,96 @@ class Ttml extends Lyric {
         parentBegin,
         childTrailing,
         skipElement,
+        pending: pending,
       );
     }
+  }
+
+  /// 嵌套 span 各自带时间时，按子元素切词，纯文本按父元素时间兜底
+  static void _collectNestedTimedText(
+    List<XmlNode> children,
+    List<SyncLyricWord> words,
+    StringBuffer buffer,
+    Duration parentBegin,
+    Duration? fallbackEnd,
+    bool Function(XmlElement)? skipElement,
+    StringBuffer pending,
+  ) {
+    final parentEnd = fallbackEnd;
+    var cursor = parentBegin;
+    for (int i = 0; i < children.length; i++) {
+      final child = children[i];
+      final childBegin = child is XmlElement
+          ? _parseTime(_attr(child, 'begin'))
+          : null;
+      final childTrailing = _wordSeparatorAfter(children, i);
+      if (childBegin == null) {
+        _collectMainTextFromNode(
+          child,
+          words,
+          buffer,
+          parentEnd,
+          parentBegin,
+          childTrailing,
+          skipElement,
+          pending: pending,
+        );
+        continue;
+      }
+      final actualChildBegin = _isOffsetTime(_attr(child as XmlElement, 'begin'))
+          ? parentBegin + childBegin
+          : childBegin;
+      _flushPendingWord(words, pending, cursor, actualChildBegin);
+      if (actualChildBegin > cursor) cursor = actualChildBegin;
+      final before = words.length;
+      _collectMainTextFromNode(
+        child,
+        words,
+        buffer,
+        parentEnd,
+        parentBegin,
+        childTrailing,
+        skipElement,
+        pending: pending,
+      );
+      if (words.length > before) {
+        final last = words.last;
+        final lastEnd = last.start + last.length;
+        if (last.hasExplicitEnd && lastEnd > cursor) cursor = lastEnd;
+      }
+    }
+    _flushPendingWord(words, pending, cursor, parentEnd);
+  }
+
+  /// 把嵌套结构里累积的纯文本补成一个词，区间由父元素时间和相邻子元素时间决定
+  static void _flushPendingWord(
+    List<SyncLyricWord> words,
+    StringBuffer pending,
+    Duration start,
+    Duration? end,
+  ) {
+    final text = _cleanTimedText(pending.toString());
+    pending.clear();
+    if (text.isEmpty) return;
+    final hasEnd = end != null && end >= start;
+    words.add(
+      SyncLyricWord(
+        start,
+        hasEnd ? end - start : Duration.zero,
+        text,
+        hasExplicitEnd: hasEnd,
+      ),
+    );
+  }
+
+  /// 元素下是否有自带 begin 的后代
+  static bool _hasTimedDescendant(XmlElement element) {
+    for (final child in element.children) {
+      if (child is! XmlElement) continue;
+      if (_parseTime(_attr(child, 'begin')) != null) return true;
+      if (_hasTimedDescendant(child)) return true;
+    }
+    return false;
   }
 
   static void _collectRawText(XmlElement element, StringBuffer buffer) {
