@@ -4,35 +4,38 @@ updates:
   - package-ecosystem: "cargo"
     directory: "/rust"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     groups:
-      cargo-minor-patch:
+      cargo-all:
         patterns:
           - "*"
         update-types:
+          - "major"
           - "minor"
           - "patch"
   # 文档站 npm 依赖（page/package.json）
   - package-ecosystem: "npm"
     directory: "/page"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     groups:
-      npm-minor-patch:
+      npm-all:
         patterns:
           - "*"
         update-types:
+          - "major"
           - "minor"
           - "patch"
   # GitHub Actions 工作流
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     groups:
-      actions-minor-patch:
+      actions-all:
         patterns:
           - "*"
         update-types:
+          - "major"
           - "minor"
           - "patch"
