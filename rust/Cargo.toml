@@ -9,7 +9,7 @@ crate-type = ["cdylib"]
 [dependencies]
 flutter_rust_bridge = "=2.13.0"
 log = "0.4"
-lofty = "0.22.4"
+lofty = "0.25.5"
 dsf-meta = "0.3.0"
 id3 = "1.17.1"
 ndsd-read = "0.1.2"
@@ -17,9 +17,9 @@ ratag = "0.2.1"
 midly = "0.5.3"
 serde_json = "1.0.117"
 phf = { version = "0.14", features = ["macros"] }
-windows-core = "0.57.0"
+windows-core = "0.100.0"
 rusqlite = { version = "0.41.1", features = ["bundled"] }
-windows = { version = "0.57.0", features = [
+windows = { version = "0.58.0", features = [
     "implement",
     "Media_Core",
     "Media_Playback",
@@ -48,11 +48,11 @@ windows = { version = "0.57.0", features = [
     "UI_ViewManagement",
 ] }
 anyhow = "1.0.86"
-ttf-parser = "0.24.1"
+ttf-parser = "0.25.1"
 image = { version = "0.25.5", default-features = false, features = ["png", "jpeg", "webp"] }
-aes = "0.8.3"
-md-5 = "0.10.6"
-rand = "0.9.4"
+aes = "0.9.4"
+md-5 = "0.11.0"
+rand = "0.10.3"
 base64 = "0.23.1"
 hex = "0.4.3"
 reqwest = { version = "0.12.0", default-features = false, features = ["json", "blocking", "rustls-tls"] }
