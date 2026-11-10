@@ -158,14 +158,17 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
   double _opacityTarget = 1.0;
   Curve _opacityCurve = Curves.easeOutCubic;
 
-  // 翻译/罗马音展开进度；高度立即让位，只做淡入淡出，避免整块歌词跟着滑动
+  // 翻译/罗马音展开进度；高度和透明度同一条时间线，文字随空间展开浮现
   late final AnimationController _translationRevealController;
   late final AnimationController _romanRevealController;
   late final Animation<double> _translationReveal;
   late final Animation<double> _romanReveal;
+  late final AnimationController _annotationHeightController;
   final ValueNotifier<double> _displayHeightNotifier = ValueNotifier(0.0);
-  double? _pendingAnnotationHeightTarget;
-  bool _holdingHeightForFade = false;
+  double _annotationHeightFrom = 0;
+  double _annotationHeightTo = 0;
+  // 本次展开的注释在原文上方时，动画期间内容改为底部对齐，避免正文被裁掉
+  bool _annotationExpandsAbove = false;
   bool _lastShowTranslation = true;
   bool _lastShowRoman = true;
 
@@ -200,14 +203,18 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
       if ((_frozenHeight! - _heightNotifier.value).abs() > 0.01) {
         _cachedLineHeight = _frozenHeight;
         _heightNotifier.value = _frozenHeight!;
-        _displayHeightNotifier.value = _frozenHeight!;
+        if (!_annotationHeightController.isAnimating) {
+          _displayHeightNotifier.value = _frozenHeight!;
+        }
       }
       return;
     }
     if ((measuredHeight - _heightNotifier.value).abs() <= 0.01) return;
     _cachedLineHeight = measuredHeight;
     _heightNotifier.value = measuredHeight;
-    _displayHeightNotifier.value = measuredHeight;
+    if (!_annotationHeightController.isAnimating) {
+      _displayHeightNotifier.value = measuredHeight;
+    }
   }
 
   void _animateAnnotationReveal(AnimationController controller, bool show) {
@@ -218,40 +225,40 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
     }
   }
 
-  void _applyAnnotationHeight(double target) {
+  void _startAnnotationHeightAnimation(double target) {
     final from = _displayHeightNotifier.value;
+    if (from <= 0.0 || (target - from).abs() < 0.5) {
+      _annotationHeightController.stop();
+      _displayHeightNotifier.value = target;
+      return;
+    }
+    _annotationHeightFrom = from;
+    _annotationHeightTo = target;
+    _annotationHeightController.forward(from: 0.0);
+  }
+
+  void _onAnnotationHeightTick() {
+    final t = Curves.easeInOutCubic.transform(_annotationHeightController.value);
+    final next =
+        _annotationHeightFrom + (_annotationHeightTo - _annotationHeightFrom) * t;
+    final delta = next - _displayHeightNotifier.value;
+    _displayHeightNotifier.value = next;
+    if (delta.abs() > 0.01) {
+      widget.onSeekCollapseHeightDelta?.call(delta);
+    }
+  }
+
+  void _onAnnotationHeightStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed) return;
+    // 期间背景人声可能改了测量高度，以最新测量值为准
+    final target = _heightNotifier.value > 0
+        ? _heightNotifier.value
+        : _annotationHeightTo;
+    final delta = target - _displayHeightNotifier.value;
     _displayHeightNotifier.value = target;
-    if (from > 0 && (target - from).abs() > 0.01) {
-      widget.onSeekCollapseHeightDelta?.call(target - from);
+    if (delta.abs() > 0.01) {
+      widget.onSeekCollapseHeightDelta?.call(delta);
     }
-    _revealAnnotationsIfShown();
-  }
-
-  void _maybeCollapseAfterFade() {
-    final translationFading =
-        !_config.showTranslation && _translationRevealController.value > 0;
-    final romanFading =
-        !_config.showRoman && _romanRevealController.value > 0;
-    if (translationFading || romanFading) return;
-    final target = _pendingAnnotationHeightTarget;
-    if (target == null) return;
-    _pendingAnnotationHeightTarget = null;
-    _holdingHeightForFade = false;
-    _applyAnnotationHeight(target);
-  }
-
-  void _revealAnnotationsIfShown() {
-    if (_config.showTranslation) {
-      _animateAnnotationReveal(_translationRevealController, true);
-    }
-    if (_config.showRoman) {
-      _animateAnnotationReveal(_romanRevealController, true);
-    }
-  }
-
-  void _onAnnotationRevealStatus(AnimationStatus status) {
-    if (status != AnimationStatus.dismissed) return;
-    _maybeCollapseAfterFade();
   }
 
   double _backgroundVocalHeightFactor() {
@@ -378,24 +385,30 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
     _lastShowRoman = _config.showRoman;
     _translationRevealController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 130),
+      duration: const Duration(milliseconds: 200),
       value: _config.showTranslation ? 1.0 : 0.0,
-    )..addStatusListener(_onAnnotationRevealStatus);
+    );
     _romanRevealController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 130),
+      duration: const Duration(milliseconds: 200),
       value: _config.showRoman ? 1.0 : 0.0,
-    )..addStatusListener(_onAnnotationRevealStatus);
+    );
     _translationReveal = CurvedAnimation(
       parent: _translationRevealController,
-      curve: Curves.easeOutCubic,
-      reverseCurve: Curves.easeInCubic,
+      curve: Curves.easeInOutCubic,
+      reverseCurve: Curves.easeInOutCubic,
     );
     _romanReveal = CurvedAnimation(
       parent: _romanRevealController,
-      curve: Curves.easeOutCubic,
-      reverseCurve: Curves.easeInCubic,
+      curve: Curves.easeInOutCubic,
+      reverseCurve: Curves.easeInOutCubic,
     );
+    _annotationHeightController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+    )
+      ..addListener(_onAnnotationHeightTick)
+      ..addStatusListener(_onAnnotationHeightStatus);
     _bindBackgroundVocalListeners();
     _playerStateListener = _syncProgressTicker;
     if (widget.positionListenable == null) {
@@ -1027,6 +1040,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
     _heightNotifier.dispose();
     _translationRevealController.dispose();
     _romanRevealController.dispose();
+    _annotationHeightController.dispose();
     _displayHeightNotifier.dispose();
     _cachedPainter = null;
     _cachedLineHeight = null;
@@ -1054,18 +1068,22 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
         showTranslation != _lastShowTranslation ||
         showRoman != _lastShowRoman;
     if (annotationVisibilityChanged) {
+      final lineOrder = renderConfig.normalizedLineOrder;
+      final originalIndex = lineOrder.indexOf(LyricLineTrack.original);
+      bool expandsAbove(LyricLineTrack track) =>
+          lineOrder.indexOf(track) < originalIndex;
+      _annotationExpandsAbove = false;
       if (showTranslation != _lastShowTranslation) {
         _lastShowTranslation = showTranslation;
-        // 显示时先让高度，等高度到位后再淡入
-        if (!showTranslation) {
-          _animateAnnotationReveal(_translationRevealController, false);
-        }
+        _annotationExpandsAbove = expandsAbove(LyricLineTrack.translation);
+        // 高度和淡入淡出同一条时间线，文字随展开的空间浮现
+        _animateAnnotationReveal(_translationRevealController, showTranslation);
       }
       if (showRoman != _lastShowRoman) {
         _lastShowRoman = showRoman;
-        if (!showRoman) {
-          _animateAnnotationReveal(_romanRevealController, false);
-        }
+        _annotationExpandsAbove =
+            _annotationExpandsAbove || expandsAbove(LyricLineTrack.romanization);
+        _animateAnnotationReveal(_romanRevealController, showRoman);
       }
       _frozenHeight = null;
       _clearHeightCache();
@@ -1256,17 +1274,8 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
               : resolvedHeight);
     _heightNotifier.value = shownHeight;
     if (annotationVisibilityChanged) {
-      _pendingAnnotationHeightTarget = shownHeight;
-      if (_config.showTranslation || _config.showRoman) {
-        // 显示时高度立即让位，再淡入
-        _holdingHeightForFade = false;
-        _applyAnnotationHeight(shownHeight);
-      } else {
-        // 关闭先淡出，淡完再收高度，避免文字压到下一行
-        _holdingHeightForFade = true;
-        _maybeCollapseAfterFade();
-      }
-    } else if (!_holdingHeightForFade) {
+      _startAnnotationHeightAnimation(shownHeight);
+    } else if (!_annotationHeightController.isAnimating) {
       _displayHeightNotifier.value = shownHeight;
     }
 
@@ -1276,16 +1285,26 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
         final paintHeight = max(h, _departingPaintHeight ?? h);
         return SizedBox(
           height: h,
-          child: OverflowBox(
-            alignment: Alignment.topCenter,
-            minHeight: paintHeight,
-            maxHeight: paintHeight,
-            child: SizedBox(
-              width: lineWidth,
-              height: paintHeight,
-              child: CustomPaint(
-                painter: _cachedPainter,
-                size: Size(lineWidth, paintHeight),
+          // 展开/收起期间按当前高度裁切，翻译不会压到下一行
+          child: ClipRect(
+            clipBehavior: _annotationHeightController.isAnimating
+                ? Clip.hardEdge
+                : Clip.none,
+            child: OverflowBox(
+              alignment:
+                  _annotationHeightController.isAnimating &&
+                      _annotationExpandsAbove
+                  ? Alignment.bottomCenter
+                  : Alignment.topCenter,
+              minHeight: paintHeight,
+              maxHeight: paintHeight,
+              child: SizedBox(
+                width: lineWidth,
+                height: paintHeight,
+                child: CustomPaint(
+                  painter: _cachedPainter,
+                  size: Size(lineWidth, paintHeight),
+                ),
               ),
             ),
           ),
