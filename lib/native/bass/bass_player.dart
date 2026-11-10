@@ -3334,18 +3334,28 @@ class BassPlayer {
         _positionUpdater = null;
         final oldHandle = _sharedOutputHandle!;
         final oldSource = _fstream!;
+        // 先停掉共享输出，让 BASS 立即释放设备，否则独占初始化会一直 BUSY
+        if (wasPlaying) _bass.BASS_ChannelStop(oldHandle);
         _fstream = decodeHandle;
         _streamWasapiExclusive = true;
         wasapiExclusive = true;
         try {
           _bassWasapiInit();
         } catch (err) {
+          log.bass.warn(
+            'legacy',
+            '[bass] wasapi exclusive init failed, fallback to shared: $err',
+          );
           _bass.BASS_StreamFree(decodeHandle);
           _fstream = oldSource;
           _streamWasapiExclusive = false;
           wasapiExclusive = false;
+          _wasapiOutputInfo = 'off';
           refreshEQ();
-          if (wasPlaying) _startPositionUpdater();
+          if (wasPlaying) {
+            _bass.BASS_ChannelStart(oldHandle);
+            _startPositionUpdater();
+          }
           showTextOnSnackBar('独占模式初始化失败', variant: ToastVariant.error);
           return false;
         }
