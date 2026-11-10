@@ -3299,6 +3299,7 @@ class BassPlayer {
     _cancelOutputGainFade(keepTarget: true);
     final prevState = wasapiExclusive;
     if (exclusive == prevState) return true;
+    var lastPos = 0.0;
     try {
       if (exclusive && !hasAudioSource) {
         const message = '独占模式未切换：当前没有可用的音频流';
@@ -3316,7 +3317,7 @@ class BassPlayer {
           );
         }
       }
-      final lastPos = position;
+      lastPos = position;
       final wasPlaying = playerState == PlayerState.playing;
       final targetVolume = _baseOutputVolume;
 
@@ -3364,11 +3365,14 @@ class BassPlayer {
         _fadeOutOldStream(oldHandle);
         _removeEQ();
         _removeAudioEffects();
+        // 先指回旧源，避免释放旧链路时把新解码流一起释放
+        _fstream = oldSource;
         if (_mixerStream != null) {
           _dropGaplessMixer();
         } else {
           _bass.BASS_ChannelStop(oldHandle);
           _bass.BASS_StreamFree(oldHandle);
+          _fstream = null;
         }
 
         // 4) 启动 WASAPI 输出
@@ -3422,6 +3426,10 @@ class BassPlayer {
       return wasapiExclusive == exclusive;
     } catch (err, trace) {
       log.bass.error('legacy', '切换独占模式失败', error: err, stackTrace: trace);
+      // 切换中途失败时回到共享输出，避免留下无效句柄
+      if (_streamWasapiExclusive || wasapiExclusive) {
+        _fallbackFromExclusive(seekPos: lastPos);
+      }
       showTextOnSnackBar('切换独占模式失败，请查看日志');
       _playerStateStreamController.add(playerState);
     }
@@ -4075,9 +4083,9 @@ class BassPlayer {
     _startPositionUpdater();
   }
 
-  void _fallbackFromExclusive() {
+  void _fallbackFromExclusive({double? seekPos}) {
     _cancelPendingPause();
-    final seekPos = position;
+    final resumePos = seekPos ?? position;
     final sourcePath = _fPath;
     _releaseWasapiOutput();
     if (_fstream != null) {
@@ -4091,7 +4099,7 @@ class BassPlayer {
       _positionUpdaterVersion++;
       _positionUpdater?.cancel();
       _positionUpdater = null;
-      _restoreSharedSource(sourcePath, seekPos);
+      _restoreSharedSource(sourcePath, resumePos);
     }
   }
 
