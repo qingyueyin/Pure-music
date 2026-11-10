@@ -262,7 +262,7 @@ class _LyricsLineWidgetState extends State<LyricsLineWidget>
   }
 
   void _onAnnotationHeightTick() {
-    final t = Curves.easeOutCubic.transform(_annotationHeightController.value);
+    final t = Curves.easeInOutCubic.transform(_annotationHeightController.value);
     final next =
         _annotationHeightFrom + (_annotationHeightTo - _annotationHeightFrom) * t;
     final delta = next - _displayHeightNotifier.value;
