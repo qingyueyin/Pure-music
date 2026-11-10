@@ -1274,12 +1274,6 @@ class LyricsLinePainter extends CustomPainter {
     return color.withValues(alpha: color.a * reveal);
   }
 
-  double _trackSlideOffset(LyricLineTrack track, {required bool preOriginal}) {
-    final reveal = _trackRevealFactor(track);
-    if (reveal >= 0.999) return 0.0;
-    return (1.0 - reveal) * (preOriginal ? 6.0 : -6.0);
-  }
-
   double get _featherPx {
     if (!config.durationFeather) return 32.0;
     final lyricLine = line;
@@ -1829,7 +1823,7 @@ class LyricsLinePainter extends CustomPainter {
             canvas,
             Offset(
               padding.left,
-              preCursorY + _trackSlideOffset(track, preOriginal: true),
+              preCursorY,
             ),
           );
           preCursorY += tp.height;
@@ -1851,7 +1845,7 @@ class LyricsLinePainter extends CustomPainter {
             canvas,
             Offset(
               padding.left,
-              preCursorY + _trackSlideOffset(track, preOriginal: true),
+              preCursorY,
             ),
           );
           preCursorY += tp.height;
@@ -2356,7 +2350,7 @@ class LyricsLinePainter extends CustomPainter {
             canvas,
             Offset(
               padding.left,
-              cursorY + _trackSlideOffset(track, preOriginal: false),
+              cursorY,
             ),
           );
           cursorY += tp.height;
@@ -2378,7 +2372,7 @@ class LyricsLinePainter extends CustomPainter {
             canvas,
             Offset(
               padding.left,
-              cursorY + _trackSlideOffset(track, preOriginal: false),
+              cursorY,
             ),
           );
           cursorY += tp.height;
@@ -2769,7 +2763,7 @@ class LyricsLinePainter extends CustomPainter {
             canvas,
             Offset(
               padding.left,
-              lrcPreY + _trackSlideOffset(track, preOriginal: true),
+              lrcPreY,
             ),
           );
           lrcPreY += tTp.height;
@@ -2792,7 +2786,7 @@ class LyricsLinePainter extends CustomPainter {
           canvas,
           Offset(
             padding.left,
-            lrcPreY + _trackSlideOffset(track, preOriginal: true),
+            lrcPreY,
           ),
         );
         lrcPreY += rTp.height;
@@ -2838,7 +2832,7 @@ class LyricsLinePainter extends CustomPainter {
               canvas,
               Offset(
                 padding.left,
-                cursorY + _trackSlideOffset(track, preOriginal: false),
+                cursorY,
               ),
             );
             cursorY += tTp.height;
@@ -2867,7 +2861,7 @@ class LyricsLinePainter extends CustomPainter {
             canvas,
             Offset(
               padding.left,
-              cursorY + _trackSlideOffset(track, preOriginal: false),
+              cursorY,
             ),
           );
           cursorY += rTp.height;
@@ -2976,7 +2970,7 @@ class LyricsLinePainter extends CustomPainter {
           canvas,
           Offset(
             padding.left,
-            preY + _trackSlideOffset(track, preOriginal: true),
+            preY,
           ),
         );
         preY += tTp.height;
@@ -2997,7 +2991,7 @@ class LyricsLinePainter extends CustomPainter {
           canvas,
           Offset(
             padding.left,
-            preY + _trackSlideOffset(track, preOriginal: true),
+            preY,
           ),
         );
         preY += rTp.height;
@@ -3039,7 +3033,7 @@ class LyricsLinePainter extends CustomPainter {
             canvas,
             Offset(
               padding.left,
-              cursorY + _trackSlideOffset(track, preOriginal: false),
+              cursorY,
             ),
           );
           cursorY += tTp.height;
@@ -3060,7 +3054,7 @@ class LyricsLinePainter extends CustomPainter {
             canvas,
             Offset(
               padding.left,
-              cursorY + _trackSlideOffset(track, preOriginal: false),
+              cursorY,
             ),
           );
           cursorY += rTp.height;
