@@ -1064,10 +1064,8 @@ class PlaybackService extends ChangeNotifier {
       return null;
     }
     final incoming = items[incomingIndex];
-    // 下一首就是当前这首时不做过场，交给正常播完路径循环
-    if (incomingIndex == outgoingIndex || identical(incoming, outgoing)) {
-      return null;
-    }
+    // 单曲循环不做切歌过渡，交给正常播完路径循环；列表循环照常过渡
+    if (playMode.value == PlayMode.singleLoop) return null;
     return SmartTransitionTarget(
       playlistRevision: _playlistRevision,
       outgoingIndex: outgoingIndex,
@@ -1293,10 +1291,9 @@ class PlaybackService extends ChangeNotifier {
         targetIndex >= items.length) {
       return;
     }
-    // 下一首就是当前这首时不做淡出淡入过场，无缝模式仍做无缝循环
+    // 单曲循环不做淡出淡入过场，交给正常播完路径循环；无缝模式仍做无缝循环
     if (_pref.transitionMode != TransitionMode.seamless &&
-        (targetIndex == fromIndex ||
-            identical(items[targetIndex], items[fromIndex]))) {
+        playMode.value == PlayMode.singleLoop) {
       return;
     }
 
