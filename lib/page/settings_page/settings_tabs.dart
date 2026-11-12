@@ -1664,8 +1664,8 @@ class _ThemeColorPickerDialogState extends State<_ThemeColorPickerDialog> {
         textCapitalization: TextCapitalization.characters,
         inputFormatters: [
           UpperCaseTextFormatter(),
-          LengthLimitingTextInputFormatter(6),
           FilteringTextInputFormatter.allow(RegExp(r'[0-9A-Fa-f]')),
+          LengthLimitingTextInputFormatter(6),
         ],
         onSubmitted: _onHexSubmitted,
         onChanged: (text) {
@@ -2589,8 +2589,8 @@ class _DesktopColorPickerDialogState extends State<_DesktopColorPickerDialog> {
         textCapitalization: TextCapitalization.characters,
         inputFormatters: [
           UpperCaseTextFormatter(),
-          LengthLimitingTextInputFormatter(6),
           FilteringTextInputFormatter.allow(RegExp(r'[0-9A-Fa-f]')),
+          LengthLimitingTextInputFormatter(6),
         ],
         onSubmitted: _onHexSubmitted,
         onChanged: (text) {
