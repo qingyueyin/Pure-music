@@ -815,54 +815,52 @@ class _SoftMeshGradient extends StatefulWidget {
   State<_SoftMeshGradient> createState() => _SoftMeshGradientState();
 }
 
-class _SoftMeshGradientState extends State<_SoftMeshGradient>
-    with SingleTickerProviderStateMixin {
+class _SoftMeshGradientState extends State<_SoftMeshGradient> {
   static const _shaderAssetPath = MeshGradientBackground.shaderAssetPath;
-  static const double _timeScale = 1.0;
   // 重绘压到 24fps，时间按真实步进累积。
-  static const double _meshFrameIntervalSeconds =
-      42 / Duration.millisecondsPerSecond;
+  static const Duration _frameInterval = Duration(milliseconds: 42);
 
-  late final Ticker _ticker;
+  final Stopwatch _clock = Stopwatch();
+  Timer? _timer;
   late final ValueNotifier<double> _time;
   late final ValueNotifier<int> _paintEpoch;
   late final Listenable _repaint;
   late final _SoftMeshGradientPainter _painter;
-  Duration? _lastElapsed;
-  double _pendingSeconds = 0;
+  Duration _lastElapsed = Duration.zero;
   VoidCallback? _controllerListener;
   bool _tickerModeEnabled = true;
 
-  void _onTick(Duration elapsed) {
+  void _onTick() {
     if (!mounted ||
         (widget.controller != null && !widget.controller!.isAnimating.value)) {
       _syncTicker();
       return;
     }
-    final previous = _lastElapsed;
-    _lastElapsed = elapsed;
-    if (previous == null) return;
+    final elapsed = _clock.elapsed;
     final deltaSeconds =
-        (elapsed - previous).inMicroseconds / Duration.microsecondsPerSecond;
+        (elapsed - _lastElapsed).inMicroseconds /
+        Duration.microsecondsPerSecond;
+    _lastElapsed = elapsed;
     if (deltaSeconds <= 0) return;
-    _pendingSeconds += deltaSeconds * _timeScale;
-    if (_pendingSeconds < _meshFrameIntervalSeconds) return;
-    _time.value += _pendingSeconds;
-    _pendingSeconds = 0;
+    _time.value += deltaSeconds;
   }
 
   void _syncTicker() {
     final shouldRun =
         _tickerModeEnabled &&
         (widget.controller == null || widget.controller!.isAnimating.value);
-    if (shouldRun && !_ticker.isActive) {
-      _lastElapsed = null;
-      _pendingSeconds = 0;
-      _ticker.start();
-    } else if (!shouldRun && _ticker.isActive) {
-      _ticker.stop();
-      _lastElapsed = null;
-      _pendingSeconds = 0;
+    if (shouldRun && _timer == null) {
+      _clock
+        ..stop()
+        ..reset()
+        ..start();
+      _lastElapsed = Duration.zero;
+      _timer = Timer.periodic(_frameInterval, (_) => _onTick());
+    } else if (!shouldRun && _timer != null) {
+      _timer!.cancel();
+      _timer = null;
+      _clock.stop();
+      _lastElapsed = Duration.zero;
     }
   }
 
@@ -892,7 +890,6 @@ class _SoftMeshGradientState extends State<_SoftMeshGradient>
     _time = ValueNotifier(_meshClockSeconds());
     _paintEpoch = ValueNotifier(0);
     _repaint = Listenable.merge([_time, _paintEpoch]);
-    _ticker = createTicker(_onTick);
     _painter = _SoftMeshGradientPainter(
       repaint: _repaint,
       time: _time,
@@ -924,7 +921,7 @@ class _SoftMeshGradientState extends State<_SoftMeshGradient>
   @override
   void dispose() {
     _unbindController(widget.controller);
-    _ticker.dispose();
+    _timer?.cancel();
     _time.dispose();
     _paintEpoch.dispose();
     super.dispose();
