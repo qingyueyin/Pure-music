@@ -190,8 +190,6 @@ class AppPreference {
         nowPlayingPagePref.dynamicFlowingLight;
     _nowPlayingAudioReactiveFlowNotifier?.value =
         nowPlayingPagePref.audioReactiveFlow;
-    _nowPlayingAudioReactiveFlowVersionNotifier?.value =
-        nowPlayingPagePref.audioReactiveFlowVersion;
   }
 
   void _applyUpdatePrefs(Map<String, dynamic> prefMap) {

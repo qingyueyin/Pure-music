@@ -1,7 +1,5 @@
 part of 'preference.dart';
 
-enum AudioReactiveFlowVersion { legacy, v2 }
-
 class NowPlayingPagePreference {
   NowPlayingViewMode nowPlayingViewMode;
   LyricTextAlign lyricTextAlign;
@@ -21,7 +19,6 @@ class NowPlayingPagePreference {
   NowPlayingBackgroundMode backgroundMode;
   bool dynamicFlowingLight;
   bool audioReactiveFlow;
-  AudioReactiveFlowVersion audioReactiveFlowVersion;
 
   NowPlayingPagePreference(
     this.nowPlayingViewMode,
@@ -42,7 +39,6 @@ class NowPlayingPagePreference {
     this.backgroundMode = NowPlayingBackgroundMode.meshGradient,
     this.dynamicFlowingLight = true,
     this.audioReactiveFlow = false,
-    this.audioReactiveFlowVersion = AudioReactiveFlowVersion.legacy,
   });
 
   LyricRenderConfig get lyricRenderConfig => LyricRenderConfig(
@@ -81,7 +77,6 @@ class NowPlayingPagePreference {
     'backgroundMode': backgroundMode.name,
     'dynamicFlowingLight': dynamicFlowingLight,
     'audioReactiveFlow': audioReactiveFlow,
-    'audioReactiveFlowVersion': audioReactiveFlowVersion.name,
   };
 
   factory NowPlayingPagePreference.fromMap(Object? value) {
@@ -116,10 +111,6 @@ class NowPlayingPagePreference {
       audioReactiveFlow: _normalizedBool(
         map['audioReactiveFlow'],
         defaultValue: false,
-      ),
-      audioReactiveFlowVersion: AudioReactiveFlowVersion.values.firstWhere(
-        (version) => version.name == map['audioReactiveFlowVersion'],
-        orElse: () => AudioReactiveFlowVersion.legacy,
       ),
     );
   }

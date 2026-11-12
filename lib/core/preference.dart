@@ -410,8 +410,6 @@ String? _normalizedNullableString(Object? value) {
 ValueNotifier<NowPlayingBackgroundMode>? _nowPlayingBackgroundModeNotifier;
 ValueNotifier<bool>? _nowPlayingDynamicFlowingLightNotifier;
 ValueNotifier<bool>? _nowPlayingAudioReactiveFlowNotifier;
-ValueNotifier<AudioReactiveFlowVersion>?
-_nowPlayingAudioReactiveFlowVersionNotifier;
 
 ValueNotifier<NowPlayingBackgroundMode> get nowPlayingBackgroundModeNotifier {
   return _nowPlayingBackgroundModeNotifier ??= ValueNotifier(
@@ -428,12 +426,5 @@ ValueNotifier<bool> get nowPlayingDynamicFlowingLightNotifier {
 ValueNotifier<bool> get nowPlayingAudioReactiveFlowNotifier {
   return _nowPlayingAudioReactiveFlowNotifier ??= ValueNotifier(
     AppPreference.instance.nowPlayingPagePref.audioReactiveFlow,
-  );
-}
-
-ValueNotifier<AudioReactiveFlowVersion>
-get nowPlayingAudioReactiveFlowVersionNotifier {
-  return _nowPlayingAudioReactiveFlowVersionNotifier ??= ValueNotifier(
-    AppPreference.instance.nowPlayingPagePref.audioReactiveFlowVersion,
   );
 }

@@ -4065,13 +4065,6 @@ class _NowPlayingBackgroundSettingsState
     await AppPreference.instance.save();
   }
 
-  Future<void> _setAudioReactiveVersion(AudioReactiveFlowVersion value) async {
-    if (value == pref.audioReactiveFlowVersion) return;
-    setState(() => pref.audioReactiveFlowVersion = value);
-    nowPlayingAudioReactiveFlowVersionNotifier.value = value;
-    await AppPreference.instance.save();
-  }
-
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -4104,40 +4097,15 @@ class _NowPlayingBackgroundSettingsState
             ],
           ),
         ),
-        if (pref.backgroundMode == NowPlayingBackgroundMode.flowingCover) ...[
-          const SizedBox(height: 16.0),
-          SettingsTile(
-            description: '音频律动',
-            subtitle: pref.audioReactiveFlow ? '背景随音频起伏' : '背景按固定节奏流动',
-            action: Switch(
-              value: pref.audioReactiveFlow,
-              onChanged: _setAudioReactive,
-            ),
+        const SizedBox(height: 16.0),
+        SettingsTile(
+          description: '音频律动',
+          subtitle: pref.audioReactiveFlow ? '背景随音频起伏' : '背景按固定节奏流动',
+          action: Switch(
+            value: pref.audioReactiveFlow,
+            onChanged: _setAudioReactive,
           ),
-          if (pref.audioReactiveFlow) ...[
-            const SizedBox(height: 16.0),
-            SettingsTile(
-              description: '律动版本',
-              subtitle: '临时对照开关，确认效果后删除',
-              action: SegmentedButton<AudioReactiveFlowVersion>(
-                showSelectedIcon: false,
-                segments: const [
-                  ButtonSegment(
-                    value: AudioReactiveFlowVersion.legacy,
-                    label: Text('旧版'),
-                  ),
-                  ButtonSegment(
-                    value: AudioReactiveFlowVersion.v2,
-                    label: Text('新版'),
-                  ),
-                ],
-                selected: {pref.audioReactiveFlowVersion},
-                onSelectionChanged: (selection) =>
-                    _setAudioReactiveVersion(selection.first),
-              ),
-            ),
-          ],
-        ],
+        ),
       ],
     );
   }
