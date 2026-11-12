@@ -102,6 +102,8 @@ class SmtcBridge {
   bool _timelineDrainQueued = false;
   bool _closed = false;
 
+  bool get isAvailable => _backend != null;
+
   Stream<SMTCControlEvent> get controlEvents =>
       _backend?.controlEvents ?? const Stream<SMTCControlEvent>.empty();
 
