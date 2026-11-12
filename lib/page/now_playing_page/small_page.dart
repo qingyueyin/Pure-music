@@ -160,6 +160,7 @@ class _PortraitViewSwitch extends StatelessWidget {
       onTap: onTap,
       icon: icon,
       tooltip: tooltip,
+      topInset: nowPlayingTopChromeHeight,
       revealed: nowPlayingSmallViewSwitchRevealed(
         alwaysShowControls: AppSettings.instance.alwaysShowNowPlayingControls,
         cursorHidden: hidden,

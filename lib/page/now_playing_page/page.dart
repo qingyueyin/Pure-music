@@ -92,6 +92,9 @@ double _responsiveNowPlayingCoverSize({
 // 沉浸模式封面下方区域高度（24 间距 + 进度条 40）
 const _immersiveCoverBelowHeight = 64.0;
 
+// 播放页顶栏高度，侧边切换条的悬停底色从这下面开始
+const nowPlayingTopChromeHeight = 56.0;
+
 // 切歌封面过渡时长。过渡期间不解码高清封面、不取色，结束后再补。
 const _coverSwitchDuration = Duration(milliseconds: 500);
 
@@ -656,7 +659,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
       top: 0,
       left: 0,
       right: 0,
-      height: 56.0,
+      height: nowPlayingTopChromeHeight,
       child: SafeArea(
         bottom: false,
         child: Padding(

@@ -23,6 +23,7 @@ class NowPlayingSmallViewSwitch extends StatefulWidget {
     this.revealed = true,
     this.busy = false,
     this.enabled = true,
+    this.topInset = 0.0,
   });
 
   final VoidCallback onTap;
@@ -31,6 +32,7 @@ class NowPlayingSmallViewSwitch extends StatefulWidget {
   final bool revealed;
   final bool busy;
   final bool enabled;
+  final double topInset;
 
   @override
   State<NowPlayingSmallViewSwitch> createState() =>
@@ -71,25 +73,36 @@ class _NowPlayingSmallViewSwitchState extends State<NowPlayingSmallViewSwitch> {
             opacity: !widget.revealed
                 ? 0.0
                 : (_hovered ? 1.0 : nowPlayingSmallViewSwitchRestOpacity),
-            child: AnimatedContainer(
-              duration: reduceMotion ? Duration.zero : MotionDuration.fast,
-              curve: MotionCurve.standard,
-              decoration: _hoverDecoration(scheme),
-              child: InkWell(
-                borderRadius: AppRadius.mdCircular,
-                hoverColor: scheme.onSecondaryContainer.withValues(alpha: 0.02),
-                highlightColor: scheme.onSecondaryContainer.withValues(
-                  alpha: 0.04,
-                ),
-                splashColor: Colors.transparent,
-                onTap: widget.enabled ? widget.onTap : null,
-                onHover: _onHover,
-                child: Center(
-                  child: _maybeTooltip(
-                    child: _switchChild(reduceMotion, iconColor),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // 悬停底色跟着切换条高度走，只避开顶栏
+                Padding(
+                  padding: EdgeInsets.only(top: widget.topInset),
+                  child: AnimatedContainer(
+                    duration: reduceMotion
+                        ? Duration.zero
+                        : MotionDuration.fast,
+                    curve: MotionCurve.standard,
+                    decoration: _hoverDecoration(scheme),
                   ),
                 ),
-              ),
+                InkWell(
+                  borderRadius: AppRadius.mdCircular,
+                  hoverColor: Colors.transparent,
+                  highlightColor: scheme.onSecondaryContainer.withValues(
+                    alpha: 0.04,
+                  ),
+                  splashColor: Colors.transparent,
+                  onTap: widget.enabled ? widget.onTap : null,
+                  onHover: _onHover,
+                  child: Center(
+                    child: _maybeTooltip(
+                      child: _switchChild(reduceMotion, iconColor),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
