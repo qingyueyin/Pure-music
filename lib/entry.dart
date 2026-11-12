@@ -364,17 +364,10 @@ class _EntryState extends State<Entry>
   }
 
   void _applyWindowTransparent() {
-    final settings = AppSettings.instance;
-    if (settings.appWindowTransparent) {
-      windowManager.setBackgroundColor(Colors.transparent);
-      return;
-    }
-    windowManager.setBackgroundColor(Color(_windowBackgroundArgb(settings)));
-  }
-
-  int _windowBackgroundArgb(AppSettings settings) {
-    if (settings.appBackgroundImagePath != null) return 0xFF000000;
-    return ThemeProvider.instance.currScheme.surfaceContainerLow.toARGB32();
+    // 窗口背景始终保持透明，由 Flutter 侧铺实际底色。
+    // 给窗口设不透明背景色会经 DWM accent 把不可见的调整边框也刷上颜色，
+    // 从透明切回不透明后四周会出现黑边。
+    windowManager.setBackgroundColor(Colors.transparent);
   }
 
   @override
