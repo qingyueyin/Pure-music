@@ -36,32 +36,85 @@ final class AudioReactiveFlowResponse {
       high < _nearlySilentThreshold;
 }
 
-/// 把频谱收成更稳的推力量，避免跟着瞬时峰值抽。
-double audioReactiveFlowCurve(double value) {
+/// 把绝对频段值映射到 0–1，不依赖自动增益。
+/// 0.06 以下视为静音，0.36 以上视为满幅，中间用 smoothstep。
+double audioReactiveFlowLevel(double value) {
   final x = value.isFinite ? value.clamp(0.0, 1.0).toDouble() : 0.0;
-  return x * x * x * (x * (x * 6 - 15) + 10);
+  final t = ((x - .06) / .30).clamp(0.0, 1.0).toDouble();
+  return t * t * (3 - 2 * t);
 }
 
-/// 低音主导的整体放大，混一点点中频。
+/// 低音主导的整体放大，带一点中频，避免只有鼓点的歌才有反应。
 /// 幅度只给到 0.30：再大就会变成每拍一次的整体缩放闪烁。
 double audioReactiveFlowSpectrumScale(double low, double mid) {
-  final specMix = _unit(low) * 0.9 + _unit(mid) * 0.1;
+  final specMix = _unit(low) * 0.75 + _unit(mid) * 0.25;
   return specMix * specMix * 0.30 + 1.0;
 }
 
-/// 整屏缩放。
-/// 旧版直接用快包络加 onset；新版用慢电平决定基准，鼓点只加 3.5% 的软脉冲。
+/// 整屏鼓点增幅：保留旧版缩放的那一下，但走平滑脉冲而不是硬起音。
+const double audioReactiveFlowZoomBeatGain = 0.16;
+
+/// 三个层的最大缩放增幅。主封面只给很小的一下，保住视觉焦点的张力。
+const double audioReactiveFlowPrimaryLayerMaxIncrease = 0.015;
+const double audioReactiveFlowSecondaryLayerMaxIncrease = 0.05;
+const double audioReactiveFlowLightLayerMaxIncrease = 0.06;
+
+/// 鼓点同时推柔性层的位移，避免只有缩放在动时像机械抽一下。
+const double audioReactiveFlowSecondaryLayerBeatOffset = 0.008;
+const double audioReactiveFlowLightLayerBeatOffset = 0.010;
+
+double audioReactiveFlowBeatOffset({
+  required double beat,
+  required double maximumOffset,
+}) {
+  final amount = maximumOffset.isFinite
+      ? maximumOffset.clamp(0.0, 0.012).toDouble()
+      : 0.0;
+  return _unit(beat) * amount;
+}
+
+/// 首次订阅后需要重建音频状态。
+bool audioReactiveFlowShouldResetAfterPause({required Duration? pausedFor}) {
+  return pausedFor == null;
+}
+
+/// 恢复时让绘制脉冲平滑追上已按暂停时长推进的节拍脉冲。
+double audioReactiveFlowFollowBeat({
+  required double current,
+  required double target,
+  required double dtSeconds,
+}) {
+  final from = _unit(current);
+  final to = _unit(target);
+  if (!dtSeconds.isFinite || dtSeconds <= 0) return from;
+  final tau = to > from ? 0.07 : 0.20;
+  final response = 1 - math.exp(-math.min(dtSeconds, 0.25) / tau);
+  return (from + (to - from) * response).clamp(0.0, 1.0).toDouble();
+}
+
+/// 鼓点对局部柔光层的缩放，限制最大增幅，避免超出实机对照范围。
+double audioReactiveFlowLayerScale({
+  required double beat,
+  required double maximumIncrease,
+}) {
+  final increase = maximumIncrease.isFinite
+      ? maximumIncrease.clamp(0.0, 0.16).toDouble()
+      : 0.0;
+  return 1.0 + _unit(beat) * increase;
+}
+
+/// 整屏缩放：慢电平做基准，鼓点再加一条平滑脉冲。
 double audioReactiveFlowZoom({
-  required bool legacy,
-  required double low,
-  required double mid,
   required double slowLow,
   required double slowMid,
-  required double onset,
+  required double beat,
+  double wholeBackgroundBeatGain = audioReactiveFlowZoomBeatGain,
 }) {
-  final value = legacy
-      ? audioReactiveFlowSpectrumScale(low, mid) + onset * 0.08
-      : audioReactiveFlowSpectrumScale(slowLow, slowMid) + low * 0.035;
+  final gain = wholeBackgroundBeatGain.isFinite
+      ? wholeBackgroundBeatGain.clamp(0.0, 0.20).toDouble()
+      : 0.0;
+  final value =
+      audioReactiveFlowSpectrumScale(slowLow, slowMid) + _unit(beat) * gain;
   return value.clamp(1.0, 1.48).toDouble();
 }
 
@@ -81,23 +134,13 @@ double audioReactiveFlowBeatEnergy(AudioReactiveFlowResponse response) {
   return math.pow(_unit(weighted), 0.62).toDouble();
 }
 
-double audioReactiveFlowOnsetPulse({
-  required double currentEnergy,
-  required double previousEnergy,
-  required double previousPulse,
-}) {
-  final current = _unit(currentEnergy);
-  final previous = _unit(previousEnergy);
-  final decayed = _unit(previousPulse) * 0.82;
-  final rise = ((current - previous) * 4.4).clamp(0.0, 1.0).toDouble();
-  return math.max(decayed, rise);
-}
-
 double audioReactiveFlowMotionSpeedTarget({
   required double energy,
-  required double onset,
+  required double beat,
+  required double energyGain,
+  required double beatGain,
 }) {
-  return (1.0 + _unit(energy) * 0.32 + _unit(onset) * 0.55)
+  return (1.0 + _unit(energy) * energyGain + _unit(beat) * beatGain)
       .clamp(1.0, 1.70)
       .toDouble();
 }
@@ -134,309 +177,240 @@ double _unit(double value) {
   return value.isFinite ? value.clamp(0.0, 1.0).toDouble() : 0.0;
 }
 
-final class AudioReactiveFlowEnvelope {
-  static const _release = .12;
-
-  final _BandSmoother _low = _BandSmoother(50);
-  final _BandSmoother _mid = _BandSmoother(100);
-  final _BandSmoother _high = _BandSmoother(1000);
-  AudioReactiveFlowResponse _value = AudioReactiveFlowResponse.zero;
-
-  AudioReactiveFlowResponse get value => _value;
-
-  AudioReactiveFlowResponse update(AudioReactiveFlowResponse target) {
-    _value = AudioReactiveFlowResponse(
-      _low.push(_sanitize(target.low)),
-      _mid.push(_sanitize(target.mid)),
-      _high.push(_sanitize(target.high)),
-    );
-    return _value;
-  }
-
-  AudioReactiveFlowResponse release() {
-    _value = AudioReactiveFlowResponse(
-      _low.decay(_release),
-      _mid.decay(_release),
-      _high.decay(_release),
-    );
-    return _value;
-  }
-
-  void reset() {
-    _low.reset();
-    _mid.reset();
-    _high.reset();
-    _value = AudioReactiveFlowResponse.zero;
-  }
-
-  static double _sanitize(double value) {
-    return value.isFinite && value >= 0
-        ? value.clamp(0.0, 1.0).toDouble()
-        : 0.0;
-  }
-}
-
-final class _BandSmoother {
-  _BandSmoother(this._peakDivisor);
-
-  final double _peakDivisor;
-  final List<double> _hist = List<double>.filled(4, 0);
-  double _peak = 0;
-  double _smoothed = 0;
-
-  double push(double incoming) {
-    _hist[0] = _hist[1];
-    _hist[1] = _hist[2];
-    _hist[2] = _hist[3];
-    _hist[3] = incoming;
-    final fir =
-        _hist[0] * 0.1 + _hist[1] * 0.2 + _hist[2] * 0.3 + _hist[3] * 0.4;
-    if (fir > _peak) {
-      _peak = fir;
-    } else {
-      _peak *= 1.0 - 1.0 / _peakDivisor;
-    }
-    _smoothed += (_peak - _smoothed) * 0.5;
-    return _smoothed.clamp(0.0, 1.0).toDouble();
-  }
-
-  double decay(double amount) {
-    final keep = (1.0 - amount).clamp(0.0, 1.0).toDouble();
-    _hist[0] *= keep;
-    _hist[1] *= keep;
-    _hist[2] *= keep;
-    _hist[3] *= keep;
-    _peak *= keep;
-    _smoothed *= keep;
-    return _smoothed.clamp(0.0, 1.0).toDouble();
-  }
-
-  void reset() {
-    _hist[0] = 0;
-    _hist[1] = 0;
-    _hist[2] = 0;
-    _hist[3] = 0;
-    _peak = 0;
-    _smoothed = 0;
-  }
-}
-
-final class AudioReactiveFlowNormalizer {
-  static const _targetPeak = 0.85;
-  static const _attack = 0.30;
-  static const _release = 0.01;
-  static const _maxGain = 30.0;
-
-  double _smoothedPeak = 0;
-  bool _hasPeak = false;
-
-  AudioReactiveFlowResponse update(AudioReactiveFlowResponse input) {
-    if (input.isNearlySilent) {
-      _smoothedPeak += (0 - _smoothedPeak) * _release;
-      return AudioReactiveFlowResponse.zero;
-    }
-
-    final peak = math.max(input.low, math.max(input.mid, input.high));
-    if (!_hasPeak) {
-      _smoothedPeak = peak;
-      _hasPeak = true;
-    } else {
-      final coefficient = peak > _smoothedPeak ? _attack : _release;
-      _smoothedPeak += (peak - _smoothedPeak) * coefficient;
-    }
-    final gain = (_targetPeak / math.max(_smoothedPeak, 0.001))
-        .clamp(0.1, _maxGain)
-        .toDouble();
-
-    double normalize(double value) => (value * gain).clamp(0.0, 1.0).toDouble();
-
-    return AudioReactiveFlowResponse(
-      normalize(input.low),
-      normalize(input.mid),
-      normalize(input.high),
-    );
-  }
-
-  void reset() {
-    _smoothedPeak = 0;
-    _hasPeak = false;
-  }
-
-  /// 短时间断订阅（失焦闲时等）后恢复用：保留峰值基线，只清过期标记。
-  /// 基线还在的话恢复第一帧就按旧峰值归一化，包络不归零重爬。
-  void resumeFromPause() {
-    _hasPeak = _smoothedPeak > 0;
-  }
-}
-
-/// 新旧两套律动的统一入口，由设置里的临时对照开关切换。
-/// 旧版保持原样；新版换成滚动底噪 + 相对门限 + 时间常数包络。
+/// 律动统一入口：慢电平做基准，鼓点走事件检测 + 平滑脉冲。
 final class AudioReactiveFlowEngine {
-  AudioReactiveFlowEngine({bool legacy = true}) : _legacy = legacy;
+  AudioReactiveFlowEngine({
+    double pulseAttackSeconds = .09,
+    double pulseReleaseTauSeconds = .30,
+  }) : _beat = _BeatTracker(
+         pulseAttackSeconds: pulseAttackSeconds,
+         pulseReleaseTauSeconds: pulseReleaseTauSeconds,
+       );
 
   /// 频谱固定 23Hz（2048 点窗约 43ms）；首帧或异常间隔时用它兜底。
   static const double nominalDtSeconds = 1 / 23;
   static const double _maxDtSeconds = .25;
 
-  final AudioReactiveFlowNormalizer _legacyNormalizer =
-      AudioReactiveFlowNormalizer();
-  final AudioReactiveFlowEnvelope _legacyEnvelope = AudioReactiveFlowEnvelope();
-  final _RollingFloorBands _bands = _RollingFloorBands();
+  final _BeatTracker _beat;
   AudioReactiveFlowResponse _value = AudioReactiveFlowResponse.zero;
-  bool _legacy;
 
   AudioReactiveFlowResponse get value => _value;
 
-  /// 慢电平：新版取绝对响度，旧版就是 AGC 后的包络。
-  double get levelLow => _legacy ? _value.low : _bands.levelLow;
-  double get levelMid => _legacy ? _value.mid : _bands.levelMid;
-  double get levelHigh => _legacy ? _value.high : _bands.levelHigh;
+  /// 慢电平：2.5s 绝对响度平均。
+  double get levelLow => _beat.levelLow;
+  double get levelMid => _beat.levelMid;
+  double get levelHigh => _beat.levelHigh;
 
-  bool get legacy => _legacy;
-
-  set legacy(bool value) {
-    if (value == _legacy) return;
-    _legacy = value;
-    reset();
-  }
+  double get beatPulse => _beat.pulse;
 
   void update(AudioReactiveFlowResponse incoming, {double? dtSeconds}) {
     final dt = dtSeconds == null || !dtSeconds.isFinite || dtSeconds <= 0
         ? nominalDtSeconds
         : math.min(dtSeconds, _maxDtSeconds);
-    _value = _legacy
-        ? _legacyEnvelope.update(_legacyNormalizer.update(incoming))
-        : _bands.update(incoming, dt);
+    _beat.update(incoming, dt);
+    _value = incoming;
   }
 
-  /// 短暂断流后恢复：旧版沿用峰值记忆，新版从当前值慢慢释放。
-  void resumeFromPause() {
-    _legacyNormalizer.resumeFromPause();
+  /// 恢复时推进脉冲年龄，同时保留暂停前的慢电平与基准线。
+  void resumeFromPause({double elapsedSeconds = 0}) {
+    _beat.resumeFromPause(elapsedSeconds: elapsedSeconds);
+  }
+
+  /// 切歌时只重建鼓点检测，保留慢电平和连续量程，避免画面跳一下。
+  void resetForTrackChange() {
+    _beat.resetForTrackChange();
   }
 
   void reset() {
-    _legacyNormalizer.reset();
-    _legacyEnvelope.reset();
-    _bands.reset();
+    _beat.reset();
     _value = AudioReactiveFlowResponse.zero;
   }
 }
 
-/// 三个频段各自跟一条 0.65s 滚动底噪，只把「高出底噪的部分」当作律动。
-/// 门限带迟滞和死区，1% 级别的抖动不会变成可见形变。
-final class _RollingFloorBands {
-  static const double floorTauSeconds = .65;
-  static const double levelTauSeconds = 2.5;
-  static const double attackTauSeconds = .09;
-  static const double releaseTauSeconds = .22;
-  static const double targetHoldSeconds = .10;
-  static const double riseOffset = .03;
-  static const double risePeakTauSeconds = 2.5;
-  static const double minRisePeak = .28;
-  static const double enterMargin = .03;
-  static const double stayMargin = .015;
-  static const double absoluteGate = .02;
-  static const double deadband = .01;
+/// 律动：慢电平决定底色，鼓点用「能量上升沿 + 最短间隔」检测，
+/// 每次触发只记一个事件，由时间算出平滑脉冲，避免每帧硬开关。
+final class _BeatTracker {
+  static const double _levelTauSeconds = 1.6;
+  // 基准线跟的是歌曲平均响度：升得慢，避免把鼓点本身吞掉；降得快，
+  // 安静段结束后能马上回到真实电平。
+  static const double _baselineRiseTauSeconds = 3.0;
+  static const double _baselineFallTauSeconds = .35;
+  static const double _risePeakTauSeconds = 2.5;
+  static const double _minRise = .04;
+  static const double _minScale = .12;
+  static const double _riseRatio = .20;
+  static const double _riseEpsilon = .004;
+  static const double _refractorySeconds = .16;
+  static const double _absoluteGate = .025;
+  static const double _minStrength = .08;
+  // 强度走平方曲线：强拍保住满幅，弱拍压到很小，节奏对比更清楚。
+  static const double _strengthCurve = 2.0;
+  static const double _pulseLifeSeconds = 1.2;
 
-  final _RollingFloorBand _low = _RollingFloorBand();
-  final _RollingFloorBand _mid = _RollingFloorBand();
-  final _RollingFloorBand _high = _RollingFloorBand();
+  _BeatTracker({
+    double pulseAttackSeconds = .09,
+    double pulseReleaseTauSeconds = .30,
+  }) : _pulseAttackSeconds = pulseAttackSeconds,
+       _pulseReleaseTauSeconds = pulseReleaseTauSeconds;
 
-  /// 慢电平：绝对响度，几秒级跟随，不受底噪扣除影响。
-  double get levelLow => _low.level;
-  double get levelMid => _mid.level;
-  double get levelHigh => _high.level;
+  final double _pulseAttackSeconds;
+  final double _pulseReleaseTauSeconds;
 
-  AudioReactiveFlowResponse update(
-    AudioReactiveFlowResponse incoming,
-    double dtSeconds,
-  ) {
-    return AudioReactiveFlowResponse(
-      _low.update(incoming.low, dtSeconds),
-      _mid.update(incoming.mid, dtSeconds),
-      _high.update(incoming.high, dtSeconds),
-    );
+  final _SlowBand _low = _SlowBand();
+  final _SlowBand _mid = _SlowBand();
+  final _SlowBand _high = _SlowBand();
+  final List<_Beat> _beats = <_Beat>[];
+
+  double _time = 0;
+  double _baseline = 0;
+  double _risePeak = 0;
+  double _previousRise = 0;
+  double _lastEnergy = 0;
+  double _lastBeatAt = double.negativeInfinity;
+  bool _started = false;
+  bool _skipNextBeat = false;
+
+  double get levelLow => _low.value;
+  double get levelMid => _mid.value;
+  double get levelHigh => _high.value;
+
+  double get pulse {
+    var value = 0.0;
+    for (final beat in _beats) {
+      final shaped = beat.strength * _shape(_time - beat.time);
+      if (shaped > value) value = shaped;
+    }
+    return value.clamp(0.0, 1.0).toDouble();
+  }
+
+  void update(AudioReactiveFlowResponse incoming, double dtSeconds) {
+    _time += dtSeconds;
+    final low = _unit(incoming.low);
+    final mid = _unit(incoming.mid);
+    final high = _unit(incoming.high);
+    final energy = low * .65 + mid * .30 + high * .05;
+    _lastEnergy = energy;
+    if (!_started) {
+      // 首帧只记录当前电平，不产生鼓点：进页面不抽。
+      _started = true;
+      _low.seed(low);
+      _mid.seed(mid);
+      _high.seed(high);
+      _baseline = energy;
+      _previousRise = 0;
+      _skipNextBeat = false;
+      return;
+    }
+    _low.update(low, dtSeconds);
+    _mid.update(mid, dtSeconds);
+    _high.update(high, dtSeconds);
+
+    final rise = math.max(0.0, energy - _baseline);
+    final scale = math.max(_risePeak, _minScale);
+    final threshold = math.max(_minRise, scale * _riseRatio);
+    final rising = rise > _previousRise + _riseEpsilon;
+    if (!_skipNextBeat &&
+        rising &&
+        rise >= threshold &&
+        energy >= _absoluteGate &&
+        _time - _lastBeatAt >= _refractorySeconds) {
+      final normalized = (rise / scale).clamp(0.0, 1.0).toDouble();
+      final strength = math
+          .pow(normalized, _strengthCurve)
+          .clamp(_minStrength, 1.0)
+          .toDouble();
+      // 用上一帧时间，脉冲在触发这一帧就能被看到，不用等下一帧。
+      _beats.add(_Beat(_time - dtSeconds, strength));
+      _lastBeatAt = _time;
+    }
+    _skipNextBeat = false;
+    _previousRise = rise;
+    _risePeak = rise > _risePeak
+        ? rise
+        : _risePeak * math.exp(-dtSeconds / _risePeakTauSeconds);
+    final baselineTau = energy > _baseline
+        ? _baselineRiseTauSeconds
+        : _baselineFallTauSeconds;
+    _baseline +=
+        (energy - _baseline) * (1 - math.exp(-dtSeconds / baselineTau));
+    _beats.removeWhere((beat) => _time - beat.time > _pulseLifeSeconds);
+  }
+
+  /// 恢复时推进节拍脉冲的年龄，但不推进暂停期间的音频电平与基准线。
+  void resumeFromPause({required double elapsedSeconds}) {
+    if (elapsedSeconds.isFinite && elapsedSeconds > 0) {
+      _time += elapsedSeconds;
+      _risePeak *= math.exp(-elapsedSeconds / _risePeakTauSeconds);
+      _beats.removeWhere((beat) => _time - beat.time > _pulseLifeSeconds);
+    }
+    _lastBeatAt = double.negativeInfinity;
+    _previousRise = 0;
+    _skipNextBeat = true;
+  }
+
+  /// 切歌时只重建鼓点检测，保留慢电平和连续量程，避免画面跳一下。
+  void resetForTrackChange() {
+    _beats.clear();
+    _baseline = _lastEnergy;
+    _risePeak = 0;
+    _previousRise = 0;
+    _lastBeatAt = double.negativeInfinity;
+    _skipNextBeat = true;
   }
 
   void reset() {
+    _time = 0;
+    _baseline = 0;
+    _risePeak = 0;
+    _previousRise = 0;
+    _lastBeatAt = double.negativeInfinity;
+    _beats.clear();
     _low.reset();
     _mid.reset();
     _high.reset();
+    _started = false;
+    _skipNextBeat = false;
+  }
+
+  double _shape(double age) {
+    if (age <= 0) return 0;
+    if (age < _pulseAttackSeconds) {
+      final t = age / _pulseAttackSeconds;
+      return t * t * (3 - 2 * t);
+    }
+    return math.exp(-(age - _pulseAttackSeconds) / _pulseReleaseTauSeconds);
   }
 }
 
-final class _RollingFloorBand {
-  double _floor = -1;
+final class _Beat {
+  const _Beat(this.time, this.strength);
+
+  final double time;
+  final double strength;
+}
+
+final class _SlowBand {
   double _value = 0;
-  double _level = 0;
-  double _risePeak = 0;
-  double _targetPeak = 0;
-  double _targetHoldFor = 0;
-  bool _active = false;
+  bool _seeded = false;
 
-  double get level => _level;
+  double get value => _value;
 
-  double update(double level, double dtSeconds) {
-    final incoming = _unit(level);
-    if (_floor < 0) {
-      // 首帧只记录底噪，输出保持 0，避免一有声音就跳满。
-      _floor = incoming;
-      _level = incoming;
-      return _value;
-    }
-    final levelStep =
-        1 - math.exp(-dtSeconds / _RollingFloorBands.levelTauSeconds);
-    _level += (incoming - _level) * levelStep;
-    final floorStep =
-        1 - math.exp(-dtSeconds / _RollingFloorBands.floorTauSeconds);
-    _floor += (incoming - _floor) * floorStep;
-    final above = incoming - _floor;
-    _active =
-        incoming >= _RollingFloorBands.absoluteGate &&
-        (above >= _RollingFloorBands.enterMargin ||
-            (_active && above >= _RollingFloorBands.stayMargin));
-
-    _risePeak *= math.exp(-dtSeconds / _RollingFloorBands.risePeakTauSeconds);
-    final target = _active ? _shape(above) : 0.0;
-    // 23Hz 下一拍只有两三帧，先顶住 100ms，慢起音才追得上峰值。
-    if (target >= _targetPeak) {
-      _targetPeak = target;
-      _targetHoldFor = 0;
-    } else if (_targetHoldFor < _RollingFloorBands.targetHoldSeconds) {
-      _targetHoldFor += dtSeconds;
-    } else {
-      _targetPeak = target;
-    }
-    if (_targetPeak > _value) {
-      final step =
-          1 - math.exp(-dtSeconds / _RollingFloorBands.attackTauSeconds);
-      _value += (_targetPeak - _value) * step;
-    } else if (_value - _targetPeak > _RollingFloorBands.deadband) {
-      final step =
-          1 - math.exp(-dtSeconds / _RollingFloorBands.releaseTauSeconds);
-      _value += (_targetPeak - _value) * step;
-    }
-    // 死区内不动，避免 1% 级别的波动变成可见抖动。
-    return _value;
+  void seed(double value) {
+    _value = _unit(value);
+    _seeded = true;
   }
 
-  double _shape(double above) {
-    final rise = above - _RollingFloorBands.riseOffset;
-    if (rise <= 0) return 0;
-    if (rise > _risePeak) _risePeak = rise;
-    // 按最近的鼓点幅度归一，安静的歌和压缩重的歌都能到同一档；
-    // 线性映射保留强弱差别，软饱和会把所有鼓点压成一样。
-    final scale = math.max(_risePeak, _RollingFloorBands.minRisePeak);
-    return (rise / scale).clamp(0.0, 1.0).toDouble();
+  void update(double target, double dtSeconds) {
+    if (!_seeded) {
+      seed(target);
+      return;
+    }
+    final step = 1 - math.exp(-dtSeconds / _BeatTracker._levelTauSeconds);
+    _value += (_unit(target) - _value) * step;
   }
 
   void reset() {
-    _floor = -1;
     _value = 0;
-    _level = 0;
-    _risePeak = 0;
-    _targetPeak = 0;
-    _targetHoldFor = 0;
-    _active = false;
+    _seeded = false;
   }
 }

@@ -447,7 +447,6 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
       nowPlayingBackgroundModeNotifier,
       nowPlayingDynamicFlowingLightNotifier,
       nowPlayingAudioReactiveFlowNotifier,
-      nowPlayingAudioReactiveFlowVersionNotifier,
     ]);
     playbackService.nowPlayingNotifier.addListener(updateCover);
     nowPlayingViewMode.addListener(_onViewModeChanged);
@@ -544,9 +543,6 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
         flowSpeed: 1.0,
         intensity: brightness == Brightness.dark ? 1.0 : 0.9,
         audioReactiveFlow: nowPlayingAudioReactiveFlowNotifier.value,
-        legacyAudioReactiveFlow:
-            nowPlayingAudioReactiveFlowVersionNotifier.value ==
-            AudioReactiveFlowVersion.legacy,
         trackId: playbackService.nowPlaying?.path,
         preExtractedColors: _preExtractedPalette,
       ),

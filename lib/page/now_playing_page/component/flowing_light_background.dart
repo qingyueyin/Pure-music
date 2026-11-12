@@ -249,8 +249,6 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground> {
       audio: _audio,
       repaint: _frameNotifier,
     );
-    _engine.legacy = widget.inputs.legacyAudioReactiveFlow;
-    _audio.legacy = _engine.legacy;
     _scheduleCoverDecode();
     _syncSpectrumSubscription();
     _bindPlayerStateListenable();
@@ -298,15 +296,11 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground> {
         oldWidget.inputs.audioReactiveFlow) {
       _resetAudioResponse();
     }
-    if (widget.inputs.legacyAudioReactiveFlow !=
-        oldWidget.inputs.legacyAudioReactiveFlow) {
-      _engine.legacy = widget.inputs.legacyAudioReactiveFlow;
-      _audio.legacy = _engine.legacy;
-      _lastSpectrumElapsed = null;
-      _resetAudioVisual();
-    }
     if (widget.inputs.trackId != oldWidget.inputs.trackId) {
-      _resetAudioResponse();
+      // 切歌只重建鼓点检测，慢电平和连续量程从上一首接续。
+      _engine.resetForTrackChange();
+      _audio.resetForTrackChange();
+      _lastSpectrumElapsed = null;
     }
     final needsSync =
         !identical(
@@ -337,23 +331,33 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground> {
         widget.inputs.isPlaybackActive;
     if (shouldListen) {
       if (_spectrumSubscription == null) {
-        // 断订阅期间峰值基线会过期：超过 10 秒重置（用旧峰值归一化新频谱
-        // 会跳变），闲时短断开则保留基线，恢复第一帧包络就直接接上。
-        // 顺序注意：reset 会清 awaitingPlaybackSpectrum，必须先 reset 再 markListenStarted。
-        if (_spectrumPausedAt == null ||
-            DateTime.now().difference(_spectrumPausedAt!) >
-                const Duration(seconds: 10)) {
+        final pausedAt = _spectrumPausedAt;
+        final pausedFor = pausedAt == null
+            ? Duration.zero
+            : DateTime.now().difference(pausedAt);
+        // 断流恢复保留慢电平，并让脉冲按暂停时长退场；首次订阅才重置。
+        if (audioReactiveFlowShouldResetAfterPause(
+          pausedFor: pausedAt == null ? null : pausedFor,
+        )) {
           _engine.reset();
           _resetAudioVisual();
         } else {
-          _engine.resumeFromPause();
+          _engine.resumeFromPause(
+            elapsedSeconds:
+                pausedFor.inMicroseconds / Duration.microsecondsPerSecond,
+          );
         }
+        _lastSpectrumElapsed = null;
         _audio.markListenStarted();
+        _spectrumPausedAt = null;
         _spectrumSubscription = stream.listen(_handleSpectrum);
       }
       return;
     }
-    _spectrumPausedAt = DateTime.now();
+    if (_spectrumSubscription != null || _spectrumPausedAt == null) {
+      _spectrumPausedAt = DateTime.now();
+    }
+    _lastSpectrumElapsed = null;
     _spectrumSubscription?.cancel();
     _spectrumSubscription = null;
   }
@@ -427,9 +431,7 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground> {
             _playbackSpeedTransitionProgress < 1.0 ||
             _smoothedPlaybackSpeed > _kIdleSpeed);
     final shouldTransition =
-        _tickerModeEnabled &&
-        _previousCover != null &&
-        widget.inputs.isVisible;
+        _tickerModeEnabled && _previousCover != null && widget.inputs.isVisible;
 
     if (shouldTransition) {
       _transitionClock.start();
@@ -529,12 +531,22 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground> {
       return;
     }
     final env = _engine.value;
-    _audio.low = audioReactiveFlowCurve(env.low);
-    _audio.mid = audioReactiveFlowCurve(env.mid);
-    _audio.high = audioReactiveFlowCurve(env.high);
-    _audio.slowLow = audioReactiveFlowCurve(_engine.levelLow);
-    _audio.slowMid = audioReactiveFlowCurve(_engine.levelMid);
+    _audio.low = audioReactiveFlowLevel(env.low);
+    _audio.mid = audioReactiveFlowLevel(env.mid);
+    _audio.high = audioReactiveFlowLevel(env.high);
+    _audio.followSlow(
+      low: audioReactiveFlowLevel(_engine.levelLow),
+      mid: audioReactiveFlowLevel(_engine.levelMid),
+      high: audioReactiveFlowLevel(_engine.levelHigh),
+      deltaSeconds: deltaSeconds,
+    );
+    _audio.beat = audioReactiveFlowFollowBeat(
+      current: _audio.beat,
+      target: _engine.beatPulse,
+      dtSeconds: deltaSeconds,
+    );
     _audio.followSpeed(deltaSeconds);
+    _audio.followFast(deltaSeconds);
   }
 
   Future<void> _scheduleCoverDecode() async {
@@ -935,8 +947,7 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground> {
       ..cover = cover.textures
       ..previousCover = previous?.textures
       ..coverBaseColor = cover.baseColor
-      ..previousCoverBaseColor =
-          previous?.baseColor ?? _kDarkNeutralBackground
+      ..previousCoverBaseColor = previous?.baseColor ?? _kDarkNeutralBackground
       ..previousMotionTime = _previousMotionTime
       ..audioReactiveFlow = audioReactiveFlow
       ..style = style;
@@ -1037,46 +1048,84 @@ class _FlowAudioState {
   double high = 0.0;
   double motionSpeed = 1.0;
 
-  /// 慢通道：几秒级平均，只用来决定整体缩放，避免每一拍都缩放整屏。
+  /// 慢通道：几秒级平均，用来决定整体缩放、层位移和颜色；鼓点只加脉冲。
   double slowLow = 0.0;
   double slowMid = 0.0;
-  bool legacy = true;
-  double _onset = 0.0;
-  double _previousEnergy = 0.0;
-  bool _skipOnset = false;
+  double slowHigh = 0.0;
+
+  /// 鼓点脉冲由引擎按事件算出，和显示帧率解耦。
+  double beat = 0.0;
+
+  /// 快通道：只推光带和副层这些柔性元素，主封面层不用它。
+  double fastLow = 0.0;
+  double fastMid = 0.0;
+  double fastHigh = 0.0;
+
+  bool _seedFast = false;
   bool awaitingPlaybackSpectrum = false;
 
-  double get onset => _onset;
-
   void markListenStarted() {
-    _skipOnset = true;
+    _seedFast = true;
     awaitingPlaybackSpectrum = true;
+  }
+
+  void followSlow({
+    required double low,
+    required double mid,
+    required double high,
+    required double deltaSeconds,
+  }) {
+    if (!deltaSeconds.isFinite || deltaSeconds <= 0) return;
+    slowLow = _follow(slowLow, low, deltaSeconds, .22, .45);
+    slowMid = _follow(slowMid, mid, deltaSeconds, .22, .45);
+    slowHigh = _follow(slowHigh, high, deltaSeconds, .22, .45);
   }
 
   void followSpeed(double deltaSeconds) {
     final energy = audioReactiveFlowBeatEnergy(
-      AudioReactiveFlowResponse(low, mid, high),
+      AudioReactiveFlowResponse(slowLow, slowMid, slowHigh),
     );
-    if (_skipOnset) {
-      _skipOnset = false;
-      _onset = 0;
-      _previousEnergy = energy;
-    } else {
-      _onset = audioReactiveFlowOnsetPulse(
-        currentEnergy: energy,
-        previousEnergy: _previousEnergy,
-        previousPulse: _onset,
-      );
-      _previousEnergy = energy;
-    }
     final target = audioReactiveFlowMotionSpeedTarget(
       energy: energy,
-      onset: _onset,
+      beat: beat,
+      energyGain: .20,
+      beatGain: .40,
     );
     if (!deltaSeconds.isFinite || deltaSeconds <= 0) return;
-    final timeConstant = target > motionSpeed ? 0.07 : 0.22;
+    final timeConstant = target > motionSpeed ? 0.07 : 0.18;
     final response = 1 - exp(-deltaSeconds / timeConstant);
     motionSpeed += (target - motionSpeed) * response;
+  }
+
+  /// 快通道用固定起音/回落，只给柔性元素；1% 级噪声到不了可见形变。
+  void followFast(double deltaSeconds) {
+    if (_seedFast) {
+      fastLow = low;
+      fastMid = mid;
+      fastHigh = high;
+      _seedFast = false;
+      return;
+    }
+    if (!deltaSeconds.isFinite || deltaSeconds <= 0) return;
+    fastLow = _follow(fastLow, low, deltaSeconds, .07, .28);
+    fastMid = _follow(fastMid, mid, deltaSeconds, .07, .28);
+    fastHigh = _follow(fastHigh, high, deltaSeconds, .07, .28);
+  }
+
+  static double _follow(
+    double current,
+    double target,
+    double deltaSeconds,
+    double attack,
+    double release,
+  ) {
+    final tau = target > current ? attack : release;
+    return current + (target - current) * (1 - exp(-deltaSeconds / tau));
+  }
+
+  /// 切歌保留慢电平、位移、速度和当前鼓点，只重建检测，避免画面从零重新爬。
+  void resetForTrackChange() {
+    awaitingPlaybackSpectrum = true;
   }
 
   void reset() {
@@ -1086,10 +1135,11 @@ class _FlowAudioState {
     motionSpeed = 1.0;
     slowLow = 0.0;
     slowMid = 0.0;
-    _onset = 0.0;
-    _previousEnergy = 0.0;
-    // 重置后的第一帧不产生 onset 脉冲，避免切歌时闪一下。
-    _skipOnset = true;
+    slowHigh = 0.0;
+    fastLow = 0.0;
+    fastMid = 0.0;
+    fastHigh = 0.0;
+    beat = 0.0;
     awaitingPlaybackSpectrum = false;
   }
 }
@@ -1212,15 +1262,16 @@ class _FlowingLightPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final low = audioReactiveFlow ? audio.low : 0.0;
-    final high = audioReactiveFlow ? audio.high : 0.0;
+    final slowHigh = audioReactiveFlow ? audio.slowHigh : 0.0;
     _coverPaint.colorFilter = _colorFilterFor(
       style.artworkSaturation +
-          (audioReactiveFlow ? audioReactiveFlowSaturationBoost(high) : 0.0),
+          (audioReactiveFlow
+              ? audioReactiveFlowSaturationBoost(
+                  slowHigh * .6 + audio.fastHigh * .4,
+                )
+              : 0.0),
       style.blackScrim,
-      audioReactiveFlow
-          ? audioReactiveFlowContrast(audio.legacy ? low : audio.slowLow)
-          : 1.0,
+      audioReactiveFlow ? audioReactiveFlowContrast(audio.slowLow) : 1.0,
     );
     final previous = previousCover;
     if (previous != null) {
@@ -1253,25 +1304,51 @@ class _FlowingLightPainter extends CustomPainter {
     double opacity,
   ) {
     if (textures == null || opacity <= 0) return;
-    final low = audioReactiveFlow ? audio.low : 0.0;
-    final mid = audioReactiveFlow ? audio.mid : 0.0;
-    final high = audioReactiveFlow ? audio.high : 0.0;
+    final slowLow = audioReactiveFlow ? audio.slowLow : 0.0;
+    final slowMid = audioReactiveFlow ? audio.slowMid : 0.0;
+    final slowHigh = audioReactiveFlow ? audio.slowHigh : 0.0;
+    // 主封面层的位移走慢电平。
+    final motionLow = slowLow;
+    final motionMid = slowMid;
+    final motionHigh = slowHigh;
+    // 快通道只推柔性层，主封面层继续走慢电平。
+    final fastLow = audioReactiveFlow ? audio.fastLow : 0.0;
+    final fastMid = audioReactiveFlow ? audio.fastMid : 0.0;
+    final fastHigh = audioReactiveFlow ? audio.fastHigh : 0.0;
     final zoom = audioReactiveFlow
         ? audioReactiveFlowZoom(
-            legacy: audio.legacy,
-            low: low,
-            mid: mid,
-            slowLow: audio.slowLow,
-            slowMid: audio.slowMid,
-            onset: audio.onset,
+            slowLow: slowLow,
+            slowMid: slowMid,
+            beat: audio.beat,
           )
         : 1.0;
+    final localBeat = audioReactiveFlow ? audio.beat : 0.0;
+    // 主封面只吃很小的一下，给视觉焦点一点张力，不做整屏鼓点缩放。
+    final primaryBeatScale = audioReactiveFlowLayerScale(
+      beat: localBeat,
+      maximumIncrease: audioReactiveFlowPrimaryLayerMaxIncrease,
+    );
+    // 鼓点同时推两个柔性层的位移，和缩放一起把同一下铺开。
+    final secondaryBeatOffset = audioReactiveFlowBeatOffset(
+      beat: localBeat,
+      maximumOffset: audioReactiveFlowSecondaryLayerBeatOffset,
+    );
+    final lightBeatOffset = audioReactiveFlowBeatOffset(
+      beat: localBeat,
+      maximumOffset: audioReactiveFlowLightLayerBeatOffset,
+    );
     final cycle2 = time / _kCoverPeriod2 * 2 * pi;
     final secondaryOffset = Offset(
-      _kSecondaryOffset.dx + cos(-cycle2 * 0.5) * _kSecondaryOrbit - mid * 0.02,
+      _kSecondaryOffset.dx +
+          cos(-cycle2 * 0.5) * _kSecondaryOrbit -
+          motionMid * 0.02 -
+          fastMid * 0.006 +
+          secondaryBeatOffset,
       _kSecondaryOffset.dy +
           sin(-cycle2 * 0.5) * _kSecondaryOrbit +
-          low * 0.015,
+          motionLow * 0.015 +
+          fastLow * 0.006 -
+          secondaryBeatOffset * 0.8,
     );
     _compositePaint.color = const Color(
       0xFFFFFFFF,
@@ -1292,11 +1369,11 @@ class _FlowingLightPainter extends CustomPainter {
       time: time,
       period: _kCoverPeriod1,
       offset: Offset(
-        _kPrimaryOffset.dx + low * 0.01,
-        _kPrimaryOffset.dy - low * 0.008,
+        _kPrimaryOffset.dx + motionLow * 0.01,
+        _kPrimaryOffset.dy - motionLow * 0.008,
       ),
       alpha: _kPrimaryLayerAlpha,
-      scaleMul: _kPrimaryScaleMul,
+      scaleMul: _kPrimaryScaleMul * primaryBeatScale,
       padding: textures.padding,
     );
     _drawCoverLayer(
@@ -1307,7 +1384,12 @@ class _FlowingLightPainter extends CustomPainter {
       period: _kCoverPeriod2,
       offset: secondaryOffset,
       alpha: _kSecondaryLayerAlpha,
-      scaleMul: _kSecondaryScaleMul,
+      scaleMul:
+          _kSecondaryScaleMul *
+          audioReactiveFlowLayerScale(
+            beat: localBeat,
+            maximumIncrease: audioReactiveFlowSecondaryLayerMaxIncrease,
+          ),
       padding: textures.padding,
     );
     _drawCoverLayer(
@@ -1317,11 +1399,22 @@ class _FlowingLightPainter extends CustomPainter {
       time: time,
       period: _kCoverPeriod3,
       offset: Offset(
-        _kLightOffset.dx + high * 0.015,
-        _kLightOffset.dy - low * 0.02,
+        _kLightOffset.dx +
+            motionHigh * 0.015 +
+            fastHigh * 0.015 -
+            lightBeatOffset,
+        _kLightOffset.dy -
+            motionLow * 0.02 -
+            fastLow * 0.015 +
+            lightBeatOffset * 0.8,
       ),
       alpha: _kLightLayerAlpha,
-      scaleMul: _kLightScaleMul,
+      scaleMul:
+          _kLightScaleMul *
+          audioReactiveFlowLayerScale(
+            beat: localBeat,
+            maximumIncrease: audioReactiveFlowLightLayerMaxIncrease,
+          ),
       padding: textures.padding,
       phase: pi,
     );
