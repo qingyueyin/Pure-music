@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:pure_music/core/log/app_log.dart';
 import 'package:pure_music/core/window_frame_probe.dart';
+import 'package:pure_music/core/window_occlusion.dart';
 
 /// 窗口状态：前台、后台（失去焦点但窗口仍在）、最小化、托盘。
 enum WindowRenderState {
@@ -77,8 +78,8 @@ class WindowRenderGate with WidgetsBindingObserver {
   /// 只有真正藏进托盘才为 true。最小化不算，界面还留着。
   final ValueNotifier<bool> trayHidden = ValueNotifier(false);
 
-  /// 失焦持续 30 秒后为 true：窗口还在桌面但被完全挡住，
-  /// 装饰动画停掉、缓存做一次温和裁剪；回前台立刻复位。
+  /// 失焦 30 秒后确认前台窗口真把本窗口完全盖住才为 true，
+  /// 装饰动画停掉、缓存做一次温和裁剪；前台窗口移开或回焦点立刻复位。
   final ValueNotifier<bool> backgroundIdle = ValueNotifier(false);
 
   bool _trayHidden = false;
@@ -90,6 +91,7 @@ class WindowRenderGate with WidgetsBindingObserver {
   Timer? _backgroundIdleTimer;
 
   static const _backgroundIdleDelay = Duration(seconds: 30);
+  static const _backgroundIdleRecheck = Duration(seconds: 15);
 
   WindowRenderState get state => windowRenderStateFor(
     trayHidden: _trayHidden,
@@ -186,7 +188,8 @@ class WindowRenderGate with WidgetsBindingObserver {
     }
   }
 
-  /// 失焦且窗口仍在桌面时启动 30 秒计时；焦点回来或窗口隐藏立即取消。
+  /// 失焦且窗口仍在桌面时启动 30 秒计时，到点确认是否真被盖住；
+  /// 焦点回来或窗口隐藏立即取消。
   /// 从闲时恢复时必须主动排一帧：闲时装饰动画全停，引擎可能没有任何
   /// 在途帧，只改状态不排帧画面就停在旧帧上，看起来像卡死。
   void _syncBackgroundIdle() {
@@ -212,19 +215,33 @@ class WindowRenderGate with WidgetsBindingObserver {
     }
     if (_backgroundIdleTimer != null) return;
     log.window.info('legacy', '[focus] idle-timer start');
-    _backgroundIdleTimer = Timer(_backgroundIdleDelay, () {
-      _backgroundIdleTimer = null;
+    _backgroundIdleTimer = Timer(_backgroundIdleDelay, _checkBackgroundIdle);
+  }
+
+  Future<void> _checkBackgroundIdle() async {
+    _backgroundIdleTimer = null;
+    if (!_attached || _windowFocused || _trayHidden || _windowMinimized) {
+      return;
+    }
+    final covered = await isWindowCoveredByForeground();
+    if (!_attached || _windowFocused || _trayHidden || _windowMinimized) {
+      return;
+    }
+    if (covered != backgroundIdle.value) {
+      backgroundIdle.value = covered;
       log.window.info(
         'legacy',
-        '[focus] idle-timer fire focused=$_windowFocused '
+        '[focus] idle=$covered focused=$_windowFocused '
         'tray=$_trayHidden min=$_windowMinimized',
       );
-      if (_windowFocused || _trayHidden || _windowMinimized) return;
-      if (!backgroundIdle.value) {
-        backgroundIdle.value = true;
-        log.window.info('legacy', '[focus] idle');
+      if (!covered &&
+          shouldRender &&
+          !WidgetsBinding.instance.hasScheduledFrame) {
+        WidgetsBinding.instance.scheduleFrame();
       }
-    });
+    }
+    // 遮挡状态变化不一定再给焦点事件，继续复查；露出后立即恢复渲染。
+    _backgroundIdleTimer = Timer(_backgroundIdleRecheck, _checkBackgroundIdle);
   }
 
   void _sync({bool forceFrame = false}) {

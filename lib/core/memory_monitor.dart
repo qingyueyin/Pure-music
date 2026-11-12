@@ -28,7 +28,7 @@ typedef _SetProcessWorkingSetSizeDart = int Function(int, int, int);
 
 /// 定时看 RSS，只回收冷封面；窗口不可见时不按 RSS 瘦身。
 /// 最小化只换出工作集页，托盘隐藏额外卸界面并清图片/排版缓存。
-/// 失焦 30 秒（被完全挡住）做一次温和裁剪并换出工作集，不清图片缓存。
+/// 失焦 30 秒且被前台窗口完全挡住时做一次温和裁剪并换出工作集，不清图片缓存。
 class MemoryMonitorService {
   static final instance = MemoryMonitorService._();
   MemoryMonitorService._() {
@@ -86,6 +86,14 @@ class MemoryMonitorService {
       _setProcessWorkingSetSize = null;
       _logTrimWarn('trim failed: $e');
       return -1;
+    }
+  }
+
+  /// 窗口完整可见时不做工作集换出：正在显示的页面被换出去，
+  /// 下一帧又得从页面文件读回来，副屏看歌词会一顿一顿。
+  void _trimWorkingSetWhenHidden() {
+    if (WindowRenderGate.instance.backgroundIdle.value) {
+      _trimWorkingSet();
     }
   }
 
@@ -280,7 +288,7 @@ class MemoryMonitorService {
     );
   }
 
-  /// 失焦闲时做一次温和裁剪 + 换出；回前台后停掉跟进换出。
+  /// 窗口真被挡住时做一次温和裁剪 + 换出；露出后停掉跟进换出。
   void _onBackgroundIdleChanged() {
     final idle = WindowRenderGate.instance.backgroundIdle.value;
     if (idle) {
@@ -346,16 +354,14 @@ class MemoryMonitorService {
           _cleanupDue(now, _lastTier3CleanupAt, const Duration(minutes: 5))) {
         _runTier3Cleanup(now, playingPath, playingRssMB, playingTier3Threshold);
         // 最后一道兜底：把工作集页换出到备用列表，不动音频缓冲。
-        _trimWorkingSet();
+        _trimWorkingSetWhenHidden();
       } else if (playingRssMB > playingTier2Threshold &&
           _cleanupDue(now, _lastTier2CleanupAt, const Duration(minutes: 10))) {
         _runTier2Cleanup(now, playingPath, playingRssMB, playingTier2Threshold);
       } else if (playingRssMB > playingTier1Threshold &&
           _cleanupDue(now, _lastTier1CleanupAt, const Duration(minutes: 2))) {
         _runTier1Cleanup(now);
-        // 播放中一直渲染，工作集会一路涨到 tier-3 的 280MB 才回落；
-        // 一级就把页换出，峰值压在 180MB 附近，省下的都是看得见的那一段。
-        _trimWorkingSet();
+        _trimWorkingSetWhenHidden();
       }
       if (Platform.environment['CP_MEMORY_LOG'] == '1') {
         CoverImageCache.instance.logStats();
