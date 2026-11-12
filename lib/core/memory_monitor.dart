@@ -27,8 +27,8 @@ typedef _SetProcessWorkingSetSizeNative =
 typedef _SetProcessWorkingSetSizeDart = int Function(int, int, int);
 
 /// 定时看 RSS，只回收冷封面；窗口不可见时不按 RSS 瘦身。
-/// 最小化只换出工作集页，托盘隐藏额外卸界面并清图片/排版缓存。
-/// 失焦 30 秒且被前台窗口完全挡住时做一次温和裁剪并换出工作集，不清图片缓存。
+/// 最小化/托盘前 5 分钟保持热状态，只清缓存；超过后才深度清理并换出工作集。
+/// 失焦 30 秒且被前台窗口完全挡住时只清缓存，不换出工作集，回来能立刻重绘。
 class MemoryMonitorService {
   static final instance = MemoryMonitorService._();
   MemoryMonitorService._() {
@@ -43,6 +43,7 @@ class MemoryMonitorService {
   Timer? _settleTrimFollowUpTimer;
   Timer? _hiddenTrimTimer;
   Timer? _hiddenWatchdogTimer;
+  Timer? _hiddenDeepCleanTimer;
   Timer? _backgroundIdleRestoreTimer;
   bool _hiddenWatchdogBusy = false;
   int _hiddenTrimTicks = 0;
@@ -53,6 +54,9 @@ class MemoryMonitorService {
   /// 头段快速换出的次数，以及掉幅低于多少就认为页立刻被拉回。
   static const _hiddenFastTrimTicks = 8;
   static const _minTrimDropBytes = 10 * 1024 * 1024;
+
+  /// 短时间最小化保持热状态，超过这个时长才深度清理并换出工作集。
+  static const _hiddenDeepCleanDelay = Duration(minutes: 5);
   Listenable? _hiddenNowPlaying;
   String? _hiddenSongPath;
   DateTime? _lastTier1CleanupAt;
@@ -89,14 +93,6 @@ class MemoryMonitorService {
     }
   }
 
-  /// 窗口完整可见时不做工作集换出：正在显示的页面被换出去，
-  /// 下一帧又得从页面文件读回来，副屏看歌词会一顿一顿。
-  void _trimWorkingSetWhenHidden() {
-    if (WindowRenderGate.instance.backgroundIdle.value) {
-      _trimWorkingSet();
-    }
-  }
-
   /// 换出后立刻回读 RSS。成功路径 30 秒最多一条；失败必须留痕。
   void _logTrim(int ok, int before, int after, int elapsedMs) {
     final now = DateTime.now();
@@ -125,12 +121,50 @@ class MemoryMonitorService {
     log.memory.warn('legacy', '[mem] $message');
   }
 
-  /// 隐藏期间换出工作集。只换一次会被帧循环重新拉回，先每 3 秒补几次，
-  /// 掉幅变小或补够次数就退到 15 秒。
+  /// 最小化后先保持热状态，回来不用重新读盘；超过 5 分钟才深度清理并换出工作集。
+  /// 深度清理后继续按 15 秒换出，长时间挂着内存保持在低位。
   void _holdWorkingSetWhileHidden() {
     _armSettleTrim();
-    _scheduleHiddenTrim();
     _watchHiddenSongChange();
+    _scheduleDeepClean();
+  }
+
+  void _scheduleDeepClean() {
+    _hiddenDeepCleanTimer?.cancel();
+    _hiddenDeepCleanTimer = Timer(_hiddenDeepCleanDelay, () {
+      _hiddenDeepCleanTimer = null;
+      if (WindowRenderGate.instance.framesEnabled.value) return;
+      _runDeepClean();
+    });
+  }
+
+  void _runDeepClean() {
+    final playingPath = PlayService.existingPlaybackService?.nowPlaying?.path;
+    log.memory.info('legacy', '[mem] hidden deep clean');
+    AudioLibrary.instance.evictAllCoversExcept(
+      playingPath,
+      includeCollectionCovers: true,
+    );
+    AudioLibrary.instance.trimCollectionThumbnailRetention(32);
+    CoverImageCache.instance.trimMemory(keepPath: playingPath);
+    CoverImageCache.instance.trimSmall(keepEntries: 48);
+    PaintingBinding.instance.imageCache.clear();
+    LyricsLinePainter.trimPool();
+    LyricsLineWidget.clearBlurFilterCache();
+    _trimWorkingSet();
+    _scheduleHiddenTrim();
+  }
+
+  /// 隐藏期间只清真正占内存的缓存，不换出工作集，保证回来时页面还是热的。
+  void _trimHiddenCaches() {
+    final playingPath = PlayService.existingPlaybackService?.nowPlaying?.path;
+    AudioLibrary.instance.evictStaleCoverBytes();
+    AudioLibrary.instance.trimCollectionThumbnailRetention(64);
+    CoverImageCache.instance.trimSmall(keepEntries: 64);
+    LyricsLinePainter.trimPool();
+    if (playingPath == null) {
+      CoverImageCache.instance.trimMemory();
+    }
   }
 
   void _scheduleHiddenTrim() {
@@ -164,7 +198,7 @@ class MemoryMonitorService {
     _settleTrimTimer = Timer(const Duration(milliseconds: 1200), () {
       _settleTrimTimer = null;
       if (WindowRenderGate.instance.framesEnabled.value) return;
-      _trimWorkingSet();
+      _trimHiddenCaches();
     });
   }
 
@@ -220,7 +254,7 @@ class MemoryMonitorService {
     }
   }
 
-  /// 隐藏时切歌会重新分配歌词、封面和缩略图，等 3 秒再补一次换出，把刚涨上来的页推回备用列表。
+  /// 隐藏时切歌会重新分配歌词、封面和缩略图，等 3 秒再清一次缓存，把旧的封面真正释放掉。
   void _watchHiddenSongChange() {
     final notifier = PlayService.existingPlaybackService?.nowPlayingNotifier;
     if (identical(notifier, _hiddenNowPlaying)) return;
@@ -241,7 +275,7 @@ class MemoryMonitorService {
     _settleTrimFollowUpTimer = Timer(const Duration(seconds: 8), () {
       _settleTrimFollowUpTimer = null;
       if (WindowRenderGate.instance.framesEnabled.value) return;
-      _trimWorkingSet();
+      _trimHiddenCaches();
     });
   }
 
@@ -252,6 +286,8 @@ class MemoryMonitorService {
     _settleTrimTimer = null;
     _settleTrimFollowUpTimer?.cancel();
     _settleTrimFollowUpTimer = null;
+    _hiddenDeepCleanTimer?.cancel();
+    _hiddenDeepCleanTimer = null;
     _hiddenTrimTimer?.cancel();
     _hiddenTrimTimer = null;
     _hiddenWatchdogTimer?.cancel();
@@ -288,16 +324,14 @@ class MemoryMonitorService {
     );
   }
 
-  /// 窗口真被挡住时做一次温和裁剪 + 换出；露出后停掉跟进换出。
+  /// 窗口真被挡住时只清缓存，不换出工作集；露出后停掉跟进清理。
   void _onBackgroundIdleChanged() {
     final idle = WindowRenderGate.instance.backgroundIdle.value;
     if (idle) {
-      final playingPath = PlayService.existingPlaybackService?.nowPlaying?.path;
       AudioLibrary.instance.evictStaleCoverBytes();
       AudioLibrary.instance.trimCollectionThumbnailRetention(64);
-      CoverImageCache.instance.trimMemory(keepPath: playingPath);
+      CoverImageCache.instance.trimSmall(keepEntries: 64);
       LyricsLineWidget.clearBlurFilterCache();
-      _trimWorkingSet();
       // 被挡住期间还会切歌解码新封面，一次清理压不住；闲时每分钟复查一次。
       _backgroundIdleRestoreTimer?.cancel();
       _backgroundIdleRestoreTimer = Timer.periodic(
@@ -317,11 +351,9 @@ class MemoryMonitorService {
       _backgroundIdleRestoreTimer = null;
       return;
     }
-    final playingPath = PlayService.existingPlaybackService?.nowPlaying?.path;
     AudioLibrary.instance.evictStaleCoverBytes();
     AudioLibrary.instance.trimCollectionThumbnailRetention(64);
-    CoverImageCache.instance.trimMemory(keepPath: playingPath);
-    _trimWorkingSet();
+    CoverImageCache.instance.trimSmall(keepEntries: 64);
   }
 
   void _checkMemoryPressure() {
@@ -353,15 +385,12 @@ class MemoryMonitorService {
       if (playingRssMB > playingTier3Threshold &&
           _cleanupDue(now, _lastTier3CleanupAt, const Duration(minutes: 5))) {
         _runTier3Cleanup(now, playingPath, playingRssMB, playingTier3Threshold);
-        // 最后一道兜底：把工作集页换出到备用列表，不动音频缓冲。
-        _trimWorkingSetWhenHidden();
       } else if (playingRssMB > playingTier2Threshold &&
           _cleanupDue(now, _lastTier2CleanupAt, const Duration(minutes: 10))) {
         _runTier2Cleanup(now, playingPath, playingRssMB, playingTier2Threshold);
       } else if (playingRssMB > playingTier1Threshold &&
           _cleanupDue(now, _lastTier1CleanupAt, const Duration(minutes: 2))) {
         _runTier1Cleanup(now);
-        _trimWorkingSetWhenHidden();
       }
       if (Platform.environment['CP_MEMORY_LOG'] == '1') {
         CoverImageCache.instance.logStats();
@@ -406,7 +435,12 @@ class MemoryMonitorService {
       'legacy',
       '[mem] RSS ${rssMB}MB > $tier3Threshold, tier-3 emergency cleanup',
     );
-    // 三档和二档一样，只回收用不到的封面，不清歌词缓存。
+    // 长时间浏览/播放后 Audio 会保留大量最近访问的封面；冷封面清理压不住时，
+    // 只保留正在播放的那张，其余全部释放。
+    AudioLibrary.instance.evictAllCoversExcept(
+      playingPath,
+      includeCollectionCovers: true,
+    );
     _reclaimColdCovers(playingPath, 64);
   }
 
@@ -459,33 +493,28 @@ class MemoryMonitorService {
     LyricsLineWidget.clearBlurFilterCache();
   }
 
-  /// 从托盘回到窗口后，恢复前台能用的图片缓存额度。
+  /// 从托盘回到窗口后，把图片缓存额度恢复成启动时的上限。
   void restoreForegroundImageCache() {
     stopHiddenTrim();
     final cache = PaintingBinding.instance.imageCache;
-    cache.maximumSize = 128;
-    cache.maximumSizeBytes = 48 << 20;
+    cache.maximumSize = 64;
+    cache.maximumSizeBytes = 24 << 20;
   }
 
-  /// 托盘隐藏：界面树已整棵卸掉，图片和排版缓存一并清，再按间隔换出工作集。
+  /// 托盘隐藏：界面树已整棵卸掉，先保持热状态，超过 5 分钟再清图片/排版缓存并换出工作集。
   void trimTrayHidden() {
-    final playingPath = PlayService.existingPlaybackService?.nowPlaying?.path;
     AudioLibrary.instance.evictStaleCoverBytes();
-    CoverImageCache.instance.trimMemory(keepPath: playingPath);
-    AudioLibrary.instance.trimCollectionThumbnailRetention(16);
-    PaintingBinding.instance.imageCache.clear();
+    AudioLibrary.instance.trimCollectionThumbnailRetention(64);
+    CoverImageCache.instance.trimSmall(keepEntries: 64);
     LyricsLinePainter.trimPool();
-    LyricsLineWidget.clearBlurFilterCache();
     _holdWorkingSetWhileHidden();
   }
 
-  /// 最小化：界面留着以便秒回，只换出工作集页，图片缓存不清。
-  /// 歌词排版池隐藏时用不到，先收掉，少一块要换出的页。
+  /// 最小化：前 5 分钟保持热状态，只清冷缓存；超时才深度清理并换出工作集。
   void trimWindowMinimized() {
-    final playingPath = PlayService.existingPlaybackService?.nowPlaying?.path;
     AudioLibrary.instance.evictStaleCoverBytes();
-    CoverImageCache.instance.trimMemory(keepPath: playingPath);
-    AudioLibrary.instance.trimCollectionThumbnailRetention(32);
+    AudioLibrary.instance.trimCollectionThumbnailRetention(64);
+    CoverImageCache.instance.trimSmall(keepEntries: 64);
     LyricsLinePainter.trimPool();
     _holdWorkingSetWhileHidden();
     _startHiddenWatchdog();

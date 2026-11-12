@@ -2315,7 +2315,7 @@ class AudioLibrary {
     }
   }
 
-  /// Evict retained Audio cover providers except the currently playing track.
+  /// 释放除当前播放曲目外的所有封面缓存。
   void evictAllCoversExcept(
     String? playingPath, {
     bool includeCollectionCovers = false,
@@ -2350,7 +2350,7 @@ class AudioLibrary {
     if (evicted > 0) {
       log.memory.debug(
         'legacy',
-        '[mem] evicted $evicted covers on song change',
+        '[mem] evicted $evicted retained covers',
       );
     }
   }
