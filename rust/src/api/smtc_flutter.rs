@@ -25,8 +25,8 @@ use windows::{
             },
         },
         UI::WindowsAndMessaging::{
-            CreateWindowExW, DefWindowProcW, DestroyWindow, FindWindowW, RegisterClassW,
-            WINDOW_EX_STYLE, WNDCLASSW, WS_POPUP,
+            CreateWindowExW, DefWindowProcW, DestroyWindow, FindWindowExW,
+            GetWindowThreadProcessId, RegisterClassW, WINDOW_EX_STYLE, WNDCLASSW, WS_POPUP,
         },
     },
 };
@@ -342,16 +342,31 @@ impl SMTCFlutter {
         }
     }
 
-    /// 获取 SMTC 绑定的窗口：优先主窗口（系统媒体控件会显示在
+    /// 获取 SMTC 绑定的窗口：优先本进程的主窗口（系统媒体控件会显示在
     /// 主窗口的任务栏缩略图上），主窗口尚未创建时回退到隐藏窗口。
     fn _get_smtc_window() -> Result<(HWND, bool), windows::core::Error> {
         const MAIN_CLASS_NAME: &str = "FLUTTER_RUNNER_WIN32_WINDOW";
         unsafe {
             let class_name: HSTRING = HSTRING::from(MAIN_CLASS_NAME);
-            let hwnd = FindWindowW(PCWSTR(class_name.as_ptr()), PCWSTR::null());
-            if hwnd.0 != 0 {
-                log::debug!(target: "smtc", "SMTC: bound to main window HWND={}", hwnd.0);
-                return Ok((hwnd, false));
+            let current_process_id = std::process::id();
+            let mut previous = HWND::default();
+            loop {
+                let hwnd = FindWindowExW(
+                    HWND::default(),
+                    previous,
+                    PCWSTR(class_name.as_ptr()),
+                    PCWSTR::null(),
+                );
+                if hwnd.0 == 0 {
+                    break;
+                }
+                let mut process_id = 0u32;
+                GetWindowThreadProcessId(hwnd, Some(&mut process_id));
+                if process_id == current_process_id {
+                    log::debug!(target: "smtc", "SMTC: bound to main window HWND={}", hwnd.0);
+                    return Ok((hwnd, false));
+                }
+                previous = hwnd;
             }
         }
         let hidden = Self::_create_hidden_smtc_window()?;
