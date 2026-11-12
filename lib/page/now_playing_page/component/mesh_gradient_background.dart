@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart' show ValueListenable, listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_shaders/flutter_shaders.dart';
+import 'package:pure_music/page/now_playing_page/component/audio_reactive_flow.dart';
 import 'package:pure_music/page/now_playing_page/component/now_playing_background_inputs.dart';
 
 const _kDarkMeshScrim = Color(0x38171717);
@@ -19,6 +20,18 @@ const _kMeshClockPeriodMilliseconds = 1 << 26;
 double _meshClockSeconds() {
   final milliseconds = DateTime.now().millisecondsSinceEpoch;
   return (milliseconds % _kMeshClockPeriodMilliseconds) / 1000.0;
+}
+
+double _followAudio(
+  double current,
+  double target,
+  double deltaSeconds,
+  double attack,
+  double release,
+) {
+  if (!deltaSeconds.isFinite || deltaSeconds <= 0) return current;
+  final tau = target > current ? attack : release;
+  return current + (target - current) * (1 - exp(-deltaSeconds / tau));
 }
 
 typedef _OklabColor = ({double l, double a, double b});
@@ -241,8 +254,9 @@ Color resolvePlayerSafeForeground({
     final darkerRatio = _contrastRatio(darker, backdrop);
     final lighterRatio = _contrastRatio(lighter, backdrop);
     final candidate = darkerRatio >= lighterRatio ? darker : lighter;
-    final candidateRatio =
-        darkerRatio >= lighterRatio ? darkerRatio : lighterRatio;
+    final candidateRatio = darkerRatio >= lighterRatio
+        ? darkerRatio
+        : lighterRatio;
     if (candidateRatio > bestRatio) {
       best = candidate;
       bestRatio = candidateRatio;
@@ -290,9 +304,10 @@ class MeshGradientBackground extends StatelessWidget {
         shader
           ..setFloat(0, 1.0)
           ..setFloat(1, 1.0)
-          ..setFloat(2, 0.0);
+          ..setFloat(2, 0.0)
+          ..setFloat(3, 0.0);
         for (var i = 0; i < _kShaderColorCount * 3; i++) {
-          shader.setFloat(3 + i, 0.5);
+          shader.setFloat(4 + i, 0.5);
         }
         final recorder = ui.PictureRecorder();
         ui.Canvas(recorder).drawRect(
@@ -374,6 +389,19 @@ class _MeshGradientBackgroundInternalState
   static const Duration _minRotationInterval = Duration(seconds: 60);
   static const Duration _maxRotationInterval = Duration(seconds: 90);
 
+  final AudioReactiveFlowEngine _audioEngine = AudioReactiveFlowEngine(
+    pulseAttackSeconds: .15,
+    pulseReleaseTauSeconds: .50,
+  );
+  StreamSubscription<Float32List>? _spectrumSubscription;
+  Stream<Float32List>? _subscribedStream;
+  final Stopwatch _spectrumClock = Stopwatch();
+  Duration? _lastSpectrumElapsed;
+  DateTime? _spectrumPausedAt;
+  bool _awaitingPlaybackSpectrum = false;
+  final ValueNotifier<double> _audioBeat = ValueNotifier(0);
+  final ValueNotifier<double> _audioTimeScale = ValueNotifier(1);
+
   @override
   void initState() {
     super.initState();
@@ -440,9 +468,19 @@ class _MeshGradientBackgroundInternalState
       _bindPlayerStateListenable();
     }
 
+    if (oldWidget.inputs.trackId != widget.inputs.trackId) {
+      _audioEngine.resetForTrackChange();
+      _lastSpectrumElapsed = null;
+    }
+
     if (oldWidget.inputs.enableAnimation != widget.inputs.enableAnimation ||
         oldWidget.inputs.isVisible != widget.inputs.isVisible ||
         oldWidget.inputs.isPlaybackActive != widget.inputs.isPlaybackActive ||
+        oldWidget.inputs.audioReactiveFlow != widget.inputs.audioReactiveFlow ||
+        !identical(
+          widget.inputs.spectrumStream,
+          oldWidget.inputs.spectrumStream,
+        ) ||
         !identical(
           widget.inputs.albumCoverBytes,
           oldWidget.inputs.albumCoverBytes,
@@ -642,6 +680,89 @@ class _MeshGradientBackgroundInternalState
     _syncMeshController();
   }
 
+  void _syncAudioSubscription() {
+    final stream = widget.inputs.spectrumStream;
+    final shouldListen =
+        stream != null &&
+        widget.inputs.audioReactiveFlow &&
+        widget.inputs.enableAnimation &&
+        widget.inputs.isVisible &&
+        widget.inputs.isPlaybackActive;
+    if (shouldListen) {
+      if (identical(_subscribedStream, stream) &&
+          _spectrumSubscription != null) {
+        return;
+      }
+      // 流对象换了（例如播放服务重建）要重新订阅，并从旧基线重置。
+      _spectrumSubscription?.cancel();
+      _spectrumSubscription = null;
+      final pausedAt = _spectrumPausedAt;
+      if (_subscribedStream != null ||
+          pausedAt == null ||
+          DateTime.now().difference(pausedAt) > const Duration(seconds: 10)) {
+        _audioEngine.reset();
+      } else {
+        _audioEngine.resumeFromPause();
+      }
+      _subscribedStream = stream;
+      _awaitingPlaybackSpectrum = true;
+      _lastSpectrumElapsed = null;
+      _spectrumClock
+        ..reset()
+        ..start();
+      _spectrumSubscription = stream.listen(_handleSpectrum);
+      return;
+    }
+    if (_spectrumSubscription != null) {
+      _spectrumPausedAt = DateTime.now();
+    }
+    _subscribedStream = null;
+    _spectrumSubscription?.cancel();
+    _spectrumSubscription = null;
+    // 暂停/离开时保留当前值，恢复后从这里接续；只有关掉音频响应才回中性。
+    if (!widget.inputs.audioReactiveFlow) {
+      _audioBeat.value = 0;
+      _audioTimeScale.value = 1;
+    }
+  }
+
+  void _handleSpectrum(Float32List bands) {
+    if (_disposed || !mounted || !widget.inputs.audioReactiveFlow) return;
+    final response = AudioReactiveFlowResponse.fromBands(bands);
+    if (_awaitingPlaybackSpectrum) {
+      if (response.isNearlySilent) return;
+      _awaitingPlaybackSpectrum = false;
+    }
+    final elapsed = _spectrumClock.elapsed;
+    final previous = _lastSpectrumElapsed;
+    _lastSpectrumElapsed = elapsed;
+    final dtSeconds = previous == null
+        ? null
+        : (elapsed - previous).inMicroseconds / Duration.microsecondsPerSecond;
+    _audioEngine.update(response, dtSeconds: dtSeconds);
+    final raw =
+        _audioEngine.levelLow * .65 +
+        _audioEngine.levelMid * .30 +
+        _audioEngine.levelHigh * .05;
+    final energy = audioReactiveFlowLevel(raw);
+    // 频谱只有 23Hz，绘制值再过一层平滑，暂停/切歌恢复时不会一步跳到位。
+    final followSeconds = dtSeconds ?? 1 / 23;
+    _audioBeat.value = _followAudio(
+      _audioBeat.value,
+      _audioEngine.beatPulse,
+      followSeconds,
+      .06,
+      .20,
+    );
+    _audioTimeScale.value = _followAudio(
+      _audioTimeScale.value,
+      1 + energy * .55,
+      followSeconds,
+      .20,
+      .40,
+    );
+  }
+
   void _syncMeshController() {
     final shouldRun =
         widget.inputs.isVisible &&
@@ -651,6 +772,7 @@ class _MeshGradientBackgroundInternalState
     } else {
       _meshController.stop();
     }
+    _syncAudioSubscription();
     _syncRotationTimer();
   }
 
@@ -720,12 +842,17 @@ class _MeshGradientBackgroundInternalState
       _onPlayerStateListenable,
     );
     _stopRotationTimer();
+    _spectrumSubscription?.cancel();
+    _spectrumSubscription = null;
+    _subscribedStream = null;
     _meshController.dispose();
     _transitionTicker?.dispose();
     _paletteColors = const [];
     _prevPaletteColors = const [];
     _targetPaletteColors = const [];
     _transitionValueNotifier.dispose();
+    _audioBeat.dispose();
+    _audioTimeScale.dispose();
     super.dispose();
   }
 
@@ -780,6 +907,8 @@ class _MeshGradientBackgroundInternalState
           colorTransition: _isTransitioning ? _transitionValueNotifier : null,
           controller: _meshController,
           scrimColor: scrimColor,
+          timeScale: _audioTimeScale,
+          beat: _audioBeat,
         );
         return FittedBox(
           fit: BoxFit.fill,
@@ -801,6 +930,8 @@ class _SoftMeshGradient extends StatefulWidget {
   final ValueListenable<double>? colorTransition;
   final _MeshAnimationController? controller;
   final Color scrimColor;
+  final ValueListenable<double> timeScale;
+  final ValueListenable<double> beat;
 
   const _SoftMeshGradient({
     required this.colors,
@@ -809,6 +940,8 @@ class _SoftMeshGradient extends StatefulWidget {
     this.colorTransition,
     this.controller,
     required this.scrimColor,
+    required this.timeScale,
+    required this.beat,
   });
 
   @override
@@ -842,7 +975,8 @@ class _SoftMeshGradientState extends State<_SoftMeshGradient> {
         Duration.microsecondsPerSecond;
     _lastElapsed = elapsed;
     if (deltaSeconds <= 0) return;
-    _time.value += deltaSeconds;
+    // 音频只加快 shader 内部时间，避免响度把重绘频率顶上去。
+    _time.value += deltaSeconds * widget.timeScale.value;
   }
 
   void _syncTicker() {
@@ -893,6 +1027,7 @@ class _SoftMeshGradientState extends State<_SoftMeshGradient> {
     _painter = _SoftMeshGradientPainter(
       repaint: _repaint,
       time: _time,
+      beat: widget.beat,
       scrimColor: widget.scrimColor,
     );
     _bindController();
@@ -974,6 +1109,7 @@ class _SoftMeshGradientPainter extends CustomPainter {
   _SoftMeshGradientPainter({
     required Listenable repaint,
     required this.time,
+    required this.beat,
     required Color scrimColor,
   }) : scrimColor = scrimColor,
        _paint = Paint()
@@ -982,6 +1118,7 @@ class _SoftMeshGradientPainter extends CustomPainter {
 
   FragmentShader? shader;
   final ValueListenable<double> time;
+  final ValueListenable<double> beat;
   List<_OklabColor> colors = const <_OklabColor>[];
   List<_OklabColor>? transitionFromColors;
   List<_OklabColor>? transitionToColors;
@@ -997,12 +1134,13 @@ class _SoftMeshGradientPainter extends CustomPainter {
     shader.setFloat(0, size.width);
     shader.setFloat(1, size.height);
     shader.setFloat(2, time.value);
+    shader.setFloat(3, beat.value.clamp(0.0, 1.0));
     if (_filterColor != scrimColor) {
       _filterColor = scrimColor;
       _paint.colorFilter = ColorFilter.mode(scrimColor, BlendMode.srcOver);
     }
 
-    var i = 3;
+    var i = 4;
     final from = transitionFromColors;
     final to = transitionToColors;
     final transition = colorTransition;
@@ -1039,6 +1177,7 @@ class _SoftMeshGradientPainter extends CustomPainter {
   bool shouldRepaint(covariant _SoftMeshGradientPainter oldDelegate) {
     return oldDelegate.shader != shader ||
         oldDelegate.time != time ||
+        oldDelegate.beat != beat ||
         oldDelegate.colorTransition != colorTransition ||
         oldDelegate.scrimColor != scrimColor ||
         !listEquals(oldDelegate.transitionFromColors, transitionFromColors) ||

@@ -4,6 +4,8 @@
 
 uniform vec2 uSize;
 uniform float uTime;
+// 鼓点短暂收小扭曲幅度；流速由 Dart 侧按慢电平调整，不改亮度、不整屏缩放。
+uniform float uBeat;
 // uColor1..4 为 OkLab，混色后转回 sRGB。
 uniform vec3 uColor1;
 uniform vec3 uColor2;
@@ -86,7 +88,7 @@ void main() {
   gradientPoint.y *= ratio;
 
   float frequency = 5.0;
-  float amplitude = 25.0;
+  float amplitude = 25.0 / (1.0 + uBeat * 0.35);
   float speed = uTime * 0.75;
   gradientPoint.x += sin(gradientPoint.y * frequency + speed) / amplitude;
   gradientPoint.y +=
