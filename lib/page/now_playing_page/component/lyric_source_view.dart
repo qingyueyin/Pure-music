@@ -884,8 +884,8 @@ class _SetLyricSourceBtn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final icon = switch (sourceType) {
-      null => Symbols.lyrics,
-      LyricSourceType.local => Symbols.lyrics,
+      null => Symbols.description,
+      LyricSourceType.local => Symbols.description,
       _ => Symbols.cloud,
     };
     final tooltip = _lyricSourceTooltip(sourceType, isExternal);
