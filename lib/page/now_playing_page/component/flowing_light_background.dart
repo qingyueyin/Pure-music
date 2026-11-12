@@ -4,7 +4,6 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:pure_music/page/now_playing_page/component/audio_reactive_flow.dart';
 import 'package:pure_music/page/now_playing_page/component/now_playing_background_inputs.dart';
 
@@ -180,8 +179,7 @@ class FlowingLightBackground extends StatefulWidget {
   State<FlowingLightBackground> createState() => _FlowingLightBackgroundState();
 }
 
-class _FlowingLightBackgroundState extends State<FlowingLightBackground>
-    with SingleTickerProviderStateMixin {
+class _FlowingLightBackgroundState extends State<FlowingLightBackground> {
   _DecodedCover? _cover;
   _DecodedCover? _previousCover;
   _DecodedCover? _pendingCover;
@@ -191,11 +189,11 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
   int _prefilterGeneration = 0;
 
   late final Stopwatch _transitionClock;
-  late final Ticker _ticker;
+  final Stopwatch _paintClock = Stopwatch();
+  Timer? _paintTimer;
   late final _FlowingLightPainter _painter;
   final _FlowMotionState _motion = _FlowMotionState();
-  Duration? _lastTickElapsed;
-  Duration? _lastPaintElapsed;
+  Duration _lastTickElapsed = Duration.zero;
   Duration? _lastSpectrumElapsed;
 
   final ValueNotifier<int> _frameNotifier = ValueNotifier(0);
@@ -245,7 +243,6 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
   void initState() {
     super.initState();
     _transitionClock = Stopwatch();
-    _ticker = createTicker(_onTick);
     _painter = _FlowingLightPainter(
       motion: _motion,
       transitionClock: _transitionClock,
@@ -441,14 +438,10 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     }
 
     final shouldTick = shouldMove || shouldTransition;
-    if (shouldTick && !_ticker.isActive) {
-      _lastTickElapsed = null;
-      _lastPaintElapsed = null;
-      _ticker.start();
-    } else if (!shouldTick && _ticker.isActive) {
-      _ticker.stop();
-      _lastTickElapsed = null;
-      _lastPaintElapsed = null;
+    if (shouldTick && _paintTimer == null) {
+      _startPaintTimer();
+    } else if (!shouldTick && _paintTimer != null) {
+      _stopPaintTimer();
     }
   }
 
@@ -483,15 +476,31 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     return (previousSpeed + _smoothedPlaybackSpeed) / 2;
   }
 
-  void _onTick(Duration elapsed) {
+  void _startPaintTimer() {
+    _paintClock
+      ..stop()
+      ..reset()
+      ..start();
+    _lastTickElapsed = Duration.zero;
+    // 按 15fps 出帧，避免空闲帧跟着屏幕刷新率空转。
+    _paintTimer = Timer.periodic(_kFrameInterval, (_) => _onPaintTick());
+  }
+
+  void _stopPaintTimer() {
+    _paintTimer?.cancel();
+    _paintTimer = null;
+    _paintClock.stop();
+    _lastTickElapsed = Duration.zero;
+  }
+
+  void _onPaintTick() {
     if (_disposed || !mounted) return;
 
-    final previousTick = _lastTickElapsed;
+    final elapsed = _paintClock.elapsed;
+    final deltaSeconds =
+        (elapsed - _lastTickElapsed).inMicroseconds /
+        Duration.microsecondsPerSecond;
     _lastTickElapsed = elapsed;
-    final deltaSeconds = previousTick == null
-        ? 0.0
-        : (elapsed - previousTick).inMicroseconds /
-              Duration.microsecondsPerSecond;
     final averageSpeed = _updatePlaybackSpeed(deltaSeconds);
     _updateAudio(deltaSeconds);
     final audioSpeed = widget.inputs.audioReactiveFlow
@@ -499,19 +508,6 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
         : 1.0;
     _motion.time +=
         deltaSeconds * widget.inputs.flowSpeed * averageSpeed * audioSpeed;
-
-    // 状态每帧都推进，重绘压到 15fps，避免模糊着色器按屏幕刷新率跑。
-    final lastPaintElapsed = _lastPaintElapsed;
-    if (lastPaintElapsed == null) {
-      _lastPaintElapsed = elapsed;
-    } else {
-      final sinceLastPaint = elapsed - lastPaintElapsed;
-      if (sinceLastPaint < _kFrameInterval) return;
-      final completedIntervals =
-          sinceLastPaint.inMicroseconds ~/ _kFrameInterval.inMicroseconds;
-      _lastPaintElapsed =
-          lastPaintElapsed + _kFrameInterval * completedIntervals;
-    }
 
     if (_previousCover != null &&
         _transitionClock.elapsed >= _kArtworkTransitionDuration) {
@@ -897,7 +893,7 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     _decodeGeneration++;
     _prefilterGeneration++;
     _prefilterDebounce?.cancel();
-    _ticker.dispose();
+    _stopPaintTimer();
     _transitionClock.stop();
     _cover?.dispose();
     _previousCover?.dispose();
