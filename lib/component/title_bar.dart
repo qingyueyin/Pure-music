@@ -128,21 +128,21 @@ class _TitleBar_Medium extends StatelessWidget {
   }
 
   Widget _mediumBrand(ColorScheme scheme) {
-    return DragToMoveArea(
-      child: Row(
-        children: [
-          Text(
+    return Row(
+      children: [
+        DragToMoveArea(
+          child: Text(
             'Pure Music',
             style: TextStyle(
               color: scheme.onSurface,
               fontSize: AppType.subtitle,
             ),
           ),
-          const _TitleLyricSlot(
-            padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-          ),
-        ],
-      ),
+        ),
+        const _TitleLyricSlot(
+          padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+        ),
+      ],
     );
   }
 
@@ -192,16 +192,16 @@ class _TitleBar_Large extends StatelessWidget {
   }
 
   Widget _dragArea(ColorScheme scheme) {
-    return DragToMoveArea(
-      child: Row(
-        children: [
-          SizedBox(width: 200, child: _largeBrand(scheme)),
-          const _TitleLyricSlot(
-            compact: true,
-            padding: EdgeInsets.fromLTRB(16, 8.0, 16.0, 8.0),
-          ),
-        ],
-      ),
+    return Row(
+      children: [
+        DragToMoveArea(
+          child: SizedBox(width: 200, child: _largeBrand(scheme)),
+        ),
+        const _TitleLyricSlot(
+          compact: true,
+          padding: EdgeInsets.fromLTRB(16, 8.0, 16.0, 8.0),
+        ),
+      ],
     );
   }
 
@@ -229,10 +229,15 @@ class _TitleLyricSlot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Expanded(
-      child: Padding(
-        padding: padding,
-        child: _UpdateAwareSlot(
-          child: HorizontalLyricView(compact: compact),
+      // 不用 DragToMoveArea：它的双击识别会让单击等待 300ms，搜索因此慢半拍
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onPanStart: (_) => windowManager.startDragging(),
+        child: Padding(
+          padding: padding,
+          child: _UpdateAwareSlot(
+            child: HorizontalLyricView(compact: compact),
+          ),
         ),
       ),
     );
